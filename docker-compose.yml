@@ -1,0 +1,47 @@
+services:
+  database:
+    image: postgres:18-alpine
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    restart: unless-stopped
+
+  backend:
+    image: ghcr.io/weaklings-ao/weaklings_backend:latest
+    ports:
+      - "8001:8001"
+    environment:
+      - RUST_LOG=${RUST_LOG}
+      - BACKEND_PORT=${BACKEND_PORT}
+      - DATABASE_URL=${DOCKER_DATABASE_URL}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
+      - DISCORD_REDIRECT_URI=${DISCORD_REDIRECT_URI}
+      - SUPER_ADMIN_DISCORD_ID=${SUPER_ADMIN_DISCORD_ID}
+      - ALBION_GUILD_ID=${ALBION_GUILD_ID}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY}
+      - ALBION_API_REGION=${ALBION_API_REGION}
+    depends_on:
+      - database
+    restart: unless-stopped
+
+  frontend:
+    image: ghcr.io/weaklings-ao/weaklings_frontend:latest
+    ports:
+      - "5000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      - PORT=${PORT}
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:

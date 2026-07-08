@@ -1,0 +1,15 @@
+# Backend build context (root) — solo ciò che serve al backend Rust
+
+.git/
+target/
+node_modules/
+.next/
+.cargo/
+
+apps/frontend/
+apps/discord-bot/
+
+scripts/
+README.md
+AGENTS.md
+CLAUDE.md

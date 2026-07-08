@@ -1,0 +1,337 @@
+//! REST API routes and OpenAPI paths for the events module.
+
+use axum::{
+    extract::{Path, Query},
+    routing::{get, post},
+    Extension, Json, Router,
+};
+
+use crate::errors::ProblemDetails;
+use crate::errors::AppError;
+use crate::modules::auth::{Permission, Permissions, UserContext};
+use crate::pagination::{PaginatedData, PaginationParams};
+use crate::responses::{ApiResponse, ApiResponseEventDetail, ApiResponseEventList, ApiResponseEventView};
+use axum::http::StatusCode;
+
+use super::models::{
+    CreateEventRequest, EventDetailView, EventView, ParticipateEventRequest, UpdateEventRequest,
+};
+use super::service::EventService;
+
+/// Returns the compiled router containing all event endpoints.
+pub fn router() -> Router {
+    Router::new()
+        .route("/", get(list_events).post(create_event))
+        .route("/{id}", get(get_event).patch(update_event).delete(delete_event))
+        .route("/{id}/participate", post(participate).delete(cancel_participation))
+        .route("/{id}/start", post(start_event))
+        .route("/{id}/stop", post(stop_event))
+        .route("/{id}/battles", get(list_event_battles))
+}
+
+/// Lists all events (paginated).
+///
+/// Any authenticated user can list events.
+#[utoipa::path(
+    get,
+    path = "/api/events",
+    tag = "events",
+    summary = "List events",
+    description = "Returns a paginated list of scheduled events. Any authenticated user can call this.",
+    security(("session_cookie" = [])),
+    params(
+        ("page" = Option<u64>, Query, description = "Page number (1-indexed, default: 1)"),
+        ("limit" = Option<u64>, Query, description = "Items per page (1-50, default: 10)")
+    ),
+    responses(
+        (status = 200, description = "Events list retrieved successfully", body = ApiResponseEventList),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
+    )
+)]
+async fn list_events(
+    _user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Query(pagination): Query<PaginationParams>,
+) -> Result<Json<ApiResponse<PaginatedData<EventView>>>, AppError> {
+    let service = EventService::new();
+    let events = service.list_events(&db, pagination).await?;
+    Ok(Json(ApiResponse::new(events)))
+}
+
+/// Gets a detailed event.
+///
+/// Any authenticated user can fetch an event.
+#[utoipa::path(
+    get,
+    path = "/api/events/{id}",
+    tag = "events",
+    summary = "Get event detail",
+    description = "Returns the full details of an event including active comp configuration and participants list. Any authenticated user can call this.",
+    security(("session_cookie" = [])),
+    params(
+        ("id" = i64, Path, description = "Event ID")
+    ),
+    responses(
+        (status = 200, description = "Event details retrieved successfully", body = ApiResponseEventDetail),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails)
+    )
+)]
+async fn get_event(
+    _user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
+    let service = EventService::new();
+    let event = service.get_event_detail(&db, id).await?;
+    Ok(Json(ApiResponse::new(event)))
+}
+
+/// Creates a new event.
+///
+/// Requires `events.manage` permission.
+#[utoipa::path(
+    post,
+    path = "/api/events",
+    tag = "events",
+    summary = "Create an event",
+    description = "Creates a new event with a base composition. Requires `events.manage` permission.",
+    security(("session_cookie" = [])),
+    request_body(content = CreateEventRequest, description = "Event details"),
+    responses(
+        (status = 200, description = "Event created successfully", body = ApiResponseEventView),
+        (status = 400, description = "Validation error", body = ProblemDetails),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails)
+    )
+)]
+async fn create_event(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Json(req): Json<CreateEventRequest>,
+) -> Result<Json<ApiResponse<EventView>>, AppError> {
+    user.require(&perms, Permission::EventsManage).await?;
+    let service = EventService::new();
+    let event = service.create_event(&db, user.user_id, req).await?;
+    Ok(Json(ApiResponse::new(event)))
+}
+
+/// Updates an existing event.
+///
+/// Requires `events.manage` permission.
+#[utoipa::path(
+    patch,
+    path = "/api/events/{id}",
+    tag = "events",
+    summary = "Update an event",
+    description = "Updates an event. Requires `events.manage` permission.",
+    security(("session_cookie" = [])),
+    params(
+        ("id" = i64, Path, description = "Event ID")
+    ),
+    request_body(content = UpdateEventRequest, description = "Updated event details"),
+    responses(
+        (status = 200, description = "Event updated successfully", body = ApiResponseEventView),
+        (status = 400, description = "Validation error", body = ProblemDetails),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails)
+    )
+)]
+async fn update_event(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+    Json(req): Json<UpdateEventRequest>,
+) -> Result<Json<ApiResponse<EventView>>, AppError> {
+    user.require(&perms, Permission::EventsManage).await?;
+    let service = EventService::new();
+    let event = service.update_event(&db, id, req).await?;
+    Ok(Json(ApiResponse::new(event)))
+}
+
+/// Deletes an event.
+///
+/// Requires `events.manage` permission.
+#[utoipa::path(
+    delete,
+    path = "/api/events/{id}",
+    tag = "events",
+    summary = "Delete an event",
+    description = "Deletes an event. Requires `events.manage` permission.",
+    security(("session_cookie" = [])),
+    params(
+        ("id" = i64, Path, description = "Event ID")
+    ),
+    responses(
+        (status = 204, description = "Event deleted successfully"),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails)
+    )
+)]
+async fn delete_event(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, AppError> {
+    user.require(&perms, Permission::EventsManage).await?;
+    let service = EventService::new();
+    service.delete_event(&db, id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Registers or updates participation for the logged-in user.
+///
+/// Any authenticated user can participate.
+#[utoipa::path(
+    post,
+    path = "/api/events/{id}/participate",
+    tag = "events",
+    summary = "Register for an event",
+    description = "Registers the logged-in user for the event or updates their build selection. Automatically scales composition variants if needed. Any authenticated user can call this.",
+    security(("session_cookie" = [])),
+    params(
+        ("id" = i64, Path, description = "Event ID")
+    ),
+    request_body(content = ParticipateEventRequest, description = "Participation build choices"),
+    responses(
+        (status = 200, description = "Registered successfully", body = ApiResponseEventDetail),
+        (status = 400, description = "Validation error (e.g. comp full, build already taken)", body = ProblemDetails),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 404, description = "Event or build not found", body = ProblemDetails)
+    )
+)]
+async fn participate(
+    user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+    Json(req): Json<ParticipateEventRequest>,
+) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
+    let service = EventService::new();
+    let detail = service.participate(&db, id, user.user_id, req).await?;
+    Ok(Json(ApiResponse::new(detail)))
+}
+
+/// Cancels participation for the logged-in user.
+///
+/// Any authenticated user can cancel their participation.
+#[utoipa::path(
+    delete,
+    path = "/api/events/{id}/participate",
+    tag = "events",
+    summary = "Leave an event",
+    description = "Cancels registration of the logged-in user for the event. Any authenticated user can call this.",
+    security(("session_cookie" = [])),
+    params(
+        ("id" = i64, Path, description = "Event ID")
+    ),
+    responses(
+        (status = 200, description = "Cancelled successfully", body = ApiResponseEventDetail),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 404, description = "Event or registration not found", body = ProblemDetails)
+    )
+)]
+async fn cancel_participation(
+    user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
+    let service = EventService::new();
+    let detail = service.cancel_participation(&db, id, user.user_id).await?;
+    Ok(Json(ApiResponse::new(detail)))
+}
+
+/// Starts an event session (status -> live).
+///
+/// Requires `events.manage` permission.
+#[utoipa::path(
+    post,
+    path = "/api/events/{id}/start",
+    tag = "events",
+    summary = "Start event session",
+    description = "Marks the event as live, records `started_at = now` and computes an `auto_stop_deadline` 3 hours out. The background linker will start pulling AlbionBB battles into the session window.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    responses(
+        (status = 200, description = "Session started", body = ApiResponseEventView),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails),
+        (status = 409, description = "Event already live", body = ProblemDetails)
+    )
+)]
+async fn start_event(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<EventView>>, AppError> {
+    user.require(&perms, Permission::EventsManage).await?;
+    let service = EventService::new();
+    let event = service.start_event(&db, id).await?;
+    Ok(Json(ApiResponse::new(event)))
+}
+
+/// Stops an event session (status -> stopped).
+///
+/// Requires `events.manage` permission. Auto-stops (`status=auto_stopped`) are
+/// handled by the background worker.
+#[utoipa::path(
+    post,
+    path = "/api/events/{id}/stop",
+    tag = "events",
+    summary = "Stop event session",
+    description = "Marks a live event session as stopped. The linker keeps refreshing battles for a grace period after the stop.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    responses(
+        (status = 200, description = "Session stopped", body = ApiResponseEventView),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails),
+        (status = 409, description = "Event is not live", body = ProblemDetails)
+    )
+)]
+async fn stop_event(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<EventView>>, AppError> {
+    user.require(&perms, Permission::EventsManage).await?;
+    let service = EventService::new();
+    let event = service.stop_event(&db, id, false).await?;
+    Ok(Json(ApiResponse::new(event)))
+}
+
+/// Returns the battles linked to an event session so far.
+///
+/// Any authenticated user can read this; it's the same data already embedded
+/// in `EventDetailView.battles`.
+#[utoipa::path(
+    get,
+    path = "/api/events/{id}/battles",
+    tag = "events",
+    summary = "List battles linked to an event",
+    description = "Returns battles pulled from AlbionBB whose guild-player count matches the event's sign-up range.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    responses(
+        (status = 200, description = "Linked battles", body = ApiResponseEventDetail),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails)
+    )
+)]
+async fn list_event_battles(
+    _user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
+    let service = EventService::new();
+    let detail = service.get_event_detail(&db, id).await?;
+    Ok(Json(ApiResponse::new(detail)))
+}

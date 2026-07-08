@@ -1,0 +1,61 @@
+//! Database migrations runner module.
+//!
+//! Registers and executes all `SeaORM` database schema updates.
+
+pub use sea_orm_migration::prelude::*;
+
+mod m20260708_000001_create_users_table;
+mod m20260708_000002_create_roles_table;
+mod m20260709_000001_create_splits_table;
+mod m20260709_000002_create_split_participants_table;
+mod m20260709_000003_create_transactions_table;
+mod m20260709_000004_create_albion_links_table;
+mod m20260709_000005_add_requested_at_to_transactions;
+mod m20260710_000001_create_role_permissions;
+mod m20260710_000002_seed_comps_permissions;
+mod m20260710_000003_create_build_categories_table;
+mod m20260710_000004_create_comp_categories_table;
+mod m20260710_000005_create_builds_table;
+mod m20260710_000006_create_build_items_table;
+mod m20260710_000007_create_comps_table;
+mod m20260710_000008_create_comp_builds_table;
+mod m20260711_000001_add_parent_id_to_comps;
+mod m20260711_000002_create_events_table;
+mod m20260711_000003_create_event_participations_table;
+mod m20260711_000004_seed_events_permissions;
+mod m20260712_000001_add_discord_id_to_users;
+mod m20260713_000001_extend_events_with_session;
+mod m20260713_000002_create_event_battles;
+
+/// Main migrator coordinating the sequential execution of registered migration scripts.
+pub struct Migrator;
+
+#[async_trait::async_trait]
+impl MigratorTrait for Migrator {
+    fn migrations() -> Vec<Box<dyn MigrationTrait>> {
+        vec![
+                Box::new(m20260708_000001_create_users_table::Migration),
+                Box::new(m20260708_000002_create_roles_table::Migration),
+                Box::new(m20260709_000001_create_splits_table::Migration),
+                Box::new(m20260709_000002_create_split_participants_table::Migration),
+                Box::new(m20260709_000003_create_transactions_table::Migration),
+                Box::new(m20260709_000004_create_albion_links_table::Migration),
+                Box::new(m20260709_000005_add_requested_at_to_transactions::Migration),
+                Box::new(m20260710_000001_create_role_permissions::Migration),
+                Box::new(m20260710_000002_seed_comps_permissions::Migration),
+                Box::new(m20260710_000003_create_build_categories_table::Migration),
+                Box::new(m20260710_000004_create_comp_categories_table::Migration),
+                Box::new(m20260710_000005_create_builds_table::Migration),
+                Box::new(m20260710_000006_create_build_items_table::Migration),
+                Box::new(m20260710_000007_create_comps_table::Migration),
+                Box::new(m20260710_000008_create_comp_builds_table::Migration),
+                Box::new(m20260711_000001_add_parent_id_to_comps::Migration),
+                Box::new(m20260711_000002_create_events_table::Migration),
+                Box::new(m20260711_000003_create_event_participations_table::Migration),
+                Box::new(m20260711_000004_seed_events_permissions::Migration),
+                Box::new(m20260712_000001_add_discord_id_to_users::Migration),
+                Box::new(m20260713_000001_extend_events_with_session::Migration),
+                Box::new(m20260713_000002_create_event_battles::Migration),
+            ]
+    }
+}

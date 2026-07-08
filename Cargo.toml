@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = ["apps/backend"]
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = "deny"
+pedantic = "warn"
