@@ -14,7 +14,7 @@ services:
   backend:
     image: ghcr.io/weaklings-ao/weaklings_backend:latest
     ports:
-      - "8001:8001"
+      - "8001:3000"
     environment:
       - RUST_LOG=${RUST_LOG}
       - BACKEND_PORT=${BACKEND_PORT}
@@ -39,6 +39,7 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
       - PORT=${PORT}
+      - API_REWRITE_URL=http://backend:3000
     depends_on:
       - backend
     restart: unless-stopped

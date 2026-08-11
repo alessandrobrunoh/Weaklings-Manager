@@ -1,16 +1,18 @@
 //! REST API routes and OpenAPI paths for the events module.
 
 use axum::{
+    Extension, Json, Router,
     extract::{Path, Query},
     routing::{get, post},
-    Extension, Json, Router,
 };
 
-use crate::errors::ProblemDetails;
 use crate::errors::AppError;
+use crate::errors::ProblemDetails;
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedData, PaginationParams};
-use crate::responses::{ApiResponse, ApiResponseEventDetail, ApiResponseEventList, ApiResponseEventView};
+use crate::responses::{
+    ApiResponse, ApiResponseEventDetail, ApiResponseEventList, ApiResponseEventView,
+};
 use axum::http::StatusCode;
 
 use super::models::{
@@ -22,8 +24,14 @@ use super::service::EventService;
 pub fn router() -> Router {
     Router::new()
         .route("/", get(list_events).post(create_event))
-        .route("/{id}", get(get_event).patch(update_event).delete(delete_event))
-        .route("/{id}/participate", post(participate).delete(cancel_participation))
+        .route(
+            "/{id}",
+            get(get_event).patch(update_event).delete(delete_event),
+        )
+        .route(
+            "/{id}/participate",
+            post(participate).delete(cancel_participation),
+        )
         .route("/{id}/start", post(start_event))
         .route("/{id}/stop", post(stop_event))
         .route("/{id}/battles", get(list_event_battles))

@@ -17,7 +17,11 @@ impl MigrationTrait for Migration {
                     .table(RolePermissions::Table)
                     .if_not_exists()
                     .col(ColumnDef::new(RolePermissions::RoleId).string().not_null())
-                    .col(ColumnDef::new(RolePermissions::Permission).string().not_null())
+                    .col(
+                        ColumnDef::new(RolePermissions::Permission)
+                            .string()
+                            .not_null(),
+                    )
                     .primary_key(
                         Index::create()
                             .col(RolePermissions::RoleId)
@@ -56,7 +60,8 @@ impl MigrationTrait for Migration {
         let role_rows = db.query_all(select).await?;
 
         // Build a name -> id lookup. Try_get by index matches the SELECT column order.
-        let mut name_to_id: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut name_to_id: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
         for row in role_rows {
             let id: String = row.try_get_by_index(0)?;
             let name: String = row.try_get_by_index(1)?;

@@ -6,17 +6,14 @@
 //! which maps role names to fine-grained [`Permission`](super::permissions::Permission)s
 //! loaded from the `role_permissions` table.
 
-use axum::{
-    extract::FromRequestParts,
-    http::request::Parts,
-};
-use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use super::permission_cache::Permissions;
+use super::permissions::Permission;
+use super::service::DiscordUserProfile;
 use crate::config::Config;
 use crate::errors::AppError;
-use super::permissions::Permission;
-use super::permission_cache::Permissions;
-use super::service::DiscordUserProfile;
+use axum::{extract::FromRequestParts, http::request::Parts};
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 /// Request context holding authenticated user details retrieved from session.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -47,7 +44,9 @@ impl UserContext {
     /// not by role name — so renaming the role on Discord can't revoke the override).
     #[must_use]
     pub fn is_superadmin(&self) -> bool {
-        self.super_admin_id.as_deref().is_some_and(|id| id == self.id)
+        self.super_admin_id
+            .as_deref()
+            .is_some_and(|id| id == self.id)
     }
 
     /// Returns `true` if the user holds `perm` through any of their roles.
@@ -89,7 +88,9 @@ where
             .map(|c| &c["session_user=".len()..]);
 
         let Some(encoded_val) = session_cookie_val else {
-            return Err(AppError::Unauthorized("No active session cookie".to_string()));
+            return Err(AppError::Unauthorized(
+                "No active session cookie".to_string(),
+            ));
         };
 
         let decoded_val = urlencoding::decode(encoded_val)

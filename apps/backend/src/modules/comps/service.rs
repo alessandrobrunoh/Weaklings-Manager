@@ -3,34 +3,30 @@
 //! Provides CRUD operations for build categories, comp categories, builds (with per-slot
 //! items sourced from OpenAlbion), and comps (compositions that group builds with a quantity).
 
+use std::collections::HashSet;
 use std::str::FromStr;
 
+use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
-    PaginatorTrait, QueryFilter, QueryOrder, TransactionTrait, QuerySelect,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
-use sea_orm::prelude::DateTimeWithTimeZone;
 
 use crate::errors::AppError;
 use crate::pagination::{PaginatedData, PaginationParams};
 
+use super::entities::{build, build_category, build_item, comp, comp_build, comp_category};
 use super::entities::{
-    build, build_category, build_item, comp, comp_build, comp_category,
-};
-use super::entities::{
-    build::Column as BuildColumn,
-    build_category::Column as BuildCategoryColumn,
-    build_item::Column as BuildItemColumn,
-    comp::Column as CompColumn,
+    build::Column as BuildColumn, build_category::Column as BuildCategoryColumn,
+    build_item::Column as BuildItemColumn, comp::Column as CompColumn,
     comp_build::Column as CompBuildColumn,
 };
 use super::models::{
-    AddCompBuildRequest, BuildCategoryView, BuildDetail, BuildFilters, BuildItemView,
-    BuildSummary, CompBuildView, CompCategoryView, CompDetail, CompFilters,
-    CompSummary, CreateBuildCategoryRequest, CreateBuildRequest, CreateCompCategoryRequest,
-    CreateCompRequest, UpdateBuildCategoryRequest, UpdateBuildRequest,
-    UpdateCompBuildQuantityRequest, UpdateCompCategoryRequest, UpdateCompRequest,
-    UpsertBuildItemRequest,
+    AddCompBuildRequest, BuildCategoryView, BuildDetail, BuildFilters, BuildItemView, BuildSummary,
+    CompBuildView, CompCategoryView, CompDetail, CompFilters, CompSummary,
+    CreateBuildCategoryRequest, CreateBuildRequest, CreateCompCategoryRequest, CreateCompRequest,
+    UpdateBuildCategoryRequest, UpdateBuildRequest, UpdateCompBuildQuantityRequest,
+    UpdateCompCategoryRequest, UpdateCompRequest, UpsertBuildItemRequest,
 };
 use super::status::{BuildRole, BuildSlot};
 
@@ -178,9 +174,7 @@ impl CompService {
         &self,
         db: &DatabaseConnection,
     ) -> Result<Vec<CompCategoryView>, AppError> {
-        let categories = comp_category::Entity::find()
-            .all(db)
-            .await?;
+        let categories = comp_category::Entity::find().all(db).await?;
 
         Ok(categories
             .into_iter()
@@ -357,25 +351,31 @@ impl CompService {
 
         // Name filter is applied locally (case-insensitive contains) since it's a simple
         // substring search — keeps the DB query portable across SQLite/Postgres.
-        let mut builds = query
-            .offset(page * limit)
-            .limit(limit)
-            .all(db)
-            .await?;
+        let mut builds = query.offset(page * limit).limit(limit).all(db).await?;
 
         if let Some(q) = filters.q.as_deref().filter(|q| !q.trim().is_empty()) {
             let needle = q.to_lowercase();
             builds.retain(|b| b.name.to_lowercase().contains(&needle));
         }
 
-        let total_pages = if limit == 0 { 0 } else { total_items.div_ceil(limit) };
+        let total_pages = if limit == 0 {
+            0
+        } else {
+            total_items.div_ceil(limit)
+        };
 
         let mut summaries = Vec::with_capacity(builds.len());
         for b in builds {
             summaries.push(self.to_build_summary(db, b).await?);
         }
 
-        Ok(PaginatedData::new(summaries, total_items, total_pages, page + 1, limit))
+        Ok(PaginatedData::new(
+            summaries,
+            total_items,
+            total_pages,
+            page + 1,
+            limit,
+        ))
     }
 
     /// Creates a new build with optional initial items, validating the category exists.
@@ -410,10 +410,18 @@ impl CompService {
         let inserted = active.insert(&txn).await?;
 
         if let Some(items) = req.items {
+            let mut used_slots = HashSet::with_capacity(items.len());
             for item in items {
+                let slot = item.slot.to_string();
+                if !used_slots.insert(slot.clone()) {
+                    return Err(AppError::Validation(format!(
+                        "duplicate build item slot: {slot}"
+                    )));
+                }
+
                 let active = build_item::ActiveModel {
                     build_id: Set(inserted.id),
-                    slot: Set(String::new()), // placeholder, overwritten below per-item
+                    slot: Set(slot),
                     openalbion_item_type: Set(item.openalbion_item_type),
                     openalbion_item_id: Set(item.openalbion_item_id),
                     openalbion_item_name: Set(item.openalbion_item_name),
@@ -421,11 +429,7 @@ impl CompService {
                     openalbion_item_tier: Set(item.openalbion_item_tier),
                     ..Default::default()
                 };
-                // `slot` is not part of UpsertBuildItemRequest — it comes from the URL path
-                // in the PUT endpoint. For create-time items, we skip slot here; items added
-                // via create should be rare (the PUT endpoint is the primary path).
-                // To keep it simple, we don't insert items without a slot at create time.
-                drop(active);
+                active.insert(&txn).await?;
             }
         }
 
@@ -494,11 +498,7 @@ impl CompService {
     }
 
     /// Deletes a build. Fails with [`AppError::Conflict`] if any comp references it.
-    pub async fn delete_build(
-        &self,
-        db: &DatabaseConnection,
-        id: i64,
-    ) -> Result<(), AppError> {
+    pub async fn delete_build(&self, db: &DatabaseConnection, id: i64) -> Result<(), AppError> {
         let count = comp_build::Entity::find()
             .filter(CompBuildColumn::BuildId.eq(id))
             .count(db)
@@ -663,25 +663,31 @@ impl CompService {
 
         let total_items = query.clone().count(db).await?;
 
-        let mut comps = query
-            .offset(page * limit)
-            .limit(limit)
-            .all(db)
-            .await?;
+        let mut comps = query.offset(page * limit).limit(limit).all(db).await?;
 
         if let Some(q) = filters.q.as_deref().filter(|q| !q.trim().is_empty()) {
             let needle = q.to_lowercase();
             comps.retain(|c| c.name.to_lowercase().contains(&needle));
         }
 
-        let total_pages = if limit == 0 { 0 } else { total_items.div_ceil(limit) };
+        let total_pages = if limit == 0 {
+            0
+        } else {
+            total_items.div_ceil(limit)
+        };
 
         let mut summaries = Vec::with_capacity(comps.len());
         for c in comps {
             summaries.push(self.to_comp_summary(db, c).await?);
         }
 
-        Ok(PaginatedData::new(summaries, total_items, total_pages, page + 1, limit))
+        Ok(PaginatedData::new(
+            summaries,
+            total_items,
+            total_pages,
+            page + 1,
+            limit,
+        ))
     }
 
     /// Creates a new comp with its initial set of builds, validating the category and all
@@ -749,11 +755,7 @@ impl CompService {
     }
 
     /// Gets a single comp's full detail, including its builds.
-    pub async fn get_comp(
-        &self,
-        db: &DatabaseConnection,
-        id: i64,
-    ) -> Result<CompDetail, AppError> {
+    pub async fn get_comp(&self, db: &DatabaseConnection, id: i64) -> Result<CompDetail, AppError> {
         let comp = comp::Entity::find_by_id(id)
             .one(db)
             .await?
@@ -807,11 +809,7 @@ impl CompService {
     }
 
     /// Deletes a comp. Cascades to `comp_builds` via FK.
-    pub async fn delete_comp(
-        &self,
-        db: &DatabaseConnection,
-        id: i64,
-    ) -> Result<(), AppError> {
+    pub async fn delete_comp(&self, db: &DatabaseConnection, id: i64) -> Result<(), AppError> {
         comp::Entity::delete_by_id(id).exec(db).await?;
         Ok(())
     }
@@ -886,9 +884,7 @@ impl CompService {
             .one(db)
             .await?
             .ok_or_else(|| {
-                AppError::NotFound(format!(
-                    "Build {build_id} is not part of comp {comp_id}"
-                ))
+                AppError::NotFound(format!("Build {build_id} is not part of comp {comp_id}"))
             })?;
 
         let mut active: comp_build::ActiveModel = cb.into();

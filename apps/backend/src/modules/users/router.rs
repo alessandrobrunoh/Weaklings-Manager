@@ -2,12 +2,12 @@
 //!
 //! Exposes HTTP endpoints for interacting with user resources.
 
-use axum::{routing::get, Json, Router, Extension, extract::Query};
-use crate::modules::auth::{Permission, Permissions, UserContext};
+use super::service::{UserFilters, UserProfile, UserService};
 use crate::errors::{AppError, ProblemDetails};
+use crate::modules::auth::{Permission, Permissions, UserContext};
+use crate::pagination::{PaginatedUserProfile, PaginationParams};
 use crate::responses::{ApiResponse, ApiResponseUserProfile};
-use crate::pagination::{PaginationParams, PaginatedUserProfile};
-use super::service::{UserProfile, UserService, UserFilters};
+use axum::{Extension, Json, Router, extract::Query, routing::get};
 
 /// Router query parameters for listing users, combining pagination and filtering.
 ///

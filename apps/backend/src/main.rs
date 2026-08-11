@@ -4,12 +4,12 @@
 
 mod config;
 pub mod errors;
+mod event_sessions;
 mod migration;
 mod modules;
 mod openapi;
-pub mod responses;
 pub mod pagination;
-mod event_sessions;
+pub mod responses;
 
 use axum::Router;
 use migration::MigratorTrait;
@@ -69,14 +69,17 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.backend_port));
 
     let openalbion_service = modules::openalbion::service::OpenAlbionService::new();
+    let albiondata_service = modules::albiondata::service::AlbionDataService::new(
+        cfg.albion_api_region.clone(),
+        Some(cfg.albiondata_request_timeout_secs),
+    );
     let albionbb_client = modules::albionbb::client::AlbionBbApiClient::new(
         Some(cfg.albionbb_base_url.clone()),
         Some(cfg.albionbb_request_timeout_secs),
     );
     let albionbb_service = modules::albionbb::service::AlbionBbService::new(albionbb_client);
     // Derive the AlbionBB server segment (eu/na/asia) from the configured region.
-    let battles_server =
-        modules::albionbb::client::normalize_server(Some(&cfg.albion_api_region));
+    let battles_server = modules::albionbb::client::normalize_server(Some(&cfg.albion_api_region));
     let battles_service = modules::battles::service::BattlesService::new(
         albionbb_service.clone(),
         cfg.albion_guild_id.clone(),
@@ -91,6 +94,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(axum::Extension(db.clone()))
         .layer(axum::Extension(cfg.clone()))
         .layer(axum::Extension(openalbion_service))
+        .layer(axum::Extension(albiondata_service))
         .layer(axum::Extension(albionbb_service))
         .layer(axum::Extension(battles_service))
         .layer(axum::Extension(permissions.clone()))

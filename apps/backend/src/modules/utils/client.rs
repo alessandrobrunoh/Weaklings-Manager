@@ -4,8 +4,8 @@
 //! Sends a base64 data-URI-encoded image and returns the concatenated extracted text across
 //! every page Mistral reports back.
 
-use serde::{Deserialize, Serialize};
 use crate::errors::AppError;
+use serde::{Deserialize, Serialize};
 
 /// Base URL of the Mistral OCR API.
 const BASE_URL: &str = "https://api.mistral.ai/v1/ocr";
@@ -76,7 +76,9 @@ impl MistralOcrClient {
             .json(&body)
             .send()
             .await
-            .map_err(|e| AppError::UpstreamService(format!("Failed to contact Mistral OCR API: {e}")))?;
+            .map_err(|e| {
+                AppError::UpstreamService(format!("Failed to contact Mistral OCR API: {e}"))
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -86,10 +88,9 @@ impl MistralOcrClient {
             )));
         }
 
-        let parsed = response
-            .json::<MistralOcrResponse>()
-            .await
-            .map_err(|e| AppError::UpstreamService(format!("Failed to parse Mistral OCR API response: {e}")))?;
+        let parsed = response.json::<MistralOcrResponse>().await.map_err(|e| {
+            AppError::UpstreamService(format!("Failed to parse Mistral OCR API response: {e}"))
+        })?;
 
         Ok(parsed
             .pages

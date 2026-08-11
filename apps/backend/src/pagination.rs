@@ -178,7 +178,9 @@ pub struct PaginatedAlbionGuildMember {
     pub limit: u64,
 }
 
-impl From<PaginatedData<crate::modules::albion::client::AlbionGuildMember>> for PaginatedAlbionGuildMember {
+impl From<PaginatedData<crate::modules::albion::client::AlbionGuildMember>>
+    for PaginatedAlbionGuildMember
+{
     fn from(data: PaginatedData<crate::modules::albion::client::AlbionGuildMember>) -> Self {
         Self {
             items: data.items,
@@ -209,7 +211,9 @@ pub struct PaginatedOpenAlbionWeapon {
     pub limit: u64,
 }
 
-impl From<PaginatedData<crate::modules::openalbion::client::OpenAlbionWeapon>> for PaginatedOpenAlbionWeapon {
+impl From<PaginatedData<crate::modules::openalbion::client::OpenAlbionWeapon>>
+    for PaginatedOpenAlbionWeapon
+{
     fn from(data: PaginatedData<crate::modules::openalbion::client::OpenAlbionWeapon>) -> Self {
         Self {
             items: data.items,
@@ -240,7 +244,9 @@ pub struct PaginatedOpenAlbionItem {
     pub limit: u64,
 }
 
-impl From<PaginatedData<crate::modules::openalbion::client::OpenAlbionItem>> for PaginatedOpenAlbionItem {
+impl From<PaginatedData<crate::modules::openalbion::client::OpenAlbionItem>>
+    for PaginatedOpenAlbionItem
+{
     fn from(data: PaginatedData<crate::modules::openalbion::client::OpenAlbionItem>) -> Self {
         Self {
             items: data.items,
@@ -364,8 +370,41 @@ pub struct PaginatedBattleSummary {
     pub limit: u64,
 }
 
-impl From<PaginatedData<crate::modules::battles::models::BattleSummary>> for PaginatedBattleSummary {
+impl From<PaginatedData<crate::modules::battles::models::BattleSummary>>
+    for PaginatedBattleSummary
+{
     fn from(data: PaginatedData<crate::modules::battles::models::BattleSummary>) -> Self {
+        Self {
+            items: data.items,
+            total_items: data.total_items,
+            total_pages: data.total_pages,
+            current_page: data.current_page,
+            limit: data.limit,
+        }
+    }
+}
+
+/// Concrete paginated `EntryView` response schema for `OpenAPI` (siphoned module).
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PaginatedEntryView {
+    /// List of siphoned energy entries on the current page.
+    pub items: Vec<crate::modules::siphoned::models::EntryView>,
+    /// Total number of items across all pages.
+    #[schema(example = 42)]
+    pub total_items: u64,
+    /// Total number of pages.
+    #[schema(example = 5)]
+    pub total_pages: u64,
+    /// The current page number (1-indexed).
+    #[schema(example = 1)]
+    pub current_page: u64,
+    /// The number of items per page.
+    #[schema(example = 50)]
+    pub limit: u64,
+}
+
+impl From<PaginatedData<crate::modules::siphoned::models::EntryView>> for PaginatedEntryView {
+    fn from(data: PaginatedData<crate::modules::siphoned::models::EntryView>) -> Self {
         Self {
             items: data.items,
             total_items: data.total_items,

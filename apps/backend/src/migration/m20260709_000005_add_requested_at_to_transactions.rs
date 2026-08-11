@@ -16,7 +16,9 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(Transactions::Table)
-                    .add_column(ColumnDef::new(Transactions::RequestedAt).timestamp_with_time_zone())
+                    .add_column(
+                        ColumnDef::new(Transactions::RequestedAt).timestamp_with_time_zone(),
+                    )
                     .to_owned(),
             )
             .await

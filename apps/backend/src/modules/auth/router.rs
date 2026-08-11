@@ -2,19 +2,20 @@
 //!
 //! Exposes HTTP endpoints for `OAuth2` login flows, session query, and logout.
 
+use super::permission_cache::Permissions;
+use super::service::{AuthService, DiscordUserProfile};
+use crate::config::Config;
+use crate::errors::{AppError, ProblemDetails};
+use crate::responses::{ApiResponse, ApiResponseDiscordUserProfile};
 use axum::{
+    Extension, Json, Router,
     extract::Query,
     response::Redirect,
     routing::{get, post},
-    Extension, Json, Router,
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use rand::distributions::{Alphanumeric, DistString};
 use serde::Deserialize;
-use crate::config::Config;
-use crate::errors::{AppError, ProblemDetails};
-use crate::responses::{ApiResponse, ApiResponseDiscordUserProfile};
-use super::service::{AuthService, DiscordUserProfile};
 
 /// Query parameters returned by Discord to the callback URI.
 #[derive(Debug, Deserialize)]
@@ -112,6 +113,7 @@ pub async fn discord_login(
 )]
 pub async fn discord_callback(
     Extension(cfg): Extension<Config>,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     jar: CookieJar,
     Query(query): Query<CallbackQuery>,
@@ -158,6 +160,10 @@ pub async fn discord_callback(
 
     profile.roles = roles;
     profile.highest_role = highest_role;
+    profile.is_superadmin = profile.id == cfg.super_admin_discord_id;
+    profile.permissions = perms
+        .granted_permissions(profile.is_superadmin, &profile.roles)
+        .await;
     profile.user_id = service.upsert_user(&db, &profile).await?;
 
     // Serialize profile to JSON for storage in session cookie
@@ -201,9 +207,12 @@ pub async fn discord_callback(
 )]
 pub async fn get_me(
     jar: CookieJar,
+    Extension(cfg): Extension<Config>,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<DiscordUserProfile>>, AppError> {
-    let session_cookie = jar.get("session_user")
+    let session_cookie = jar
+        .get("session_user")
         .ok_or_else(|| AppError::Unauthorized("No active session".to_string()))?;
 
     let mut profile: DiscordUserProfile = serde_json::from_str(session_cookie.value())
@@ -212,7 +221,16 @@ pub async fn get_me(
     // The cookie caches the Discord username from login time; re-resolve here so a display
     // name change (e.g. linking an Albion Online character after logging in) shows up without
     // requiring a fresh login.
-    profile.username = crate::modules::users::display_name::resolve_by_id(&db, profile.user_id).await?;
+    profile.username =
+        crate::modules::users::display_name::resolve_by_id(&db, profile.user_id).await?;
+    profile.is_superadmin = profile.id == cfg.super_admin_discord_id;
+    if profile.is_superadmin && !profile.roles.iter().any(|role| role == "SuperAdmin") {
+        profile.roles.insert(0, "SuperAdmin".to_string());
+        profile.highest_role = "SuperAdmin".to_string();
+    }
+    profile.permissions = perms
+        .granted_permissions(profile.is_superadmin, &profile.roles)
+        .await;
 
     Ok(Json(ApiResponse::new(profile)))
 }
@@ -230,9 +248,7 @@ pub async fn get_me(
         (status = 200, description = "Logout succeeded (cookie cleared); data is null")
     )
 )]
-pub async fn logout(
-    jar: CookieJar,
-) -> (CookieJar, Json<ApiResponse<()>>) {
+pub async fn logout(jar: CookieJar) -> (CookieJar, Json<ApiResponse<()>>) {
     let jar = jar.remove(Cookie::from("session_user"));
     (jar, Json(ApiResponse::new(())))
 }

@@ -2,8 +2,8 @@
 
 use sea_orm_migration::prelude::*;
 
-use super::m20260710_000003_create_build_categories_table::BuildCategories;
 use super::m20260708_000001_create_users_table::Users;
+use super::m20260710_000003_create_build_categories_table::BuildCategories;
 
 /// Migration step to create the `builds` table.
 #[derive(DeriveMigrationName)]

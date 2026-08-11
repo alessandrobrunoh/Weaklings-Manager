@@ -23,8 +23,16 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(EventBattles::EventId).big_integer().not_null())
-                    .col(ColumnDef::new(EventBattles::AlbionbbBattleId).string().not_null())
+                    .col(
+                        ColumnDef::new(EventBattles::EventId)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(EventBattles::AlbionbbBattleId)
+                            .string()
+                            .not_null(),
+                    )
                     .col(
                         ColumnDef::new(EventBattles::BattleStartedAt)
                             .timestamp_with_time_zone()

@@ -18,14 +18,23 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(AlbionLinks::DiscordId).string().not_null().unique_key())
+                    .col(
+                        ColumnDef::new(AlbionLinks::DiscordId)
+                            .string()
+                            .not_null()
+                            .unique_key(),
+                    )
                     .col(
                         ColumnDef::new(AlbionLinks::AlbionPlayerId)
                             .string()
                             .not_null()
                             .unique_key(),
                     )
-                    .col(ColumnDef::new(AlbionLinks::AlbionPlayerName).string().not_null())
+                    .col(
+                        ColumnDef::new(AlbionLinks::AlbionPlayerName)
+                            .string()
+                            .not_null(),
+                    )
                     .col(
                         ColumnDef::new(AlbionLinks::LinkedAt)
                             .timestamp_with_time_zone()

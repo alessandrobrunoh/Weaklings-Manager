@@ -24,7 +24,7 @@ impl<T> ApiResponse<T> {
     }
 }
 
-/// OpenAPI schema wrapper for UserProfile response.
+/// `OpenAPI` schema wrapper for UserProfile response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseUserProfile {
     /// Indicates the outcome of the request, always "success".
@@ -34,7 +34,7 @@ pub struct ApiResponseUserProfile {
     pub data: crate::modules::users::service::UserProfile,
 }
 
-/// OpenAPI schema wrapper for DiscordUserProfile response.
+/// `OpenAPI` schema wrapper for DiscordUserProfile response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseDiscordUserProfile {
     /// Indicates the outcome of the request, always "success".
@@ -44,7 +44,7 @@ pub struct ApiResponseDiscordUserProfile {
     pub data: crate::modules::auth::service::DiscordUserProfile,
 }
 
-/// OpenAPI schema wrapper for Paginated UserProfile response.
+/// `OpenAPI` schema wrapper for Paginated UserProfile response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponsePaginatedUsers {
     /// Indicates the outcome of the request, always "success".
@@ -54,7 +54,7 @@ pub struct ApiResponsePaginatedUsers {
     pub data: crate::pagination::PaginatedUserProfile,
 }
 
-/// OpenAPI schema wrapper for `BalanceSummary` response.
+/// `OpenAPI` schema wrapper for `BalanceSummary` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseBalanceSummary {
     /// Indicates the outcome of the request, always "success".
@@ -64,7 +64,7 @@ pub struct ApiResponseBalanceSummary {
     pub data: crate::modules::bank::models::BalanceSummary,
 }
 
-/// OpenAPI schema wrapper for a list-of-`TransactionView` response (the withdrawal
+/// `OpenAPI` schema wrapper for a list-of-`TransactionView` response (the withdrawal
 /// request/accept endpoints return the transactions they just touched, not paginated).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseTransactionViewList {
@@ -75,7 +75,7 @@ pub struct ApiResponseTransactionViewList {
     pub data: Vec<crate::modules::bank::models::TransactionView>,
 }
 
-/// OpenAPI schema wrapper for `SplitDetail` response.
+/// `OpenAPI` schema wrapper for `SplitDetail` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseSplitDetail {
     /// Indicates the outcome of the request, always "success".
@@ -85,7 +85,7 @@ pub struct ApiResponseSplitDetail {
     pub data: crate::modules::splits::models::SplitDetail,
 }
 
-/// OpenAPI schema wrapper for `AlbionLinkStatus` response.
+/// `OpenAPI` schema wrapper for `AlbionLinkStatus` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseAlbionLinkStatus {
     /// Indicates the outcome of the request, always "success".
@@ -95,7 +95,7 @@ pub struct ApiResponseAlbionLinkStatus {
     pub data: crate::modules::albion::service::AlbionLinkStatus,
 }
 
-/// OpenAPI schema wrapper for Paginated `AlbionGuildMember` response.
+/// `OpenAPI` schema wrapper for Paginated `AlbionGuildMember` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponsePaginatedAlbionGuildMembers {
     /// Indicates the outcome of the request, always "success".
@@ -105,7 +105,7 @@ pub struct ApiResponsePaginatedAlbionGuildMembers {
     pub data: crate::pagination::PaginatedAlbionGuildMember,
 }
 
-/// OpenAPI schema wrapper for Paginated `OpenAlbionWeapon` response.
+/// `OpenAPI` schema wrapper for Paginated `OpenAlbionWeapon` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponsePaginatedOpenAlbionWeapons {
     /// Indicates the outcome of the request, always "success".
@@ -115,7 +115,7 @@ pub struct ApiResponsePaginatedOpenAlbionWeapons {
     pub data: crate::pagination::PaginatedOpenAlbionWeapon,
 }
 
-/// OpenAPI schema wrapper for Paginated `OpenAlbionItem` response.
+/// `OpenAPI` schema wrapper for Paginated `OpenAlbionItem` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponsePaginatedOpenAlbionItems {
     /// Indicates the outcome of the request, always "success".
@@ -125,7 +125,27 @@ pub struct ApiResponsePaginatedOpenAlbionItems {
     pub data: crate::pagination::PaginatedOpenAlbionItem,
 }
 
-/// OpenAPI schema wrapper for `BuildCategoryView` list response.
+/// `OpenAPI` schema wrapper for Albion Online Data market prices.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseAlbionDataMarketPriceList {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The current market rows returned by Albion Online Data.
+    pub data: Vec<crate::modules::albiondata::client::AlbionDataMarketPrice>,
+}
+
+/// `OpenAPI` schema wrapper for an Albion render-service item icon URL.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseAlbionDataItemIcon {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The resolved render-service URL payload.
+    pub data: crate::modules::albiondata::client::AlbionDataItemIcon,
+}
+
+/// `OpenAPI` schema wrapper for `BuildCategoryView` list response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseBuildCategoryList {
     /// Indicates the outcome of the request, always "success".
@@ -135,7 +155,7 @@ pub struct ApiResponseBuildCategoryList {
     pub data: Vec<crate::modules::comps::models::BuildCategoryView>,
 }
 
-/// OpenAPI schema wrapper for `CompCategoryView` list response.
+/// `OpenAPI` schema wrapper for `CompCategoryView` list response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseCompCategoryList {
     /// Indicates the outcome of the request, always "success".
@@ -145,7 +165,7 @@ pub struct ApiResponseCompCategoryList {
     pub data: Vec<crate::modules::comps::models::CompCategoryView>,
 }
 
-/// OpenAPI schema wrapper for `BuildDetail` response.
+/// `OpenAPI` schema wrapper for `BuildDetail` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseBuildDetail {
     /// Indicates the outcome of the request, always "success".
@@ -155,7 +175,7 @@ pub struct ApiResponseBuildDetail {
     pub data: crate::modules::comps::models::BuildDetail,
 }
 
-/// OpenAPI schema wrapper for `CompDetail` response.
+/// `OpenAPI` schema wrapper for `CompDetail` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseCompDetail {
     /// Indicates the outcome of the request, always "success".
@@ -165,7 +185,17 @@ pub struct ApiResponseCompDetail {
     pub data: crate::modules::comps::models::CompDetail,
 }
 
-/// OpenAPI schema wrapper for Paginated `CompSummary` response.
+/// `OpenAPI` schema wrapper for comp performance analytics.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseCompPerformance {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The comp performance data payload.
+    pub data: crate::modules::events::models::CompPerformanceView,
+}
+
+/// `OpenAPI` schema wrapper for Paginated `CompSummary` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponsePaginatedComps {
     /// Indicates the outcome of the request, always "success".
@@ -175,7 +205,7 @@ pub struct ApiResponsePaginatedComps {
     pub data: crate::pagination::PaginatedCompSummary,
 }
 
-/// OpenAPI schema wrapper for Paginated `BuildSummary` response.
+/// `OpenAPI` schema wrapper for Paginated `BuildSummary` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponsePaginatedBuilds {
     /// Indicates the outcome of the request, always "success".
@@ -185,7 +215,7 @@ pub struct ApiResponsePaginatedBuilds {
     pub data: crate::pagination::PaginatedBuildSummary,
 }
 
-/// OpenAPI schema wrapper for Paginated `EventView` response.
+/// `OpenAPI` schema wrapper for Paginated `EventView` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseEventList {
     /// Indicates the outcome of the request, always "success".
@@ -195,7 +225,7 @@ pub struct ApiResponseEventList {
     pub data: crate::pagination::PaginatedEventSummary,
 }
 
-/// OpenAPI schema wrapper for `EventView` response.
+/// `OpenAPI` schema wrapper for `EventView` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseEventView {
     /// Indicates the outcome of the request, always "success".
@@ -205,7 +235,7 @@ pub struct ApiResponseEventView {
     pub data: crate::modules::events::models::EventView,
 }
 
-/// OpenAPI schema wrapper for `EventDetailView` response.
+/// `OpenAPI` schema wrapper for `EventDetailView` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseEventDetail {
     /// Indicates the outcome of the request, always "success".
@@ -215,7 +245,7 @@ pub struct ApiResponseEventDetail {
     pub data: crate::modules::events::models::EventDetailView,
 }
 
-/// OpenAPI schema wrapper for `OcrResult` response.
+/// `OpenAPI` schema wrapper for `OcrResult` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseOcrResult {
     /// Indicates the outcome of the request, always "success".
@@ -225,7 +255,7 @@ pub struct ApiResponseOcrResult {
     pub data: crate::modules::utils::models::OcrResult,
 }
 
-/// OpenAPI schema wrapper for `MatchedParticipant` list response.
+/// `OpenAPI` schema wrapper for `MatchedParticipant` list response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseMatchedParticipantList {
     /// Indicates the outcome of the request, always "success".
@@ -235,7 +265,7 @@ pub struct ApiResponseMatchedParticipantList {
     pub data: Vec<crate::modules::splits::models::MatchedParticipant>,
 }
 
-/// OpenAPI schema wrapper for the AlbionBB battles list response.
+/// `OpenAPI` schema wrapper for the AlbionBB battles list response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseAlbionBbBattlesList {
     /// Indicates the outcome of the request, always "success".
@@ -245,7 +275,7 @@ pub struct ApiResponseAlbionBbBattlesList {
     pub data: crate::modules::albionbb::router::AlbionBbBattlesList,
 }
 
-/// OpenAPI schema wrapper for an AlbionBB battle detail response.
+/// `OpenAPI` schema wrapper for an AlbionBB battle detail response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseAlbionBbBattleDetail {
     /// Indicates the outcome of the request, always "success".
@@ -255,7 +285,7 @@ pub struct ApiResponseAlbionBbBattleDetail {
     pub data: crate::modules::albionbb::client::AlbionBbBattleDetail,
 }
 
-/// OpenAPI schema wrapper for an AlbionBB kill events list response.
+/// `OpenAPI` schema wrapper for an AlbionBB kill events list response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseAlbionBbKillEventList {
     /// Indicates the outcome of the request, always "success".
@@ -265,7 +295,7 @@ pub struct ApiResponseAlbionBbKillEventList {
     pub data: Vec<crate::modules::albionbb::client::AlbionBbKillEvent>,
 }
 
-/// OpenAPI schema wrapper for an AlbionBB guild info response.
+/// `OpenAPI` schema wrapper for an AlbionBB guild info response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseAlbionBbGuildInfo {
     /// Indicates the outcome of the request, always "success".
@@ -275,7 +305,7 @@ pub struct ApiResponseAlbionBbGuildInfo {
     pub data: crate::modules::albionbb::client::AlbionBbGuildInfo,
 }
 
-/// OpenAPI schema wrapper for an AlbionBB player stats response.
+/// `OpenAPI` schema wrapper for an AlbionBB player stats response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseAlbionBbPlayerStats {
     /// Indicates the outcome of the request, always "success".
@@ -285,7 +315,7 @@ pub struct ApiResponseAlbionBbPlayerStats {
     pub data: serde_json::Value,
 }
 
-/// OpenAPI schema wrapper for the paginated `BattleSummary` response (guild-scoped).
+/// `OpenAPI` schema wrapper for the paginated `BattleSummary` response (guild-scoped).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponsePaginatedBattles {
     /// Indicates the outcome of the request, always "success".
@@ -295,7 +325,7 @@ pub struct ApiResponsePaginatedBattles {
     pub data: crate::pagination::PaginatedBattleSummary,
 }
 
-/// OpenAPI schema wrapper for the `BattleDetail` response (guild-scoped).
+/// `OpenAPI` schema wrapper for the `BattleDetail` response (guild-scoped).
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseBattleDetail {
     /// Indicates the outcome of the request, always "success".
@@ -303,4 +333,74 @@ pub struct ApiResponseBattleDetail {
     pub status: String,
     /// The battle detail data payload.
     pub data: crate::modules::battles::models::BattleDetail,
+}
+
+/// `OpenAPI` schema wrapper for `IngestResponse` (siphoned module).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseIngestResponse {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The ingest result payload.
+    pub data: crate::modules::siphoned::models::IngestResponse,
+}
+
+/// `OpenAPI` schema wrapper for one `EntryView` response (siphoned module).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseEntryView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The siphoned energy entry payload.
+    pub data: crate::modules::siphoned::models::EntryView,
+}
+
+/// `OpenAPI` schema wrapper for paginated `EntryView` response (siphoned module).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponsePaginatedEntryView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The paginated siphoned energy entries data payload.
+    pub data: crate::pagination::PaginatedEntryView,
+}
+
+/// `OpenAPI` schema wrapper for `PlayerBalance` list response (siphoned module).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponsePlayerBalanceList {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The per-player balance list payload.
+    pub data: Vec<crate::modules::siphoned::models::PlayerBalance>,
+}
+
+/// `OpenAPI` schema wrapper for `PlayerBalanceDetail` response (siphoned module).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponsePlayerBalanceDetail {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The single-player balance detail payload.
+    pub data: crate::modules::siphoned::models::PlayerBalanceDetail,
+}
+
+/// `OpenAPI` schema wrapper for `BatchSummary` list response (siphoned module).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseBatchSummaryList {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The ingestion batch list payload.
+    pub data: Vec<crate::modules::siphoned::models::BatchSummary>,
+}
+
+/// `OpenAPI` schema wrapper for `DeletedCount` response (siphoned module).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseDeletedCount {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The deletion result payload.
+    pub data: crate::modules::siphoned::models::DeletedCount,
 }

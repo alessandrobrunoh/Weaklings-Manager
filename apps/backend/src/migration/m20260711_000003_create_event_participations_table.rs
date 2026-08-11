@@ -25,9 +25,21 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(EventParticipations::EventId).big_integer().not_null())
-                    .col(ColumnDef::new(EventParticipations::UserId).big_integer().not_null())
-                    .col(ColumnDef::new(EventParticipations::PrimaryBuildId).big_integer().not_null())
+                    .col(
+                        ColumnDef::new(EventParticipations::EventId)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(EventParticipations::UserId)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(EventParticipations::PrimaryBuildId)
+                            .big_integer()
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(EventParticipations::SecondaryBuildId).big_integer())
                     .col(
                         ColumnDef::new(EventParticipations::CreatedAt)
@@ -55,13 +67,19 @@ impl MigrationTrait for Migration {
                     )
                     .foreign_key(
                         ForeignKey::create()
-                            .from(EventParticipations::Table, EventParticipations::PrimaryBuildId)
+                            .from(
+                                EventParticipations::Table,
+                                EventParticipations::PrimaryBuildId,
+                            )
                             .to(Builds::Table, Builds::Id)
                             .on_delete(ForeignKeyAction::Restrict),
                     )
                     .foreign_key(
                         ForeignKey::create()
-                            .from(EventParticipations::Table, EventParticipations::SecondaryBuildId)
+                            .from(
+                                EventParticipations::Table,
+                                EventParticipations::SecondaryBuildId,
+                            )
                             .to(Builds::Table, Builds::Id)
                             .on_delete(ForeignKeyAction::Restrict),
                     )

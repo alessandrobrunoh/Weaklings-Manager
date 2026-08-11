@@ -7,9 +7,9 @@
 //! `Option`/`#[serde(default)]` since the upstream schema mixes PascalCase and camelCase keys
 //! and occasionally returns `null` for numeric fields (verified via live requests).
 
+use crate::errors::AppError;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use crate::errors::AppError;
 
 /// Supported Albion Online API regions, each backed by a distinct gameinfo server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -203,15 +203,15 @@ impl AlbionApiClient {
     async fn get_json<T: for<'de> Deserialize<'de>>(&self, path: &str) -> Result<T, AppError> {
         let url = format!("{}{}", self.base_url, path);
 
-        let response = self
-            .http
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| AppError::UpstreamService(format!("Failed to contact Albion API: {e}")))?;
+        let response =
+            self.http.get(&url).send().await.map_err(|e| {
+                AppError::UpstreamService(format!("Failed to contact Albion API: {e}"))
+            })?;
 
         if response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(AppError::NotFound(format!("Albion resource not found: {url}")));
+            return Err(AppError::NotFound(format!(
+                "Albion resource not found: {url}"
+            )));
         }
 
         if !response.status().is_success() {
@@ -222,7 +222,9 @@ impl AlbionApiClient {
         }
 
         response.json::<T>().await.map_err(|e| {
-            AppError::UpstreamService(format!("Failed to parse Albion API response from {url}: {e}"))
+            AppError::UpstreamService(format!(
+                "Failed to parse Albion API response from {url}: {e}"
+            ))
         })
     }
 

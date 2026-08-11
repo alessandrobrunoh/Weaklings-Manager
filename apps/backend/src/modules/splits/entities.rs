@@ -24,6 +24,8 @@ pub mod split {
         pub net_value: Option<Decimal>,
         /// An optional free-text note (e.g. boss/item name).
         pub note: Option<String>,
+        /// Event this split belongs to, when the loot came from a tracked event.
+        pub event_id: Option<i64>,
         /// The timestamp when the split was created.
         pub created_at: DateTimeWithTimeZone,
         /// The timestamp when the split was finalized, if it has been.
@@ -34,6 +36,7 @@ pub mod split {
     pub enum Relation {
         Participants,
         Creator,
+        Event,
     }
 
     impl RelationTrait for Relation {
@@ -44,6 +47,10 @@ pub mod split {
                     .from(Column::CreatedBy)
                     .to(crate::modules::users::entities::Column::Id)
                     .into(),
+                Self::Event => Entity::belongs_to(crate::modules::events::entities::event::Entity)
+                    .from(Column::EventId)
+                    .to(crate::modules::events::entities::event::Column::Id)
+                    .into(),
             }
         }
     }
@@ -51,6 +58,12 @@ pub mod split {
     impl Related<super::split_participant::Entity> for Entity {
         fn to() -> RelationDef {
             Relation::Participants.def()
+        }
+    }
+
+    impl Related<crate::modules::events::entities::event::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Event.def()
         }
     }
 

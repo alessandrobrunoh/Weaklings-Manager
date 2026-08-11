@@ -47,7 +47,11 @@ impl BattlesService {
         Self {
             albionbb,
             guild_id,
-            server: if server.is_empty() { None } else { Some(server) },
+            server: if server.is_empty() {
+                None
+            } else {
+                Some(server)
+            },
             list_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -76,24 +80,25 @@ impl BattlesService {
             min_guild_players: Some(DEFAULT_MIN_GUILD_PLAYERS),
             page: Some(page),
         };
-        let (raw_battles, meta) = self.albionbb.get_battles(self.server.as_deref(), &filters).await?;
+        let (raw_battles, meta) = self
+            .albionbb
+            .get_battles(self.server.as_deref(), &filters)
+            .await?;
 
         // AlbionBB's list payload is intentionally sparse (guilds only expose
         // name/alliance/killFame there), so hydrate each summary with the cached
         // single-battle detail to return richer guild breakdowns.
         let mut items = Vec::with_capacity(raw_battles.len());
         for raw in &raw_battles {
-            let detail = self.albionbb.get_battle(self.server.as_deref(), raw.id).await?;
+            let detail = self
+                .albionbb
+                .get_battle(self.server.as_deref(), raw.id)
+                .await?;
             items.push(BattleSummary::from(&detail.summary));
         }
         let limit = raw_battles.len().max(1) as u64;
-        let total_pages = meta
-            .total_pages
-            .map_or(page, |v| v.max(page as i64) as u64);
-        let total_items = meta
-            .total_results
-            .unwrap_or(items.len() as i64)
-            .max(0) as u64;
+        let total_pages = meta.total_pages.map_or(page, |v| v.max(page as i64) as u64);
+        let total_items = meta.total_results.unwrap_or(items.len() as i64).max(0) as u64;
 
         let paginated = PaginatedData::new(items, total_items, total_pages, page, limit);
         self.list_cache
@@ -106,8 +111,14 @@ impl BattlesService {
     /// Fetches full detail for a battle (battle + kills combined), cached
     /// server-side by the underlying AlbionBB service.
     pub async fn get_battle_detail(&self, battle_id: i64) -> Result<BattleDetail, AppError> {
-        let detail = self.albionbb.get_battle(self.server.as_deref(), battle_id).await?;
-        let kills = self.albionbb.get_battle_kills(self.server.as_deref(), battle_id).await?;
+        let detail = self
+            .albionbb
+            .get_battle(self.server.as_deref(), battle_id)
+            .await?;
+        let kills = self
+            .albionbb
+            .get_battle_kills(self.server.as_deref(), battle_id)
+            .await?;
         Ok(BattleDetail::from_upstream(&detail, &kills))
     }
 
@@ -144,14 +155,20 @@ impl BattlesService {
                 min_guild_players: Some(DEFAULT_MIN_GUILD_PLAYERS),
                 page: Some(upstream_page),
             };
-            let (raw_battles, _meta) = self.albionbb.get_battles(self.server.as_deref(), &filters).await?;
+            let (raw_battles, _meta) = self
+                .albionbb
+                .get_battles(self.server.as_deref(), &filters)
+                .await?;
             if raw_battles.is_empty() {
                 break;
             }
 
             for raw in &raw_battles {
                 // Fetch detail to inspect participants. Cheap thanks to the 24h cache.
-                let detail = self.albionbb.get_battle(self.server.as_deref(), raw.id).await?;
+                let detail = self
+                    .albionbb
+                    .get_battle(self.server.as_deref(), raw.id)
+                    .await?;
                 if detail
                     .players
                     .iter()
@@ -168,11 +185,25 @@ impl BattlesService {
         let total_items = matched.len() as u64;
         let limit = pagination.limit();
         let page = pagination.offset_page();
-        let total_pages = if limit == 0 { 0 } else { total_items.div_ceil(limit) };
+        let total_pages = if limit == 0 {
+            0
+        } else {
+            total_items.div_ceil(limit)
+        };
 
         let start = (page * limit) as usize;
-        let items = matched.into_iter().skip(start).take(limit as usize).collect();
+        let items = matched
+            .into_iter()
+            .skip(start)
+            .take(limit as usize)
+            .collect();
 
-        Ok(PaginatedData::new(items, total_items, total_pages, page + 1, limit))
+        Ok(PaginatedData::new(
+            items,
+            total_items,
+            total_pages,
+            page + 1,
+            limit,
+        ))
     }
 }

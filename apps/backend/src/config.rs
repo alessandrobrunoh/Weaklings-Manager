@@ -42,6 +42,9 @@ pub struct Config {
     /// Request timeout in seconds for AlbionBB API requests. Defaults to 60.
     #[serde(default = "default_albionbb_timeout")]
     pub albionbb_request_timeout_secs: u64,
+    /// Request timeout in seconds for Albion Online Data requests. Defaults to 30.
+    #[serde(default = "default_albiondata_timeout")]
+    pub albiondata_request_timeout_secs: u64,
 }
 
 fn default_backend_port() -> u16 {
@@ -62,6 +65,10 @@ fn default_albionbb_base_url() -> String {
 
 fn default_albionbb_timeout() -> u64 {
     60
+}
+
+fn default_albiondata_timeout() -> u64 {
+    30
 }
 
 impl Config {

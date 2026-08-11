@@ -1,0 +1,369 @@
+/* =================================================================
+   Albion Guild Manager — Global stylesheet
+   Material-inspired, minimal, light & dark themes via CSS variables.
+   Tailwind v4 imports and theme-aware token layer.
+   ================================================================= */
+
+@import 'tailwindcss';
+
+/* Dark mode is driven by a `dark` class on <html>, toggled by ThemeService. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* -----------------------------------------------------------------
+   Design tokens — semantic surface / text colors, radius, elevation.
+   Light theme is the default; the `.dark` block overrides below.
+   ----------------------------------------------------------------- */
+@layer base {
+  :root {
+    /* Surfaces */
+    --color-bg: #f8fafc;
+    --color-surface: #ffffff;
+    --color-surface-1: #f8fafc;
+    --color-surface-2: #eef2f7;
+    --color-surface-hover: #f1f5f9;
+    --color-border: #e2e8f0;
+    --color-border-strong: #cbd5e1;
+
+    /* Text */
+    --color-text: #0f172a;
+    --color-text-secondary: #475569;
+    --color-text-disabled: #94a3b8;
+
+    /* Accent (Google blue) */
+    --color-primary: #b91c1c;
+    --color-primary-hover: #991b1b;
+    --color-primary-container: #fee2e2;
+    --color-on-primary: #ffffff;
+    --color-logo-glow: rgba(239, 68, 68, 0.45);
+
+    /* Status */
+    --color-success: #1e8e3e;
+    --color-success-container: #e6f4ea;
+    --color-warning: #f9ab00;
+    --color-warning-container: #fef7e0;
+    --color-error: #d93025;
+    --color-error-container: #fce8e6;
+
+    /* Shape & elevation */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 18px;
+    --radius-full: 9999px;
+
+    --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
+    --shadow-2: 0 8px 24px rgba(15, 23, 42, 0.08);
+    --shadow-3: 0 20px 48px rgba(15, 23, 42, 0.18);
+
+    --font-sans: 'Google Sans', 'Roboto', 'Inter', system-ui, -apple-system, sans-serif;
+
+    color-scheme: light;
+  }
+
+  .dark {
+    --color-bg: #09090b;
+    --color-surface: #111113;
+    --color-surface-1: #18181b;
+    --color-surface-2: #27272a;
+    --color-surface-hover: #1f1f23;
+    --color-border: #27272a;
+    --color-border-strong: #3f3f46;
+
+    --color-text: #fafafa;
+    --color-text-secondary: #a1a1aa;
+    --color-text-disabled: #71717a;
+
+    --color-primary: #f87171;
+    --color-primary-hover: #fca5a5;
+    --color-primary-container: #3f1518;
+    --color-on-primary: #180708;
+    --color-logo-glow: rgba(248, 113, 113, 0.55);
+
+    --color-success: #81c995;
+    --color-success-container: #1e3a25;
+    --color-warning: #fdd663;
+    --color-warning-container: #3d3210;
+    --color-error: #f28b82;
+    --color-error-container: #4a1d18;
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.35);
+    --shadow-3: 0 20px 48px rgba(0, 0, 0, 0.55);
+
+    color-scheme: dark;
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background:
+      radial-gradient(circle at top, var(--color-logo-glow), transparent 28rem), var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    line-height: 1.5;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Smooth theme transition. */
+  body,
+  .surface,
+  .card {
+    transition:
+      background-color 180ms ease,
+      color 180ms ease,
+      border-color 180ms ease;
+  }
+}
+
+/* -----------------------------------------------------------------
+   Reusable utility component classes (small layer, not a UI library).
+   Plain class names — no Tailwind @apply tricks needed.
+   ----------------------------------------------------------------- */
+@layer components {
+  .surface {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+  }
+
+  .card {
+    background-color: color-mix(in srgb, var(--color-surface) 96%, transparent);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-1);
+    backdrop-filter: blur(8px);
+  }
+
+  .card:hover {
+    border-color: var(--color-border-strong);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    min-height: 40px;
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    font-weight: 500;
+    font-size: 0.875rem;
+    cursor: pointer;
+    user-select: none;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease,
+      border-color 120ms ease,
+      box-shadow 120ms ease,
+      transform 120ms ease;
+  }
+
+  .btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .btn--primary {
+    background-color: var(--color-primary);
+    color: var(--color-on-primary);
+  }
+
+  .btn--primary:hover:not(:disabled) {
+    background-color: var(--color-primary-hover);
+    box-shadow: var(--shadow-1);
+    transform: translateY(-1px);
+  }
+
+  .btn--tonal {
+    background-color: var(--color-primary-container);
+    color: var(--color-primary);
+    border-color: color-mix(in srgb, var(--color-primary) 25%, transparent);
+  }
+
+  .btn--tonal:hover:not(:disabled) {
+    background-color: var(--color-surface-hover);
+  }
+
+  .btn--outline {
+    background-color: transparent;
+    border-color: var(--color-border);
+    color: var(--color-primary);
+  }
+
+  .btn--outline:hover:not(:disabled) {
+    background-color: var(--color-surface-1);
+  }
+
+  .btn--ghost {
+    background-color: transparent;
+    color: var(--color-text-secondary);
+  }
+
+  .btn--ghost:hover:not(:disabled) {
+    background-color: var(--color-surface-hover);
+    color: var(--color-text);
+  }
+
+  .btn--danger {
+    background-color: var(--color-error);
+    color: #fff;
+  }
+
+  .btn--danger:hover:not(:disabled) {
+    background-color: #b3261e;
+  }
+
+  .input,
+  .select,
+  .textarea {
+    width: 100%;
+    padding: 0.625rem 0.875rem;
+    background-color: var(--color-surface-1);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-size: 0.9375rem;
+    transition:
+      border-color 120ms ease,
+      box-shadow 120ms ease;
+  }
+
+  .input::placeholder,
+  .textarea::placeholder {
+    color: var(--color-text-disabled);
+  }
+
+  .input:focus,
+  .select:focus,
+  .textarea:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-primary-container);
+  }
+
+  .label {
+    display: block;
+    margin-bottom: 0.375rem;
+    color: var(--color-text-secondary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: var(--radius-full);
+    background-color: var(--color-surface-2);
+    color: var(--color-text-secondary);
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .chip--success {
+    background-color: var(--color-success-container);
+    color: var(--color-success);
+  }
+  .chip--warning {
+    background-color: var(--color-warning-container);
+    color: var(--color-warning);
+  }
+  .chip--error {
+    background-color: var(--color-error-container);
+    color: var(--color-error);
+  }
+
+  /* Table */
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+
+  .table thead th {
+    text-align: left;
+    padding: 0.75rem 1rem;
+    color: var(--color-text-secondary);
+    font-weight: 500;
+    border-bottom: 1px solid var(--color-border);
+    font-size: 0.8125rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .table tbody td {
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text);
+  }
+
+  .table tbody tr:hover {
+    background-color: var(--color-surface-1);
+  }
+
+  .table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  /* Sidebar nav link */
+  .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    padding: 0.625rem 0.875rem;
+    border-radius: var(--radius-full);
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .nav-link:hover {
+    background-color: var(--color-surface-hover);
+    color: var(--color-text);
+  }
+
+  .nav-link--active {
+    background-color: var(--color-primary-container);
+    color: var(--color-primary);
+    font-weight: 600;
+  }
+
+  .nav-link--active:hover {
+    background-color: var(--color-primary-container);
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: var(--color-border-strong);
+    border-radius: var(--radius-full);
+  }
+}

@@ -26,6 +26,10 @@ mod m20260711_000004_seed_events_permissions;
 mod m20260712_000001_add_discord_id_to_users;
 mod m20260713_000001_extend_events_with_session;
 mod m20260713_000002_create_event_battles;
+mod m20260811_000001_create_siphoned_energy_entries_table;
+mod m20260811_000002_seed_siphoned_permissions;
+mod m20260811_000003_enrich_event_battles;
+mod m20260811_000004_link_splits_to_events;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -34,28 +38,32 @@ pub struct Migrator;
 impl MigratorTrait for Migrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
         vec![
-                Box::new(m20260708_000001_create_users_table::Migration),
-                Box::new(m20260708_000002_create_roles_table::Migration),
-                Box::new(m20260709_000001_create_splits_table::Migration),
-                Box::new(m20260709_000002_create_split_participants_table::Migration),
-                Box::new(m20260709_000003_create_transactions_table::Migration),
-                Box::new(m20260709_000004_create_albion_links_table::Migration),
-                Box::new(m20260709_000005_add_requested_at_to_transactions::Migration),
-                Box::new(m20260710_000001_create_role_permissions::Migration),
-                Box::new(m20260710_000002_seed_comps_permissions::Migration),
-                Box::new(m20260710_000003_create_build_categories_table::Migration),
-                Box::new(m20260710_000004_create_comp_categories_table::Migration),
-                Box::new(m20260710_000005_create_builds_table::Migration),
-                Box::new(m20260710_000006_create_build_items_table::Migration),
-                Box::new(m20260710_000007_create_comps_table::Migration),
-                Box::new(m20260710_000008_create_comp_builds_table::Migration),
-                Box::new(m20260711_000001_add_parent_id_to_comps::Migration),
-                Box::new(m20260711_000002_create_events_table::Migration),
-                Box::new(m20260711_000003_create_event_participations_table::Migration),
-                Box::new(m20260711_000004_seed_events_permissions::Migration),
-                Box::new(m20260712_000001_add_discord_id_to_users::Migration),
-                Box::new(m20260713_000001_extend_events_with_session::Migration),
-                Box::new(m20260713_000002_create_event_battles::Migration),
-            ]
+            Box::new(m20260708_000001_create_users_table::Migration),
+            Box::new(m20260708_000002_create_roles_table::Migration),
+            Box::new(m20260709_000001_create_splits_table::Migration),
+            Box::new(m20260709_000002_create_split_participants_table::Migration),
+            Box::new(m20260709_000003_create_transactions_table::Migration),
+            Box::new(m20260709_000004_create_albion_links_table::Migration),
+            Box::new(m20260709_000005_add_requested_at_to_transactions::Migration),
+            Box::new(m20260710_000001_create_role_permissions::Migration),
+            Box::new(m20260710_000002_seed_comps_permissions::Migration),
+            Box::new(m20260710_000003_create_build_categories_table::Migration),
+            Box::new(m20260710_000004_create_comp_categories_table::Migration),
+            Box::new(m20260710_000005_create_builds_table::Migration),
+            Box::new(m20260710_000006_create_build_items_table::Migration),
+            Box::new(m20260710_000007_create_comps_table::Migration),
+            Box::new(m20260710_000008_create_comp_builds_table::Migration),
+            Box::new(m20260711_000001_add_parent_id_to_comps::Migration),
+            Box::new(m20260711_000002_create_events_table::Migration),
+            Box::new(m20260711_000003_create_event_participations_table::Migration),
+            Box::new(m20260711_000004_seed_events_permissions::Migration),
+            Box::new(m20260712_000001_add_discord_id_to_users::Migration),
+            Box::new(m20260713_000001_extend_events_with_session::Migration),
+            Box::new(m20260713_000002_create_event_battles::Migration),
+            Box::new(m20260811_000001_create_siphoned_energy_entries_table::Migration),
+            Box::new(m20260811_000002_seed_siphoned_permissions::Migration),
+            Box::new(m20260811_000003_enrich_event_battles::Migration),
+            Box::new(m20260811_000004_link_splits_to_events::Migration),
+        ]
     }
 }

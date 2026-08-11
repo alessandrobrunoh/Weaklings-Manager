@@ -9,11 +9,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
-use crate::errors::AppError;
 use super::client::{
     AlbionBbApiClient, AlbionBbBattleDetail, AlbionBbBattleSummary, AlbionBbBattlesFilters,
     AlbionBbGuildInfo, AlbionBbKillEvent, AlbionBbPageMeta,
 };
+use crate::errors::AppError;
 
 /// How long cached single-resource lookups are considered fresh.
 const RESOURCE_CACHE_TTL: Duration = Duration::from_secs(60 * 60 * 24);
@@ -85,7 +85,9 @@ impl AlbionBbService {
         player_id: &str,
         min_players: Option<i64>,
     ) -> Result<serde_json::Value, AppError> {
-        self.client.get_player_stats(server, player_id, min_players).await
+        self.client
+            .get_player_stats(server, player_id, min_players)
+            .await
     }
 
     /// Fetches guild info, serving from cache when fresh.

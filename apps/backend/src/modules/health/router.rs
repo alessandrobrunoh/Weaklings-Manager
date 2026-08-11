@@ -2,7 +2,7 @@
 //!
 //! Exposes the root health endpoint.
 
-use axum::{routing::get, Json, Router};
+use axum::{Json, Router, routing::get};
 
 use super::models::HealthResponse;
 use super::service::HealthService;

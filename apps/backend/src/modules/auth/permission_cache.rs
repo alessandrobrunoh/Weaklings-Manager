@@ -88,11 +88,47 @@ impl Permissions {
         Ok(())
     }
 
+    /// Returns the stable permission keys granted to the current session.
+    ///
+    /// Super-admin receives every known permission so clients can render by capability instead of
+    /// mirroring backend role rules. Regular users receive the union of permissions granted by all
+    /// their roles in the `role_permissions` table.
+    pub async fn granted_permissions(
+        &self,
+        is_superadmin: bool,
+        user_roles: &[String],
+    ) -> Vec<String> {
+        if is_superadmin {
+            return Permission::all()
+                .iter()
+                .map(|permission| permission.as_str().to_string())
+                .collect();
+        }
+
+        let cache = self.0.read().await;
+        let mut permission_keys: Vec<String> = Permission::all()
+            .iter()
+            .filter(|permission| {
+                user_roles
+                    .iter()
+                    .any(|role| cache.role_has(role, **permission))
+            })
+            .map(|permission| permission.as_str().to_string())
+            .collect();
+        permission_keys.sort();
+        permission_keys
+    }
+
     /// Returns `true` if any of `user_roles` grants `perm`.
     ///
     /// `is_superadmin` short-circuits to `true` so callers don't need a special
     /// case for the configured super-admin Discord id.
-    pub async fn check(&self, is_superadmin: bool, user_roles: &[String], perm: Permission) -> bool {
+    pub async fn check(
+        &self,
+        is_superadmin: bool,
+        user_roles: &[String],
+        perm: Permission,
+    ) -> bool {
         if is_superadmin {
             return true;
         }

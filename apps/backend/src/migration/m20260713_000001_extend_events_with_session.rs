@@ -24,12 +24,8 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .default("scheduled"),
                     )
-                    .add_column(
-                        ColumnDef::new(Alias::new("started_at")).timestamp_with_time_zone(),
-                    )
-                    .add_column(
-                        ColumnDef::new(Alias::new("stopped_at")).timestamp_with_time_zone(),
-                    )
+                    .add_column(ColumnDef::new(Alias::new("started_at")).timestamp_with_time_zone())
+                    .add_column(ColumnDef::new(Alias::new("stopped_at")).timestamp_with_time_zone())
                     .add_column(
                         ColumnDef::new(Alias::new("auto_stop_deadline")).timestamp_with_time_zone(),
                     )

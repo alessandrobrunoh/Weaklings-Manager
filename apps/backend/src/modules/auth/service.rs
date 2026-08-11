@@ -2,10 +2,12 @@
 //!
 //! Handles communication with Discord API for token exchange and profile retrieval.
 
-use serde::{Deserialize, Serialize};
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use crate::errors::AppError;
 use crate::modules::users::entities::{self as user_entities, Entity as UserEntity};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+};
+use serde::{Deserialize, Serialize};
 
 /// Token response returned from Discord's token exchange endpoint.
 #[derive(Debug, Deserialize)]
@@ -50,6 +52,21 @@ pub struct DiscordUserProfile {
     #[schema(example = 42)]
     #[serde(default)]
     pub user_id: i64,
+    /// Capability flag derived from the configured Discord user id, not from guild roles.
+    ///
+    /// This lets clients expose privileged UI without depending on a Discord role row named
+    /// `SuperAdmin`, and `/api/auth/me` recomputes it on every request so env changes do not
+    /// require users to clear their cookies.
+    #[schema(example = true)]
+    #[serde(default)]
+    pub is_superadmin: bool,
+    /// Stable permission keys granted to this session.
+    ///
+    /// The frontend should render privileged actions from this list instead of duplicating role
+    /// checks. Super-admin receives every known permission from the backend permission enum.
+    #[schema(example = json!(["splits.manage", "permissions.reload"]))]
+    #[serde(default)]
+    pub permissions: Vec<String>,
 }
 
 /// Service for interacting with the Discord `OAuth2` API.
@@ -75,7 +92,7 @@ impl AuthService {
         redirect_uri: &str,
     ) -> Result<DiscordTokenResponse, AppError> {
         let client = reqwest::Client::new();
-        
+
         let params = [
             ("client_id", client_id),
             ("client_secret", client_secret),
@@ -119,7 +136,9 @@ impl AuthService {
             .bearer_auth(access_token)
             .send()
             .await
-            .map_err(|e| AppError::Unauthorized(format!("Failed to request Discord profile: {e}")))?;
+            .map_err(|e| {
+                AppError::Unauthorized(format!("Failed to request Discord profile: {e}"))
+            })?;
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
@@ -146,7 +165,6 @@ impl AuthService {
         bot_token: Option<&str>,
         super_admin_id: &str,
     ) -> (Vec<String>, String) {
-        // Admin override check (SuperAdmin)
         if user_id == super_admin_id {
             return (vec!["SuperAdmin".to_string()], "SuperAdmin".to_string());
         }
@@ -157,7 +175,8 @@ impl AuthService {
         if let Some(bot) = bot_token {
             if !bot.trim().is_empty() && bot != "your_discord_bot_token" {
                 // Fetch member details using bot token
-                let url = format!("https://discord.com/api/v10/guilds/{guild_id}/members/{user_id}");
+                let url =
+                    format!("https://discord.com/api/v10/guilds/{guild_id}/members/{user_id}");
                 if let Ok(res) = client
                     .get(&url)
                     .header("Authorization", format!("Bot {bot}"))
@@ -204,8 +223,8 @@ impl AuthService {
 
         // Query the database to find matching roles and determine the highest one
         if !user_role_ids.is_empty() {
-            use sea_orm::{EntityTrait, QueryFilter, ColumnTrait};
             use super::entities::role;
+            use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
             if let Ok(matched_db_roles) = role::Entity::find()
                 .filter(role::Column::Id.is_in(user_role_ids))
@@ -218,7 +237,10 @@ impl AuthService {
                     matched.sort_by(|a, b| b.priority.cmp(&a.priority));
 
                     let role_names: Vec<String> = matched.iter().map(|r| r.name.clone()).collect();
-                    let highest_role = role_names.first().cloned().unwrap_or_else(|| "User".to_string());
+                    let highest_role = role_names
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| "User".to_string());
 
                     return (role_names, highest_role);
                 }
@@ -243,10 +265,9 @@ impl AuthService {
         db: &DatabaseConnection,
         profile: &DiscordUserProfile,
     ) -> Result<i64, AppError> {
-        let email = profile
-            .email
-            .clone()
-            .ok_or_else(|| AppError::Unauthorized("Discord account has no email to provision a user".to_string()))?;
+        let email = profile.email.clone().ok_or_else(|| {
+            AppError::Unauthorized("Discord account has no email to provision a user".to_string())
+        })?;
 
         let existing = UserEntity::find()
             .filter(user_entities::Column::Email.eq(&email))

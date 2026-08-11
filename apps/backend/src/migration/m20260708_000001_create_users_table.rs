@@ -22,7 +22,12 @@ impl MigrationTrait for Migration {
                             .primary_key(),
                     )
                     .col(ColumnDef::new(Users::Username).string().not_null())
-                    .col(ColumnDef::new(Users::Email).string().not_null().unique_key())
+                    .col(
+                        ColumnDef::new(Users::Email)
+                            .string()
+                            .not_null()
+                            .unique_key(),
+                    )
                     .col(ColumnDef::new(Users::Role).string().not_null())
                     .col(
                         ColumnDef::new(Users::CreatedAt)

@@ -4,7 +4,7 @@
 
 pub mod entities;
 pub mod models;
-pub mod service;
 pub mod router;
+pub mod service;
 
 pub use router::router;

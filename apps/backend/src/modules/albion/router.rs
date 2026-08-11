@@ -3,15 +3,21 @@
 //! Exposes HTTP endpoints for browsing the configured guild's roster, generic Albion Online
 //! API passthroughs, and the self-service Discord <-> Albion player link.
 
-use axum::{extract::Query, routing::{get, post}, Extension, Json, Router};
-use serde::Deserialize;
+use super::client::{AlbionGuild, AlbionPlayer, AlbionRegion, AlbionSearchResult};
+use super::service::{AlbionLinkService, AlbionLinkStatus, AlbionService};
 use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::UserContext;
-use crate::responses::{ApiResponse, ApiResponseAlbionLinkStatus, ApiResponsePaginatedAlbionGuildMembers};
 use crate::pagination::{PaginatedAlbionGuildMember, PaginationParams};
-use super::client::{AlbionGuild, AlbionPlayer, AlbionRegion, AlbionSearchResult};
-use super::service::{AlbionLinkService, AlbionLinkStatus, AlbionService};
+use crate::responses::{
+    ApiResponse, ApiResponseAlbionLinkStatus, ApiResponsePaginatedAlbionGuildMembers,
+};
+use axum::{
+    Extension, Json, Router,
+    extract::Query,
+    routing::{get, post},
+};
+use serde::Deserialize;
 
 /// Creates the router for the Albion module.
 pub fn router() -> Router {
@@ -25,7 +31,10 @@ pub fn router() -> Router {
 }
 
 fn build_service(cfg: &Config) -> AlbionService {
-    AlbionService::new(AlbionRegion::from_env_str(&cfg.albion_api_region), cfg.albion_guild_id.clone())
+    AlbionService::new(
+        AlbionRegion::from_env_str(&cfg.albion_api_region),
+        cfg.albion_guild_id.clone(),
+    )
 }
 
 /// Query parameters for browsing the configured guild's roster.
@@ -85,7 +94,9 @@ pub async fn get_guild_roster(
         .search_configured_guild_roster(query.q.as_deref(), &pagination)
         .await?;
 
-    Ok(Json(ApiResponse::new(PaginatedAlbionGuildMember::from(paginated))))
+    Ok(Json(ApiResponse::new(PaginatedAlbionGuildMember::from(
+        paginated,
+    ))))
 }
 
 /// Query parameters for the generic Albion search passthrough.
@@ -201,7 +212,9 @@ pub async fn get_link_status(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<AlbionLinkStatus>>, AppError> {
     let link_service = AlbionLinkService::new();
-    let link = link_service.get_link_for_discord_user(&db, &user.id).await?;
+    let link = link_service
+        .get_link_for_discord_user(&db, &user.id)
+        .await?;
     Ok(Json(ApiResponse::new(AlbionLinkStatus::from(link))))
 }
 
@@ -260,7 +273,11 @@ pub async fn link_player(
     let matched = roster
         .iter()
         .find(|member| member.id == body.albion_player_id)
-        .ok_or_else(|| AppError::Validation("Selected player is not a member of the configured guild".to_string()))?;
+        .ok_or_else(|| {
+            AppError::Validation(
+                "Selected player is not a member of the configured guild".to_string(),
+            )
+        })?;
 
     let link_service = AlbionLinkService::new();
     let link = link_service

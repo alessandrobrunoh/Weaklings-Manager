@@ -3,14 +3,20 @@
 //! Exposes HTTP endpoints for the Guild Bank ledger: balance, transactions, withdrawal requests,
 //! and officer acceptance/payout of those requests.
 
-use axum::{extract::Query, routing::{get, post}, Extension, Json, Router};
+use axum::{
+    Extension, Json, Router,
+    extract::Query,
+    routing::{get, post},
+};
 
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedTransactionView, PaginationParams};
 use crate::responses::{ApiResponse, ApiResponseBalanceSummary, ApiResponseTransactionViewList};
 
-use super::models::{AcceptWithdrawalRequest, TransactionFilters, TransactionView, WithdrawRequest};
+use super::models::{
+    AcceptWithdrawalRequest, TransactionFilters, TransactionView, WithdrawRequest,
+};
 use super::service::BankService;
 
 /// Router query parameters for the balance endpoint.
@@ -145,7 +151,9 @@ async fn list_transactions(
     let paginated = service
         .list_transactions(&db, target, &pagination, &query.filters)
         .await?;
-    Ok(Json(ApiResponse::new(PaginatedTransactionView::from(paginated))))
+    Ok(Json(ApiResponse::new(PaginatedTransactionView::from(
+        paginated,
+    ))))
 }
 
 /// Request withdrawal of one, several, or all of the caller's pending transactions.

@@ -5,13 +5,16 @@
 //! API has no documented authentication or rate limiting. Every list endpoint wraps its
 //! payload in a `{"data": [...]}` envelope, hence `OpenAlbionListResponse<T>`.
 
+use crate::errors::AppError;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use utoipa::ToSchema;
-use crate::errors::AppError;
 
 /// Base URL of the public OpenAlbion API.
 const BASE_URL: &str = "https://api.openalbion.com/api/v3";
+
+/// Base URL of Sandbox Interactive's public item render service.
+const RENDER_ITEM_BASE_URL: &str = "https://render.albiononline.com/v1/item";
 
 /// Generic `{"data": [...]}` list envelope used by every OpenAlbion list endpoint.
 #[derive(Debug, Deserialize)]
@@ -165,8 +168,9 @@ impl FromStr for OpenAlbionItemType {
     "name": "Broadsword",
     "tier": "4",
     "item_power": 900,
+    "type": "weapon",
     "identifier": "T4_MAIN_SWORD",
-    "icon": "https://cdn.openalbion.com/icons/T4_MAIN_SWORD.png",
+    "icon": "https://render.albiononline.com/v1/item/T4_MAIN_SWORD.png?quality=1&size=64",
     "info": "Additional consumable info"
 }))]
 pub struct OpenAlbionItem {
@@ -182,6 +186,10 @@ pub struct OpenAlbionItem {
     #[serde(default)]
     #[schema(example = 900)]
     pub item_power: Option<i64>,
+    /// Item branch (`weapon`, `armor`, `accessory`, or `consumable`) used by build slots.
+    #[serde(rename = "type", default)]
+    #[schema(example = "weapon")]
+    pub item_type: Option<String>,
     /// Item identifier unique string (present on armor, accessory, consumable).
     #[serde(default)]
     #[schema(example = "T4_MAIN_SWORD")]
@@ -225,7 +233,9 @@ impl OpenAlbionApiClient {
         })?;
 
         if response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(AppError::NotFound(format!("OpenAlbion resource not found: {url}")));
+            return Err(AppError::NotFound(format!(
+                "OpenAlbion resource not found: {url}"
+            )));
         }
 
         if !response.status().is_success() {
@@ -236,12 +246,17 @@ impl OpenAlbionApiClient {
         }
 
         response.json::<T>().await.map_err(|e| {
-            AppError::UpstreamService(format!("Failed to parse OpenAlbion API response from {url}: {e}"))
+            AppError::UpstreamService(format!(
+                "Failed to parse OpenAlbion API response from {url}: {e}"
+            ))
         })
     }
 
     /// Fetches item categories, optionally filtered by top-level type (e.g. "weapon", "armor").
-    pub async fn get_categories(&self, category_type: Option<&str>) -> Result<Vec<OpenAlbionCategory>, AppError> {
+    pub async fn get_categories(
+        &self,
+        category_type: Option<&str>,
+    ) -> Result<Vec<OpenAlbionCategory>, AppError> {
         let path = match category_type {
             Some(t) => format!("/categories?type={}", urlencoding::encode(t)),
             None => "/categories".to_string(),
@@ -251,7 +266,10 @@ impl OpenAlbionApiClient {
     }
 
     /// Fetches the full weapon catalog, optionally narrowed by category, subcategory, or tier.
-    pub async fn get_weapons(&self, filters: &OpenAlbionWeaponFilters) -> Result<Vec<OpenAlbionWeapon>, AppError> {
+    pub async fn get_weapons(
+        &self,
+        filters: &OpenAlbionWeaponFilters,
+    ) -> Result<Vec<OpenAlbionWeapon>, AppError> {
         let mut query = Vec::new();
         if let Some(v) = filters.category_id {
             query.push(format!("category_id={v}"));
@@ -270,18 +288,25 @@ impl OpenAlbionApiClient {
         };
 
         let res: OpenAlbionListResponse<OpenAlbionWeapon> = self.get_json(&path).await?;
-        Ok(res.data)
+        Ok(res.data.into_iter().map(normalize_weapon_icon).collect())
     }
 
     /// Fetches per-quality-tier stats for a single weapon by ID.
-    pub async fn get_weapon_stats(&self, weapon_id: i64) -> Result<Vec<OpenAlbionWeaponStats>, AppError> {
-        let res: OpenAlbionListResponse<OpenAlbionWeaponStats> =
-            self.get_json(&format!("/weapon-stats/weapon/{weapon_id}")).await?;
+    pub async fn get_weapon_stats(
+        &self,
+        weapon_id: i64,
+    ) -> Result<Vec<OpenAlbionWeaponStats>, AppError> {
+        let res: OpenAlbionListResponse<OpenAlbionWeaponStats> = self
+            .get_json(&format!("/weapon-stats/weapon/{weapon_id}"))
+            .await?;
         Ok(res.data)
     }
 
     /// Fetches the full armor catalog, optionally narrowed by category, subcategory, or tier.
-    pub async fn get_armors(&self, filters: &OpenAlbionWeaponFilters) -> Result<Vec<OpenAlbionItem>, AppError> {
+    pub async fn get_armors(
+        &self,
+        filters: &OpenAlbionWeaponFilters,
+    ) -> Result<Vec<OpenAlbionItem>, AppError> {
         let mut query = Vec::new();
         if let Some(v) = filters.category_id {
             query.push(format!("category_id={v}"));
@@ -300,11 +325,18 @@ impl OpenAlbionApiClient {
         };
 
         let res: OpenAlbionListResponse<OpenAlbionItem> = self.get_json(&path).await?;
-        Ok(res.data)
+        Ok(res
+            .data
+            .into_iter()
+            .map(|item| normalize_item(item, "armor"))
+            .collect())
     }
 
     /// Fetches the full accessory catalog, optionally narrowed by category, subcategory, or tier.
-    pub async fn get_accessories(&self, filters: &OpenAlbionWeaponFilters) -> Result<Vec<OpenAlbionItem>, AppError> {
+    pub async fn get_accessories(
+        &self,
+        filters: &OpenAlbionWeaponFilters,
+    ) -> Result<Vec<OpenAlbionItem>, AppError> {
         let mut query = Vec::new();
         if let Some(v) = filters.category_id {
             query.push(format!("category_id={v}"));
@@ -323,11 +355,18 @@ impl OpenAlbionApiClient {
         };
 
         let res: OpenAlbionListResponse<OpenAlbionItem> = self.get_json(&path).await?;
-        Ok(res.data)
+        Ok(res
+            .data
+            .into_iter()
+            .map(|item| normalize_item(item, "accessory"))
+            .collect())
     }
 
     /// Fetches the full consumable catalog, optionally narrowed by category, subcategory, or tier.
-    pub async fn get_consumables(&self, filters: &OpenAlbionWeaponFilters) -> Result<Vec<OpenAlbionItem>, AppError> {
+    pub async fn get_consumables(
+        &self,
+        filters: &OpenAlbionWeaponFilters,
+    ) -> Result<Vec<OpenAlbionItem>, AppError> {
         let mut query = Vec::new();
         if let Some(v) = filters.category_id {
             query.push(format!("category_id={v}"));
@@ -346,11 +385,18 @@ impl OpenAlbionApiClient {
         };
 
         let res: OpenAlbionListResponse<OpenAlbionItem> = self.get_json(&path).await?;
-        Ok(res.data)
+        Ok(res
+            .data
+            .into_iter()
+            .map(|item| normalize_item(item, "consumable"))
+            .collect())
     }
 
     /// Fetches weapons and maps them to `OpenAlbionItem` (identifier and info are `None`).
-    async fn get_weapons_as_items(&self, filters: &OpenAlbionWeaponFilters) -> Result<Vec<OpenAlbionItem>, AppError> {
+    async fn get_weapons_as_items(
+        &self,
+        filters: &OpenAlbionWeaponFilters,
+    ) -> Result<Vec<OpenAlbionItem>, AppError> {
         let weapons = self.get_weapons(filters).await?;
         Ok(weapons
             .into_iter()
@@ -359,7 +405,8 @@ impl OpenAlbionApiClient {
                 name: w.name,
                 tier: w.tier,
                 item_power: w.item_power,
-                identifier: None,
+                item_type: Some("weapon".to_string()),
+                identifier: item_identifier_from_icon(w.icon.as_deref()),
                 icon: w.icon,
                 info: None,
             })
@@ -388,5 +435,54 @@ impl OpenAlbionApiClient {
 impl Default for OpenAlbionApiClient {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn normalize_weapon_icon(mut weapon: OpenAlbionWeapon) -> OpenAlbionWeapon {
+    weapon.icon = render_icon_url_from_identifier_or_icon(None, weapon.icon.as_deref());
+    weapon
+}
+
+fn normalize_item(mut item: OpenAlbionItem, fallback_item_type: &str) -> OpenAlbionItem {
+    if item.item_type.is_none() {
+        item.item_type = Some(fallback_item_type.to_string());
+    }
+    item.icon =
+        render_icon_url_from_identifier_or_icon(item.identifier.as_deref(), item.icon.as_deref());
+    item
+}
+
+fn render_icon_url_from_identifier_or_icon(
+    identifier: Option<&str>,
+    icon_url: Option<&str>,
+) -> Option<String> {
+    let item_id = identifier
+        .filter(|value| !value.trim().is_empty())
+        .map(str::trim)
+        .map(ToString::to_string)
+        .or_else(|| item_identifier_from_icon(icon_url));
+    item_id.map(|value| {
+        format!(
+            "{RENDER_ITEM_BASE_URL}/{}.png?quality=1&size=64",
+            urlencoding::encode(&value)
+        )
+    })
+}
+
+fn item_identifier_from_icon(icon_url: Option<&str>) -> Option<String> {
+    let file_name = icon_url?.rsplit('/').next()?;
+    let item_id = file_name
+        .strip_suffix(".png")
+        .unwrap_or(file_name)
+        .split('?')
+        .next()?
+        .split('@')
+        .next()?
+        .trim();
+
+    if item_id.is_empty() {
+        None
+    } else {
+        Some(item_id.to_string())
     }
 }

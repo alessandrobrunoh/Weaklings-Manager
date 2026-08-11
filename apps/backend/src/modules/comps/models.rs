@@ -203,6 +203,7 @@ pub struct UpdateCompCategoryRequest {
     "category_id": 3,
     "items": [
         {
+            "slot": "weapon",
             "openalbion_item_type": "weapon",
             "openalbion_item_id": 4532,
             "openalbion_item_name": "Holy Staff",
@@ -220,8 +221,8 @@ pub struct CreateBuildRequest {
     pub role: BuildRole,
     /// The category ID this build belongs to.
     pub category_id: i64,
-    /// Optional list of items to include in the build.
-    pub items: Option<Vec<UpsertBuildItemRequest>>,
+    /// Optional list of slotted items to include in the build.
+    pub items: Option<Vec<CreateBuildItemRequest>>,
 }
 
 /// Request body to update a build.
@@ -239,6 +240,31 @@ pub struct UpdateBuildRequest {
     pub role: Option<BuildRole>,
     /// The new category ID this build belongs to.
     pub category_id: Option<i64>,
+}
+
+/// Request body to create an initial build item with its equipment slot.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[schema(example = json!({
+    "slot": "weapon",
+    "openalbion_item_type": "weapon",
+    "openalbion_item_id": 4532,
+    "openalbion_item_name": "Holy Staff",
+    "openalbion_item_icon": "https://...",
+    "openalbion_item_tier": "8.0"
+}))]
+pub struct CreateBuildItemRequest {
+    /// The equipment slot where this item belongs.
+    pub slot: BuildSlot,
+    /// The OpenAlbion item type.
+    pub openalbion_item_type: String,
+    /// The OpenAlbion item ID.
+    pub openalbion_item_id: i64,
+    /// The OpenAlbion item name.
+    pub openalbion_item_name: String,
+    /// The OpenAlbion item icon URL.
+    pub openalbion_item_icon: Option<String>,
+    /// The OpenAlbion item tier.
+    pub openalbion_item_tier: Option<String>,
 }
 
 /// Request body to upsert a build item.

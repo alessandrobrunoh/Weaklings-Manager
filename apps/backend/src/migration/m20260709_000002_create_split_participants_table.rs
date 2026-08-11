@@ -34,7 +34,11 @@ impl MigrationTrait for Migration {
                             .big_integer()
                             .not_null(),
                     )
-                    .col(ColumnDef::new(SplitParticipants::Weight).integer().not_null())
+                    .col(
+                        ColumnDef::new(SplitParticipants::Weight)
+                            .integer()
+                            .not_null(),
+                    )
                     .col(
                         ColumnDef::new(SplitParticipants::CreatedAt)
                             .timestamp_with_time_zone()

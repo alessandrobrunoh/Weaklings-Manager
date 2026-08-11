@@ -2,11 +2,11 @@
 //!
 //! Provides structures and logic to fetch and manage user data from the database.
 
+use crate::errors::AppError;
+use crate::pagination::{PaginatedData, PaginationParams};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, PaginatorTrait};
-use crate::pagination::{PaginationParams, PaginatedData};
-use crate::errors::AppError;
 
 /// The profile of a user containing identification and authorization details.
 #[derive(Debug, Serialize, Clone, ToSchema)]
@@ -28,7 +28,10 @@ pub struct UserProfile {
 impl UserProfile {
     /// Builds a `UserProfile` from a user row, resolving `username` to the user's linked
     /// Albion Online character name if they have one, falling back to their Discord username.
-    async fn from_model(db: &sea_orm::DatabaseConnection, model: super::entities::Model) -> Result<Self, AppError> {
+    async fn from_model(
+        db: &sea_orm::DatabaseConnection,
+        model: super::entities::Model,
+    ) -> Result<Self, AppError> {
         let username = super::display_name::resolve(db, &model).await?;
         Ok(Self {
             id: model.id as u64,
@@ -66,11 +69,13 @@ impl UserService {
     /// Fetches the profile of a user by their user ID.
     ///
     /// Returns `Some(UserProfile)` if the user is found, or `None` otherwise.
-    pub async fn get_profile(&self, db: &DatabaseConnection, user_id: u64) -> Result<Option<UserProfile>, AppError> {
-        use super::entities::{Entity as UserEntity};
-        let user = UserEntity::find_by_id(user_id as i64)
-            .one(db)
-            .await?;
+    pub async fn get_profile(
+        &self,
+        db: &DatabaseConnection,
+        user_id: u64,
+    ) -> Result<Option<UserProfile>, AppError> {
+        use super::entities::Entity as UserEntity;
+        let user = UserEntity::find_by_id(user_id as i64).one(db).await?;
         match user {
             Some(model) => Ok(Some(UserProfile::from_model(db, model).await?)),
             None => Ok(None),
@@ -88,7 +93,7 @@ impl UserService {
         pagination: &PaginationParams,
         filters: &UserFilters,
     ) -> Result<PaginatedData<UserProfile>, AppError> {
-        use super::entities::{Entity as UserEntity, Column as UserColumn};
+        use super::entities::{Column as UserColumn, Entity as UserEntity};
 
         let mut query = UserEntity::find();
 
@@ -141,8 +146,8 @@ impl Default for UserService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sea_orm::{Database, ActiveModelTrait, ActiveValue::Set};
     use crate::migration::MigratorTrait;
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set, Database};
 
     #[tokio::test]
     async fn test_pagination_and_filtering() {

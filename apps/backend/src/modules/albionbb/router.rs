@@ -5,18 +5,22 @@
 //! data for the configured Weaklings guild. Exposed for power users and the
 //! OpenAPI explorer.
 
-use axum::{extract::{Path, Query}, routing::get, Extension, Json, Router};
+use axum::{
+    Extension, Json, Router,
+    extract::{Path, Query},
+    routing::get,
+};
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use crate::errors::{AppError, ProblemDetails};
-use crate::modules::auth::UserContext;
-use crate::responses::ApiResponse;
 use super::client::{
     AlbionBbBattleDetail, AlbionBbBattleSummary, AlbionBbBattlesFilters, AlbionBbGuildInfo,
     AlbionBbKillEvent,
 };
 use super::service::AlbionBbService;
+use crate::errors::{AppError, ProblemDetails};
+use crate::modules::auth::UserContext;
+use crate::responses::ApiResponse;
 
 /// Creates the router for the `AlbionBB` module.
 pub fn router() -> Router {
@@ -89,7 +93,9 @@ pub async fn list_battles(
         min_guild_players: query.min_guild_players,
         page: query.page,
     };
-    let (items, meta) = service.get_battles(query.server.as_deref(), &filters).await?;
+    let (items, meta) = service
+        .get_battles(query.server.as_deref(), &filters)
+        .await?;
     Ok(Json(ApiResponse::new(AlbionBbBattlesList {
         items,
         total_results: meta.total_results,
@@ -123,7 +129,9 @@ pub async fn get_battle(
     Path(battle_id): Path<i64>,
     Query(params): Query<ServerQuery>,
 ) -> Result<Json<ApiResponse<AlbionBbBattleDetail>>, AppError> {
-    let detail = service.get_battle(params.server.as_deref(), battle_id).await?;
+    let detail = service
+        .get_battle(params.server.as_deref(), battle_id)
+        .await?;
     Ok(Json(ApiResponse::new(detail)))
 }
 
@@ -152,7 +160,9 @@ pub async fn get_battle_kills(
     Path(battle_id): Path<i64>,
     Query(params): Query<ServerQuery>,
 ) -> Result<Json<ApiResponse<Vec<AlbionBbKillEvent>>>, AppError> {
-    let kills = service.get_battle_kills(params.server.as_deref(), battle_id).await?;
+    let kills = service
+        .get_battle_kills(params.server.as_deref(), battle_id)
+        .await?;
     Ok(Json(ApiResponse::new(kills)))
 }
 
@@ -181,7 +191,9 @@ pub async fn get_guild(
     Path(guild_id): Path<String>,
     Query(params): Query<ServerQuery>,
 ) -> Result<Json<ApiResponse<AlbionBbGuildInfo>>, AppError> {
-    let info = service.get_guild(params.server.as_deref(), &guild_id).await?;
+    let info = service
+        .get_guild(params.server.as_deref(), &guild_id)
+        .await?;
     Ok(Json(ApiResponse::new(info)))
 }
 

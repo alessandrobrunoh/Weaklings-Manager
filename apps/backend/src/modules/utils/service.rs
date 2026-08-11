@@ -4,9 +4,9 @@
 //! trimmed lines" transform. Has no knowledge of any domain concept (players, users, splits) —
 //! consumers needing to match extracted lines against application data do that themselves.
 
-use crate::errors::AppError;
 use super::client::MistralOcrClient;
 use super::models::OcrResult;
+use crate::errors::AppError;
 
 /// Service exposing generic OCR operations.
 pub struct OcrService {

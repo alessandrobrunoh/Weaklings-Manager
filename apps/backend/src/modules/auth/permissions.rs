@@ -23,7 +23,17 @@ use strum::{AsRefStr, EnumString, VariantArray};
 /// `as_str` / `from_str` / `all` are derived by `strum` — no manual `match`
 /// to keep in sync.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, AsRefStr, EnumString, VariantArray,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    AsRefStr,
+    EnumString,
+    VariantArray,
 )]
 pub enum Permission {
     /// Accept (pay out) a requested bank withdrawal. Officer-or-above today.
@@ -56,6 +66,12 @@ pub enum Permission {
     /// Manage events (create, edit, delete).
     #[strum(serialize = "events.manage")]
     EventsManage,
+    /// Import siphoned energy ledger rows from the Albion export. Moderator-or-above today.
+    #[strum(serialize = "siphoned.ingest")]
+    SiphonedIngest,
+    /// View the siphoned energy ledger / per-player balances. User-or-above today.
+    #[strum(serialize = "siphoned.view")]
+    SiphonedView,
 }
 
 impl Permission {
@@ -98,7 +114,11 @@ mod tests {
     fn as_str_and_from_str_roundtrip() {
         for perm in Permission::all() {
             let s = perm.as_str();
-            assert_eq!(Permission::from_str(s), Some(*perm), "roundtrip failed for {s}");
+            assert_eq!(
+                Permission::from_str(s),
+                Some(*perm),
+                "roundtrip failed for {s}"
+            );
         }
     }
 
@@ -109,6 +129,6 @@ mod tests {
 
     #[test]
     fn all_contains_every_variant() {
-        assert_eq!(Permission::all().len(), 10);
+        assert_eq!(Permission::all().len(), 12);
     }
 }

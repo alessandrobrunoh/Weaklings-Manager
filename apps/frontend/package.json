@@ -1,27 +1,42 @@
 {
   "name": "frontend",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.0.0",
   "scripts": {
-    "dev": "next dev --port 5000 --hostname 0.0.0.0",
-    "build": "next build",
-    "start": "next start --port 5000",
-    "lint": "next lint"
+    "ng": "cross-env NODE_OPTIONS=--experimental-import-meta-resolve ng",
+    "start": "cross-env NODE_OPTIONS=--experimental-import-meta-resolve ng serve",
+    "build": "cross-env NODE_OPTIONS=--experimental-import-meta-resolve ng build",
+    "watch": "cross-env NODE_OPTIONS=--experimental-import-meta-resolve ng build --watch --configuration development",
+    "test": "ng test",
+    "serve:ssr:frontend": "node dist/frontend/server/server.mjs"
   },
+  "private": true,
+  "packageManager": "npm@11.11.0",
   "dependencies": {
-    "next": "16.2.9",
-    "next-auth": "^4.24.14",
-    "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "@angular/common": "^21.2.0",
+    "@angular/compiler": "^21.2.0",
+    "@angular/core": "^21.2.0",
+    "@angular/forms": "^21.2.0",
+    "@angular/platform-browser": "^21.2.0",
+    "@angular/platform-server": "^21.2.0",
+    "@angular/router": "^21.2.0",
+    "@angular/ssr": "^21.2.17",
+    "express": "^5.1.0",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.9",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+    "@angular/build": "^21.2.17",
+    "@angular/cli": "^21.2.17",
+    "@angular/compiler-cli": "^21.2.0",
+    "@tailwindcss/postcss": "^4.1.12",
+    "@types/express": "^5.0.1",
+    "@types/node": "^20.17.19",
+    "cross-env": "^10.1.0",
+    "jsdom": "^28.0.0",
+    "postcss": "^8.5.3",
+    "prettier": "^3.8.1",
+    "tailwindcss": "^4.1.12",
+    "typescript": "~5.9.2",
+    "vitest": "^4.0.8"
   }
 }

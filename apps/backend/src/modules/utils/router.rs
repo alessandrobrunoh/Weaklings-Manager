@@ -2,16 +2,16 @@
 //!
 //! Exposes generic, reusable backend utilities not tied to any specific domain.
 
-use axum::{extract::Multipart, routing::post, Extension, Json, Router};
+use axum::{Extension, Json, Router, extract::Multipart, routing::post};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 
+use super::models::OcrResult;
+use super::service::OcrService;
 use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::UserContext;
 use crate::responses::{ApiResponse, ApiResponseOcrResult};
-use super::models::OcrResult;
-use super::service::OcrService;
 
 /// Creates the router for the utils module.
 pub fn router() -> Router {

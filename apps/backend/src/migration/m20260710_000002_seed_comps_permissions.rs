@@ -71,11 +71,7 @@ impl MigrationTrait for Migration {
                             .into_table(RolePermissions::Table)
                             .columns([RolePermissions::RoleId, RolePermissions::Permission])
                             .values_panic([role_id.clone().into(), (*perm).into()])
-                            .on_conflict(
-                                OnConflict::new()
-                                    .do_nothing()
-                                    .to_owned(),
-                            )
+                            .on_conflict(OnConflict::new().do_nothing().to_owned())
                             .to_owned(),
                     ),
                 )

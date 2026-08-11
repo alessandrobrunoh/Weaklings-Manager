@@ -3,18 +3,21 @@
 //! Exposes HTTP endpoints for browsing the OpenAlbion item database: the full weapon catalog
 //! (used by the frontend's comp builder), item categories, and per-weapon quality-tier stats.
 
-use axum::{extract::{Path, Query}, routing::get, Extension, Json, Router};
-use serde::Deserialize;
-use std::str::FromStr;
-use crate::errors::{AppError, ProblemDetails};
-use crate::modules::auth::UserContext;
-use crate::responses::{ApiResponse, ApiResponsePaginatedOpenAlbionWeapons};
-use crate::pagination::{PaginatedOpenAlbionWeapon, PaginationParams};
 use super::client::{
-    OpenAlbionCategory, OpenAlbionItemType, OpenAlbionWeaponFilters,
-    OpenAlbionWeaponStats,
+    OpenAlbionCategory, OpenAlbionItemType, OpenAlbionWeaponFilters, OpenAlbionWeaponStats,
 };
 use super::service::OpenAlbionService;
+use crate::errors::{AppError, ProblemDetails};
+use crate::modules::auth::UserContext;
+use crate::pagination::{PaginatedOpenAlbionWeapon, PaginationParams};
+use crate::responses::{ApiResponse, ApiResponsePaginatedOpenAlbionWeapons};
+use axum::{
+    Extension, Json, Router,
+    extract::{Path, Query},
+    routing::get,
+};
+use serde::Deserialize;
+use std::str::FromStr;
 
 /// Creates the router for the `OpenAlbion` module.
 pub fn router() -> Router {
@@ -92,9 +95,13 @@ pub async fn list_weapons(
 ) -> Result<Json<ApiResponse<PaginatedOpenAlbionWeapon>>, AppError> {
     let pagination = query.pagination();
     let filters = query.filters();
-    let paginated = service.list_weapons(&filters, query.q.as_deref(), &pagination).await?;
+    let paginated = service
+        .list_weapons(&filters, query.q.as_deref(), &pagination)
+        .await?;
 
-    Ok(Json(ApiResponse::new(PaginatedOpenAlbionWeapon::from(paginated))))
+    Ok(Json(ApiResponse::new(PaginatedOpenAlbionWeapon::from(
+        paginated,
+    ))))
 }
 
 /// Fetch per-quality-tier stats for a single weapon by ID.
@@ -246,5 +253,9 @@ pub async fn list_categories(
     Extension(service): Extension<OpenAlbionService>,
     Query(query): Query<CategoryListQuery>,
 ) -> Result<Json<Vec<OpenAlbionCategory>>, AppError> {
-    Ok(Json(service.list_categories(query.category_type.as_deref()).await?))
+    Ok(Json(
+        service
+            .list_categories(query.category_type.as_deref())
+            .await?,
+    ))
 }

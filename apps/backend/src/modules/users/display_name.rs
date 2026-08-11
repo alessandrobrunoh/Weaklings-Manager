@@ -9,9 +9,11 @@ use std::collections::HashMap;
 
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
-use crate::errors::AppError;
-use crate::modules::albion::entities::albion_link::{Column as AlbionLinkColumn, Entity as AlbionLinkEntity};
 use super::entities::{Column as UserColumn, Entity as UserEntity, Model as UserModel};
+use crate::errors::AppError;
+use crate::modules::albion::entities::albion_link::{
+    Column as AlbionLinkColumn, Entity as AlbionLinkEntity,
+};
 
 /// Fetches `albion_player_name` for every given `discord_id`, keyed by `discord_id`.
 async fn albion_names_by_discord_id(
@@ -27,7 +29,10 @@ async fn albion_names_by_discord_id(
         .all(db)
         .await?;
 
-    Ok(links.into_iter().map(|l| (l.discord_id, l.albion_player_name)).collect())
+    Ok(links
+        .into_iter()
+        .map(|l| (l.discord_id, l.albion_player_name))
+        .collect())
 }
 
 /// Resolves a single user's display name: their linked Albion Online character name if they
@@ -42,7 +47,10 @@ pub async fn resolve(db: &DatabaseConnection, user: &UserModel) -> Result<String
     };
 
     let names = albion_names_by_discord_id(db, vec![discord_id]).await?;
-    Ok(names.into_values().next().unwrap_or_else(|| user.username.clone()))
+    Ok(names
+        .into_values()
+        .next()
+        .unwrap_or_else(|| user.username.clone()))
 }
 
 /// Resolves display names for a set of user ids in bulk (one query for users, one for
@@ -89,5 +97,7 @@ pub async fn resolve_by_ids(
 /// Returns `AppError::Database` if the lookup fails.
 pub async fn resolve_by_id(db: &DatabaseConnection, user_id: i64) -> Result<String, AppError> {
     let mut names = resolve_by_ids(db, &[user_id]).await?;
-    Ok(names.remove(&user_id).unwrap_or_else(|| "Unknown".to_string()))
+    Ok(names
+        .remove(&user_id)
+        .unwrap_or_else(|| "Unknown".to_string()))
 }

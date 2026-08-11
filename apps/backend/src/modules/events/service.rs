@@ -1,22 +1,31 @@
 //! Business logic for the events module.
 
+use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
+
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-    Set, PaginatorTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, Set,
 };
 
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 
-use crate::errors::AppError;
-use crate::pagination::{PaginatedData, PaginationParams};
-use crate::modules::comps::entities::{comp, comp_build, build};
-use crate::modules::albionbb::client::AlbionBbBattlesFilters;
-use crate::modules::albionbb::service::AlbionBbService;
 use super::entities::{event, event_battle, event_participation};
 use super::models::{
-    CreateEventRequest, EventBattleView, EventDetailView, EventParticipantView, EventView,
+    BattlePerformanceStats, CompPerformanceView, CreateEventRequest, EventBattleView,
+    EventDetailView, EventParticipantView, EventSplitStats, EventView, OpponentPerformanceView,
     ParticipateEventRequest, UpdateEventRequest,
 };
+use crate::errors::AppError;
+use crate::modules::albionbb::client::{
+    AlbionBbBattleSummary, AlbionBbBattlesFilters, AlbionBbGuild,
+};
+use crate::modules::albionbb::service::AlbionBbService;
+use crate::modules::comps::entities::{build, comp, comp_build};
+use crate::modules::splits::entities::{split, split_participant};
+use crate::modules::splits::service::SplitService;
+use crate::modules::splits::status::SplitStatus;
+use crate::pagination::{PaginatedData, PaginationParams};
 
 /// Hard cap on how long an event session can stay live before the background
 /// worker auto-stops it. Tuned to 3 hours per product requirement.
@@ -26,7 +35,182 @@ const MAX_SESSION_DURATION: ChronoDuration = ChronoDuration::hours(3);
 /// re-fetching AlbionBB to absorb the upstream's slow ingestion (~30 minutes).
 const LINK_GRACE_PERIOD: ChronoDuration = ChronoDuration::minutes(45);
 
+/// Incremental accumulator for opponent analytics.
+#[derive(Debug, Clone, Default)]
+struct OpponentRollup {
+    guild_id: Option<String>,
+    guild_name: String,
+    battles: i64,
+    wins: i64,
+    guild_kill_fame: i64,
+    opponent_kill_fame: i64,
+}
 
+/// Compact battle snapshot derived from AlbionBB for event analytics.
+#[derive(Debug, Clone)]
+struct LinkedBattleSnapshot {
+    guild_players_count: i64,
+    battle_total_players: i64,
+    guild_kills: i64,
+    guild_deaths: i64,
+    guild_kill_fame: i64,
+    is_win: bool,
+    opponent: Option<AlbionBbGuild>,
+}
+
+/// Computes a percentage and safely handles empty denominators.
+fn ratio_percent(part: i64, total: i64) -> f64 {
+    if total == 0 {
+        return 0.0;
+    }
+
+    (part as f64 / total as f64) * 100.0
+}
+
+/// Computes K/D while avoiding division by zero.
+fn kill_death_ratio(kills: i64, deaths: i64) -> f64 {
+    if deaths == 0 {
+        return kills as f64;
+    }
+
+    kills as f64 / deaths as f64
+}
+
+/// Ranks the most relevant opponents for the current analytics scope.
+fn build_top_opponents(battle_rows: &[event_battle::Model]) -> Vec<OpponentPerformanceView> {
+    let mut rollups: HashMap<String, OpponentRollup> = HashMap::new();
+
+    for battle in battle_rows {
+        let opponent_name = battle
+            .opponent_guild_name
+            .clone()
+            .unwrap_or_else(|| "Unknown opponent".to_string());
+        let key = battle
+            .opponent_guild_id
+            .clone()
+            .unwrap_or_else(|| opponent_name.clone());
+        let rollup = rollups.entry(key).or_insert_with(|| OpponentRollup {
+            guild_id: battle.opponent_guild_id.clone(),
+            guild_name: opponent_name,
+            ..Default::default()
+        });
+        rollup.battles += 1;
+        rollup.wins += i64::from(battle.is_win);
+        rollup.guild_kill_fame += battle.guild_kill_fame;
+        rollup.opponent_kill_fame += battle.opponent_kill_fame.unwrap_or_default();
+    }
+
+    let mut opponents: Vec<OpponentPerformanceView> = rollups
+        .into_values()
+        .map(|rollup| OpponentPerformanceView {
+            guild_id: rollup.guild_id,
+            guild_name: rollup.guild_name,
+            battles: rollup.battles,
+            wins: rollup.wins,
+            losses: rollup.battles - rollup.wins,
+            guild_kill_fame: rollup.guild_kill_fame,
+            opponent_kill_fame: rollup.opponent_kill_fame,
+        })
+        .collect();
+
+    opponents.sort_by(|left, right| {
+        right
+            .battles
+            .cmp(&left.battles)
+            .then(right.opponent_kill_fame.cmp(&left.opponent_kill_fame))
+    });
+    opponents.truncate(5);
+    opponents
+}
+
+/// Builds the persisted analytics snapshot for a battle summary.
+fn linked_battle_snapshot(battle: &AlbionBbBattleSummary, guild_id: &str) -> LinkedBattleSnapshot {
+    let guild = battle.guilds.iter().find(|guild| guild.id == guild_id);
+    let opponent = battle
+        .guilds
+        .iter()
+        .filter(|guild| guild.id != guild_id)
+        .max_by_key(|guild| guild.kill_fame)
+        .cloned();
+
+    LinkedBattleSnapshot {
+        guild_players_count: guild.map(|guild| guild.players).unwrap_or_default(),
+        battle_total_players: battle.total_players,
+        guild_kills: guild.map(|guild| guild.kills).unwrap_or_default(),
+        guild_deaths: guild.map(|guild| guild.deaths).unwrap_or_default(),
+        guild_kill_fame: guild.map(|guild| guild.kill_fame).unwrap_or_default(),
+        is_win: guild.map(|guild| guild.winner).unwrap_or(false),
+        opponent,
+    }
+}
+
+/// Applies the same analytics snapshot to both newly linked and refreshed rows.
+fn apply_battle_snapshot(
+    row: &mut event_battle::ActiveModel,
+    snapshot: &LinkedBattleSnapshot,
+) -> Result<(), AppError> {
+    row.guild_players_count = Set(i32::try_from(snapshot.guild_players_count).map_err(|e| {
+        AppError::Validation(format!(
+            "Guild player count does not fit database column: {e}"
+        ))
+    })?);
+    row.battle_total_players = Set(Some(i32::try_from(snapshot.battle_total_players).map_err(
+        |e| {
+            AppError::Validation(format!(
+                "Battle player count does not fit database column: {e}"
+            ))
+        },
+    )?));
+    row.guild_kills = Set(snapshot.guild_kills);
+    row.guild_deaths = Set(snapshot.guild_deaths);
+    row.guild_kill_fame = Set(snapshot.guild_kill_fame);
+    row.is_win = Set(snapshot.is_win);
+
+    let opponent = snapshot.opponent.as_ref();
+    row.opponent_guild_id = Set(opponent.map(|guild| guild.id.clone()));
+    row.opponent_guild_name = Set(opponent.map(|guild| guild.name.clone()));
+    row.opponent_players_count = Set(opponent
+        .map(|guild| {
+            i32::try_from(guild.players).map_err(|e| {
+                AppError::Validation(format!(
+                    "Opponent player count does not fit database column: {e}"
+                ))
+            })
+        })
+        .transpose()?);
+    row.opponent_kills = Set(opponent.map(|guild| guild.kills));
+    row.opponent_deaths = Set(opponent.map(|guild| guild.deaths));
+    row.opponent_kill_fame = Set(opponent.map(|guild| guild.kill_fame));
+    Ok(())
+}
+
+/// Builds loot/economy rollups from splits attached to an event.
+fn build_split_stats(splits: &[split::Model], participant_entries: i64) -> EventSplitStats {
+    let mut stats = EventSplitStats {
+        total_splits: splits.len() as i64,
+        participant_entries,
+        ..Default::default()
+    };
+
+    for split in splits {
+        stats.estimated_market_value += split.estimated_market_value;
+        stats.repair_value += split.repair_value;
+        stats.bags_value += split.bags_value;
+        if let Some(net_value) = split.net_value {
+            stats.completed_net_value += net_value;
+        }
+
+        match SplitStatus::from_str(&split.status) {
+            Ok(SplitStatus::Pending) => stats.pending_splits += 1,
+            Ok(SplitStatus::Completed) => stats.completed_splits += 1,
+            Ok(SplitStatus::NotCompleted) => stats.not_completed_splits += 1,
+            Ok(SplitStatus::Lost) => stats.lost_splits += 1,
+            Err(_) => {}
+        }
+    }
+
+    stats
+}
 
 /// Service layer coordinating events operations.
 #[derive(Debug, Clone)]
@@ -89,7 +273,8 @@ impl EventService {
         comps_with_capacity.sort_by_key(|(_, cap)| *cap);
 
         // Find first comp with capacity >= target_size
-        let active = comps_with_capacity.into_iter()
+        let active = comps_with_capacity
+            .into_iter()
             .find(|(_, cap)| *cap >= target_size as i64);
 
         if let Some((active_comp, capacity)) = active {
@@ -111,7 +296,8 @@ impl EventService {
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Comp {} not found", model.comp_id)))?;
 
-        let created_by_username = crate::modules::users::display_name::resolve_by_id(db, model.created_by).await?;
+        let created_by_username =
+            crate::modules::users::display_name::resolve_by_id(db, model.created_by).await?;
 
         Ok(EventView {
             id: model.id,
@@ -152,14 +338,23 @@ impl EventService {
         let total_pages = paginator.num_pages().await.map_err(AppError::Database)?;
         let current_page = page + 1;
 
-        let models = paginator.fetch_page(page).await.map_err(AppError::Database)?;
+        let models = paginator
+            .fetch_page(page)
+            .await
+            .map_err(AppError::Database)?;
 
         let mut items = Vec::new();
         for m in models {
             items.push(self.to_event_view(db, m).await?);
         }
 
-        Ok(PaginatedData::new(items, total_items, total_pages, current_page, limit))
+        Ok(PaginatedData::new(
+            items,
+            total_items,
+            total_pages,
+            current_page,
+            limit,
+        ))
     }
 
     /// Gets detailed event information including participants and resolved active comp.
@@ -200,7 +395,9 @@ impl EventService {
                 .one(db)
                 .await
                 .map_err(AppError::Database)?
-                .ok_or_else(|| AppError::NotFound(format!("Build {} not found", p.primary_build_id)))?;
+                .ok_or_else(|| {
+                    AppError::NotFound(format!("Build {} not found", p.primary_build_id))
+                })?;
 
             let secondary_build_name = if let Some(sec_id) = p.secondary_build_id {
                 let sec_build = build::Entity::find_by_id(sec_id)
@@ -229,17 +426,33 @@ impl EventService {
             .all(db)
             .await
             .map_err(AppError::Database)?;
+        let stats = Self::build_performance_stats(&battle_rows);
         let battles = battle_rows
             .into_iter()
-            .map(|b| EventBattleView {
-                id: b.id,
-                albionbb_battle_id: b.albionbb_battle_id,
-                battle_started_at: b.battle_started_at.to_rfc3339(),
-                guild_players_count: b.guild_players_count,
-                battle_total_players: b.battle_total_players,
-                fetched_at: b.fetched_at.to_rfc3339(),
-            })
+            .map(Self::to_event_battle_view)
             .collect();
+
+        let split_rows = split::Entity::find()
+            .filter(split::Column::EventId.eq(id))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let split_ids: Vec<i64> = split_rows.iter().map(|split| split.id).collect();
+        let participant_entries = if split_ids.is_empty() {
+            0
+        } else {
+            split_participant::Entity::find()
+                .filter(split_participant::Column::SplitId.is_in(split_ids))
+                .count(db)
+                .await
+                .map_err(AppError::Database)? as i64
+        };
+        let split_stats = build_split_stats(&split_rows, participant_entries);
+        let split_service = SplitService::new();
+        let mut splits = Vec::with_capacity(split_rows.len());
+        for split in split_rows {
+            splits.push(split_service.to_summary(db, split).await?);
+        }
 
         Ok(EventDetailView {
             event: event_view,
@@ -248,7 +461,116 @@ impl EventService {
             active_comp_capacity: active_capacity,
             participants: participant_views,
             battles,
+            stats,
+            splits,
+            split_stats,
         })
+    }
+
+    /// Aggregates all linked battles for events using a composition.
+    ///
+    /// This powers the comp-level analytics page without depending on AlbionBB
+    /// at read time; only snapshots already linked to completed/live events are
+    /// used.
+    pub async fn get_comp_performance(
+        &self,
+        db: &DatabaseConnection,
+        comp_id: i64,
+    ) -> Result<CompPerformanceView, AppError> {
+        let comp_model = comp::Entity::find_by_id(comp_id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Comp {comp_id} not found")))?;
+
+        let event_models = event::Entity::find()
+            .filter(event::Column::CompId.eq(comp_id))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let event_ids: Vec<i64> = event_models.iter().map(|model| model.id).collect();
+
+        if event_ids.is_empty() {
+            return Ok(CompPerformanceView {
+                comp_id,
+                comp_name: comp_model.name,
+                events_with_battles: 0,
+                stats: BattlePerformanceStats::default(),
+            });
+        }
+
+        let battle_rows = event_battle::Entity::find()
+            .filter(event_battle::Column::EventId.is_in(event_ids))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let events_with_battles = battle_rows
+            .iter()
+            .map(|battle| battle.event_id)
+            .collect::<HashSet<_>>()
+            .len() as i64;
+
+        Ok(CompPerformanceView {
+            comp_id,
+            comp_name: comp_model.name,
+            events_with_battles,
+            stats: Self::build_performance_stats(&battle_rows),
+        })
+    }
+
+    /// Converts a linked battle row into an API view.
+    fn to_event_battle_view(battle: event_battle::Model) -> EventBattleView {
+        EventBattleView {
+            id: battle.id,
+            albionbb_battle_id: battle.albionbb_battle_id,
+            battle_started_at: battle.battle_started_at.to_rfc3339(),
+            guild_players_count: battle.guild_players_count,
+            battle_total_players: battle.battle_total_players,
+            fetched_at: battle.fetched_at.to_rfc3339(),
+            guild_kills: battle.guild_kills,
+            guild_deaths: battle.guild_deaths,
+            guild_kill_fame: battle.guild_kill_fame,
+            is_win: battle.is_win,
+            opponent_guild_id: battle.opponent_guild_id,
+            opponent_guild_name: battle.opponent_guild_name,
+            opponent_players_count: battle.opponent_players_count,
+            opponent_kills: battle.opponent_kills,
+            opponent_deaths: battle.opponent_deaths,
+            opponent_kill_fame: battle.opponent_kill_fame,
+        }
+    }
+
+    /// Builds analytics rollups from persisted battle snapshots.
+    fn build_performance_stats(battle_rows: &[event_battle::Model]) -> BattlePerformanceStats {
+        if battle_rows.is_empty() {
+            return BattlePerformanceStats::default();
+        }
+
+        let total_battles = battle_rows.len() as i64;
+        let wins = battle_rows.iter().filter(|battle| battle.is_win).count() as i64;
+        let total_kills = battle_rows.iter().map(|battle| battle.guild_kills).sum();
+        let total_deaths = battle_rows.iter().map(|battle| battle.guild_deaths).sum();
+        let total_kill_fame = battle_rows
+            .iter()
+            .map(|battle| battle.guild_kill_fame)
+            .sum();
+        let player_sum: i64 = battle_rows
+            .iter()
+            .map(|battle| i64::from(battle.guild_players_count))
+            .sum();
+
+        BattlePerformanceStats {
+            total_battles,
+            wins,
+            losses: total_battles - wins,
+            win_rate: ratio_percent(wins, total_battles),
+            total_kills,
+            total_deaths,
+            kill_death_ratio: kill_death_ratio(total_kills, total_deaths),
+            total_kill_fame,
+            average_guild_players: player_sum as f64 / total_battles as f64,
+            top_opponents: build_top_opponents(battle_rows),
+        }
     }
 
     /// Creates a new event.
@@ -266,7 +588,10 @@ impl EventService {
             > 0;
 
         if !comp_exists {
-            return Err(AppError::NotFound(format!("Composition {} not found", req.comp_id)));
+            return Err(AppError::NotFound(format!(
+                "Composition {} not found",
+                req.comp_id
+            )));
         }
 
         // Parse date
@@ -317,7 +642,10 @@ impl EventService {
                 .map_err(AppError::Database)?
                 > 0;
             if !comp_exists {
-                return Err(AppError::NotFound(format!("Composition {} not found", comp_id)));
+                return Err(AppError::NotFound(format!(
+                    "Composition {} not found",
+                    comp_id
+                )));
             }
             active.comp_id = Set(comp_id);
         }
@@ -334,11 +662,7 @@ impl EventService {
     }
 
     /// Deletes an event.
-    pub async fn delete_event(
-        &self,
-        db: &DatabaseConnection,
-        id: i64,
-    ) -> Result<(), AppError> {
+    pub async fn delete_event(&self, db: &DatabaseConnection, id: i64) -> Result<(), AppError> {
         let deleted = event::Entity::delete_by_id(id)
             .exec(db)
             .await
@@ -370,9 +694,7 @@ impl EventService {
             .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
 
         if model.status == "live" {
-            return Err(AppError::Conflict(format!(
-                "Event {id} is already live"
-            )));
+            return Err(AppError::Conflict(format!("Event {id} is already live")));
         }
 
         let now: DateTime<Utc> = Utc::now();
@@ -436,10 +758,7 @@ impl EventService {
     // --- Battle linker -----------------------------------------------------
 
     /// Counts current sign-ups for `event_id`.
-    async fn count_participants(
-        db: &DatabaseConnection,
-        event_id: i64,
-    ) -> Result<usize, AppError> {
+    async fn count_participants(db: &DatabaseConnection, event_id: i64) -> Result<usize, AppError> {
         let n = event_participation::Entity::find()
             .filter(event_participation::Column::EventId.eq(event_id))
             .count(db)
@@ -498,9 +817,10 @@ impl EventService {
             ..Default::default()
         };
         let (battles, _) = albionbb.get_battles(None, &filters).await?;
+        let next_link_attempts = model.link_attempts + 1;
 
         let mut active: event::ActiveModel = model.into();
-        active.link_attempts = Set(active.link_attempts.unwrap() + 1);
+        active.link_attempts = Set(next_link_attempts);
         active.link_status = Set("in_progress".to_string());
         active.link_last_error = Set(None);
         active.updated_at = Set(Utc::now().into());
@@ -516,13 +836,10 @@ impl EventService {
                 continue;
             }
 
-            let guild_players = battle
-                .guilds
-                .iter()
-                .find(|g| g.id == guild_id)
-                .map(|g| g.players)
-                .unwrap_or(0);
-            if guild_players < min_guild_players || guild_players > max_guild_players {
+            let snapshot = linked_battle_snapshot(&battle, guild_id);
+            if snapshot.guild_players_count < min_guild_players
+                || snapshot.guild_players_count > max_guild_players
+            {
                 continue;
             }
 
@@ -535,25 +852,22 @@ impl EventService {
 
             if let Some(existing) = existing {
                 let mut row: event_battle::ActiveModel = existing.into();
-                row.guild_players_count = Set(guild_players as i32);
-                row.battle_total_players = Set(Some(battle.total_players as i32));
+                apply_battle_snapshot(&mut row, &snapshot)?;
                 row.fetched_at = Set(Utc::now().into());
                 row.update(db).await.map_err(AppError::Database)?;
-            } else {
-                event_battle::ActiveModel {
-                    event_id: Set(event_id),
-                    albionbb_battle_id: Set(battle.id.to_string()),
-                    battle_started_at: Set(started.into()),
-                    guild_players_count: Set(guild_players as i32),
-                    battle_total_players: Set(Some(battle.total_players as i32)),
-                    fetched_at: Set(Utc::now().into()),
-                    ..Default::default()
-                }
-                .insert(db)
-                .await
-                .map_err(AppError::Database)?;
-                inserted += 1;
+                continue;
             }
+
+            let mut row = event_battle::ActiveModel {
+                event_id: Set(event_id),
+                albionbb_battle_id: Set(battle.id.to_string()),
+                battle_started_at: Set(started.into()),
+                fetched_at: Set(Utc::now().into()),
+                ..Default::default()
+            };
+            apply_battle_snapshot(&mut row, &snapshot)?;
+            row.insert(db).await.map_err(AppError::Database)?;
+            inserted += 1;
         }
 
         Ok(inserted)
@@ -618,7 +932,10 @@ impl EventService {
             .map_err(AppError::Database)?
             > 0;
         if !primary_exists {
-            return Err(AppError::NotFound(format!("Primary build {} not found", req.primary_build_id)));
+            return Err(AppError::NotFound(format!(
+                "Primary build {} not found",
+                req.primary_build_id
+            )));
         }
 
         if let Some(sec_id) = req.secondary_build_id {
@@ -628,7 +945,10 @@ impl EventService {
                 .map_err(AppError::Database)?
                 > 0;
             if !secondary_exists {
-                return Err(AppError::NotFound(format!("Secondary build {} not found", sec_id)));
+                return Err(AppError::NotFound(format!(
+                    "Secondary build {} not found",
+                    sec_id
+                )));
             }
         }
 
@@ -731,7 +1051,9 @@ impl EventService {
             .map_err(AppError::Database)?;
 
         if deleted.rows_affected == 0 {
-            return Err(AppError::NotFound(format!("User {user_id} is not registered for event {event_id}")));
+            return Err(AppError::NotFound(format!(
+                "User {user_id} is not registered for event {event_id}"
+            )));
         }
 
         self.get_event_detail(db, event_id).await
@@ -747,10 +1069,15 @@ impl Default for EventService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sea_orm::{Database, ActiveValue::Set};
     use crate::migration::MigratorTrait;
+    use crate::modules::comps::entities::{
+        build::ActiveModel as BuildActiveModel,
+        build_category::ActiveModel as BuildCategoryActiveModel,
+        comp::ActiveModel as CompActiveModel, comp_build::ActiveModel as CompBuildActiveModel,
+        comp_category::ActiveModel as CompCategoryActiveModel,
+    };
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
-    use crate::modules::comps::entities::{comp::ActiveModel as CompActiveModel, comp_build::ActiveModel as CompBuildActiveModel, build::ActiveModel as BuildActiveModel, comp_category::ActiveModel as CompCategoryActiveModel, build_category::ActiveModel as BuildCategoryActiveModel};
+    use sea_orm::{ActiveValue::Set, Database};
 
     async fn seed_db() -> DatabaseConnection {
         let db = Database::connect("sqlite::memory:")
@@ -778,7 +1105,10 @@ mod tests {
             slug: Set(name.to_lowercase()),
             ..Default::default()
         };
-        cat.insert(db).await.expect("Failed to insert build category").id
+        cat.insert(db)
+            .await
+            .expect("Failed to insert build category")
+            .id
     }
 
     async fn create_build(db: &DatabaseConnection, name: &str, category_id: i64) -> i64 {
@@ -798,10 +1128,19 @@ mod tests {
             slug: Set(name.to_lowercase()),
             ..Default::default()
         };
-        cat.insert(db).await.expect("Failed to insert comp category").id
+        cat.insert(db)
+            .await
+            .expect("Failed to insert comp category")
+            .id
     }
 
-    async fn create_comp(db: &DatabaseConnection, name: &str, category_id: i64, parent_id: Option<i64>, builds: Vec<(i64, i32)>) -> i64 {
+    async fn create_comp(
+        db: &DatabaseConnection,
+        name: &str,
+        category_id: i64,
+        parent_id: Option<i64>,
+        builds: Vec<(i64, i32)>,
+    ) -> i64 {
         let comp = CompActiveModel {
             name: Set(name.to_string()),
             category_id: Set(category_id),
@@ -866,7 +1205,14 @@ mod tests {
         // Base comp capacity = 1 (1 slot for Tank)
         let base_comp = create_comp(&db, "Base Comp 1", cat, None, vec![(b1, 1)]).await;
         // Variant comp capacity = 2 (1 slot for Tank, 1 slot for Healer)
-        let variant_comp = create_comp(&db, "Variant Comp 2", cat, Some(base_comp), vec![(b1, 1), (b2, 1)]).await;
+        let variant_comp = create_comp(
+            &db,
+            "Variant Comp 2",
+            cat,
+            Some(base_comp),
+            vec![(b1, 1), (b2, 1)],
+        )
+        .await;
 
         let service = EventService::new();
         let event = service

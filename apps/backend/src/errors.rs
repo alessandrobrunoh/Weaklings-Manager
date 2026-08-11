@@ -4,13 +4,13 @@
 //! standard-compliant RFC 7807 HTTP Problem Details responses.
 
 use axum::{
-    http::{header, StatusCode},
-    response::{IntoResponse, Response},
     Json,
+    http::{StatusCode, header},
+    response::{IntoResponse, Response},
 };
 use serde::Serialize;
-use utoipa::ToSchema;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 /// The standard RFC 7807 Problem Details representation for HTTP API errors.
 #[derive(Debug, Serialize, ToSchema)]
@@ -101,12 +101,7 @@ impl IntoResponse for AppError {
                 "Validation Error",
                 msg,
             ),
-            Self::Conflict(msg) => (
-                StatusCode::CONFLICT,
-                "/errors/conflict",
-                "Conflict",
-                msg,
-            ),
+            Self::Conflict(msg) => (StatusCode::CONFLICT, "/errors/conflict", "Conflict", msg),
             Self::UpstreamService(msg) => (
                 StatusCode::BAD_GATEWAY,
                 "/errors/upstream-service-error",

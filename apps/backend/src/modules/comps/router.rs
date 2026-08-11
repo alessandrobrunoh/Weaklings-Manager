@@ -3,28 +3,28 @@
 //! Exposes HTTP endpoints for managing build categories, comp categories, builds,
 //! and comps (compositions of builds).
 
-use axum::{
-    extract::{Path, Query},
-    routing::{get, post, patch, delete, put},
-    Extension, Json, Router,
-};
 use axum::http::StatusCode;
+use axum::{
+    Extension, Json, Router,
+    extract::{Path, Query},
+    routing::{get, patch, post, put},
+};
 use std::str::FromStr;
 
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
-use crate::pagination::{PaginatedCompSummary, PaginatedBuildSummary, PaginationParams};
+use crate::pagination::{PaginatedBuildSummary, PaginatedCompSummary, PaginationParams};
 use crate::responses::{
-    ApiResponse, ApiResponseBuildCategoryList, ApiResponseCompCategoryList,
-    ApiResponseBuildDetail, ApiResponseCompDetail, ApiResponsePaginatedComps,
-    ApiResponsePaginatedBuilds,
+    ApiResponse, ApiResponseBuildCategoryList, ApiResponseBuildDetail, ApiResponseCompCategoryList,
+    ApiResponseCompDetail, ApiResponseCompPerformance, ApiResponsePaginatedBuilds,
+    ApiResponsePaginatedComps,
 };
 
 use super::models::{
-    AddCompBuildRequest, BuildFilters, CompFilters, CreateBuildCategoryRequest,
-    CreateBuildRequest, CreateCompCategoryRequest, CreateCompRequest, UpdateBuildCategoryRequest,
-    UpdateBuildRequest, UpdateCompBuildQuantityRequest, UpdateCompCategoryRequest,
-    UpdateCompRequest, UpsertBuildItemRequest,
+    AddCompBuildRequest, BuildFilters, CompFilters, CreateBuildCategoryRequest, CreateBuildRequest,
+    CreateCompCategoryRequest, CreateCompRequest, UpdateBuildCategoryRequest, UpdateBuildRequest,
+    UpdateCompBuildQuantityRequest, UpdateCompCategoryRequest, UpdateCompRequest,
+    UpsertBuildItemRequest,
 };
 use super::service::CompService;
 
@@ -74,27 +74,40 @@ impl ListCompsQuery {
 pub fn router() -> Router {
     Router::new()
         // Build categories
-        .route("/build-categories", get(list_build_categories).post(create_build_category))
+        .route(
+            "/build-categories",
+            get(list_build_categories).post(create_build_category),
+        )
         .route(
             "/build-categories/{id}",
             patch(update_build_category).delete(delete_build_category),
         )
         // Comp categories
-        .route("/comp-categories", get(list_comp_categories).post(create_comp_category))
+        .route(
+            "/comp-categories",
+            get(list_comp_categories).post(create_comp_category),
+        )
         .route(
             "/comp-categories/{id}",
             patch(update_comp_category).delete(delete_comp_category),
         )
         // Builds
         .route("/builds", get(list_builds).post(create_build))
-        .route("/builds/{id}", get(get_build).patch(update_build).delete(delete_build))
+        .route(
+            "/builds/{id}",
+            get(get_build).patch(update_build).delete(delete_build),
+        )
         .route(
             "/builds/{id}/items/{slot}",
             put(upsert_build_item).delete(remove_build_item),
         )
         // Comps
         .route("/", get(list_comps).post(create_comp))
-        .route("/{id}", get(get_comp).patch(update_comp).delete(delete_comp))
+        .route(
+            "/{id}",
+            get(get_comp).patch(update_comp).delete(delete_comp),
+        )
+        .route("/{id}/performance", get(get_comp_performance))
         .route("/{id}/builds", post(add_comp_build))
         .route(
             "/{id}/builds/{build_id}",
@@ -151,7 +164,8 @@ async fn create_build_category(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<CreateBuildCategoryRequest>,
 ) -> Result<Json<ApiResponse<Vec<crate::modules::comps::models::BuildCategoryView>>>, AppError> {
-    user.require(&perms, Permission::CompsBuildCategoriesManage).await?;
+    user.require(&perms, Permission::CompsBuildCategoriesManage)
+        .await?;
     let service = CompService::new();
     let category = service.create_build_category(&db, req).await?;
     Ok(Json(ApiResponse::new(vec![category])))
@@ -186,7 +200,8 @@ async fn update_build_category(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<UpdateBuildCategoryRequest>,
 ) -> Result<Json<ApiResponse<Vec<crate::modules::comps::models::BuildCategoryView>>>, AppError> {
-    user.require(&perms, Permission::CompsBuildCategoriesManage).await?;
+    user.require(&perms, Permission::CompsBuildCategoriesManage)
+        .await?;
     let service = CompService::new();
     let category = service.update_build_category(&db, id, req).await?;
     Ok(Json(ApiResponse::new(vec![category])))
@@ -220,7 +235,8 @@ async fn delete_build_category(
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<StatusCode, AppError> {
-    user.require(&perms, Permission::CompsBuildCategoriesManage).await?;
+    user.require(&perms, Permission::CompsBuildCategoriesManage)
+        .await?;
     let service = CompService::new();
     service.delete_build_category(&db, id).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -275,7 +291,8 @@ async fn create_comp_category(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<CreateCompCategoryRequest>,
 ) -> Result<Json<ApiResponse<Vec<crate::modules::comps::models::CompCategoryView>>>, AppError> {
-    user.require(&perms, Permission::CompsCompCategoriesManage).await?;
+    user.require(&perms, Permission::CompsCompCategoriesManage)
+        .await?;
     let service = CompService::new();
     let category = service.create_comp_category(&db, req).await?;
     Ok(Json(ApiResponse::new(vec![category])))
@@ -310,7 +327,8 @@ async fn update_comp_category(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<UpdateCompCategoryRequest>,
 ) -> Result<Json<ApiResponse<Vec<crate::modules::comps::models::CompCategoryView>>>, AppError> {
-    user.require(&perms, Permission::CompsCompCategoriesManage).await?;
+    user.require(&perms, Permission::CompsCompCategoriesManage)
+        .await?;
     let service = CompService::new();
     let category = service.update_comp_category(&db, id, req).await?;
     Ok(Json(ApiResponse::new(vec![category])))
@@ -344,7 +362,8 @@ async fn delete_comp_category(
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<StatusCode, AppError> {
-    user.require(&perms, Permission::CompsCompCategoriesManage).await?;
+    user.require(&perms, Permission::CompsCompCategoriesManage)
+        .await?;
     let service = CompService::new();
     service.delete_comp_category(&db, id).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -375,9 +394,7 @@ async fn list_builds(
     let service = CompService::new();
     let pagination = query.pagination();
     let filters = query.filters.clone();
-    let paginated = service
-        .list_builds(&db, filters, pagination)
-        .await?;
+    let paginated = service.list_builds(&db, filters, pagination).await?;
     Ok(Json(ApiResponse::new(paginated.into())))
 }
 
@@ -543,10 +560,7 @@ async fn upsert_build_item(
     let slot = crate::modules::comps::status::BuildSlot::from_str(&slot)
         .map_err(|e| AppError::Validation(e))?;
     let service = CompService::new();
-    let item = service.upsert_build_item(&db, id, slot, req).await?;
-
-    // Return updated build detail
-    let build = service.get_build(&db, id).await?;
+    let build = service.upsert_build_item(&db, id, slot, req).await?;
     Ok(Json(ApiResponse::new(build)))
 }
 
@@ -609,9 +623,7 @@ async fn list_comps(
     let service = CompService::new();
     let pagination = query.pagination();
     let filters = query.filters.clone();
-    let paginated = service
-        .list_comps(&db, filters, pagination)
-        .await?;
+    let paginated = service.list_comps(&db, filters, pagination).await?;
     Ok(Json(ApiResponse::new(paginated.into())))
 }
 
@@ -672,6 +684,33 @@ async fn get_comp(
     let service = CompService::new();
     let comp = service.get_comp(&db, id).await?;
     Ok(Json(ApiResponse::new(comp)))
+}
+
+/// Gets linked-event performance for a comp.
+///
+/// Any authenticated user can inspect these analytics because they are derived
+/// from event and battle data already visible to guild members.
+#[utoipa::path(
+    get,
+    path = "/api/comps/{id}/performance",
+    tag = "comps",
+    summary = "Get comp performance analytics",
+    description = "Aggregates win/loss, K/D, kill fame and opponent performance from battles linked to events using this comp.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Comp ID")),
+    responses(
+        (status = 200, description = "Comp performance retrieved successfully", body = ApiResponseCompPerformance),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 404, description = "Comp not found", body = ProblemDetails)
+    )
+)]
+async fn get_comp_performance(
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<crate::modules::events::models::CompPerformanceView>>, AppError> {
+    let service = crate::modules::events::service::EventService::new();
+    let performance = service.get_comp_performance(&db, id).await?;
+    Ok(Json(ApiResponse::new(performance)))
 }
 
 /// Updates a comp.

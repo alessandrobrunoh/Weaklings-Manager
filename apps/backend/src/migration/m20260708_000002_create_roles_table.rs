@@ -11,14 +11,14 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(Roles::Table)
                     .if_not_exists()
-                    .col(
-                        ColumnDef::new(Roles::Id)
-                            .string()
-                            .not_null()
-                            .primary_key(),
-                    )
+                    .col(ColumnDef::new(Roles::Id).string().not_null().primary_key())
                     .col(ColumnDef::new(Roles::Name).string().not_null().unique_key())
-                    .col(ColumnDef::new(Roles::Priority).integer().not_null().default(0))
+                    .col(
+                        ColumnDef::new(Roles::Priority)
+                            .integer()
+                            .not_null()
+                            .default(0),
+                    )
                     .to_owned(),
             )
             .await?;

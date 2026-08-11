@@ -52,7 +52,13 @@ pub struct AlbionBbPageMeta {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AlbionBbGuild {
     /// AlbionBB opaque guild id.
-    #[serde(alias = "AlbionId", alias = "albionId", alias = "Id", alias = "id", default)]
+    #[serde(
+        alias = "AlbionId",
+        alias = "albionId",
+        alias = "Id",
+        alias = "id",
+        default
+    )]
     pub id: String,
     /// Guild name.
     #[serde(alias = "Name", alias = "name", default)]
@@ -102,7 +108,13 @@ pub struct AlbionBbPlayer {
     #[serde(alias = "DeathFame", alias = "deathFame", default)]
     pub death_fame: i64,
     /// Average item power of this player during the battle.
-    #[serde(alias = "Ip", alias = "ip", alias = "ItemPower", alias = "itemPower", default)]
+    #[serde(
+        alias = "Ip",
+        alias = "ip",
+        alias = "ItemPower",
+        alias = "itemPower",
+        default
+    )]
     pub item_power: f64,
 }
 
@@ -112,16 +124,41 @@ pub struct AlbionBbPlayer {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AlbionBbBattleSummary {
     /// AlbionBB opaque battle id (numeric upstream).
-    #[serde(alias = "AlbionId", alias = "albionId", alias = "Id", alias = "BattleId", alias = "battleId", alias = "id", default)]
+    #[serde(
+        alias = "AlbionId",
+        alias = "albionId",
+        alias = "Id",
+        alias = "BattleId",
+        alias = "battleId",
+        alias = "id",
+        default
+    )]
     pub id: i64,
     /// Battle start time as an ISO 8601 string.
-    #[serde(alias = "StartedAt", alias = "startedAt", alias = "StartTime", alias = "startTime", default)]
+    #[serde(
+        alias = "StartedAt",
+        alias = "startedAt",
+        alias = "StartTime",
+        alias = "startTime",
+        default
+    )]
     pub start_time: String,
     /// Battle end time as an ISO 8601 string.
-    #[serde(alias = "FinishedAt", alias = "finishedAt", alias = "EndTime", alias = "endTime", default)]
+    #[serde(
+        alias = "FinishedAt",
+        alias = "finishedAt",
+        alias = "EndTime",
+        alias = "endTime",
+        default
+    )]
     pub end_time: String,
     /// Total number of players across all guilds.
-    #[serde(alias = "TotalPlayers", alias = "totalPlayers", alias = "players", default)]
+    #[serde(
+        alias = "TotalPlayers",
+        alias = "totalPlayers",
+        alias = "players",
+        default
+    )]
     pub total_players: i64,
     /// Total number of kills in the battle.
     #[serde(alias = "TotalKills", alias = "totalKills", alias = "kills", default)]
@@ -172,10 +209,22 @@ pub struct AlbionBbKillParticipant {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AlbionBbKillEvent {
     /// AlbionBB kill event id.
-    #[serde(alias = "EventId", alias = "eventId", alias = "id", alias = "Id", default)]
+    #[serde(
+        alias = "EventId",
+        alias = "eventId",
+        alias = "id",
+        alias = "Id",
+        default
+    )]
     pub event_id: i64,
     /// Kill timestamp as an ISO 8601 string.
-    #[serde(alias = "TimeStamp", alias = "timeStamp", alias = "Time", alias = "time", default)]
+    #[serde(
+        alias = "TimeStamp",
+        alias = "timeStamp",
+        alias = "Time",
+        alias = "time",
+        default
+    )]
     pub time: String,
     /// The killer.
     #[serde(alias = "Killer", alias = "killer", default)]
@@ -184,13 +233,33 @@ pub struct AlbionBbKillEvent {
     #[serde(alias = "Victim", alias = "victim", default)]
     pub victim: AlbionBbKillParticipant,
     /// Killer average item power.
-    #[serde(alias = "KillerItemPower", alias = "killerItemPower", alias = "killerAverageItemPower", default)]
+    #[serde(
+        alias = "KillerItemPower",
+        alias = "killerItemPower",
+        alias = "killerAverageItemPower",
+        default
+    )]
     pub killer_item_power: f64,
     /// Victim average item power.
-    #[serde(alias = "VictimItemPower", alias = "victimItemPower", alias = "victimAverageItemPower", default)]
+    #[serde(
+        alias = "VictimItemPower",
+        alias = "victimItemPower",
+        alias = "victimAverageItemPower",
+        default
+    )]
     pub victim_item_power: f64,
     /// Total fame awarded for this kill.
-    #[serde(alias = "TotalVictimKillFame", alias = "totalVictimKillFame", alias = "TotalKillFame", alias = "totalKillFame", alias = "KillFame", alias = "killFame", alias = "Fame", alias = "fame", default)]
+    #[serde(
+        alias = "TotalVictimKillFame",
+        alias = "totalVictimKillFame",
+        alias = "TotalKillFame",
+        alias = "totalKillFame",
+        alias = "KillFame",
+        alias = "killFame",
+        alias = "Fame",
+        alias = "fame",
+        default
+    )]
     pub total_kill_fame: i64,
     /// The entire upstream kill event preserved verbatim.
     #[serde(default, skip_serializing)]
@@ -201,7 +270,13 @@ pub struct AlbionBbKillEvent {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AlbionBbGuildInfo {
     /// AlbionBB opaque guild id.
-    #[serde(alias = "AlbionId", alias = "albionId", alias = "Id", alias = "id", default)]
+    #[serde(
+        alias = "AlbionId",
+        alias = "albionId",
+        alias = "Id",
+        alias = "id",
+        default
+    )]
     pub id: String,
     /// Guild name.
     #[serde(alias = "Name", alias = "name", default)]
@@ -254,7 +329,10 @@ impl AlbionBbApiClient {
     fn build_query(params: &[(&str, Option<String>)]) -> String {
         let pairs: Vec<String> = params
             .iter()
-            .filter_map(|(k, v)| v.as_ref().map(|val| format!("{k}={}", urlencoding::encode(val))))
+            .filter_map(|(k, v)| {
+                v.as_ref()
+                    .map(|val| format!("{k}={}", urlencoding::encode(val)))
+            })
             .collect();
         if pairs.is_empty() {
             String::new()
@@ -271,7 +349,9 @@ impl AlbionBbApiClient {
         })?;
 
         if response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(AppError::NotFound(format!("AlbionBB resource not found: {url}")));
+            return Err(AppError::NotFound(format!(
+                "AlbionBB resource not found: {url}"
+            )));
         }
 
         if !response.status().is_success() {
@@ -282,7 +362,9 @@ impl AlbionBbApiClient {
         }
 
         response.json::<T>().await.map_err(|e| {
-            AppError::UpstreamService(format!("Failed to parse AlbionBB API response from {url}: {e}"))
+            AppError::UpstreamService(format!(
+                "Failed to parse AlbionBB API response from {url}: {e}"
+            ))
         })
     }
 
@@ -298,7 +380,10 @@ impl AlbionBbApiClient {
             ("search", filters.search.clone()),
             ("guildId", filters.guild_id.clone()),
             ("minPlayers", filters.min_players.map(|v| v.to_string())),
-            ("minGuildPlayers", filters.min_guild_players.map(|v| v.to_string())),
+            (
+                "minGuildPlayers",
+                filters.min_guild_players.map(|v| v.to_string()),
+            ),
             ("page", filters.page.map(|v| v.to_string())),
         ]);
         let path = format!("/{server}/battles{query}");
@@ -338,11 +423,12 @@ impl AlbionBbApiClient {
         raw_items
             .into_iter()
             .map(|raw| {
-                let mut event: AlbionBbKillEvent = serde_json::from_value(raw.clone()).map_err(|e| {
-                    AppError::UpstreamService(format!(
-                        "Failed to parse AlbionBB kill event from {path}: {e}"
-                    ))
-                })?;
+                let mut event: AlbionBbKillEvent =
+                    serde_json::from_value(raw.clone()).map_err(|e| {
+                        AppError::UpstreamService(format!(
+                            "Failed to parse AlbionBB kill event from {path}: {e}"
+                        ))
+                    })?;
                 event.raw = raw;
                 if event.killer_item_power == 0.0 {
                     event.killer_item_power = event.killer.average_item_power;
@@ -365,7 +451,10 @@ impl AlbionBbApiClient {
     ) -> Result<serde_json::Value, AppError> {
         let server = normalize_server(server);
         let query = Self::build_query(&[("minPlayers", min_players.map(|v| v.to_string()))]);
-        let path = format!("/{server}/stats/players/{}{query}", urlencoding::encode(player_id));
+        let path = format!(
+            "/{server}/stats/players/{}{query}",
+            urlencoding::encode(player_id)
+        );
         self.get_json(&path).await
     }
 

@@ -7,11 +7,11 @@
 
 use std::str::FromStr;
 
+use sea_orm::prelude::Decimal;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
     PaginatorTrait, QueryFilter, TransactionTrait,
 };
-use sea_orm::prelude::Decimal;
 
 use crate::errors::AppError;
 use crate::pagination::{PaginatedData, PaginationParams};
@@ -34,10 +34,7 @@ async fn to_views_with_usernames(
     db: &DatabaseConnection,
     models: Vec<Model>,
 ) -> Result<Vec<TransactionView>, AppError> {
-    let from_user_ids: Vec<i64> = models
-        .iter()
-        .filter_map(|m| m.from_user_id)
-        .collect();
+    let from_user_ids: Vec<i64> = models.iter().filter_map(|m| m.from_user_id).collect();
 
     let user_map = crate::modules::users::display_name::resolve_by_ids(db, &from_user_ids).await?;
 
@@ -83,8 +80,12 @@ impl BankService {
             .all(db)
             .await?;
 
-        let pending_total = pending.iter().fold(Decimal::ZERO, |acc, tx| acc + tx.amount);
-        let requested_total = requested.iter().fold(Decimal::ZERO, |acc, tx| acc + tx.amount);
+        let pending_total = pending
+            .iter()
+            .fold(Decimal::ZERO, |acc, tx| acc + tx.amount);
+        let requested_total = requested
+            .iter()
+            .fold(Decimal::ZERO, |acc, tx| acc + tx.amount);
 
         Ok(BalanceSummary {
             user_id,
@@ -123,7 +124,13 @@ impl BankService {
 
         let items = to_views_with_usernames(db, models).await?;
 
-        Ok(PaginatedData::new(items, total_items, total_pages, page + 1, limit))
+        Ok(PaginatedData::new(
+            items,
+            total_items,
+            total_pages,
+            page + 1,
+            limit,
+        ))
     }
 
     /// Requests withdrawal of one, several, or all of a user's pending transactions, moving them
@@ -159,7 +166,7 @@ impl BankService {
                 _ => {
                     return Err(AppError::Validation(
                         "must provide transaction_ids or all=true".to_string(),
-                    ))
+                    ));
                 }
             }
         };
@@ -228,7 +235,7 @@ impl BankService {
                 _ => {
                     return Err(AppError::Validation(
                         "must provide transaction_ids or all=true".to_string(),
-                    ))
+                    ));
                 }
             }
         };
@@ -279,8 +286,8 @@ impl Default for BankService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sea_orm::Database;
     use crate::migration::MigratorTrait;
+    use sea_orm::Database;
 
     async fn seed_db() -> DatabaseConnection {
         let db = Database::connect("sqlite::memory:")
@@ -318,7 +325,11 @@ mod tests {
             split_id: Set(None),
             ..Default::default()
         };
-        active.insert(db).await.expect("Failed to insert transaction").id
+        active
+            .insert(db)
+            .await
+            .expect("Failed to insert transaction")
+            .id
     }
 
     #[tokio::test]
@@ -382,7 +393,11 @@ mod tests {
             .unwrap();
 
         assert_eq!(requested.len(), 2);
-        assert!(requested.iter().all(|tx| tx.status == TransactionStatus::Requested));
+        assert!(
+            requested
+                .iter()
+                .all(|tx| tx.status == TransactionStatus::Requested)
+        );
 
         let balance = service.get_balance(&db, alice).await.unwrap();
         assert_eq!(balance.pending_count, 0);

@@ -52,6 +52,11 @@ pub struct SplitSummary {
     /// An optional free-text note (e.g. boss/item name).
     #[schema(example = "Ancient Avalon boss drop")]
     pub note: Option<String>,
+    /// Event linked to this split, if the loot belongs to a tracked activity.
+    #[schema(example = 42)]
+    pub event_id: Option<i64>,
+    /// Event title for display without an extra frontend lookup.
+    pub event_title: Option<String>,
     /// The timestamp when the split was created.
     pub created_at: String,
     /// The timestamp when the split was completed (money paid out), if it has been. Despite the
@@ -101,9 +106,36 @@ pub struct CreateSplitRequest {
     /// An optional free-text note (e.g. boss/item name).
     #[schema(example = "Ancient Avalon boss drop")]
     pub note: Option<String>,
+    /// Optional event id to connect the split to an event's post-activity statistics.
+    #[schema(example = 42)]
+    pub event_id: Option<i64>,
     /// The participants to distribute the loot to, with their relative weights. Must be
     /// non-empty and contain no duplicate user ids.
     pub participants: Vec<UpsertParticipantRequest>,
+}
+
+/// Request body for editing the mutable fields of a pending split.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[schema(example = json!({
+    "estimated_market_value": "125.00",
+    "repair_value": "12.00",
+    "bags_value": "5.00",
+    "note": "Updated Avalon boss drop"
+}))]
+pub struct UpdateSplitRequest {
+    /// New estimated market value. Omit to keep the current value.
+    #[schema(value_type = Option<String>, example = "125.00")]
+    pub estimated_market_value: Option<Decimal>,
+    /// New repair costs. Omit to keep the current value.
+    #[schema(value_type = Option<String>, example = "12.00")]
+    pub repair_value: Option<Decimal>,
+    /// New bags/consumables value. Omit to keep the current value.
+    #[schema(value_type = Option<String>, example = "5.00")]
+    pub bags_value: Option<Decimal>,
+    /// New free-text note. Send an empty string to clear it.
+    pub note: Option<String>,
+    /// New event link. `null` clears the association.
+    pub event_id: Option<Option<i64>>,
 }
 
 /// Request body to add or update a participant's weight in a pending split.
@@ -148,4 +180,6 @@ pub struct MatchedParticipant {
 pub struct SplitFilters {
     /// Filter splits by their status.
     pub status: Option<SplitStatus>,
+    /// Filter splits linked to a specific event.
+    pub event_id: Option<i64>,
 }

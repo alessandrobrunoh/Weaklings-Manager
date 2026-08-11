@@ -139,14 +139,18 @@ pub mod event_participation {
                     .from(Column::UserId)
                     .to(crate::modules::users::entities::Column::Id)
                     .into(),
-                Self::PrimaryBuild => Entity::belongs_to(crate::modules::comps::entities::build::Entity)
-                    .from(Column::PrimaryBuildId)
-                    .to(crate::modules::comps::entities::build::Column::Id)
-                    .into(),
-                Self::SecondaryBuild => Entity::belongs_to(crate::modules::comps::entities::build::Entity)
-                    .from(Column::SecondaryBuildId)
-                    .to(crate::modules::comps::entities::build::Column::Id)
-                    .into(),
+                Self::PrimaryBuild => {
+                    Entity::belongs_to(crate::modules::comps::entities::build::Entity)
+                        .from(Column::PrimaryBuildId)
+                        .to(crate::modules::comps::entities::build::Column::Id)
+                        .into()
+                }
+                Self::SecondaryBuild => {
+                    Entity::belongs_to(crate::modules::comps::entities::build::Entity)
+                        .from(Column::SecondaryBuildId)
+                        .to(crate::modules::comps::entities::build::Column::Id)
+                        .into()
+                }
             }
         }
     }
@@ -188,6 +192,26 @@ pub mod event_battle {
         pub battle_total_players: Option<i32>,
         /// The timestamp when this battle was fetched.
         pub fetched_at: DateTimeWithTimeZone,
+        /// Kills scored by the configured guild.
+        pub guild_kills: i64,
+        /// Deaths suffered by the configured guild.
+        pub guild_deaths: i64,
+        /// Kill fame scored by the configured guild.
+        pub guild_kill_fame: i64,
+        /// Whether the configured guild won this battle.
+        pub is_win: bool,
+        /// Main opponent guild ID by kill fame, if known.
+        pub opponent_guild_id: Option<String>,
+        /// Main opponent guild name by kill fame, if known.
+        pub opponent_guild_name: Option<String>,
+        /// Main opponent player count, if known.
+        pub opponent_players_count: Option<i32>,
+        /// Main opponent kills, if known.
+        pub opponent_kills: Option<i64>,
+        /// Main opponent deaths, if known.
+        pub opponent_deaths: Option<i64>,
+        /// Main opponent kill fame, if known.
+        pub opponent_kill_fame: Option<i64>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]

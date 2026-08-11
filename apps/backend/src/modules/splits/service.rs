@@ -8,29 +8,31 @@
 use std::collections::HashSet;
 use std::str::FromStr;
 
+use sea_orm::prelude::Decimal;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
     PaginatorTrait, QueryFilter, TransactionTrait,
 };
-use sea_orm::prelude::Decimal;
 
 use crate::errors::AppError;
-use crate::pagination::{PaginatedData, PaginationParams};
 use crate::modules::albion::entities::albion_link::Entity as AlbionLinkEntity;
 use crate::modules::bank::entities::ActiveModel as TransactionActiveModel;
 use crate::modules::bank::service::TYPE_SPLIT_CREDIT;
 use crate::modules::bank::status::TransactionStatus;
+use crate::modules::events::entities::event::Entity as EventEntity;
 use crate::modules::users::entities::{Column as UserColumn, Entity as UserEntity};
+use crate::pagination::{PaginatedData, PaginationParams};
 
 use super::entities::split::{
-    ActiveModel as SplitActiveModel, Column as SplitColumn, Entity as SplitEntity, Model as SplitModel,
+    ActiveModel as SplitActiveModel, Column as SplitColumn, Entity as SplitEntity,
+    Model as SplitModel,
 };
 use super::entities::split_participant::{
     ActiveModel as ParticipantActiveModel, Column as ParticipantColumn, Entity as ParticipantEntity,
 };
 use super::models::{
     CreateSplitRequest, MatchedParticipant, SplitDetail, SplitFilters, SplitParticipantView,
-    SplitSummary, UpsertParticipantRequest,
+    SplitSummary, UpdateSplitRequest, UpsertParticipantRequest,
 };
 use super::status::SplitStatus;
 
@@ -43,6 +45,39 @@ fn parse_status(split: &SplitModel) -> Result<SplitStatus, AppError> {
         .map_err(|_| AppError::Internal(format!("Unknown split status: {}", split.status)))
 }
 
+/// Ensures an optional event link points to a real event.
+async fn validate_event_link(
+    db: &DatabaseConnection,
+    event_id: Option<i64>,
+) -> Result<(), AppError> {
+    let Some(event_id) = event_id else {
+        return Ok(());
+    };
+
+    let exists = EventEntity::find_by_id(event_id).count(db).await? > 0;
+    if exists {
+        return Ok(());
+    }
+
+    Err(AppError::NotFound(format!("Event {event_id} not found")))
+}
+
+/// Resolves the event title for a linked split summary.
+async fn event_title(
+    db: &DatabaseConnection,
+    event_id: Option<i64>,
+) -> Result<Option<String>, AppError> {
+    let Some(event_id) = event_id else {
+        return Ok(None);
+    };
+
+    let title = EventEntity::find_by_id(event_id)
+        .one(db)
+        .await?
+        .map(|event| event.title);
+    Ok(title)
+}
+
 /// Service for executing business logic operations related to loot splits.
 pub struct SplitService;
 
@@ -53,13 +88,19 @@ impl SplitService {
         Self
     }
 
-    async fn to_summary(&self, db: &DatabaseConnection, split: SplitModel) -> Result<SplitSummary, AppError> {
+    pub(crate) async fn to_summary(
+        &self,
+        db: &DatabaseConnection,
+        split: SplitModel,
+    ) -> Result<SplitSummary, AppError> {
         let status = parse_status(&split)?;
-        let created_by_username = crate::modules::users::display_name::resolve_by_id(db, split.created_by).await?;
+        let created_by_username =
+            crate::modules::users::display_name::resolve_by_id(db, split.created_by).await?;
         let participant_count = ParticipantEntity::find()
             .filter(ParticipantColumn::SplitId.eq(split.id))
             .count(db)
             .await?;
+        let linked_event_title = event_title(db, split.event_id).await?;
 
         Ok(SplitSummary {
             id: split.id,
@@ -70,13 +111,19 @@ impl SplitService {
             bags_value: split.bags_value,
             net_value: split.net_value,
             note: split.note,
+            event_id: split.event_id,
+            event_title: linked_event_title,
             created_at: split.created_at.to_rfc3339(),
             finalized_at: split.finalized_at.map(|dt| dt.to_rfc3339()),
             participant_count,
         })
     }
 
-    async fn to_detail(&self, db: &DatabaseConnection, split: SplitModel) -> Result<SplitDetail, AppError> {
+    async fn to_detail(
+        &self,
+        db: &DatabaseConnection,
+        split: SplitModel,
+    ) -> Result<SplitDetail, AppError> {
         let participants = ParticipantEntity::find()
             .filter(ParticipantColumn::SplitId.eq(split.id))
             .all(db)
@@ -101,11 +148,15 @@ impl SplitService {
         };
 
         let participant_ids: Vec<i64> = participants.iter().map(|p| p.user_id).collect();
-        let names = crate::modules::users::display_name::resolve_by_ids(db, &participant_ids).await?;
+        let names =
+            crate::modules::users::display_name::resolve_by_ids(db, &participant_ids).await?;
 
         let mut views = Vec::with_capacity(participants.len());
         for p in participants {
-            let username = names.get(&p.user_id).cloned().unwrap_or_else(|| "Unknown".to_string());
+            let username = names
+                .get(&p.user_id)
+                .cloned()
+                .unwrap_or_else(|| "Unknown".to_string());
             let share_amount = generated_amounts.get(&p.user_id).copied().or_else(|| {
                 net_value.map(|net| {
                     if total_weight == 0 {
@@ -161,6 +212,8 @@ impl SplitService {
             ));
         }
 
+        validate_event_link(db, req.event_id).await?;
+
         let txn = db.begin().await?;
 
         let active = SplitActiveModel {
@@ -171,6 +224,7 @@ impl SplitService {
             bags_value: Set(req.bags_value),
             net_value: Set(None),
             note: Set(req.note),
+            event_id: Set(req.event_id),
             ..Default::default()
         };
         let inserted = active.insert(&txn).await?;
@@ -232,8 +286,13 @@ impl SplitService {
     ///
     /// * Returns `AppError::NotFound` if the split does not exist.
     /// * Returns `AppError::Validation` if the split is not in `"pending"` status.
-    pub async fn mark_not_completed(&self, db: &DatabaseConnection, split_id: i64) -> Result<SplitDetail, AppError> {
-        self.close_split(db, split_id, SplitStatus::NotCompleted).await
+    pub async fn mark_not_completed(
+        &self,
+        db: &DatabaseConnection,
+        split_id: i64,
+    ) -> Result<SplitDetail, AppError> {
+        self.close_split(db, split_id, SplitStatus::NotCompleted)
+            .await
     }
 
     /// Marks a pending split as lost — the loot was never recovered. Terminal.
@@ -242,8 +301,50 @@ impl SplitService {
     ///
     /// * Returns `AppError::NotFound` if the split does not exist.
     /// * Returns `AppError::Validation` if the split is not in `"pending"` status.
-    pub async fn mark_lost(&self, db: &DatabaseConnection, split_id: i64) -> Result<SplitDetail, AppError> {
+    pub async fn mark_lost(
+        &self,
+        db: &DatabaseConnection,
+        split_id: i64,
+    ) -> Result<SplitDetail, AppError> {
         self.close_split(db, split_id, SplitStatus::Lost).await
+    }
+
+    /// Updates mutable split values while the split is still pending.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::Validation` if the split is not pending.
+    pub async fn update_split(
+        &self,
+        db: &DatabaseConnection,
+        split_id: i64,
+        req: UpdateSplitRequest,
+    ) -> Result<SplitDetail, AppError> {
+        let split = self
+            .load_with_status(db, split_id, SplitStatus::Pending, "update")
+            .await?;
+        let mut active: SplitActiveModel = split.into();
+
+        if let Some(value) = req.estimated_market_value {
+            active.estimated_market_value = Set(value);
+        }
+        if let Some(value) = req.repair_value {
+            active.repair_value = Set(value);
+        }
+        if let Some(value) = req.bags_value {
+            active.bags_value = Set(value);
+        }
+        if let Some(note) = req.note {
+            let trimmed = note.trim().to_string();
+            active.note = Set((!trimmed.is_empty()).then_some(trimmed));
+        }
+        if let Some(event_id) = req.event_id {
+            validate_event_link(db, event_id).await?;
+            active.event_id = Set(event_id);
+        }
+
+        let updated = active.update(db).await?;
+        self.to_detail(db, updated).await
     }
 
     /// Fetches a split's full detail by id.
@@ -251,7 +352,11 @@ impl SplitService {
     /// # Errors
     ///
     /// Returns `AppError::NotFound` if the split does not exist.
-    pub async fn get_split(&self, db: &DatabaseConnection, split_id: i64) -> Result<SplitDetail, AppError> {
+    pub async fn get_split(
+        &self,
+        db: &DatabaseConnection,
+        split_id: i64,
+    ) -> Result<SplitDetail, AppError> {
         let split = SplitEntity::find_by_id(split_id)
             .one(db)
             .await?
@@ -274,6 +379,9 @@ impl SplitService {
         if let Some(status) = filters.status {
             query = query.filter(SplitColumn::Status.eq(status.to_string()));
         }
+        if let Some(event_id) = filters.event_id {
+            query = query.filter(SplitColumn::EventId.eq(event_id));
+        }
 
         let limit = pagination.limit();
         let page = pagination.offset_page();
@@ -288,7 +396,13 @@ impl SplitService {
             items.push(self.to_summary(db, model).await?);
         }
 
-        Ok(PaginatedData::new(items, total_items, total_pages, page + 1, limit))
+        Ok(PaginatedData::new(
+            items,
+            total_items,
+            total_pages,
+            page + 1,
+            limit,
+        ))
     }
 
     /// Adds a new participant to a pending split, or updates their weight if already present.
@@ -367,7 +481,11 @@ impl SplitService {
     /// * Returns `AppError::Validation` if the split is not pending, has no participants, or the
     ///   net value is not positive.
     /// * Returns `AppError::Database` if the transaction fails.
-    pub async fn complete_split(&self, db: &DatabaseConnection, split_id: i64) -> Result<SplitDetail, AppError> {
+    pub async fn complete_split(
+        &self,
+        db: &DatabaseConnection,
+        split_id: i64,
+    ) -> Result<SplitDetail, AppError> {
         let split = self
             .load_with_status(db, split_id, SplitStatus::Pending, "complete")
             .await?;
@@ -400,8 +518,9 @@ impl SplitService {
             let share = if i == last_index {
                 net_value - running_total
             } else {
-                let s = (net_value * Decimal::from(participant.weight) / Decimal::from(total_weight))
-                    .round_dp(2);
+                let s = (net_value * Decimal::from(participant.weight)
+                    / Decimal::from(total_weight))
+                .round_dp(2);
                 running_total += s;
                 s
             };
@@ -461,7 +580,10 @@ impl SplitService {
                 continue;
             }
 
-            let Some(link) = links.iter().find(|l| l.albion_player_name.to_lowercase() == needle) else {
+            let Some(link) = links
+                .iter()
+                .find(|l| l.albion_player_name.to_lowercase() == needle)
+            else {
                 continue;
             };
 
@@ -494,9 +616,9 @@ impl Default for SplitService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sea_orm::Database;
     use crate::migration::MigratorTrait;
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
+    use sea_orm::Database;
 
     async fn seed_db() -> DatabaseConnection {
         let db = Database::connect("sqlite::memory:")
@@ -518,7 +640,12 @@ mod tests {
         user.insert(db).await.expect("Failed to insert user").id
     }
 
-    async fn insert_user_with_discord_id(db: &DatabaseConnection, username: &str, email: &str, discord_id: &str) -> i64 {
+    async fn insert_user_with_discord_id(
+        db: &DatabaseConnection,
+        username: &str,
+        email: &str,
+        discord_id: &str,
+    ) -> i64 {
         let user = UserActiveModel {
             username: Set(username.to_string()),
             email: Set(email.to_string()),
@@ -529,7 +656,12 @@ mod tests {
         user.insert(db).await.expect("Failed to insert user").id
     }
 
-    async fn insert_albion_link(db: &DatabaseConnection, discord_id: &str, player_id: &str, player_name: &str) {
+    async fn insert_albion_link(
+        db: &DatabaseConnection,
+        discord_id: &str,
+        player_id: &str,
+        player_name: &str,
+    ) {
         use crate::modules::albion::entities::albion_link::ActiveModel as AlbionLinkActiveModel;
 
         let link = AlbionLinkActiveModel {
@@ -553,6 +685,7 @@ mod tests {
             repair_value: repair.parse().unwrap(),
             bags_value: bags.parse().unwrap(),
             note: None,
+            event_id: None,
             participants,
         }
     }
@@ -563,7 +696,9 @@ mod tests {
         let admin = insert_user(&db, "admin", "admin@example.com").await;
 
         let service = SplitService::new();
-        let result = service.create_split(&db, admin, request("50.00", "0.00", "0.00", vec![])).await;
+        let result = service
+            .create_split(&db, admin, request("50.00", "0.00", "0.00", vec![]))
+            .await;
         assert!(result.is_err());
     }
 
@@ -583,8 +718,14 @@ mod tests {
                     "0.00",
                     "0.00",
                     vec![
-                        UpsertParticipantRequest { user_id: alice, weight: 1 },
-                        UpsertParticipantRequest { user_id: alice, weight: 2 },
+                        UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: 1,
+                        },
+                        UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: 2,
+                        },
                     ],
                 ),
             )
@@ -607,7 +748,10 @@ mod tests {
                     "50.00",
                     "0.00",
                     "0.00",
-                    vec![UpsertParticipantRequest { user_id: alice, weight: 1 }],
+                    vec![UpsertParticipantRequest {
+                        user_id: alice,
+                        weight: 1,
+                    }],
                 ),
             )
             .await
@@ -669,7 +813,10 @@ mod tests {
                     "50.00",
                     "0.00",
                     "0.00",
-                    vec![UpsertParticipantRequest { user_id: alice, weight: 1 }],
+                    vec![UpsertParticipantRequest {
+                        user_id: alice,
+                        weight: 1,
+                    }],
                 ),
             )
             .await
@@ -695,13 +842,19 @@ mod tests {
                     "50.00",
                     "0.00",
                     "0.00",
-                    vec![UpsertParticipantRequest { user_id: alice, weight: 1 }],
+                    vec![UpsertParticipantRequest {
+                        user_id: alice,
+                        weight: 1,
+                    }],
                 ),
             )
             .await
             .unwrap();
 
-        let closed = service.mark_not_completed(&db, split.summary.id).await.unwrap();
+        let closed = service
+            .mark_not_completed(&db, split.summary.id)
+            .await
+            .unwrap();
         assert_eq!(closed.summary.status, SplitStatus::NotCompleted);
 
         let complete_result = service.complete_split(&db, split.summary.id).await;
@@ -723,7 +876,10 @@ mod tests {
                     "50.00",
                     "0.00",
                     "0.00",
-                    vec![UpsertParticipantRequest { user_id: alice, weight: 1 }],
+                    vec![UpsertParticipantRequest {
+                        user_id: alice,
+                        weight: 1,
+                    }],
                 ),
             )
             .await
@@ -744,7 +900,10 @@ mod tests {
 
         let service = SplitService::new();
         let matched = service
-            .match_participants(&db, &["aliceinalbion".to_string(), "NoSuchPlayer".to_string()])
+            .match_participants(
+                &db,
+                &["aliceinalbion".to_string(), "NoSuchPlayer".to_string()],
+            )
             .await
             .unwrap();
 

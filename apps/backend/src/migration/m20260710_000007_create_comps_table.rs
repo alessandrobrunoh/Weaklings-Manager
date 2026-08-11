@@ -2,8 +2,8 @@
 
 use sea_orm_migration::prelude::*;
 
-use super::m20260710_000004_create_comp_categories_table::CompCategories;
 use super::m20260708_000001_create_users_table::Users;
+use super::m20260710_000004_create_comp_categories_table::CompCategories;
 
 /// Migration step to create the `comps` table.
 #[derive(DeriveMigrationName)]

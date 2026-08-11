@@ -38,6 +38,8 @@ use utoipa::OpenApi;
         crate::modules::openalbion::router::get_weapon_stats,
         crate::modules::openalbion::router::list_categories,
         crate::modules::openalbion::router::list_items,
+        crate::modules::albiondata::router::get_prices,
+        crate::modules::albiondata::router::get_item_icon,
         crate::modules::admin::router::reload_permissions,
         crate::modules::comps::router::list_build_categories,
         crate::modules::comps::router::create_build_category,
@@ -57,6 +59,7 @@ use utoipa::OpenApi;
         crate::modules::comps::router::list_comps,
         crate::modules::comps::router::create_comp,
         crate::modules::comps::router::get_comp,
+        crate::modules::comps::router::get_comp_performance,
         crate::modules::comps::router::update_comp,
         crate::modules::comps::router::delete_comp,
         crate::modules::comps::router::add_comp_build,
@@ -82,6 +85,15 @@ use utoipa::OpenApi;
         crate::modules::battles::router::list_battles,
         crate::modules::battles::router::get_battle,
         crate::modules::battles::router::list_my_battles,
+        crate::modules::siphoned::router::ingest,
+        crate::modules::siphoned::router::list_entries,
+        crate::modules::siphoned::router::create_entry,
+        crate::modules::siphoned::router::update_entry,
+        crate::modules::siphoned::router::delete_entry,
+        crate::modules::siphoned::router::list_balances,
+        crate::modules::siphoned::router::get_balance,
+        crate::modules::siphoned::router::list_batches,
+        crate::modules::siphoned::router::delete_batch,
     ),
     components(
         schemas(
@@ -132,6 +144,10 @@ use utoipa::OpenApi;
             crate::pagination::PaginatedOpenAlbionWeapon,
             crate::responses::ApiResponsePaginatedOpenAlbionItems,
             crate::pagination::PaginatedOpenAlbionItem,
+            crate::modules::albiondata::client::AlbionDataMarketPrice,
+            crate::modules::albiondata::client::AlbionDataItemIcon,
+            crate::responses::ApiResponseAlbionDataMarketPriceList,
+            crate::responses::ApiResponseAlbionDataItemIcon,
             crate::modules::comps::models::BuildCategoryView,
             crate::modules::comps::models::CompCategoryView,
             crate::modules::comps::models::BuildSummary,
@@ -201,6 +217,26 @@ use utoipa::OpenApi;
             crate::pagination::PaginatedBattleSummary,
             crate::responses::ApiResponsePaginatedBattles,
             crate::responses::ApiResponseBattleDetail,
+            crate::modules::siphoned::models::EntryView,
+            crate::modules::siphoned::models::EntryMutationRequest,
+            crate::modules::siphoned::models::PlayerBalance,
+            crate::modules::siphoned::models::PlayerBalanceDetail,
+            crate::modules::siphoned::models::BalanceSort,
+            crate::modules::siphoned::models::IngestRow,
+            crate::modules::siphoned::models::IngestRequest,
+            crate::modules::siphoned::models::IngestResponse,
+            crate::modules::siphoned::models::EntryFilters,
+            crate::modules::siphoned::models::BatchSummary,
+            crate::modules::siphoned::models::DeletedCount,
+            crate::modules::siphoned::status::SiphonedEntrySource,
+            crate::pagination::PaginatedEntryView,
+            crate::responses::ApiResponseIngestResponse,
+            crate::responses::ApiResponseEntryView,
+            crate::responses::ApiResponsePaginatedEntryView,
+            crate::responses::ApiResponsePlayerBalanceList,
+            crate::responses::ApiResponsePlayerBalanceDetail,
+            crate::responses::ApiResponseBatchSummaryList,
+            crate::responses::ApiResponseDeletedCount,
         )
     ),
     tags(
@@ -215,11 +251,13 @@ use utoipa::OpenApi;
         (name = "albion", description = "Albion Online integration: browse the configured in-game guild's roster \
             and self-link a Discord account to an Albion Online character."),
         (name = "albionbb", description = "Read-only passthrough for the public AlbionBB battle-history API (third-party, community-run). Used internally by the `battles` module; not typically called directly by the frontend."),
+        (name = "albiondata", description = "Self-owned Albion item utilities: render-service icon URLs from Sandbox and current market prices from Albion Online Data."),
                 (name = "battles", description = "Battle history for the configured Weaklings guild, sourced from AlbionBB and reshaped for the frontend. Includes a `/me` endpoint filtered by the caller's linked Albion character."),
         (name = "openalbion", description = "Read-only OpenAlbion item database passthrough (weapons, armor, accessories, consumables, categories, \
             per-weapon stats) used by the composition/loadout builder. Third-party data, cached server-side."),
         (name = "comps", description = "Compositions and builds: comps group reusable builds of Albion Online items; builds are per-slot loadouts sourced from OpenAlbion. Two DB-creatable category tables (build categories, comp categories)."),
         (name = "events", description = "Events and participations: schedule events with compositions and let logged-in players sign up using build roles with automatic variant capacity scaling."),
+        (name = "siphoned", description = "Guild Siphoned Energy ledger: bulk-import the Albion Online in-game export as immutable rows, browse the ledger, and compute per-player balances (who is in debt to the guild)."),
         (name = "admin", description = "Administrative operations: permission cache reload."),
         (name = "utils", description = "Generic, reusable backend utilities not tied to any specific domain — currently just image OCR via Mistral AI.")
     ),
@@ -363,9 +401,9 @@ impl utoipa::Modify for SecurityAddon {
                 "session_cookie",
                 utoipa::openapi::security::SecurityScheme::ApiKey(
                     utoipa::openapi::security::ApiKey::Cookie(
-                        utoipa::openapi::security::ApiKeyValue::new("session_user")
-                    )
-                )
+                        utoipa::openapi::security::ApiKeyValue::new("session_user"),
+                    ),
+                ),
             );
         }
     }

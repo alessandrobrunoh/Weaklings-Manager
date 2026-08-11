@@ -3,9 +3,9 @@
 //! Exposes HTTP endpoints for requesting, managing, and closing loot splits.
 
 use axum::{
+    Extension, Json, Router,
     extract::{Path, Query},
     routing::{get, post},
-    Extension, Json, Router,
 };
 
 use crate::errors::{AppError, ProblemDetails};
@@ -15,7 +15,7 @@ use crate::responses::{ApiResponse, ApiResponseMatchedParticipantList, ApiRespon
 
 use super::models::{
     CreateSplitRequest, MatchParticipantsRequest, MatchedParticipant, SplitDetail, SplitFilters,
-    UpsertParticipantRequest,
+    UpdateSplitRequest, UpsertParticipantRequest,
 };
 use super::service::SplitService;
 
@@ -48,9 +48,12 @@ impl ListSplitsQuery {
 pub fn router() -> Router {
     Router::new()
         .route("/", get(list_splits).post(create_split))
-        .route("/{id}", get(get_split))
+        .route("/{id}", get(get_split).patch(update_split))
         .route("/{id}/participants", post(add_or_update_participant))
-        .route("/{id}/participants/{user_id}", axum::routing::delete(remove_participant))
+        .route(
+            "/{id}/participants/{user_id}",
+            axum::routing::delete(remove_participant),
+        )
         .route("/{id}/complete", post(complete_split))
         .route("/{id}/not-completed", post(not_completed_split))
         .route("/{id}/lost", post(lost_split))
@@ -122,8 +125,12 @@ async fn list_splits(
 ) -> Result<Json<ApiResponse<PaginatedSplitSummary>>, AppError> {
     let service = SplitService::new();
     let pagination = query.pagination();
-    let paginated = service.list_splits(&db, &pagination, &query.filters).await?;
-    Ok(Json(ApiResponse::new(PaginatedSplitSummary::from(paginated))))
+    let paginated = service
+        .list_splits(&db, &pagination, &query.filters)
+        .await?;
+    Ok(Json(ApiResponse::new(PaginatedSplitSummary::from(
+        paginated,
+    ))))
 }
 
 /// Get a single split's full detail, including participants.
@@ -156,6 +163,38 @@ async fn get_split(
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     let service = SplitService::new();
     let split = service.get_split(&db, id).await?;
+    Ok(Json(ApiResponse::new(split)))
+}
+
+/// Edit mutable values on a pending split.
+///
+/// Requires the Admin or Officer role.
+#[utoipa::path(
+    patch,
+    path = "/api/splits/{id}",
+    tag = "splits",
+    summary = "Edit a pending split's values and note (Officer/Admin only)",
+    description = "Updates note, estimated_market_value, repair_value, and bags_value while the split is still pending. Once completed/not_completed/lost, values are immutable.",
+    security(("session_cookie" = ["splits.manage"])),
+    params(("id" = i64, Path, description = "The split id")),
+    request_body(content = UpdateSplitRequest, description = "Mutable split fields to update."),
+    responses(
+        (status = 200, description = "Split updated successfully", body = ApiResponseSplitDetail),
+        (status = 403, description = "Forbidden - lacks administrator/officer role", body = ProblemDetails),
+        (status = 400, description = "Validation error - split is not pending", body = ProblemDetails),
+        (status = 404, description = "No split exists with this id", body = ProblemDetails)
+    )
+)]
+async fn update_split(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+    Json(req): Json<UpdateSplitRequest>,
+) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
+    user.require(&perms, Permission::SplitsManage).await?;
+    let service = SplitService::new();
+    let split = service.update_split(&db, id, req).await?;
     Ok(Json(ApiResponse::new(split)))
 }
 

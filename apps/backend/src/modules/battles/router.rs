@@ -5,17 +5,21 @@
 //! - `GET /{battle_id}` — full detail (battle + kills).
 //! - `GET /me` — battles the calling user participated in.
 
-use axum::{extract::{Path, Query}, routing::get, Extension, Json, Router};
+use axum::{
+    Extension, Json, Router,
+    extract::{Path, Query},
+    routing::get,
+};
 use sea_orm::DatabaseConnection;
 use serde::Deserialize;
 use utoipa::IntoParams;
 
+use super::models::BattleDetail;
+use super::service::BattlesService;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::UserContext;
 use crate::pagination::{PaginatedBattleSummary, PaginationParams};
 use crate::responses::{ApiResponse, ApiResponsePaginatedBattles};
-use super::models::BattleDetail;
-use super::service::BattlesService;
 
 /// Creates the router for the `battles` module.
 ///
@@ -73,7 +77,9 @@ pub async fn list_battles(
     let page = query.page.unwrap_or(1).max(1);
     let min_players = query.min_players.or(Some(10));
     let paginated = service.list_guild_battles(min_players, page).await?;
-    Ok(Json(ApiResponse::new(PaginatedBattleSummary::from(paginated))))
+    Ok(Json(ApiResponse::new(PaginatedBattleSummary::from(
+        paginated,
+    ))))
 }
 
 /// Fetch full detail for a battle.
@@ -132,5 +138,7 @@ pub async fn list_my_battles(
         limit: query.limit,
     };
     let paginated = service.list_my_battles(&db, &user.id, &pagination).await?;
-    Ok(Json(ApiResponse::new(PaginatedBattleSummary::from(paginated))))
+    Ok(Json(ApiResponse::new(PaginatedBattleSummary::from(
+        paginated,
+    ))))
 }

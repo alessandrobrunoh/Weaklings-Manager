@@ -4,13 +4,18 @@
 //! configured guild. `AlbionLinkService` manages the `albion_links` table backing the
 //! self-service Discord <-> Albion player link feature.
 
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
-use serde::Serialize;
-use utoipa::ToSchema;
+use super::client::{
+    AlbionAlliance, AlbionApiClient, AlbionGuild, AlbionGuildMember, AlbionPlayer, AlbionRegion,
+    AlbionSearchResult,
+};
+use super::entities::albion_link;
 use crate::errors::AppError;
 use crate::pagination::{PaginatedData, PaginationParams};
-use super::client::{AlbionApiClient, AlbionAlliance, AlbionGuild, AlbionGuildMember, AlbionPlayer, AlbionRegion, AlbionSearchResult};
-use super::entities::albion_link;
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+};
+use serde::Serialize;
+use utoipa::ToSchema;
 
 /// Service exposing Albion Online API operations, scoped to the operator's configured guild.
 pub struct AlbionService {
@@ -50,12 +55,26 @@ impl AlbionService {
         let total_items = roster.len() as u64;
         let limit = pagination.limit();
         let page = pagination.offset_page();
-        let total_pages = if limit == 0 { 0 } else { total_items.div_ceil(limit) };
+        let total_pages = if limit == 0 {
+            0
+        } else {
+            total_items.div_ceil(limit)
+        };
 
         let start = (page * limit) as usize;
-        let items = roster.into_iter().skip(start).take(limit as usize).collect();
+        let items = roster
+            .into_iter()
+            .skip(start)
+            .take(limit as usize)
+            .collect();
 
-        Ok(PaginatedData::new(items, total_items, total_pages, page + 1, limit))
+        Ok(PaginatedData::new(
+            items,
+            total_items,
+            total_pages,
+            page + 1,
+            limit,
+        ))
     }
 
     pub async fn search(&self, query: &str) -> Result<AlbionSearchResult, AppError> {
@@ -157,7 +176,11 @@ impl AlbionLinkService {
         albion_player_id: &str,
         albion_player_name: &str,
     ) -> Result<albion_link::Model, AppError> {
-        if self.get_link_for_discord_user(db, discord_id).await?.is_some() {
+        if self
+            .get_link_for_discord_user(db, discord_id)
+            .await?
+            .is_some()
+        {
             return Err(AppError::Conflict(
                 "Your Discord account is already linked to an Albion player".to_string(),
             ));
@@ -189,13 +212,21 @@ impl AlbionLinkService {
     /// # Errors
     ///
     /// Returns `AppError::NotFound` if no link exists for this Discord account.
-    pub async fn delete_link(&self, db: &DatabaseConnection, discord_id: &str) -> Result<(), AppError> {
+    pub async fn delete_link(
+        &self,
+        db: &DatabaseConnection,
+        discord_id: &str,
+    ) -> Result<(), AppError> {
         let existing = self
             .get_link_for_discord_user(db, discord_id)
             .await?
-            .ok_or_else(|| AppError::NotFound("No Albion link exists for this account".to_string()))?;
+            .ok_or_else(|| {
+                AppError::NotFound("No Albion link exists for this account".to_string())
+            })?;
 
-        albion_link::Entity::delete_by_id(existing.id).exec(db).await?;
+        albion_link::Entity::delete_by_id(existing.id)
+            .exec(db)
+            .await?;
         Ok(())
     }
 }
@@ -209,8 +240,8 @@ impl Default for AlbionLinkService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sea_orm::Database;
     use crate::migration::MigratorTrait;
+    use sea_orm::Database;
 
     async fn setup_db() -> DatabaseConnection {
         let db = Database::connect("sqlite::memory:")
@@ -227,7 +258,13 @@ mod tests {
         let db = setup_db().await;
         let service = AlbionLinkService::new();
 
-        assert!(service.get_link_for_discord_user(&db, "discord_a").await.unwrap().is_none());
+        assert!(
+            service
+                .get_link_for_discord_user(&db, "discord_a")
+                .await
+                .unwrap()
+                .is_none()
+        );
 
         let link = service
             .create_link(&db, "discord_a", "player_1", "PlayerOne")
@@ -235,11 +272,23 @@ mod tests {
             .expect("Failed to create link");
         assert_eq!(link.albion_player_id, "player_1");
 
-        let fetched = service.get_link_for_discord_user(&db, "discord_a").await.unwrap();
+        let fetched = service
+            .get_link_for_discord_user(&db, "discord_a")
+            .await
+            .unwrap();
         assert!(fetched.is_some());
 
-        service.delete_link(&db, "discord_a").await.expect("Failed to delete link");
-        assert!(service.get_link_for_discord_user(&db, "discord_a").await.unwrap().is_none());
+        service
+            .delete_link(&db, "discord_a")
+            .await
+            .expect("Failed to delete link");
+        assert!(
+            service
+                .get_link_for_discord_user(&db, "discord_a")
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -247,9 +296,14 @@ mod tests {
         let db = setup_db().await;
         let service = AlbionLinkService::new();
 
-        service.create_link(&db, "discord_a", "player_1", "PlayerOne").await.unwrap();
+        service
+            .create_link(&db, "discord_a", "player_1", "PlayerOne")
+            .await
+            .unwrap();
 
-        let result = service.create_link(&db, "discord_a", "player_2", "PlayerTwo").await;
+        let result = service
+            .create_link(&db, "discord_a", "player_2", "PlayerTwo")
+            .await;
         assert!(matches!(result, Err(AppError::Conflict(_))));
     }
 
@@ -258,9 +312,14 @@ mod tests {
         let db = setup_db().await;
         let service = AlbionLinkService::new();
 
-        service.create_link(&db, "discord_a", "player_1", "PlayerOne").await.unwrap();
+        service
+            .create_link(&db, "discord_a", "player_1", "PlayerOne")
+            .await
+            .unwrap();
 
-        let result = service.create_link(&db, "discord_b", "player_1", "PlayerOne").await;
+        let result = service
+            .create_link(&db, "discord_b", "player_1", "PlayerOne")
+            .await;
         assert!(matches!(result, Err(AppError::Conflict(_))));
     }
 

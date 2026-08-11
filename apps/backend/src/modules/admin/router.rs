@@ -3,10 +3,10 @@
 //! Endpoints for administrative operations: currently just the permission
 //! cache reload, which applies `role_permissions` changes without a redeploy.
 
-use axum::{routing::post, Extension, Json, Router};
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::responses::ApiResponse;
+use axum::{Extension, Json, Router, routing::post};
 
 /// Creates the router for the admin module.
 pub fn router() -> Router {

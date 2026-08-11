@@ -1,7 +1,94 @@
 //! Request/response DTOs and view models for the events module.
 
+use sea_orm::prelude::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+/// Aggregated performance metrics for an event or composition.
+#[derive(Debug, Serialize, Clone, Default, ToSchema)]
+pub struct BattlePerformanceStats {
+    /// Total battles linked to the analytical scope.
+    pub total_battles: i64,
+    /// Battles won by the configured guild.
+    pub wins: i64,
+    /// Battles lost or not marked as won by AlbionBB.
+    pub losses: i64,
+    /// Win percentage in the `0..=100` range.
+    pub win_rate: f64,
+    /// Kills scored by the configured guild.
+    pub total_kills: i64,
+    /// Deaths suffered by the configured guild.
+    pub total_deaths: i64,
+    /// Kill/death ratio. Uses kills as-is when deaths are zero.
+    pub kill_death_ratio: f64,
+    /// Kill fame scored by the configured guild.
+    pub total_kill_fame: i64,
+    /// Average guild player count across linked battles.
+    pub average_guild_players: f64,
+    /// Most frequent or highest-impact opponents faced in this scope.
+    pub top_opponents: Vec<OpponentPerformanceView>,
+}
+
+/// Opponent rollup for event and comp analytics.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct OpponentPerformanceView {
+    /// AlbionBB guild id when available.
+    pub guild_id: Option<String>,
+    /// Human-readable guild name when available.
+    pub guild_name: String,
+    /// Number of linked battles against this opponent.
+    pub battles: i64,
+    /// Wins against this opponent.
+    pub wins: i64,
+    /// Losses against this opponent.
+    pub losses: i64,
+    /// Kill fame scored by our guild in these matchups.
+    pub guild_kill_fame: i64,
+    /// Kill fame scored by the opponent in these matchups.
+    pub opponent_kill_fame: i64,
+}
+
+/// Historical performance of a comp across linked event sessions.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct CompPerformanceView {
+    /// Composition identifier used by the events.
+    pub comp_id: i64,
+    /// Composition display name.
+    pub comp_name: String,
+    /// Number of events that currently have at least one linked battle.
+    pub events_with_battles: i64,
+    /// Aggregated battle performance for all events using this comp.
+    pub stats: BattlePerformanceStats,
+}
+
+/// Aggregated loot split metrics linked to an event.
+#[derive(Debug, Serialize, Clone, Default, ToSchema)]
+pub struct EventSplitStats {
+    /// Number of splits linked to the event.
+    pub total_splits: i64,
+    /// Splits still awaiting officer closure.
+    pub pending_splits: i64,
+    /// Splits completed and credited to participants.
+    pub completed_splits: i64,
+    /// Splits marked as not completed.
+    pub not_completed_splits: i64,
+    /// Splits marked as lost.
+    pub lost_splits: i64,
+    /// Sum of estimated market values across linked splits.
+    #[schema(value_type = String, example = "1000000.00")]
+    pub estimated_market_value: Decimal,
+    /// Sum of repair deductions across linked splits.
+    #[schema(value_type = String, example = "25000.00")]
+    pub repair_value: Decimal,
+    /// Sum of bags/consumables values across linked splits.
+    #[schema(value_type = String, example = "50000.00")]
+    pub bags_value: Decimal,
+    /// Sum of completed net payouts.
+    #[schema(value_type = String, example = "1025000.00")]
+    pub completed_net_value: Decimal,
+    /// Number of participant rows across linked splits.
+    pub participant_entries: i64,
+}
 
 /// General details of an event.
 #[derive(Debug, Serialize, Clone, ToSchema)]
@@ -82,6 +169,26 @@ pub struct EventBattleView {
     pub battle_total_players: Option<i32>,
     /// When this row was last refreshed from AlbionBB (RFC3339).
     pub fetched_at: String,
+    /// Kills scored by the configured guild.
+    pub guild_kills: i64,
+    /// Deaths suffered by the configured guild.
+    pub guild_deaths: i64,
+    /// Kill fame scored by the configured guild.
+    pub guild_kill_fame: i64,
+    /// Whether the configured guild won this battle.
+    pub is_win: bool,
+    /// Main opponent guild ID by kill fame, if known.
+    pub opponent_guild_id: Option<String>,
+    /// Main opponent guild name by kill fame, if known.
+    pub opponent_guild_name: Option<String>,
+    /// Main opponent player count, if known.
+    pub opponent_players_count: Option<i32>,
+    /// Main opponent kills, if known.
+    pub opponent_kills: Option<i64>,
+    /// Main opponent deaths, if known.
+    pub opponent_deaths: Option<i64>,
+    /// Main opponent kill fame, if known.
+    pub opponent_kill_fame: Option<i64>,
 }
 
 /// Full details of an event including active comp details and participants list.
@@ -102,6 +209,12 @@ pub struct EventDetailView {
     pub participants: Vec<EventParticipantView>,
     /// Battles linked to this event session (only populated while/after live).
     pub battles: Vec<EventBattleView>,
+    /// Aggregated event outcome and fight performance.
+    pub stats: BattlePerformanceStats,
+    /// Loot splits connected to this event.
+    pub splits: Vec<crate::modules::splits::models::SplitSummary>,
+    /// Aggregated split economy statistics.
+    pub split_stats: EventSplitStats,
 }
 
 /// Request body to create a new event.

@@ -4,16 +4,16 @@
 //! the full weapon catalog (reference data that changes only on Albion Online patches) plus
 //! local name/tier filtering and pagination, mirroring `AlbionService`'s guild roster search.
 
+use super::client::{
+    OpenAlbionApiClient, OpenAlbionCategory, OpenAlbionItem, OpenAlbionItemType, OpenAlbionWeapon,
+    OpenAlbionWeaponFilters, OpenAlbionWeaponStats,
+};
+use crate::errors::AppError;
+use crate::pagination::{PaginatedData, PaginationParams};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use crate::errors::AppError;
-use crate::pagination::{PaginatedData, PaginationParams};
-use super::client::{
-    OpenAlbionApiClient, OpenAlbionCategory, OpenAlbionItem, OpenAlbionItemType,
-    OpenAlbionWeapon, OpenAlbionWeaponFilters, OpenAlbionWeaponStats,
-};
 
 /// How long cached item catalogs are considered fresh before being refetched.
 const WEAPON_CACHE_TTL: Duration = Duration::from_secs(60 * 60);
@@ -50,7 +50,10 @@ impl OpenAlbionService {
             return Ok(weapons.clone());
         }
 
-        let weapons = self.client.get_weapons(&OpenAlbionWeaponFilters::default()).await?;
+        let weapons = self
+            .client
+            .get_weapons(&OpenAlbionWeaponFilters::default())
+            .await?;
         *self.weapon_cache.write().await = Some((Instant::now(), weapons.clone()));
         Ok(weapons)
     }
@@ -83,21 +86,41 @@ impl OpenAlbionService {
         let total_items = weapons.len() as u64;
         let limit = pagination.limit();
         let page = pagination.offset_page();
-        let total_pages = if limit == 0 { 0 } else { total_items.div_ceil(limit) };
+        let total_pages = if limit == 0 {
+            0
+        } else {
+            total_items.div_ceil(limit)
+        };
 
         let start = (page * limit) as usize;
-        let items = weapons.into_iter().skip(start).take(limit as usize).collect();
+        let items = weapons
+            .into_iter()
+            .skip(start)
+            .take(limit as usize)
+            .collect();
 
-        Ok(PaginatedData::new(items, total_items, total_pages, page + 1, limit))
+        Ok(PaginatedData::new(
+            items,
+            total_items,
+            total_pages,
+            page + 1,
+            limit,
+        ))
     }
 
     /// Fetches item categories, optionally filtered by top-level type (e.g. "weapon").
-    pub async fn list_categories(&self, category_type: Option<&str>) -> Result<Vec<OpenAlbionCategory>, AppError> {
+    pub async fn list_categories(
+        &self,
+        category_type: Option<&str>,
+    ) -> Result<Vec<OpenAlbionCategory>, AppError> {
         self.client.get_categories(category_type).await
     }
 
     /// Returns the full catalog for a given item type, serving from cache when fresh.
-    async fn get_all_items_cached(&self, item_type: OpenAlbionItemType) -> Result<Vec<OpenAlbionItem>, AppError> {
+    async fn get_all_items_cached(
+        &self,
+        item_type: OpenAlbionItemType,
+    ) -> Result<Vec<OpenAlbionItem>, AppError> {
         if let Some((fetched_at, items)) = self.item_cache.read().await.get(&item_type)
             && fetched_at.elapsed() < WEAPON_CACHE_TTL
         {
@@ -126,9 +149,7 @@ impl OpenAlbionService {
         pagination: &PaginationParams,
     ) -> Result<PaginatedData<OpenAlbionItem>, AppError> {
         let mut items = if filters.category_id.is_some() || filters.subcategory_id.is_some() {
-            self.client
-                .get_items(item_type, filters)
-                .await?
+            self.client.get_items(item_type, filters).await?
         } else {
             self.get_all_items_cached(item_type).await?
         };
@@ -146,16 +167,29 @@ impl OpenAlbionService {
         let total_items = items.len() as u64;
         let limit = pagination.limit();
         let page = pagination.offset_page();
-        let total_pages = if limit == 0 { 0 } else { total_items.div_ceil(limit) };
+        let total_pages = if limit == 0 {
+            0
+        } else {
+            total_items.div_ceil(limit)
+        };
 
         let start = (page * limit) as usize;
         let items = items.into_iter().skip(start).take(limit as usize).collect();
 
-        Ok(PaginatedData::new(items, total_items, total_pages, page + 1, limit))
+        Ok(PaginatedData::new(
+            items,
+            total_items,
+            total_pages,
+            page + 1,
+            limit,
+        ))
     }
 
     /// Fetches per-quality-tier stats for a single weapon by ID.
-    pub async fn get_weapon_stats(&self, weapon_id: i64) -> Result<Vec<OpenAlbionWeaponStats>, AppError> {
+    pub async fn get_weapon_stats(
+        &self,
+        weapon_id: i64,
+    ) -> Result<Vec<OpenAlbionWeaponStats>, AppError> {
         self.client.get_weapon_stats(weapon_id).await
     }
 }

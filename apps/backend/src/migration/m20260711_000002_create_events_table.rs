@@ -28,7 +28,11 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Events::Description).string())
                     .col(ColumnDef::new(Events::CompId).big_integer().not_null())
                     .col(ColumnDef::new(Events::CreatedBy).big_integer().not_null())
-                    .col(ColumnDef::new(Events::EventDateUtc).timestamp_with_time_zone().not_null())
+                    .col(
+                        ColumnDef::new(Events::EventDateUtc)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
                     .col(
                         ColumnDef::new(Events::CreatedAt)
                             .timestamp_with_time_zone()

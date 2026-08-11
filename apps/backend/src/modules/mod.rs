@@ -5,6 +5,7 @@
 pub mod admin;
 pub mod albion;
 pub mod albionbb;
+pub mod albiondata;
 pub mod auth;
 pub mod bank;
 pub mod battles;
@@ -12,6 +13,7 @@ pub mod comps;
 pub mod events;
 pub mod health;
 pub mod openalbion;
+pub mod siphoned;
 pub mod splits;
 pub mod users;
 pub mod utils;
@@ -30,10 +32,12 @@ pub fn router() -> Router {
         .nest("/splits", splits::router())
         .nest("/albion", albion::router())
         .nest("/albionbb", albionbb::router())
+        .nest("/albiondata", albiondata::router())
         .nest("/battles", battles::router())
         .nest("/openalbion", openalbion::router())
         .nest("/comps", comps::router())
         .nest("/events", events::router())
+        .nest("/siphoned", siphoned::router())
         .nest("/admin", admin::router())
         .nest("/utils", utils::router())
 }
