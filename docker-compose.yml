@@ -12,7 +12,7 @@ services:
     restart: unless-stopped
 
   backend:
-    image: ghcr.io/weaklings-ao/weaklings_backend:latest
+    image: ghcr.io/alessandrobrunoh/weaklings-backend:latest
     ports:
       - "8001:3000"
     environment:
@@ -37,7 +37,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ghcr.io/weaklings-ao/weaklings_frontend:latest
+    image: ghcr.io/alessandrobrunoh/weaklings-frontend:latest
     ports:
       - "5000:3000"
     environment:
@@ -49,7 +49,7 @@ services:
     restart: unless-stopped
 
   discord-bot:
-    image: ghcr.io/weaklings-ao/weaklings_discord_bot:latest
+    image: ghcr.io/alessandrobrunoh/weaklings-discord-bot:latest
     environment:
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
