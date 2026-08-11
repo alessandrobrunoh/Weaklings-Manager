@@ -1,27 +1,29 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
-import type { PaginatedData, Role, UserProfile } from '../../core/models/api.models';
+import type { Role, UserProfile } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import { EmptyState } from '../../shared/components/empty-state/empty-state';
-import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 
-const PAGE_SIZE = 10;
+/** Page size requested when bulk-loading the roster for client-side filtering. */
+const ROSTER_LOAD_LIMIT = 1000;
 
 /**
  * Guild member directory.
  *
  * Drives the participant picker used elsewhere (splits, events), but exposed
- * here as a browsable list with username substring search and pagination.
+ * here as a browsable list. Loads the whole roster once and delegates search,
+ * sort, filter and pagination to `DataTable`, keeping round-trips off the
+ * critical path for the common typing-in-the-search-box interaction.
  */
 @Component({
   selector: 'app-users',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Loading],
+  imports: [PageHeader, DataTable],
   template: `
     <app-page-header
       [title]="t('users.title')"
@@ -29,66 +31,24 @@ const PAGE_SIZE = 10;
       [actions]="false"
     />
 
-    <form class="mb-4 flex gap-2" (submit)="onSearchSubmit($event)">
-      <input
-        type="text"
-        class="input"
-        [placeholder]="t('common.username')"
-        [value]="query()"
-        (input)="onQueryChange($event)"
-      />
-      <button type="submit" class="btn btn--primary">
-        {{ t('common.search') }}
-      </button>
-    </form>
-
-    @if (loading()) {
-      <app-loading [label]="t('common.loading')" />
-    } @else if (users().length === 0) {
-      <app-empty-state [message]="t('common.empty')" icon="users" />
-    } @else {
-      <div class="overflow-x-auto">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>{{ t('common.username') }}</th>
-              <th>{{ t('common.email') }}</th>
-              <th>{{ t('common.role') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (user of users(); track user.id) {
-              <tr>
-                <td style="font-weight: 500">{{ user.username }}</td>
-                <td style="color: var(--color-text-secondary)">{{ user.email }}</td>
-                <td>
-                  <span class="chip" [class]="roleChip(user.role)">{{ user.role }}</span>
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-
-      <div class="mt-4 flex items-center justify-between">
-        <p class="text-xs" style="color: var(--color-text-secondary)">
-          {{ t('common.page') }} {{ page() }} {{ t('common.of') }} {{ totalPages() }}
-        </p>
-        <div class="flex gap-2">
-          <button type="button" class="btn btn--outline" [disabled]="page() <= 1" (click)="prev()">
-            {{ t('common.prev') }}
-          </button>
-          <button
-            type="button"
-            class="btn btn--outline"
-            [disabled]="page() >= totalPages()"
-            (click)="next()"
-          >
-            {{ t('common.next') }}
-          </button>
-        </div>
-      </div>
-    }
+    <app-data-table
+      [columns]="columns"
+      [rows]="users()"
+      [loading]="loading()"
+      [trackBy]="trackById"
+      [pageSize]="10"
+      emptyIcon="users"
+    >
+      <ng-template dataTableCell="username" let-row>
+        <span style="font-weight: 500">{{ row.username }}</span>
+      </ng-template>
+      <ng-template dataTableCell="email" let-row>
+        <span style="color: var(--color-text-secondary)">{{ row.email }}</span>
+      </ng-template>
+      <ng-template dataTableCell="role" let-row>
+        <span class="chip" [class]="roleChip(row.role)">{{ row.role }}</span>
+      </ng-template>
+    </app-data-table>
   `,
 })
 export class Users {
@@ -98,44 +58,44 @@ export class Users {
 
   protected readonly users = signal<UserProfile[]>([]);
   protected readonly loading = signal(false);
-  protected readonly page = signal(1);
-  protected readonly totalPages = signal(1);
-  protected readonly query = signal('');
+  protected readonly trackById = (user: UserProfile): unknown => user.id;
+
+  protected readonly columns: readonly DataTableColumn<UserProfile>[] = [
+    {
+      key: 'username',
+      label: 'common.username',
+      sortable: true,
+      searchable: true,
+      accessor: (user) => user.username,
+      comparator: (a, b) => a.username.localeCompare(b.username),
+    },
+    {
+      key: 'email',
+      label: 'common.email',
+      sortable: true,
+      searchable: true,
+      accessor: (user) => user.email,
+      comparator: (a, b) => a.email.localeCompare(b.email),
+    },
+    {
+      key: 'role',
+      label: 'common.role',
+      sortable: true,
+      accessor: (user) => user.role,
+      comparator: (a, b) => a.role.localeCompare(b.role),
+      filterOptions: [
+        { value: 'SuperAdmin', label: 'SuperAdmin' },
+        { value: 'Admin', label: 'Admin' },
+        { value: 'Officer', label: 'Officer' },
+        { value: 'Member', label: 'Member' },
+      ],
+    },
+  ];
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   constructor() {
     void this.load();
-  }
-
-  protected onQueryChange(event: Event): void {
-    this.query.set((event.target as HTMLInputElement).value);
-  }
-
-  protected async search(): Promise<void> {
-    this.page.set(1);
-    await this.load();
-  }
-
-  protected onSearchSubmit(event: SubmitEvent): void {
-    event.preventDefault();
-    void this.search();
-  }
-
-  protected async next(): Promise<void> {
-    if (this.page() >= this.totalPages()) {
-      return;
-    }
-    this.page.update((p) => p + 1);
-    await this.load();
-  }
-
-  protected async prev(): Promise<void> {
-    if (this.page() <= 1) {
-      return;
-    }
-    this.page.update((p) => p - 1);
-    await this.load();
   }
 
   protected roleChip(role: Role): string {
@@ -154,16 +114,13 @@ export class Users {
   private async load(): Promise<void> {
     this.loading.set(true);
     try {
-      const params: Record<string, string | number> = { page: this.page(), limit: PAGE_SIZE };
-      const q = this.query().trim();
-      if (q) {
-        params['username'] = q;
-      }
       const data = await firstValueFrom(
-        this.api.get<PaginatedData<UserProfile>>('api/users', params),
+        this.api.get<{ items: UserProfile[]; total_items: number }>('api/users', {
+          page: 1,
+          limit: ROSTER_LOAD_LIMIT,
+        }),
       );
       this.users.set(data.items);
-      this.totalPages.set(data.total_pages);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {

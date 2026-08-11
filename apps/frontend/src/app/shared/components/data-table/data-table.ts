@@ -16,6 +16,13 @@ import type { TranslationKey } from '../../../i18n/en';
 import { EmptyState } from '../empty-state/empty-state';
 import { Loading } from '../loading/loading';
 import { DataTableCell } from './data-table-cell';
+export type {
+  DataTableColumn,
+  DataTableFilterOption,
+  DataTablePageChange,
+  SortDirection,
+  SortState,
+} from './data-table-column';
 import type {
   DataTableColumn,
   DataTablePageChange,
@@ -323,16 +330,20 @@ export class DataTable<T> {
       return [...rows];
     }
     const direction: SortDirection = state.direction;
-    const sorted = [...rows].sort(column.comparator);
-    return direction === 'asc' ? sorted : sorted.reverse();
+    const copy: T[] = [...rows];
+    copy.sort(column.comparator);
+    if (direction === 'desc') {
+      copy.reverse();
+    }
+    return copy;
   }
 
   private applyPagination(rows: readonly T[]): T[] {
     if (this.serverMode()) {
-      return rows;
+      return [...rows];
     }
     const start = (this.page() - 1) * this.currentPageSize();
-    return rows.slice(start, start + this.currentPageSize());
+    return [...rows].slice(start, start + this.currentPageSize());
   }
 
   private emitChange(): void {
