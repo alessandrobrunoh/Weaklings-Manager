@@ -353,7 +353,7 @@ impl SiphonedService {
             FROM unique_entries
             GROUP BY player_key
         "#;
-        let statement = build_statement(db, sql, &[player_name.to_string()]);
+        let statement = build_statement(db, sql, &[text_value(player_name)]);
         let mut rows = PlayerBalanceRow::find_by_statement(statement)
             .all(db)
             .await?;
@@ -401,7 +401,10 @@ impl SiphonedService {
         let recent_stmt = build_statement(
             db,
             recent_sql,
-            &[player_name.to_string(), recent.to_string()],
+            &[
+                text_value(player_name),
+                sea_orm::Value::BigInt(Some(recent as i64)),
+            ],
         );
         let recent_models = SiphonedEntryModel::find_by_statement(recent_stmt)
             .all(db)
@@ -610,33 +613,33 @@ fn entries_query(filters: &EntryFilters) -> sea_orm::Select<SiphonedEntryEntity>
 
 /// Builds a parameterized raw SQL statement using the connection's live backend.
 ///
-/// We use SQLite-style `?` placeholders and rewrite to Postgres-style `$N` when the connection
-/// is `Postgres`. This keeps the call sites backend-agnostic (the test suite runs on `SQLite`, the
-/// production runtime on Postgres).
-fn build_statement(db: &DatabaseConnection, sql: &str, params: &[String]) -> Statement {
+/// Parameters are passed as typed `sea_orm::Value`s so callers can bind text for
+/// string comparisons and integers for `LIMIT`/`OFFSET` — a plain string bind for
+/// `LIMIT` breaks on PostgreSQL ("argument of LIMIT must be type bigint").
+fn build_statement(db: &DatabaseConnection, sql: &str, params: &[sea_orm::Value]) -> Statement {
     let backend = db.get_database_backend();
-    let values: Vec<sea_orm::Value> = params
-        .iter()
-        .map(|s| sea_orm::Value::String(Some(Box::new(s.clone()))))
-        .collect();
 
     match backend {
         DatabaseBackend::Postgres => {
-            // Convert SQLite-style `$1` placeholders already in the source sql — the callers in
-            // this file already write Postgres-style `$N`, so we just pass through.
-            Statement::from_sql_and_values(DatabaseBackend::Postgres, sql, values)
+            // The source sql already uses Postgres-style `$N` placeholders, so no rewrite needed.
+            Statement::from_sql_and_values(DatabaseBackend::Postgres, sql, params.to_vec())
         }
         DatabaseBackend::Sqlite => {
             // The source sql uses Postgres-style `$N`. Rewrite to `?` for SQLite.
             let rewritten = rewrite_pg_placeholders_to_sqlite(sql);
-            Statement::from_sql_and_values(DatabaseBackend::Sqlite, rewritten, values)
+            Statement::from_sql_and_values(DatabaseBackend::Sqlite, rewritten, params.to_vec())
         }
         // The only other `SeaORM` backend is `MySql`, which the project doesn't use (see Cargo.toml:
         // only `sqlx-postgres` and `sqlx-sqlite` features are enabled). Pass the SQL through and
         // let the driver figure it out; if a MySql deployment is ever added, the placeholder
         // rewriting should be revisited here.
-        DatabaseBackend::MySql => Statement::from_sql_and_values(backend, sql, values),
+        DatabaseBackend::MySql => Statement::from_sql_and_values(backend, sql, params.to_vec()),
     }
+}
+
+/// Builds a `text` bind value for parameterized SQL.
+fn text_value(value: &str) -> sea_orm::Value {
+    sea_orm::Value::String(Some(Box::new(value.to_string())))
 }
 
 /// Replaces Postgres-style `$1`, `$2`, ... placeholders with SQLite-style `?` in order.

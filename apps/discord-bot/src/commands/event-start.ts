@@ -26,6 +26,35 @@ export async function execute(
   );
 
   const embed = buildEventEmbed(event);
+
+  // Try to find the thread to update the message and ping the role
+  try {
+    const { config } = await import('../config.js');
+    const channelId = config.DISCORD_EVENTS_CHANNEL_ID;
+    const channel = await interaction.client.channels.fetch(channelId);
+    
+    if (channel && channel.isTextBased() && !channel.isDMBased() && 'threads' in channel) {
+      const activeThreads = await channel.threads.fetchActive();
+      const thread = activeThreads.threads.find(t => t.name.startsWith(`Event #${event.id}`));
+      
+      if (thread) {
+        // Ping the role
+        if (config.EVENT_PING_ROLE_ID) {
+          await thread.send(`🚨 <@&${config.EVENT_PING_ROLE_ID}> L'evento **${event.title}** è **INIZIATO (LIVE)** 🟢!`);
+        }
+        
+        // Update the COMP embed in the thread
+        const msgs = await thread.messages.fetch({ limit: 10 });
+        const botMsg = msgs.find(m => m.author.id === interaction.client.user?.id && m.components.length > 0);
+        if (botMsg) {
+          await botMsg.edit({ embeds: [embed] });
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to update thread on event start', err);
+  }
+
   const noticeEmbed = createResponseEmbed(
     'success',
     'Event Started',
@@ -34,6 +63,6 @@ export async function execute(
   );
 
   await interaction.editReply({
-    embeds: [noticeEmbed, embed],
+    embeds: [noticeEmbed],
   });
 }

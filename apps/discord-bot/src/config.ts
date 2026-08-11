@@ -18,6 +18,8 @@ const Env = z.object({
   DISCORD_EVENTS_CHANNEL_ID: z.string().min(1),
   /** Channel ID where new battles are posted automatically. */
   DISCORD_BATTLES_CHANNEL_ID: z.string().min(1),
+  /** Role ID to ping 1h before the event and when it starts. */
+  EVENT_PING_ROLE_ID: z.string().optional(),
   /** How often (ms) the polling service checks for new events/battles. */
   POLL_INTERVAL_MS: z.coerce.number().default(60_000),
 });

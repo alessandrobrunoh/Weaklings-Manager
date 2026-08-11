@@ -90,8 +90,22 @@ fn default_albiondata_timeout() -> u64 {
 }
 
 impl Config {
+    /// Loads configuration from environment variables.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a required variable is missing or malformed — appropriate at startup, where a
+    /// broken deployment should fail fast.
     pub fn from_env() -> Self {
-        envy::from_env().expect("Failed to parse config from environment")
+        Self::try_from_env().expect("Failed to parse config from environment")
+    }
+
+    /// Best-effort config load for optional side effects (e.g. Discord notifications).
+    ///
+    /// Returns the underlying `envy` error when required variables are absent so callers can skip
+    /// non-critical work instead of aborting — the audit log rows themselves are never lost.
+    pub fn try_from_env() -> Result<Self, envy::Error> {
+        envy::from_env()
     }
 
     /// Parses optional comma-separated allied guild IDs without forcing deployment-specific state

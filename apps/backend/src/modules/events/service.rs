@@ -908,7 +908,9 @@ impl EventService {
     /// `DISCORD_BOT_TOKEN`; otherwise the event is still created normally. Best-effort by design:
     /// a Discord outage must never roll back event creation, so failures are only logged.
     async fn announce_call_to_arms(&self, event_view: &EventView) {
-        let cfg = Config::from_env();
+        let Ok(cfg) = Config::try_from_env() else {
+            return;
+        };
 
         let Some(channel_id) = cfg.discord_battles_cta_channel_id else {
             return;

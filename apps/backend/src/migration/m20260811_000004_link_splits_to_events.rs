@@ -3,6 +3,7 @@
 //! A nullable foreign key keeps split creation flexible: members can create a
 //! normal split, or attach it to an event when the loot came from that activity.
 
+use sea_orm::DatabaseBackend;
 use sea_orm_migration::prelude::*;
 
 use super::m20260709_000001_create_splits_table::Splits;
@@ -24,16 +25,20 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        manager
-            .create_foreign_key(
-                ForeignKey::create()
-                    .name("fk_splits_event_id")
-                    .from(Splits::Table, SplitEventLink::EventId)
-                    .to(Events::Table, Events::Id)
-                    .on_delete(ForeignKeyAction::SetNull)
-                    .to_owned(),
-            )
-            .await?;
+        // SQLite cannot add foreign key constraints to an existing table, so the constraint is
+        // PostgreSQL-only; the in-memory SQLite used by the test suite still gets the column.
+        if manager.get_database_backend() == DatabaseBackend::Postgres {
+            manager
+                .create_foreign_key(
+                    ForeignKey::create()
+                        .name("fk_splits_event_id")
+                        .from(Splits::Table, SplitEventLink::EventId)
+                        .to(Events::Table, Events::Id)
+                        .on_delete(ForeignKeyAction::SetNull)
+                        .to_owned(),
+                )
+                .await?;
+        }
 
         manager
             .create_index(
@@ -56,14 +61,16 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        manager
-            .drop_foreign_key(
-                ForeignKey::drop()
-                    .name("fk_splits_event_id")
-                    .table(Splits::Table)
-                    .to_owned(),
-            )
-            .await?;
+        if manager.get_database_backend() == DatabaseBackend::Postgres {
+            manager
+                .drop_foreign_key(
+                    ForeignKey::drop()
+                        .name("fk_splits_event_id")
+                        .table(Splits::Table)
+                        .to_owned(),
+                )
+                .await?;
+        }
 
         manager
             .alter_table(

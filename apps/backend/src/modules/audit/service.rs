@@ -15,7 +15,6 @@ impl AuditService {
         user_id: Option<i64>,
         details: Option<serde_json::Value>,
     ) -> Result<entities::Model, crate::errors::AppError> {
-        let cfg = Config::from_env();
         let model = ActiveModel {
             action: Set(action.to_string()),
             entity_type: Set(entity_type.map(String::from)),
@@ -23,6 +22,19 @@ impl AuditService {
             user_id: Set(user_id),
             details: Set(details.clone()),
             ..Default::default()
+        };
+
+        // Discord notifications are best-effort: a missing/misconfigured environment (e.g. unit
+        // tests) must never abort the audit row write or the surrounding request.
+        let cfg = match Config::try_from_env() {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                tracing::warn!("Skipping Discord notifications, config unavailable: {e}");
+                return model
+                    .insert(db)
+                    .await
+                    .map_err(crate::errors::AppError::Database);
+            }
         };
 
         let inserted = model.insert(db).await?;

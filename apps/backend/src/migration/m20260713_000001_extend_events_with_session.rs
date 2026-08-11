@@ -10,6 +10,22 @@ use sea_orm_migration::prelude::*;
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
+/// Adds one column to `events` via a single-action `ALTER TABLE`.
+async fn add_column<T: IntoTableRef>(
+    manager: &SchemaManager<'_>,
+    table: T,
+    column_def: ColumnDef,
+) -> Result<(), DbErr> {
+    manager
+        .alter_table(
+            Table::alter()
+                .table(table)
+                .add_column(column_def)
+                .to_owned(),
+        )
+        .await
+}
+
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
@@ -18,60 +34,37 @@ impl MigrationTrait for Migration {
         // which would clash with the import from the creating migration.
         let events_tbl = Alias::new("events").into_iden();
 
-        let columns = [
-            (
-                Alias::new("status"),
-                ColumnDef::new(Alias::new("status"))
-                    .text()
-                    .not_null()
-                    .default("scheduled"),
-            ),
-            (
-                Alias::new("started_at"),
-                ColumnDef::new(Alias::new("started_at")).timestamp_with_time_zone(),
-            ),
-            (
-                Alias::new("stopped_at"),
-                ColumnDef::new(Alias::new("stopped_at")).timestamp_with_time_zone(),
-            ),
-            (
-                Alias::new("auto_stop_deadline"),
-                ColumnDef::new(Alias::new("auto_stop_deadline")).timestamp_with_time_zone(),
-            ),
-            (
-                Alias::new("link_status"),
-                ColumnDef::new(Alias::new("link_status"))
-                    .text()
-                    .not_null()
-                    .default("pending"),
-            ),
-            (
-                Alias::new("link_attempts"),
-                ColumnDef::new(Alias::new("link_attempts"))
-                    .big_integer()
-                    .not_null()
-                    .default(0),
-            ),
-            (
-                Alias::new("link_last_error"),
-                ColumnDef::new(Alias::new("link_last_error")).text(),
-            ),
-            (
-                Alias::new("link_battles_completed_at"),
-                ColumnDef::new(Alias::new("link_battles_completed_at")).timestamp_with_time_zone(),
-            ),
-        ];
+        let mut column = ColumnDef::new("status");
+        column.text().not_null().default("scheduled");
+        add_column(manager, events_tbl.clone(), column).await?;
 
-        for (_, column_def) in columns {
-            manager
-                .alter_table(
-                    Table::alter()
-                        .table(events_tbl.clone())
-                        .add_column(column_def)
-                        .to_owned(),
-                )
-                .await?;
-        }
+        let mut column = ColumnDef::new("started_at");
+        column.timestamp_with_time_zone();
+        add_column(manager, events_tbl.clone(), column).await?;
+
+        let mut column = ColumnDef::new("stopped_at");
+        column.timestamp_with_time_zone();
+        add_column(manager, events_tbl.clone(), column).await?;
+
+        let mut column = ColumnDef::new("auto_stop_deadline");
+        column.timestamp_with_time_zone();
+        add_column(manager, events_tbl.clone(), column).await?;
+
+        let mut column = ColumnDef::new("link_status");
+        column.text().not_null().default("pending");
+        add_column(manager, events_tbl.clone(), column).await?;
+
+        let mut column = ColumnDef::new("link_attempts");
+        column.big_integer().not_null().default(0);
+        add_column(manager, events_tbl.clone(), column).await?;
+
+        let mut column = ColumnDef::new("link_last_error");
+        column.text();
+        add_column(manager, events_tbl.clone(), column).await?;
+
+        let mut column = ColumnDef::new("link_battles_completed_at");
+        column.timestamp_with_time_zone();
+        add_column(manager, events_tbl.clone(), column).await?;
 
         manager
             .create_index(

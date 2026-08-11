@@ -9,82 +9,94 @@ use sea_orm_migration::prelude::*;
 use super::m20260713_000002_create_event_battles::EventBattles;
 
 /// Migration step for event-battle analytics columns.
+///
+/// Each column is added through its own `ALTER TABLE` because SQLite only supports a single
+/// `ALTER TABLE` action per statement; PostgreSQL tolerates multi-action alters, the in-memory
+/// SQLite used by the test suite does not.
 #[derive(DeriveMigrationName)]
 pub struct Migration;
+
+/// Adds one column to `event_battles` via a single-action `ALTER TABLE`.
+async fn add_column(manager: &SchemaManager<'_>, column_def: ColumnDef) -> Result<(), DbErr> {
+    manager
+        .alter_table(
+            Table::alter()
+                .table(EventBattles::Table)
+                .add_column(column_def)
+                .to_owned(),
+        )
+        .await
+}
 
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(EventBattles::Table)
-                    .add_column(
-                        ColumnDef::new(EventBattleMetrics::GuildKills)
-                            .big_integer()
-                            .not_null()
-                            .default(0),
-                    )
-                    .add_column(
-                        ColumnDef::new(EventBattleMetrics::GuildDeaths)
-                            .big_integer()
-                            .not_null()
-                            .default(0),
-                    )
-                    .add_column(
-                        ColumnDef::new(EventBattleMetrics::GuildKillFame)
-                            .big_integer()
-                            .not_null()
-                            .default(0),
-                    )
-                    .add_column(
-                        ColumnDef::new(EventBattleMetrics::IsWin)
-                            .boolean()
-                            .not_null()
-                            .default(false),
-                    )
-                    .add_column(ColumnDef::new(EventBattleMetrics::OpponentGuildId).string())
-                    .add_column(ColumnDef::new(EventBattleMetrics::OpponentGuildName).string())
-                    .add_column(ColumnDef::new(EventBattleMetrics::OpponentPlayersCount).integer())
-                    .add_column(ColumnDef::new(EventBattleMetrics::OpponentKills).big_integer())
-                    .add_column(ColumnDef::new(EventBattleMetrics::OpponentDeaths).big_integer())
-                    .add_column(ColumnDef::new(EventBattleMetrics::OpponentKillFame).big_integer())
-                    .to_owned(),
-            )
-            .await
+        let mut column = ColumnDef::new("guild_kills");
+        column.big_integer().not_null().default(0);
+        add_column(manager, column).await?;
+
+        let mut column = ColumnDef::new("guild_deaths");
+        column.big_integer().not_null().default(0);
+        add_column(manager, column).await?;
+
+        let mut column = ColumnDef::new("guild_kill_fame");
+        column.big_integer().not_null().default(0);
+        add_column(manager, column).await?;
+
+        let mut column = ColumnDef::new("is_win");
+        column.boolean().not_null().default(false);
+        add_column(manager, column).await?;
+
+        let mut column = ColumnDef::new("opponent_guild_id");
+        column.string();
+        add_column(manager, column).await?;
+
+        let mut column = ColumnDef::new("opponent_guild_name");
+        column.string();
+        add_column(manager, column).await?;
+
+        let mut column = ColumnDef::new("opponent_players_count");
+        column.integer();
+        add_column(manager, column).await?;
+
+        let mut column = ColumnDef::new("opponent_kills");
+        column.big_integer();
+        add_column(manager, column).await?;
+
+        let mut column = ColumnDef::new("opponent_deaths");
+        column.big_integer();
+        add_column(manager, column).await?;
+
+        let mut column = ColumnDef::new("opponent_kill_fame");
+        column.big_integer();
+        add_column(manager, column).await?;
+
+        Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(EventBattles::Table)
-                    .drop_column(EventBattleMetrics::GuildKills)
-                    .drop_column(EventBattleMetrics::GuildDeaths)
-                    .drop_column(EventBattleMetrics::GuildKillFame)
-                    .drop_column(EventBattleMetrics::IsWin)
-                    .drop_column(EventBattleMetrics::OpponentGuildId)
-                    .drop_column(EventBattleMetrics::OpponentGuildName)
-                    .drop_column(EventBattleMetrics::OpponentPlayersCount)
-                    .drop_column(EventBattleMetrics::OpponentKills)
-                    .drop_column(EventBattleMetrics::OpponentDeaths)
-                    .drop_column(EventBattleMetrics::OpponentKillFame)
-                    .to_owned(),
-            )
-            .await
-    }
-}
+        for column in [
+            "guild_kills",
+            "guild_deaths",
+            "guild_kill_fame",
+            "is_win",
+            "opponent_guild_id",
+            "opponent_guild_name",
+            "opponent_players_count",
+            "opponent_kills",
+            "opponent_deaths",
+            "opponent_kill_fame",
+        ] {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(EventBattles::Table)
+                        .drop_column(Alias::new(column))
+                        .to_owned(),
+                )
+                .await?;
+        }
 
-#[derive(DeriveIden)]
-pub enum EventBattleMetrics {
-    GuildKills,
-    GuildDeaths,
-    GuildKillFame,
-    IsWin,
-    OpponentGuildId,
-    OpponentGuildName,
-    OpponentPlayersCount,
-    OpponentKills,
-    OpponentDeaths,
-    OpponentKillFame,
+        Ok(())
+    }
 }

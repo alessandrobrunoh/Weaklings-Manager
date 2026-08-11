@@ -441,7 +441,7 @@ export class Settings {
     const siphoned = this.siphonedBalance();
     const battleRows = this.battles();
     const userMetrics = this.userMetrics();
-    
+
     return [
       {
         label: 'Pending silver',
@@ -452,6 +452,11 @@ export class Settings {
         label: 'Requested silver',
         value: this.formatAmount(balance?.requested_total ?? 0),
         sub: `${balance?.requested_count ?? 0} rows`,
+      },
+      {
+        label: 'Total earned',
+        value: this.formatAmount(this.withdrawnTotal()),
+        sub: `${this.withdrawnCount()} tx paid out`,
       },
       {
         label: 'Siphoned net',
@@ -521,6 +526,18 @@ export class Settings {
 
   protected formatAmount(value: number | string): string {
     return new Intl.NumberFormat().format(Number(value ?? 0));
+  }
+
+  /** Sum of every `withdrawn` transaction — the silver the bank actually paid out to this member. */
+  protected withdrawnTotal(): number {
+    return this.transactions()
+      .filter((tx) => tx.status === 'withdrawn')
+      .reduce((sum, tx) => sum + Number(tx.amount), 0);
+  }
+
+  /** Number of `withdrawn` transactions on the member's ledger. */
+  protected withdrawnCount(): number {
+    return this.transactions().filter((tx) => tx.status === 'withdrawn').length;
   }
 
   protected formatCompact(value: number): string {

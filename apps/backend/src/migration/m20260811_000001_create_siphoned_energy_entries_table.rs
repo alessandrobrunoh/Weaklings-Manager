@@ -1,5 +1,6 @@
 //! Migration script to create the `siphoned_energy_entries` table (the Guild Siphoned Energy ledger).
 
+use sea_orm::DatabaseBackend;
 use sea_orm_migration::prelude::*;
 
 /// Migration step to create the `siphoned_energy_entries` table.
@@ -46,7 +47,7 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(SiphonedEnergyEntries::Amount)
-                            .decimal_len(20, 0)
+                            .decimal_len(16, 0)
                             .not_null(),
                     )
                     .col(
@@ -66,15 +67,19 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        manager
-            .create_index(
-                Index::create()
-                    .name("idx_siphoned_player_lower")
-                    .table(SiphonedEnergyEntries::Table)
-                    .col(Expr::cust("LOWER(\"player_name\")"))
-                    .to_owned(),
-            )
-            .await?;
+        // Functional `LOWER()` index: only PostgreSQL supports expression indexes, and the
+        // in-memory SQLite used by the test suite panics on them.
+        if manager.get_database_backend() == DatabaseBackend::Postgres {
+            manager
+                .create_index(
+                    Index::create()
+                        .name("idx_siphoned_player_lower")
+                        .table(SiphonedEnergyEntries::Table)
+                        .col(Expr::cust("LOWER(\"player_name\")"))
+                        .to_owned(),
+                )
+                .await?;
+        }
 
         manager
             .create_index(
