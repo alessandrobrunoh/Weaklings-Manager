@@ -22,6 +22,7 @@ import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { SearchDialog, SearchDialogOption } from '../../shared/components/search-dialog/search-dialog';
 
 const PAGE_SIZE = 10;
 
@@ -48,7 +49,7 @@ interface SplitParticipantDraft {
 @Component({
   selector: 'app-splits',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Icon, Loading],
+  imports: [PageHeader, EmptyState, Icon, Loading, SearchDialog],
   template: `
     <app-page-header [title]="t('splits.title')" [subtitle]="t('splits.subtitle')">
       <button type="button" class="btn btn--primary" (click)="toggleCreateForm()">
@@ -70,17 +71,22 @@ interface SplitParticipantDraft {
               />
             </label>
 
-            <label>
+            <div>
               <span class="label">Event (optional)</span>
-              <select class="select" [value]="draftEventId()" (change)="onDraftEventChange($event)">
-                <option value="">No event</option>
-                @for (event of eventOptions(); track event.id) {
-                  <option [value]="event.id">
-                    {{ event.title }} · {{ formatDate(event.event_date_utc) }}
-                  </option>
+              <div class="flex items-center gap-2">
+                <div class="flex-1 input flex items-center bg-[var(--color-surface-1)]">
+                  <span class="truncate">{{ draftEventTitle() || 'No event linked' }}</span>
+                </div>
+                <button type="button" class="btn btn--outline whitespace-nowrap" (click)="showEventSearch.set(true)">
+                  Link Event
+                </button>
+                @if (draftEventId()) {
+                  <button type="button" class="btn btn--danger whitespace-nowrap" (click)="unlinkDraftEvent()">
+                    <app-icon name="close" size="1rem" />
+                  </button>
                 }
-              </select>
-            </label>
+              </div>
+            </div>
 
             <div class="grid gap-3 sm:grid-cols-3">
               <label>
@@ -408,9 +414,16 @@ interface SplitParticipantDraft {
                 }
               </p>
             </div>
-            <button type="button" class="btn btn--ghost" (click)="closeSplitDetail()">
-              <app-icon name="close" size="1rem" />
-            </button>
+            <div class="flex items-center gap-2">
+              @if (canAct()) {
+                <button type="button" class="btn btn--danger" (click)="deleteSplit(detail.id)">
+                  {{ t('common.delete') }}
+                </button>
+              }
+              <button type="button" class="btn btn--ghost" (click)="closeSplitDetail()">
+                <app-icon name="close" size="1rem" />
+              </button>
+            </div>
           </header>
 
           @if (detail.status === 'pending' && canAct()) {
@@ -452,6 +465,22 @@ interface SplitParticipantDraft {
                   (input)="onEditBagsChange($event)"
                 />
               </label>
+              <div class="surface p-3 sm:col-span-4">
+                <span class="label">Event</span>
+                <div class="flex items-center gap-2">
+                  <div class="flex-1 input flex items-center bg-[var(--color-surface-1)]">
+                    <span class="truncate">{{ editEventTitle() || 'No event linked' }}</span>
+                  </div>
+                  <button type="button" class="btn btn--outline whitespace-nowrap" (click)="showEditEventSearch.set(true)">
+                    Link Event
+                  </button>
+                  @if (editEventId()) {
+                    <button type="button" class="btn btn--danger whitespace-nowrap" (click)="unlinkEditEvent()">
+                      <app-icon name="close" size="1rem" />
+                    </button>
+                  }
+                </div>
+              </div>
               <div class="sm:col-span-4 flex justify-end">
                 <button type="submit" class="btn btn--tonal">Save split values</button>
               </div>
@@ -546,6 +575,30 @@ interface SplitParticipantDraft {
         </section>
       </div>
     }
+
+    @if (showEventSearch()) {
+      <app-search-dialog
+        title="Link Event"
+        [options]="eventSearchOptions()"
+        [loading]="eventSearchLoading()"
+        [showDateFilters]="true"
+        (filterChange)="onEventSearchFilter($event)"
+        (select)="onDraftEventSelect($event)"
+        (close)="showEventSearch.set(false)"
+      />
+    }
+
+    @if (showEditEventSearch()) {
+      <app-search-dialog
+        title="Link Event"
+        [options]="eventSearchOptions()"
+        [loading]="eventSearchLoading()"
+        [showDateFilters]="true"
+        (filterChange)="onEventSearchFilter($event)"
+        (select)="onEditEventSelect($event)"
+        (close)="showEditEventSearch.set(false)"
+      />
+    }
   `,
 })
 export class Splits {
@@ -580,11 +633,19 @@ export class Splits {
   protected readonly participantRoster = signal<AlbionGuildMember[]>([]);
   protected readonly searchingRoster = signal(false);
 
+  protected readonly showEventSearch = signal(false);
+  protected readonly showEditEventSearch = signal(false);
+  protected readonly eventSearchOptions = signal<SearchDialogOption[]>([]);
+  protected readonly eventSearchLoading = signal(false);
+  protected readonly draftEventTitle = signal('');
+  protected readonly editEventId = signal<number | null>(null);
+  protected readonly editEventTitle = signal('');
+
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   constructor() {
     void this.load();
-    void this.loadEventOptions();
+    this.onEventSearchFilter({ search: '', dateFrom: '', dateTo: '' });
   }
 
   protected canAct(): boolean {
@@ -813,6 +874,7 @@ export class Splits {
       estimated_market_value: this.editEstimated(),
       repair_value: this.editRepair(),
       bags_value: this.editBags(),
+      event_id: this.editEventId(),
     };
 
     try {
@@ -822,6 +884,18 @@ export class Splits {
       this.setSelectedSplit(detail);
       await this.load();
       this.toasts.success(this.t('common.save'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    }
+  }
+
+  protected async deleteSplit(id: number): Promise<void> {
+    if (!confirm(this.t('common.confirm'))) return;
+    try {
+      await firstValueFrom(this.api.delete(`api/splits/${id}`));
+      this.toasts.success(this.t('common.delete'));
+      this.closeSplitDetail();
+      await this.load();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     }
@@ -920,12 +994,14 @@ export class Splits {
     return 'chip';
   }
 
-  private setSelectedSplit(detail: SplitDetail): void {
-    this.selectedSplit.set(detail);
-    this.editNote.set(detail.note ?? '');
-    this.editEstimated.set(Number(detail.estimated_market_value));
-    this.editRepair.set(Number(detail.repair_value));
-    this.editBags.set(Number(detail.bags_value));
+  private setSelectedSplit(split: SplitDetail): void {
+    this.selectedSplit.set(split);
+    this.editNote.set(split.note || '');
+    this.editEstimated.set(Number(split.estimated_market_value));
+    this.editRepair.set(Number(split.repair_value));
+    this.editBags.set(Number(split.bags_value));
+    this.editEventId.set(split.event_id ?? null);
+    this.editEventTitle.set(split.event_title || '');
   }
 
   private toDraftParticipants(matched: MatchedParticipant[]): SplitParticipantDraft[] {
@@ -951,12 +1027,9 @@ export class Splits {
 
   private buildCreateRequest(): CreateSplitRequest | null {
     const title = this.draftTitle().trim();
-    const participants = this.participants().map((participant) => ({
-      user_id: participant.user_id,
-      weight: participant.weight,
-    }));
+    const finalParticipants = this.participants();
 
-    if (!title || participants.length === 0) {
+    if (!title || finalParticipants.length === 0) {
       this.toasts.error(this.t('validation.required'));
       return null;
     }
@@ -966,12 +1039,12 @@ export class Splits {
       estimated_market_value: this.draftEstimated(),
       repair_value: this.draftRepair(),
       bags_value: this.draftBags(),
-      participants,
+      event_id: this.draftEventId() ? Number(this.draftEventId()) : undefined,
+      participants: finalParticipants.map((p) => ({
+        user_id: p.user_id,
+        weight: p.weight,
+      })),
     };
-    const eventId = Number(this.draftEventId());
-    if (eventId > 0) {
-      request.event_id = eventId;
-    }
     return request;
   }
 
@@ -997,6 +1070,7 @@ export class Splits {
   private resetCreateForm(): void {
     this.draftTitle.set('');
     this.draftEventId.set('');
+    this.draftEventTitle.set('');
     this.draftEstimated.set(0);
     this.draftRepair.set(0);
     this.draftBags.set(0);
@@ -1005,15 +1079,55 @@ export class Splits {
     this.showCreateForm.set(false);
   }
 
-  private async loadEventOptions(): Promise<void> {
+  protected async onEventSearchFilter(filters: { search: string; dateFrom: string; dateTo: string }) {
+    this.eventSearchLoading.set(true);
     try {
-      const events = await firstValueFrom(
-        this.api.get<PaginatedData<EventView>>('api/events', { page: 1, limit: 100 }),
+      const params: Record<string, string> = {
+        page: '1',
+        limit: '50'
+      };
+      if (filters.search) params['search'] = filters.search;
+      if (filters.dateFrom) params['date_from'] = filters.dateFrom;
+      if (filters.dateTo) params['date_to'] = filters.dateTo;
+      
+      const res = await firstValueFrom(
+        this.api.get<PaginatedData<EventView>>('/api/events', params)
       );
-      this.eventOptions.set(events.items);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      this.eventSearchOptions.set(
+        res.items.map(e => ({
+          id: e.id,
+          title: e.title,
+          subtitle: this.formatDate(e.event_date_utc),
+          chip: e.status
+        }))
+      );
+    } catch (err) {
+      this.toasts.error(err instanceof Error ? err.message : this.t('common.error'));
+    } finally {
+      this.eventSearchLoading.set(false);
     }
+  }
+
+  protected onDraftEventSelect(opt: SearchDialogOption) {
+    this.draftEventId.set(opt.id as any);
+    this.draftEventTitle.set(opt.title);
+    this.showEventSearch.set(false);
+  }
+
+  protected unlinkDraftEvent() {
+    this.draftEventId.set('');
+    this.draftEventTitle.set('');
+  }
+
+  protected onEditEventSelect(opt: SearchDialogOption) {
+    this.editEventId.set(opt.id as number);
+    this.editEventTitle.set(opt.title);
+    this.showEditEventSearch.set(false);
+  }
+
+  protected unlinkEditEvent() {
+    this.editEventId.set(null);
+    this.editEventTitle.set('');
   }
 
   private async load(): Promise<void> {

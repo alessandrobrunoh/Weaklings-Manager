@@ -44,5 +44,21 @@ services:
       - backend
     restart: unless-stopped
 
+  discord-bot:
+    image: ghcr.io/weaklings-ao/weaklings_discord_bot:latest
+    environment:
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
+      - BACKEND_URL=http://backend:3000
+      - BOT_API_SECRET=${BOT_API_SECRET}
+      - DISCORD_EVENTS_CHANNEL_ID=${DISCORD_EVENTS_CHANNEL_ID}
+      - DISCORD_BATTLES_CHANNEL_ID=${DISCORD_BATTLES_CHANNEL_ID}
+      - GUILD_NAME=${GUILD_NAME}
+      - POLL_INTERVAL_MS=${POLL_INTERVAL_MS}
+    depends_on:
+      - backend
+    restart: unless-stopped
+
 volumes:
   pgdata:

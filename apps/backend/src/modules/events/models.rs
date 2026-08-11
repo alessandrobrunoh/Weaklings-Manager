@@ -4,6 +4,17 @@ use sea_orm::prelude::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+/// Filters for listing events.
+#[derive(Debug, Clone, Deserialize, ToSchema, Default)]
+pub struct EventFilters {
+    /// Filter by event title (case-insensitive partial match).
+    pub search: Option<String>,
+    /// Filter by start date (inclusive).
+    pub date_from: Option<String>,
+    /// Filter by end date (inclusive).
+    pub date_to: Option<String>,
+}
+
 /// Aggregated performance metrics for an event or composition.
 #[derive(Debug, Serialize, Clone, Default, ToSchema)]
 pub struct BattlePerformanceStats {
@@ -215,6 +226,27 @@ pub struct EventDetailView {
     pub splits: Vec<crate::modules::splits::models::SplitSummary>,
     /// Aggregated split economy statistics.
     pub split_stats: EventSplitStats,
+}
+
+/// Request body used by officers to define the exact battles linked to an event.
+///
+/// Replacing the full list supports the valid `0+ battles` model: an empty array explicitly means
+/// the event currently has no battle evidence attached, while one or more IDs become the battle set
+/// used by analytics.
+///
+/// # Example
+/// ```rust
+/// # use backend::modules::events::models::UpdateEventBattlesRequest;
+/// let request = UpdateEventBattlesRequest {
+///     battle_ids: vec!["123456789".to_string()],
+/// };
+/// assert_eq!(request.battle_ids.len(), 1);
+/// ```
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[schema(example = json!({ "battle_ids": ["123456789", "123456790"] }))]
+pub struct UpdateEventBattlesRequest {
+    /// AlbionBB battle IDs to attach. Empty list removes every linked battle from the event.
+    pub battle_ids: Vec<String>,
 }
 
 /// Request body to create a new event.

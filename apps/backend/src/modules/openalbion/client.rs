@@ -135,18 +135,6 @@ pub enum OpenAlbionItemType {
     Consumable,
 }
 
-impl OpenAlbionItemType {
-    #[must_use]
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Weapon => "weapon",
-            Self::Armor => "armor",
-            Self::Accessory => "accessory",
-            Self::Consumable => "consumable",
-        }
-    }
-}
-
 impl FromStr for OpenAlbionItemType {
     type Err = String;
 
@@ -471,14 +459,8 @@ fn render_icon_url_from_identifier_or_icon(
 
 fn item_identifier_from_icon(icon_url: Option<&str>) -> Option<String> {
     let file_name = icon_url?.rsplit('/').next()?;
-    let item_id = file_name
-        .strip_suffix(".png")
-        .unwrap_or(file_name)
-        .split('?')
-        .next()?
-        .split('@')
-        .next()?
-        .trim();
+    let file_stem = file_name.split('?').next()?.split('@').next()?.trim();
+    let item_id = file_stem.strip_suffix(".png").unwrap_or(file_stem).trim();
 
     if item_id.is_empty() {
         None

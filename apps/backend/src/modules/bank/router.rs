@@ -15,7 +15,7 @@ use crate::pagination::{PaginatedTransactionView, PaginationParams};
 use crate::responses::{ApiResponse, ApiResponseBalanceSummary, ApiResponseTransactionViewList};
 
 use super::models::{
-    AcceptWithdrawalRequest, TransactionFilters, TransactionView, WithdrawRequest,
+    AcceptWithdrawalRequest, RejectWithdrawalRequest, TransactionFilters, TransactionView, WithdrawRequest,
 };
 use super::service::BankService;
 
@@ -42,6 +42,8 @@ pub struct ListTransactionsQuery {
     pub filters: TransactionFilters,
     /// Optional user id to view another user's transactions; requires administrator privileges.
     pub user_id: Option<i64>,
+    /// If `true`, returns transactions for all users. Requires administrator privileges.
+    pub global: Option<bool>,
 }
 
 impl ListTransactionsQuery {
@@ -60,6 +62,7 @@ pub fn router() -> Router {
         .route("/transactions", get(list_transactions))
         .route("/transactions/withdraw", post(withdraw))
         .route("/transactions/withdraw/accept", post(accept_withdrawal))
+        .route("/transactions/withdraw/reject", post(reject_withdrawal))
 }
 
 /// Resolves which user's ledger to act on, honoring the admin override query param.
@@ -145,7 +148,13 @@ async fn list_transactions(
     Extension(perms): Extension<Permissions>,
     Query(query): Query<ListTransactionsQuery>,
 ) -> Result<Json<ApiResponse<PaginatedTransactionView>>, AppError> {
-    let target = resolve_target_user(&user, &perms, query.user_id).await?;
+    let target = if query.global.unwrap_or(false) {
+        user.require(&perms, Permission::BankViewOthers).await?;
+        None
+    } else {
+        Some(resolve_target_user(&user, &perms, query.user_id).await?)
+    };
+
     let service = BankService::new();
     let pagination = query.pagination();
     let paginated = service
@@ -238,4 +247,41 @@ async fn accept_withdrawal(
     let service = BankService::new();
     let accepted = service.accept_withdrawal(&db, user.user_id, &req).await?;
     Ok(Json(ApiResponse::new(accepted)))
+}
+
+/// Reject one, several, or all currently-requested withdrawals, moving them back to "pending".
+///
+/// Requires the Admin or Officer role.
+///
+/// # Errors
+///
+/// * Returns `AppError::Forbidden` if the caller lacks the required role.
+/// * Returns `AppError::Validation` if the request selects transactions that aren't currently
+///   requested.
+#[utoipa::path(
+    post,
+    path = "/api/bank/transactions/withdraw/reject",
+    tag = "bank",
+    summary = "Reject requested withdrawals (Officer/Admin only)",
+    description = "Moves the selected `requested` transactions back to `pending`. Provide either \
+        `transaction_ids` (specific rows, any member) or `all: true` for every currently-requested \
+        transaction guild-wide. Requires the Admin or Officer role.",
+    security(("session_cookie" = ["bank.withdraw.accept"])),
+    request_body(content = RejectWithdrawalRequest, description = "Either `transaction_ids` or `all: true`."),
+    responses(
+        (status = 200, description = "The transactions that were rejected (may be an empty list)", body = ApiResponseTransactionViewList),
+        (status = 403, description = "Forbidden - lacks administrator/officer role", body = ProblemDetails),
+        (status = 400, description = "Validation error", body = ProblemDetails)
+    )
+)]
+async fn reject_withdrawal(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Json(req): Json<RejectWithdrawalRequest>,
+) -> Result<Json<ApiResponse<Vec<TransactionView>>>, AppError> {
+    user.require(&perms, Permission::BankWithdrawAccept).await?;
+    let service = BankService::new();
+    let rejected = service.reject_withdrawal(&db, &req).await?;
+    Ok(Json(ApiResponse::new(rejected)))
 }

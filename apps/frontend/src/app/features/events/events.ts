@@ -3,8 +3,6 @@ import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
-  CompSummary,
-  CreateEventRequest,
   EventDetailView,
   EventStatus,
   EventView,
@@ -22,10 +20,11 @@ import { PageHeader } from '../../shared/components/page-header/page-header';
 const PAGE_SIZE = 10;
 
 /**
- * Events page for scheduling and running guild activities.
+ * Events list page.
  *
- * Members can join/leave scheduled events; officers/admins additionally
- * create, start, and stop sessions from the same focused screen.
+ * Shows a paginated grid of guild events with quick state actions (join, leave,
+ * start, stop). Creation now lives on a dedicated route (`/events/new`) so the
+ * list stays focused on browsing; clicking any card opens the analytics view.
  */
 @Component({
   selector: 'app-events',
@@ -34,55 +33,11 @@ const PAGE_SIZE = 10;
   template: `
     <app-page-header [title]="t('events.title')" [subtitle]="t('events.subtitle')">
       @if (canManage()) {
-        <button type="button" class="btn btn--primary" (click)="toggleCreateForm()">
-          {{ showCreateForm() ? t('common.close') : t('events.new') }}
+        <button type="button" class="btn btn--primary" (click)="openCreateForm()">
+          {{ t('events.new') }}
         </button>
       }
     </app-page-header>
-
-    @if (showCreateForm()) {
-      <form class="card mb-6 grid gap-4 p-5" (submit)="onCreateSubmit($event)">
-        <label>
-          <span class="label">{{ t('common.name') }}</span>
-          <input class="input" type="text" [value]="draftTitle()" (input)="onTitleChange($event)" />
-        </label>
-        <label>
-          <span class="label">Description</span>
-          <textarea
-            class="textarea"
-            rows="3"
-            [value]="draftDescription()"
-            (input)="onDescriptionChange($event)"
-          ></textarea>
-        </label>
-        <label>
-          <span class="label">Composition</span>
-          <select class="select" [value]="draftCompId()" (change)="onCompChange($event)">
-            <option value="">Select comp</option>
-            @for (comp of comps(); track comp.id) {
-              <option [value]="comp.id">{{ comp.name }}</option>
-            }
-          </select>
-        </label>
-        <label>
-          <span class="label">{{ t('common.date') }}</span>
-          <input
-            class="input"
-            type="datetime-local"
-            [value]="draftScheduledAt()"
-            (input)="onScheduledAtChange($event)"
-          />
-        </label>
-        <div class="flex justify-end gap-2">
-          <button type="button" class="btn btn--ghost" (click)="toggleCreateForm()">
-            {{ t('common.cancel') }}
-          </button>
-          <button type="submit" class="btn btn--primary" [disabled]="saving()">
-            {{ t('common.create') }}
-          </button>
-        </div>
-      </form>
-    }
 
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
@@ -144,6 +99,11 @@ const PAGE_SIZE = 10;
               <button type="button" class="btn btn--outline" (click)="openEventDetail(event.id)">
                 Stats
               </button>
+              @if (canManage()) {
+                <button type="button" class="btn btn--danger" (click)="deleteEvent(event.id)">
+                  {{ t('common.delete') }}
+                </button>
+              }
             </footer>
           </article>
         }
@@ -181,84 +141,34 @@ export class Events {
   protected readonly loading = signal(false);
   protected readonly page = signal(1);
   protected readonly totalPages = signal(1);
-  protected readonly saving = signal(false);
-  protected readonly showCreateForm = signal(false);
-  protected readonly comps = signal<CompSummary[]>([]);
-  protected readonly draftTitle = signal('');
-  protected readonly draftDescription = signal('');
-  protected readonly draftCompId = signal('');
-  protected readonly draftScheduledAt = signal(this.defaultScheduledAt());
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   constructor() {
     void this.load();
-    void this.loadComps();
   }
 
+  /** True when the current user can create, start, or stop events. */
   protected canManage(): boolean {
     return this.auth.hasPermission('events.manage');
   }
 
-  protected toggleCreateForm(): void {
-    this.showCreateForm.update((isVisible) => !isVisible);
+  /** Opens the dedicated create event route. */
+  protected openCreateForm(): void {
+    void this.router.navigate(['/events/new']);
   }
 
-  protected onTitleChange(event: Event): void {
-    this.draftTitle.set((event.target as HTMLInputElement).value);
+  /** Opens the analytics view for a single event. */
+  protected openEventDetail(id: number): void {
+    void this.router.navigate(['/events', id]);
   }
 
-  protected onDescriptionChange(event: Event): void {
-    this.draftDescription.set((event.target as HTMLTextAreaElement).value);
-  }
-
-  protected onScheduledAtChange(event: Event): void {
-    this.draftScheduledAt.set((event.target as HTMLInputElement).value);
-  }
-
-  protected onCompChange(event: Event): void {
-    this.draftCompId.set((event.target as HTMLSelectElement).value);
-  }
-
-  protected onCreateSubmit(event: SubmitEvent): void {
-    event.preventDefault();
-    void this.createEvent();
-  }
-
-  private async createEvent(): Promise<void> {
-    const title = this.draftTitle().trim();
-    const compId = Number(this.draftCompId());
-    if (!title || compId <= 0) {
-      this.toasts.error(this.t('validation.required'));
-      return;
-    }
-
-    this.saving.set(true);
-    try {
-      const request: CreateEventRequest = {
-        title,
-        comp_id: compId,
-        event_date_utc: new Date(this.draftScheduledAt()).toISOString(),
-      };
-      const description = this.draftDescription().trim();
-      if (description) {
-        request.description = description;
-      }
-      await firstValueFrom(this.api.post<EventView>('api/events', request));
-      this.resetCreateForm();
-      await this.load();
-      this.toasts.success(this.t('common.create'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
+  /** Formats ISO date strings using the browser locale. */
   protected formatDate(iso: string): string {
     return new Date(iso).toLocaleString();
   }
 
+  /** Maps event lifecycle to chip color modifiers. */
   protected statusChip(status: EventStatus): string {
     if (status === 'live') {
       return 'chip chip--success';
@@ -269,28 +179,35 @@ export class Events {
     return 'chip';
   }
 
+  /** Redirects to the detail page where build selection is performed. */
   protected async join(id: number): Promise<void> {
-    this.toasts.info('Open event detail to select a build before joining.');
-    void id;
-  }
-
-  /** Opens the dedicated event analytics route. */
-  protected openEventDetail(id: number): void {
     void this.router.navigate(['/events', id]);
   }
 
+  /** Cancels the current user's participation in the event. */
   protected async leave(id: number): Promise<void> {
     await this.mutate(`api/events/${id}/participate`, 'DELETE', null);
   }
 
+  /** Marks a scheduled event as live; reserved to officers/admins. */
   protected async start(id: number): Promise<void> {
     await this.mutate(`api/events/${id}/start`, 'POST', {});
   }
 
+  /** Stops a live event; reserved to officers/admins. */
   protected async stop(id: number): Promise<void> {
     await this.mutate(`api/events/${id}/stop`, 'POST', {});
   }
 
+  /** Deletes an event from the list; reserved to officers/admins. */
+  protected async deleteEvent(id: number): Promise<void> {
+    if (!window.confirm(this.t('common.confirm'))) {
+      return;
+    }
+    await this.mutate(`api/events/${id}`, 'DELETE', null);
+  }
+
+  /** Advances to the next page of events. */
   protected async next(): Promise<void> {
     if (this.page() >= this.totalPages()) {
       return;
@@ -299,37 +216,13 @@ export class Events {
     await this.load();
   }
 
+  /** Returns to the previous page of events. */
   protected async prev(): Promise<void> {
     if (this.page() <= 1) {
       return;
     }
     this.page.update((p) => p - 1);
     await this.load();
-  }
-
-  private resetCreateForm(): void {
-    this.draftTitle.set('');
-    this.draftDescription.set('');
-    this.draftCompId.set('');
-    this.draftScheduledAt.set(this.defaultScheduledAt());
-    this.showCreateForm.set(false);
-  }
-
-  private defaultScheduledAt(): string {
-    const nextHour = new Date(Date.now() + 60 * 60 * 1000);
-    nextHour.setMinutes(0, 0, 0);
-    return nextHour.toISOString().slice(0, 16);
-  }
-
-  private async loadComps(): Promise<void> {
-    try {
-      const comps = await firstValueFrom(
-        this.api.get<PaginatedData<CompSummary>>('api/comps', { page: 1, limit: 100 }),
-      );
-      this.comps.set(comps.items);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    }
   }
 
   private async load(): Promise<void> {

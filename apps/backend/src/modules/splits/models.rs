@@ -182,4 +182,10 @@ pub struct SplitFilters {
     pub status: Option<SplitStatus>,
     /// Filter splits linked to a specific event.
     pub event_id: Option<i64>,
+    /// Filter by note or creator username.
+    pub search: Option<String>,
+    /// Filter by created_at date (inclusive).
+    pub date_from: Option<String>,
+    /// Filter by created_at date (inclusive).
+    pub date_to: Option<String>,
 }

@@ -26,6 +26,8 @@ const MAX_ITEM_IDS_PER_PRICE_REQUEST: usize = 120;
 pub struct AlbionDataService {
     client: AlbionDataApiClient,
     default_server: String,
+    default_icon_quality: u8,
+    default_icon_size: u16,
 }
 
 impl AlbionDataService {
@@ -44,6 +46,8 @@ impl AlbionDataService {
         Self {
             client: AlbionDataApiClient::new(timeout_secs),
             default_server,
+            default_icon_quality: DEFAULT_ICON_QUALITY,
+            default_icon_size: DEFAULT_ICON_SIZE,
         }
     }
 
@@ -110,7 +114,7 @@ impl AlbionDataService {
             ));
         }
 
-        let size = size.unwrap_or(DEFAULT_ICON_SIZE);
+        let size = size.unwrap_or(self.default_icon_size);
         if size == 0 {
             return Err(AppError::Validation(
                 "Icon size must be greater than zero".to_string(),
@@ -119,7 +123,7 @@ impl AlbionDataService {
 
         Ok(AlbionDataItemIcon::new(
             item_id,
-            quality.unwrap_or(DEFAULT_ICON_QUALITY),
+            quality.unwrap_or(self.default_icon_quality),
             size,
         ))
     }

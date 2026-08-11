@@ -18,7 +18,9 @@ import type {
   CreateCompRequest,
   OpenAlbionItem,
   UpdateBuildCategoryRequest,
+  UpdateBuildRequest,
   UpdateCompCategoryRequest,
+  UpdateCompRequest,
   PaginatedData,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
@@ -420,34 +422,73 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         @for (item of items(); track item.id) {
           <article class="card p-5">
-            <header class="mb-3 flex items-start justify-between gap-2">
-              <h3 class="text-base font-semibold" style="color: var(--color-text)">
-                {{ item.name }}
-              </h3>
-              <span class="chip">{{ item.category_name || 'No category' }}</span>
-            </header>
-            @if (tab() === 'builds') {
-              <p class="text-xs" style="color: var(--color-text-secondary)">
-                {{ roleLabel(asBuild(item).role) }} · {{ asBuild(item).item_count }} item(s)
-              </p>
+            @if (editingItemId() === item.id) {
+              <div class="grid gap-3">
+                <input class="input" type="text" [value]="editItemName()" (input)="onEditItemNameChange($event)" placeholder="Name" />
+                <select class="select" [value]="editItemCategoryId()" (change)="onEditItemCategoryIdChange($event)">
+                  <option value="">No category</option>
+                  @for (category of currentCategories(); track category.id) {
+                    <option [value]="category.id">{{ category.name }}</option>
+                  }
+                </select>
+                @if (tab() === 'builds') {
+                  <select class="select" [value]="editItemRole()" (change)="onEditItemRoleChange($event)">
+                    @for (role of roles; track role) {
+                      <option [value]="role">{{ roleLabel(role) }}</option>
+                    }
+                  </select>
+                } @else {
+                  <select class="select" [value]="editItemParentId()" (change)="onEditItemParentIdChange($event)">
+                    <option value="">No parent</option>
+                    @for (comp of comps(); track comp.id) {
+                      @if (comp.id !== item.id) {
+                        <option [value]="comp.id">{{ comp.name }}</option>
+                      }
+                    }
+                  </select>
+                }
+                <div class="flex justify-end gap-2 mt-2">
+                  <button type="button" class="btn btn--ghost" (click)="cancelEditItem()">{{ t('common.cancel') }}</button>
+                  <button type="button" class="btn btn--primary" [disabled]="saving()" (click)="saveEditItem(item.id)">{{ t('common.save') }}</button>
+                </div>
+              </div>
             } @else {
-              <p class="text-xs" style="color: var(--color-text-secondary)">
-                {{ asComp(item).build_count }} build(s) · {{ asComp(item).total_quantity }} slots
-              </p>
+              <header class="mb-3 flex items-start justify-between gap-2">
+                <h3 class="text-base font-semibold" style="color: var(--color-text)">
+                  {{ item.name }}
+                </h3>
+                <span class="chip">{{ item.category_name || 'No category' }}</span>
+              </header>
+              @if (tab() === 'builds') {
+                <p class="text-xs" style="color: var(--color-text-secondary)">
+                  {{ roleLabel(asBuild(item).role) }} · {{ asBuild(item).item_count }} item(s)
+                </p>
+              } @else {
+                <p class="text-xs" style="color: var(--color-text-secondary)">
+                  {{ asComp(item).build_count }} build(s) · {{ asComp(item).total_quantity }} slots
+                </p>
 
-              @if (compPerformance(asComp(item).id); as performance) {
-                <section
-                  class="mt-4 grid grid-cols-2 gap-2 rounded-xl border p-3 text-xs"
-                  style="border-color: var(--color-border)"
-                >
-                  <span>Events: {{ performance.events_with_battles }}</span>
-                  <span>W/L: {{ performance.stats.wins }}-{{ performance.stats.losses }}</span>
-                  <span>Win: {{ formatPercent(performance.stats.win_rate) }}</span>
-                  <span>K/D: {{ formatRatio(performance.stats.kill_death_ratio) }}</span>
-                  <span class="col-span-2"
-                    >Fame: {{ formatNumber(performance.stats.total_kill_fame) }}</span
+                @if (compPerformance(asComp(item).id); as performance) {
+                  <section
+                    class="mt-4 grid grid-cols-2 gap-2 rounded-xl border p-3 text-xs"
+                    style="border-color: var(--color-border)"
                   >
-                </section>
+                    <span>Events: {{ performance.events_with_battles }}</span>
+                    <span>W/L: {{ performance.stats.wins }}-{{ performance.stats.losses }}</span>
+                    <span>Win: {{ formatPercent(performance.stats.win_rate) }}</span>
+                    <span>K/D: {{ formatRatio(performance.stats.kill_death_ratio) }}</span>
+                    <span class="col-span-2"
+                      >Fame: {{ formatNumber(performance.stats.total_kill_fame) }}</span
+                    >
+                  </section>
+                }
+              }
+
+              @if (canCreateCurrent()) {
+                <footer class="mt-4 flex justify-end gap-2 border-t pt-3" style="border-color: var(--color-border)">
+                  <button type="button" class="btn btn--outline" (click)="startEditItem(item)">{{ t('common.edit') }}</button>
+                  <button type="button" class="btn btn--danger" [disabled]="saving()" (click)="deleteItem(item)">{{ t('common.delete') }}</button>
+                </footer>
               }
             }
           </article>
@@ -506,6 +547,11 @@ export class Comps {
   protected readonly draftCategoryId = signal('');
   protected readonly draftRole = signal<BuildRole>('dps');
   protected readonly draftParentCompId = signal('');
+  protected readonly editingItemId = signal<number | null>(null);
+  protected readonly editItemName = signal('');
+  protected readonly editItemCategoryId = signal('');
+  protected readonly editItemRole = signal<BuildRole>('dps');
+  protected readonly editItemParentId = signal('');
   protected readonly selectedBuildId = signal('');
   protected readonly selectedBuildQuantity = signal(1);
   protected readonly draftBuildEntries = signal<Array<{ build_id: number; quantity: number }>>([]);
@@ -678,6 +724,7 @@ export class Comps {
     this.tab.set(tab);
     this.page.set(1);
     this.showCreateForm.set(false);
+    this.cancelEditItem();
     void this.load();
   }
 
@@ -714,6 +761,22 @@ export class Comps {
 
   protected onParentCompChange(event: Event): void {
     this.draftParentCompId.set((event.target as HTMLSelectElement).value);
+  }
+
+  protected onEditItemNameChange(event: Event): void {
+    this.editItemName.set((event.target as HTMLInputElement).value);
+  }
+
+  protected onEditItemCategoryIdChange(event: Event): void {
+    this.editItemCategoryId.set((event.target as HTMLSelectElement).value);
+  }
+
+  protected onEditItemRoleChange(event: Event): void {
+    this.editItemRole.set((event.target as HTMLSelectElement).value as BuildRole);
+  }
+
+  protected onEditItemParentIdChange(event: Event): void {
+    this.editItemParentId.set((event.target as HTMLSelectElement).value);
   }
 
   protected onSelectedBuildChange(event: Event): void {
@@ -948,6 +1011,77 @@ export class Comps {
       await this.load();
       await this.loadFormOptions();
       this.toasts.success(this.t('common.create'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected startEditItem(item: CompSummary | BuildSummary): void {
+    this.editingItemId.set(item.id);
+    this.editItemName.set(item.name);
+    this.editItemCategoryId.set(String(item.category_id || ''));
+    if (this.tab() === 'builds') {
+      this.editItemRole.set(this.asBuild(item).role);
+    } else {
+      this.editItemParentId.set(String(this.asComp(item).parent_id || ''));
+    }
+  }
+
+  protected cancelEditItem(): void {
+    this.editingItemId.set(null);
+  }
+
+  protected async saveEditItem(id: number): Promise<void> {
+    const name = this.editItemName().trim();
+    if (!name) {
+      this.toasts.error(this.t('validation.required'));
+      return;
+    }
+    const categoryIdStr = this.editItemCategoryId();
+    const categoryId = categoryIdStr ? Number(categoryIdStr) : undefined;
+    
+    this.saving.set(true);
+    try {
+      if (this.tab() === 'builds') {
+        const role = this.editItemRole();
+        const request: Partial<UpdateBuildRequest> = { name, role };
+        if (categoryId !== undefined) request.category_id = categoryId;
+        await firstValueFrom(this.api.patch(`api/comps/builds/${id}`, request));
+      } else {
+        const request: Partial<UpdateCompRequest> = { name };
+        if (categoryId !== undefined) request.category_id = categoryId;
+        const parentIdStr = this.editItemParentId();
+        const parentId = parentIdStr ? Number(parentIdStr) : undefined;
+        if (parentId !== undefined) request.parent_id = parentId;
+        await firstValueFrom(this.api.patch(`api/comps/${id}`, request));
+      }
+      this.cancelEditItem();
+      await this.loadFormOptions();
+      await this.load();
+      this.toasts.success(this.t('common.save'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async deleteItem(item: CompSummary | BuildSummary): Promise<void> {
+    if (!window.confirm(this.t('comps.delete.confirm'))) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      if (this.tab() === 'builds') {
+        await firstValueFrom(this.api.delete(`api/comps/builds/${item.id}`));
+      } else {
+        await firstValueFrom(this.api.delete(`api/comps/${item.id}`));
+      }
+      await this.loadFormOptions();
+      await this.load();
+      this.toasts.success(this.t('common.delete'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {

@@ -22,6 +22,12 @@ pub struct Config {
     pub discord_redirect_uri: String,
     /// Discord Guild (Server) ID.
     pub discord_guild_id: String,
+    /// Shared secret for bot-to-backend authentication (optional).
+    ///
+    /// When set, HTTP requests carrying the `X-Bot-Secret` header with this value are
+    /// treated as authenticated bot requests and resolved to a local user via the
+    /// `X-Discord-Id` header. Leave unset to disable bot header auth entirely.
+    pub bot_api_secret: Option<String>,
     /// Discord Bot Token (optional).
     pub discord_bot_token: Option<String>,
     /// Super Admin Discord User ID.

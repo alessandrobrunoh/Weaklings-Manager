@@ -7,6 +7,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, Set,
 };
+use sea_orm::sea_query::{Expr, Func};
 
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 
@@ -14,7 +15,7 @@ use super::entities::{event, event_battle, event_participation};
 use super::models::{
     BattlePerformanceStats, CompPerformanceView, CreateEventRequest, EventBattleView,
     EventDetailView, EventParticipantView, EventSplitStats, EventView, OpponentPerformanceView,
-    ParticipateEventRequest, UpdateEventRequest,
+    ParticipateEventRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
 use crate::errors::AppError;
 use crate::modules::albionbb::client::{
@@ -212,6 +213,29 @@ fn build_split_stats(splits: &[split::Model], participant_entries: i64) -> Event
     stats
 }
 
+/// Deduplicates user-provided battle IDs while preserving the order officers typed.
+fn normalize_battle_ids(raw_battle_ids: &[String]) -> Result<Vec<String>, AppError> {
+    if raw_battle_ids.len() > 50 {
+        return Err(AppError::Validation(
+            "A maximum of 50 battles can be linked to one event at once".to_string(),
+        ));
+    }
+
+    let mut seen = HashSet::new();
+    let mut battle_ids = Vec::new();
+    for raw_battle_id in raw_battle_ids {
+        let battle_id = raw_battle_id.trim();
+        if battle_id.is_empty() {
+            continue;
+        }
+        if seen.insert(battle_id.to_string()) {
+            battle_ids.push(battle_id.to_string());
+        }
+    }
+
+    Ok(battle_ids)
+}
+
 /// Service layer coordinating events operations.
 #[derive(Debug, Clone)]
 pub struct EventService;
@@ -326,11 +350,38 @@ impl EventService {
         &self,
         db: &DatabaseConnection,
         pagination: PaginationParams,
+        filters: super::models::EventFilters,
     ) -> Result<PaginatedData<EventView>, AppError> {
         let page = pagination.offset_page();
         let limit = pagination.limit();
 
-        let paginator = event::Entity::find()
+        let mut query = event::Entity::find();
+
+        if let Some(search) = filters.search {
+            if !search.trim().is_empty() {
+                let pattern = format!("%{}%", search.trim());
+                query = query.filter(
+                    sea_orm::Condition::any().add(
+                        Expr::expr(Func::lower(Expr::col(event::Column::Title)))
+                            .like(pattern.to_lowercase()),
+                    )
+                );
+            }
+        }
+
+        if let Some(date_from) = filters.date_from {
+            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_from) {
+                query = query.filter(event::Column::EventDateUtc.gte(dt));
+            }
+        }
+
+        if let Some(date_to) = filters.date_to {
+            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_to) {
+                query = query.filter(event::Column::EventDateUtc.lte(dt));
+            }
+        }
+
+        let paginator = query
             .order_by_asc(event::Column::EventDateUtc)
             .paginate(db, limit);
 
@@ -871,6 +922,95 @@ impl EventService {
         }
 
         Ok(inserted)
+    }
+
+    /// Replaces the manually linked battle set for an event.
+    ///
+    /// Officers can attach zero or more AlbionBB battles after reviewing what actually happened
+    /// during the event. The method fetches each requested battle before changing the database so a
+    /// temporary upstream failure does not wipe existing analytics.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use backend::modules::events::models::UpdateEventBattlesRequest;
+    /// # use backend::modules::events::service::EventService;
+    /// # async fn example(
+    /// #     db: &sea_orm::DatabaseConnection,
+    /// #     albionbb: &backend::modules::albionbb::service::AlbionBbService,
+    /// # ) -> Result<(), backend::errors::AppError> {
+    /// let service = EventService::new();
+    /// let request = UpdateEventBattlesRequest { battle_ids: vec!["123456789".to_string()] };
+    /// let detail = service
+    ///     .replace_event_battles(db, albionbb, "guild-id", Some("eu"), 1, request)
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    /// Returns validation errors for malformed IDs or battles that do not include the configured
+    /// guild, not-found when the event/battle is missing, and upstream errors from AlbionBB.
+    pub async fn replace_event_battles(
+        &self,
+        db: &DatabaseConnection,
+        albionbb: &AlbionBbService,
+        guild_id: &str,
+        server: Option<&str>,
+        event_id: i64,
+        req: UpdateEventBattlesRequest,
+    ) -> Result<EventDetailView, AppError> {
+        let event_exists = event::Entity::find_by_id(event_id)
+            .count(db)
+            .await
+            .map_err(AppError::Database)?
+            > 0;
+        if !event_exists {
+            return Err(AppError::NotFound(format!("Event {event_id} not found")));
+        }
+
+        let battle_ids = normalize_battle_ids(&req.battle_ids)?;
+        let mut snapshots = Vec::with_capacity(battle_ids.len());
+        for battle_id in &battle_ids {
+            let parsed_battle_id = battle_id.parse::<i64>().map_err(|error| {
+                AppError::Validation(format!("Invalid AlbionBB battle id '{battle_id}': {error}"))
+            })?;
+            let battle = albionbb.get_battle(server, parsed_battle_id).await?.summary;
+            let snapshot = linked_battle_snapshot(&battle, guild_id);
+            if snapshot.guild_players_count == 0 {
+                return Err(AppError::Validation(format!(
+                    "Battle {battle_id} does not include the configured guild"
+                )));
+            }
+            let started = chrono::DateTime::parse_from_rfc3339(&battle.start_time)
+                .map_err(|error| {
+                    AppError::UpstreamService(format!(
+                        "AlbionBB battle {battle_id} has an invalid start time: {error}"
+                    ))
+                })?
+                .with_timezone(&Utc);
+            snapshots.push((battle.id.to_string(), started, snapshot));
+        }
+
+        event_battle::Entity::delete_many()
+            .filter(event_battle::Column::EventId.eq(event_id))
+            .exec(db)
+            .await
+            .map_err(AppError::Database)?;
+
+        for (battle_id, started, snapshot) in snapshots {
+            let mut row = event_battle::ActiveModel {
+                event_id: Set(event_id),
+                albionbb_battle_id: Set(battle_id),
+                battle_started_at: Set(started.into()),
+                fetched_at: Set(Utc::now().into()),
+                ..Default::default()
+            };
+            apply_battle_snapshot(&mut row, &snapshot)?;
+            row.insert(db).await.map_err(AppError::Database)?;
+        }
+
+        Self::finalize_link(db, event_id, false).await?;
+        self.get_event_detail(db, event_id).await
     }
 
     /// Returns `true` when the linker should stop polling AlbionBB for this

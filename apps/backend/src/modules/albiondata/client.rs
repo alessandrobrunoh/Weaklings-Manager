@@ -1,6 +1,6 @@
 //! Albion Online Data and Render Service client.
 //!
-//! Provides the small, self-owned integration surface that does not depend on OpenAlbion:
+//! Provides the small, self-owned integration surface that does not depend on `OpenAlbion`:
 //! current market prices from Albion Online Data and deterministic item image URLs from
 //! Sandbox Interactive's render service.
 

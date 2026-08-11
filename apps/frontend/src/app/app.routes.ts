@@ -33,6 +33,12 @@ export const routes: Routes = [
         loadComponent: () => import('./features/events/events').then((m) => m.Events),
       },
       {
+        path: 'events/new',
+        canActivate: [roleGuard('Officer', 'Admin', 'SuperAdmin')],
+        loadComponent: () =>
+          import('./features/events/event-create').then((m) => m.EventCreatePage),
+      },
+      {
         path: 'events/:eventId',
         loadComponent: () =>
           import('./features/events/event-detail').then((m) => m.EventDetailPage),

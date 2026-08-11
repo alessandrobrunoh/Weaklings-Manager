@@ -6,6 +6,7 @@ use axum::{
     routing::{get, post},
 };
 
+use crate::config::Config;
 use crate::errors::AppError;
 use crate::errors::ProblemDetails;
 use crate::modules::auth::{Permission, Permissions, UserContext};
@@ -16,9 +17,12 @@ use crate::responses::{
 use axum::http::StatusCode;
 
 use super::models::{
-    CreateEventRequest, EventDetailView, EventView, ParticipateEventRequest, UpdateEventRequest,
+    CreateEventRequest, EventDetailView, EventFilters, EventView, ParticipateEventRequest,
+    UpdateEventBattlesRequest, UpdateEventRequest,
 };
 use super::service::EventService;
+use crate::modules::albionbb::client::normalize_server;
+use crate::modules::albionbb::service::AlbionBbService;
 
 /// Returns the compiled router containing all event endpoints.
 pub fn router() -> Router {
@@ -34,7 +38,10 @@ pub fn router() -> Router {
         )
         .route("/{id}/start", post(start_event))
         .route("/{id}/stop", post(stop_event))
-        .route("/{id}/battles", get(list_event_battles))
+        .route(
+            "/{id}/battles",
+            get(list_event_battles).put(replace_event_battles),
+        )
 }
 
 /// Lists all events (paginated).
@@ -60,9 +67,10 @@ async fn list_events(
     _user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Query(pagination): Query<PaginationParams>,
+    Query(filters): Query<EventFilters>,
 ) -> Result<Json<ApiResponse<PaginatedData<EventView>>>, AppError> {
     let service = EventService::new();
-    let events = service.list_events(&db, pagination).await?;
+    let events = service.list_events(&db, pagination, filters).await?;
     Ok(Json(ApiResponse::new(events)))
 }
 
@@ -341,5 +349,45 @@ async fn list_event_battles(
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     let service = EventService::new();
     let detail = service.get_event_detail(&db, id).await?;
+    Ok(Json(ApiResponse::new(detail)))
+}
+
+/// Replaces the complete set of battles linked to an event.
+///
+/// Requires `events.manage` permission. Passing an empty `battle_ids` array is valid and removes
+/// every linked battle, so an event can explicitly have zero battles.
+#[utoipa::path(
+    put,
+    path = "/api/events/{id}/battles",
+    tag = "events",
+    summary = "Replace battles linked to an event",
+    description = "Officer/admin endpoint for manually setting the exact AlbionBB battles fought during an event. The request body replaces the complete linked set; use an empty `battle_ids` array to leave the event with zero linked battles. Each battle is fetched from AlbionBB and must include the configured guild before analytics are updated.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    request_body(content = UpdateEventBattlesRequest, description = "Complete set of AlbionBB battle IDs to link"),
+    responses(
+        (status = 200, description = "Linked battles replaced", body = ApiResponseEventDetail),
+        (status = 400, description = "Invalid battle list or battle outside configured guild", body = ProblemDetails),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 404, description = "Event or battle not found", body = ProblemDetails),
+        (status = 502, description = "Upstream AlbionBB API error", body = ProblemDetails)
+    )
+)]
+async fn replace_event_battles(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Extension(albionbb): Extension<AlbionBbService>,
+    Path(id): Path<i64>,
+    Json(req): Json<UpdateEventBattlesRequest>,
+) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
+    user.require(&perms, Permission::EventsManage).await?;
+    let service = EventService::new();
+    let server = normalize_server(Some(&cfg.albion_api_region));
+    let detail = service
+        .replace_event_battles(&db, &albionbb, &cfg.albion_guild_id, Some(&server), id, req)
+        .await?;
     Ok(Json(ApiResponse::new(detail)))
 }

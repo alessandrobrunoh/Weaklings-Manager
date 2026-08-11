@@ -48,7 +48,7 @@ impl ListSplitsQuery {
 pub fn router() -> Router {
     Router::new()
         .route("/", get(list_splits).post(create_split))
-        .route("/{id}", get(get_split).patch(update_split))
+        .route("/{id}", get(get_split).patch(update_split).delete(delete_split))
         .route("/{id}/participants", post(add_or_update_participant))
         .route(
             "/{id}/participants/{user_id}",
@@ -196,6 +196,38 @@ async fn update_split(
     let service = SplitService::new();
     let split = service.update_split(&db, id, req).await?;
     Ok(Json(ApiResponse::new(split)))
+}
+
+/// Delete a split entirely.
+///
+/// Requires the Admin or Officer role.
+#[utoipa::path(
+    delete,
+    path = "/api/splits/{id}",
+    tag = "splits",
+    summary = "Delete a split (Officer/Admin only)",
+    description = "Deletes a split and its participants completely. Requires Admin or Officer role.",
+    security(("session_cookie" = ["splits.manage"])),
+    params(("id" = i64, Path, description = "The split id")),
+    responses(
+        (status = 204, description = "Split deleted successfully"),
+        (status = 403, description = "Forbidden - lacks administrator/officer role", body = ProblemDetails),
+        (status = 404, description = "No split exists with this id", body = ProblemDetails)
+    )
+)]
+async fn delete_split(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<axum::response::Response, AppError> {
+    user.require(&perms, Permission::SplitsManage).await?;
+    let service = SplitService::new();
+    service.delete_split(&db, id).await?;
+    Ok(axum::response::Response::builder()
+        .status(axum::http::StatusCode::NO_CONTENT)
+        .body(axum::body::Body::empty())
+        .unwrap())
 }
 
 /// Add a new participant to a pending split, or update their weight if already present.

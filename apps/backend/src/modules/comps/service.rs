@@ -661,14 +661,36 @@ impl CompService {
             query = query.filter(CompColumn::CategoryId.eq(category_id));
         }
 
+        let search = filters.search.or(filters.q);
+        if let Some(s) = search {
+            if !s.trim().is_empty() {
+                let pattern = format!("%{}%", s.trim());
+                query = query.filter(
+                    sea_orm::Condition::any().add(
+                        sea_orm::sea_query::Expr::expr(sea_orm::sea_query::Func::lower(
+                            sea_orm::sea_query::Expr::col(CompColumn::Name)
+                        ))
+                        .like(pattern.to_lowercase())
+                    )
+                );
+            }
+        }
+
+        if let Some(date_from) = filters.date_from {
+            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_from) {
+                query = query.filter(CompColumn::CreatedAt.gte(dt));
+            }
+        }
+
+        if let Some(date_to) = filters.date_to {
+            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_to) {
+                query = query.filter(CompColumn::CreatedAt.lte(dt));
+            }
+        }
+
         let total_items = query.clone().count(db).await?;
 
-        let mut comps = query.offset(page * limit).limit(limit).all(db).await?;
-
-        if let Some(q) = filters.q.as_deref().filter(|q| !q.trim().is_empty()) {
-            let needle = q.to_lowercase();
-            comps.retain(|c| c.name.to_lowercase().contains(&needle));
-        }
+        let comps = query.offset(page * limit).limit(limit).all(db).await?;
 
         let total_pages = if limit == 0 {
             0

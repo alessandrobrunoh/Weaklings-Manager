@@ -32,13 +32,19 @@ const PAGE_SIZE = 10;
   imports: [PageHeader, EmptyState, Loading],
   template: `
     <app-page-header [title]="t('bank.title')" [subtitle]="t('bank.subtitle')">
-      <button type="button" class="btn btn--tonal" (click)="requestWithdrawal()">
-        {{ t('bank.withdraw.request') }}
-      </button>
-      @if (canAccept()) {
-        <button type="button" class="btn btn--primary" (click)="acceptWithdrawals()">
-          {{ t('bank.withdraw.accept') }}
+      @if (viewMode() === 'personal') {
+        <button type="button" class="btn btn--tonal" (click)="requestWithdrawal()">
+          {{ t('bank.withdraw.request') }}
         </button>
+      } @else if (canAccept()) {
+        <div class="flex gap-2">
+          <button type="button" class="btn btn--outline" (click)="rejectWithdrawals()">
+            {{ t('bank.withdraw.reject') }}
+          </button>
+          <button type="button" class="btn btn--primary" (click)="acceptWithdrawals()">
+            {{ t('bank.withdraw.accept') }}
+          </button>
+        </div>
       }
     </app-page-header>
 
@@ -77,9 +83,29 @@ const PAGE_SIZE = 10;
     <!-- Transactions -->
     <section class="card p-5">
       <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 class="text-base font-semibold" style="color: var(--color-text)">
-          {{ t('bank.transactions.title') }}
-        </h2>
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <h2 class="text-base font-semibold" style="color: var(--color-text)">
+            {{ t('bank.transactions.title') }}
+          </h2>
+          @if (canAccept()) {
+            <div class="flex rounded-md border p-1 ml-0 sm:ml-4" style="border-color: var(--color-border)">
+              <button
+                class="px-3 py-1 text-xs rounded"
+                [class]="viewMode() === 'personal' ? 'bg-surface-active font-medium' : 'text-secondary hover:bg-surface-hover'"
+                (click)="setViewMode('personal')"
+              >
+                {{ t('bank.view.personal') }}
+              </button>
+              <button
+                class="px-3 py-1 text-xs rounded"
+                [class]="viewMode() === 'guild' ? 'bg-surface-active font-medium' : 'text-secondary hover:bg-surface-hover'"
+                (click)="setViewMode('guild')"
+              >
+                {{ t('bank.view.guild') }}
+              </button>
+            </div>
+          }
+        </div>
         <label class="flex items-center gap-2">
           <span class="label" style="margin-bottom: 0">{{ t('common.status') }}</span>
           <select
@@ -105,14 +131,23 @@ const PAGE_SIZE = 10;
           <table class="table">
             <thead>
               <tr>
+                @if (viewMode() === 'guild') {
+                  <th>{{ t('common.player') }}</th>
+                }
                 <th>{{ t('common.status') }}</th>
                 <th>{{ t('common.amount') }}</th>
                 <th>{{ t('common.date') }}</th>
+                @if (viewMode() === 'guild') {
+                  <th></th>
+                }
               </tr>
             </thead>
             <tbody>
               @for (tx of transactions(); track tx.id) {
                 <tr>
+                  @if (viewMode() === 'guild') {
+                    <td class="font-medium text-sm">{{ tx.to_username }}</td>
+                  }
                   <td>
                     <span class="chip" [class]="statusChip(tx.status)">
                       {{ tx.status }}
@@ -124,6 +159,16 @@ const PAGE_SIZE = 10;
                   <td style="color: var(--color-text-secondary)">
                     {{ formatDate(tx.created_at) }}
                   </td>
+                  @if (viewMode() === 'guild') {
+                    <td>
+                      @if (tx.status === 'requested') {
+                        <div class="flex gap-2 justify-end">
+                          <button class="btn btn--outline btn--sm text-success" (click)="acceptSingle(tx.id)">{{ t('common.accept') }}</button>
+                          <button class="btn btn--outline btn--sm text-error" (click)="rejectSingle(tx.id)">{{ t('common.reject') }}</button>
+                        </div>
+                      }
+                    </td>
+                  }
                 </tr>
               }
             </tbody>
@@ -169,6 +214,7 @@ export class Bank {
   protected readonly page = signal(1);
   protected readonly totalPages = signal(1);
   protected readonly statusFilter = signal<TransactionStatus | ''>('');
+  protected readonly viewMode = signal<'personal' | 'guild'>('personal');
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
@@ -184,6 +230,16 @@ export class Bank {
     const value = (event.target as HTMLSelectElement).value as TransactionStatus | '';
     this.statusFilter.set(value);
     this.page.set(1);
+    void this.loadTransactions();
+  }
+
+  protected setViewMode(mode: 'personal' | 'guild'): void {
+    if (this.viewMode() === mode) return;
+    this.viewMode.set(mode);
+    this.page.set(1);
+    if (mode === 'guild') {
+      this.statusFilter.set('requested');
+    }
     void this.loadTransactions();
   }
 
@@ -204,11 +260,23 @@ export class Bank {
   }
 
   protected async requestWithdrawal(): Promise<void> {
-    await this.mutate('api/bank/transactions/withdraw', 'bank.withdraw.request');
+    await this.mutate('api/bank/transactions/withdraw', 'bank.withdraw.request', { all: true });
   }
 
   protected async acceptWithdrawals(): Promise<void> {
-    await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept');
+    await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept', { all: true });
+  }
+
+  protected async rejectWithdrawals(): Promise<void> {
+    await this.mutate('api/bank/transactions/withdraw/reject', 'bank.withdraw.reject', { all: true });
+  }
+
+  protected async acceptSingle(id: number): Promise<void> {
+    await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept', { transaction_ids: [id] });
+  }
+
+  protected async rejectSingle(id: number): Promise<void> {
+    await this.mutate('api/bank/transactions/withdraw/reject', 'bank.withdraw.reject', { transaction_ids: [id] });
   }
 
   protected formatAmount(value: number | undefined | null): string {
@@ -249,12 +317,15 @@ export class Bank {
     this.loading.set(true);
     try {
       const filter = this.statusFilter();
-      const params: Record<string, string | number> = {
+      const params: Record<string, string | number | boolean> = {
         page: this.page(),
         limit: PAGE_SIZE,
       };
       if (filter) {
         params['status'] = filter;
+      }
+      if (this.viewMode() === 'guild') {
+        params['global'] = true;
       }
       const data = await firstValueFrom(
         this.api.get<PaginatedData<TransactionView>>('api/bank/transactions', params),
@@ -268,8 +339,7 @@ export class Bank {
     }
   }
 
-  private async mutate(path: string, successKey: TranslationKey): Promise<void> {
-    const body: WithdrawRequest = { all: true };
+  private async mutate(path: string, successKey: TranslationKey, body: WithdrawRequest): Promise<void> {
     try {
       await firstValueFrom(this.api.post<TransactionView[]>(path, body));
       this.toasts.success(this.translate.t(successKey));

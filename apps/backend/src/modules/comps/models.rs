@@ -373,4 +373,10 @@ pub struct CompFilters {
     pub category_id: Option<i64>,
     /// Filter by comp name (case-insensitive partial match).
     pub q: Option<String>,
+    /// Filter by search keyword (case-insensitive partial match, replaces `q`).
+    pub search: Option<String>,
+    /// Filter by created date (inclusive).
+    pub date_from: Option<String>,
+    /// Filter by created date (inclusive).
+    pub date_to: Option<String>,
 }

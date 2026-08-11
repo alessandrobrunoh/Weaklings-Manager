@@ -1,7 +1,7 @@
 //! Albion Data routing module.
 //!
 //! Exposes self-owned item utility endpoints for render URLs and market prices, avoiding runtime
-//! dependencies on OpenAlbion for these concerns.
+//! dependencies on `OpenAlbion` for these concerns.
 
 use axum::{
     Extension, Json, Router,
@@ -27,7 +27,6 @@ use crate::responses::ApiResponse;
 /// # use backend::modules::albiondata::router::router;
 /// let router = router();
 /// ```
-#[must_use]
 pub fn router() -> Router {
     Router::new()
         .route("/prices", get(get_prices))

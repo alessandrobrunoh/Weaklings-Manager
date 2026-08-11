@@ -1,0 +1,101 @@
+:host {
+  display: block;
+}
+
+.data-table__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.data-table__search {
+  flex: 1 1 16rem;
+  min-width: 12rem;
+}
+
+.data-table__search .input {
+  width: 100%;
+}
+
+.data-table__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.data-table__filters .select {
+  min-width: 9rem;
+}
+
+.data-table__scroll {
+  overflow-x: auto;
+  width: 100%;
+}
+
+.data-table__th {
+  cursor: pointer;
+  user-select: none;
+  transition: color 120ms ease;
+}
+
+.data-table__th:hover {
+  color: var(--color-text);
+}
+
+.data-table__th-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.data-table__sort-indicator {
+  font-size: 0.75rem;
+  color: var(--color-primary);
+}
+
+.data-table__cell--right {
+  text-align: right;
+}
+
+.data-table__cell--center {
+  text-align: center;
+}
+
+.data-table__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.75rem;
+}
+
+.data-table__page-info {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
+
+.data-table__controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.data-table__pager {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.data-table__page-size {
+  min-width: 6.5rem;
+}
+
+@media (max-width: 40rem) {
+  .data-table__footer {
+    justify-content: center;
+  }
+}

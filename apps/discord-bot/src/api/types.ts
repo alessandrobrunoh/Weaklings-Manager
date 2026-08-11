@@ -1,0 +1,252 @@
+/**
+ * Shared type definitions mirroring the backend Rust API responses.
+ * Kept in sync with apps/frontend/src/app/core/models/api.models.ts.
+ */
+
+/* ----------------------------- Envelope ----------------------------- */
+
+export interface ApiResponse<T> {
+  status: 'success';
+  data: T;
+}
+
+export interface PaginatedData<T> {
+  items: T[];
+  total_items: number;
+  total_pages: number;
+  current_page: number;
+  limit: number;
+}
+
+/* ------------------------------ Auth -------------------------------- */
+
+export type Role = 'User' | 'Officer' | 'Admin' | 'SuperAdmin';
+
+export type BuildRole =
+  | 'healer'
+  | 'tank'
+  | 'dps'
+  | 'support'
+  | 'battle_mount'
+  | 'brawler';
+
+export interface BuildSummary {
+  id: number;
+  name: string;
+  role: BuildRole;
+  category_id: number;
+  category_name?: string;
+  created_by_username: string;
+  updated_at: string;
+  item_count: number;
+}
+
+export interface CompBuildView {
+  build_id: number;
+  build: BuildSummary;
+  quantity: number;
+}
+
+export interface CompSummary {
+  id: number;
+  name: string;
+  category_id: number;
+  category_name?: string;
+  created_by_username: string;
+  created_at: string;
+  build_count: number;
+  total_quantity: number;
+  parent_id?: number;
+}
+
+export interface CompDetail extends CompSummary {
+  builds: CompBuildView[];
+}
+
+export type PermissionKey =
+  | 'bank.withdraw.accept'
+  | 'bank.view_others'
+  | 'splits.manage'
+  | 'users.create'
+  | 'permissions.reload'
+  | 'comps.build_categories.manage'
+  | 'comps.comp_categories.manage'
+  | 'comps.builds.manage'
+  | 'comps.comps.manage'
+  | 'events.manage'
+  | 'siphoned.ingest'
+  | 'siphoned.view';
+
+export interface DiscordUserProfile {
+  id: string;
+  username: string;
+  avatar: string | null;
+  email: string | null;
+  user_id: number;
+  roles: Role[];
+  highest_role: Role;
+  is_superadmin: boolean;
+  permissions: PermissionKey[];
+}
+
+/* ----------------------------- Users -------------------------------- */
+
+export interface UserProfile {
+  id: number;
+  username: string;
+  email: string;
+  role: Role;
+}
+
+/* ------------------------------ Bank -------------------------------- */
+
+export type TransactionStatus = 'pending' | 'requested' | 'withdrawn';
+
+export interface TransactionView {
+  id: number;
+  to_user_id: number;
+  amount: number;
+  reason: string | null;
+  status: TransactionStatus;
+  from_user_id: number | null;
+  from_label: string;
+  created_at: string;
+  requested_at: string | null;
+  withdrawn_at: string | null;
+}
+
+export interface BalanceSummary {
+  user_id: number;
+  pending_total: number;
+  pending_count: number;
+  requested_total: number;
+  requested_count: number;
+}
+
+export interface WithdrawRequest {
+  transaction_ids?: number[];
+  all?: boolean;
+}
+
+/* ----------------------------- Events ------------------------------- */
+
+export type EventStatus = 'scheduled' | 'live' | 'stopped' | 'auto_stopped';
+
+export interface EventView {
+  id: number;
+  title: string;
+  description: string | null;
+  comp_id: number;
+  comp_name: string;
+  created_by: number;
+  created_by_username: string;
+  event_date_utc: string;
+  created_at: string;
+  updated_at: string;
+  status: EventStatus;
+  started_at: string | null;
+  stopped_at: string | null;
+  auto_stop_deadline: string | null;
+  link_status: string;
+}
+
+export interface EventParticipant {
+  user_id: number;
+  username: string;
+  primary_build_id: number;
+  primary_build_name: string;
+  secondary_build_id: number | null;
+  secondary_build_name: string | null;
+}
+
+export interface EventDetailView extends EventView {
+  active_comp_id: number;
+  active_comp_name: string;
+  active_comp_capacity: number;
+  participants: EventParticipant[];
+}
+
+export interface CreateEventRequest {
+  title: string;
+  description?: string;
+  comp_id: number;
+  event_date_utc: string;
+}
+
+export interface ParticipateEventRequest {
+  primary_build_id: number;
+  secondary_build_id?: number;
+}
+
+/* ------------------------------ Comps ------------------------------- */
+
+/* ----------------------------- Battles ------------------------------ */
+
+export interface BattleGuildSummary {
+  id: string;
+  name: string;
+  players: number;
+  kills: number;
+  deaths: number;
+  kill_fame: number;
+  winner: boolean;
+}
+
+export interface BattleSummary {
+  battle_id: number;
+  start_time: string;
+  end_time: string;
+  total_players: number;
+  total_kills: number;
+  total_fame: number;
+  guilds: BattleGuildSummary[];
+}
+
+/* ------------------------------ Albion ------------------------------ */
+
+export interface AlbionLinkRequest {
+  albion_player_id: string;
+  albion_player_name: string;
+}
+
+export interface AlbionLinkStatus {
+  linked: boolean;
+  albion_player_id?: string;
+  albion_player_name?: string;
+  linked_at?: string;
+}
+
+export interface AlbionPlayerSummary {
+  id: string;
+  name: string;
+}
+
+export interface AlbionGuildSummary {
+  id: string;
+  name: string;
+}
+
+export interface AlbionSearchResult {
+  players: AlbionPlayerSummary[];
+  guilds: AlbionGuildSummary[];
+}
+
+export interface AlbionPlayer {
+  id: string;
+  name: string;
+  guildName?: string | null;
+  allianceName?: string | null;
+  killFame: number;
+  deathFame: number;
+  pveFame: number;
+  gatheringFame: number;
+  craftingFame: number;
+  fishingFame?: number;
+  farmingFame?: number;
+}
+
+export interface AlbionGuildMember {
+  id: string;
+  name: string;
+}
+

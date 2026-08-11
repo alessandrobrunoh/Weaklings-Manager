@@ -347,6 +347,34 @@ impl SplitService {
         self.to_detail(db, updated).await
     }
 
+    /// Deletes a split entirely.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::NotFound` if the split does not exist.
+    pub async fn delete_split(
+        &self,
+        db: &DatabaseConnection,
+        split_id: i64,
+    ) -> Result<(), AppError> {
+        let split = SplitEntity::find_by_id(split_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
+
+        let txn = db.begin().await?;
+        ParticipantEntity::delete_many()
+            .filter(ParticipantColumn::SplitId.eq(split_id))
+            .exec(&txn)
+            .await?;
+        
+        let active: SplitActiveModel = split.into();
+        active.delete(&txn).await?;
+
+        txn.commit().await?;
+        Ok(())
+    }
+
     /// Fetches a split's full detail by id.
     ///
     /// # Errors
@@ -381,6 +409,46 @@ impl SplitService {
         }
         if let Some(event_id) = filters.event_id {
             query = query.filter(SplitColumn::EventId.eq(event_id));
+        }
+
+        if let Some(search) = filters.search.as_deref().filter(|s| !s.trim().is_empty()) {
+            let pattern = format!("%{}%", search.trim());
+            
+            let note_cond = sea_orm::sea_query::Expr::expr(sea_orm::sea_query::Func::lower(
+                sea_orm::sea_query::Expr::col(SplitColumn::Note)
+            ))
+            .like(pattern.to_lowercase());
+            
+            let user_subquery = sea_orm::sea_query::Query::select()
+                .column(UserColumn::Id)
+                .from(UserEntity)
+                .and_where(
+                    sea_orm::sea_query::Expr::expr(sea_orm::sea_query::Func::lower(
+                        sea_orm::sea_query::Expr::col(UserColumn::Username)
+                    ))
+                    .like(pattern.to_lowercase())
+                )
+                .to_owned();
+                
+            let creator_cond = SplitColumn::CreatedBy.in_subquery(user_subquery);
+            
+            query = query.filter(
+                sea_orm::Condition::any()
+                    .add(note_cond)
+                    .add(creator_cond)
+            );
+        }
+
+        if let Some(date_from) = &filters.date_from {
+            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(date_from) {
+                query = query.filter(SplitColumn::CreatedAt.gte(dt));
+            }
+        }
+
+        if let Some(date_to) = &filters.date_to {
+            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(date_to) {
+                query = query.filter(SplitColumn::CreatedAt.lte(dt));
+            }
         }
 
         let limit = pagination.limit();

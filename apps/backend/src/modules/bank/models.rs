@@ -24,6 +24,9 @@ pub struct TransactionView {
     /// The user id who is owed / receives the amount.
     #[schema(example = 7)]
     pub to_user_id: i64,
+    /// The username of the user who is owed / receives the amount.
+    #[schema(example = "Alice")]
+    pub to_username: String,
     /// The transaction amount.
     #[schema(value_type = String, example = "42.50")]
     pub amount: Decimal,
@@ -48,6 +51,7 @@ impl TransactionView {
         model: Model,
         status: TransactionStatus,
         from_username: Option<String>,
+        to_username: String,
     ) -> Self {
         let from_label = from_username.unwrap_or_else(|| {
             model
@@ -59,6 +63,7 @@ impl TransactionView {
             from_user_id: model.from_user_id,
             from_label,
             to_user_id: model.to_user_id,
+            to_username,
             amount: model.amount,
             status,
             r#type: model.r#type,
@@ -119,6 +124,19 @@ pub struct AcceptWithdrawalRequest {
     #[schema(example = json!([12, 13]))]
     pub transaction_ids: Option<Vec<i64>>,
     /// If `true`, accept every currently-requested transaction guild-wide (across all members)
+    /// instead of listing `transaction_ids` individually.
+    #[schema(example = true)]
+    pub all: Option<bool>,
+}
+
+/// Request body for an officer to reject requested withdrawals.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct RejectWithdrawalRequest {
+    /// The specific transaction ids to reject. Each must currently be `requested`. Omit this and
+    /// set `all: true` instead to reject everything at once.
+    #[schema(example = json!([12, 13]))]
+    pub transaction_ids: Option<Vec<i64>>,
+    /// If `true`, reject every currently-requested transaction guild-wide (across all members)
     /// instead of listing `transaction_ids` individually.
     #[schema(example = true)]
     pub all: Option<bool>,

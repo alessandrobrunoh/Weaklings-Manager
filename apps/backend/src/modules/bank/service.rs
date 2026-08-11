@@ -18,7 +18,8 @@ use crate::pagination::{PaginatedData, PaginationParams};
 
 use super::entities::{ActiveModel, Column, Entity as TransactionEntity, Model};
 use super::models::{
-    AcceptWithdrawalRequest, BalanceSummary, TransactionFilters, TransactionView, WithdrawRequest,
+    AcceptWithdrawalRequest, BalanceSummary, RejectWithdrawalRequest, TransactionFilters,
+    TransactionView, WithdrawRequest,
 };
 use super::status::TransactionStatus;
 
@@ -35,14 +36,17 @@ async fn to_views_with_usernames(
     models: Vec<Model>,
 ) -> Result<Vec<TransactionView>, AppError> {
     let from_user_ids: Vec<i64> = models.iter().filter_map(|m| m.from_user_id).collect();
-
-    let user_map = crate::modules::users::display_name::resolve_by_ids(db, &from_user_ids).await?;
+    let to_user_ids: Vec<i64> = models.iter().map(|m| m.to_user_id).collect();
+    
+    let all_user_ids: Vec<i64> = from_user_ids.iter().chain(to_user_ids.iter()).copied().collect();
+    let user_map = crate::modules::users::display_name::resolve_by_ids(db, &all_user_ids).await?;
 
     let mut views = Vec::with_capacity(models.len());
     for model in models {
         let status = parse_status(&model)?;
         let from_username = model.from_user_id.and_then(|id| user_map.get(&id).cloned());
-        views.push(TransactionView::from_model(model, status, from_username));
+        let to_username = user_map.get(&model.to_user_id).cloned().unwrap_or_else(|| "Unknown".to_string());
+        views.push(TransactionView::from_model(model, status, from_username, to_username));
     }
 
     Ok(views)
@@ -104,11 +108,15 @@ impl BankService {
     pub async fn list_transactions(
         &self,
         db: &DatabaseConnection,
-        user_id: i64,
+        user_id: Option<i64>,
         pagination: &PaginationParams,
         filters: &TransactionFilters,
     ) -> Result<PaginatedData<TransactionView>, AppError> {
-        let mut query = TransactionEntity::find().filter(Column::ToUserId.eq(user_id));
+        let mut query = TransactionEntity::find();
+        
+        if let Some(uid) = user_id {
+            query = query.filter(Column::ToUserId.eq(uid));
+        }
 
         if let Some(status) = filters.status {
             query = query.filter(Column::Status.eq(status.to_string()));
@@ -265,6 +273,71 @@ impl BankService {
             active.status = Set(TransactionStatus::Withdrawn.to_string());
             active.from_user_id = Set(Some(officer_user_id));
             active.withdrawn_at = Set(Some(now));
+            let updated = active.update(&txn).await?;
+            updated_models.push(updated);
+        }
+
+        txn.commit().await?;
+
+        let updated_views = to_views_with_usernames(db, updated_models).await?;
+
+        Ok(updated_views)
+    }
+
+    /// Rejects one, several, or all currently-requested withdrawals, returning them to `"pending"`.
+    ///
+    /// # Errors
+    ///
+    /// * Returns `AppError::Validation` if neither `transaction_ids` nor `all` is provided, or if
+    ///   one or more requested transaction ids are not currently in `"requested"` status.
+    /// * Returns `AppError::Database` if the query fails.
+    pub async fn reject_withdrawal(
+        &self,
+        db: &DatabaseConnection,
+        req: &RejectWithdrawalRequest,
+    ) -> Result<Vec<TransactionView>, AppError> {
+        let ids: Vec<i64> = if req.all.unwrap_or(false) {
+            TransactionEntity::find()
+                .filter(Column::Status.eq(TransactionStatus::Requested.to_string()))
+                .all(db)
+                .await?
+                .into_iter()
+                .map(|tx| tx.id)
+                .collect()
+        } else {
+            match &req.transaction_ids {
+                Some(ids) if !ids.is_empty() => ids.clone(),
+                _ => {
+                    return Err(AppError::Validation(
+                        "must provide transaction_ids or all=true".to_string(),
+                    ));
+                }
+            }
+        };
+
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let txn = db.begin().await?;
+
+        let targets = TransactionEntity::find()
+            .filter(Column::Id.is_in(ids.clone()))
+            .filter(Column::Status.eq(TransactionStatus::Requested.to_string()))
+            .all(&txn)
+            .await?;
+
+        if targets.len() != ids.len() {
+            return Err(AppError::Validation(
+                "one or more transactions are not currently requested".to_string(),
+            ));
+        }
+
+        let mut updated_models = Vec::with_capacity(targets.len());
+        for model in targets {
+            let mut active: ActiveModel = model.into();
+            active.status = Set(TransactionStatus::Pending.to_string());
+            active.requested_at = Set(None);
             let updated = active.update(&txn).await?;
             updated_models.push(updated);
         }

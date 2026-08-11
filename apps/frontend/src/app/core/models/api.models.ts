@@ -83,6 +83,7 @@ export type TransactionStatus = 'pending' | 'requested' | 'withdrawn';
 export interface TransactionView {
   id: number;
   to_user_id: number;
+  to_username: string;
   amount: number;
   reason: string | null;
   status: TransactionStatus;
@@ -107,6 +108,8 @@ export interface WithdrawRequest {
 }
 
 export type AcceptWithdrawalRequest = WithdrawRequest;
+
+export type RejectWithdrawalRequest = WithdrawRequest;
 
 /* ----------------------------- Splits ------------------------------- */
 
@@ -142,6 +145,9 @@ export interface SplitDetail extends SplitSummary {
 export interface SplitFilters {
   status?: SplitStatus;
   event_id?: number;
+  search?: string;
+  date_from?: string;
+  date_to?: string;
 }
 
 export interface CreateSplitRequest {
@@ -264,6 +270,12 @@ export interface EventParticipant {
   secondary_build_name: string | null;
 }
 
+export interface EventFilters {
+  search?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
 export interface EventBattleSummary {
   id: number;
   albionbb_battle_id: string;
@@ -295,6 +307,10 @@ export interface UpdateEventRequest {
   description?: string;
   event_date_utc?: string;
   comp_id?: number;
+}
+
+export interface UpdateEventBattlesRequest {
+  battle_ids: string[];
 }
 
 export interface ParticipateEventRequest {
@@ -519,6 +535,14 @@ export interface CompDetail extends CompSummary {
   builds: CompBuildEntry[];
 }
 
+export interface CompFilters {
+  category_id?: number;
+  q?: string;
+  search?: string;
+  date_from?: string;
+  date_to?: string;
+}
+
 export type BuildRole = 'healer' | 'support' | 'dps' | 'tank' | 'battle_mount' | 'brawler';
 
 export interface CreateBuildRequest {
@@ -529,12 +553,26 @@ export interface CreateBuildRequest {
   items?: BuildItemSlot[];
 }
 
+export interface UpdateBuildRequest {
+  name?: string;
+  description?: string;
+  role?: BuildRole;
+  category_id?: number;
+}
+
 export interface CreateCompRequest {
   name: string;
   description?: string;
   category_id: number;
   parent_id?: number;
   builds: Array<{ build_id: number; quantity: number }>;
+}
+
+export interface UpdateCompRequest {
+  name?: string;
+  description?: string;
+  category_id?: number;
+  parent_id?: number;
 }
 
 /* ------------------------------ Utils ------------------------------- */
