@@ -598,7 +598,20 @@ impl SplitService {
                 split_id: Set(Some(split_id)),
                 ..Default::default()
             };
-            active.insert(&txn).await?;
+            let inserted_tx = active.insert(&txn).await?;
+            let _ = crate::modules::audit::service::AuditService::log(
+                db,
+                "TRANSACTION_CREATED",
+                Some("TRANSACTION"),
+                Some(inserted_tx.id),
+                Some(participant.user_id),
+                Some(serde_json::json!({
+                    "split_id": split_id,
+                    "amount": share,
+                    "type": TYPE_SPLIT_CREDIT
+                })),
+            )
+            .await;
         }
 
         let mut split_active: SplitActiveModel = split.into();

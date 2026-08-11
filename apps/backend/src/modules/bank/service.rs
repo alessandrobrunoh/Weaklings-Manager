@@ -1,7 +1,7 @@
 //! Bank service logic module.
 //!
 //! Provides the Guild Bank ledger: derived balances, transaction listing, and the two-step
-//! withdrawal workflow (a user requests withdrawal of their pending transactions, then an
+//! withdrawal workflow (a user requests withdrawal of their requestable transactions, then an
 //! officer accepts and pays them out — becoming the recorded payer via `from_user_id`).
 //! Request/response types live in `models.rs`; the status enum lives in `status.rs`.
 
@@ -31,6 +31,15 @@ fn parse_status(model: &Model) -> Result<TransactionStatus, AppError> {
         .map_err(|_| AppError::Internal(format!("Unknown transaction status: {}", model.status)))
 }
 
+/// Shared predicate for balances and withdrawal requests.
+///
+/// A rejected withdrawal should behave like available balance, but keeping this predicate in one
+/// place prevents the acceptance path from accidentally treating rejected rows as payable.
+///
+/// # Example
+/// ```rust,ignore
+/// let query = TransactionEntity::find().filter(requestable_status_condition());
+/// ```
 fn requestable_status_condition() -> Condition {
     Condition::any()
         .add(Column::Status.eq(TransactionStatus::Pending.to_string()))
@@ -80,8 +89,10 @@ impl BankService {
         Self
     }
 
-    /// Computes the derived balance for a user: what's pending (not yet requested) and what's
-    /// requested (awaiting officer acceptance).
+    /// Computes the derived balance for a user: what's requestable and what's requested.
+    ///
+    /// Rejected withdrawals are included in the requestable side because they must be explicitly
+    /// requested again before an officer can accept them.
     ///
     /// # Errors
     ///
@@ -187,17 +198,17 @@ impl BankService {
         ))
     }
 
-    /// Requests withdrawal of one, several, or all of a user's pending transactions, moving them
-    /// to `"requested"` status. Does not pay them out — an officer must accept via
+    /// Requests withdrawal of one, several, or all of a user's requestable transactions, moving
+    /// them to `"requested"` status. Does not pay them out — an officer must accept via
     /// [`Self::accept_withdrawal`].
     ///
     /// A transaction can only have its withdrawal requested if it belongs to the caller and is
-    /// still pending — this is enforced directly by the update predicate.
+    /// pending or rejected — this is enforced directly by the update predicate.
     ///
     /// # Errors
     ///
     /// * Returns `AppError::Validation` if neither `transaction_ids` nor `all` is provided, or if
-    ///   one or more requested transaction ids are not the caller's or are not pending.
+    ///   one or more requested transaction ids are not the caller's or are not requestable.
     /// * Returns `AppError::Database` if the query fails.
     pub async fn request_withdrawal(
         &self,
@@ -337,6 +348,18 @@ impl BankService {
 
         txn.commit().await?;
 
+        for updated in &updated_models {
+            crate::modules::audit::service::AuditService::log(
+                db,
+                "WITHDRAW_ACCEPTED",
+                Some("TRANSACTION"),
+                Some(updated.id),
+                Some(officer_user_id),
+                Some(serde_json::json!({ "status": "withdrawn", "from_user_id": officer_user_id })),
+            )
+            .await?;
+        }
+
         let updated_views = to_views_with_usernames(db, updated_models).await?;
 
         Ok(updated_views)
@@ -355,6 +378,7 @@ impl BankService {
     pub async fn reject_withdrawal(
         &self,
         db: &DatabaseConnection,
+        officer_user_id: i64,
         req: &RejectWithdrawalRequest,
     ) -> Result<Vec<TransactionView>, AppError> {
         let ids: Vec<i64> = if req.all.unwrap_or(false) {
@@ -404,6 +428,18 @@ impl BankService {
         }
 
         txn.commit().await?;
+
+        for updated in &updated_models {
+            crate::modules::audit::service::AuditService::log(
+                db,
+                "WITHDRAW_REJECTED",
+                Some("TRANSACTION"),
+                Some(updated.id),
+                Some(officer_user_id),
+                Some(serde_json::json!({ "status": "rejected" })),
+            )
+            .await?;
+        }
 
         let updated_views = to_views_with_usernames(db, updated_models).await?;
 
@@ -473,13 +509,14 @@ mod tests {
         insert_transaction(&db, user_id, "10.00", TransactionStatus::Pending).await;
         insert_transaction(&db, user_id, "5.25", TransactionStatus::Pending).await;
         insert_transaction(&db, user_id, "20.00", TransactionStatus::Requested).await;
+        insert_transaction(&db, user_id, "7.50", TransactionStatus::Rejected).await;
         insert_transaction(&db, user_id, "99.00", TransactionStatus::Withdrawn).await;
 
         let service = BankService::new();
         let balance = service.get_balance(&db, user_id).await.unwrap();
 
-        assert_eq!(balance.pending_count, 2);
-        assert_eq!(balance.pending_total, "15.25".parse::<Decimal>().unwrap());
+        assert_eq!(balance.pending_count, 3);
+        assert_eq!(balance.pending_total, "22.75".parse::<Decimal>().unwrap());
         assert_eq!(balance.requested_count, 1);
         assert_eq!(balance.requested_total, "20.00".parse::<Decimal>().unwrap());
     }
@@ -512,6 +549,7 @@ mod tests {
         let alice = insert_user(&db, "alice", "alice@example.com").await;
         insert_transaction(&db, alice, "10.00", TransactionStatus::Pending).await;
         insert_transaction(&db, alice, "5.00", TransactionStatus::Pending).await;
+        insert_transaction(&db, alice, "3.00", TransactionStatus::Rejected).await;
 
         let service = BankService::new();
         let requested = service
@@ -526,7 +564,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(requested.len(), 2);
+        assert_eq!(requested.len(), 3);
         assert!(
             requested
                 .iter()
@@ -535,7 +573,7 @@ mod tests {
 
         let balance = service.get_balance(&db, alice).await.unwrap();
         assert_eq!(balance.pending_count, 0);
-        assert_eq!(balance.requested_count, 2);
+        assert_eq!(balance.requested_count, 3);
     }
 
     #[tokio::test]
@@ -621,6 +659,7 @@ mod tests {
         let rejected = service
             .reject_withdrawal(
                 &db,
+                officer,
                 &RejectWithdrawalRequest {
                     transaction_ids: Some(vec![tx_id]),
                     all: None,

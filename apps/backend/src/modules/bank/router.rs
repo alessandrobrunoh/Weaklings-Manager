@@ -104,7 +104,8 @@ async fn resolve_target_user(
         yet paid out by an officer. Money that has been `withdrawn` is excluded from both; fetch \
         `GET /transactions?status=withdrawn` for payout history. Pass `?user_id=<id>` to view another \
         member's balance — only administrators may do this; everyone else may only omit it (defaults \
-        to their own balance) or pass their own id.",
+        to their own balance) or pass their own id. Rejected withdrawals are counted as pending \
+        balance because the member must explicitly request them again before payout.",
     security(("session_cookie" = [])),
     params(BalanceQuery),
     responses(
@@ -162,8 +163,8 @@ async fn get_guild_summary(
     description = "Every row is a single Guild Bank ledger entry owed to the caller, in any status. \
         `from_label` is a display-ready string: `\"Guild Bank\"` while `status` is `pending` or \
         `requested`, or the paying officer's user id once `status` is `withdrawn`. Filter with \
-        `?status=pending`, `?status=requested`, or `?status=withdrawn` (see `TransactionStatus`); \
-        omit it to get every status. Standard `page`/`limit` pagination. Pass `?user_id=<id>` to view \
+        `?status=pending`, `?status=requested`, `?status=rejected`, or `?status=withdrawn` (see \
+        `TransactionStatus`); omit it to get every status. Standard `page`/`limit` pagination. Pass `?user_id=<id>` to view \
         another member's transactions — administrator-only, same rule as `GET /bank/balance`.",
     security(("session_cookie" = [])),
     params(ListTransactionsQuery),
@@ -195,7 +196,7 @@ async fn list_transactions(
     ))))
 }
 
-/// Request withdrawal of one, several, or all of the caller's pending transactions.
+/// Request withdrawal of one, several, or all of the caller's requestable transactions.
 ///
 /// This does not pay them out — it moves them to `"requested"` status, awaiting an officer to
 /// accept via `POST /api/bank/transactions/withdraw/accept`. Always acts on the caller's own
@@ -211,11 +212,11 @@ async fn list_transactions(
     tag = "bank",
     summary = "Step 1 of 2: request a withdrawal (does not pay out)",
     description = "Self-service only — always acts on the caller's own ledger, there is no \
-        \"request on behalf of another user\" option. Moves the selected `pending` transactions to \
-        `requested` status and stamps `requested_at`; `from_user_id`/`from_label` stay as the Guild \
+        \"request on behalf of another user\" option. Moves the selected `pending` or `rejected` \
+        transactions to `requested` status and stamps `requested_at`; `from_user_id`/`from_label` stay as the Guild \
         Bank until an officer completes step 2. Provide either `transaction_ids` (specific rows — \
-        each must belong to the caller and currently be `pending`, or the whole call fails with no \
-        partial effect) or `all: true` (every one of the caller's currently-`pending` transactions, \
+        each must belong to the caller and currently be `pending` or `rejected`, or the whole call fails with no \
+        partial effect) or `all: true` (every one of the caller's currently-requestable transactions, \
         which may be an empty list — that's not an error). After this call, the amounts move from \
         `pending_total` to `requested_total` in `GET /bank/balance`; nothing is payable to the member \
         yet. See `POST /transactions/withdraw/accept` for the officer side.",
@@ -223,7 +224,7 @@ async fn list_transactions(
     request_body(content = WithdrawRequest, description = "Either `transaction_ids` (specific rows) or `all: true`; provide exactly one of the two."),
     responses(
         (status = 200, description = "The transactions that were moved to \"requested\" status (may be an empty list)", body = ApiResponseTransactionViewList),
-        (status = 400, description = "Validation error - neither transaction_ids nor all=true was provided, or a selected transaction isn't the caller's / isn't pending", body = ProblemDetails),
+        (status = 400, description = "Validation error - neither transaction_ids nor all=true was provided, or a selected transaction isn't the caller's / isn't requestable", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
     )
 )]
@@ -279,7 +280,7 @@ async fn accept_withdrawal(
     Ok(Json(ApiResponse::new(accepted)))
 }
 
-/// Reject one, several, or all currently-requested withdrawals, moving them back to "pending".
+/// Reject one, several, or all currently-requested withdrawals, requiring a fresh request later.
 ///
 /// Requires the Admin or Officer role.
 ///
@@ -293,9 +294,11 @@ async fn accept_withdrawal(
     path = "/api/bank/transactions/withdraw/reject",
     tag = "bank",
     summary = "Reject requested withdrawals (Officer/Admin only)",
-    description = "Moves the selected `requested` transactions back to `pending`. Provide either \
-        `transaction_ids` (specific rows, any member) or `all: true` for every currently-requested \
-        transaction guild-wide. Requires the Admin or Officer role.",
+    description = "Moves the selected `requested` transactions to `rejected`. Rejected transactions \
+        remain part of the member's requestable balance but cannot be accepted until the member \
+        submits a fresh withdrawal request. Provide either `transaction_ids` (specific rows, any \
+        member) or `all: true` for every currently-requested transaction guild-wide. Requires the \
+        Admin or Officer role.",
     security(("session_cookie" = ["bank.withdraw.accept"])),
     request_body(content = RejectWithdrawalRequest, description = "Either `transaction_ids` or `all: true`."),
     responses(
@@ -312,6 +315,6 @@ async fn reject_withdrawal(
 ) -> Result<Json<ApiResponse<Vec<TransactionView>>>, AppError> {
     user.require(&perms, Permission::BankWithdrawAccept).await?;
     let service = BankService::new();
-    let rejected = service.reject_withdrawal(&db, &req).await?;
+    let rejected = service.reject_withdrawal(&db, user.user_id, &req).await?;
     Ok(Json(ApiResponse::new(rejected)))
 }

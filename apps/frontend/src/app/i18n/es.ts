@@ -107,6 +107,7 @@ export const es: TranslationDict = {
   'bank.transactions.empty': 'Aún no hay transacciones.',
   'bank.status.pending': 'Pendiente',
   'bank.status.requested': 'Esperando pago',
+  'bank.status.rejected': 'Rechazado',
   'bank.status.withdrawn': 'Pagado',
   'bank.actions.accept_single': 'Aceptar',
   'bank.actions.reject_single': 'Rechazar',

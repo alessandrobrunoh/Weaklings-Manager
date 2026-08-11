@@ -72,6 +72,9 @@ pub enum Permission {
     /// View the siphoned energy ledger / per-player balances. User-or-above today.
     #[strum(serialize = "siphoned.view")]
     SiphonedView,
+    /// View audit logs
+    #[strum(serialize = "audit.view")]
+    AuditView,
 }
 
 impl Permission {

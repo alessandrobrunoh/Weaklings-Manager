@@ -1,8 +1,8 @@
+use super::entities::{self, ActiveModel};
+use crate::config::Config;
+use reqwest::Client;
 use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
 use serde_json::json;
-use reqwest::Client;
-use crate::config::Config;
-use super::entities::{self, ActiveModel};
 
 pub struct AuditService;
 
@@ -44,18 +44,18 @@ impl AuditService {
 
         // Send transaction spam to Discord if configured
         if let Some(channel_id) = &cfg.discord_transaction_spam_channel_id {
-             if let Some(token) = &cfg.discord_bot_token {
-                 if entity_type == Some("TRANSACTION") {
-                     let message = format!(
-                         "**Transaction Activity:** `{}`\n**Entity ID:** {:?}\n**User ID:** {:?}\n**Details:**\n```json\n{}\n```",
-                         action,
-                         entity_id,
-                         user_id,
-                         serde_json::to_string_pretty(&inserted.details).unwrap_or_default()
-                     );
-                     Self::send_discord_message(channel_id, token, &message).await;
-                 }
-             }
+            if let Some(token) = &cfg.discord_bot_token {
+                if entity_type == Some("TRANSACTION") {
+                    let message = format!(
+                        "**Transaction Activity:** `{}`\n**Entity ID:** {:?}\n**User ID:** {:?}\n**Details:**\n```json\n{}\n```",
+                        action,
+                        entity_id,
+                        user_id,
+                        serde_json::to_string_pretty(&inserted.details).unwrap_or_default()
+                    );
+                    Self::send_discord_message(channel_id, token, &message).await;
+                }
+            }
         }
 
         Ok(inserted)
@@ -63,8 +63,11 @@ impl AuditService {
 
     async fn send_discord_message(channel_id: &str, token: &str, content: &str) {
         let client = Client::new();
-        let url = format!("https://discord.com/api/v10/channels/{}/messages", channel_id);
-        
+        let url = format!(
+            "https://discord.com/api/v10/channels/{}/messages",
+            channel_id
+        );
+
         let mut truncated_content = content.to_string();
         if truncated_content.len() > 1900 {
             truncated_content.truncate(1900);

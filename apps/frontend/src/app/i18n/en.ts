@@ -116,6 +116,7 @@ export const en = {
   'bank.transactions.empty': 'No transactions yet.',
   'bank.status.pending': 'Pending',
   'bank.status.requested': 'Awaiting payout',
+  'bank.status.rejected': 'Rejected',
   'bank.status.withdrawn': 'Paid out',
   'bank.actions.accept_single': 'Accept',
   'bank.actions.reject_single': 'Reject',

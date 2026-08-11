@@ -13,7 +13,7 @@ pub struct Model {
     pub entity_id: Option<i64>,
     pub user_id: Option<i64>,
     pub details: Option<Json>,
-    pub created_at: DateTimeUtc,
+    pub created_at: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

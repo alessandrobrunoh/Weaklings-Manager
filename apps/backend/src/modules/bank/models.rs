@@ -40,7 +40,7 @@ pub struct TransactionView {
     pub split_id: Option<i64>,
     /// The timestamp when the transaction was created.
     pub created_at: String,
-    /// The timestamp when the recipient requested withdrawal, if they have.
+    /// The timestamp when the recipient last requested withdrawal, if the request is active.
     pub requested_at: Option<String>,
     /// The timestamp when the withdrawal was accepted/paid, if it has been.
     pub withdrawn_at: Option<String>,
@@ -81,10 +81,10 @@ pub struct BalanceSummary {
     /// The user this balance belongs to.
     #[schema(example = 7)]
     pub user_id: i64,
-    /// The total amount still owed and not yet requested for withdrawal.
+    /// The total amount still owed and currently requestable for withdrawal.
     #[schema(value_type = String, example = "128.75")]
     pub pending_total: Decimal,
-    /// The number of pending transactions contributing to `pending_total`.
+    /// The number of pending or rejected transactions contributing to `pending_total`.
     #[schema(example = 3)]
     pub pending_count: u64,
     /// The total amount requested for withdrawal, awaiting officer acceptance.
@@ -118,15 +118,16 @@ pub struct TransactionFilters {
     pub status: Option<TransactionStatus>,
 }
 
-/// Request body to request withdrawal of one, several, or all of the caller's pending
+/// Request body to request withdrawal of one, several, or all of the caller's requestable
 /// transactions.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct WithdrawRequest {
     /// The specific transaction ids to request withdrawal for. Each must belong to the caller and
-    /// currently be `pending`. Omit this and set `all: true` instead to request everything at once.
+    /// currently be `pending` or `rejected`. Omit this and set `all: true` instead to request
+    /// everything at once.
     #[schema(example = json!([12, 13]))]
     pub transaction_ids: Option<Vec<i64>>,
-    /// If `true`, request withdrawal of every one of the caller's currently-pending transactions
+    /// If `true`, request withdrawal of every one of the caller's currently-requestable transactions
     /// instead of listing `transaction_ids` individually.
     #[schema(example = true)]
     pub all: Option<bool>,

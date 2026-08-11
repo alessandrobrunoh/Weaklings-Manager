@@ -1,28 +1,36 @@
-use std::sync::Arc;
-use axum::{
-    extract::{Query, State},
-    routing::get,
-    Json, Router,
-};
-use sea_orm::{DatabaseConnection, EntityTrait, QueryOrder, QuerySelect, QueryFilter};
-use crate::{
-    config::Config,
-    errors::AppError,
-    modules::auth::AdminGuard,
-    pagination::{Page, PaginationParams},
-};
 use super::entities;
+use crate::{
+    errors::AppError,
+    modules::auth::{Permission, Permissions, UserContext},
+    pagination::{PaginatedData, PaginationParams},
+    responses::ApiResponse,
+};
+use axum::{Extension, Json, Router, extract::Query, routing::get};
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+};
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize)]
-pub struct AuditLogQueryParams {
+#[derive(Deserialize, utoipa::IntoParams)]
+pub struct AuditLogQuery {
+    pub page: Option<u64>,
+    pub limit: Option<u64>,
     pub action: Option<String>,
     pub entity_type: Option<String>,
     pub entity_id: Option<i64>,
     pub user_id: Option<i64>,
 }
 
-#[derive(Serialize)]
+impl AuditLogQuery {
+    fn pagination(&self) -> PaginationParams {
+        PaginationParams {
+            page: self.page,
+            limit: self.limit,
+        }
+    }
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
 pub struct AuditLogResponse {
     pub id: i64,
     pub action: String,
@@ -30,7 +38,8 @@ pub struct AuditLogResponse {
     pub entity_id: Option<i64>,
     pub user_id: Option<i64>,
     pub details: Option<serde_json::Value>,
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[schema(value_type = String, format = DateTime)]
+    pub created_at: chrono::DateTime<chrono::FixedOffset>,
 }
 
 impl From<entities::Model> for AuditLogResponse {
@@ -53,44 +62,51 @@ pub fn router() -> Router {
 
 #[utoipa::path(
     get,
-    path = "/audit",
+    path = "/api/audit",
     tag = "Audit",
-    security(("bearer_auth" = [])),
+    security(("session_cookie" = ["audit.view"])),
     params(
-        PaginationParams,
+        AuditLogQuery,
     ),
     responses(
         (status = 200, description = "List of audit logs")
     )
 )]
 async fn list_audit_logs(
-    State(db): State<DatabaseConnection>,
-    _admin: AdminGuard,
-    Query(pagination): Query<PaginationParams>,
-    Query(filters): Query<AuditLogQueryParams>,
-) -> Result<Json<Page<AuditLogResponse>>, AppError> {
-    let mut query = entities::Entity::find().order_by_desc(entities::Column::CreatedAt);
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<DatabaseConnection>,
+    Query(query): Query<AuditLogQuery>,
+) -> Result<Json<ApiResponse<PaginatedData<AuditLogResponse>>>, AppError> {
+    user.require(&perms, Permission::AuditView).await?;
 
-    if let Some(action) = filters.action {
-        query = query.filter(entities::Column::Action.eq(action));
+    let mut q = entities::Entity::find().order_by_desc(entities::Column::CreatedAt);
+
+    if let Some(action) = &query.action {
+        q = q.filter(entities::Column::Action.eq(action));
     }
-    if let Some(entity_type) = filters.entity_type {
-        query = query.filter(entities::Column::EntityType.eq(entity_type));
+    if let Some(entity_type) = &query.entity_type {
+        q = q.filter(entities::Column::EntityType.eq(entity_type));
     }
-    if let Some(entity_id) = filters.entity_id {
-        query = query.filter(entities::Column::EntityId.eq(entity_id));
+    if let Some(entity_id) = query.entity_id {
+        q = q.filter(entities::Column::EntityId.eq(entity_id));
     }
-    if let Some(user_id) = filters.user_id {
-        query = query.filter(entities::Column::UserId.eq(user_id));
+    if let Some(user_id) = query.user_id {
+        q = q.filter(entities::Column::UserId.eq(user_id));
     }
 
-    let (items, total) = pagination.paginate(query, &db).await?;
-    let items = items.into_iter().map(AuditLogResponse::from).collect();
+    let pagination = query.pagination();
+    let limit = pagination.limit();
+    let page = pagination.offset_page();
 
-    Ok(Json(Page {
-        items,
-        total,
-        page: pagination.page,
-        size: pagination.size,
-    }))
+    let paginator = q.paginate(&db, limit);
+    let total_items = paginator.num_items().await?;
+    let total_pages = paginator.num_pages().await?;
+    let models = paginator.fetch_page(page).await?;
+
+    let items = models.into_iter().map(AuditLogResponse::from).collect();
+
+    let paginated = PaginatedData::new(items, total_items, total_pages, page + 1, limit);
+
+    Ok(Json(ApiResponse::new(paginated)))
 }

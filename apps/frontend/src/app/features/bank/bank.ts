@@ -159,6 +159,7 @@ const TRANSACTIONS_LOAD_LIMIT = 1000;
             <option value="">{{ t('common.all') }}</option>
             <option value="pending">{{ t('bank.balance.pending') }}</option>
             <option value="requested">{{ t('bank.balance.requested') }}</option>
+            <option value="rejected">{{ t('bank.status.rejected') }}</option>
             <option value="withdrawn">{{ t('bank.balance.payouts') }}</option>
           </select>
         </label>
@@ -186,6 +187,7 @@ const TRANSACTIONS_LOAD_LIMIT = 1000;
               class="font-semibold"
               [class.text-success]="row.status === 'withdrawn'"
               [class.text-warning]="row.status === 'requested'"
+              [class.text-error]="row.status === 'rejected'"
               style="font-variant-numeric: tabular-nums"
             >
               {{ formatAmount(row.amount) }}
@@ -443,6 +445,8 @@ export class Bank {
         return 'chip--info';
       case 'requested':
         return 'chip--warning';
+      case 'rejected':
+        return 'chip--error';
       case 'withdrawn':
         return 'chip--success';
       default:
@@ -457,6 +461,8 @@ export class Bank {
         return 'info';
       case 'requested':
         return 'alert';
+      case 'rejected':
+        return 'close';
       case 'withdrawn':
         return 'check';
       default:
@@ -469,6 +475,7 @@ export class Bank {
     const keyMap: Record<TransactionStatus, TranslationKey> = {
       pending: 'bank.status.pending',
       requested: 'bank.status.requested',
+      rejected: 'bank.status.rejected',
       withdrawn: 'bank.status.withdrawn',
     };
     return this.t(keyMap[status]);

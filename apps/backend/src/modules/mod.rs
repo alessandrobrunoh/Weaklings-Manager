@@ -6,6 +6,7 @@ pub mod admin;
 pub mod albion;
 pub mod albionbb;
 pub mod albiondata;
+pub mod audit;
 pub mod auth;
 pub mod bank;
 pub mod battles;
@@ -17,7 +18,6 @@ pub mod siphoned;
 pub mod splits;
 pub mod users;
 pub mod utils;
-pub mod audit;
 
 use axum::Router;
 

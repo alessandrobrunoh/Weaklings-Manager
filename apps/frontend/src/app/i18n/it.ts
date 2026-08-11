@@ -107,6 +107,7 @@ export const it: TranslationDict = {
   'bank.transactions.empty': 'Nessuna transazione ancora.',
   'bank.status.pending': 'In attesa',
   'bank.status.requested': 'In attesa di pagamento',
+  'bank.status.rejected': 'Rifiutato',
   'bank.status.withdrawn': 'Pagato',
   'bank.actions.accept_single': 'Accetta',
   'bank.actions.reject_single': 'Rifiuta',
