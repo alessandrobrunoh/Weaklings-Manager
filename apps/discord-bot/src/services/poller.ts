@@ -5,10 +5,10 @@ import type { ApiClient } from '../api/client.js';
 import type { PaginatedData, EventView, BattleSummary } from '../api/types.js';
 import { buildEventEmbed, buildEventActionRows } from '../embeds/event.embed.js';
 import { buildBattleEmbed } from '../embeds/battle.embed.js';
+import { GUILD_NAME } from '../embeds/theme.js';
 
 const STATE_DIR = 'data';
 const STATE_FILE = join(STATE_DIR, 'poller-state.json');
-const GUILD_NAME = process.env['GUILD_NAME'] ?? '';
 
 interface PollerState {
   lastEventId: number;
@@ -39,9 +39,6 @@ function saveState(state: PollerState): void {
 /**
  * Polling service that checks for new events and battles and posts them
  * to the configured Discord channels.
- *
- * State is persisted in `data/poller-state.json` so that restarts don't
- * re-announce already-posted content.
  */
 export class Poller {
   private readonly state: PollerState;
@@ -62,7 +59,6 @@ export class Poller {
 
   /** Start the polling loop. */
   start(): void {
-    // Run once immediately then on interval
     void this.poll();
     this.timer = setInterval(() => void this.poll(), this.intervalMs);
   }
@@ -84,7 +80,6 @@ export class Poller {
         limit: 20,
       });
 
-      // Filter to events we haven't announced yet, sorted ascending by ID
       const newEvents = result.items
         .filter((e) => e.id > this.state.lastEventId)
         .sort((a, b) => a.id - b.id);
@@ -107,7 +102,7 @@ export class Poller {
         const timeStr = `${h}:${m} UTC ${d}/${mo}/${y}`;
 
         await channel.send({
-          content: `📌 MassUp ${timeStr}\nAnother day with Ally 🐸\n\n@Weak`,
+          content: `📌 **MassUp ${timeStr}**\n*Another day with Ally 🐸*\n\n@${GUILD_NAME}`,
           embeds: [embed],
           components: [row1, row2],
         });

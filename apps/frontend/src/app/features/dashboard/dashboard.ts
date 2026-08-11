@@ -161,7 +161,12 @@ interface DashboardStat {
                     aria-hidden="true"
                   ></span>
                   <div class="min-w-0 flex-1">
-                    <p class="truncate text-sm font-medium">{{ event.title }}</p>
+                    <p class="truncate text-sm font-medium">
+                      @if (event.call_to_arms) {
+                        <span class="cta-star" title="{{ t('events.call_to_arms') }}">★</span>
+                      }
+                      {{ event.title }}
+                    </p>
                     <p class="truncate text-xs" style="color: var(--color-text-secondary)">
                       {{ event.comp_name }} · {{ formatEventDate(event.event_date_utc) }}
                     </p>

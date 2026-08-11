@@ -2,6 +2,7 @@ import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import type { EventDetailView } from '../api/types.js';
 import { buildEventEmbed } from '../embeds/event.embed.js';
+import { createResponseEmbed } from '../embeds/theme.js';
 
 export const data = new SlashCommandBuilder()
   .setName('event-stop')
@@ -14,7 +15,7 @@ export async function execute(
   interaction: ChatInputCommandInteraction,
   api: ApiClient,
 ): Promise<void> {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: ['Ephemeral'] });
 
   const eventId = interaction.options.getInteger('event_id', true);
 
@@ -25,8 +26,14 @@ export async function execute(
   );
 
   const embed = buildEventEmbed(event);
+  const noticeEmbed = createResponseEmbed(
+    'warning',
+    'Event Stopped',
+    `Event **#${eventId}** has been stopped. ⏹️`,
+    'GUILD EVENT',
+  );
+
   await interaction.editReply({
-    content: `✅ Event **#${eventId}** has been stopped.`,
-    embeds: [embed],
+    embeds: [noticeEmbed, embed],
   });
 }

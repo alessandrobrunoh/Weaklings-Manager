@@ -3,8 +3,9 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
-import type { EventView, PaginatedData, CompSummary, CreateEventRequest } from '../api/types.js';
+import type { EventView, CreateEventRequest } from '../api/types.js';
 import { buildEventEmbed, buildEventActionRows } from '../embeds/event.embed.js';
+import { createResponseEmbed } from '../embeds/theme.js';
 
 export const data = new SlashCommandBuilder()
   .setName('event-create')
@@ -23,25 +24,36 @@ export const data = new SlashCommandBuilder()
   )
   .addStringOption((opt) =>
     opt.setName('description').setDescription('Optional description').setRequired(false),
+  )
+  .addBooleanOption((opt) =>
+    opt
+      .setName('call_to_arms')
+      .setDescription('Urgent call to arms — posted to the CTA channel')
+      .setRequired(false),
   );
 
 export async function execute(
   interaction: ChatInputCommandInteraction,
   api: ApiClient,
 ): Promise<void> {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: ['Ephemeral'] });
 
   const title = interaction.options.getString('title', true);
   const dateStr = interaction.options.getString('date', true);
   const compId = interaction.options.getInteger('comp_id', true);
   const description = interaction.options.getString('description') ?? undefined;
+  const callToArms = interaction.options.getBoolean('call_to_arms') ?? false;
 
   // Validate date
   const parsedDate = new Date(dateStr);
   if (isNaN(parsedDate.getTime())) {
-    await interaction.editReply({
-      content: '❌ Invalid date format. Use ISO format like `2026-08-15T20:00:00Z`.',
-    });
+    const errEmbed = createResponseEmbed(
+      'error',
+      'Invalid Date Format',
+      'Use ISO format like `2026-08-15T20:00:00Z`.',
+      'GUILD EVENT',
+    );
+    await interaction.editReply({ embeds: [errEmbed] });
     return;
   }
 
@@ -51,15 +63,22 @@ export async function execute(
     event_date_utc: parsedDate.toISOString(),
   };
   if (description) body.description = description;
+  if (callToArms) body.call_to_arms = true;
 
   const event = await api.post<EventView>('api/events', body, interaction.user.id);
 
   const embed = buildEventEmbed(event);
   const [row1, row2] = buildEventActionRows(event.id);
 
+  const noticeEmbed = createResponseEmbed(
+    'success',
+    'Guild Event Created',
+    `Event **#${event.id}** is now scheduled. Members can sign up using the buttons below.`,
+    'GUILD EVENT',
+  );
+
   await interaction.editReply({
-    content: '✅ Event created! Members can now sign up using the buttons below.',
-    embeds: [embed],
+    embeds: [noticeEmbed, embed],
     components: [row1, row2],
   });
 }

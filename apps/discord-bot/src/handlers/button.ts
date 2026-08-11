@@ -1,8 +1,9 @@
-import { ButtonInteraction, Colors, EmbedBuilder } from 'discord.js';
+import { ButtonInteraction } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import type { BuildRole, EventDetailView, PaginatedData, EventView, BattleSummary, CompDetail } from '../api/types.js';
 import { buildEventEmbed, buildEventSummaryEmbed, buildEventActionRows } from '../embeds/event.embed.js';
 import { buildBattleListEmbed } from '../embeds/battle.embed.js';
+import { createResponseEmbed } from '../embeds/theme.js';
 
 const GUILD_NAME = process.env['GUILD_NAME'] ?? '';
 
@@ -17,16 +18,6 @@ const BUILD_ROLE_LABELS: Record<BuildRole, string> = {
 
 /**
  * Handles all button interactions.
- *
- * Custom ID format:
- *   event:join:{eventId}:{role}    — join event with build role
- *   event:leave:{eventId}          — leave event
- *   event:start:{eventId}          — start event (Officer+)
- *   event:stop:{eventId}           — stop event (Officer+)
- *   events:prev:{page}             — navigate events list
- *   events:next:{page}             — navigate events list
- *   battles:prev:{page}            — navigate battles list
- *   battles:next:{page}            — navigate battles list
  */
 export async function handleButton(
   interaction: ButtonInteraction,
@@ -45,11 +36,13 @@ export async function handleButton(
     } else if (ns === 'bank') {
       await handleBankButton(interaction, api, action, rest);
     } else {
-      await interaction.reply({ content: '❓ Unknown button action.', ephemeral: true });
+      const embed = createResponseEmbed('warning', 'Unknown Action', 'Unknown button action.', 'BUTTON SYSTEM');
+      await interaction.reply({ embeds: [embed], flags: ['Ephemeral'] });
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'An unexpected error occurred.';
-    const reply = { content: `❌ ${message}`, ephemeral: true };
+    const errEmbed = createResponseEmbed('error', 'Button Action Failed', message, 'BUTTON SYSTEM');
+    const reply = { embeds: [errEmbed], flags: ['Ephemeral'] as any };
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp(reply);
     } else {
@@ -69,13 +62,14 @@ async function handleEventButton(
     const eventId = Number(eventIdStr);
     const buildRole = role as BuildRole;
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: ['Ephemeral'] });
 
     // Fetch the event to get the active comp
     const event = await api.get<EventDetailView>(`api/events/${eventId}`, interaction.user.id);
 
     if (!event.active_comp_id) {
-      await interaction.editReply({ content: '❌ This event has no active comp set.' });
+      const errEmbed = createResponseEmbed('error', 'No Active Comp', 'This event has no active composition assigned.', 'GUILD EVENT');
+      await interaction.editReply({ embeds: [errEmbed] });
       return;
     }
 
@@ -84,7 +78,8 @@ async function handleEventButton(
     try {
       comp = await api.get<CompDetail>(`api/comps/${event.active_comp_id}`, interaction.user.id);
     } catch (err) {
-      await interaction.editReply({ content: '❌ Failed to fetch comp details.' });
+      const errEmbed = createResponseEmbed('error', 'Fetch Error', 'Failed to fetch composition details.', 'GUILD EVENT');
+      await interaction.editReply({ embeds: [errEmbed] });
       return;
     }
 
@@ -92,9 +87,13 @@ async function handleEventButton(
     const availableBuilds = comp.builds.filter((b: any) => b.build.role === buildRole);
 
     if (availableBuilds.length === 0) {
-      await interaction.editReply({
-        content: `❌ The active comp (**${comp.name}**) does not require any **${BUILD_ROLE_LABELS[buildRole] ?? buildRole}** builds.`,
-      });
+      const warnEmbed = createResponseEmbed(
+        'warning',
+        'Role Not Required',
+        `The active comp (**${comp.name}**) does not require any **${BUILD_ROLE_LABELS[buildRole] ?? buildRole}** builds.`,
+        'GUILD EVENT',
+      );
+      await interaction.editReply({ embeds: [warnEmbed] });
       return;
     }
 
@@ -107,15 +106,22 @@ async function handleEventButton(
         availableBuilds.map((b: any) =>
           new StringSelectMenuOptionBuilder()
             .setLabel(b.build.name)
-            .setDescription(`Requested: ${b.quantity}`)
+            .setDescription(`Requested count: ${b.quantity}`)
             .setValue(String(b.build_id)),
         ),
       );
 
     const row = new ActionRowBuilder<InstanceType<typeof StringSelectMenuBuilder>>().addComponents(selectMenu);
 
+    const infoEmbed = createResponseEmbed(
+      'info',
+      'Select Specific Build',
+      `🎯 Choose your specific **${BUILD_ROLE_LABELS[buildRole] ?? buildRole}** build for event **#${eventId}**:`,
+      'GUILD EVENT',
+    );
+
     await interaction.editReply({
-      content: `🎯 Select your specific **${BUILD_ROLE_LABELS[buildRole] ?? buildRole}** build for event **#${eventId}**:`,
+      embeds: [infoEmbed],
       components: [row],
     });
     return;
@@ -125,9 +131,9 @@ async function handleEventButton(
     const [eventIdStr] = rest;
     const eventId = Number(eventIdStr);
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: ['Ephemeral'] });
     await api.delete(`api/events/${eventId}/participate`, interaction.user.id);
-    
+
     try {
       const updatedEvent = await api.get<EventDetailView>(`api/events/${eventId}`, interaction.user.id);
       const embed = buildEventEmbed(updatedEvent);
@@ -136,7 +142,8 @@ async function handleEventButton(
       console.error('Failed to update event embed on leave', e);
     }
 
-    await interaction.editReply({ content: `✅ You have left event **#${eventId}**.` });
+    const successEmbed = createResponseEmbed('success', 'Left Event', `You have successfully left event **#${eventId}**.`, 'GUILD EVENT');
+    await interaction.editReply({ embeds: [successEmbed] });
     return;
   }
 
@@ -144,7 +151,7 @@ async function handleEventButton(
     const [eventIdStr] = rest;
     const eventId = Number(eventIdStr);
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: ['Ephemeral'] });
     const event = await api.post<EventDetailView>(
       `api/events/${eventId}/start`,
       {},
@@ -152,7 +159,8 @@ async function handleEventButton(
     );
     const embed = buildEventEmbed(event);
     await interaction.message.edit({ embeds: [embed] });
-    await interaction.editReply({ content: `✅ Event **#${eventId}** is now LIVE!` });
+    const successEmbed = createResponseEmbed('success', 'Event Live', `Event **#${eventId}** is now **LIVE**! 🟢`, 'GUILD EVENT');
+    await interaction.editReply({ embeds: [successEmbed] });
     return;
   }
 
@@ -160,7 +168,7 @@ async function handleEventButton(
     const [eventIdStr] = rest;
     const eventId = Number(eventIdStr);
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: ['Ephemeral'] });
     const event = await api.post<EventDetailView>(
       `api/events/${eventId}/stop`,
       {},
@@ -168,11 +176,13 @@ async function handleEventButton(
     );
     const embed = buildEventEmbed(event);
     await interaction.message.edit({ embeds: [embed] });
-    await interaction.editReply({ content: `✅ Event **#${eventId}** stopped.` });
+    const warnEmbed = createResponseEmbed('warning', 'Event Stopped', `Event **#${eventId}** has been stopped. ⏹️`, 'GUILD EVENT');
+    await interaction.editReply({ embeds: [warnEmbed] });
     return;
   }
 
-  await interaction.reply({ content: '❓ Unknown event action.', ephemeral: true });
+  const errEmbed = createResponseEmbed('warning', 'Unknown Event Action', 'Unknown event button action.', 'GUILD EVENT');
+  await interaction.reply({ embeds: [errEmbed], flags: ['Ephemeral'] });
 }
 
 async function handleEventsNav(
@@ -194,7 +204,6 @@ async function handleEventsNav(
 
   const embed = buildEventSummaryEmbed(result.items, result.current_page, result.total_pages);
 
-  // Rebuild nav row with updated state
   const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
   const navRow = new ActionRowBuilder<InstanceType<typeof ButtonBuilder>>().addComponents(
     new ButtonBuilder()
@@ -255,34 +264,31 @@ async function handleBankButton(
   rest: string[],
 ): Promise<void> {
   if (action === 'request_all') {
-    await interaction.deferReply({ ephemeral: true });
-    
-    // Disable the button on the original message if we have it
+    await interaction.deferReply({ flags: ['Ephemeral'] });
+
     try {
       const components = interaction.message.components;
       if (components && components.length > 0) {
-        // I won't re-import all of discord.js classes just to disable the button,
-        // it's easier to just strip components from the original message if they requested it
         await interaction.message.edit({ components: [] });
       }
     } catch (e) {}
-    
+
     const txs = await api.post<any[]>(
       'api/bank/transactions/withdraw',
       { all: true },
       interaction.user.id,
     );
 
-    const total  = txs.reduce((sum, tx) => sum + tx.amount, 0);
+    const total    = txs.reduce((sum, tx) => sum + tx.amount, 0);
     const totalFmt = total.toLocaleString('en-US');
 
-    const embed = new EmbedBuilder()
-      .setColor(0x57f287)
-      .setAuthor({ name: 'Bank — Withdrawal Request' })
-      .setDescription(
-        `Withdrawal of **${totalFmt} silver** across **${txs.length}** transaction${txs.length !== 1 ? 's' : ''} submitted.\nAn officer will process it shortly.`,
-      )
-      .setTimestamp();
+    const desc = [
+      `• 💰 **Total Amount:** **${totalFmt} silver**`,
+      `• 📄 **Transactions:** **${txs.length}** item(s)`,
+      `• ⏳ **Status:** Withdrawal submitted to Officers`,
+    ].join('\n');
+
+    const embed = createResponseEmbed('success', 'Withdrawal Requested', desc, 'GUILD BANK');
 
     await interaction.editReply({ embeds: [embed] });
     return;
@@ -292,23 +298,35 @@ async function handleBankButton(
     const [txIdStr] = rest;
     const txId = Number(txIdStr);
 
-    await interaction.deferReply({ ephemeral: true });
-    
+    await interaction.deferReply({ flags: ['Ephemeral'] });
+
     try {
       await api.post<any>(
         'api/bank/transactions/withdraw/accept',
         { transaction_ids: [txId] },
         interaction.user.id,
       );
-      
-      // Update original message to remove buttons
+
       try {
         await interaction.message.edit({ components: [] });
       } catch (e) {}
 
-      await interaction.editReply({ content: `✅ Withdrawal request **#${txId}** has been accepted and marked as paid.` });
+      const successEmbed = createResponseEmbed(
+        'success',
+        'Withdrawal Approved',
+        `Withdrawal request **#${txId}** has been accepted and marked as paid.`,
+        'GUILD BANK',
+      );
+
+      await interaction.editReply({ embeds: [successEmbed] });
     } catch (err: any) {
-      await interaction.editReply({ content: `❌ Failed to accept: ${err.message || 'Unknown error'}` });
+      const errEmbed = createResponseEmbed(
+        'error',
+        'Approval Failed',
+        err.message || 'Failed to accept withdrawal request.',
+        'GUILD BANK',
+      );
+      await interaction.editReply({ embeds: [errEmbed] });
     }
     return;
   }
@@ -317,26 +335,39 @@ async function handleBankButton(
     const [txIdStr] = rest;
     const txId = Number(txIdStr);
 
-    await interaction.deferReply({ ephemeral: true });
-    
+    await interaction.deferReply({ flags: ['Ephemeral'] });
+
     try {
       await api.post<any>(
         'api/bank/transactions/withdraw/reject',
         { transaction_ids: [txId] },
         interaction.user.id,
       );
-      
-      // Update original message to remove buttons
+
       try {
         await interaction.message.edit({ components: [] });
       } catch (e) {}
 
-      await interaction.editReply({ content: `❌ Withdrawal request **#${txId}** has been rejected.` });
+      const rejectEmbed = createResponseEmbed(
+        'error',
+        'Withdrawal Rejected',
+        `Withdrawal request **#${txId}** has been rejected.`,
+        'GUILD BANK',
+      );
+
+      await interaction.editReply({ embeds: [rejectEmbed] });
     } catch (err: any) {
-      await interaction.editReply({ content: `❌ Failed to reject: ${err.message || 'Unknown error'}` });
+      const errEmbed = createResponseEmbed(
+        'error',
+        'Rejection Failed',
+        err.message || 'Failed to reject withdrawal request.',
+        'GUILD BANK',
+      );
+      await interaction.editReply({ embeds: [errEmbed] });
     }
     return;
   }
 
-  await interaction.reply({ content: '❓ Unknown bank action.', ephemeral: true });
+  const errEmbed = createResponseEmbed('warning', 'Unknown Bank Action', 'Unknown bank action.', 'GUILD BANK');
+  await interaction.reply({ embeds: [errEmbed], flags: ['Ephemeral'] });
 }

@@ -1,5 +1,6 @@
 import { StringSelectMenuInteraction } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
+import { createResponseEmbed } from '../embeds/theme.js';
 
 export async function handleSelectMenu(
   interaction: StringSelectMenuInteraction,
@@ -36,20 +37,27 @@ export async function handleSelectMenu(
         }
       }
 
+      const successEmbed = createResponseEmbed(
+        'success',
+        'Signed Up For Event',
+        `You have successfully signed up for event **#${eventId}** with build ID **${buildId}**.`,
+        'GUILD EVENT',
+      );
+
       await interaction.editReply({
-        content: `✅ You have successfully signed up for event **#${eventId}** with build ID **${buildId}**.`,
+        embeds: [successEmbed],
         components: [],
       });
       return;
     }
 
-    await interaction.reply({ content: '❓ Unknown select menu action.', ephemeral: true });
+    const warnEmbed = createResponseEmbed('warning', 'Unknown Select Menu', 'Unknown select menu action.', 'SELECT HANDLER');
+    await interaction.reply({ embeds: [warnEmbed], flags: ['Ephemeral'] });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'An unexpected error occurred.';
-    const reply = { content: `❌ ${message}`, components: [] };
-    
-    // interaction.deferUpdate() fa si che interaction.replied/deferred non ci aiutino molto per un followUp
-    // se non c'e' stato un deferReply, ma noi facciamo deferUpdate, quindi editReply e' la via.
-    await interaction.editReply(reply).catch(() => interaction.followUp({ content: reply.content, ephemeral: true }));
+    const errEmbed = createResponseEmbed('error', 'Selection Failed', message, 'GUILD EVENT');
+
+    await interaction.editReply({ embeds: [errEmbed], components: [] })
+      .catch(() => interaction.followUp({ embeds: [errEmbed], flags: ['Ephemeral'] }));
   }
 }

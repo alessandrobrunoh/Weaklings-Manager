@@ -5,48 +5,56 @@ import {
   ButtonStyle,
 } from 'discord.js';
 import type { EventView, EventDetailView } from '../api/types.js';
+import { BOT_COLORS, createBaseEmbed } from './theme.js';
 
-// ── Colori per stato evento ──────────────────────────────────────────────────
+// Status colors
 const STATUS_COLOR: Record<string, number> = {
-  scheduled: 0x5865f2, // Blurple
-  live:       0x57f287, // Verde
-  stopped:    0x4f545c, // Grigio scuro
-  auto_stopped: 0xfee75c, // Giallo
+  scheduled:    BOT_COLORS.BRAND,
+  live:         BOT_COLORS.SUCCESS,
+  stopped:      BOT_COLORS.DARK,
+  auto_stopped: BOT_COLORS.WARNING,
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  scheduled:    'Scheduled',
-  live:         'LIVE',
-  stopped:      'Stopped',
-  auto_stopped: 'Auto-stopped',
+  scheduled:    'SCHEDULED',
+  live:         'LIVE 🟢',
+  stopped:      'STOPPED ⏹️',
+  auto_stopped: 'AUTO-STOPPED ⚠️',
 };
 
 // ── Embed dettaglio evento ───────────────────────────────────────────────────
 
 export function buildEventEmbed(event: EventView | EventDetailView): EmbedBuilder {
-  const color  = STATUS_COLOR[event.status] ?? 0x5865f2;
-  const status = STATUS_LABEL[event.status] ?? event.status;
+  const color  = STATUS_COLOR[event.status] ?? BOT_COLORS.BRAND;
+  const status = STATUS_LABEL[event.status] ?? event.status.toUpperCase();
   const date   = new Date(event.event_date_utc);
   const ts     = Math.floor(date.getTime() / 1000);
 
-  const embed = new EmbedBuilder()
-    .setColor(color)
-    .setAuthor({ name: 'Guild Event' })
-    .setTitle(event.title)
-    .addFields(
-      { name: 'Status',       value: `\`${status}\``,           inline: true },
-      { name: 'Composition',  value: event.comp_name,           inline: true },
-      { name: 'Date',         value: `<t:${ts}:F>`,             inline: false },
-      { name: 'Created by',   value: event.created_by_username, inline: true },
-    )
-    .setFooter({ text: `Event #${event.id}` })
-    .setTimestamp(date);
+  let descLines: string[] = [];
 
   if (event.description) {
-    embed.setDescription(event.description);
+    descLines.push(`*${event.description}*`, '');
   }
 
-  // Se è un EventDetailView con partecipanti, mostriamo la lista
+  descLines.push(
+    `• 🗓️ **Date & Time:** <t:${ts}:F> (<t:${ts}:R>)`,
+    `• ⚡ **Status:** \`${status}\``,
+    `• ⚔️ **Composition:** **${event.comp_name}**`,
+    `• 👑 **Organizer:** **${event.created_by_username}**`,
+    ...(event.call_to_arms ? ['', '🚨 **URGENT — CALL TO ARMS** — be online and ready!'] : []),
+  );
+
+  const embed = createBaseEmbed({
+    category: 'GUILD EVENT',
+    title: event.call_to_arms
+      ? `🚨 CALL TO ARMS: ${event.title}`
+      : `📌 ${event.title}`,
+    description: descLines.join('\n'),
+    color,
+    footerText: `Event #${event.id} • Weaklings Guild Manager`,
+  });
+
+  // Se è un EventDetailView con partecipanti, mostriamo la lista raggruppata
   const detail = event as EventDetailView;
   if (detail.participants?.length > 0) {
     const buildCounts: Record<string, number> = {};
@@ -55,12 +63,18 @@ export function buildEventEmbed(event: EventView | EventDetailView): EmbedBuilde
     }
 
     const lines = Object.entries(buildCounts)
-      .map(([buildName, count]) => `**${count}**x ${buildName}`)
+      .map(([buildName, count]) => `• **${count}x** ${buildName}`)
       .join('\n');
 
     embed.addFields({
-      name: `Roster (${detail.participants.length}/${detail.active_comp_capacity})`,
+      name: `📋 Roster (${detail.participants.length}/${detail.active_comp_capacity} Filled)`,
       value: lines,
+      inline: false,
+    });
+  } else {
+    embed.addFields({
+      name: `📋 Roster (0/${detail.active_comp_capacity ?? '?'})`,
+      value: '*No players registered yet. Click a role button below to sign up!*',
       inline: false,
     });
   }
@@ -75,23 +89,24 @@ export function buildEventSummaryEmbed(
   page: number,
   totalPages: number,
 ): EmbedBuilder {
-  const embed = new EmbedBuilder()
-    .setColor(0x5865f2)
-    .setTitle('Guild Events')
-    .setFooter({ text: `Page ${page} of ${totalPages}` })
-    .setTimestamp();
+  const embed = createBaseEmbed({
+    category: 'EVENT CALENDAR',
+    title: '📅 Guild Events',
+    color: BOT_COLORS.BRAND,
+    footerText: `Page ${page} of ${totalPages} • Weaklings Guild Manager`,
+  });
 
   if (events.length === 0) {
-    embed.setDescription('*No events found.*');
+    embed.setDescription('*No upcoming or past events found.*');
     return embed;
   }
 
   const lines = events.map((e) => {
     const ts     = Math.floor(new Date(e.event_date_utc).getTime() / 1000);
-    const status = STATUS_LABEL[e.status] ?? e.status;
+    const status = STATUS_LABEL[e.status] ?? e.status.toUpperCase();
     return [
-      `**[#${e.id}] ${e.title}**`,
-      `\`${status}\` · ${e.comp_name} · <t:${ts}:R>`,
+      `${e.call_to_arms ? '🚨 ' : '📌 '}**[#${e.id}] ${e.title}**`,
+      `• ⚡ \`${status}\` · ⚔️ **${e.comp_name}** · <t:${ts}:R>`,
     ].join('\n');
   });
 
@@ -108,22 +123,27 @@ export function buildEventActionRows(
     new ButtonBuilder()
       .setCustomId(`event:join:${eventId}:healer`)
       .setLabel('Healer')
+      .setEmoji('🛡️')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId(`event:join:${eventId}:tank`)
       .setLabel('Tank')
+      .setEmoji('🪓')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId(`event:join:${eventId}:dps`)
       .setLabel('DPS')
+      .setEmoji('⚔️')
       .setStyle(ButtonStyle.Danger),
     new ButtonBuilder()
       .setCustomId(`event:join:${eventId}:support`)
       .setLabel('Support')
+      .setEmoji('✨')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`event:join:${eventId}:battle_mount`)
       .setLabel('Battle Mount')
+      .setEmoji('🐴')
       .setStyle(ButtonStyle.Secondary),
   );
 
@@ -131,10 +151,12 @@ export function buildEventActionRows(
     new ButtonBuilder()
       .setCustomId(`event:join:${eventId}:brawler`)
       .setLabel('Brawler')
+      .setEmoji('🥊')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`event:leave:${eventId}`)
       .setLabel('Leave Event')
+      .setEmoji('🚪')
       .setStyle(ButtonStyle.Danger),
   );
 

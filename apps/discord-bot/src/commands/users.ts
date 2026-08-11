@@ -1,6 +1,7 @@
-import { ChatInputCommandInteraction, EmbedBuilder, SlashCommandBuilder } from 'discord.js';
+import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import type { PaginatedData, UserProfile } from '../api/types.js';
+import { BOT_COLORS, createBaseEmbed } from '../embeds/theme.js';
 
 export const data = new SlashCommandBuilder()
   .setName('users')
@@ -12,18 +13,18 @@ export const data = new SlashCommandBuilder()
     opt.setName('page').setDescription('Page number').setMinValue(1).setRequired(false),
   );
 
-const ROLE_COLOR: Record<string, string> = {
-  SuperAdmin: '`👑 SuperAdmin`',
-  Admin:      '`🔴 Admin`',
-  Officer:    '`🟡 Officer`',
-  User:       '`User`',
+const ROLE_BADGES: Record<string, string> = {
+  SuperAdmin: '👑 **SuperAdmin**',
+  Admin:      '🔴 **Admin**',
+  Officer:    '🟡 **Officer**',
+  User:       '🛡️ **User**',
 };
 
 export async function execute(
   interaction: ChatInputCommandInteraction,
   api: ApiClient,
 ): Promise<void> {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: ['Ephemeral'] });
 
   const search = interaction.options.getString('search') ?? undefined;
   const page   = interaction.options.getInteger('page') ?? 1;
@@ -37,18 +38,18 @@ export async function execute(
     params,
   );
 
-  const embed = new EmbedBuilder()
-    .setColor(0x2b2d31)
-    .setAuthor({ name: 'Guild Members' })
-    .setTitle(`${result.total_items} members`)
-    .setFooter({ text: `Page ${result.current_page} of ${result.total_pages}` })
-    .setTimestamp();
+  const embed = createBaseEmbed({
+    category: 'GUILD ACCOUNTS',
+    title: `👥 Guild Manager Accounts (${result.total_items})`,
+    color: BOT_COLORS.BRAND,
+    footerText: `Page ${result.current_page} of ${result.total_pages} • Weaklings Guild Manager`,
+  });
 
   if (result.items.length === 0) {
-    embed.setDescription('*No members found.*');
+    embed.setDescription('*No guild users found.*');
   } else {
     const lines = result.items.map(
-      (u) => `${ROLE_COLOR[u.role] ?? u.role} **${u.username}**`,
+      (u) => `• ${ROLE_BADGES[u.role] ?? u.role} — **${u.username}**`,
     );
     embed.setDescription(lines.join('\n'));
   }

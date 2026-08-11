@@ -52,6 +52,9 @@ const PAGE_SIZE = 10;
               (click)="openEventDetail(event.id)"
             >
               <h3 class="text-base font-semibold" style="color: var(--color-text)">
+                @if (event.call_to_arms) {
+                  <span class="cta-star" title="{{ t('events.call_to_arms') }}">★</span>
+                }
                 {{ event.title }}
               </h3>
               <span class="chip" [class]="statusChip(event.status)">

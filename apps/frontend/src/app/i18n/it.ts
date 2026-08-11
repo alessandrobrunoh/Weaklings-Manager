@@ -44,6 +44,7 @@ export const it: TranslationDict = {
   'common.open': 'Apri',
 
   'nav.dashboard': 'Cruscotto',
+  'nav.leaderboards': 'Classifiche',
   'nav.bank': 'Banca',
   'nav.splits': 'Splits',
   'nav.events': 'Eventi',
@@ -128,6 +129,7 @@ export const it: TranslationDict = {
 
   'events.title': 'Eventi',
   'events.subtitle': 'Pianifica e gestisci le attività della gilda.',
+  'events.call_to_arms': 'Chiamata alle armi',
   'events.new': 'Nuovo evento',
   'events.create.comp_required': 'La composizione è obbligatoria.',
   'events.start': 'Avvia',
@@ -273,6 +275,33 @@ export const it: TranslationDict = {
   'validation.required': 'Questo campo è obbligatorio.',
   'validation.min': 'Deve essere almeno {min}.',
   'validation.positive': 'Deve essere un numero positivo.',
+
+  // Leaderboards
+  'leaderboards.title': 'Classifiche',
+  'leaderboards.subtitle': 'I migliori nelle attività recenti della gilda.',
+  'leaderboards.tab.payout': 'Top Payout',
+  'leaderboards.tab.deaths': 'Top Morti Stim.',
+  'leaderboards.tab.kills': 'Top Kill',
+  'leaderboards.tab.attendance': 'Top Presenze',
+  'leaderboards.tab.killfame': 'Top Kill Fame',
+  'leaderboards.tab.deathfame': 'Top Death Fame',
+  'leaderboards.tab.siphoned': 'Top Siphoned',
+  'leaderboards.rank': 'Posizione',
+  'leaderboards.player': 'Giocatore',
+  'leaderboards.value': 'Valore',
+  'leaderboards.empty':
+    'Dati ancora insufficienti — gioca qualche evento per popolare la classifica.',
+  'leaderboards.hint.payout': 'Totale quote loot riscosse dagli split completati.',
+  'leaderboards.hint.deaths': 'Argento stimato perso nelle battaglie recenti.',
+  'leaderboards.hint.kills': 'Colpi finali inflitti nelle battaglie recenti.',
+  'leaderboards.hint.attendance': 'Eventi a cui hai partecipato nella finestra recente.',
+  'leaderboards.hint.killfame': 'Kill fame totale guadagnata nelle battaglie recenti.',
+  'leaderboards.hint.deathfame': 'Death fame regalata ai nemici nelle battaglie recenti.',
+  'leaderboards.hint.siphoned': 'Energia siphonata raccolta per la gilda.',
+  'leaderboards.unit.events': 'eventi',
+  'leaderboards.unit.silver': 'argento',
+  'leaderboards.unit.kills': 'kill',
+  'leaderboards.unit.fame': 'fame',
 
   // Audit
   'audit.title': 'Audit Logs',

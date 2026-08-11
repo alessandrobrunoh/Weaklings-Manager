@@ -1,7 +1,8 @@
-import { ChatInputCommandInteraction, EmbedBuilder, SlashCommandBuilder } from 'discord.js';
+import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import type { EventDetailView } from '../api/types.js';
 import { buildEventEmbed } from '../embeds/event.embed.js';
+import { BOT_COLORS, createBaseEmbed } from '../embeds/theme.js';
 
 export const data = new SlashCommandBuilder()
   .setName('event-roster')
@@ -14,14 +15,12 @@ export async function execute(
   interaction: ChatInputCommandInteraction,
   api: ApiClient,
 ): Promise<void> {
-  await interaction.deferReply({ ephemeral: false }); // Pubblico — tutti possono vederlo
+  await interaction.deferReply(); // Pubblico — tutti possono vederlo
 
   const eventId = interaction.options.getInteger('event_id', true);
   const event   = await api.get<EventDetailView>(`api/events/${eventId}`, interaction.user.id);
 
   const eventEmbed = buildEventEmbed(event);
-
-  // Crea embed separato per roster dettagliato se ci sono partecipanti
   const embeds = [eventEmbed];
 
   if (event.participants.length > 0) {
@@ -33,16 +32,18 @@ export async function execute(
       byRole[role].push(p.username);
     }
 
-    const rosterEmbed = new EmbedBuilder()
-      .setColor(0x2b2d31)
-      .setAuthor({ name: `Event #${event.id} — Roster` })
-      .setTitle(`${event.participants.length} / ${event.active_comp_capacity} slots filled`)
-      .setFooter({ text: event.active_comp_name });
+    const rosterEmbed = createBaseEmbed({
+      category: 'EVENT ROSTER',
+      title: `🛡️ Event #${event.id} — Registered Roster`,
+      description: `*${event.participants.length} / ${event.active_comp_capacity} slots filled for ${event.active_comp_name}*`,
+      color: BOT_COLORS.BRAND,
+      footerText: `Composition: ${event.active_comp_name} • Weaklings Guild Manager`,
+    });
 
     for (const [role, names] of Object.entries(byRole)) {
       rosterEmbed.addFields({
-        name: role,
-        value: names.map((n) => `• ${n}`).join('\n'),
+        name: `⚔️ ${role}`,
+        value: names.map((n) => `• **${n}**`).join('\n'),
         inline: true,
       });
     }

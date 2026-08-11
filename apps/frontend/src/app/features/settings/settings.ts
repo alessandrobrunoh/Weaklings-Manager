@@ -9,6 +9,7 @@ import type {
   SiphonedEntryView,
   SiphonedPlayerBalance,
   TransactionView,
+  UserMetrics,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
@@ -336,6 +337,7 @@ export class Settings {
   protected readonly siphonedEntries = signal<SiphonedEntryView[]>([]);
   protected readonly battles = signal<BattleSummary[]>([]);
   protected readonly albionLink = signal<AlbionLinkStatus | null>(null);
+  protected readonly userMetrics = signal<UserMetrics | null>(null);
   protected readonly profile = this.auth.profile;
 
   protected readonly transactionColumns: readonly DataTableColumn<TransactionView>[] = [
@@ -438,6 +440,8 @@ export class Settings {
     const balance = this.balance();
     const siphoned = this.siphonedBalance();
     const battleRows = this.battles();
+    const userMetrics = this.userMetrics();
+    
     return [
       {
         label: 'Pending silver',
@@ -459,6 +463,22 @@ export class Settings {
       {
         label: 'Fight fame',
         value: this.formatCompact(battleRows.reduce((sum, battle) => sum + battle.total_fame, 0)),
+      },
+      {
+        label: 'Events attended',
+        value: String(userMetrics?.events_attended ?? 0),
+      },
+      {
+        label: 'Most played build',
+        value: userMetrics?.most_played_build || 'N/A',
+      },
+      {
+        label: 'Total estimated loss',
+        value: this.formatAmount(userMetrics?.total_estimated_loss ?? 0),
+      },
+      {
+        label: 'Top estimated loss',
+        value: this.formatAmount(userMetrics?.top_estimated_loss ?? 0),
       },
     ];
   });
@@ -534,7 +554,7 @@ export class Settings {
   private async load(): Promise<void> {
     this.loading.set(true);
     try {
-      const [balance, transactions, albionLink, battles] = await Promise.all([
+      const [balance, transactions, albionLink, battles, metrics] = await Promise.all([
         firstValueFrom(this.api.get<BalanceSummary>('api/bank/balance')),
         firstValueFrom(
           this.api.get<PaginatedData<TransactionView>>('api/bank/transactions', {
@@ -546,11 +566,13 @@ export class Settings {
         firstValueFrom(
           this.api.get<PaginatedData<BattleSummary>>('api/battles/me', { page: 1, limit: 50 }),
         ).catch(() => emptyPaginatedBattles()),
+        firstValueFrom(this.api.get<UserMetrics>('api/users/me/metrics')).catch(() => null),
       ]);
       this.balance.set(balance);
       this.transactions.set(transactions.items);
       this.albionLink.set(albionLink);
       this.battles.set(battles.items);
+      this.userMetrics.set(metrics);
       await this.loadSiphoned(albionLink.albion_player_name ?? this.profile()?.username ?? '');
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

@@ -6,7 +6,7 @@ use super::service::{UserFilters, UserProfile, UserService};
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedUserProfile, PaginationParams};
-use crate::responses::{ApiResponse, ApiResponseUserProfile};
+use crate::responses::{ApiResponse, ApiResponseUserProfile, ApiResponseUserMetrics};
 use axum::{Extension, Json, Router, extract::Query, routing::get};
 
 /// Router query parameters for listing users, combining pagination and filtering.
@@ -40,6 +40,7 @@ impl ListUsersQuery {
 pub fn router() -> Router {
     Router::new()
         .route("/me", get(get_my_profile))
+        .route("/me/metrics", get(get_my_metrics))
         .route("/", get(list_users).post(create_user))
 }
 
@@ -77,6 +78,28 @@ async fn get_my_profile(
         role: user.highest_role,
     };
     Ok(Json(ApiResponse::new(profile)))
+}
+
+/// Retrieve the profile metrics of the currently authenticated user.
+#[utoipa::path(
+    get,
+    path = "/api/users/me/metrics",
+    tag = "users",
+    summary = "Get the caller's user metrics",
+    description = "Returns aggregated metrics like most played build, events attended, and estimated losses.",
+    security(("session_cookie" = [])),
+    responses(
+        (status = 200, description = "Metrics retrieved successfully", body = ApiResponseUserMetrics),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
+    )
+)]
+async fn get_my_metrics(
+    user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<crate::modules::users::service::UserMetrics>>, AppError> {
+    let service = UserService::new();
+    let metrics = service.get_metrics(&db, user.user_id as u64, &user.id).await?;
+    Ok(Json(ApiResponse::new(metrics)))
 }
 
 /// List all user profiles with pagination and filtering.

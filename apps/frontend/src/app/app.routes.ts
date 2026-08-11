@@ -21,6 +21,11 @@ export const routes: Routes = [
         loadComponent: () => import('./features/dashboard/dashboard').then((m) => m.Dashboard),
       },
       {
+        path: 'leaderboards',
+        loadComponent: () =>
+          import('./features/leaderboards/leaderboards').then((m) => m.Leaderboards),
+      },
+      {
         path: 'bank',
         loadComponent: () => import('./features/bank/bank').then((m) => m.Bank),
       },

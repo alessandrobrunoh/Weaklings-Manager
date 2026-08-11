@@ -16,6 +16,8 @@ pub mod event {
         pub title: String,
         /// A description of the event.
         pub description: Option<String>,
+        /// Whether this event is a priority call-to-arms announcement.
+        pub call_to_arms: bool,
         /// The composition associated with this event.
         pub comp_id: i64,
         /// The user who created the event.

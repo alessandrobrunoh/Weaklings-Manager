@@ -48,6 +48,7 @@ export const en = {
 
   // Nav
   'nav.dashboard': 'Dashboard',
+  'nav.leaderboards': 'Leaderboards',
   'nav.bank': 'Bank',
   'nav.splits': 'Splits',
   'nav.events': 'Events',
@@ -139,6 +140,7 @@ export const en = {
   // Events
   'events.title': 'Events',
   'events.subtitle': 'Schedule and run guild activities.',
+  'events.call_to_arms': 'Call to arms',
   'events.new': 'New event',
   'events.create.comp_required': 'Composition is required.',
   'events.start': 'Start',
@@ -293,6 +295,32 @@ export const en = {
   'validation.required': 'This field is required.',
   'validation.min': 'Must be at least {min}.',
   'validation.positive': 'Must be a positive number.',
+
+  // Leaderboards
+  'leaderboards.title': 'Leaderboards',
+  'leaderboards.subtitle': 'Top performers across recent guild activity.',
+  'leaderboards.tab.payout': 'Top Payout',
+  'leaderboards.tab.deaths': 'Top Estimated Deaths',
+  'leaderboards.tab.kills': 'Top Kills',
+  'leaderboards.tab.attendance': 'Top Attendance',
+  'leaderboards.tab.killfame': 'Top Kill Fame',
+  'leaderboards.tab.deathfame': 'Top Death Fame',
+  'leaderboards.tab.siphoned': 'Top Siphoned',
+  'leaderboards.rank': 'Rank',
+  'leaderboards.player': 'Player',
+  'leaderboards.value': 'Value',
+  'leaderboards.empty': 'Not enough data yet — play a few events to populate this leaderboard.',
+  'leaderboards.hint.payout': 'Total loot share collected from completed splits.',
+  'leaderboards.hint.deaths': 'Estimated silver lost across recent battles.',
+  'leaderboards.hint.kills': 'Final blows dealt across recent battles.',
+  'leaderboards.hint.attendance': 'Events attended in the recent window.',
+  'leaderboards.hint.killfame': 'Total kill fame earned across recent battles.',
+  'leaderboards.hint.deathfame': 'Death fame given to enemies across recent battles.',
+  'leaderboards.hint.siphoned': 'Siphoned energy collected for the guild.',
+  'leaderboards.unit.events': 'events',
+  'leaderboards.unit.silver': 'silver',
+  'leaderboards.unit.kills': 'kills',
+  'leaderboards.unit.fame': 'fame',
 
   // Audit
   'audit.title': 'Audit Logs',

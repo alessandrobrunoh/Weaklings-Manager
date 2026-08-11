@@ -1,6 +1,7 @@
-import { ChatInputCommandInteraction, EmbedBuilder, SlashCommandBuilder } from 'discord.js';
+import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import type { TransactionView, WithdrawRequest } from '../api/types.js';
+import { createResponseEmbed } from '../embeds/theme.js';
 
 export const data = new SlashCommandBuilder()
   .setName('balance-request')
@@ -10,7 +11,7 @@ export async function execute(
   interaction: ChatInputCommandInteraction,
   api: ApiClient,
 ): Promise<void> {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: ['Ephemeral'] });
 
   const body: WithdrawRequest = { all: true };
   const txs = await api.post<TransactionView[]>(
@@ -19,16 +20,16 @@ export async function execute(
     interaction.user.id,
   );
 
-  const total  = txs.reduce((sum, tx) => sum + tx.amount, 0);
+  const total    = txs.reduce((sum, tx) => sum + tx.amount, 0);
   const totalFmt = total.toLocaleString('en-US');
 
-  const embed = new EmbedBuilder()
-    .setColor(0x57f287)
-    .setAuthor({ name: 'Bank — Withdrawal Request' })
-    .setDescription(
-      `Withdrawal of **${totalFmt} silver** across **${txs.length}** transaction${txs.length !== 1 ? 's' : ''} submitted.\nAn officer will process it shortly.`,
-    )
-    .setTimestamp();
+  const desc = [
+    `• 💰 **Total Amount:** **${totalFmt} silver**`,
+    `• 📄 **Transactions:** **${txs.length}** pending item${txs.length !== 1 ? 's' : ''}`,
+    `• ⏳ **Status:** Sent to Officers for payout approval`,
+  ].join('\n');
+
+  const embed = createResponseEmbed('success', 'Withdrawal Request Submitted', desc, 'GUILD BANK');
 
   await interaction.editReply({ embeds: [embed] });
 }

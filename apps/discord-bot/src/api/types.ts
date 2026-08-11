@@ -136,6 +136,7 @@ export interface EventView {
   id: number;
   title: string;
   description: string | null;
+  call_to_arms: boolean;
   comp_id: number;
   comp_name: string;
   created_by: number;
@@ -169,6 +170,7 @@ export interface EventDetailView extends EventView {
 export interface CreateEventRequest {
   title: string;
   description?: string;
+  call_to_arms?: boolean;
   comp_id: number;
   event_date_utc: string;
 }

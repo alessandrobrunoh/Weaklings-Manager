@@ -68,6 +68,9 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
           <div>
             <div class="mb-2 flex flex-wrap items-center gap-2">
               <h1 class="text-3xl font-bold" style="color: var(--color-text)">
+                @if (detail.call_to_arms) {
+                  <span class="cta-star" title="{{ t('events.call_to_arms') }}">★</span>
+                }
                 {{ detail.title }}
               </h1>
               <span class="chip" [class]="statusChip(detail.status)">{{ detail.status }}</span>
@@ -191,6 +194,15 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
               {{ t('common.save') }}
             </button>
           </div>
+          <label class="flex items-center gap-2">
+            <input
+              class="checkbox"
+              type="checkbox"
+              [checked]="draftCallToArms()"
+              (change)="onCallToArmsChange($event)"
+            />
+            <span>{{ t('events.call_to_arms') }}</span>
+          </label>
         </form>
       }
 
@@ -1093,6 +1105,7 @@ export class EventDetailPage {
   protected readonly draftTitle = signal('');
   protected readonly draftDescription = signal('');
   protected readonly draftCompId = signal('');
+  protected readonly draftCallToArms = signal(false);
   protected readonly draftScheduledAt = signal('');
   protected readonly showJoinForm = signal(false);
   protected readonly joinFormLoading = signal(false);
@@ -1587,6 +1600,7 @@ export class EventDetailPage {
       const d = new Date(detail.event_date_utc);
       d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
       this.draftScheduledAt.set(d.toISOString().slice(0, 16));
+      this.draftCallToArms.set(detail.call_to_arms);
     }
     this.showEditForm.update((v) => !v);
   }
@@ -1607,6 +1621,11 @@ export class EventDetailPage {
     this.draftCompId.set((event.target as HTMLSelectElement).value);
   }
 
+  /** Two-way bind helper for the call-to-arms checkbox in the edit form. */
+  protected onCallToArmsChange(event: Event): void {
+    this.draftCallToArms.set((event.target as HTMLInputElement).checked);
+  }
+
   protected async onUpdateSubmit(submit: SubmitEvent): Promise<void> {
     submit.preventDefault();
     const detail = this.event();
@@ -1623,6 +1642,7 @@ export class EventDetailPage {
     const request: UpdateEventRequest = { title };
     const description = this.draftDescription().trim();
     request.description = description || undefined;
+    request.call_to_arms = this.draftCallToArms();
     const compId = Number(this.draftCompId());
     if (compId > 0) {
       request.comp_id = compId;

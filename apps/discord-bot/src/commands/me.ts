@@ -1,10 +1,10 @@
 import {
   ChatInputCommandInteraction,
-  EmbedBuilder,
   SlashCommandBuilder,
 } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import type { AlbionLinkStatus, BalanceSummary, EventView, PaginatedData } from '../api/types.js';
+import { BOT_COLORS, createBaseEmbed } from '../embeds/theme.js';
 
 export const data = new SlashCommandBuilder()
   .setName('me')
@@ -14,7 +14,7 @@ export async function execute(
   interaction: ChatInputCommandInteraction,
   api: ApiClient,
 ): Promise<void> {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: ['Ephemeral'] });
 
   // Fetch everything in parallel
   const [linkResult, balanceResult, eventsResult] = await Promise.allSettled([
@@ -35,55 +35,48 @@ export async function execute(
     (e) => e.status === 'scheduled' || e.status === 'live',
   ).length ?? 0;
 
-  const embed = new EmbedBuilder()
-    .setColor(0x5865f2)
-    .setAuthor({ name: 'Your Profile' })
-    .setTitle(interaction.user.displayName);
+  const embed = createBaseEmbed({
+    category: 'MEMBER PROFILE',
+    title: `👤 ${interaction.user.displayName}`,
+    description: '*Guild Member Overview & Financial Summary*',
+    color: BOT_COLORS.BRAND,
+  });
 
   // Albion link
   if (link?.linked) {
-    embed.addFields({
-      name: 'Albion Character',
-      value: `**${link.albion_player_name}**`,
-      inline: true,
-    });
+    let linkVal = `• **Name:** **${link.albion_player_name}**\n• **Status:** Linked 🟢`;
     if (link.linked_at) {
       const linkedDate = new Date(link.linked_at);
-      embed.addFields({
-        name: 'Linked since',
-        value: `<t:${Math.floor(linkedDate.getTime() / 1000)}:d>`,
-        inline: true,
-      });
+      linkVal += `\n• **Linked Since:** <t:${Math.floor(linkedDate.getTime() / 1000)}:d>`;
     }
+    embed.addFields({
+      name: '⚔️ Albion Character',
+      value: linkVal,
+      inline: true,
+    });
   } else {
     embed.addFields({
-      name: 'Albion Character',
-      value: '*Not linked — use `/link` to connect your character*',
-      inline: false,
+      name: '⚔️ Albion Character',
+      value: '• **Status:** Not Linked 🔴\n*Use `/link` to connect your character*',
+      inline: true,
     });
   }
 
   // Balance
   if (balance) {
     embed.addFields({
-      name: 'Pending Silver',
-      value: `**${balance.pending_total.toLocaleString('en-US')}** (${balance.pending_count} tx)`,
-      inline: true,
-    });
-    embed.addFields({
-      name: 'Requested',
-      value: `**${balance.requested_total.toLocaleString('en-US')}** (${balance.requested_count} tx)`,
+      name: '💰 Guild Bank',
+      value: `• **Pending:** **${balance.pending_total.toLocaleString('en-US')}** silver (${balance.pending_count} tx)\n• **Requested:** **${balance.requested_total.toLocaleString('en-US')}** silver (${balance.requested_count} tx)`,
       inline: true,
     });
   }
 
   // Upcoming events
   embed.addFields({
-    name: 'Active Events',
-    value: upcomingCount > 0 ? String(upcomingCount) : 'None',
+    name: '📅 Guild Activity',
+    value: `• **Active Events:** **${upcomingCount}** scheduled`,
     inline: true,
   });
 
-  embed.setTimestamp();
   await interaction.editReply({ embeds: [embed] });
 }

@@ -70,6 +70,13 @@ export interface UserProfile {
   role: Role;
 }
 
+export interface UserMetrics {
+  most_played_build: string | null;
+  events_attended: number;
+  total_estimated_loss: number;
+  top_estimated_loss: number;
+}
+
 export interface UserFilters {
   username?: string;
   email?: string;
@@ -195,6 +202,7 @@ export interface EventView {
   id: number;
   title: string;
   description: string | null;
+  call_to_arms: boolean;
   comp_id: number;
   comp_name: string;
   created_by: number;
@@ -304,6 +312,7 @@ export interface EventBattleSummary {
 export interface CreateEventRequest {
   title: string;
   description?: string;
+  call_to_arms?: boolean;
   comp_id: number;
   event_date_utc: string;
 }
@@ -311,6 +320,7 @@ export interface CreateEventRequest {
 export interface UpdateEventRequest {
   title?: string;
   description?: string;
+  call_to_arms?: boolean;
   event_date_utc?: string;
   comp_id?: number;
 }

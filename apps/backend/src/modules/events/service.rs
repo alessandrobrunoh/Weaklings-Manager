@@ -17,6 +17,7 @@ use super::models::{
     EventDetailView, EventParticipantView, EventSplitStats, EventView, OpponentPerformanceView,
     ParticipateEventRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
+use crate::config::Config;
 use crate::errors::AppError;
 use crate::modules::albionbb::client::{
     AlbionBbBattleSummary, AlbionBbBattlesFilters, AlbionBbGuild,
@@ -484,6 +485,7 @@ impl EventService {
             id: model.id,
             title: model.title,
             description: model.description,
+            call_to_arms: model.call_to_arms,
             comp_id: model.comp_id,
             comp_name: comp.name,
             created_by: model.created_by,
@@ -868,6 +870,7 @@ impl EventService {
         let event_model = event::ActiveModel {
             title: Set(req.title),
             description: Set(req.description),
+            call_to_arms: Set(req.call_to_arms),
             comp_id: Set(req.comp_id),
             created_by: Set(creator_id),
             event_date_utc: Set(parsed_date.into()),
@@ -878,6 +881,10 @@ impl EventService {
         .map_err(AppError::Database)?;
 
         let event_view = self.to_event_view(db, event_model).await?;
+
+        if req.call_to_arms {
+            self.announce_call_to_arms(&event_view).await;
+        }
 
         let _ = crate::modules::audit::service::AuditService::log(
             db,
@@ -893,6 +900,41 @@ impl EventService {
         .await;
 
         Ok(event_view)
+    }
+
+    /// Posts an urgent call-to-arms announcement to the dedicated Discord channel.
+    ///
+    /// Fires only when the operator configured `DISCORD_BATTLES_CTA_CHANNEL_ID` together with
+    /// `DISCORD_BOT_TOKEN`; otherwise the event is still created normally. Best-effort by design:
+    /// a Discord outage must never roll back event creation, so failures are only logged.
+    async fn announce_call_to_arms(&self, event_view: &EventView) {
+        let cfg = Config::from_env();
+
+        let Some(channel_id) = cfg.discord_battles_cta_channel_id else {
+            return;
+        };
+        let Some(token) = cfg.discord_bot_token else {
+            return;
+        };
+
+        let mut message = format!("🚨 **CALL TO ARMS** 🚨\n\n**{}**\n", event_view.title);
+        if let Some(description) = &event_view.description {
+            message.push_str(&format!("*{}*\n", description));
+        }
+        message.push_str(&format!("\n🕐 {}\n", event_view.event_date_utc));
+        message.push_str("\n@everyone");
+
+        let payload = serde_json::json!({
+            "content": message,
+            "allowed_mentions": { "parse": ["everyone"] }
+        });
+
+        crate::modules::audit::service::AuditService::send_discord_payload(
+            &channel_id,
+            &token,
+            payload,
+        )
+        .await;
     }
 
     /// Updates an existing event.
@@ -915,6 +957,9 @@ impl EventService {
         }
         if let Some(description) = req.description {
             active.description = Set(Some(description));
+        }
+        if let Some(call_to_arms) = req.call_to_arms {
+            active.call_to_arms = Set(call_to_arms);
         }
         if let Some(comp_id) = req.comp_id {
             // Validate comp exists
@@ -1555,6 +1600,7 @@ mod tests {
                 CreateEventRequest {
                     title: "ZvZ Castle Fight".to_string(),
                     description: Some("Fight for control".to_string()),
+                    call_to_arms: false,
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                 },
@@ -1599,6 +1645,7 @@ mod tests {
                 CreateEventRequest {
                     title: "Scaling Event".to_string(),
                     description: None,
+                    call_to_arms: false,
                     comp_id: base_comp,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                 },
@@ -1683,6 +1730,7 @@ mod tests {
                 CreateEventRequest {
                     title: "Roles Event".to_string(),
                     description: None,
+                    call_to_arms: false,
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                 },

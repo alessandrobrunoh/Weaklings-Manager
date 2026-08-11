@@ -1,10 +1,10 @@
 import {
   ChatInputCommandInteraction,
-  EmbedBuilder,
   SlashCommandBuilder,
 } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import type { PaginatedData } from '../api/types.js';
+import { BOT_COLORS, createBaseEmbed } from '../embeds/theme.js';
 
 interface AlbionRosterMember {
   id: string;
@@ -25,7 +25,7 @@ export async function execute(
   interaction: ChatInputCommandInteraction,
   api: ApiClient,
 ): Promise<void> {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: ['Ephemeral'] });
 
   const search = interaction.options.getString('search') ?? undefined;
   const page   = interaction.options.getInteger('page') ?? 1;
@@ -39,21 +39,21 @@ export async function execute(
     params,
   );
 
-  const embed = new EmbedBuilder()
-    .setColor(0x2b2d31)
-    .setAuthor({ name: 'Albion Online — Guild Roster' })
-    .setTitle(`${result.total_items} members in guild`)
-    .setFooter({ text: `Page ${result.current_page} of ${result.total_pages}` })
-    .setTimestamp();
+  const embed = createBaseEmbed({
+    category: 'ALBION ROSTER',
+    title: `🛡️ Guild Roster (${result.total_items} Members)`,
+    color: BOT_COLORS.BRAND,
+    footerText: `Page ${result.current_page} of ${result.total_pages} • Weaklings Guild Manager`,
+  });
 
   if (result.items.length === 0) {
-    embed.setDescription('*No members found.*');
+    embed.setDescription('*No guild members found matching your criteria.*');
   } else {
     const cols = chunkArray(result.items, Math.ceil(result.items.length / 2));
     for (const col of cols) {
       embed.addFields({
         name: '\u200b',
-        value: col.map((m) => m.name).join('\n'),
+        value: col.map((m) => `• **${m.name}**`).join('\n'),
         inline: true,
       });
     }

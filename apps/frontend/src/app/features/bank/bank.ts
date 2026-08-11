@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -248,6 +249,8 @@ export class Bank {
   private readonly auth = inject(AuthService);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   protected readonly balance = signal<BalanceSummary | null>(null);
   protected readonly transactions = signal<TransactionView[]>([]);
@@ -327,7 +330,30 @@ export class Bank {
       this.viewMode.set('guild');
       this.statusFilter.set('requested');
     }
-    void this.load();
+    void this.load().then(() => this.checkQueryParams());
+  }
+
+  private async checkQueryParams(): Promise<void> {
+    const action = this.route.snapshot.queryParamMap.get('action');
+    const idParam = this.route.snapshot.queryParamMap.get('id');
+    
+    if (action && idParam && this.canAccept()) {
+      const id = parseInt(idParam, 10);
+      if (!isNaN(id)) {
+        if (action === 'accept') {
+          await this.acceptSingle(id);
+        } else if (action === 'reject') {
+          await this.rejectSingle(id);
+        }
+        
+        // Remove query params after processing
+        void this.router.navigate([], {
+          queryParams: { action: null, id: null },
+          queryParamsHandling: 'merge',
+          replaceUrl: true
+        });
+      }
+    }
   }
 
   protected canAccept(): boolean {

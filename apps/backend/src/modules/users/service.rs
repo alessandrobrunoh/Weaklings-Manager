@@ -6,7 +6,16 @@ use crate::errors::AppError;
 use crate::pagination::{PaginatedData, PaginationParams};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use utoipa::ToSchema;
+
+use crate::modules::albion::service::AlbionLinkService;
+use crate::modules::battles::entities::Entity as GuildBattleSnapshotEntity;
+use crate::modules::battles::models::BattleLossEstimate;
+use crate::modules::comps::entities::build::Entity as BuildEntity;
+use crate::modules::events::entities::event_participation::{
+    Column as EventParticipationColumn, Entity as EventParticipationEntity,
+};
 
 /// The profile of a user containing identification and authorization details.
 #[derive(Debug, Serialize, Clone, ToSchema)]
@@ -23,6 +32,19 @@ pub struct UserProfile {
     /// The authorization role of the user (e.g. Admin, User).
     #[schema(example = "Admin")]
     pub role: String,
+}
+
+/// The aggregated metrics for a user's profile.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct UserMetrics {
+    /// The name of the build the user signed up with the most.
+    pub most_played_build: Option<String>,
+    /// The number of events the user has attended/signed up for.
+    pub events_attended: i64,
+    /// Total estimated silver loss across all battles.
+    pub total_estimated_loss: i64,
+    /// Highest estimated silver loss in a single battle.
+    pub top_estimated_loss: i64,
 }
 
 impl UserProfile {
@@ -80,6 +102,63 @@ impl UserService {
             Some(model) => Ok(Some(UserProfile::from_model(db, model).await?)),
             None => Ok(None),
         }
+    }
+
+    /// Computes and returns the metrics for a given user.
+    pub async fn get_metrics(
+        &self,
+        db: &DatabaseConnection,
+        user_id: u64,
+        discord_id: &str,
+    ) -> Result<UserMetrics, AppError> {
+        let participations = EventParticipationEntity::find()
+            .filter(EventParticipationColumn::UserId.eq(user_id as i64))
+            .all(db)
+            .await?;
+
+        let events_attended = participations.len() as i64;
+        let mut build_counts = HashMap::new();
+        for p in &participations {
+            *build_counts.entry(p.primary_build_id).or_insert(0) += 1;
+        }
+        let most_played_build_id = build_counts
+            .into_iter()
+            .max_by_key(|&(_, count)| count)
+            .map(|(id, _)| id);
+
+        let most_played_build = if let Some(id) = most_played_build_id {
+            BuildEntity::find_by_id(id).one(db).await?.map(|b| b.name)
+        } else {
+            None
+        };
+
+        let mut total_estimated_loss = 0;
+        let mut top_estimated_loss = 0;
+
+        if let Some(link) = AlbionLinkService::new()
+            .get_link_for_discord_user(db, discord_id)
+            .await?
+        {
+            let albion_name = link.albion_player_name;
+            let snapshots = GuildBattleSnapshotEntity::find().all(db).await?;
+            for snap in snapshots {
+                if let Ok(losses) = serde_json::from_str::<BattleLossEstimate>(&snap.losses_json) {
+                    for player in losses.players {
+                        if player.player_name.eq_ignore_ascii_case(&albion_name) {
+                            total_estimated_loss += player.estimated_loss;
+                            top_estimated_loss = top_estimated_loss.max(player.estimated_loss);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(UserMetrics {
+            events_attended,
+            most_played_build,
+            total_estimated_loss,
+            top_estimated_loss,
+        })
     }
 
     /// Lists paginated and filtered users from the database.

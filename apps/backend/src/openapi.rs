@@ -10,6 +10,7 @@ use utoipa::OpenApi;
     paths(
         crate::modules::audit::router::list_audit_logs,
         crate::modules::users::router::get_my_profile,
+        crate::modules::users::router::get_my_metrics,
         crate::modules::users::router::list_users,
         crate::modules::users::router::create_user,
         crate::modules::auth::router::discord_login,
@@ -104,7 +105,9 @@ use utoipa::OpenApi;
             crate::modules::audit::router::PaginatedAuditLogResponse,
             crate::modules::audit::router::ApiResponsePaginatedAuditLogs,
             crate::modules::users::service::UserProfile,
+            crate::modules::users::service::UserMetrics,
             crate::modules::users::service::UserFilters,
+            crate::responses::ApiResponseUserMetrics,
             crate::pagination::PaginationParams,
             crate::errors::ProblemDetails,
             crate::modules::auth::service::DiscordUserProfile,

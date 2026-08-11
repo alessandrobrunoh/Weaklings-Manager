@@ -44,6 +44,7 @@ export const es: TranslationDict = {
   'common.open': 'Abrir',
 
   'nav.dashboard': 'Panel',
+  'nav.leaderboards': 'Rankings',
   'nav.bank': 'Banco',
   'nav.splits': 'Repartos',
   'nav.events': 'Eventos',
@@ -128,6 +129,7 @@ export const es: TranslationDict = {
 
   'events.title': 'Eventos',
   'events.subtitle': 'Programa y gestiona las actividades de la hermandad.',
+  'events.call_to_arms': 'Llamada a las armas',
   'events.new': 'Nuevo evento',
   'events.create.comp_required': 'La composición es obligatoria.',
   'events.start': 'Iniciar',
@@ -274,6 +276,32 @@ export const es: TranslationDict = {
   'validation.required': 'Este campo es obligatorio.',
   'validation.min': 'Debe ser al menos {min}.',
   'validation.positive': 'Debe ser un número positivo.',
+
+  // Leaderboards
+  'leaderboards.title': 'Rankings',
+  'leaderboards.subtitle': 'Los mejores en la actividad reciente del gremio.',
+  'leaderboards.tab.payout': 'Top Pagos',
+  'leaderboards.tab.deaths': 'Top Muertes Est.',
+  'leaderboards.tab.kills': 'Top Asesinatos',
+  'leaderboards.tab.attendance': 'Top Asistencia',
+  'leaderboards.tab.killfame': 'Top Kill Fame',
+  'leaderboards.tab.deathfame': 'Top Death Fame',
+  'leaderboards.tab.siphoned': 'Top Siphoned',
+  'leaderboards.rank': 'Posición',
+  'leaderboards.player': 'Jugador',
+  'leaderboards.value': 'Valor',
+  'leaderboards.empty': 'Datos insuficientes — juega algunos eventos para llenar el ranking.',
+  'leaderboards.hint.payout': 'Total de botín cobrado en splits completados.',
+  'leaderboards.hint.deaths': 'Plata estimada perdida en batallas recientes.',
+  'leaderboards.hint.kills': 'Golpes finales dados en batallas recientes.',
+  'leaderboards.hint.attendance': 'Eventos atendidos en la ventana reciente.',
+  'leaderboards.hint.killfame': 'Kill fame total ganada en batallas recientes.',
+  'leaderboards.hint.deathfame': 'Death fame regalada a enemigos en batallas recientes.',
+  'leaderboards.hint.siphoned': 'Energía sifonada recogida para el gremio.',
+  'leaderboards.unit.events': 'eventos',
+  'leaderboards.unit.silver': 'plata',
+  'leaderboards.unit.kills': 'asesinatos',
+  'leaderboards.unit.fame': 'fama',
 
   // Audit
   'audit.title': 'Registros de Auditoría',

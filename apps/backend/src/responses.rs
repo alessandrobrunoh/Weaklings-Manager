@@ -34,6 +34,16 @@ pub struct ApiResponseUserProfile {
     pub data: crate::modules::users::service::UserProfile,
 }
 
+/// `OpenAPI` schema wrapper for UserMetrics response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseUserMetrics {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The user metrics data payload.
+    pub data: crate::modules::users::service::UserMetrics,
+}
+
 /// `OpenAPI` schema wrapper for DiscordUserProfile response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseDiscordUserProfile {

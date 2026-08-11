@@ -113,6 +113,8 @@ pub struct EventView {
     pub title: String,
     /// An optional description of the event.
     pub description: Option<String>,
+    /// Whether this event is a priority call-to-arms announcement.
+    pub call_to_arms: bool,
     /// The base composition ID associated with the event.
     #[schema(example = 10)]
     pub comp_id: i64,
@@ -258,6 +260,7 @@ pub struct UpdateEventBattlesRequest {
 #[schema(example = json!({
     "title": "ZvZ Castle Fight",
     "description": "Weekly Castle Fight. Be on time!",
+    "call_to_arms": false,
     "comp_id": 1,
     "event_date_utc": "2026-07-20T20:00:00Z"
 }))]
@@ -266,6 +269,9 @@ pub struct CreateEventRequest {
     pub title: String,
     /// An optional description of the event.
     pub description: Option<String>,
+    /// Whether this event is a priority call-to-arms announcement (default: false).
+    #[serde(default)]
+    pub call_to_arms: bool,
     /// The base composition ID to use.
     pub comp_id: i64,
     /// The start date and time of the event (UTC, e.g. RFC3339).
@@ -283,6 +289,8 @@ pub struct UpdateEventRequest {
     pub title: Option<String>,
     /// The new description of the event.
     pub description: Option<String>,
+    /// Whether this event should be treated as a call-to-arms announcement.
+    pub call_to_arms: Option<bool>,
     /// The new base composition ID.
     pub comp_id: Option<i64>,
     /// The new start date and time of the event (UTC, e.g. RFC3339).

@@ -1,6 +1,7 @@
-import { ChatInputCommandInteraction, EmbedBuilder, SlashCommandBuilder } from 'discord.js';
+import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import type { AlbionSearchResult, AlbionPlayer } from '../api/types.js';
+import { BOT_COLORS, createBaseEmbed, createResponseEmbed } from '../embeds/theme.js';
 
 export const data = new SlashCommandBuilder()
   .setName('player')
@@ -19,7 +20,7 @@ export async function execute(
   interaction: ChatInputCommandInteraction,
   api: ApiClient,
 ): Promise<void> {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: ['Ephemeral'] });
 
   const name = interaction.options.getString('name', true);
 
@@ -31,7 +32,13 @@ export async function execute(
   );
 
   if (results.players.length === 0) {
-    await interaction.editReply({ content: `No player found matching **${name}**.` });
+    const errEmbed = createResponseEmbed(
+      'error',
+      'Player Not Found',
+      `No Albion Online player matching **${name}** was found.`,
+      'PLAYER LOOKUP',
+    );
+    await interaction.editReply({ embeds: [errEmbed] });
     return;
   }
 
@@ -48,35 +55,39 @@ export async function execute(
     // Fallback to search result only
   }
 
-  const embed = new EmbedBuilder()
-    .setColor(0x5865f2)
-    .setAuthor({ name: 'Albion Online — Player' })
-    .setTitle(player?.name ?? match.name)
-    .setFooter({ text: `ID: ${match.id}` });
+  const playerName = player?.name ?? match.name;
+  const guildName  = player?.guildName ?? '*Guildless*';
+  const allyName   = player?.allianceName ? `[${player.allianceName}]` : '';
+
+  let footer = `ID: ${match.id} • Weaklings Guild Manager`;
+  if (results.players.length > 1) {
+    const others = results.players.slice(1, 6).map((p) => p.name).join(', ');
+    footer = `ID: ${match.id} · Other matches: ${others}`;
+  }
+
+  const embed = createBaseEmbed({
+    category: 'PLAYER LOOKUP',
+    title: `⚔️ ${playerName}`,
+    description: `*Guild:* **${guildName}** ${allyName}`,
+    color: BOT_COLORS.BRAND,
+    footerText: footer,
+  });
 
   if (player) {
     embed.addFields(
-      { name: 'Guild',      value: player.guildName ?? '*Guildless*',         inline: true },
-      { name: 'Alliance',   value: player.allianceName ?? '—',                inline: true },
-      { name: '\u200b',     value: '\u200b',                                   inline: true },
-      { name: 'PvP Kill Fame',  value: fmt(player.killFame),                  inline: true },
-      { name: 'Death Fame',     value: fmt(player.deathFame),                 inline: true },
-      { name: 'PvE Fame',       value: fmt(player.pveFame),                   inline: true },
-      { name: 'Gathering',      value: fmt(player.gatheringFame),             inline: true },
-      { name: 'Crafting',       value: fmt(player.craftingFame),              inline: true },
-      { name: '\u200b',         value: '\u200b',                               inline: true },
+      {
+        name: '🗡️ Combat Fame',
+        value: `• **PvP Kill Fame:** **${fmt(player.killFame)}**\n• **Death Fame:** **${fmt(player.deathFame)}**`,
+        inline: true,
+      },
+      {
+        name: '⛏️ Activity Fame',
+        value: `• **PvE Fame:** **${fmt(player.pveFame)}**\n• **Gathering:** **${fmt(player.gatheringFame)}**\n• **Crafting:** **${fmt(player.craftingFame)}**`,
+        inline: true,
+      },
     );
   } else {
-    embed.setDescription(`*Could not fetch full profile — showing search result only.*`);
-  }
-
-  // Mostra altri match se ci sono
-  if (results.players.length > 1) {
-    const others = results.players
-      .slice(1, 6)
-      .map((p) => p.name)
-      .join(', ');
-    embed.setFooter({ text: `ID: ${match.id} · Other matches: ${others}` });
+    embed.setDescription(`*Guild:* **${guildName}** ${allyName}\n\n*Could not fetch full stats profile — showing basic search match.*`);
   }
 
   await interaction.editReply({ embeds: [embed] });

@@ -83,7 +83,10 @@ export class Shell {
   protected readonly NAV_SECTIONS: NavSection[] = [
     {
       headingKey: 'nav.section.main',
-      items: [{ path: '/dashboard', icon: 'chart', labelKey: 'nav.dashboard' }],
+      items: [
+        { path: '/dashboard', icon: 'chart', labelKey: 'nav.dashboard' },
+        { path: '/leaderboards', icon: 'trophy', labelKey: 'nav.leaderboards' },
+      ],
     },
     {
       headingKey: 'nav.section.guild',

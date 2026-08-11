@@ -6,6 +6,7 @@ import { handleButton } from './handlers/button.js';
 import { handleSelectMenu } from './handlers/select.js';
 import { Poller } from './services/poller.js';
 import { registerCommands } from './services/registry.js';
+import { createResponseEmbed } from './embeds/theme.js';
 
 /**
  * Albion Guild Manager — Discord Bot
@@ -34,7 +35,8 @@ async function main(): Promise<void> {
       const command = commands.get(interaction.commandName);
       if (!command) {
         console.warn(`[Bot] Unknown command: ${interaction.commandName}`);
-        await interaction.reply({ content: '❌ Unknown command.', ephemeral: true });
+        const warnEmbed = createResponseEmbed('warning', 'Unknown Command', 'Command not recognized by bot system.', 'COMMAND ERROR');
+        await interaction.reply({ embeds: [warnEmbed], flags: ['Ephemeral'] });
         return;
       }
 
@@ -44,7 +46,8 @@ async function main(): Promise<void> {
         const message = err instanceof Error ? err.message : 'An unexpected error occurred.';
         console.error(`[Bot] Error in /${interaction.commandName}:`, err);
 
-        const reply = { content: `❌ ${message}`, ephemeral: true };
+        const errEmbed = createResponseEmbed('error', 'Command Error', message, 'COMMAND FAILED');
+        const reply = { embeds: [errEmbed], flags: ['Ephemeral'] as any };
         if (interaction.replied || interaction.deferred) {
           await interaction.followUp(reply);
         } else {

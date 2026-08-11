@@ -294,6 +294,32 @@
     font-weight: 500;
   }
 
+  .checkbox {
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--color-primary);
+    cursor: pointer;
+  }
+
+  .cta-star {
+    display: inline-block;
+    margin-right: 0.25rem;
+    color: var(--color-error);
+    animation: cta-pulse 1.6s ease-in-out infinite;
+  }
+
+  @keyframes cta-pulse {
+    0%,
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+    50% {
+      transform: scale(1.25);
+      opacity: 0.75;
+    }
+  }
+
   .chip {
     display: inline-flex;
     align-items: center;

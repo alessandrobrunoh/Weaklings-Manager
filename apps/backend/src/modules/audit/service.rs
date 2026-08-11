@@ -1,7 +1,7 @@
 use super::entities::{self, ActiveModel};
 use crate::config::Config;
 use reqwest::Client;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, Set, EntityTrait};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
 use serde_json::json;
 
 pub struct AuditService;
@@ -29,7 +29,10 @@ impl AuditService {
 
         let mut user_display = String::from("System");
         if let Some(uid) = user_id {
-            if let Ok(Some(u)) = crate::modules::users::entities::Entity::find_by_id(uid).one(db).await {
+            if let Ok(Some(u)) = crate::modules::users::entities::Entity::find_by_id(uid)
+                .one(db)
+                .await
+            {
                 let discord_tag = u.discord_id.as_deref().unwrap_or("No Discord");
                 user_display = format!("{} (<@{}>)", u.username, discord_tag);
             } else {
@@ -41,9 +44,13 @@ impl AuditService {
         if let Some(details_val) = &details {
             if let Some(target_uid_val) = details_val.get("target_user_id") {
                 if let Some(t_uid) = target_uid_val.as_i64() {
-                    if let Ok(Some(u)) = crate::modules::users::entities::Entity::find_by_id(t_uid).one(db).await {
+                    if let Ok(Some(u)) = crate::modules::users::entities::Entity::find_by_id(t_uid)
+                        .one(db)
+                        .await
+                    {
                         let discord_tag = u.discord_id.as_deref().unwrap_or("No Discord");
-                        target_display = format!("\n**Target User:** {} (<@{}>)", u.username, discord_tag);
+                        target_display =
+                            format!("\n**Target User:** {} (<@{}>)", u.username, discord_tag);
                     }
                 }
             }
@@ -80,9 +87,9 @@ impl AuditService {
                         serde_json::to_string_pretty(&inserted.details).unwrap_or_default()
                     );
                     Self::truncate_discord_msg(&mut message);
-                    
+
                     let mut payload = serde_json::json!({ "content": message });
-                    
+
                     if action == "WITHDRAW_REQUESTED" {
                         payload["components"] = serde_json::json!([{
                             "type": 1,
@@ -102,7 +109,7 @@ impl AuditService {
                             ]
                         }]);
                     }
-                    
+
                     Self::send_discord_payload(channel_id, token, payload).await;
                 }
             }
@@ -121,7 +128,15 @@ impl AuditService {
         }
     }
 
-    async fn send_discord_payload(channel_id: &str, token: &str, payload: serde_json::Value) {
+    /// Sends a payload to a Discord channel via the bot REST API, retrying on rate limits.
+    ///
+    /// Best-effort: failures are logged, never propagated, so audit trails and event
+    /// announcements never fail because Discord is unreachable.
+    pub(crate) async fn send_discord_payload(
+        channel_id: &str,
+        token: &str,
+        payload: serde_json::Value,
+    ) {
         let client = Client::new();
         let url = format!(
             "https://discord.com/api/v10/channels/{}/messages",
@@ -136,13 +151,18 @@ impl AuditService {
                 .json(&current_payload)
                 .send()
                 .await;
-                
+
             match resp {
                 Ok(res) if res.status() == reqwest::StatusCode::TOO_MANY_REQUESTS => {
                     if let Ok(json) = res.json::<serde_json::Value>().await {
-                        if let Some(retry_after) = json.get("retry_after").and_then(|v| v.as_f64()) {
-                            tracing::warn!("Discord rate limited. Retrying after {} seconds...", retry_after);
-                            tokio::time::sleep(std::time::Duration::from_secs_f64(retry_after)).await;
+                        if let Some(retry_after) = json.get("retry_after").and_then(|v| v.as_f64())
+                        {
+                            tracing::warn!(
+                                "Discord rate limited. Retrying after {} seconds...",
+                                retry_after
+                            );
+                            tokio::time::sleep(std::time::Duration::from_secs_f64(retry_after))
+                                .await;
                             continue;
                         }
                     }
@@ -151,7 +171,11 @@ impl AuditService {
                 Ok(res) if !res.status().is_success() => {
                     let status = res.status();
                     let text = res.text().await.unwrap_or_default();
-                    tracing::warn!("Failed to send Discord message. Status: {}, Body: {}", status, text);
+                    tracing::warn!(
+                        "Failed to send Discord message. Status: {}, Body: {}",
+                        status,
+                        text
+                    );
                     break;
                 }
                 Err(e) => {

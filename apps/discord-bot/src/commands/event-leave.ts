@@ -1,5 +1,6 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
+import { createResponseEmbed } from '../embeds/theme.js';
 
 export const data = new SlashCommandBuilder()
   .setName('event-leave')
@@ -12,10 +13,18 @@ export async function execute(
   interaction: ChatInputCommandInteraction,
   api: ApiClient,
 ): Promise<void> {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: ['Ephemeral'] });
 
   const eventId = interaction.options.getInteger('event_id', true);
 
   await api.delete(`api/events/${eventId}/participate`, interaction.user.id);
-  await interaction.editReply({ content: `✅ You have left event **#${eventId}**.` });
+
+  const embed = createResponseEmbed(
+    'success',
+    'Left Event',
+    `You have successfully left event **#${eventId}**.`,
+    'GUILD EVENT',
+  );
+
+  await interaction.editReply({ embeds: [embed] });
 }

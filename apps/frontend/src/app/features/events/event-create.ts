@@ -44,12 +44,7 @@ import { PageHeader } from '../../shared/components/page-header/page-header';
       <form class="card grid gap-4 p-5" (submit)="onSubmit($event)">
         <label>
           <span class="label">{{ t('common.name') }}</span>
-          <input
-            class="input"
-            type="text"
-            [value]="draftTitle()"
-            (input)="onTitleChange($event)"
-          />
+          <input class="input" type="text" [value]="draftTitle()" (input)="onTitleChange($event)" />
         </label>
 
         <label>
@@ -84,6 +79,16 @@ import { PageHeader } from '../../shared/components/page-header/page-header';
           </label>
         </div>
 
+        <label class="flex items-center gap-2">
+          <input
+            class="checkbox"
+            type="checkbox"
+            [checked]="draftCallToArms()"
+            (change)="onCallToArmsChange($event)"
+          />
+          <span>{{ t('events.call_to_arms') }}</span>
+        </label>
+
         @if (compError()) {
           <p class="text-sm" style="color: var(--color-danger)">{{ compError() }}</p>
         }
@@ -113,6 +118,7 @@ export class EventCreatePage {
   protected readonly draftDescription = signal('');
   protected readonly draftCompId = signal('');
   protected readonly draftScheduledAt = signal(defaultScheduledAt());
+  protected readonly draftCallToArms = signal(false);
   protected readonly compError = signal<string | null>(null);
 
   protected t = (key: TranslationKey) => this.translate.t(key);
@@ -142,6 +148,11 @@ export class EventCreatePage {
     this.compError.set(null);
   }
 
+  /** Two-way bind helper for the call-to-arms checkbox. */
+  protected onCallToArmsChange(event: Event): void {
+    this.draftCallToArms.set((event.target as HTMLInputElement).checked);
+  }
+
   /** Returns to the events list without creating anything. */
   protected cancel(): void {
     void this.router.navigate(['/events']);
@@ -167,6 +178,7 @@ export class EventCreatePage {
       title,
       comp_id: compId,
       event_date_utc: new Date(this.draftScheduledAt()).toISOString(),
+      call_to_arms: this.draftCallToArms(),
     };
     const description = this.draftDescription().trim();
     if (description) {
