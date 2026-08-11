@@ -288,5 +288,55 @@ async function handleBankButton(
     return;
   }
 
+  if (action === 'accept') {
+    const [txIdStr] = rest;
+    const txId = Number(txIdStr);
+
+    await interaction.deferReply({ ephemeral: true });
+    
+    try {
+      await api.post<any>(
+        'api/bank/transactions/withdraw/accept',
+        { transaction_ids: [txId] },
+        interaction.user.id,
+      );
+      
+      // Update original message to remove buttons
+      try {
+        await interaction.message.edit({ components: [] });
+      } catch (e) {}
+
+      await interaction.editReply({ content: `✅ Withdrawal request **#${txId}** has been accepted and marked as paid.` });
+    } catch (err: any) {
+      await interaction.editReply({ content: `❌ Failed to accept: ${err.message || 'Unknown error'}` });
+    }
+    return;
+  }
+
+  if (action === 'reject') {
+    const [txIdStr] = rest;
+    const txId = Number(txIdStr);
+
+    await interaction.deferReply({ ephemeral: true });
+    
+    try {
+      await api.post<any>(
+        'api/bank/transactions/withdraw/reject',
+        { transaction_ids: [txId] },
+        interaction.user.id,
+      );
+      
+      // Update original message to remove buttons
+      try {
+        await interaction.message.edit({ components: [] });
+      } catch (e) {}
+
+      await interaction.editReply({ content: `❌ Withdrawal request **#${txId}** has been rejected.` });
+    } catch (err: any) {
+      await interaction.editReply({ content: `❌ Failed to reject: ${err.message || 'Unknown error'}` });
+    }
+    return;
+  }
+
   await interaction.reply({ content: '❓ Unknown bank action.', ephemeral: true });
 }

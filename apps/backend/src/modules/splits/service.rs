@@ -549,6 +549,7 @@ impl SplitService {
         &self,
         db: &DatabaseConnection,
         split_id: i64,
+        officer_user_id: i64,
     ) -> Result<SplitDetail, AppError> {
         let split = self
             .load_with_status(db, split_id, SplitStatus::Pending, "complete")
@@ -604,11 +605,12 @@ impl SplitService {
                 "TRANSACTION_CREATED",
                 Some("TRANSACTION"),
                 Some(inserted_tx.id),
-                Some(participant.user_id),
+                Some(officer_user_id),
                 Some(serde_json::json!({
                     "split_id": split_id,
                     "amount": share,
-                    "type": TYPE_SPLIT_CREDIT
+                    "type": TYPE_SPLIT_CREDIT,
+                    "target_user_id": participant.user_id
                 })),
             )
             .await;

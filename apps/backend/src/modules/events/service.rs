@@ -877,7 +877,22 @@ impl EventService {
         .await
         .map_err(AppError::Database)?;
 
-        self.to_event_view(db, event_model).await
+        let event_view = self.to_event_view(db, event_model).await?;
+
+        let _ = crate::modules::audit::service::AuditService::log(
+            db,
+            "EVENT_CREATED",
+            Some("EVENT"),
+            Some(event_view.id),
+            Some(creator_id),
+            Some(serde_json::json!({
+                "title": event_view.title,
+                "comp_id": req.comp_id
+            })),
+        )
+        .await;
+
+        Ok(event_view)
     }
 
     /// Updates an existing event.

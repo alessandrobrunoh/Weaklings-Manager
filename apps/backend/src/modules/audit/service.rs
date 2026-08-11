@@ -1,7 +1,7 @@
 use super::entities::{self, ActiveModel};
 use crate::config::Config;
 use reqwest::Client;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, Set, EntityTrait};
 use serde_json::json;
 
 pub struct AuditService;
@@ -27,16 +27,39 @@ impl AuditService {
 
         let inserted = model.insert(db).await?;
 
+        let mut user_display = String::from("System");
+        if let Some(uid) = user_id {
+            if let Ok(Some(u)) = crate::modules::users::entities::Entity::find_by_id(uid).one(db).await {
+                let discord_tag = u.discord_id.as_deref().unwrap_or("No Discord");
+                user_display = format!("{} (<@{}>)", u.username, discord_tag);
+            } else {
+                user_display = format!("User ID {}", uid);
+            }
+        }
+
+        let mut target_display = String::new();
+        if let Some(details_val) = &details {
+            if let Some(target_uid_val) = details_val.get("target_user_id") {
+                if let Some(t_uid) = target_uid_val.as_i64() {
+                    if let Ok(Some(u)) = crate::modules::users::entities::Entity::find_by_id(t_uid).one(db).await {
+                        let discord_tag = u.discord_id.as_deref().unwrap_or("No Discord");
+                        target_display = format!("\n**Target User:** {} (<@{}>)", u.username, discord_tag);
+                    }
+                }
+            }
+        }
+
         // Send to Discord audit log channel if configured
         if let Some(channel_id) = &cfg.discord_audit_log_channel_id {
             if let Some(token) = &cfg.discord_bot_token {
                 let mut message = format!(
-                    "**Audit Log:** `{}`\n**Entity:** `{:?}` (ID: {:?})\n**User ID:** {:?}\n**Details:**\n```json\n{}\n```",
+                    "**Audit Log:** `{}`\n**Entity:** `{:?}` (ID: {:?})\n**User:** {}{}\n**Details:**\n```json\n{}\n```",
                     action,
                     entity_type,
                     entity_id,
-                    user_id,
-                    details.map(|v| v.to_string()).unwrap_or_default()
+                    user_display,
+                    target_display,
+                    details.as_ref().map(|v| v.to_string()).unwrap_or_default()
                 );
                 Self::truncate_discord_msg(&mut message);
                 let payload = serde_json::json!({ "content": message });
@@ -49,10 +72,11 @@ impl AuditService {
             if let Some(token) = &cfg.discord_bot_token {
                 if entity_type == Some("TRANSACTION") {
                     let mut message = format!(
-                        "**Transaction Activity:** `{}`\n**Entity ID:** {:?}\n**User ID:** {:?}\n**Details:**\n```json\n{}\n```",
+                        "**Transaction Activity:** `{}`\n**Entity ID:** {:?}\n**User:** {}{}\n**Details:**\n```json\n{}\n```",
                         action,
                         entity_id,
-                        user_id,
+                        user_display,
+                        target_display,
                         serde_json::to_string_pretty(&inserted.details).unwrap_or_default()
                     );
                     Self::truncate_discord_msg(&mut message);
@@ -62,12 +86,20 @@ impl AuditService {
                     if action == "WITHDRAW_REQUESTED" {
                         payload["components"] = serde_json::json!([{
                             "type": 1,
-                            "components": [{
-                                "type": 2,
-                                "style": 5,
-                                "label": "Review on Dashboard",
-                                "url": format!("{}/bank", cfg.frontend_url)
-                            }]
+                            "components": [
+                                {
+                                    "type": 2,
+                                    "style": 3,
+                                    "custom_id": format!("bank:accept:{}", entity_id.unwrap_or(0)),
+                                    "label": "Accept"
+                                },
+                                {
+                                    "type": 2,
+                                    "style": 4,
+                                    "custom_id": format!("bank:reject:{}", entity_id.unwrap_or(0)),
+                                    "label": "Reject"
+                                }
+                            ]
                         }]);
                     }
                     

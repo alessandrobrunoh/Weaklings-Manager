@@ -355,7 +355,7 @@ async fn complete_split(
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     user.require(&perms, Permission::SplitsManage).await?;
     let service = SplitService::new();
-    let split = service.complete_split(&db, id).await?;
+    let split = service.complete_split(&db, id, user.user_id).await?;
     Ok(Json(ApiResponse::new(split)))
 }
 
