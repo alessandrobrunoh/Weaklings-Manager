@@ -3,6 +3,8 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
+  BattleDetail,
+  BattleLossEstimate,
   BattleSummary,
   BuildRole,
   CompBuildEntry,
@@ -298,6 +300,16 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
             {{ formatRatio(detail.stats.average_guild_players) }}
           </p>
         </article>
+        <article class="surface p-4 sm:col-span-2 xl:col-span-4">
+          <p class="event-detail__label">Our guild estimated silver lost</p>
+          <p class="event-detail__value">
+            {{ formatCompact(eventLossEstimate().total_estimated_loss) }}
+          </p>
+          <p class="event-detail__sub">
+            {{ eventLossEstimate().priced_items }} / {{ eventLossEstimate().total_items }} own-guild
+            victim items priced through AlbionData
+          </p>
+        </article>
       </section>
 
       <section class="mt-5 grid gap-4 xl:grid-cols-3" aria-label="Event charts">
@@ -365,6 +377,33 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
               </div>
             }
           </div>
+        </article>
+
+        <article class="surface p-4 xl:col-span-3">
+          <header class="event-detail__chart-header">
+            <h2>Our guild losses by player</h2>
+            <span>{{ formatCompact(eventLossEstimate().total_estimated_loss) }}</span>
+          </header>
+          @if (lossPlayerChartRows().length > 0) {
+            <div class="event-detail__bar-list">
+              @for (row of lossPlayerChartRows(); track row.label) {
+                <div class="event-detail__bar-row">
+                  <div class="event-detail__bar-label">
+                    <span>{{ row.label }}</span>
+                    <strong>{{ formatCompact(row.value) }}</strong>
+                  </div>
+                  <div class="event-detail__fill-bar">
+                    <span [style.width.%]="chartPercent(row.value, lossPlayerChartRows())"></span>
+                  </div>
+                </div>
+              }
+            </div>
+          } @else {
+            <p class="event-detail__empty event-detail__empty--compact">
+              No priced equipment losses for our guild members yet. Open linked battles or refresh
+              battle data.
+            </p>
+          }
         </article>
 
         <article class="surface p-4 xl:col-span-3">
@@ -1008,6 +1047,7 @@ export class EventDetailPage {
   private eventId = 0;
 
   protected readonly event = signal<EventDetailView | null>(null);
+  protected readonly eventLossEstimate = signal<BattleLossEstimate>(emptyLossEstimate());
   protected readonly loading = signal(false);
   protected readonly canEdit = signal(false);
   protected readonly showEditForm = signal(false);
@@ -1137,6 +1177,15 @@ export class EventDetailPage {
       target: group.target,
       color: 'var(--color-info)',
     })),
+  );
+  protected readonly lossPlayerChartRows = computed<ChartMetric[]>(() =>
+    this.eventLossEstimate()
+      .players.slice(0, 10)
+      .map((player) => ({
+        label: player.player_name,
+        value: player.estimated_loss,
+        color: 'var(--color-danger)',
+      })),
   );
   protected readonly splitStatusChartRows = computed<ChartMetric[]>(() => {
     const stats = this.event()?.split_stats;
@@ -1827,7 +1876,8 @@ export class EventDetailPage {
         this.api.get<EventDetailView>(`api/events/${this.eventId}`),
       );
       this.event.set(detail);
-      await this.loadActiveComp();
+      this.eventLossEstimate.set(detail.estimated_losses ?? emptyLossEstimate());
+      await Promise.all([this.loadActiveComp(), this.loadLinkedBattleLosses(detail)]);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -1869,6 +1919,30 @@ export class EventDetailPage {
     }
   }
 
+  private async loadLinkedBattleLosses(detail: EventDetailView): Promise<void> {
+    if (detail.battles.length === 0) {
+      return;
+    }
+    try {
+      const battleDetails = await Promise.all(
+        detail.battles.map((battle) =>
+          firstValueFrom(
+            this.api.get<BattleDetail>(`api/battles/${battle.albionbb_battle_id}`),
+          ).catch(() => null),
+        ),
+      );
+      const estimates = battleDetails
+        .filter((battle): battle is BattleDetail => battle !== null)
+        .map((battle) => battle.estimated_losses);
+      if (estimates.length === 0) {
+        return;
+      }
+      this.eventLossEstimate.set(mergeLossEstimates(estimates));
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
   private async mutate(path: string, method: 'POST' | 'DELETE', body: unknown): Promise<void> {
     try {
       if (method === 'POST') {
@@ -1887,6 +1961,64 @@ export class EventDetailPage {
  * Converts an ISO UTC timestamp into the `YYYY-MM-DDTHH:mm` value expected by
  * `<input type="datetime-local">`, expressed in the user's local timezone.
  */
+function emptyLossEstimate(): BattleLossEstimate {
+  return {
+    total_estimated_loss: 0,
+    priced_items: 0,
+    total_items: 0,
+    players: [],
+    guilds: [],
+  };
+}
+
+function mergeLossEstimates(estimates: readonly BattleLossEstimate[]): BattleLossEstimate {
+  const merged = emptyLossEstimate();
+  const playerRows = new Map<string, BattleLossEstimate['players'][number]>();
+  const guildRows = new Map<string, BattleLossEstimate['guilds'][number]>();
+
+  for (const estimate of estimates) {
+    merged.total_estimated_loss += estimate.total_estimated_loss;
+    merged.priced_items += estimate.priced_items;
+    merged.total_items += estimate.total_items;
+    for (const player of estimate.players) {
+      const row = playerRows.get(player.player_name) ?? {
+        ...player,
+        estimated_loss: 0,
+        deaths: 0,
+        priced_items: 0,
+        total_items: 0,
+      };
+      row.estimated_loss += player.estimated_loss;
+      row.deaths += player.deaths;
+      row.priced_items += player.priced_items;
+      row.total_items += player.total_items;
+      playerRows.set(player.player_name, row);
+    }
+    for (const guild of estimate.guilds) {
+      const row = guildRows.get(guild.guild_name) ?? {
+        ...guild,
+        estimated_loss: 0,
+        deaths: 0,
+        priced_items: 0,
+        total_items: 0,
+      };
+      row.estimated_loss += guild.estimated_loss;
+      row.deaths += guild.deaths;
+      row.priced_items += guild.priced_items;
+      row.total_items += guild.total_items;
+      guildRows.set(guild.guild_name, row);
+    }
+  }
+
+  merged.players = Array.from(playerRows.values()).sort(
+    (left, right) => right.estimated_loss - left.estimated_loss,
+  );
+  merged.guilds = Array.from(guildRows.values()).sort(
+    (left, right) => right.estimated_loss - left.estimated_loss,
+  );
+  return merged;
+}
+
 function toLocalInputValue(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) {

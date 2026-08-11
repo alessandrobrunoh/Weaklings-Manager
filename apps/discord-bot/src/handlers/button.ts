@@ -42,6 +42,8 @@ export async function handleButton(
       await handleEventsNav(interaction, api, action, rest);
     } else if (ns === 'battles') {
       await handleBattlesNav(interaction, api, action, rest);
+    } else if (ns === 'bank') {
+      await handleBankButton(interaction, api, action, rest);
     } else {
       await interaction.reply({ content: '❓ Unknown button action.', ephemeral: true });
     }
@@ -99,7 +101,7 @@ async function handleEventButton(
     const { ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = await import('discord.js');
 
     const selectMenu = new StringSelectMenuBuilder()
-      .setCustomId(`event:join_build:${eventId}`)
+      .setCustomId(`event:join_build:${eventId}:${interaction.message.id}`)
       .setPlaceholder('Select your specific build')
       .addOptions(
         availableBuilds.map((b: any) =>
@@ -125,6 +127,15 @@ async function handleEventButton(
 
     await interaction.deferReply({ ephemeral: true });
     await api.delete(`api/events/${eventId}/participate`, interaction.user.id);
+    
+    try {
+      const updatedEvent = await api.get<EventDetailView>(`api/events/${eventId}`, interaction.user.id);
+      const embed = buildEventEmbed(updatedEvent);
+      await interaction.message.edit({ embeds: [embed] });
+    } catch (e) {
+      console.error('Failed to update event embed on leave', e);
+    }
+
     await interaction.editReply({ content: `✅ You have left event **#${eventId}**.` });
     return;
   }
@@ -140,7 +151,8 @@ async function handleEventButton(
       interaction.user.id,
     );
     const embed = buildEventEmbed(event);
-    await interaction.editReply({ content: `✅ Event **#${eventId}** is now LIVE!`, embeds: [embed] });
+    await interaction.message.edit({ embeds: [embed] });
+    await interaction.editReply({ content: `✅ Event **#${eventId}** is now LIVE!` });
     return;
   }
 
@@ -155,7 +167,8 @@ async function handleEventButton(
       interaction.user.id,
     );
     const embed = buildEventEmbed(event);
-    await interaction.editReply({ content: `✅ Event **#${eventId}** stopped.`, embeds: [embed] });
+    await interaction.message.edit({ embeds: [embed] });
+    await interaction.editReply({ content: `✅ Event **#${eventId}** stopped.` });
     return;
   }
 
@@ -233,4 +246,47 @@ async function handleBattlesNav(
   );
 
   await interaction.editReply({ embeds: [embed], components: [navRow] });
+}
+
+async function handleBankButton(
+  interaction: ButtonInteraction,
+  api: ApiClient,
+  action: string,
+  rest: string[],
+): Promise<void> {
+  if (action === 'request_all') {
+    await interaction.deferReply({ ephemeral: true });
+    
+    // Disable the button on the original message if we have it
+    try {
+      const components = interaction.message.components;
+      if (components && components.length > 0) {
+        // I won't re-import all of discord.js classes just to disable the button,
+        // it's easier to just strip components from the original message if they requested it
+        await interaction.message.edit({ components: [] });
+      }
+    } catch (e) {}
+    
+    const txs = await api.post<any[]>(
+      'api/bank/transactions/withdraw',
+      { all: true },
+      interaction.user.id,
+    );
+
+    const total  = txs.reduce((sum, tx) => sum + tx.amount, 0);
+    const totalFmt = total.toLocaleString('en-US');
+
+    const embed = new EmbedBuilder()
+      .setColor(0x57f287)
+      .setAuthor({ name: 'Bank — Withdrawal Request' })
+      .setDescription(
+        `Withdrawal of **${totalFmt} silver** across **${txs.length}** transaction${txs.length !== 1 ? 's' : ''} submitted.\nAn officer will process it shortly.`,
+      )
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+    return;
+  }
+
+  await interaction.reply({ content: '❓ Unknown bank action.', ephemeral: true });
 }

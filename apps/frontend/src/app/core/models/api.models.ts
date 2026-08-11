@@ -78,7 +78,7 @@ export interface UserFilters {
 
 /* ------------------------------ Bank -------------------------------- */
 
-export type TransactionStatus = 'pending' | 'requested' | 'withdrawn';
+export type TransactionStatus = 'pending' | 'requested' | 'rejected' | 'withdrawn';
 
 export interface TransactionView {
   id: number;
@@ -262,6 +262,7 @@ export interface EventDetailView extends EventView {
   participants: EventParticipant[];
   battles: EventBattleSummary[];
   stats: BattlePerformanceStats;
+  estimated_losses: BattleLossEstimate;
   splits: SplitSummary[];
   split_stats: EventSplitStats;
 }
@@ -375,9 +376,35 @@ export interface BattleKillEvent {
   raw: unknown;
 }
 
+export interface BattleLossEstimate {
+  total_estimated_loss: number;
+  priced_items: number;
+  total_items: number;
+  players: PlayerLossEstimate[];
+  guilds: GuildLossEstimate[];
+}
+
+export interface PlayerLossEstimate {
+  player_name: string;
+  guild_name: string | null;
+  estimated_loss: number;
+  deaths: number;
+  priced_items: number;
+  total_items: number;
+}
+
+export interface GuildLossEstimate {
+  guild_name: string;
+  estimated_loss: number;
+  deaths: number;
+  priced_items: number;
+  total_items: number;
+}
+
 export interface BattleDetail extends BattleSummary {
   players: BattlePlayer[];
   kills: BattleKillEvent[];
+  estimated_losses: BattleLossEstimate;
 }
 
 /* ------------------------------ Albion ------------------------------ */

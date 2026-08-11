@@ -98,8 +98,16 @@ export class Poller {
         const embed = buildEventEmbed(event);
         const [row1, row2] = buildEventActionRows(event.id);
 
+        const eventDate = new Date(event.event_date_utc);
+        const h = String(eventDate.getUTCHours()).padStart(2, '0');
+        const m = String(eventDate.getUTCMinutes()).padStart(2, '0');
+        const d = String(eventDate.getUTCDate()).padStart(2, '0');
+        const mo = String(eventDate.getUTCMonth() + 1).padStart(2, '0');
+        const y = String(eventDate.getUTCFullYear()).slice(-2);
+        const timeStr = `${h}:${m} UTC ${d}/${mo}/${y}`;
+
         await channel.send({
-          content: `🎉 **New event posted!** Sign up for your role below.`,
+          content: `📌 MassUp ${timeStr}\nAnother day with Ally 🐸\n\n@Weak`,
           embeds: [embed],
           components: [row1, row2],
         });

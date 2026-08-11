@@ -17,6 +17,7 @@ pub mod siphoned;
 pub mod splits;
 pub mod users;
 pub mod utils;
+pub mod audit;
 
 use axum::Router;
 
@@ -40,4 +41,5 @@ pub fn router() -> Router {
         .nest("/siphoned", siphoned::router())
         .nest("/admin", admin::router())
         .nest("/utils", utils::router())
+        .nest("/audit", audit::router())
 }

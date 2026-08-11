@@ -9,7 +9,7 @@ use std::str::FromStr;
 
 use sea_orm::prelude::Decimal;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
     PaginatorTrait, QueryFilter, TransactionTrait,
 };
 
@@ -29,6 +29,12 @@ pub const TYPE_SPLIT_CREDIT: &str = "split_credit";
 fn parse_status(model: &Model) -> Result<TransactionStatus, AppError> {
     TransactionStatus::from_str(&model.status)
         .map_err(|_| AppError::Internal(format!("Unknown transaction status: {}", model.status)))
+}
+
+fn requestable_status_condition() -> Condition {
+    Condition::any()
+        .add(Column::Status.eq(TransactionStatus::Pending.to_string()))
+        .add(Column::Status.eq(TransactionStatus::Rejected.to_string()))
 }
 
 async fn to_views_with_usernames(
@@ -87,7 +93,7 @@ impl BankService {
     ) -> Result<BalanceSummary, AppError> {
         let pending = TransactionEntity::find()
             .filter(Column::ToUserId.eq(user_id))
-            .filter(Column::Status.eq(TransactionStatus::Pending.to_string()))
+            .filter(requestable_status_condition())
             .all(db)
             .await?;
         let requested = TransactionEntity::find()
@@ -202,7 +208,7 @@ impl BankService {
         let ids: Vec<i64> = if req.all.unwrap_or(false) {
             TransactionEntity::find()
                 .filter(Column::ToUserId.eq(user_id))
-                .filter(Column::Status.eq(TransactionStatus::Pending.to_string()))
+                .filter(requestable_status_condition())
                 .all(db)
                 .await?
                 .into_iter()
@@ -228,13 +234,13 @@ impl BankService {
         let targets = TransactionEntity::find()
             .filter(Column::Id.is_in(ids.clone()))
             .filter(Column::ToUserId.eq(user_id))
-            .filter(Column::Status.eq(TransactionStatus::Pending.to_string()))
+            .filter(requestable_status_condition())
             .all(&txn)
             .await?;
 
         if targets.len() != ids.len() {
             return Err(AppError::Validation(
-                "one or more transactions are not yours or are not pending".to_string(),
+                "one or more transactions are not yours or are not requestable".to_string(),
             ));
         }
 
@@ -249,6 +255,18 @@ impl BankService {
         }
 
         txn.commit().await?;
+
+        for updated in &updated_models {
+            let _ = crate::modules::audit::service::AuditService::log(
+                db,
+                "WITHDRAW_REQUESTED",
+                Some("TRANSACTION"),
+                Some(updated.id),
+                Some(user_id),
+                Some(serde_json::json!({ "status": "requested" })),
+            )
+            .await;
+        }
 
         let updated_views = to_views_with_usernames(db, updated_models).await?;
 
@@ -324,7 +342,10 @@ impl BankService {
         Ok(updated_views)
     }
 
-    /// Rejects one, several, or all currently-requested withdrawals, returning them to `"pending"`.
+    /// Rejects one, several, or all currently-requested withdrawals, marking them as `"rejected"`.
+    ///
+    /// Rejected transactions stay part of the requestable balance but cannot be accepted until the
+    /// recipient submits a fresh withdrawal request, which moves them back to `"requested"`.
     ///
     /// # Errors
     ///
@@ -376,7 +397,7 @@ impl BankService {
         let mut updated_models = Vec::with_capacity(targets.len());
         for model in targets {
             let mut active: ActiveModel = model.into();
-            active.status = Set(TransactionStatus::Pending.to_string());
+            active.status = Set(TransactionStatus::Rejected.to_string());
             active.requested_at = Set(None);
             let updated = active.update(&txn).await?;
             updated_models.push(updated);
@@ -562,5 +583,95 @@ mod tests {
             .await;
 
         assert!(result.is_err());
+    }
+
+    /// Protects the withdrawal lifecycle from bypassing the member after an officer rejection.
+    ///
+    /// A rejected request returns to `pending`, so stale officer actions cannot pay it out until
+    /// the recipient explicitly asks again. This preserves the user's intent while still allowing
+    /// the same ledger row to be paid after a fresh request.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// request_withdrawal(transaction_id);
+    /// reject_withdrawal(transaction_id);
+    /// request_withdrawal(transaction_id);
+    /// accept_withdrawal(transaction_id);
+    /// ```
+    #[tokio::test]
+    async fn test_rejected_withdrawal_requires_fresh_request_before_acceptance() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let officer = insert_user(&db, "officer", "officer@example.com").await;
+        let tx_id = insert_transaction(&db, alice, "10.00", TransactionStatus::Pending).await;
+
+        let service = BankService::new();
+        service
+            .request_withdrawal(
+                &db,
+                alice,
+                &WithdrawRequest {
+                    transaction_ids: Some(vec![tx_id]),
+                    all: None,
+                },
+            )
+            .await
+            .expect("Failed to request withdrawal before rejection");
+
+        let rejected = service
+            .reject_withdrawal(
+                &db,
+                &RejectWithdrawalRequest {
+                    transaction_ids: Some(vec![tx_id]),
+                    all: None,
+                },
+            )
+            .await
+            .expect("Failed to reject requested withdrawal");
+
+        assert_eq!(rejected.len(), 1);
+        assert_eq!(rejected[0].status, TransactionStatus::Rejected);
+        assert_eq!(rejected[0].requested_at, None);
+
+        let stale_acceptance = service
+            .accept_withdrawal(
+                &db,
+                officer,
+                &AcceptWithdrawalRequest {
+                    transaction_ids: Some(vec![tx_id]),
+                    all: None,
+                },
+            )
+            .await;
+
+        assert!(stale_acceptance.is_err());
+
+        service
+            .request_withdrawal(
+                &db,
+                alice,
+                &WithdrawRequest {
+                    transaction_ids: Some(vec![tx_id]),
+                    all: None,
+                },
+            )
+            .await
+            .expect("Failed to request withdrawal again after rejection");
+
+        let accepted = service
+            .accept_withdrawal(
+                &db,
+                officer,
+                &AcceptWithdrawalRequest {
+                    transaction_ids: Some(vec![tx_id]),
+                    all: None,
+                },
+            )
+            .await
+            .expect("Failed to accept freshly requested withdrawal");
+
+        assert_eq!(accepted.len(), 1);
+        assert_eq!(accepted[0].status, TransactionStatus::Withdrawn);
+        assert_eq!(accepted[0].from_user_id, Some(officer));
     }
 }

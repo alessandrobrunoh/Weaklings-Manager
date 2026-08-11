@@ -57,6 +57,10 @@ pub struct Config {
     /// Request timeout in seconds for Albion Online Data requests. Defaults to 30.
     #[serde(default = "default_albiondata_timeout")]
     pub albiondata_request_timeout_secs: u64,
+    /// Discord channel ID for audit logs (optional).
+    pub discord_audit_log_channel_id: Option<String>,
+    /// Discord channel ID for transaction spam (optional).
+    pub discord_transaction_spam_channel_id: Option<String>,
 }
 
 fn default_backend_port() -> u16 {

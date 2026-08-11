@@ -4,7 +4,7 @@
 //! consistent with the rest of the codebase. Missing upstream fields fall back
 //! to safe defaults so the frontend never has to handle nulls.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::modules::albionbb::client::{
@@ -12,7 +12,7 @@ use crate::modules::albionbb::client::{
 };
 
 /// A guild summary nested in a battle.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct BattleGuildSummary {
     /// Guild id.
     pub id: String,
@@ -31,7 +31,7 @@ pub struct BattleGuildSummary {
 }
 
 /// A battle summary for list views.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct BattleSummary {
     /// AlbionBB battle id.
     pub battle_id: i64,
@@ -50,7 +50,7 @@ pub struct BattleSummary {
 }
 
 /// A player in a battle.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct BattlePlayer {
     /// Player id.
     pub id: String,
@@ -73,7 +73,7 @@ pub struct BattlePlayer {
 }
 
 /// A kill participant (killer or victim).
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct BattleKillParticipant {
     /// Player id.
     pub id: String,
@@ -86,7 +86,7 @@ pub struct BattleKillParticipant {
 }
 
 /// A kill event in the battle timeline.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct BattleKillEvent {
     /// AlbionBB kill event id.
     pub event_id: i64,
@@ -107,8 +107,44 @@ pub struct BattleKillEvent {
     pub raw: serde_json::Value,
 }
 
+/// Estimated silver lost in a battle, derived from victim equipment and Albion Data prices.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+pub struct BattleLossEstimate {
+    /// Sum of all priced victim equipment items.
+    pub total_estimated_loss: i64,
+    /// Number of distinct item stacks that received a market price.
+    pub priced_items: i64,
+    /// Number of item stacks present in kill feed equipment.
+    pub total_items: i64,
+    /// Estimate grouped by victim player.
+    pub players: Vec<PlayerLossEstimate>,
+    /// Estimate grouped by victim guild.
+    pub guilds: Vec<GuildLossEstimate>,
+}
+
+/// Per-player loss estimate for one battle.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+pub struct PlayerLossEstimate {
+    pub player_name: String,
+    pub guild_name: Option<String>,
+    pub estimated_loss: i64,
+    pub deaths: i64,
+    pub priced_items: i64,
+    pub total_items: i64,
+}
+
+/// Per-guild loss estimate for one battle.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+pub struct GuildLossEstimate {
+    pub guild_name: String,
+    pub estimated_loss: i64,
+    pub deaths: i64,
+    pub priced_items: i64,
+    pub total_items: i64,
+}
+
 /// Full battle detail, extending the summary with per-player and kill timeline.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct BattleDetail {
     /// All summary fields inlined.
     #[serde(flatten)]
@@ -117,6 +153,8 @@ pub struct BattleDetail {
     pub players: Vec<BattlePlayer>,
     /// Kill timeline (newest last, as returned by AlbionBB).
     pub kills: Vec<BattleKillEvent>,
+    /// Market-based loss estimate from victim equipment, when Albion Data is reachable.
+    pub estimated_losses: BattleLossEstimate,
 }
 
 impl From<&AlbionBbGuild> for BattleGuildSummary {
@@ -216,6 +254,7 @@ impl BattleDetail {
             summary: BattleSummary::from(&detail.summary),
             players: detail.players.iter().map(BattlePlayer::from).collect(),
             kills: kills.iter().map(BattleKillEvent::from).collect(),
+            estimated_losses: BattleLossEstimate::default(),
         }
     }
 }

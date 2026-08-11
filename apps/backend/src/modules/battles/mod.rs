@@ -5,6 +5,7 @@
 //! battle detail (combining battle + kills in one response), and provides a
 //! `/me` endpoint filtered by the calling user's linked Albion character.
 
+pub mod entities;
 pub mod models;
 pub mod router;
 pub mod service;

@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, EmbedBuilder, SlashCommandBuilder } from 'discord.js';
+import { ChatInputCommandInteraction, EmbedBuilder, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import type { BalanceSummary } from '../api/types.js';
 
@@ -36,5 +36,17 @@ export async function execute(
     .setFooter({ text: 'Use /balance-request to request a withdrawal of all pending silver.' })
     .setTimestamp();
 
-  await interaction.editReply({ embeds: [embed] });
+  const payload: any = { embeds: [embed] };
+
+  if (balance.pending_total > 0) {
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId('bank:request_all')
+        .setLabel('Request your Balance')
+        .setStyle(ButtonStyle.Success),
+    );
+    payload.components = [row];
+  }
+
+  await interaction.editReply(payload);
 }

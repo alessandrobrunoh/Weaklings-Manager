@@ -58,6 +58,7 @@ export const en = {
   'nav.users': 'Members',
   'nav.admin': 'Admin',
   'nav.settings': 'Settings',
+  'nav.profile': 'Profile',
   'nav.logout': 'Sign out',
   'nav.section.main': 'Main',
   'nav.section.guild': 'Guild',

@@ -17,6 +17,7 @@ use utoipa::IntoParams;
 use super::models::BattleDetail;
 use super::service::BattlesService;
 use crate::errors::{AppError, ProblemDetails};
+use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::auth::UserContext;
 use crate::pagination::{PaginatedBattleSummary, PaginationParams};
 use crate::responses::{ApiResponse, ApiResponsePaginatedBattles};
@@ -102,9 +103,13 @@ pub async fn list_battles(
 pub async fn get_battle(
     _user: UserContext,
     Extension(service): Extension<BattlesService>,
+    Extension(albiondata): Extension<AlbionDataService>,
+    Extension(db): Extension<DatabaseConnection>,
     Path(battle_id): Path<i64>,
 ) -> Result<Json<ApiResponse<BattleDetail>>, AppError> {
-    let detail = service.get_battle_detail(battle_id).await?;
+    let detail = service
+        .get_battle_detail_with_losses(&db, battle_id, &albiondata)
+        .await?;
     Ok(Json(ApiResponse::new(detail)))
 }
 

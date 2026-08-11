@@ -54,6 +54,7 @@ export const es: TranslationDict = {
   'nav.users': 'Miembros',
   'nav.admin': 'Administración',
   'nav.settings': 'Ajustes',
+  'nav.profile': 'Perfil',
   'nav.logout': 'Salir',
   'nav.section.main': 'Principal',
   'nav.section.guild': 'Hermandad',

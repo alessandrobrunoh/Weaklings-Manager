@@ -19,9 +19,20 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
 const CHART_LIMIT = 8;
 const ALBION_RENDER_ITEM_BASE_URL = 'https://render.albiononline.com/v1/item';
 
-type DetailTab = 'fight' | 'guild';
+type DetailTab = 'fight' | 'guild' | 'players' | 'timeline';
 type KillSide = 'killer' | 'victim';
 type RawObject = Record<string, unknown>;
+
+interface BattleChartMetric {
+  readonly label: string;
+  readonly value: number;
+}
+
+interface BattleKpiCard {
+  readonly label: string;
+  readonly value: string;
+  readonly sub?: string;
+}
 
 /**
  * Full-page analytics view for one battle.
@@ -82,9 +93,40 @@ type RawObject = Record<string, unknown>;
             >
               {{ t('battles.guild_info') }}
             </button>
+            <button
+              type="button"
+              class="btn btn--ghost"
+              [class.btn--tonal]="tab() === 'players'"
+              (click)="switchTab('players')"
+            >
+              Players
+            </button>
+            <button
+              type="button"
+              class="btn btn--ghost"
+              [class.btn--tonal]="tab() === 'timeline'"
+              (click)="switchTab('timeline')"
+            >
+              Timeline
+            </button>
           </nav>
         </div>
       </header>
+
+      <section
+        class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-8"
+        aria-label="Advanced battle KPIs"
+      >
+        @for (metric of battleKpiCards(); track metric.label) {
+          <article class="surface p-4">
+            <p class="battle-detail__label">{{ metric.label }}</p>
+            <p class="battle-detail__value">{{ metric.value }}</p>
+            @if (metric.sub) {
+              <p class="battle-detail__sub">{{ metric.sub }}</p>
+            }
+          </article>
+        }
+      </section>
 
       @if (tab() === 'fight') {
         <section class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6" aria-label="Fight stats">
@@ -116,7 +158,7 @@ type RawObject = Record<string, unknown>;
           </article>
         </section>
 
-        <section class="mt-5 grid gap-4 xl:grid-cols-2">
+        <section class="mt-5 grid gap-4 xl:grid-cols-3">
           <article class="surface p-5">
             <h2 class="battle-detail__panel-title">{{ t('battles.fame_chart') }}</h2>
             @for (guild of chartGuilds(detail.guilds); track guildKey(guild)) {
@@ -145,6 +187,97 @@ type RawObject = Record<string, unknown>;
               </div>
             }
           </article>
+          <article class="surface p-5">
+            <h2 class="battle-detail__panel-title">Damage pressure proxy</h2>
+            @for (guild of chartGuilds(detail.guilds); track guildKey(guild)) {
+              <div class="battle-detail__bar-row">
+                <span>{{ guild.name || t('common.none') }}</span>
+                <div class="battle-detail__bar battle-detail__bar--danger">
+                  <span
+                    [style.width.%]="percentage(guild.deaths, maxGuildDeaths(detail.guilds))"
+                  ></span>
+                </div>
+                <strong>{{ guild.deaths }} deaths</strong>
+              </div>
+            }
+          </article>
+        </section>
+
+        <section class="mt-5 grid gap-4 xl:grid-cols-4">
+          <article class="surface p-5">
+            <h2 class="battle-detail__panel-title">Fame efficiency</h2>
+            @for (row of famePerPlayerChart(); track row.label) {
+              <div class="battle-detail__bar-row">
+                <span>{{ row.label }}</span>
+                <div class="battle-detail__bar">
+                  <span
+                    [style.width.%]="percentage(row.value, maxMetric(famePerPlayerChart()))"
+                  ></span>
+                </div>
+                <strong>{{ formatCompact(row.value) }}</strong>
+              </div>
+            }
+          </article>
+          <article class="surface p-5">
+            <h2 class="battle-detail__panel-title">K/D leaders</h2>
+            @for (row of guildKdChart(); track row.label) {
+              <div class="battle-detail__bar-row">
+                <span>{{ row.label }}</span>
+                <div class="battle-detail__bar battle-detail__bar--kills">
+                  <span [style.width.%]="percentage(row.value, maxMetric(guildKdChart()))"></span>
+                </div>
+                <strong>{{ formatDecimal(row.value) }}</strong>
+              </div>
+            }
+          </article>
+          <article class="surface p-5">
+            <h2 class="battle-detail__panel-title">Player share</h2>
+            @for (row of guildPlayerShareChart(); track row.label) {
+              <div class="battle-detail__bar-row">
+                <span>{{ row.label }}</span>
+                <div class="battle-detail__bar battle-detail__bar--players">
+                  <span [style.width.%]="row.value"></span>
+                </div>
+                <strong>{{ formatDecimal(row.value) }}%</strong>
+              </div>
+            }
+          </article>
+          <article class="surface p-5">
+            <h2 class="battle-detail__panel-title">Our guild silver lost</h2>
+            <p class="battle-detail__value">
+              {{ formatCompact(detail.estimated_losses.total_estimated_loss) }}
+            </p>
+            <p class="battle-detail__sub">
+              {{ detail.estimated_losses.priced_items }} /
+              {{ detail.estimated_losses.total_items }} own-guild victim items · AlbionData city
+              minimum
+            </p>
+            @for (row of lossGuildChart(); track row.label) {
+              <div class="battle-detail__bar-row">
+                <span>{{ row.label }}</span>
+                <div class="battle-detail__bar battle-detail__bar--danger">
+                  <span [style.width.%]="percentage(row.value, maxMetric(lossGuildChart()))"></span>
+                </div>
+                <strong>{{ formatCompact(row.value) }}</strong>
+              </div>
+            }
+          </article>
+          <article class="surface p-5">
+            <h2 class="battle-detail__panel-title">Kill timeline density</h2>
+            @for (row of killMinuteChart(); track row.label) {
+              <div class="battle-detail__bar-row">
+                <span>{{ row.label }}</span>
+                <div class="battle-detail__bar battle-detail__bar--timeline">
+                  <span
+                    [style.width.%]="percentage(row.value, maxMetric(killMinuteChart()))"
+                  ></span>
+                </div>
+                <strong>{{ row.value }}</strong>
+              </div>
+            } @empty {
+              <p class="text-sm" style="color: var(--color-text-secondary)">No kill timestamps.</p>
+            }
+          </article>
         </section>
 
         <article class="mt-5 surface overflow-hidden">
@@ -168,7 +301,7 @@ type RawObject = Record<string, unknown>;
             </ng-template>
           </app-data-table>
         </article>
-      } @else {
+      } @else if (tab() === 'guild') {
         @if (primaryGuild(detail); as guild) {
           <section class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6" aria-label="Guild stats">
             <article class="surface p-4 xl:col-span-2">
@@ -248,6 +381,89 @@ type RawObject = Record<string, unknown>;
             }
           </article>
         </section>
+      } @else if (tab() === 'players') {
+        <section class="mt-5 grid gap-4 xl:grid-cols-4">
+          <article class="surface p-5 xl:col-span-2">
+            <h2 class="battle-detail__panel-title">Top player kill fame</h2>
+            @for (row of topPlayerFameChart(); track row.label) {
+              <div class="battle-detail__bar-row">
+                <span>{{ row.label }}</span>
+                <div class="battle-detail__bar">
+                  <span
+                    [style.width.%]="percentage(row.value, maxMetric(topPlayerFameChart()))"
+                  ></span>
+                </div>
+                <strong>{{ formatCompact(row.value) }}</strong>
+              </div>
+            }
+          </article>
+          <article class="surface p-5">
+            <h2 class="battle-detail__panel-title">Top player IP</h2>
+            @for (row of topPlayerIpChart(); track row.label) {
+              <div class="battle-detail__bar-row">
+                <span>{{ row.label }}</span>
+                <div class="battle-detail__bar battle-detail__bar--players">
+                  <span
+                    [style.width.%]="percentage(row.value, maxMetric(topPlayerIpChart()))"
+                  ></span>
+                </div>
+                <strong>{{ formatDecimal(row.value) }}</strong>
+              </div>
+            }
+          </article>
+          <article class="surface p-5">
+            <h2 class="battle-detail__panel-title">Deaths by player</h2>
+            @for (row of topPlayerDeathsChart(); track row.label) {
+              <div class="battle-detail__bar-row">
+                <span>{{ row.label }}</span>
+                <div class="battle-detail__bar battle-detail__bar--danger">
+                  <span
+                    [style.width.%]="percentage(row.value, maxMetric(topPlayerDeathsChart()))"
+                  ></span>
+                </div>
+                <strong>{{ row.value }}</strong>
+              </div>
+            }
+          </article>
+        </section>
+
+        <section class="mt-5 grid gap-4 xl:grid-cols-2">
+          <article class="surface p-5">
+            <h2 class="battle-detail__panel-title">Our guild silver lost by player</h2>
+            @for (row of lossPlayerChart(); track row.label) {
+              <div class="battle-detail__bar-row">
+                <span>{{ row.label }}</span>
+                <div class="battle-detail__bar battle-detail__bar--danger">
+                  <span
+                    [style.width.%]="percentage(row.value, maxMetric(lossPlayerChart()))"
+                  ></span>
+                </div>
+                <strong>{{ formatCompact(row.value) }}</strong>
+              </div>
+            } @empty {
+              <p class="text-sm" style="color: var(--color-text-secondary)">
+                No priced equipment lost by our guild members.
+              </p>
+            }
+          </article>
+          <article class="surface p-5">
+            <h2 class="battle-detail__panel-title">Loss estimate coverage</h2>
+            <p class="battle-detail__value">
+              {{
+                formatDecimal(
+                  percentage(
+                    detail.estimated_losses.priced_items,
+                    detail.estimated_losses.total_items
+                  )
+                )
+              }}%
+            </p>
+            <p class="battle-detail__sub">
+              {{ detail.estimated_losses.priced_items }} priced of
+              {{ detail.estimated_losses.total_items }} equipment items
+            </p>
+          </article>
+        </section>
 
         <article class="mt-5 surface overflow-hidden">
           <app-data-table
@@ -273,6 +489,51 @@ type RawObject = Record<string, unknown>;
             </ng-template>
           </app-data-table>
         </article>
+      } @else {
+        <section class="mt-5 grid gap-4 xl:grid-cols-3">
+          <article class="surface p-5">
+            <h2 class="battle-detail__panel-title">Killer guilds</h2>
+            @for (row of killerGuildChart(); track row.label) {
+              <div class="battle-detail__bar-row">
+                <span>{{ row.label }}</span>
+                <div class="battle-detail__bar battle-detail__bar--kills">
+                  <span
+                    [style.width.%]="percentage(row.value, maxMetric(killerGuildChart()))"
+                  ></span>
+                </div>
+                <strong>{{ row.value }}</strong>
+              </div>
+            }
+          </article>
+          <article class="surface p-5">
+            <h2 class="battle-detail__panel-title">Victim guilds</h2>
+            @for (row of victimGuildChart(); track row.label) {
+              <div class="battle-detail__bar-row">
+                <span>{{ row.label }}</span>
+                <div class="battle-detail__bar battle-detail__bar--danger">
+                  <span
+                    [style.width.%]="percentage(row.value, maxMetric(victimGuildChart()))"
+                  ></span>
+                </div>
+                <strong>{{ row.value }}</strong>
+              </div>
+            }
+          </article>
+          <article class="surface p-5">
+            <h2 class="battle-detail__panel-title">Highest fame kills</h2>
+            @for (row of highFameKillChart(); track row.label) {
+              <div class="battle-detail__bar-row">
+                <span>{{ row.label }}</span>
+                <div class="battle-detail__bar">
+                  <span
+                    [style.width.%]="percentage(row.value, maxMetric(highFameKillChart()))"
+                  ></span>
+                </div>
+                <strong>{{ formatCompact(row.value) }}</strong>
+              </div>
+            }
+          </article>
+        </section>
 
         <article class="mt-5 surface overflow-hidden">
           <app-data-table
@@ -332,6 +593,11 @@ type RawObject = Record<string, unknown>;
         font-size: clamp(1.25rem, 2vw, 1.75rem);
         font-weight: 700;
       }
+      .battle-detail__sub {
+        color: var(--color-text-secondary);
+        font-size: 0.75rem;
+        margin-top: 0.25rem;
+      }
       .battle-detail__panel-title {
         color: var(--color-text);
         font-size: 1rem;
@@ -361,6 +627,15 @@ type RawObject = Record<string, unknown>;
       }
       .battle-detail__bar--kills span {
         background: var(--color-warning);
+      }
+      .battle-detail__bar--danger span {
+        background: var(--color-danger);
+      }
+      .battle-detail__bar--players span {
+        background: var(--color-success);
+      }
+      .battle-detail__bar--timeline span {
+        background: var(--color-primary);
       }
       .battle-detail__table-header {
         align-items: center;
@@ -440,6 +715,41 @@ export class BattleDetailPage {
   protected readonly maxWeaponCount = computed(() =>
     Math.max(...this.weaponChart().map((weapon) => weapon.count), 0),
   );
+  protected readonly battleKpiCards = computed<BattleKpiCard[]>(() => {
+    const detail = this.battle();
+    if (!detail) {
+      return [];
+    }
+    const deaths = this.totalDeaths(detail.guilds);
+    const durationMinutes = this.durationMinutes(detail);
+    const averageIp = this.average(detail.players.map((player) => player.item_power));
+    const totalDeathFame = detail.players.reduce((sum, player) => sum + player.death_fame, 0);
+    const weaponCount = this.weaponChart().length;
+    const killFamePerKill = detail.total_kills > 0 ? detail.total_fame / detail.total_kills : 0;
+    return [
+      { label: 'Kill fame / kill', value: this.formatCompact(killFamePerKill) },
+      {
+        label: 'Kills / minute',
+        value: this.formatDecimal(this.safeDivide(detail.total_kills, durationMinutes)),
+      },
+      {
+        label: 'Deaths / minute',
+        value: this.formatDecimal(this.safeDivide(deaths, durationMinutes)),
+      },
+      { label: 'Avg item power', value: this.formatDecimal(averageIp) },
+      {
+        label: 'Death fame',
+        value: this.formatCompact(totalDeathFame),
+        sub: 'Modeled from players',
+      },
+      { label: 'Weapons seen', value: String(weaponCount), sub: 'From kill feed equipment' },
+      {
+        label: 'Players / guild',
+        value: this.formatDecimal(this.safeDivide(detail.total_players, detail.guilds.length)),
+      },
+      { label: 'Fight duration', value: this.formatDuration(detail) },
+    ];
+  });
 
   // Guild table columns and data
   protected readonly guildColumns: readonly DataTableColumn<BattleGuildSummary>[] = [
@@ -742,6 +1052,110 @@ export class BattleDetailPage {
     return Math.max(...guilds.map((guild) => guild.kills), 0);
   }
 
+  protected maxGuildDeaths(guilds: readonly BattleGuildSummary[]): number {
+    return Math.max(...guilds.map((guild) => guild.deaths), 0);
+  }
+
+  protected maxMetric(rows: readonly BattleChartMetric[]): number {
+    return Math.max(...rows.map((row) => row.value), 0);
+  }
+
+  protected famePerPlayerChart(): BattleChartMetric[] {
+    const detail = this.battle();
+    if (!detail) {
+      return [];
+    }
+    return this.chartGuilds(detail.guilds).map((guild) => ({
+      label: guild.name || this.t('common.none'),
+      value: this.safeDivide(guild.kill_fame, guild.players),
+    }));
+  }
+
+  protected guildKdChart(): BattleChartMetric[] {
+    const detail = this.battle();
+    if (!detail) {
+      return [];
+    }
+    return this.chartGuilds(detail.guilds).map((guild) => ({
+      label: guild.name || this.t('common.none'),
+      value: this.safeDivide(guild.kills, guild.deaths || 1),
+    }));
+  }
+
+  protected guildPlayerShareChart(): BattleChartMetric[] {
+    const detail = this.battle();
+    if (!detail) {
+      return [];
+    }
+    return this.chartGuilds(detail.guilds).map((guild) => ({
+      label: guild.name || this.t('common.none'),
+      value: this.percentage(guild.players, detail.total_players),
+    }));
+  }
+
+  protected killMinuteChart(): BattleChartMetric[] {
+    const detail = this.battle();
+    if (!detail || detail.kills.length === 0) {
+      return [];
+    }
+    const start = new Date(detail.start_time).getTime();
+    const buckets = new Map<string, number>();
+    for (const kill of detail.kills) {
+      const minute = Math.max(0, Math.floor((new Date(kill.time).getTime() - start) / 60000));
+      const label = `${minute}m`;
+      buckets.set(label, (buckets.get(label) ?? 0) + 1);
+    }
+    return Array.from(buckets.entries())
+      .map(([label, value]) => ({ label, value }))
+      .slice(0, 12);
+  }
+
+  protected topPlayerFameChart(): BattleChartMetric[] {
+    return this.topPlayersBy((player) => player.kill_fame);
+  }
+
+  protected topPlayerIpChart(): BattleChartMetric[] {
+    return this.topPlayersBy((player) => player.item_power);
+  }
+
+  protected topPlayerDeathsChart(): BattleChartMetric[] {
+    return this.topPlayersBy((player) => player.deaths);
+  }
+
+  protected killerGuildChart(): BattleChartMetric[] {
+    return this.groupKillsByGuild('killer');
+  }
+
+  protected victimGuildChart(): BattleChartMetric[] {
+    return this.groupKillsByGuild('victim');
+  }
+
+  protected highFameKillChart(): BattleChartMetric[] {
+    const detail = this.battle();
+    if (!detail) {
+      return [];
+    }
+    return [...detail.kills]
+      .sort((left, right) => right.total_kill_fame - left.total_kill_fame)
+      .slice(0, CHART_LIMIT)
+      .map((kill) => ({
+        label: `${kill.killer.name} → ${kill.victim.name}`,
+        value: kill.total_kill_fame,
+      }));
+  }
+
+  protected lossGuildChart(): BattleChartMetric[] {
+    return (this.battle()?.estimated_losses.guilds ?? [])
+      .slice(0, CHART_LIMIT)
+      .map((guild) => ({ label: guild.guild_name, value: guild.estimated_loss }));
+  }
+
+  protected lossPlayerChart(): BattleChartMetric[] {
+    return (this.battle()?.estimated_losses.players ?? [])
+      .slice(0, CHART_LIMIT)
+      .map((player) => ({ label: player.player_name, value: player.estimated_loss }));
+  }
+
   /** Converts values into bounded percentages for CSS/SVG chart dimensions. */
   protected percentage(value: number, total: number): number {
     return total <= 0 ? 0 : Math.min(100, Math.max(0, (value / total) * 100));
@@ -755,6 +1169,58 @@ export class BattleDetailPage {
   /** Extracts participant weapon icon from AlbionBB raw equipment data. */
   protected participantWeaponIcon(kill: BattleKillEvent, side: KillSide): string {
     return this.itemIconUrl(this.extractWeaponType(kill.raw, side) ?? 'T4_MAIN_SWORD');
+  }
+
+  private durationMinutes(battle: Pick<BattleSummary, 'start_time' | 'end_time'>): number {
+    const milliseconds =
+      new Date(battle.end_time).getTime() - new Date(battle.start_time).getTime();
+    if (!Number.isFinite(milliseconds) || milliseconds <= 0) {
+      return 1;
+    }
+    return Math.max(1, milliseconds / 60000);
+  }
+
+  private safeDivide(value: number, denominator: number): number {
+    if (denominator <= 0 || !Number.isFinite(denominator)) {
+      return 0;
+    }
+    return value / denominator;
+  }
+
+  private average(values: readonly number[]): number {
+    const validValues = values.filter((value) => Number.isFinite(value) && value > 0);
+    if (validValues.length === 0) {
+      return 0;
+    }
+    return validValues.reduce((sum, value) => sum + value, 0) / validValues.length;
+  }
+
+  private topPlayersBy(selector: (player: BattlePlayer) => number): BattleChartMetric[] {
+    const detail = this.battle();
+    if (!detail) {
+      return [];
+    }
+    return [...detail.players]
+      .sort((left, right) => selector(right) - selector(left))
+      .slice(0, CHART_LIMIT)
+      .map((player) => ({ label: player.name, value: selector(player) }));
+  }
+
+  private groupKillsByGuild(side: KillSide): BattleChartMetric[] {
+    const detail = this.battle();
+    if (!detail) {
+      return [];
+    }
+    const counts = new Map<string, number>();
+    for (const kill of detail.kills) {
+      const participant = side === 'killer' ? kill.killer : kill.victim;
+      const label = participant.guild_name || this.t('common.none');
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([label, value]) => ({ label, value }))
+      .sort((left, right) => right.value - left.value)
+      .slice(0, CHART_LIMIT);
   }
 
   /** Fetches battle id from the route and loads the full analytics payload. */

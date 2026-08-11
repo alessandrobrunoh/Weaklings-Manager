@@ -5,19 +5,28 @@
 //! paginated battle list, single-battle detail (battle + kills combined), and
 //! the `/me` endpoint filtered by the calling user's linked Albion character.
 
-use sea_orm::DatabaseConnection;
-use std::collections::HashMap;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
 use crate::errors::AppError;
 use crate::modules::albion::service::AlbionLinkService;
-use crate::modules::albionbb::client::AlbionBbBattlesFilters;
+use crate::modules::albionbb::client::{AlbionBbBattlesFilters, AlbionBbKillEvent};
 use crate::modules::albionbb::service::AlbionBbService;
+use crate::modules::albiondata::client::AlbionDataMarketPrice;
+use crate::modules::albiondata::service::AlbionDataService;
 use crate::pagination::{PaginatedData, PaginationParams};
 
-use super::models::{BattleDetail, BattleSummary};
+use super::entities::Entity as GuildBattleSnapshotEntity;
+use super::entities::{
+    ActiveModel as GuildBattleSnapshotActiveModel, Column as GuildBattleSnapshotColumn,
+};
+use super::models::{
+    BattleDetail, BattleLossEstimate, BattleSummary, GuildLossEstimate, PlayerLossEstimate,
+};
 
 /// Upper bound on how many upstream battle-list pages `/me` will scan before
 /// giving up. Keeps the endpoint from scanning AlbionBB's entire history.
@@ -29,6 +38,8 @@ const DEFAULT_MIN_GUILD_PLAYERS: i64 = 5;
 
 /// How long a hydrated `/battles` page stays fresh in the local cache.
 const LIST_CACHE_TTL: Duration = Duration::from_secs(60);
+const LOSS_ESTIMATE_LOCATIONS: &str =
+    "Caerleon,Bridgewatch,Fort Sterling,Lymhurst,Martlock,Thetford,Brecilien";
 
 type BattleListCache = Arc<RwLock<HashMap<(u64, i64), (Instant, PaginatedData<BattleSummary>)>>>;
 
@@ -122,6 +133,37 @@ impl BattlesService {
         Ok(BattleDetail::from_upstream(&detail, &kills))
     }
 
+    /// Fetches battle detail and enriches it with Albion Data loss estimates.
+    ///
+    /// The kill feed carries victim equipment in the preserved raw JSON. We price those item types
+    /// in one batched Albion Data call and then roll losses up by player and guild. If Albion Data
+    /// is unavailable, the caller still receives the full battle with an empty estimate instead of
+    /// losing the analytics page.
+    pub async fn get_battle_detail_with_losses(
+        &self,
+        db: &DatabaseConnection,
+        battle_id: i64,
+        albiondata: &AlbionDataService,
+    ) -> Result<BattleDetail, AppError> {
+        let detail = self
+            .albionbb
+            .get_battle(self.server.as_deref(), battle_id)
+            .await?;
+        let kills = self
+            .albionbb
+            .get_battle_kills(self.server.as_deref(), battle_id)
+            .await?;
+        let mut battle = BattleDetail::from_upstream(&detail, &kills);
+        let loss_scope = LossEstimateScope::from_battle(&self.guild_id, &detail.summary.guilds);
+        battle.estimated_losses = estimate_losses(albiondata, &kills, &loss_scope)
+            .await
+            .unwrap_or_default();
+        if let Err(error) = persist_battle_snapshot(db, &battle).await {
+            tracing::warn!(battle_id = battle.summary.battle_id, error = %error, "failed to persist guild battle snapshot");
+        }
+        Ok(battle)
+    }
+
     /// Lists battles the calling user participated in.
     ///
     /// Pages through the configured guild's battles (capped at
@@ -206,4 +248,277 @@ impl BattlesService {
             limit,
         ))
     }
+}
+
+/// Persists the enriched battle payload for future local analytics.
+async fn persist_battle_snapshot(
+    db: &DatabaseConnection,
+    battle: &BattleDetail,
+) -> Result<(), AppError> {
+    let existing = GuildBattleSnapshotEntity::find()
+        .filter(GuildBattleSnapshotColumn::BattleId.eq(battle.summary.battle_id))
+        .one(db)
+        .await
+        .map_err(AppError::Database)?;
+    let start_time = chrono::DateTime::parse_from_rfc3339(&battle.summary.start_time)
+        .map_err(|error| AppError::Validation(format!("Invalid battle start time: {error}")))?;
+    let end_time = chrono::DateTime::parse_from_rfc3339(&battle.summary.end_time).ok();
+
+    let mut row: GuildBattleSnapshotActiveModel =
+        existing.map_or_else(Default::default, Into::into);
+    row.battle_id = Set(battle.summary.battle_id);
+    row.start_time = Set(start_time.into());
+    row.end_time = Set(end_time.map(Into::into));
+    row.total_players = Set(battle.summary.total_players);
+    row.total_kills = Set(battle.summary.total_kills);
+    row.total_fame = Set(battle.summary.total_fame);
+    row.guilds_json = Set(serialize_snapshot(&battle.summary.guilds)?);
+    row.players_json = Set(serialize_snapshot(&battle.players)?);
+    row.kills_json = Set(serialize_snapshot(&battle.kills)?);
+    row.losses_json = Set(serialize_snapshot(&battle.estimated_losses)?);
+    row.fetched_at = Set(chrono::Utc::now().into());
+    row.save(db).await.map_err(AppError::Database)?;
+    Ok(())
+}
+
+fn serialize_snapshot<T: serde::Serialize>(value: &T) -> Result<String, AppError> {
+    serde_json::to_string(value).map_err(|error| {
+        AppError::Internal(format!("Failed to serialize battle snapshot: {error}"))
+    })
+}
+
+/// Estimates battle losses from victim equipment using Albion Data market prices.
+async fn estimate_losses(
+    albiondata: &AlbionDataService,
+    kills: &[AlbionBbKillEvent],
+    scope: &LossEstimateScope,
+) -> Result<BattleLossEstimate, AppError> {
+    let loss_items = collect_loss_items(kills, scope);
+    if loss_items.is_empty() {
+        return Ok(BattleLossEstimate::default());
+    }
+
+    let item_ids = loss_items
+        .iter()
+        .map(|item| item.item_id.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let prices = albiondata
+        .prices(
+            None,
+            &item_ids.join(","),
+            Some(LOSS_ESTIMATE_LOCATIONS),
+            None,
+        )
+        .await?;
+    let price_index = build_price_index(&prices);
+
+    let mut total_estimated_loss = 0;
+    let mut priced_items = 0;
+    let mut player_rollups: HashMap<String, PlayerLossEstimate> = HashMap::new();
+    let mut guild_rollups: HashMap<String, GuildLossEstimate> = HashMap::new();
+
+    for item in &loss_items {
+        let estimated_value = price_index.get(&item.item_id).copied().unwrap_or_default()
+            * i64::from(item.quantity.max(1));
+        let is_priced = estimated_value > 0;
+        total_estimated_loss += estimated_value;
+        priced_items += i64::from(is_priced);
+
+        let player = player_rollups
+            .entry(item.player_name.clone())
+            .or_insert_with(|| PlayerLossEstimate {
+                player_name: item.player_name.clone(),
+                guild_name: item.guild_name.clone(),
+                ..Default::default()
+            });
+        player.estimated_loss += estimated_value;
+        player.priced_items += i64::from(is_priced);
+        player.total_items += 1;
+
+        let guild_name = item
+            .guild_name
+            .clone()
+            .unwrap_or_else(|| "Unknown guild".to_string());
+        let guild = guild_rollups
+            .entry(guild_name.clone())
+            .or_insert_with(|| GuildLossEstimate {
+                guild_name,
+                ..Default::default()
+            });
+        guild.estimated_loss += estimated_value;
+        guild.priced_items += i64::from(is_priced);
+        guild.total_items += 1;
+    }
+
+    for kill in kills {
+        let player_name = kill.victim.name.clone();
+        if let Some(player) = player_rollups.get_mut(&player_name) {
+            player.deaths += 1;
+        }
+        let guild_name = kill
+            .victim
+            .guild_name
+            .clone()
+            .unwrap_or_else(|| "Unknown guild".to_string());
+        if let Some(guild) = guild_rollups.get_mut(&guild_name) {
+            guild.deaths += 1;
+        }
+    }
+
+    let mut players = player_rollups.into_values().collect::<Vec<_>>();
+    players.sort_by(|left, right| right.estimated_loss.cmp(&left.estimated_loss));
+    let mut guilds = guild_rollups.into_values().collect::<Vec<_>>();
+    guilds.sort_by(|left, right| right.estimated_loss.cmp(&left.estimated_loss));
+
+    Ok(BattleLossEstimate {
+        total_estimated_loss,
+        priced_items,
+        total_items: loss_items.len() as i64,
+        players,
+        guilds,
+    })
+}
+
+/// Restricts economic loss estimates to the configured guild only.
+///
+/// Opponent deaths may be interesting for fight outcome, but silver-loss accounting must describe
+/// our members only. The scope prefers Albion guild IDs and uses the configured guild name only as a
+/// fallback when AlbionBB omits IDs in the kill feed.
+struct LossEstimateScope {
+    guild_id: String,
+    guild_name: Option<String>,
+}
+
+impl LossEstimateScope {
+    fn from_battle(
+        guild_id: &str,
+        guilds: &[crate::modules::albionbb::client::AlbionBbGuild],
+    ) -> Self {
+        let guild_name = guilds
+            .iter()
+            .find(|guild| guild.id == guild_id)
+            .map(|guild| guild.name.to_ascii_lowercase());
+        Self {
+            guild_id: guild_id.to_string(),
+            guild_name,
+        }
+    }
+
+    fn is_own_guild_victim(&self, kill: &AlbionBbKillEvent) -> bool {
+        if kill.victim.guild_id.as_deref() == Some(self.guild_id.as_str()) {
+            return true;
+        }
+        let Some(expected_name) = &self.guild_name else {
+            return false;
+        };
+        kill.victim
+            .guild_name
+            .as_deref()
+            .is_some_and(|guild_name| guild_name.eq_ignore_ascii_case(expected_name))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct LossItem {
+    item_id: String,
+    quantity: i32,
+    player_name: String,
+    guild_name: Option<String>,
+}
+
+fn collect_loss_items(kills: &[AlbionBbKillEvent], scope: &LossEstimateScope) -> Vec<LossItem> {
+    let mut items = Vec::new();
+    for kill in kills {
+        if !scope.is_own_guild_victim(kill) {
+            continue;
+        }
+        let Some(victim) =
+            read_object(&kill.raw, "Victim").or_else(|| read_object(&kill.raw, "victim"))
+        else {
+            continue;
+        };
+        let Some(equipment) =
+            read_object(victim, "Equipment").or_else(|| read_object(victim, "equipment"))
+        else {
+            continue;
+        };
+        collect_equipment_items(equipment, kill, &mut items);
+    }
+    items
+}
+
+fn collect_equipment_items(equipment: &Value, kill: &AlbionBbKillEvent, items: &mut Vec<LossItem>) {
+    let Some(slots) = equipment.as_object() else {
+        return;
+    };
+    for value in slots.values() {
+        collect_item_value(value, kill, items);
+    }
+}
+
+fn collect_item_value(value: &Value, kill: &AlbionBbKillEvent, items: &mut Vec<LossItem>) {
+    if let Some(item_id) = read_string(value, "Type").or_else(|| read_string(value, "type")) {
+        items.push(LossItem {
+            item_id,
+            quantity: read_i32(value, "Count")
+                .or_else(|| read_i32(value, "count"))
+                .unwrap_or(1),
+            player_name: kill.victim.name.clone(),
+            guild_name: kill.victim.guild_name.clone(),
+        });
+        return;
+    }
+
+    if let Some(array) = value.as_array() {
+        for nested in array {
+            collect_item_value(nested, kill, items);
+        }
+        return;
+    }
+
+    if let Some(object) = value.as_object() {
+        for nested in object.values() {
+            collect_item_value(nested, kill, items);
+        }
+    }
+}
+
+fn build_price_index(prices: &[AlbionDataMarketPrice]) -> HashMap<String, i64> {
+    let mut index = HashMap::new();
+    for price in prices {
+        let value = [
+            price.sell_price_min,
+            price.sell_price_max,
+            price.buy_price_max,
+        ]
+        .into_iter()
+        .filter(|price| *price > 0)
+        .min()
+        .unwrap_or_default();
+        if value > 0 {
+            index.insert(price.item_id.clone(), value);
+        }
+    }
+    index
+}
+
+fn read_object<'a>(source: &'a Value, key: &str) -> Option<&'a Value> {
+    source
+        .as_object()?
+        .get(key)
+        .filter(|value| value.is_object())
+}
+
+fn read_string(source: &Value, key: &str) -> Option<String> {
+    source
+        .as_object()?
+        .get(key)?
+        .as_str()
+        .map(ToOwned::to_owned)
+}
+
+fn read_i32(source: &Value, key: &str) -> Option<i32> {
+    source.as_object()?.get(key)?.as_i64()?.try_into().ok()
 }

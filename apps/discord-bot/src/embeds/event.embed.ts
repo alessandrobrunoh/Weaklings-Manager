@@ -49,16 +49,18 @@ export function buildEventEmbed(event: EventView | EventDetailView): EmbedBuilde
   // Se è un EventDetailView con partecipanti, mostriamo la lista
   const detail = event as EventDetailView;
   if (detail.participants?.length > 0) {
-    const lines = detail.participants
-      .slice(0, 10)
-      .map((p) => `**${p.username}** — ${p.primary_build_name}`)
+    const buildCounts: Record<string, number> = {};
+    for (const p of detail.participants) {
+      buildCounts[p.primary_build_name] = (buildCounts[p.primary_build_name] || 0) + 1;
+    }
+
+    const lines = Object.entries(buildCounts)
+      .map(([buildName, count]) => `**${count}**x ${buildName}`)
       .join('\n');
-    const extra = detail.participants.length > 10
-      ? `\n*+ ${detail.participants.length - 10} more*`
-      : '';
+
     embed.addFields({
       name: `Roster (${detail.participants.length}/${detail.active_comp_capacity})`,
-      value: lines + extra,
+      value: lines,
       inline: false,
     });
   }

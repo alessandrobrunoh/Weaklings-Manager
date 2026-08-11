@@ -30,6 +30,8 @@ mod m20260811_000001_create_siphoned_energy_entries_table;
 mod m20260811_000002_seed_siphoned_permissions;
 mod m20260811_000003_enrich_event_battles;
 mod m20260811_000004_link_splits_to_events;
+mod m20260811_000005_create_guild_battle_snapshots;
+mod m20260811_000006_create_audit_logs_table;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -64,6 +66,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260811_000002_seed_siphoned_permissions::Migration),
             Box::new(m20260811_000003_enrich_event_battles::Migration),
             Box::new(m20260811_000004_link_splits_to_events::Migration),
+            Box::new(m20260811_000005_create_guild_battle_snapshots::Migration),
+            Box::new(m20260811_000006_create_audit_logs_table::Migration),
         ]
     }
 }

@@ -17,6 +17,8 @@ pub enum TransactionStatus {
     Pending,
     /// The recipient has requested withdrawal; awaiting an officer to accept and pay it.
     Requested,
+    /// An officer rejected the withdrawal request; the recipient must request it again.
+    Rejected,
     /// An officer accepted the withdrawal request and paid it out.
     Withdrawn,
 }
@@ -27,6 +29,7 @@ impl TransactionStatus {
         match self {
             Self::Pending => "pending",
             Self::Requested => "requested",
+            Self::Rejected => "rejected",
             Self::Withdrawn => "withdrawn",
         }
     }
@@ -45,6 +48,7 @@ impl FromStr for TransactionStatus {
         match s {
             "pending" => Ok(Self::Pending),
             "requested" => Ok(Self::Requested),
+            "rejected" => Ok(Self::Rejected),
             "withdrawn" => Ok(Self::Withdrawn),
             other => Err(format!("unknown transaction status: {other}")),
         }

@@ -1,204 +1,485 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 
+import type {
+  AlbionLinkStatus,
+  BalanceSummary,
+  BattleSummary,
+  PaginatedData,
+  SiphonedEntryView,
+  SiphonedPlayerBalance,
+  TransactionView,
+} from '../../core/models/api.models';
+import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 import { ThemeService, type ThemePreference } from '../../core/services/theme.service';
-import { TranslateService, type Language } from '../../core/services/translate.service';
 import { ToastService } from '../../core/services/toast.service';
-import { PageHeader } from '../../shared/components/page-header/page-header';
+import { TranslateService, type Language } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { Loading } from '../../shared/components/loading/loading';
+import { PageHeader } from '../../shared/components/page-header/page-header';
+import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
+
+interface ProfileMetric {
+  readonly label: string;
+  readonly value: string;
+  readonly sub?: string;
+}
+
+interface ProfileChartMetric {
+  readonly label: string;
+  readonly value: number;
+}
 
 /**
- * User preferences page.
+ * Empty paginated response for optional profile panels.
  *
- * Self-contained: holds the theme preference (light / dark / system) and the
- * UI language. Both controls persist their choice via the underlying services
- * and apply instantly across the whole shell.
+ * The `/battles/me` endpoint intentionally returns a validation error when the user has not linked
+ * an Albion character. Profile should still render money/settings in that case, so we degrade only
+ * the fight panel to an empty dataset.
+ *
+ * @example
+ * ```ts
+ * const empty = emptyPaginatedBattles();
+ * console.assert(empty.items.length === 0);
+ * ```
+ */
+function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
+  return {
+    items: [],
+    total_items: 0,
+    total_pages: 0,
+    current_page: 1,
+    limit: 50,
+  };
+}
+
+/**
+ * Personal performance command center.
+ *
+ * Settings were too small for what members need day-to-day. This profile view keeps preferences,
+ * but its primary purpose is to show the caller's money, siphoned-energy activity, and fight
+ * history using the same backend ledgers used by the guild pages.
+ *
+ * @example
+ * ```ts
+ * { path: 'profile', loadComponent: () => import('./features/settings/settings').then(m => m.Settings) }
+ * ```
  */
 @Component({
-  selector: 'app-settings',
+  selector: 'app-profile',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader],
+  imports: [PageHeader, Loading, DataTable],
   template: `
-    <app-page-header
-      [title]="t('settings.title')"
-      [subtitle]="t('settings.subtitle')"
-      [actions]="false"
-    />
+    <app-page-header title="Profile" subtitle="Your account, economy and fight performance." />
 
-    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <!-- Appearance -->
-      <section class="card p-6">
-        <h2 class="settings__title">{{ t('settings.appearance') }}</h2>
-        <fieldset class="settings__list">
-          <legend class="sr-only">{{ t('settings.appearance') }}</legend>
-          @for (option of themeOptions; track option.value) {
-            <label
-              class="settings__option"
-              [class.settings__option--active]="theme.preference() === option.value"
-            >
-              <input
-                class="settings__input"
-                type="radio"
-                name="theme"
-                [value]="option.value"
-                [checked]="theme.preference() === option.value"
-                (change)="onThemeChange(option.value)"
-              />
-              <span class="settings__indicator" aria-hidden="true"></span>
-              <span class="settings__label">{{ t(option.labelKey) }}</span>
-            </label>
+    @if (loading()) {
+      <app-loading [label]="t('common.loading')" />
+    } @else {
+      <section class="profile__hero card p-6">
+        <div>
+          <p class="profile__eyebrow">Account</p>
+          <h1>{{ displayName() }}</h1>
+          <p>{{ profile()?.email || 'No email' }} · {{ profile()?.highest_role || 'User' }}</p>
+          @if (albionLink()?.linked) {
+            <span class="chip chip--success">Albion: {{ albionLink()?.albion_player_name }}</span>
+          } @else {
+            <span class="chip chip--warning">Albion character not linked</span>
           }
-        </fieldset>
+        </div>
       </section>
 
-      <!-- Language -->
-      <section class="card p-6">
-        <h2 class="settings__title">{{ t('settings.language') }}</h2>
-        <fieldset class="settings__list">
-          <legend class="sr-only">{{ t('settings.language') }}</legend>
-          @for (lang of translate.supportedLanguages; track lang) {
-            <label
-              class="settings__option"
-              [class.settings__option--active]="translate.language() === lang"
-            >
-              <input
-                class="settings__input"
-                type="radio"
-                name="language"
-                [value]="lang"
-                [checked]="translate.language() === lang"
-                (change)="onLanguageChange(lang)"
-              />
-              <span class="settings__indicator" aria-hidden="true"></span>
-              <span class="settings__label">{{ translate.languageLabels[lang] }}</span>
-            </label>
-          }
-        </fieldset>
+      <section class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        @for (metric of profileMetrics(); track metric.label) {
+          <article class="surface p-4">
+            <p class="profile__label">{{ metric.label }}</p>
+            <p class="profile__value">{{ metric.value }}</p>
+            @if (metric.sub) {
+              <p class="profile__sub">{{ metric.sub }}</p>
+            }
+          </article>
+        }
       </section>
-    </div>
+
+      <section class="mt-5 grid gap-4 xl:grid-cols-3">
+        <article class="surface p-5">
+          <h2 class="profile__panel-title">Bank status</h2>
+          @for (row of bankChart(); track row.label) {
+            <div class="profile__bar-row">
+              <span>{{ row.label }}</span>
+              <div class="profile__bar">
+                <span [style.width.%]="chartPercent(row.value, bankChart())"></span>
+              </div>
+              <strong>{{ formatAmount(row.value) }}</strong>
+            </div>
+          }
+        </article>
+        <article class="surface p-5">
+          <h2 class="profile__panel-title">Siphoned energy</h2>
+          @for (row of siphonedChart(); track row.label) {
+            <div class="profile__bar-row">
+              <span>{{ row.label }}</span>
+              <div class="profile__bar profile__bar--energy">
+                <span [style.width.%]="chartPercent(row.value, siphonedChart())"></span>
+              </div>
+              <strong>{{ formatAmount(row.value) }}</strong>
+            </div>
+          }
+        </article>
+        <article class="surface p-5">
+          <h2 class="profile__panel-title">My fights</h2>
+          @for (row of battleChart(); track row.label) {
+            <div class="profile__bar-row">
+              <span>{{ row.label }}</span>
+              <div class="profile__bar profile__bar--fight">
+                <span [style.width.%]="chartPercent(row.value, battleChart())"></span>
+              </div>
+              <strong>{{ formatCompact(row.value) }}</strong>
+            </div>
+          }
+        </article>
+      </section>
+
+      <section class="mt-5 grid gap-4 xl:grid-cols-2">
+        <article class="surface overflow-hidden">
+          <header class="profile__section-header"><h2>Recent bank ledger</h2></header>
+          <app-data-table
+            [columns]="transactionColumns"
+            [rows]="transactions()"
+            [trackBy]="trackTransaction"
+            [pageSize]="8"
+          >
+            <ng-template dataTableCell="amount" let-row>{{ formatAmount(row.amount) }}</ng-template>
+            <ng-template dataTableCell="created_at" let-row>{{
+              formatDate(row.created_at)
+            }}</ng-template>
+          </app-data-table>
+        </article>
+        <article class="surface overflow-hidden">
+          <header class="profile__section-header"><h2>Recent siphoned ledger</h2></header>
+          <app-data-table
+            [columns]="siphonedColumns"
+            [rows]="siphonedEntries()"
+            [trackBy]="trackSiphonedEntry"
+            [pageSize]="8"
+          >
+            <ng-template dataTableCell="amount" let-row>{{ formatAmount(row.amount) }}</ng-template>
+            <ng-template dataTableCell="occurred_at" let-row>{{
+              formatDate(row.occurred_at)
+            }}</ng-template>
+          </app-data-table>
+        </article>
+      </section>
+
+      <article class="mt-5 surface overflow-hidden">
+        <header class="profile__section-header"><h2>My recent fights</h2></header>
+        <app-data-table
+          [columns]="battleColumns"
+          [rows]="battles()"
+          [trackBy]="trackBattle"
+          [pageSize]="8"
+        >
+          <ng-template dataTableCell="start_time" let-row>{{
+            formatDate(row.start_time)
+          }}</ng-template>
+          <ng-template dataTableCell="total_fame" let-row>{{
+            formatCompact(row.total_fame)
+          }}</ng-template>
+        </app-data-table>
+      </article>
+
+      <section class="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <section class="card p-6">
+          <h2 class="profile__panel-title">Appearance</h2>
+          <fieldset class="profile__option-list">
+            @for (option of themeOptions; track option.value) {
+              <label
+                class="profile__option"
+                [class.profile__option--active]="theme.preference() === option.value"
+              >
+                <input
+                  type="radio"
+                  name="theme"
+                  [checked]="theme.preference() === option.value"
+                  (change)="onThemeChange(option.value)"
+                />
+                <span>{{ t(option.labelKey) }}</span>
+              </label>
+            }
+          </fieldset>
+        </section>
+        <section class="card p-6">
+          <h2 class="profile__panel-title">Language</h2>
+          <fieldset class="profile__option-list">
+            @for (lang of translate.supportedLanguages; track lang) {
+              <label
+                class="profile__option"
+                [class.profile__option--active]="translate.language() === lang"
+              >
+                <input
+                  type="radio"
+                  name="language"
+                  [checked]="translate.language() === lang"
+                  (change)="onLanguageChange(lang)"
+                />
+                <span>{{ translate.languageLabels[lang] }}</span>
+              </label>
+            }
+          </fieldset>
+        </section>
+      </section>
+    }
   `,
-  styles: [
-    `
-      :host {
-        display: block;
+  styles: `
+    @layer components {
+      .profile__hero h1 {
+        color: var(--color-text);
+        font-size: clamp(1.75rem, 4vw, 3rem);
+        font-weight: 800;
       }
-
-      .settings__title {
-        margin-bottom: 1rem;
+      .profile__hero p {
+        color: var(--color-text-secondary);
+        margin-top: 0.25rem;
+      }
+      .profile__eyebrow,
+      .profile__label {
+        color: var(--color-text-disabled);
+        font-size: 0.75rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .profile__value {
+        color: var(--color-text);
+        font-size: clamp(1.2rem, 2vw, 1.6rem);
+        font-weight: 800;
+      }
+      .profile__sub {
+        color: var(--color-text-secondary);
+        font-size: 0.75rem;
+        margin-top: 0.25rem;
+      }
+      .profile__panel-title {
+        color: var(--color-text);
         font-size: 1rem;
-        font-weight: 600;
-        color: var(--color-text);
+        font-weight: 700;
+        margin-bottom: 1rem;
       }
-
-      .settings__list {
-        display: flex;
-        flex-direction: column;
-        gap: 0.375rem;
-        margin: 0;
-        padding: 0;
-        border: 0;
-      }
-
-      /*
-       * Selectable row: hidden native radio + custom circular indicator.
-       * The native input stays in the a11y tree but is visually replaced by
-       * .settings__indicator so the control matches the Material token palette.
-       */
-      .settings__option {
-        display: flex;
+      .profile__bar-row {
         align-items: center;
-        gap: 0.875rem;
-        padding: 0.625rem 0.875rem;
-        border-radius: var(--radius-md);
-        border: 1px solid transparent;
-        cursor: pointer;
-        user-select: none;
-        transition:
-          background-color 140ms ease,
-          border-color 140ms ease,
-          box-shadow 140ms ease;
+        display: grid;
+        gap: 0.75rem;
+        grid-template-columns: minmax(7rem, 1fr) minmax(8rem, 2fr) auto;
+        margin-top: 0.75rem;
       }
-
-      .settings__option:hover {
-        background-color: var(--color-surface-hover);
+      .profile__bar {
+        background: var(--color-surface-2);
+        border-radius: var(--radius-full);
+        height: 0.7rem;
+        overflow: hidden;
       }
-
-      .settings__option--active {
-        background-color: var(--color-primary-container);
-        border-color: color-mix(in srgb, var(--color-primary) 22%, transparent);
+      .profile__bar span {
+        background: var(--color-primary);
+        border-radius: inherit;
+        display: block;
+        height: 100%;
+        min-width: 0.25rem;
       }
-
-      .settings__label {
-        flex: 1;
-        font-size: 0.9375rem;
+      .profile__bar--energy span {
+        background: var(--color-warning);
+      }
+      .profile__bar--fight span {
+        background: var(--color-success);
+      }
+      .profile__section-header {
+        border-bottom: 1px solid var(--color-border);
+        padding: 1rem;
+      }
+      .profile__section-header h2 {
         color: var(--color-text);
+        font-weight: 700;
       }
-
-      /* Visually hidden input — keyboard still reaches it. */
-      .settings__input {
-        position: absolute;
-        width: 1px;
-        height: 1px;
+      .profile__option-list {
+        border: 0;
+        display: grid;
+        gap: 0.5rem;
         margin: 0;
         padding: 0;
-        overflow: hidden;
-        clip: rect(0 0 0 0);
-        clip-path: inset(50%);
-        white-space: nowrap;
-        border: 0;
-        opacity: 0;
       }
-
-      .settings__input:focus-visible + .settings__indicator {
-        box-shadow:
-          0 0 0 3px var(--color-primary-container),
-          0 0 0 5px var(--color-primary);
+      .profile__option {
+        align-items: center;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        color: var(--color-text);
+        cursor: pointer;
+        display: flex;
+        gap: 0.75rem;
+        padding: 0.75rem;
       }
-
-      /*
-       * Radio dot: outer ring always visible, inner dot appears when the
-       * sibling input is checked (:checked) or when the row is active.
-       */
-      .settings__indicator {
-        position: relative;
-        flex: 0 0 auto;
-        width: 20px;
-        height: 20px;
-        border-radius: var(--radius-full);
-        border: 2px solid var(--color-border-strong);
-        background-color: transparent;
-        transition:
-          border-color 140ms ease,
-          background-color 140ms ease;
-      }
-
-      .settings__indicator::after {
-        content: '';
-        position: absolute;
-        inset: 0;
-        margin: auto;
-        width: 10px;
-        height: 10px;
-        border-radius: var(--radius-full);
-        background-color: var(--color-primary);
-        transform: scale(0);
-        transition: transform 140ms ease;
-      }
-
-      .settings__input:checked + .settings__indicator {
+      .profile__option--active {
+        background: var(--color-primary-container);
         border-color: var(--color-primary);
       }
-
-      .settings__input:checked + .settings__indicator::after {
-        transform: scale(1);
-      }
-    `,
-  ],
+    }
+  `,
 })
 export class Settings {
+  private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
   protected readonly theme = inject(ThemeService);
   protected readonly translate = inject(TranslateService);
   private readonly toasts = inject(ToastService);
 
+  protected readonly loading = signal(false);
+  protected readonly balance = signal<BalanceSummary | null>(null);
+  protected readonly transactions = signal<TransactionView[]>([]);
+  protected readonly siphonedBalance = signal<SiphonedPlayerBalance | null>(null);
+  protected readonly siphonedEntries = signal<SiphonedEntryView[]>([]);
+  protected readonly battles = signal<BattleSummary[]>([]);
+  protected readonly albionLink = signal<AlbionLinkStatus | null>(null);
+  protected readonly profile = this.auth.profile;
+
+  protected readonly transactionColumns: readonly DataTableColumn<TransactionView>[] = [
+    {
+      key: 'status',
+      label: 'common.status',
+      sortable: true,
+      accessor: (row) => row.status,
+      comparator: (a, b) => a.status.localeCompare(b.status),
+    },
+    {
+      key: 'amount',
+      label: 'common.amount',
+      sortable: true,
+      accessor: (row) => row.amount,
+      comparator: (a, b) => a.amount - b.amount,
+      align: 'right',
+    },
+    {
+      key: 'reason',
+      label: 'common.description',
+      searchable: true,
+      accessor: (row) => row.reason ?? '',
+      comparator: (a, b) => (a.reason ?? '').localeCompare(b.reason ?? ''),
+    },
+    {
+      key: 'created_at',
+      label: 'common.date',
+      sortable: true,
+      accessor: (row) => row.created_at,
+      comparator: (a, b) => a.created_at.localeCompare(b.created_at),
+    },
+  ];
+  protected readonly siphonedColumns: readonly DataTableColumn<SiphonedEntryView>[] = [
+    {
+      key: 'occurred_at',
+      label: 'common.date',
+      sortable: true,
+      accessor: (row) => row.occurred_at,
+      comparator: (a, b) => a.occurred_at.localeCompare(b.occurred_at),
+    },
+    {
+      key: 'reason',
+      label: 'common.description',
+      sortable: true,
+      accessor: (row) => row.reason,
+      comparator: (a, b) => a.reason.localeCompare(b.reason),
+    },
+    {
+      key: 'amount',
+      label: 'common.amount',
+      sortable: true,
+      accessor: (row) => row.amount,
+      comparator: (a, b) => a.amount - b.amount,
+      align: 'right',
+    },
+  ];
+  protected readonly battleColumns: readonly DataTableColumn<BattleSummary>[] = [
+    {
+      key: 'battle_id',
+      label: 'events.detail.open_battle',
+      sortable: true,
+      accessor: (row) => row.battle_id,
+      comparator: (a, b) => a.battle_id - b.battle_id,
+    },
+    {
+      key: 'start_time',
+      label: 'common.date',
+      sortable: true,
+      accessor: (row) => row.start_time,
+      comparator: (a, b) => a.start_time.localeCompare(b.start_time),
+    },
+    {
+      key: 'total_players',
+      label: 'battles.players',
+      sortable: true,
+      accessor: (row) => row.total_players,
+      comparator: (a, b) => a.total_players - b.total_players,
+      align: 'right',
+    },
+    {
+      key: 'total_kills',
+      label: 'battles.kills',
+      sortable: true,
+      accessor: (row) => row.total_kills,
+      comparator: (a, b) => a.total_kills - b.total_kills,
+      align: 'right',
+    },
+    {
+      key: 'total_fame',
+      label: 'battles.fame',
+      sortable: true,
+      accessor: (row) => row.total_fame,
+      comparator: (a, b) => a.total_fame - b.total_fame,
+      align: 'right',
+    },
+  ];
+
+  protected readonly profileMetrics = computed<ProfileMetric[]>(() => {
+    const balance = this.balance();
+    const siphoned = this.siphonedBalance();
+    const battleRows = this.battles();
+    return [
+      {
+        label: 'Pending silver',
+        value: this.formatAmount(balance?.pending_total ?? 0),
+        sub: `${balance?.pending_count ?? 0} rows`,
+      },
+      {
+        label: 'Requested silver',
+        value: this.formatAmount(balance?.requested_total ?? 0),
+        sub: `${balance?.requested_count ?? 0} rows`,
+      },
+      {
+        label: 'Siphoned net',
+        value: this.formatAmount(siphoned?.net ?? 0),
+        sub: `${siphoned?.entry_count ?? 0} entries`,
+      },
+      { label: 'Siphoned withdrawn', value: this.formatAmount(siphoned?.total_withdrawn ?? 0) },
+      { label: 'Tracked fights', value: String(battleRows.length) },
+      {
+        label: 'Fight fame',
+        value: this.formatCompact(battleRows.reduce((sum, battle) => sum + battle.total_fame, 0)),
+      },
+    ];
+  });
+  protected readonly bankChart = computed<ProfileChartMetric[]>(() => [
+    { label: 'Pending', value: Number(this.balance()?.pending_total ?? 0) },
+    { label: 'Requested', value: Number(this.balance()?.requested_total ?? 0) },
+  ]);
+  protected readonly siphonedChart = computed<ProfileChartMetric[]>(() => [
+    { label: 'Deposited', value: Number(this.siphonedBalance()?.total_deposited ?? 0) },
+    { label: 'Withdrawn', value: Number(this.siphonedBalance()?.total_withdrawn ?? 0) },
+    { label: 'Debt', value: Math.abs(Math.min(0, Number(this.siphonedBalance()?.net ?? 0))) },
+  ]);
+  protected readonly battleChart = computed<ProfileChartMetric[]>(() => [
+    { label: 'Battles', value: this.battles().length },
+    { label: 'Kills', value: this.battles().reduce((sum, battle) => sum + battle.total_kills, 0) },
+    { label: 'Fame', value: this.battles().reduce((sum, battle) => sum + battle.total_fame, 0) },
+  ]);
+
+  protected readonly trackTransaction = (row: TransactionView): unknown => row.id;
+  protected readonly trackSiphonedEntry = (row: SiphonedEntryView): unknown => row.id;
+  protected readonly trackBattle = (row: BattleSummary): unknown => row.battle_id;
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   protected readonly themeOptions: ReadonlyArray<{
@@ -210,17 +491,90 @@ export class Settings {
     { value: 'system', labelKey: 'theme.system' },
   ];
 
+  constructor() {
+    void this.load();
+  }
+
+  protected displayName(): string {
+    return this.profile()?.username ?? 'Profile';
+  }
+
+  protected formatAmount(value: number | string): string {
+    return new Intl.NumberFormat().format(Number(value ?? 0));
+  }
+
+  protected formatCompact(value: number): string {
+    return Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(
+      value,
+    );
+  }
+
+  protected formatDate(value: string): string {
+    return new Date(value).toLocaleString();
+  }
+
+  protected chartPercent(value: number, rows: readonly ProfileChartMetric[]): number {
+    const maxValue = Math.max(...rows.map((row) => row.value), 0);
+    if (maxValue <= 0) return 0;
+    return Math.max(4, Math.round((value / maxValue) * 100));
+  }
+
   protected onThemeChange(value: ThemePreference): void {
     this.theme.setPreference(value);
     this.toasts.success(
-      this.translate.t(
-        value === 'light' ? 'theme.light' : value === 'dark' ? 'theme.dark' : 'theme.system',
-      ),
+      this.t(value === 'light' ? 'theme.light' : value === 'dark' ? 'theme.dark' : 'theme.system'),
     );
   }
 
   protected onLanguageChange(value: Language): void {
     this.translate.use(value);
     this.toasts.success(this.translate.languageLabels[value]);
+  }
+
+  private async load(): Promise<void> {
+    this.loading.set(true);
+    try {
+      const [balance, transactions, albionLink, battles] = await Promise.all([
+        firstValueFrom(this.api.get<BalanceSummary>('api/bank/balance')),
+        firstValueFrom(
+          this.api.get<PaginatedData<TransactionView>>('api/bank/transactions', {
+            page: 1,
+            limit: 50,
+          }),
+        ),
+        firstValueFrom(this.api.get<AlbionLinkStatus>('api/albion/link/me')),
+        firstValueFrom(
+          this.api.get<PaginatedData<BattleSummary>>('api/battles/me', { page: 1, limit: 50 }),
+        ).catch(() => emptyPaginatedBattles()),
+      ]);
+      this.balance.set(balance);
+      this.transactions.set(transactions.items);
+      this.albionLink.set(albionLink);
+      this.battles.set(battles.items);
+      await this.loadSiphoned(albionLink.albion_player_name ?? this.profile()?.username ?? '');
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  private async loadSiphoned(playerName: string): Promise<void> {
+    if (!playerName || !this.auth.hasPermission('siphoned.view')) {
+      return;
+    }
+    try {
+      const detail = await firstValueFrom(
+        this.api.get<{ balance: SiphonedPlayerBalance; recent_entries: SiphonedEntryView[] }>(
+          `api/siphoned/balances/${encodeURIComponent(playerName)}`,
+          { recent: 50 },
+        ),
+      );
+      this.siphonedBalance.set(detail.balance);
+      this.siphonedEntries.set(detail.recent_entries);
+    } catch {
+      this.siphonedBalance.set(null);
+      this.siphonedEntries.set([]);
+    }
   }
 }

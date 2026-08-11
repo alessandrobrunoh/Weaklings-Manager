@@ -4,6 +4,8 @@ use sea_orm::prelude::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::modules::battles::models::BattleLossEstimate;
+
 /// Filters for listing events.
 #[derive(Debug, Clone, Deserialize, ToSchema, Default)]
 pub struct EventFilters {
@@ -222,6 +224,8 @@ pub struct EventDetailView {
     pub battles: Vec<EventBattleView>,
     /// Aggregated event outcome and fight performance.
     pub stats: BattlePerformanceStats,
+    /// Market-based equipment loss estimates aggregated from persisted battle snapshots.
+    pub estimated_losses: BattleLossEstimate,
     /// Loot splits connected to this event.
     pub splits: Vec<crate::modules::splits::models::SplitSummary>,
     /// Aggregated split economy statistics.

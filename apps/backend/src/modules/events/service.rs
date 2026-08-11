@@ -22,6 +22,10 @@ use crate::modules::albionbb::client::{
     AlbionBbBattleSummary, AlbionBbBattlesFilters, AlbionBbGuild,
 };
 use crate::modules::albionbb::service::AlbionBbService;
+use crate::modules::battles::entities::{
+    Column as GuildBattleSnapshotColumn, Entity as GuildBattleSnapshotEntity,
+};
+use crate::modules::battles::models::{BattleLossEstimate, GuildLossEstimate, PlayerLossEstimate};
 use crate::modules::comps::entities::{build, comp, comp_build};
 use crate::modules::splits::entities::{split, split_participant};
 use crate::modules::splits::service::SplitService;
@@ -264,6 +268,78 @@ fn apply_battle_snapshot(
     row.opponent_deaths = Set(opponent.map(|guild| guild.deaths));
     row.opponent_kill_fame = Set(opponent.map(|guild| guild.kill_fame));
     Ok(())
+}
+
+/// Aggregates persisted battle loss estimates for an event.
+async fn build_event_loss_estimate(
+    db: &DatabaseConnection,
+    battle_rows: &[event_battle::Model],
+) -> Result<BattleLossEstimate, AppError> {
+    let battle_ids = battle_rows
+        .iter()
+        .filter_map(|battle| battle.albionbb_battle_id.parse::<i64>().ok())
+        .collect::<Vec<_>>();
+    if battle_ids.is_empty() {
+        return Ok(BattleLossEstimate::default());
+    }
+
+    let snapshots = GuildBattleSnapshotEntity::find()
+        .filter(GuildBattleSnapshotColumn::BattleId.is_in(battle_ids))
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+
+    let mut total = BattleLossEstimate::default();
+    let mut players: HashMap<String, PlayerLossEstimate> = HashMap::new();
+    let mut guilds: HashMap<String, GuildLossEstimate> = HashMap::new();
+
+    for snapshot in snapshots {
+        let estimate: BattleLossEstimate =
+            serde_json::from_str(&snapshot.losses_json).map_err(|error| {
+                AppError::Internal(format!("Failed to parse battle loss snapshot: {error}"))
+            })?;
+        total.total_estimated_loss += estimate.total_estimated_loss;
+        total.priced_items += estimate.priced_items;
+        total.total_items += estimate.total_items;
+
+        for player in estimate.players {
+            let rollup = players
+                .entry(player.player_name.clone())
+                .or_insert_with(|| PlayerLossEstimate {
+                    player_name: player.player_name.clone(),
+                    guild_name: player.guild_name.clone(),
+                    ..Default::default()
+                });
+            rollup.estimated_loss += player.estimated_loss;
+            rollup.deaths += player.deaths;
+            rollup.priced_items += player.priced_items;
+            rollup.total_items += player.total_items;
+        }
+
+        for guild in estimate.guilds {
+            let rollup =
+                guilds
+                    .entry(guild.guild_name.clone())
+                    .or_insert_with(|| GuildLossEstimate {
+                        guild_name: guild.guild_name.clone(),
+                        ..Default::default()
+                    });
+            rollup.estimated_loss += guild.estimated_loss;
+            rollup.deaths += guild.deaths;
+            rollup.priced_items += guild.priced_items;
+            rollup.total_items += guild.total_items;
+        }
+    }
+
+    total.players = players.into_values().collect();
+    total
+        .players
+        .sort_by(|left, right| right.estimated_loss.cmp(&left.estimated_loss));
+    total.guilds = guilds.into_values().collect();
+    total
+        .guilds
+        .sort_by(|left, right| right.estimated_loss.cmp(&left.estimated_loss));
+    Ok(total)
 }
 
 /// Builds loot/economy rollups from splits attached to an event.
@@ -589,6 +665,7 @@ impl EventService {
             .map_err(AppError::Database)?;
         let battle_rows = Self::apply_read_context_to_battles(battle_rows, context);
         let stats = Self::build_performance_stats(&battle_rows);
+        let estimated_losses = build_event_loss_estimate(db, &battle_rows).await?;
         let battles = battle_rows
             .into_iter()
             .map(Self::to_event_battle_view)
@@ -624,6 +701,7 @@ impl EventService {
             participants: participant_views,
             battles,
             stats,
+            estimated_losses,
             splits,
             split_stats,
         })

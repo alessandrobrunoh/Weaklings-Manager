@@ -11,6 +11,7 @@ export async function handleSelectMenu(
   try {
     if (ns === 'event' && action === 'join_build') {
       const eventId = Number(rest[0]);
+      const messageId = rest[1];
       const buildId = Number(interaction.values[0]);
 
       await interaction.deferUpdate();
@@ -20,6 +21,20 @@ export async function handleSelectMenu(
         { primary_build_id: buildId },
         interaction.user.id,
       );
+
+      if (messageId && interaction.channel) {
+        try {
+          const { buildEventEmbed } = await import('../embeds/event.embed.js');
+          const updatedEvent = await api.get<any>(`api/events/${eventId}`, interaction.user.id);
+          const embed = buildEventEmbed(updatedEvent);
+          const originalMsg = await interaction.channel.messages.fetch(messageId);
+          if (originalMsg) {
+            await originalMsg.edit({ embeds: [embed] });
+          }
+        } catch (e) {
+          console.error('Failed to update original message on join', e);
+        }
+      }
 
       await interaction.editReply({
         content: `✅ You have successfully signed up for event **#${eventId}** with build ID **${buildId}**.`,
