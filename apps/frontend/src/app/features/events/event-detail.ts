@@ -3,6 +3,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
+  BattleSummary,
   BuildRole,
   CompBuildEntry,
   CompDetail,
@@ -296,6 +297,92 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
             {{ t('events.detail.avg_players') }}:
             {{ formatRatio(detail.stats.average_guild_players) }}
           </p>
+        </article>
+      </section>
+
+      <section class="mt-5 grid gap-4 xl:grid-cols-3" aria-label="Event charts">
+        <article class="surface p-4">
+          <header class="event-detail__chart-header">
+            <h2>{{ t('events.detail.battles') }}</h2>
+            <span>{{ detail.stats.total_battles }}</span>
+          </header>
+          <div class="event-detail__donut" [style.--event-detail-chart-angle.deg]="winRateAngle()">
+            <span>{{ formatPercent(detail.stats.win_rate) }}</span>
+          </div>
+          <div class="event-detail__legend">
+            @for (row of outcomeChartRows(); track row.label) {
+              <span><i [style.background]="row.color"></i>{{ row.label }}: {{ row.value }}</span>
+            }
+          </div>
+        </article>
+
+        <article class="surface p-4">
+          <header class="event-detail__chart-header">
+            <h2>{{ t('events.detail.opponents') }}</h2>
+            <span>{{ detail.stats.top_opponents.length }}</span>
+          </header>
+          @if (opponentChartRows().length > 0) {
+            <div class="event-detail__bar-list">
+              @for (row of opponentChartRows(); track row.label) {
+                <div class="event-detail__bar-row">
+                  <div class="event-detail__bar-label">
+                    <span>{{ row.label }}</span>
+                    <strong>{{ formatCompact(row.value) }}</strong>
+                  </div>
+                  <div class="event-detail__fill-bar">
+                    <span [style.width.%]="chartPercent(row.value, opponentChartRows())"></span>
+                  </div>
+                </div>
+              }
+            </div>
+          } @else {
+            <p class="event-detail__empty event-detail__empty--compact">
+              {{ t('events.detail.no_opponents') }}
+            </p>
+          }
+        </article>
+
+        <article class="surface p-4">
+          <header class="event-detail__chart-header">
+            <h2>{{ t('events.detail.participants') }}</h2>
+            <span
+              >{{ participantsTotal() }} /
+              {{ participantsTarget() || detail.active_comp_capacity }}</span
+            >
+          </header>
+          <div class="event-detail__bar-list">
+            @for (row of roleChartRows(); track row.label) {
+              <div class="event-detail__bar-row">
+                <div class="event-detail__bar-label">
+                  <span>{{ row.label }}</span>
+                  <strong>{{ row.value }} / {{ row.target || 0 }}</strong>
+                </div>
+                <div class="event-detail__fill-bar">
+                  <span
+                    [style.width.%]="row.target ? fillPercent(row.value, row.target) : 0"
+                  ></span>
+                </div>
+              </div>
+            }
+          </div>
+        </article>
+
+        <article class="surface p-4 xl:col-span-3">
+          <header class="event-detail__chart-header">
+            <h2>{{ t('events.detail.splits') }}</h2>
+            <span>{{ detail.split_stats.total_splits }}</span>
+          </header>
+          <div class="event-detail__status-grid">
+            @for (row of splitStatusChartRows(); track row.label) {
+              <div class="event-detail__status-card">
+                <span>{{ row.label }}</span>
+                <strong>{{ row.value }}</strong>
+                <div class="event-detail__fill-bar">
+                  <span [style.width.%]="chartPercent(row.value, splitStatusChartRows())"></span>
+                </div>
+              </div>
+            }
+          </div>
         </article>
       </section>
 
@@ -808,6 +895,106 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
         gap: 0.5rem;
         padding: 1.25rem 1rem;
       }
+      .event-detail__chart-header {
+        align-items: center;
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1rem;
+      }
+      .event-detail__chart-header h2,
+      .event-detail__chart-header span {
+        color: var(--color-text);
+        font-weight: 700;
+      }
+      .event-detail__donut {
+        --event-detail-chart-angle: 0deg;
+        aspect-ratio: 1;
+        background: conic-gradient(
+          var(--color-success) 0deg var(--event-detail-chart-angle),
+          var(--color-danger) var(--event-detail-chart-angle) 360deg
+        );
+        border-radius: 50%;
+        display: grid;
+        margin: 0 auto 1rem;
+        max-width: 12rem;
+        place-items: center;
+        position: relative;
+      }
+      .event-detail__donut::after {
+        background: var(--color-surface-1);
+        border-radius: inherit;
+        content: '';
+        inset: 22%;
+        position: absolute;
+      }
+      .event-detail__donut span {
+        color: var(--color-text);
+        font-weight: 800;
+        position: relative;
+        z-index: 1;
+      }
+      .event-detail__legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      .event-detail__legend span {
+        align-items: center;
+        color: var(--color-text-secondary);
+        display: inline-flex;
+        font-size: 0.8rem;
+        gap: 0.35rem;
+      }
+      .event-detail__legend i {
+        border-radius: var(--radius-full);
+        display: inline-block;
+        height: 0.625rem;
+        width: 0.625rem;
+      }
+      .event-detail__bar-list {
+        display: grid;
+        gap: 0.85rem;
+      }
+      .event-detail__bar-row {
+        display: grid;
+        gap: 0.35rem;
+      }
+      .event-detail__bar-label {
+        align-items: center;
+        color: var(--color-text-secondary);
+        display: flex;
+        font-size: 0.8rem;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+      .event-detail__bar-label strong {
+        color: var(--color-text);
+      }
+      .event-detail__status-grid {
+        display: grid;
+        gap: 0.75rem;
+        grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+      }
+      .event-detail__status-card {
+        background: var(--color-surface-1);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        display: grid;
+        gap: 0.5rem;
+        padding: 0.875rem;
+      }
+      .event-detail__status-card span {
+        color: var(--color-text-secondary);
+        font-size: 0.8rem;
+      }
+      .event-detail__status-card strong {
+        color: var(--color-text);
+        font-size: 1.25rem;
+      }
+      .event-detail__empty--compact {
+        padding: 0;
+      }
     }
   `,
 })
@@ -833,7 +1020,24 @@ export class EventDetailPage {
   protected readonly draftCompTitle = signal('');
 
   protected readonly showBattleSearch = signal(false);
-  protected readonly battleSearchOptions = signal<SearchDialogOption[]>([]);
+  /** Raw list of guild battles fetched from the backend (unfiltered). */
+  protected readonly battleSearchRaw = signal<SearchDialogOption[]>([]);
+  /** Current text typed into the battle search dialog. */
+  protected readonly battleSearchTerm = signal('');
+  /** Visible options after applying the client-side text filter. */
+  protected readonly battleSearchOptions = computed<SearchDialogOption[]>(() => {
+    const term = this.battleSearchTerm().trim().toLowerCase();
+    const items = this.battleSearchRaw();
+    if (!term) {
+      return items;
+    }
+    return items.filter(
+      (option) =>
+        option.title.toLowerCase().includes(term) ||
+        (option.subtitle?.toLowerCase().includes(term) ?? false) ||
+        (option.chip?.toLowerCase().includes(term) ?? false),
+    );
+  });
   protected readonly battleSearchLoading = signal(false);
   protected readonly battleLinksSaving = signal(false);
   protected readonly draftBattleLinks = signal<{ id: string; title: string }[]>([]);
@@ -905,11 +1109,53 @@ export class EventDetailPage {
       (group): group is RoleGrouping => !!group,
     );
   });
-  protected readonly participantsTotal = computed(() =>
-    this.participantsByRole().reduce((sum, group) => sum + group.participants.length, 0),
-  );
+  protected readonly participantsTotal = computed(() => this.event()?.participants.length ?? 0);
   protected readonly participantsTarget = computed(() =>
     this.participantsByRole().reduce((sum, group) => sum + group.target, 0),
+  );
+  protected readonly outcomeChartRows = computed<ChartMetric[]>(() => {
+    const stats = this.event()?.stats;
+    if (!stats) {
+      return [];
+    }
+    return [
+      { label: this.t('events.detail.wins'), value: stats.wins, color: 'var(--color-success)' },
+      { label: this.t('events.detail.losses'), value: stats.losses, color: 'var(--color-danger)' },
+    ];
+  });
+  protected readonly opponentChartRows = computed<ChartMetric[]>(() =>
+    (this.event()?.stats.top_opponents ?? []).map((opponent) => ({
+      label: opponent.guild_name || this.t('common.none'),
+      value: Math.max(opponent.opponent_kill_fame, opponent.battles),
+      color: 'var(--color-warning)',
+    })),
+  );
+  protected readonly roleChartRows = computed<ChartMetric[]>(() =>
+    this.participantsByRole().map((group) => ({
+      label: this.t(this.roleLabel(group.role)),
+      value: group.participants.length,
+      target: group.target,
+      color: 'var(--color-info)',
+    })),
+  );
+  protected readonly splitStatusChartRows = computed<ChartMetric[]>(() => {
+    const stats = this.event()?.split_stats;
+    if (!stats) {
+      return [];
+    }
+    return [
+      { label: 'Pending', value: stats.pending_splits, color: 'var(--color-warning)' },
+      { label: 'Completed', value: stats.completed_splits, color: 'var(--color-success)' },
+      {
+        label: 'Not completed',
+        value: stats.not_completed_splits,
+        color: 'var(--color-text-secondary)',
+      },
+      { label: 'Lost', value: stats.lost_splits, color: 'var(--color-danger)' },
+    ];
+  });
+  protected readonly winRateAngle = computed(
+    () => ((this.event()?.stats.win_rate ?? 0) / 100) * 360,
   );
 
   // Opponents table columns and trackBy
@@ -1180,25 +1426,28 @@ export class EventDetailPage {
   }
 
   protected onBattleSearchFilter(filter: { search: string; dateFrom: string; dateTo: string }) {
-    this.doBattleSearch(filter);
+    // `/api/battles` is guild-scoped and does not accept a search parameter,
+    // so the text filter is applied client-side over the already-loaded
+    // battles. The backend is only hit on dialog open.
+    this.battleSearchTerm.set(filter.search);
+    if (this.battleSearchRaw().length === 0) {
+      void this.loadGuildBattles();
+    }
   }
 
-  private async doBattleSearch(filter: {
-    search: string;
-    dateFrom: string;
-    dateTo: string;
-  }): Promise<void> {
+  private async loadGuildBattles(): Promise<void> {
     this.battleSearchLoading.set(true);
     try {
-      const params: Record<string, string> = {};
-      if (filter.search) params['search'] = filter.search;
-      const data = await firstValueFrom(this.api.get<any>('api/albionbb/battles', params));
-      this.battleSearchOptions.set(
-        (data.items || []).map((b: any) => ({
-          id: b.id,
-          title: `Battle ${b.id}`,
-          subtitle: `${b.total_players} players · ${b.total_kills} kills`,
-          chip: new Date(b.start_time).toLocaleString(),
+      // Use the guild-scoped endpoint: the backend only returns battles
+      // involving the configured Weaklings guild, so members cannot
+      // accidentally link foreign battles to an event.
+      const data = await firstValueFrom(this.api.get<PaginatedData<BattleSummary>>('api/battles'));
+      this.battleSearchRaw.set(
+        data.items.map((battle) => ({
+          id: battle.battle_id,
+          title: `Battle ${battle.battle_id}`,
+          subtitle: `${battle.total_players} players · ${battle.total_kills} kills`,
+          chip: new Date(battle.start_time).toLocaleString(),
         })),
       );
     } catch (err) {
@@ -1546,6 +1795,14 @@ export class EventDetailPage {
     return Math.min(100, Math.round((current / target) * 100));
   }
 
+  protected chartPercent(value: number, rows: readonly ChartMetric[]): number {
+    const maxValue = rows.reduce((max, row) => Math.max(max, row.value), 0);
+    if (maxValue <= 0) {
+      return 0;
+    }
+    return Math.max(4, Math.round((value / maxValue) * 100));
+  }
+
   protected statusChip(status: EventStatus): string {
     if (status === 'live') {
       return 'chip chip--success';
@@ -1570,6 +1827,7 @@ export class EventDetailPage {
         this.api.get<EventDetailView>(`api/events/${this.eventId}`),
       );
       this.event.set(detail);
+      await this.loadActiveComp();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -1678,4 +1936,11 @@ interface RoleGrouping {
   readonly role: BuildRole;
   target: number;
   participants: EventParticipant[];
+}
+
+interface ChartMetric {
+  readonly label: string;
+  readonly value: number;
+  readonly color: string;
+  readonly target?: number;
 }

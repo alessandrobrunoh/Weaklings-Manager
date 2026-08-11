@@ -367,7 +367,7 @@ impl SplitService {
             .filter(ParticipantColumn::SplitId.eq(split_id))
             .exec(&txn)
             .await?;
-        
+
         let active: SplitActiveModel = split.into();
         active.delete(&txn).await?;
 
@@ -413,30 +413,26 @@ impl SplitService {
 
         if let Some(search) = filters.search.as_deref().filter(|s| !s.trim().is_empty()) {
             let pattern = format!("%{}%", search.trim());
-            
+
             let note_cond = sea_orm::sea_query::Expr::expr(sea_orm::sea_query::Func::lower(
-                sea_orm::sea_query::Expr::col(SplitColumn::Note)
+                sea_orm::sea_query::Expr::col(SplitColumn::Note),
             ))
             .like(pattern.to_lowercase());
-            
+
             let user_subquery = sea_orm::sea_query::Query::select()
                 .column(UserColumn::Id)
                 .from(UserEntity)
                 .and_where(
                     sea_orm::sea_query::Expr::expr(sea_orm::sea_query::Func::lower(
-                        sea_orm::sea_query::Expr::col(UserColumn::Username)
+                        sea_orm::sea_query::Expr::col(UserColumn::Username),
                     ))
-                    .like(pattern.to_lowercase())
+                    .like(pattern.to_lowercase()),
                 )
                 .to_owned();
-                
+
             let creator_cond = SplitColumn::CreatedBy.in_subquery(user_subquery);
-            
-            query = query.filter(
-                sea_orm::Condition::any()
-                    .add(note_cond)
-                    .add(creator_cond)
-            );
+
+            query = query.filter(sea_orm::Condition::any().add(note_cond).add(creator_cond));
         }
 
         if let Some(date_from) = &filters.date_from {

@@ -3,11 +3,11 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
+use sea_orm::sea_query::{Expr, Func};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, Set,
 };
-use sea_orm::sea_query::{Expr, Func};
 
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 
@@ -45,6 +45,81 @@ struct OpponentRollup {
     wins: i64,
     guild_kill_fame: i64,
     opponent_kill_fame: i64,
+}
+
+/// Battle-side classification rules for event analytics.
+///
+/// AlbionBB exposes every guild in the fight as a peer, but event stats need to separate our side
+/// from real opponents. The configured guild plus allied guild IDs/names are treated as friendly,
+/// so alliance members do not pollute opponent charts or matchup summaries.
+///
+/// # Example
+/// ```ignore
+/// let context = BattleLinkingContext::new(
+///     "weaklings-id",
+///     &["ally-id".to_string()],
+///     &["BetterGetBack".to_string()],
+/// );
+/// assert!(context.is_friendly_guild("ally-id", "BetterGetBack"));
+/// ```
+#[derive(Debug, Clone)]
+pub struct BattleLinkingContext {
+    guild_id: String,
+    allied_guild_ids: HashSet<String>,
+    allied_guild_names: HashSet<String>,
+}
+
+impl BattleLinkingContext {
+    /// Creates a normalized friendly-guild classifier for a single linking run.
+    ///
+    /// IDs are kept case-sensitive because Albion IDs are opaque. Names are lower-cased to tolerate
+    /// operator input differences in environment variables. The method performs no I/O and is safe
+    /// to construct per request or worker tick.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let context = BattleLinkingContext::new("main", &[], &["BetterGetBack".to_string()]);
+    /// assert!(context.is_friendly_guild("main", "Weaklings"));
+    /// ```
+    #[must_use]
+    pub fn new(guild_id: &str, allied_guild_ids: &[String], allied_guild_names: &[String]) -> Self {
+        Self {
+            guild_id: guild_id.to_string(),
+            allied_guild_ids: allied_guild_ids.iter().cloned().collect(),
+            allied_guild_names: allied_guild_names
+                .iter()
+                .map(|name| name.to_ascii_lowercase())
+                .collect(),
+        }
+    }
+
+    /// Returns `true` when a battle guild belongs to our side.
+    ///
+    /// The configured guild ID always wins, then explicit allied IDs, then normalized names as a
+    /// fallback for partial upstream payloads.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let context = BattleLinkingContext::new("main", &[], &["BetterGetBack".to_string()]);
+    /// assert!(context.is_friendly_guild("", "bettergetback"));
+    /// ```
+    #[must_use]
+    pub fn is_friendly_guild(&self, guild_id: &str, guild_name: &str) -> bool {
+        if guild_id == self.guild_id || self.allied_guild_ids.contains(guild_id) {
+            return true;
+        }
+        if guild_name.trim().is_empty() {
+            return false;
+        }
+        self.allied_guild_names
+            .contains(&guild_name.to_ascii_lowercase())
+    }
+
+    /// Configured Albion guild ID used to query AlbionBB and identify our own guild row.
+    #[must_use]
+    pub fn guild_id(&self) -> &str {
+        &self.guild_id
+    }
 }
 
 /// Compact battle snapshot derived from AlbionBB for event analytics.
@@ -125,12 +200,18 @@ fn build_top_opponents(battle_rows: &[event_battle::Model]) -> Vec<OpponentPerfo
 }
 
 /// Builds the persisted analytics snapshot for a battle summary.
-fn linked_battle_snapshot(battle: &AlbionBbBattleSummary, guild_id: &str) -> LinkedBattleSnapshot {
-    let guild = battle.guilds.iter().find(|guild| guild.id == guild_id);
+fn linked_battle_snapshot(
+    battle: &AlbionBbBattleSummary,
+    context: &BattleLinkingContext,
+) -> LinkedBattleSnapshot {
+    let guild = battle
+        .guilds
+        .iter()
+        .find(|guild| guild.id == context.guild_id());
     let opponent = battle
         .guilds
         .iter()
-        .filter(|guild| guild.id != guild_id)
+        .filter(|guild| !context.is_friendly_guild(&guild.id, &guild.name))
         .max_by_key(|guild| guild.kill_fame)
         .cloned();
 
@@ -364,7 +445,7 @@ impl EventService {
                     sea_orm::Condition::any().add(
                         Expr::expr(Func::lower(Expr::col(event::Column::Title)))
                             .like(pattern.to_lowercase()),
-                    )
+                    ),
                 );
             }
         }
@@ -413,6 +494,35 @@ impl EventService {
         &self,
         db: &DatabaseConnection,
         id: i64,
+    ) -> Result<EventDetailView, AppError> {
+        self.get_event_detail_scoped(db, id, None).await
+    }
+
+    /// Gets event details while applying friendly-guild opponent filtering.
+    ///
+    /// Persisted battle rows may have been linked before alliance configuration existed. Applying
+    /// the context at read time makes existing event analytics correct immediately after operators
+    /// configure allied guild IDs/names, without requiring a destructive relink.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let context = BattleLinkingContext::new("guild-id", &[], &["BetterGetBack".to_string()]);
+    /// let detail = service.get_event_detail_with_context(&db, 1, &context).await?;
+    /// ```
+    pub async fn get_event_detail_with_context(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+        context: &BattleLinkingContext,
+    ) -> Result<EventDetailView, AppError> {
+        self.get_event_detail_scoped(db, id, Some(context)).await
+    }
+
+    async fn get_event_detail_scoped(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+        context: Option<&BattleLinkingContext>,
     ) -> Result<EventDetailView, AppError> {
         let event_model = event::Entity::find_by_id(id)
             .one(db)
@@ -477,6 +587,7 @@ impl EventService {
             .all(db)
             .await
             .map_err(AppError::Database)?;
+        let battle_rows = Self::apply_read_context_to_battles(battle_rows, context);
         let stats = Self::build_performance_stats(&battle_rows);
         let battles = battle_rows
             .into_iter()
@@ -567,6 +678,33 @@ impl EventService {
             events_with_battles,
             stats: Self::build_performance_stats(&battle_rows),
         })
+    }
+
+    /// Clears friendly guilds from persisted opponent fields before producing analytics.
+    fn apply_read_context_to_battles(
+        battle_rows: Vec<event_battle::Model>,
+        context: Option<&BattleLinkingContext>,
+    ) -> Vec<event_battle::Model> {
+        let Some(context) = context else {
+            return battle_rows;
+        };
+
+        battle_rows
+            .into_iter()
+            .map(|mut battle| {
+                let opponent_id = battle.opponent_guild_id.as_deref().unwrap_or_default();
+                let opponent_name = battle.opponent_guild_name.as_deref().unwrap_or_default();
+                if context.is_friendly_guild(opponent_id, opponent_name) {
+                    battle.opponent_guild_id = None;
+                    battle.opponent_guild_name = None;
+                    battle.opponent_players_count = None;
+                    battle.opponent_kills = None;
+                    battle.opponent_deaths = None;
+                    battle.opponent_kill_fame = None;
+                }
+                battle
+            })
+            .collect()
     }
 
     /// Converts a linked battle row into an API view.
@@ -838,7 +976,7 @@ impl EventService {
     pub async fn link_battles_for_event(
         db: &DatabaseConnection,
         albionbb: &AlbionBbService,
-        guild_id: &str,
+        context: &BattleLinkingContext,
         event_id: i64,
     ) -> Result<usize, AppError> {
         let model = event::Entity::find_by_id(event_id)
@@ -861,7 +999,7 @@ impl EventService {
             Self::participant_target_range(participant_count);
 
         let filters = AlbionBbBattlesFilters {
-            guild_id: Some(guild_id.to_string()),
+            guild_id: Some(context.guild_id().to_string()),
             min_players: Some(min_guild_players),
             min_guild_players: Some(min_guild_players),
             page: Some(1),
@@ -887,7 +1025,7 @@ impl EventService {
                 continue;
             }
 
-            let snapshot = linked_battle_snapshot(&battle, guild_id);
+            let snapshot = linked_battle_snapshot(&battle, context);
             if snapshot.guild_players_count < min_guild_players
                 || snapshot.guild_players_count > max_guild_players
             {
@@ -940,8 +1078,13 @@ impl EventService {
     /// # ) -> Result<(), backend::errors::AppError> {
     /// let service = EventService::new();
     /// let request = UpdateEventBattlesRequest { battle_ids: vec!["123456789".to_string()] };
+    /// let context = backend::modules::events::service::BattleLinkingContext::new(
+    ///     "guild-id",
+    ///     &[],
+    ///     &["BetterGetBack".to_string()],
+    /// );
     /// let detail = service
-    ///     .replace_event_battles(db, albionbb, "guild-id", Some("eu"), 1, request)
+    ///     .replace_event_battles(db, albionbb, &context, Some("eu"), 1, request)
     ///     .await?;
     /// # Ok(())
     /// # }
@@ -954,7 +1097,7 @@ impl EventService {
         &self,
         db: &DatabaseConnection,
         albionbb: &AlbionBbService,
-        guild_id: &str,
+        context: &BattleLinkingContext,
         server: Option<&str>,
         event_id: i64,
         req: UpdateEventBattlesRequest,
@@ -975,7 +1118,7 @@ impl EventService {
                 AppError::Validation(format!("Invalid AlbionBB battle id '{battle_id}': {error}"))
             })?;
             let battle = albionbb.get_battle(server, parsed_battle_id).await?.summary;
-            let snapshot = linked_battle_snapshot(&battle, guild_id);
+            let snapshot = linked_battle_snapshot(&battle, context);
             if snapshot.guild_players_count == 0 {
                 return Err(AppError::Validation(format!(
                     "Battle {battle_id} does not include the configured guild"
@@ -1010,7 +1153,8 @@ impl EventService {
         }
 
         Self::finalize_link(db, event_id, false).await?;
-        self.get_event_detail(db, event_id).await
+        self.get_event_detail_with_context(db, event_id, context)
+            .await
     }
 
     /// Returns `true` when the linker should stop polling AlbionBB for this

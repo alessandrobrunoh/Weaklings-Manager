@@ -668,10 +668,10 @@ impl CompService {
                 query = query.filter(
                     sea_orm::Condition::any().add(
                         sea_orm::sea_query::Expr::expr(sea_orm::sea_query::Func::lower(
-                            sea_orm::sea_query::Expr::col(CompColumn::Name)
+                            sea_orm::sea_query::Expr::col(CompColumn::Name),
                         ))
-                        .like(pattern.to_lowercase())
-                    )
+                        .like(pattern.to_lowercase()),
+                    ),
                 );
             }
         }

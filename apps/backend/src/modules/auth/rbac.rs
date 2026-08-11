@@ -138,7 +138,11 @@ fn try_from_session_cookie(parts: &mut Parts) -> Option<UserContext> {
 ///     like the poller, which have no associated user.
 async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, AppError> {
     // Read the bot secret header. Absence means this isn't a bot request at all.
-    let provided_secret = match parts.headers.get("X-Bot-Secret").and_then(|v| v.to_str().ok()) {
+    let provided_secret = match parts
+        .headers
+        .get("X-Bot-Secret")
+        .and_then(|v| v.to_str().ok())
+    {
         Some(s) => s.to_string(),
         None => return Ok(None),
     };
@@ -209,7 +213,9 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
     let is_superadmin = super_admin_id.as_deref() == Some(&discord_id);
 
     // Resolve permissions from the role cache
-    let perms = parts.extensions.get::<super::permission_cache::Permissions>();
+    let perms = parts
+        .extensions
+        .get::<super::permission_cache::Permissions>();
     let _permissions = if let Some(perms) = perms {
         let roles = vec![user.role.clone()];
         perms.granted_permissions(is_superadmin, &roles).await
@@ -244,7 +250,6 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
         super_admin_id,
     }))
 }
-
 
 #[cfg(test)]
 mod tests {

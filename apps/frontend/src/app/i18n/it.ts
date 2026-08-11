@@ -89,7 +89,7 @@ export const it: TranslationDict = {
   'dashboard.stat.pending_splits': 'Splits in attesa',
   'dashboard.stat.live_events': 'Eventi live',
   'dashboard.stat.scheduled_events': 'Eventi programmati',
-  'dashboard.stat.linked_members': 'Membri collegati',
+  'dashboard.stat.guild_paid': 'Pagato dalla gilda',
   'dashboard.stat.completed_splits': 'Splits completati',
 
   'bank.title': 'Banca della Gilda',
@@ -104,6 +104,14 @@ export const it: TranslationDict = {
   'bank.view.guild': 'Richieste Gilda',
   'bank.transactions.title': 'Cronologia transazioni',
   'bank.transactions.empty': 'Nessuna transazione ancora.',
+  'bank.status.pending': 'In attesa',
+  'bank.status.requested': 'In attesa di pagamento',
+  'bank.status.withdrawn': 'Pagato',
+  'bank.actions.accept_single': 'Accetta',
+  'bank.actions.reject_single': 'Rifiuta',
+  'bank.actions.accept_title': 'Accetta questa richiesta di prelievo',
+  'bank.actions.reject_title': 'Rifiuta questa richiesta di prelievo',
+  'bank.actions.none': '—',
 
   'splits.title': 'Splits del bottino',
   'splits.subtitle': 'Distribuisci il bottino equamente tra i partecipanti.',

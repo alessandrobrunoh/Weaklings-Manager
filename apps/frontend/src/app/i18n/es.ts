@@ -89,7 +89,7 @@ export const es: TranslationDict = {
   'dashboard.stat.pending_splits': 'Repartos pendientes',
   'dashboard.stat.live_events': 'Eventos en directo',
   'dashboard.stat.scheduled_events': 'Eventos programados',
-  'dashboard.stat.linked_members': 'Miembros enlazados',
+  'dashboard.stat.guild_paid': 'Pagado por la hermandad',
   'dashboard.stat.completed_splits': 'Repartos completados',
 
   'bank.title': 'Banco de la Hermandad',
@@ -104,6 +104,14 @@ export const es: TranslationDict = {
   'bank.view.guild': 'Peticiones del Gremio',
   'bank.transactions.title': 'Historial de transacciones',
   'bank.transactions.empty': 'Aún no hay transacciones.',
+  'bank.status.pending': 'Pendiente',
+  'bank.status.requested': 'Esperando pago',
+  'bank.status.withdrawn': 'Pagado',
+  'bank.actions.accept_single': 'Aceptar',
+  'bank.actions.reject_single': 'Rechazar',
+  'bank.actions.accept_title': 'Aceptar este retiro',
+  'bank.actions.reject_title': 'Rechazar este retiro',
+  'bank.actions.none': '—',
 
   'splits.title': 'Repartos de botín',
   'splits.subtitle': 'Reparte el botín de forma justa entre los participantes.',

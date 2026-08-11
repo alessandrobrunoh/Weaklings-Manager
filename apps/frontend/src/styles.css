@@ -230,6 +230,34 @@
     background-color: #b3261e;
   }
 
+  /* Compact button variant for in-cell actions (tables, dense toolbars). */
+  .btn--sm {
+    min-height: 32px;
+    padding: 0.25rem 0.625rem;
+    font-size: 0.8125rem;
+    border-radius: var(--radius-sm);
+    gap: 0.375rem;
+  }
+
+  /* Compact icon-only button: square, no padding, accessible hit area. */
+  .btn--icon {
+    min-height: 32px;
+    min-width: 32px;
+    padding: 0;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Status-tinted text helpers for inline emphasis inside chips/buttons. */
+  .text-success {
+    color: var(--color-success);
+  }
+  .text-warning {
+    color: var(--color-warning);
+  }
+  .text-error {
+    color: var(--color-error);
+  }
+
   .input,
   .select,
   .textarea {
@@ -278,6 +306,10 @@
     font-weight: 500;
   }
 
+  .chip--info {
+    background-color: var(--color-surface-2);
+    color: var(--color-text-secondary);
+  }
   .chip--success {
     background-color: var(--color-success-container);
     color: var(--color-success);
@@ -289,6 +321,28 @@
   .chip--error {
     background-color: var(--color-error-container);
     color: var(--color-error);
+  }
+
+  /* Semantic outline variants for tinted action buttons (accept/reject). */
+  .btn--success {
+    background-color: var(--color-success-container);
+    color: var(--color-success);
+    border-color: color-mix(in srgb, var(--color-success) 35%, transparent);
+  }
+  .btn--success:hover:not(:disabled) {
+    background-color: color-mix(
+      in srgb,
+      var(--color-success-container) 65%,
+      var(--color-surface-1)
+    );
+  }
+  .btn--error {
+    background-color: var(--color-error-container);
+    color: var(--color-error);
+    border-color: color-mix(in srgb, var(--color-error) 35%, transparent);
+  }
+  .btn--error:hover:not(:disabled) {
+    background-color: color-mix(in srgb, var(--color-error-container) 65%, var(--color-surface-1));
   }
 
   /* Table */

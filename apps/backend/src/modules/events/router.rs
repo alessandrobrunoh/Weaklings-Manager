@@ -20,7 +20,7 @@ use super::models::{
     CreateEventRequest, EventDetailView, EventFilters, EventView, ParticipateEventRequest,
     UpdateEventBattlesRequest, UpdateEventRequest,
 };
-use super::service::EventService;
+use super::service::{BattleLinkingContext, EventService};
 use crate::modules::albionbb::client::normalize_server;
 use crate::modules::albionbb::service::AlbionBbService;
 
@@ -96,10 +96,18 @@ async fn list_events(
 async fn get_event(
     _user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     let service = EventService::new();
-    let event = service.get_event_detail(&db, id).await?;
+    let context = BattleLinkingContext::new(
+        &cfg.albion_guild_id,
+        &cfg.albion_allied_guild_ids(),
+        &cfg.albion_allied_guild_names(),
+    );
+    let event = service
+        .get_event_detail_with_context(&db, id, &context)
+        .await?;
     Ok(Json(ApiResponse::new(event)))
 }
 
@@ -345,10 +353,18 @@ async fn stop_event(
 async fn list_event_battles(
     _user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     let service = EventService::new();
-    let detail = service.get_event_detail(&db, id).await?;
+    let context = BattleLinkingContext::new(
+        &cfg.albion_guild_id,
+        &cfg.albion_allied_guild_ids(),
+        &cfg.albion_allied_guild_names(),
+    );
+    let detail = service
+        .get_event_detail_with_context(&db, id, &context)
+        .await?;
     Ok(Json(ApiResponse::new(detail)))
 }
 
@@ -386,8 +402,13 @@ async fn replace_event_battles(
     user.require(&perms, Permission::EventsManage).await?;
     let service = EventService::new();
     let server = normalize_server(Some(&cfg.albion_api_region));
+    let context = BattleLinkingContext::new(
+        &cfg.albion_guild_id,
+        &cfg.albion_allied_guild_ids(),
+        &cfg.albion_allied_guild_names(),
+    );
     let detail = service
-        .replace_event_battles(&db, &albionbb, &cfg.albion_guild_id, Some(&server), id, req)
+        .replace_event_battles(&db, &albionbb, &context, Some(&server), id, req)
         .await?;
     Ok(Json(ApiResponse::new(detail)))
 }

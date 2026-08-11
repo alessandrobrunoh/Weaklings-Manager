@@ -64,6 +64,16 @@ pub struct ApiResponseBalanceSummary {
     pub data: crate::modules::bank::models::BalanceSummary,
 }
 
+/// `OpenAPI` schema wrapper for `GuildBankSummary` response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseGuildBankSummary {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The guild-wide payout aggregate payload.
+    pub data: crate::modules::bank::models::GuildBankSummary,
+}
+
 /// `OpenAPI` schema wrapper for a list-of-`TransactionView` response (the withdrawal
 /// request/accept endpoints return the transactions they just touched, not paginated).
 #[derive(Debug, Serialize, ToSchema)]

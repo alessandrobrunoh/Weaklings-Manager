@@ -6,10 +6,10 @@ import type {
   BalanceSummary,
   EventStatus,
   EventView,
+  GuildBankSummary,
   PaginatedData,
   SplitStatus,
   SplitSummary,
-  UserProfile,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
@@ -244,11 +244,11 @@ export class Dashboard {
   protected readonly translate = inject(TranslateService);
 
   protected readonly bankBalance = signal<BalanceSummary | null>(null);
+  protected readonly guildSummary = signal<GuildBankSummary | null>(null);
   protected readonly pendingSplitCount = signal<number | null>(null);
   protected readonly completedSplitCount = signal<number | null>(null);
   protected readonly liveEventCount = signal<number | null>(null);
   protected readonly scheduledEventCount = signal<number | null>(null);
-  protected readonly memberCount = signal<number | null>(null);
 
   protected readonly recentEvents = signal<ReadonlyArray<EventView>>([]);
   protected readonly recentSplits = signal<ReadonlyArray<SplitSummary>>([]);
@@ -313,11 +313,12 @@ export class Dashboard {
       hint: () => this.translate.t('dashboard.stat.scheduled_events'),
     },
     {
-      labelKey: 'dashboard.stat.linked_members',
-      icon: 'users',
-      tone: 'neutral',
-      value: () => this.formatCount(this.memberCount()),
-      hint: () => this.translate.t('nav.users'),
+      labelKey: 'dashboard.stat.guild_paid',
+      icon: 'bank',
+      tone: 'primary',
+      value: () => this.formatNumber(this.guildSummary()?.paid_total ?? null),
+      hint: () =>
+        this.formatCountHint(this.guildSummary()?.paid_count ?? null, 'dashboard.stat.guild_paid'),
     },
   ];
 
@@ -336,9 +337,10 @@ export class Dashboard {
   }
 
   private async loadSnapshot(): Promise<void> {
-    const [balance, pendingSplits, completedSplits, events, recentSplits, members] =
+    const [balance, guildSummary, pendingSplits, completedSplits, events, recentSplits] =
       await Promise.allSettled([
         firstValueFrom(this.api.get<BalanceSummary>('api/bank/balance')),
+        firstValueFrom(this.api.get<GuildBankSummary>('api/bank/guild/summary')),
         firstValueFrom(
           this.api.get<PaginatedData<SplitSummary>>('api/splits', {
             status: 'pending',
@@ -359,13 +361,13 @@ export class Dashboard {
         firstValueFrom(
           this.api.get<PaginatedData<SplitSummary>>('api/splits', { page: 1, limit: 5 }),
         ),
-        firstValueFrom(
-          this.api.get<PaginatedData<UserProfile>>('api/users', { page: 1, limit: 1 }),
-        ),
       ]);
 
     if (balance.status === 'fulfilled') {
       this.bankBalance.set(balance.value);
+    }
+    if (guildSummary.status === 'fulfilled') {
+      this.guildSummary.set(guildSummary.value);
     }
     if (pendingSplits.status === 'fulfilled') {
       this.pendingSplitCount.set(pendingSplits.value.total_items);
@@ -381,9 +383,6 @@ export class Dashboard {
     }
     if (recentSplits.status === 'fulfilled') {
       this.recentSplits.set(recentSplits.value.items);
-    }
-    if (members.status === 'fulfilled') {
-      this.memberCount.set(members.value.total_items);
     }
   }
 

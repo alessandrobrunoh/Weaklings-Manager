@@ -22,7 +22,7 @@ use battle_linker::refresh_pending_links;
 use crate::config::Config;
 use crate::errors::AppError;
 use crate::modules::albionbb::service::AlbionBbService;
-use crate::modules::events::service::EventService;
+use crate::modules::events::service::{BattleLinkingContext, EventService};
 
 /// Tick interval for the worker. Short enough that auto-stop latency stays
 /// within tens of seconds, long enough not to hammer the DB.
@@ -59,6 +59,11 @@ async fn run_cycle(
     cfg: &Config,
 ) -> Result<(), AppError> {
     auto_stop_expired_sessions(db, &EventService::new()).await?;
-    refresh_pending_links(db, albionbb, &cfg.albion_guild_id).await?;
+    let context = BattleLinkingContext::new(
+        &cfg.albion_guild_id,
+        &cfg.albion_allied_guild_ids(),
+        &cfg.albion_allied_guild_names(),
+    );
+    refresh_pending_links(db, albionbb, &context).await?;
     Ok(())
 }

@@ -9,7 +9,7 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use crate::errors::AppError;
 use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::events::entities::event;
-use crate::modules::events::service::EventService;
+use crate::modules::events::service::{BattleLinkingContext, EventService};
 
 /// Re-links battles for every session still awaiting linkage.
 ///
@@ -19,12 +19,12 @@ use crate::modules::events::service::EventService;
 ///
 /// # Example
 /// ```ignore
-/// refresh_pending_links(&db, &albionbb, &cfg.albion_guild_id).await?;
+/// refresh_pending_links(&db, &albionbb, &context).await?;
 /// ```
 pub async fn refresh_pending_links(
     db: &DatabaseConnection,
     albionbb: &AlbionBbService,
-    guild_id: &str,
+    context: &BattleLinkingContext,
 ) -> Result<(), AppError> {
     let pending_sessions = event::Entity::find()
         .filter(
@@ -41,7 +41,7 @@ pub async fn refresh_pending_links(
             finalize_expired_link(db, session.id).await;
             continue;
         }
-        link_or_retry(db, albionbb, guild_id, session.id).await;
+        link_or_retry(db, albionbb, context, session.id).await;
     }
 
     Ok(())
@@ -58,10 +58,10 @@ async fn finalize_expired_link(db: &DatabaseConnection, event_id: i64) {
 async fn link_or_retry(
     db: &DatabaseConnection,
     albionbb: &AlbionBbService,
-    guild_id: &str,
+    context: &BattleLinkingContext,
     event_id: i64,
 ) {
-    match EventService::link_battles_for_event(db, albionbb, guild_id, event_id).await {
+    match EventService::link_battles_for_event(db, albionbb, context, event_id).await {
         Ok(new_count) => {
             tracing::debug!(event_id = event_id, new_battles = new_count, "link tick");
         }

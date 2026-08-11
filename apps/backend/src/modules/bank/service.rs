@@ -18,8 +18,8 @@ use crate::pagination::{PaginatedData, PaginationParams};
 
 use super::entities::{ActiveModel, Column, Entity as TransactionEntity, Model};
 use super::models::{
-    AcceptWithdrawalRequest, BalanceSummary, RejectWithdrawalRequest, TransactionFilters,
-    TransactionView, WithdrawRequest,
+    AcceptWithdrawalRequest, BalanceSummary, GuildBankSummary, RejectWithdrawalRequest,
+    TransactionFilters, TransactionView, WithdrawRequest,
 };
 use super::status::TransactionStatus;
 
@@ -37,16 +37,28 @@ async fn to_views_with_usernames(
 ) -> Result<Vec<TransactionView>, AppError> {
     let from_user_ids: Vec<i64> = models.iter().filter_map(|m| m.from_user_id).collect();
     let to_user_ids: Vec<i64> = models.iter().map(|m| m.to_user_id).collect();
-    
-    let all_user_ids: Vec<i64> = from_user_ids.iter().chain(to_user_ids.iter()).copied().collect();
+
+    let all_user_ids: Vec<i64> = from_user_ids
+        .iter()
+        .chain(to_user_ids.iter())
+        .copied()
+        .collect();
     let user_map = crate::modules::users::display_name::resolve_by_ids(db, &all_user_ids).await?;
 
     let mut views = Vec::with_capacity(models.len());
     for model in models {
         let status = parse_status(&model)?;
         let from_username = model.from_user_id.and_then(|id| user_map.get(&id).cloned());
-        let to_username = user_map.get(&model.to_user_id).cloned().unwrap_or_else(|| "Unknown".to_string());
-        views.push(TransactionView::from_model(model, status, from_username, to_username));
+        let to_username = user_map
+            .get(&model.to_user_id)
+            .cloned()
+            .unwrap_or_else(|| "Unknown".to_string());
+        views.push(TransactionView::from_model(
+            model,
+            status,
+            from_username,
+            to_username,
+        ));
     }
 
     Ok(views)
@@ -100,6 +112,34 @@ impl BankService {
         })
     }
 
+    /// Computes the guild-wide aggregate of settled (`withdrawn`) payouts.
+    ///
+    /// Unlike `get_balance`, this is intentionally global: the dashboard surfaces it as
+    /// a single "how much the guild has paid out" metric, with no per-member breakdown
+    /// leaking through (only the aggregate total and count are returned).
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::Database` if the query fails.
+    pub async fn get_guild_summary(
+        &self,
+        db: &DatabaseConnection,
+    ) -> Result<GuildBankSummary, AppError> {
+        let withdrawn = TransactionEntity::find()
+            .filter(Column::Status.eq(TransactionStatus::Withdrawn.to_string()))
+            .all(db)
+            .await?;
+
+        let paid_total = withdrawn
+            .iter()
+            .fold(Decimal::ZERO, |acc, tx| acc + tx.amount);
+
+        Ok(GuildBankSummary {
+            paid_total,
+            paid_count: withdrawn.len() as u64,
+        })
+    }
+
     /// Lists paginated transactions owed to a user, optionally filtered by status.
     ///
     /// # Errors
@@ -113,7 +153,7 @@ impl BankService {
         filters: &TransactionFilters,
     ) -> Result<PaginatedData<TransactionView>, AppError> {
         let mut query = TransactionEntity::find();
-        
+
         if let Some(uid) = user_id {
             query = query.filter(Column::ToUserId.eq(uid));
         }

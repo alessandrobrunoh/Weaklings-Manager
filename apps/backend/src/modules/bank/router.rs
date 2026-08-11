@@ -12,10 +12,14 @@ use axum::{
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedTransactionView, PaginationParams};
-use crate::responses::{ApiResponse, ApiResponseBalanceSummary, ApiResponseTransactionViewList};
+use crate::responses::{
+    ApiResponse, ApiResponseBalanceSummary, ApiResponseGuildBankSummary,
+    ApiResponseTransactionViewList,
+};
 
 use super::models::{
-    AcceptWithdrawalRequest, RejectWithdrawalRequest, TransactionFilters, TransactionView, WithdrawRequest,
+    AcceptWithdrawalRequest, RejectWithdrawalRequest, TransactionFilters, TransactionView,
+    WithdrawRequest,
 };
 use super::service::BankService;
 
@@ -59,6 +63,7 @@ impl ListTransactionsQuery {
 pub fn router() -> Router {
     Router::new()
         .route("/balance", get(get_balance))
+        .route("/guild/summary", get(get_guild_summary))
         .route("/transactions", get(list_transactions))
         .route("/transactions/withdraw", post(withdraw))
         .route("/transactions/withdraw/accept", post(accept_withdrawal))
@@ -117,6 +122,31 @@ async fn get_balance(
     let service = BankService::new();
     let balance = service.get_balance(&db, target).await?;
     Ok(Json(ApiResponse::new(balance)))
+}
+
+/// Retrieve the guild-wide aggregate of all settled Guild Bank payouts.
+///
+/// Returns only the aggregate `paid_total`/`paid_count` (sum over every member's
+/// `withdrawn` transactions), so it does not expose any per-member data and is safe
+/// to surface on every authenticated member's dashboard.
+#[utoipa::path(
+    get,
+    path = "/api/bank/guild/summary",
+    tag = "bank",
+    summary = "Get the guild-wide total the Guild Bank has paid out",
+    description = "Computes the sum and count of every `withdrawn` transaction across the entire \n        guild — i.e. silver the officers have already settled. `BalanceSummary` only exposes the \n        `pending`/`requested` totals per user, so this endpoint exists for the dashboard's \n        \"how much the guild has paid in total\" metric. Returns an aggregate; no individual \n        member balances leak through, so any authenticated member may call it.",
+    security(("session_cookie" = [])),
+    responses(
+        (status = 200, description = "Guild summary retrieved successfully", body = ApiResponseGuildBankSummary)
+    )
+)]
+async fn get_guild_summary(
+    _user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<super::models::GuildBankSummary>>, AppError> {
+    let service = BankService::new();
+    let summary = service.get_guild_summary(&db).await?;
+    Ok(Json(ApiResponse::new(summary)))
 }
 
 /// List the caller's transactions with pagination and optional status filtering.

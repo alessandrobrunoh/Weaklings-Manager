@@ -97,7 +97,7 @@ export const en = {
   'dashboard.stat.pending_splits': 'Pending splits',
   'dashboard.stat.live_events': 'Live events',
   'dashboard.stat.scheduled_events': 'Scheduled events',
-  'dashboard.stat.linked_members': 'Linked members',
+  'dashboard.stat.guild_paid': 'Guild paid out',
   'dashboard.stat.completed_splits': 'Completed splits',
 
   // Bank
@@ -113,6 +113,14 @@ export const en = {
   'bank.view.guild': 'Guild Requests',
   'bank.transactions.title': 'Transaction history',
   'bank.transactions.empty': 'No transactions yet.',
+  'bank.status.pending': 'Pending',
+  'bank.status.requested': 'Awaiting payout',
+  'bank.status.withdrawn': 'Paid out',
+  'bank.actions.accept_single': 'Accept',
+  'bank.actions.reject_single': 'Reject',
+  'bank.actions.accept_title': 'Accept this withdrawal',
+  'bank.actions.reject_title': 'Reject this withdrawal',
+  'bank.actions.none': '—',
 
   // Splits
   'splits.title': 'Loot Splits',

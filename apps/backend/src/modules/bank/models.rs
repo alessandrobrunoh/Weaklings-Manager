@@ -95,6 +95,22 @@ pub struct BalanceSummary {
     pub requested_count: u64,
 }
 
+/// Guild-wide aggregate of paid-out Guild Bank transactions.
+///
+/// Lives apart from `BalanceSummary` because the latter is per-user and only covers
+/// `pending`/`requested` states — it intentionally excludes the `withdrawn` ledger
+/// that officers have already settled. This struct surfaces that hidden total so the
+/// dashboard can show "how much the guild has actually paid out".
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct GuildBankSummary {
+    /// Total silver the Guild Bank has paid out across all members (status `withdrawn`).
+    #[schema(value_type = String, example = "12_480.50")]
+    pub paid_total: Decimal,
+    /// Number of `withdrawn` transactions contributing to `paid_total`.
+    #[schema(example = 87)]
+    pub paid_count: u64,
+}
+
 /// Filters that can be applied when listing transactions.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct TransactionFilters {

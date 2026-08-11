@@ -48,7 +48,10 @@ impl ListSplitsQuery {
 pub fn router() -> Router {
     Router::new()
         .route("/", get(list_splits).post(create_split))
-        .route("/{id}", get(get_split).patch(update_split).delete(delete_split))
+        .route(
+            "/{id}",
+            get(get_split).patch(update_split).delete(delete_split),
+        )
         .route("/{id}/participants", post(add_or_update_participant))
         .route(
             "/{id}/participants/{user_id}",

@@ -40,6 +40,12 @@ pub struct Config {
     pub albion_api_region: String,
     /// The Albion Online guild ID whose roster is used for self-service player linking.
     pub albion_guild_id: String,
+    /// Comma-separated Albion guild IDs that fight on our side and must not be counted as opponents.
+    #[serde(default)]
+    pub albion_allied_guild_ids: String,
+    /// Comma-separated Albion guild names used as a fallback when an upstream battle omits guild IDs.
+    #[serde(default)]
+    pub albion_allied_guild_names: String,
     /// Mistral AI API key, used by the `/utils/ocr` endpoint to extract text from images.
     pub mistral_api_key: String,
     /// Base URL for the AlbionBB API. Defaults to the public endpoint.
@@ -81,4 +87,56 @@ impl Config {
     pub fn from_env() -> Self {
         envy::from_env().expect("Failed to parse config from environment")
     }
+
+    /// Parses optional comma-separated allied guild IDs without forcing deployment-specific state
+    /// into the codebase.
+    ///
+    /// The value comes from `ALBION_ALLIED_GUILD_IDS`, for example
+    /// `guild-id-1,guild-id-2`. Empty items are ignored so operators can keep readable env files.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let allied_ids = cfg.albion_allied_guild_ids();
+    /// assert!(allied_ids.iter().any(|id| id == "guild-id-1"));
+    /// ```
+    #[must_use]
+    pub fn albion_allied_guild_ids(&self) -> Vec<String> {
+        split_csv(&self.albion_allied_guild_ids)
+    }
+
+    /// Parses optional comma-separated allied guild names as a fallback for incomplete upstream
+    /// battle payloads.
+    ///
+    /// IDs are preferred because names can change, but AlbionBB can occasionally omit IDs in
+    /// summary rows. Keeping names configurable prevents allies from leaking into opponent charts.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let allied_names = cfg.albion_allied_guild_names();
+    /// assert!(allied_names.iter().any(|name| name == "BetterGetBack"));
+    /// ```
+    #[must_use]
+    pub fn albion_allied_guild_names(&self) -> Vec<String> {
+        split_csv(&self.albion_allied_guild_names)
+    }
+}
+
+/// Normalizes comma-separated env values while preserving the original item spelling.
+///
+/// This helper avoids allocating empty tokens and keeps configuration parsing consistent across
+/// IDs and names. It performs no I/O and is safe to call from any thread.
+///
+/// # Example
+/// ```ignore
+/// let items = split_csv("a, b,,c");
+/// assert_eq!(items, vec!["a", "b", "c"]);
+/// ```
+#[must_use]
+fn split_csv(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
 }

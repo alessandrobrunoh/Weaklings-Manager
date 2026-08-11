@@ -14,9 +14,11 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
+import type { IconName } from '../../shared/components/icon/icon';
 
 const TRANSACTIONS_LOAD_LIMIT = 1000;
 
@@ -30,7 +32,44 @@ const TRANSACTIONS_LOAD_LIMIT = 1000;
 @Component({
   selector: 'app-bank',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Loading, DataTable],
+  imports: [PageHeader, EmptyState, Loading, DataTable, Icon],
+  styles: [
+    `
+      .bank__view-toggle {
+        display: inline-flex;
+        gap: 0.125rem;
+        padding: 0.25rem;
+        border-radius: var(--radius-md);
+        background-color: var(--color-surface-2);
+        border: 1px solid var(--color-border);
+      }
+
+      .bank__view-btn {
+        padding: 0.375rem 0.875rem;
+        border: none;
+        background: transparent;
+        color: var(--color-text-secondary);
+        font-size: 0.8125rem;
+        font-weight: 500;
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        transition:
+          background-color 120ms ease,
+          color 120ms ease;
+      }
+
+      .bank__view-btn:hover:not(.bank__view-btn--active) {
+        color: var(--color-text);
+      }
+
+      .bank__view-btn--active {
+        background-color: var(--color-surface);
+        color: var(--color-text);
+        font-weight: 600;
+        box-shadow: var(--shadow-1);
+      }
+    `,
+  ],
   template: `
     <app-page-header [title]="t('bank.title')" [subtitle]="t('bank.subtitle')">
       @if (viewMode() === 'personal') {
@@ -89,28 +128,19 @@ const TRANSACTIONS_LOAD_LIMIT = 1000;
             {{ t('bank.transactions.title') }}
           </h2>
           @if (canAccept()) {
-            <div
-              class="flex rounded-md border p-1 ml-0 sm:ml-4"
-              style="border-color: var(--color-border)"
-            >
+            <div class="bank__view-toggle">
               <button
-                class="px-3 py-1 text-xs rounded"
-                [class]="
-                  viewMode() === 'personal'
-                    ? 'bg-surface-active font-medium'
-                    : 'text-secondary hover:bg-surface-hover'
-                "
+                type="button"
+                class="bank__view-btn"
+                [class.bank__view-btn--active]="viewMode() === 'personal'"
                 (click)="setViewMode('personal')"
               >
                 {{ t('bank.view.personal') }}
               </button>
               <button
-                class="px-3 py-1 text-xs rounded"
-                [class]="
-                  viewMode() === 'guild'
-                    ? 'bg-surface-active font-medium'
-                    : 'text-secondary hover:bg-surface-hover'
-                "
+                type="button"
+                class="bank__view-btn"
+                [class.bank__view-btn--active]="viewMode() === 'guild'"
                 (click)="setViewMode('guild')"
               >
                 {{ t('bank.view.guild') }}
@@ -146,12 +176,18 @@ const TRANSACTIONS_LOAD_LIMIT = 1000;
           [pageSize]="10"
         >
           <ng-template dataTableCell="status" let-row>
-            <span class="chip" [class]="statusChip(row.status)">
-              {{ row.status }}
+            <span class="chip" [class]="statusChipClass(row.status)">
+              <app-icon [name]="statusIcon(row.status)" size="0.875rem" />
+              {{ statusLabel(row.status) }}
             </span>
           </ng-template>
           <ng-template dataTableCell="amount" let-row>
-            <span style="font-variant-numeric: tabular-nums">
+            <span
+              class="font-semibold"
+              [class.text-success]="row.status === 'withdrawn'"
+              [class.text-warning]="row.status === 'requested'"
+              style="font-variant-numeric: tabular-nums"
+            >
               {{ formatAmount(row.amount) }}
             </span>
           </ng-template>
@@ -161,21 +197,42 @@ const TRANSACTIONS_LOAD_LIMIT = 1000;
             </span>
           </ng-template>
           <ng-template dataTableCell="to_username" let-row>
-            <span class="font-medium text-sm">{{ row.to_username }}</span>
+            <div class="flex items-center gap-2">
+              <span
+                class="inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold"
+                style="
+                  background-color: var(--color-primary-container);
+                  color: var(--color-primary);
+                "
+                >{{ row.to_username.charAt(0).toUpperCase() }}</span
+              >
+              <span class="font-medium text-sm">{{ row.to_username }}</span>
+            </div>
           </ng-template>
           <ng-template dataTableCell="actions" let-row>
-            @if (row.status === 'requested') {
-              <div class="flex gap-2 justify-end">
+            @if (row.status === 'requested' && canAccept()) {
+              <div class="flex justify-end gap-1">
                 <button
-                  class="btn btn--outline btn--sm text-success"
+                  type="button"
+                  class="btn btn--success btn--icon"
+                  [title]="t('bank.actions.accept_title')"
+                  [attr.aria-label]="t('bank.actions.accept_title')"
                   (click)="acceptSingle(row.id)"
                 >
-                  {{ t('common.accept') }}
+                  <app-icon name="check" size="1rem" />
                 </button>
-                <button class="btn btn--outline btn--sm text-error" (click)="rejectSingle(row.id)">
-                  {{ t('common.reject') }}
+                <button
+                  type="button"
+                  class="btn btn--error btn--icon"
+                  [title]="t('bank.actions.reject_title')"
+                  [attr.aria-label]="t('bank.actions.reject_title')"
+                  (click)="rejectSingle(row.id)"
+                >
+                  <app-icon name="close" size="1rem" />
                 </button>
               </div>
+            } @else {
+              <span style="color: var(--color-text-disabled)">{{ t('bank.actions.none') }}</span>
             }
           </ng-template>
         </app-data-table>
@@ -239,6 +296,7 @@ export class Bank {
           key: 'actions',
           label: 'common.actions',
           sortable: false,
+          align: 'right',
           accessor: () => null,
         },
       ];
@@ -260,6 +318,12 @@ export class Bank {
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   constructor() {
+    // Officers/Admins land directly on the guild-wide request queue so the
+    // accept/reject actions are immediately reachable.
+    if (this.canAccept()) {
+      this.viewMode.set('guild');
+      this.statusFilter.set('requested');
+    }
     void this.load();
   }
 
@@ -278,6 +342,7 @@ export class Bank {
     if (mode === 'guild') {
       this.statusFilter.set('requested');
     }
+    void this.loadTransactions();
   }
 
   protected async requestWithdrawal(): Promise<void> {
@@ -372,16 +437,40 @@ export class Bank {
   }
 
   /** Maps a transaction status to its semantic chip class. */
-  protected statusChip(status: TransactionStatus): string {
+  protected statusChipClass(status: TransactionStatus): string {
     switch (status) {
       case 'pending':
-        return 'chip chip--info';
+        return 'chip--info';
       case 'requested':
-        return 'chip chip--warning';
+        return 'chip--warning';
       case 'withdrawn':
-        return 'chip chip--success';
+        return 'chip--success';
       default:
-        return 'chip';
+        return '';
     }
+  }
+
+  /** Maps a transaction status to a representative icon. */
+  protected statusIcon(status: TransactionStatus): IconName {
+    switch (status) {
+      case 'pending':
+        return 'info';
+      case 'requested':
+        return 'alert';
+      case 'withdrawn':
+        return 'check';
+      default:
+        return 'info';
+    }
+  }
+
+  /** Returns the localized status label shown inside the chip. */
+  protected statusLabel(status: TransactionStatus): string {
+    const keyMap: Record<TransactionStatus, TranslationKey> = {
+      pending: 'bank.status.pending',
+      requested: 'bank.status.requested',
+      withdrawn: 'bank.status.withdrawn',
+    };
+    return this.t(keyMap[status]);
   }
 }

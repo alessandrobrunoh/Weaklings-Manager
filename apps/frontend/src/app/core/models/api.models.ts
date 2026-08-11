@@ -102,6 +102,11 @@ export interface BalanceSummary {
   requested_count: number;
 }
 
+export interface GuildBankSummary {
+  paid_total: number;
+  paid_count: number;
+}
+
 export interface WithdrawRequest {
   transaction_ids?: number[];
   all?: boolean;
