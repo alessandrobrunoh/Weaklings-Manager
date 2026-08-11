@@ -354,7 +354,6 @@ impl SiphonedService {
                 MIN("occurred_at") AS first_seen,
                 MAX("occurred_at") AS last_seen
             FROM unique_entries
-            WHERE LOWER("player_name") = LOWER($1)
             GROUP BY player_key
             "#
         );
