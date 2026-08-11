@@ -355,8 +355,8 @@ impl BankService {
                 Some("TRANSACTION"),
                 Some(updated.id),
                 Some(officer_user_id),
-                Some(serde_json::json!({ 
-                    "status": "withdrawn", 
+                Some(serde_json::json!({
+                    "status": "withdrawn",
                     "from_user_id": officer_user_id,
                     "target_user_id": updated.to_user_id
                 })),
@@ -440,10 +440,10 @@ impl BankService {
                 Some("TRANSACTION"),
                 Some(updated.id),
                 Some(officer_user_id),
-                Some(serde_json::json!({ 
-                    "status": "rejected", 
+                Some(serde_json::json!({
+                    "status": "rejected",
                     "from_user_id": officer_user_id,
-                    "target_user_id": updated.to_user_id 
+                    "target_user_id": updated.to_user_id
                 })),
             )
             .await?;

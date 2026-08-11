@@ -6,7 +6,7 @@ use super::service::{UserFilters, UserProfile, UserService};
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedUserProfile, PaginationParams};
-use crate::responses::{ApiResponse, ApiResponseUserProfile, ApiResponseUserMetrics};
+use crate::responses::{ApiResponse, ApiResponseUserMetrics, ApiResponseUserProfile};
 use axum::{Extension, Json, Router, extract::Query, routing::get};
 
 /// Router query parameters for listing users, combining pagination and filtering.
@@ -98,7 +98,9 @@ async fn get_my_metrics(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<crate::modules::users::service::UserMetrics>>, AppError> {
     let service = UserService::new();
-    let metrics = service.get_metrics(&db, user.user_id as u64, &user.id).await?;
+    let metrics = service
+        .get_metrics(&db, user.user_id as u64, &user.id)
+        .await?;
     Ok(Json(ApiResponse::new(metrics)))
 }
 
