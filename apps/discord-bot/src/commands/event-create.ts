@@ -4,7 +4,7 @@ import {
 } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import type { EventView, CreateEventRequest } from '../api/types.js';
-import { buildEventEmbed, buildEventActionRows } from '../embeds/event.embed.js';
+import { buildEventEmbed, buildEventManageActionRow } from '../embeds/event.embed.js';
 import { createResponseEmbed } from '../embeds/theme.js';
 
 export const data = new SlashCommandBuilder()
@@ -67,18 +67,37 @@ export async function execute(
 
   const event = await api.post<EventView>('api/events', body, interaction.user.id);
 
-  const embed = buildEventEmbed(event);
-  const [row1, row2] = buildEventActionRows(event.id);
-
+  // Acknowledge the command ephemerally
   const noticeEmbed = createResponseEmbed(
     'success',
     'Guild Event Created',
-    `Event **#${event.id}** is now scheduled. Members can sign up using the buttons below.`,
+    `Event **#${event.id}** is now scheduled.`,
     'GUILD EVENT',
   );
+  await interaction.editReply({ embeds: [noticeEmbed] });
 
-  await interaction.editReply({
-    embeds: [noticeEmbed, embed],
-    components: [row1, row2],
+  // Ensure we are in a text channel
+  const channel = interaction.channel;
+  if (!channel || !channel.isTextBased()) return;
+
+  // Send public empty message (no buttons)
+  const ts = Math.floor(new Date(event.event_date_utc).getTime() / 1000);
+  const publicMsg = await channel.send({
+    content: `🔔 **Nuovo Evento Gilda: ${event.title}**\n<t:${ts}:F>`,
+  });
+
+  // Create a thread
+  const thread = await publicMsg.startThread({
+    name: `Event #${event.id} - ${event.title}`,
+    autoArchiveDuration: 1440, // 24 hours
+  });
+
+  // Send the actual COMP inside the thread with the manage button
+  const embed = buildEventEmbed(event);
+  const row = buildEventManageActionRow(event.id);
+
+  await thread.send({
+    embeds: [embed],
+    components: [row],
   });
 }

@@ -109,56 +109,22 @@ export function buildEventSummaryEmbed(
       `• ⚡ \`${status}\` · ⚔️ **${e.comp_name}** · <t:${ts}:R>`,
     ].join('\n');
   });
-
-  embed.setDescription(lines.join('\n\n'));
+  embed.setDescription(lines.join('\n\n'));
   return embed;
 }
 
 // ── Bottoni partecipazione evento ────────────────────────────────────────────
 
-export function buildEventActionRows(
+export function buildEventManageActionRow(
   eventId: number,
-): [ActionRowBuilder<ButtonBuilder>, ActionRowBuilder<ButtonBuilder>] {
-  const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+): ActionRowBuilder<ButtonBuilder> {
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
-      .setCustomId(`event:join:${eventId}:healer`)
-      .setLabel('Healer')
-      .setEmoji('🛡️')
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId(`event:join:${eventId}:tank`)
-      .setLabel('Tank')
-      .setEmoji('🪓')
+      .setCustomId(`event:manage:${eventId}`)
+      .setLabel('Gestisci Partecipazione')
+      .setEmoji('📋')
       .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId(`event:join:${eventId}:dps`)
-      .setLabel('DPS')
-      .setEmoji('⚔️')
-      .setStyle(ButtonStyle.Danger),
-    new ButtonBuilder()
-      .setCustomId(`event:join:${eventId}:support`)
-      .setLabel('Support')
-      .setEmoji('✨')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(`event:join:${eventId}:battle_mount`)
-      .setLabel('Battle Mount')
-      .setEmoji('🐴')
-      .setStyle(ButtonStyle.Secondary),
   );
 
-  const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`event:join:${eventId}:brawler`)
-      .setLabel('Brawler')
-      .setEmoji('🥊')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(`event:leave:${eventId}`)
-      .setLabel('Leave Event')
-      .setEmoji('🚪')
-      .setStyle(ButtonStyle.Danger),
-  );
-
-  return [row1, row2];
+  return row;
 }

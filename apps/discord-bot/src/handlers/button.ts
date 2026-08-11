@@ -57,94 +57,100 @@ async function handleEventButton(
   action: string,
   rest: string[],
 ): Promise<void> {
-  if (action === 'join') {
-    const [eventIdStr, role] = rest;
-    const eventId = Number(eventIdStr);
-    const buildRole = role as BuildRole;
-
-    await interaction.deferReply({ flags: ['Ephemeral'] });
-
-    // Fetch the event to get the active comp
-    const event = await api.get<EventDetailView>(`api/events/${eventId}`, interaction.user.id);
-
-    if (!event.active_comp_id) {
-      const errEmbed = createResponseEmbed('error', 'No Active Comp', 'This event has no active composition assigned.', 'GUILD EVENT');
-      await interaction.editReply({ embeds: [errEmbed] });
-      return;
-    }
-
-    // Fetch the comp details to see what builds are available
-    let comp;
-    try {
-      comp = await api.get<CompDetail>(`api/comps/${event.active_comp_id}`, interaction.user.id);
-    } catch (err) {
-      const errEmbed = createResponseEmbed('error', 'Fetch Error', 'Failed to fetch composition details.', 'GUILD EVENT');
-      await interaction.editReply({ embeds: [errEmbed] });
-      return;
-    }
-
-    // Filter builds by the selected role
-    const availableBuilds = comp.builds.filter((b: any) => b.build.role === buildRole);
-
-    if (availableBuilds.length === 0) {
-      const warnEmbed = createResponseEmbed(
-        'warning',
-        'Role Not Required',
-        `The active comp (**${comp.name}**) does not require any **${BUILD_ROLE_LABELS[buildRole] ?? buildRole}** builds.`,
-        'GUILD EVENT',
-      );
-      await interaction.editReply({ embeds: [warnEmbed] });
-      return;
-    }
-
-    const { ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = await import('discord.js');
-
-    const selectMenu = new StringSelectMenuBuilder()
-      .setCustomId(`event:join_build:${eventId}:${interaction.message.id}`)
-      .setPlaceholder('Select your specific build')
-      .addOptions(
-        availableBuilds.map((b: any) =>
-          new StringSelectMenuOptionBuilder()
-            .setLabel(b.build.name)
-            .setDescription(`Requested count: ${b.quantity}`)
-            .setValue(String(b.build_id)),
-        ),
-      );
-
-    const row = new ActionRowBuilder<InstanceType<typeof StringSelectMenuBuilder>>().addComponents(selectMenu);
-
-    const infoEmbed = createResponseEmbed(
-      'info',
-      'Select Specific Build',
-      `🎯 Choose your specific **${BUILD_ROLE_LABELS[buildRole] ?? buildRole}** build for event **#${eventId}**:`,
-      'GUILD EVENT',
-    );
-
-    await interaction.editReply({
-      embeds: [infoEmbed],
-      components: [row],
-    });
-    return;
-  }
-
-  if (action === 'leave') {
+  if (action === 'manage') {
     const [eventIdStr] = rest;
     const eventId = Number(eventIdStr);
 
     await interaction.deferReply({ flags: ['Ephemeral'] });
-    await api.delete(`api/events/${eventId}/participate`, interaction.user.id);
 
+    // Fetch the event to get participants and active comp
+    let event;
     try {
-      const updatedEvent = await api.get<EventDetailView>(`api/events/${eventId}`, interaction.user.id);
-      const embed = buildEventEmbed(updatedEvent);
-      await interaction.message.edit({ embeds: [embed] });
-    } catch (e) {
-      console.error('Failed to update event embed on leave', e);
+      event = await api.get<EventDetailView>(`api/events/${eventId}`, interaction.user.id);
+    } catch (err) {
+      const errEmbed = createResponseEmbed('error', 'Fetch Error', 'Failed to fetch event details.', 'GUILD EVENT');
+      await interaction.editReply({ embeds: [errEmbed] });
+      return;
     }
 
-    const successEmbed = createResponseEmbed('success', 'Left Event', `You have successfully left event **#${eventId}**.`, 'GUILD EVENT');
-    await interaction.editReply({ embeds: [successEmbed] });
-    return;
+    // Check if user is already a participant
+    const isParticipant = event.participants?.some((p: any) => p.discord_id === interaction.user.id);
+
+    if (isParticipant) {
+      // User is already signed up -> Leave
+      try {
+        await api.delete(`api/events/${eventId}/participate`, interaction.user.id);
+        const updatedEvent = await api.get<EventDetailView>(`api/events/${eventId}`, interaction.user.id);
+        const embed = buildEventEmbed(updatedEvent);
+        await interaction.message.edit({ embeds: [embed] });
+
+        const successEmbed = createResponseEmbed('success', 'Left Event', `You have successfully left event **#${eventId}**.`, 'GUILD EVENT');
+        await interaction.editReply({ embeds: [successEmbed] });
+      } catch (e) {
+        console.error('Failed to leave event', e);
+        const errEmbed = createResponseEmbed('error', 'Leave Failed', 'Failed to leave the event.', 'GUILD EVENT');
+        await interaction.editReply({ embeds: [errEmbed] });
+      }
+      return;
+    } else {
+      // User is not signed up -> Join (show roles)
+      if (!event.active_comp_id) {
+        const errEmbed = createResponseEmbed('error', 'No Active Comp', 'This event has no active composition assigned.', 'GUILD EVENT');
+        await interaction.editReply({ embeds: [errEmbed] });
+        return;
+      }
+
+      let comp;
+      try {
+        comp = await api.get<CompDetail>(`api/comps/${event.active_comp_id}`, interaction.user.id);
+      } catch (err) {
+        const errEmbed = createResponseEmbed('error', 'Fetch Error', 'Failed to fetch composition details.', 'GUILD EVENT');
+        await interaction.editReply({ embeds: [errEmbed] });
+        return;
+      }
+
+      // Find all unique roles required by the composition
+      const availableRoles = [...new Set<string>(comp.builds.map((b: any) => b.build.role))] as BuildRole[];
+
+      if (availableRoles.length === 0) {
+        const warnEmbed = createResponseEmbed(
+          'warning',
+          'No Roles Available',
+          `The active comp (**${comp.name}**) does not require any builds.`,
+          'GUILD EVENT',
+        );
+        await interaction.editReply({ embeds: [warnEmbed] });
+        return;
+      }
+
+      const { ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = await import('discord.js');
+
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId(`event:join_role:${eventId}:${interaction.message.id}`)
+        .setPlaceholder('Seleziona il tuo Ruolo')
+        .addOptions(
+          availableRoles.map(role =>
+            new StringSelectMenuOptionBuilder()
+              .setLabel(BUILD_ROLE_LABELS[role] ?? role)
+              .setValue(role)
+          )
+        );
+
+      const row = new ActionRowBuilder<InstanceType<typeof StringSelectMenuBuilder>>().addComponents(selectMenu);
+
+      const infoEmbed = createResponseEmbed(
+        'info',
+        'Select Role',
+        `🎯 Choose your role for event **#${eventId}**:`,
+        'GUILD EVENT',
+      );
+
+      await interaction.editReply({
+        embeds: [infoEmbed],
+        components: [row],
+      });
+      return;
+    }
   }
 
   if (action === 'start') {

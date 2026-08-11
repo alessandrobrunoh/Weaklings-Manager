@@ -866,7 +866,10 @@ mod tests {
             .await
             .unwrap();
 
-        let completed = service.complete_split(&db, split.summary.id).await.unwrap();
+        let completed = service
+            .complete_split(&db, split.summary.id, admin)
+            .await
+            .unwrap();
         assert_eq!(completed.summary.status, SplitStatus::Completed);
 
         let total: Decimal = completed
@@ -901,8 +904,11 @@ mod tests {
             .await
             .unwrap();
 
-        service.complete_split(&db, split.summary.id).await.unwrap();
-        let second = service.complete_split(&db, split.summary.id).await;
+        service
+            .complete_split(&db, split.summary.id, admin)
+            .await
+            .unwrap();
+        let second = service.complete_split(&db, split.summary.id, admin).await;
         assert!(second.is_err());
     }
 
@@ -936,7 +942,7 @@ mod tests {
             .unwrap();
         assert_eq!(closed.summary.status, SplitStatus::NotCompleted);
 
-        let complete_result = service.complete_split(&db, split.summary.id).await;
+        let complete_result = service.complete_split(&db, split.summary.id, admin).await;
         assert!(complete_result.is_err());
     }
 
@@ -967,7 +973,7 @@ mod tests {
         let closed = service.mark_lost(&db, split.summary.id).await.unwrap();
         assert_eq!(closed.summary.status, SplitStatus::Lost);
 
-        let complete_result = service.complete_split(&db, split.summary.id).await;
+        let complete_result = service.complete_split(&db, split.summary.id, admin).await;
         assert!(complete_result.is_err());
     }
 

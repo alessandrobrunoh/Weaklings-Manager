@@ -3,6 +3,10 @@
 use sea_orm_migration::prelude::*;
 
 /// Migration step to extend `events` with session management fields.
+///
+/// Each column is added through its own `ALTER TABLE` because SQLite only supports a single
+/// `ALTER TABLE` action per statement; PostgreSQL tolerates multi-action alters, the in-memory
+/// SQLite used by the test suite does not.
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -14,41 +18,60 @@ impl MigrationTrait for Migration {
         // which would clash with the import from the creating migration.
         let events_tbl = Alias::new("events").into_iden();
 
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(events_tbl.clone())
-                    .add_column(
-                        ColumnDef::new(Alias::new("status"))
-                            .text()
-                            .not_null()
-                            .default("scheduled"),
-                    )
-                    .add_column(ColumnDef::new(Alias::new("started_at")).timestamp_with_time_zone())
-                    .add_column(ColumnDef::new(Alias::new("stopped_at")).timestamp_with_time_zone())
-                    .add_column(
-                        ColumnDef::new(Alias::new("auto_stop_deadline")).timestamp_with_time_zone(),
-                    )
-                    .add_column(
-                        ColumnDef::new(Alias::new("link_status"))
-                            .text()
-                            .not_null()
-                            .default("pending"),
-                    )
-                    .add_column(
-                        ColumnDef::new(Alias::new("link_attempts"))
-                            .big_integer()
-                            .not_null()
-                            .default(0),
-                    )
-                    .add_column(ColumnDef::new(Alias::new("link_last_error")).text())
-                    .add_column(
-                        ColumnDef::new(Alias::new("link_battles_completed_at"))
-                            .timestamp_with_time_zone(),
-                    )
-                    .to_owned(),
-            )
-            .await?;
+        let columns = [
+            (
+                Alias::new("status"),
+                ColumnDef::new(Alias::new("status"))
+                    .text()
+                    .not_null()
+                    .default("scheduled"),
+            ),
+            (
+                Alias::new("started_at"),
+                ColumnDef::new(Alias::new("started_at")).timestamp_with_time_zone(),
+            ),
+            (
+                Alias::new("stopped_at"),
+                ColumnDef::new(Alias::new("stopped_at")).timestamp_with_time_zone(),
+            ),
+            (
+                Alias::new("auto_stop_deadline"),
+                ColumnDef::new(Alias::new("auto_stop_deadline")).timestamp_with_time_zone(),
+            ),
+            (
+                Alias::new("link_status"),
+                ColumnDef::new(Alias::new("link_status"))
+                    .text()
+                    .not_null()
+                    .default("pending"),
+            ),
+            (
+                Alias::new("link_attempts"),
+                ColumnDef::new(Alias::new("link_attempts"))
+                    .big_integer()
+                    .not_null()
+                    .default(0),
+            ),
+            (
+                Alias::new("link_last_error"),
+                ColumnDef::new(Alias::new("link_last_error")).text(),
+            ),
+            (
+                Alias::new("link_battles_completed_at"),
+                ColumnDef::new(Alias::new("link_battles_completed_at")).timestamp_with_time_zone(),
+            ),
+        ];
+
+        for (_, column_def) in columns {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(events_tbl.clone())
+                        .add_column(column_def)
+                        .to_owned(),
+                )
+                .await?;
+        }
 
         manager
             .create_index(
@@ -74,20 +97,26 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(events_tbl)
-                    .drop_column(Alias::new("status"))
-                    .drop_column(Alias::new("started_at"))
-                    .drop_column(Alias::new("stopped_at"))
-                    .drop_column(Alias::new("auto_stop_deadline"))
-                    .drop_column(Alias::new("link_status"))
-                    .drop_column(Alias::new("link_attempts"))
-                    .drop_column(Alias::new("link_last_error"))
-                    .drop_column(Alias::new("link_battles_completed_at"))
-                    .to_owned(),
-            )
-            .await
+        for column in [
+            "status",
+            "started_at",
+            "stopped_at",
+            "auto_stop_deadline",
+            "link_status",
+            "link_attempts",
+            "link_last_error",
+            "link_battles_completed_at",
+        ] {
+            manager
+                .alter_table(
+                    Table::alter()
+                        .table(events_tbl.clone())
+                        .drop_column(Alias::new(column))
+                        .to_owned(),
+                )
+                .await?;
+        }
+
+        Ok(())
     }
 }

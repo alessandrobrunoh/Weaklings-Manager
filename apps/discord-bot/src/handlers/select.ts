@@ -1,5 +1,6 @@
 import { StringSelectMenuInteraction } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
+import type { BuildRole } from '../api/types.js';
 import { createResponseEmbed } from '../embeds/theme.js';
 
 export async function handleSelectMenu(
@@ -10,6 +11,67 @@ export async function handleSelectMenu(
   const [ns, action, ...rest] = parts;
 
   try {
+    if (ns === 'event' && action === 'join_role') {
+      const eventId = Number(rest[0]);
+      const messageId = rest[1];
+      const role = interaction.values[0] as BuildRole;
+
+      await interaction.deferUpdate();
+
+      // Fetch event and comp to get builds for this role
+      let event, comp;
+      try {
+        event = await api.get<any>(`api/events/${eventId}`, interaction.user.id);
+        comp = await api.get<any>(`api/comps/${event.active_comp_id}`, interaction.user.id);
+      } catch (err) {
+        const errEmbed = createResponseEmbed('error', 'Fetch Error', 'Failed to fetch event or comp details.', 'GUILD EVENT');
+        await interaction.editReply({ embeds: [errEmbed], components: [] });
+        return;
+      }
+
+      const availableBuilds = comp.builds.filter((b: any) => b.build.role === role);
+
+      if (availableBuilds.length === 0) {
+        const warnEmbed = createResponseEmbed(
+          'warning',
+          'Role Not Required',
+          `The active comp does not require any **${role}** builds.`,
+          'GUILD EVENT',
+        );
+        await interaction.editReply({ embeds: [warnEmbed], components: [] });
+        return;
+      }
+
+      const { ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = await import('discord.js');
+
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId(`event:join_build:${eventId}:${messageId}`)
+        .setPlaceholder('Seleziona la tua build specifica')
+        .addOptions(
+          availableBuilds.map((b: any) =>
+            new StringSelectMenuOptionBuilder()
+              .setLabel(b.build.name)
+              .setDescription(`Requested count: ${b.quantity}`)
+              .setValue(String(b.build_id)),
+          ),
+        );
+
+      const row = new ActionRowBuilder<InstanceType<typeof StringSelectMenuBuilder>>().addComponents(selectMenu);
+
+      const infoEmbed = createResponseEmbed(
+        'info',
+        'Select Specific Build',
+        `🎯 Choose your specific **${role}** build for event **#${eventId}**:`,
+        'GUILD EVENT',
+      );
+
+      await interaction.editReply({
+        embeds: [infoEmbed],
+        components: [row],
+      });
+      return;
+    }
+
     if (ns === 'event' && action === 'join_build') {
       const eventId = Number(rest[0]);
       const messageId = rest[1];
