@@ -1,10 +1,8 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
 import type { ApiClient } from "../api/client.js";
 import type { EventView, CreateEventRequest } from "../api/types.js";
-import {
-  buildEventEmbed,
-  buildEventManageActionRow,
-} from "../embeds/event.embed.js";
+import { config, getEventRoleId } from "../config.js";
+import { buildEventAnnouncementContent } from "../embeds/event.embed.js";
 import { createResponseEmbed } from "../embeds/theme.js";
 
 export const data = new SlashCommandBuilder()
@@ -93,24 +91,9 @@ export async function execute(
   const channel = interaction.channel;
   if (!channel?.isTextBased() || !("send" in channel)) return;
 
-  // Send public empty message (no buttons)
-  const ts = Math.floor(new Date(event.event_date_utc).getTime() / 1000);
-  const publicMsg = await channel.send({
-    content: `🔔 **Nuovo Evento Gilda: ${event.title}**\n<t:${ts}:F>`,
-  });
-
-  // Create a thread
-  const thread = await publicMsg.startThread({
-    name: `Event #${event.id} - ${event.title}`,
-    autoArchiveDuration: 1440, // 24 hours
-  });
-
-  // Send the actual COMP inside the thread with the manage button
-  const embed = buildEventEmbed(event);
-  const row = buildEventManageActionRow(event.id);
-
-  await thread.send({
-    embeds: [embed],
-    components: [row],
+  const eventRoleId = getEventRoleId(config);
+  await channel.send({
+    content: buildEventAnnouncementContent(event, eventRoleId),
+    allowedMentions: eventRoleId ? { roles: [eventRoleId] } : { parse: [] },
   });
 }

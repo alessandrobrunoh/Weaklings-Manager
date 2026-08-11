@@ -132,6 +132,6 @@ mod tests {
 
     #[test]
     fn all_contains_every_variant() {
-        assert_eq!(Permission::all().len(), 12);
+        assert_eq!(Permission::all().len(), 13);
     }
 }

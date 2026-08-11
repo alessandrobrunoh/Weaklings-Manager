@@ -41,6 +41,54 @@ const MAX_SESSION_DURATION: ChronoDuration = ChronoDuration::hours(3);
 /// re-fetching AlbionBB to absorb the upstream's slow ingestion (~30 minutes).
 const LINK_GRACE_PERIOD: ChronoDuration = ChronoDuration::minutes(45);
 
+/// Formats event announcements for Discord without depending on interactive components.
+///
+/// This keeps backend-created call-to-arms messages visually aligned with bot-created events while
+/// allowing Discord to localize the timestamp per user. The function performs no I/O and only emits
+/// an inert `@Weak` label when no role ID is configured, preventing accidental broad mentions.
+///
+/// # Example
+/// ```ignore
+/// let content = build_event_announcement_content(&event_view, Some("123"));
+/// assert!(content.contains("<@&123>"));
+/// ```
+fn build_event_announcement_content(event_view: &EventView, event_role_id: Option<&str>) -> String {
+    let scheduled_at = format_event_timestamp(&event_view.event_date_utc);
+    let description = event_view
+        .description
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("*No description provided.*");
+    let role_mention = event_role_id
+        .map(|role_id| format!("<@&{role_id}>"))
+        .unwrap_or_else(|| "@Weak".to_string());
+
+    format!(
+        "📌 {} - {}\n\n{}\n\n|| {} ||\n\n---",
+        event_view.title, scheduled_at, description, role_mention
+    )
+}
+
+/// Converts a stored RFC3339 date into Discord's compact localized timestamp tokens.
+///
+/// Invalid timestamps are returned as-is because announcements are best-effort side effects: a
+/// formatting issue should not block event creation or hide the original stored value from officers.
+///
+/// # Example
+/// ```ignore
+/// assert_eq!(format_event_timestamp("2026-08-15T20:00:00Z"), "<t:1786824000:t> | <t:1786824000:d>");
+/// ```
+fn format_event_timestamp(event_date_utc: &str) -> String {
+    match DateTime::parse_from_rfc3339(event_date_utc) {
+        Ok(date) => {
+            let timestamp = date.timestamp();
+            format!("<t:{timestamp}:t> | <t:{timestamp}:d>")
+        }
+        Err(_) => event_date_utc.to_string(),
+    }
+}
+
 /// Incremental accumulator for opponent analytics.
 #[derive(Debug, Clone, Default)]
 struct OpponentRollup {
@@ -919,16 +967,15 @@ impl EventService {
             return;
         };
 
-        let mut message = format!("🚨 **CALL TO ARMS** 🚨\n\n**{}**\n", event_view.title);
-        if let Some(description) = &event_view.description {
-            message.push_str(&format!("*{}*\n", description));
-        }
-        message.push_str(&format!("\n🕐 {}\n", event_view.event_date_utc));
-        message.push_str("\n@everyone");
+        let event_role_id = cfg.discord_event_role_id.as_deref();
+        let message = build_event_announcement_content(event_view, event_role_id);
+        let allowed_mentions = event_role_id
+            .map(|role_id| serde_json::json!({ "roles": [role_id] }))
+            .unwrap_or_else(|| serde_json::json!({ "parse": [] }));
 
         let payload = serde_json::json!({
             "content": message,
-            "allowed_mentions": { "parse": ["everyone"] }
+            "allowed_mentions": allowed_mentions
         });
 
         crate::modules::audit::service::AuditService::send_discord_payload(

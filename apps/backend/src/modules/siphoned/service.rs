@@ -279,6 +279,7 @@ impl SiphonedService {
             .map(|threshold| format!("HAVING SUM(amount) < {threshold}"))
             .unwrap_or_default();
 
+        let (total_deposited, total_withdrawn, net) = balance_aggregates(db);
         let sql = format!(
             r#"
             WITH unique_entries AS (
@@ -294,9 +295,9 @@ impl SiphonedService {
             )
             SELECT
                 MAX(player_name) AS display_name,
-                COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS total_deposited,
-                COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS total_withdrawn,
-                COALESCE(SUM(amount), 0) AS net,
+                {total_deposited},
+                {total_withdrawn},
+                {net},
                 COUNT(*) AS entry_count,
                 MIN("occurred_at") AS first_seen,
                 MAX("occurred_at") AS last_seen
@@ -329,7 +330,9 @@ impl SiphonedService {
     ) -> Result<PlayerBalanceDetail, AppError> {
         let recent = recent.clamp(1, 100);
 
-        let sql = r#"
+        let (total_deposited, total_withdrawn, net) = balance_aggregates(db);
+        let sql = format!(
+            r#"
             WITH unique_entries AS (
                 SELECT
                     LOWER("player_name") AS player_key,
@@ -344,16 +347,18 @@ impl SiphonedService {
             )
             SELECT
                 MAX(player_name) AS display_name,
-                COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS total_deposited,
-                COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS total_withdrawn,
-                COALESCE(SUM(amount), 0) AS net,
+                {total_deposited},
+                {total_withdrawn},
+                {net},
                 COUNT(*) AS entry_count,
                 MIN("occurred_at") AS first_seen,
                 MAX("occurred_at") AS last_seen
             FROM unique_entries
+            WHERE LOWER("player_name") = LOWER($1)
             GROUP BY player_key
-        "#;
-        let statement = build_statement(db, sql, &[text_value(player_name)]);
+            "#
+        );
+        let statement = build_statement(db, &sql, &[text_value(player_name)]);
         let mut rows = PlayerBalanceRow::find_by_statement(statement)
             .all(db)
             .await?;
@@ -609,6 +614,33 @@ fn entries_query(filters: &EntryFilters) -> sea_orm::Select<SiphonedEntryEntity>
     }
 
     q
+}
+
+/// Builds the three balance aggregate expressions (deposits, withdrawals, net).
+///
+/// SQLite's `SUM` over integer-valued `numeric` rows yields an `INTEGER` column that sea-orm's
+/// `Decimal` decoder cannot read (it expects `REAL`), so the values are cast to `REAL` there.
+/// PostgreSQL keeps the exact `numeric` type — the cast is skipped to avoid precision loss.
+fn balance_aggregates(db: &DatabaseConnection) -> (String, String, String) {
+    if db.get_database_backend() == DatabaseBackend::Sqlite {
+        (
+            "CAST(COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS REAL) \
+             AS total_deposited"
+                .to_owned(),
+            "CAST(COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS REAL) \
+             AS total_withdrawn"
+                .to_owned(),
+            "CAST(COALESCE(SUM(amount), 0) AS REAL) AS net".to_owned(),
+        )
+    } else {
+        (
+            "COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS total_deposited"
+                .to_owned(),
+            "COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS total_withdrawn"
+                .to_owned(),
+            "COALESCE(SUM(amount), 0) AS net".to_owned(),
+        )
+    }
 }
 
 /// Builds a parameterized raw SQL statement using the connection's live backend.

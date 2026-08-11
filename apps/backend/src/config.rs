@@ -63,6 +63,8 @@ pub struct Config {
     pub discord_transaction_spam_channel_id: Option<String>,
     /// Discord channel ID where call-to-arms events are announced (optional).
     pub discord_battles_cta_channel_id: Option<String>,
+    /// Discord role ID pinged by event announcements (optional).
+    pub discord_event_role_id: Option<String>,
 }
 
 fn default_backend_port() -> u16 {
