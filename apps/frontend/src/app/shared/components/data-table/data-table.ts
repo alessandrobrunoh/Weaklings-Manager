@@ -14,6 +14,7 @@ import {
 import { TranslateService } from '../../../core/services/translate.service';
 import type { TranslationKey } from '../../../i18n/en';
 import { EmptyState } from '../empty-state/empty-state';
+import { type IconName } from '../icon/icon';
 import { Loading } from '../loading/loading';
 import { DataTableCell } from './data-table-cell';
 export type {
@@ -92,7 +93,7 @@ export class DataTable<T> {
   readonly emptyLabel = input<TranslationKey>('common.empty');
 
   /** Optional empty state icon. */
-  readonly emptyIcon = input<string>('list');
+  readonly emptyIcon = input<IconName>('sparkles');
 
   /** Total number of items in the dataset. Ignored in client mode. */
   readonly totalItems = input<number>(0);
@@ -140,7 +141,7 @@ export class DataTable<T> {
   protected readonly sort = signal<SortState | null>(null);
   protected readonly columnFilters = signal<Readonly<Record<string, string>>>({});
 
-  protected readonly t = (key: TranslationKey) => this.translate.t(key);
+  protected readonly t = (key: TranslationKey | '') => (key === '' ? '' : this.translate.t(key));
 
   constructor() {
     // Synchronise the page size signal with the input.

@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -47,7 +48,7 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
 @Component({
   selector: 'app-comps',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Loading],
+  imports: [RouterLink, PageHeader, EmptyState, Loading],
   template: `
     <app-page-header [title]="t('comps.title')" [subtitle]="t('comps.subtitle')">
       <div class="flex flex-wrap gap-2">
@@ -424,21 +425,39 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
           <article class="card p-5">
             @if (editingItemId() === item.id) {
               <div class="grid gap-3">
-                <input class="input" type="text" [value]="editItemName()" (input)="onEditItemNameChange($event)" placeholder="Name" />
-                <select class="select" [value]="editItemCategoryId()" (change)="onEditItemCategoryIdChange($event)">
+                <input
+                  class="input"
+                  type="text"
+                  [value]="editItemName()"
+                  (input)="onEditItemNameChange($event)"
+                  placeholder="Name"
+                />
+                <select
+                  class="select"
+                  [value]="editItemCategoryId()"
+                  (change)="onEditItemCategoryIdChange($event)"
+                >
                   <option value="">No category</option>
                   @for (category of currentCategories(); track category.id) {
                     <option [value]="category.id">{{ category.name }}</option>
                   }
                 </select>
                 @if (tab() === 'builds') {
-                  <select class="select" [value]="editItemRole()" (change)="onEditItemRoleChange($event)">
+                  <select
+                    class="select"
+                    [value]="editItemRole()"
+                    (change)="onEditItemRoleChange($event)"
+                  >
                     @for (role of roles; track role) {
                       <option [value]="role">{{ roleLabel(role) }}</option>
                     }
                   </select>
                 } @else {
-                  <select class="select" [value]="editItemParentId()" (change)="onEditItemParentIdChange($event)">
+                  <select
+                    class="select"
+                    [value]="editItemParentId()"
+                    (change)="onEditItemParentIdChange($event)"
+                  >
                     <option value="">No parent</option>
                     @for (comp of comps(); track comp.id) {
                       @if (comp.id !== item.id) {
@@ -448,14 +467,31 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
                   </select>
                 }
                 <div class="flex justify-end gap-2 mt-2">
-                  <button type="button" class="btn btn--ghost" (click)="cancelEditItem()">{{ t('common.cancel') }}</button>
-                  <button type="button" class="btn btn--primary" [disabled]="saving()" (click)="saveEditItem(item.id)">{{ t('common.save') }}</button>
+                  <button type="button" class="btn btn--ghost" (click)="cancelEditItem()">
+                    {{ t('common.cancel') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn--primary"
+                    [disabled]="saving()"
+                    (click)="saveEditItem(item.id)"
+                  >
+                    {{ t('common.save') }}
+                  </button>
                 </div>
               </div>
             } @else {
               <header class="mb-3 flex items-start justify-between gap-2">
                 <h3 class="text-base font-semibold" style="color: var(--color-text)">
-                  {{ item.name }}
+                  @if (tab() === 'comps') {
+                    <a class="hover:underline" [routerLink]="['/comps', item.id]">{{
+                      item.name
+                    }}</a>
+                  } @else {
+                    <a class="hover:underline" [routerLink]="['/comps', 'builds', item.id]">{{
+                      item.name
+                    }}</a>
+                  }
                 </h3>
                 <span class="chip">{{ item.category_name || 'No category' }}</span>
               </header>
@@ -485,9 +521,30 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
               }
 
               @if (canCreateCurrent()) {
-                <footer class="mt-4 flex justify-end gap-2 border-t pt-3" style="border-color: var(--color-border)">
-                  <button type="button" class="btn btn--outline" (click)="startEditItem(item)">{{ t('common.edit') }}</button>
-                  <button type="button" class="btn btn--danger" [disabled]="saving()" (click)="deleteItem(item)">{{ t('common.delete') }}</button>
+                <footer
+                  class="mt-4 flex flex-wrap justify-end gap-2 border-t pt-3"
+                  style="border-color: var(--color-border)"
+                >
+                  @if (tab() === 'comps') {
+                    <a class="btn btn--tonal" [routerLink]="['/comps', item.id]">{{
+                      t('common.open')
+                    }}</a>
+                  } @else {
+                    <a class="btn btn--tonal" [routerLink]="['/comps', 'builds', item.id]">{{
+                      t('common.open')
+                    }}</a>
+                  }
+                  <button type="button" class="btn btn--outline" (click)="startEditItem(item)">
+                    {{ t('common.edit') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn--danger"
+                    [disabled]="saving()"
+                    (click)="deleteItem(item)"
+                  >
+                    {{ t('common.delete') }}
+                  </button>
                 </footer>
               }
             }
@@ -1041,7 +1098,7 @@ export class Comps {
     }
     const categoryIdStr = this.editItemCategoryId();
     const categoryId = categoryIdStr ? Number(categoryIdStr) : undefined;
-    
+
     this.saving.set(true);
     try {
       if (this.tab() === 'builds') {

@@ -7,6 +7,7 @@ import type {
   CompBuildEntry,
   CompDetail,
   CompSummary,
+  EventBattleSummary,
   EventDetailView,
   EventParticipant,
   EventStatus,
@@ -25,7 +26,11 @@ import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
-import { SearchDialog, SearchDialogOption } from '../../shared/components/search-dialog/search-dialog';
+import {
+  SearchDialog,
+  SearchDialogOption,
+} from '../../shared/components/search-dialog/search-dialog';
+import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 
 /**
  * Full-page analytics view for a single guild event.
@@ -46,7 +51,7 @@ import { SearchDialog, SearchDialogOption } from '../../shared/components/search
 @Component({
   selector: 'app-event-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EmptyState, Loading, SearchDialog, Icon],
+  imports: [EmptyState, Loading, SearchDialog, Icon, DataTable],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
@@ -147,11 +152,19 @@ import { SearchDialog, SearchDialogOption } from '../../shared/components/search
                 <div class="flex-1 input flex items-center bg-[var(--color-surface-1)]">
                   <span class="truncate">{{ draftCompTitle() || 'No comp linked' }}</span>
                 </div>
-                <button type="button" class="btn btn--outline whitespace-nowrap" (click)="showCompSearch.set(true)">
+                <button
+                  type="button"
+                  class="btn btn--outline whitespace-nowrap"
+                  (click)="showCompSearch.set(true)"
+                >
                   Link Comp
                 </button>
                 @if (draftCompId()) {
-                  <button type="button" class="btn btn--danger whitespace-nowrap" (click)="unlinkComp()">
+                  <button
+                    type="button"
+                    class="btn btn--danger whitespace-nowrap"
+                    (click)="unlinkComp()"
+                  >
                     <app-icon name="close" size="1rem" />
                   </button>
                 }
@@ -245,7 +258,10 @@ import { SearchDialog, SearchDialogOption } from '../../shared/components/search
           </p>
           @if (detail.stats.total_battles > 0) {
             <div class="event-detail__fill-bar" style="background: var(--color-danger)">
-              <span [style.width.%]="(detail.stats.wins / detail.stats.total_battles) * 100" style="background: var(--color-success)"></span>
+              <span
+                [style.width.%]="(detail.stats.wins / detail.stats.total_battles) * 100"
+                style="background: var(--color-success)"
+              ></span>
             </div>
           }
         </article>
@@ -258,7 +274,14 @@ import { SearchDialog, SearchDialogOption } from '../../shared/components/search
           </p>
           @if (detail.stats.total_kills + detail.stats.total_deaths > 0) {
             <div class="event-detail__fill-bar" style="background: var(--color-danger)">
-              <span [style.width.%]="(detail.stats.total_kills / (detail.stats.total_kills + detail.stats.total_deaths)) * 100" style="background: var(--color-success)"></span>
+              <span
+                [style.width.%]="
+                  (detail.stats.total_kills /
+                    (detail.stats.total_kills + detail.stats.total_deaths)) *
+                  100
+                "
+                style="background: var(--color-success)"
+              ></span>
             </div>
           }
         </article>
@@ -281,34 +304,23 @@ import { SearchDialog, SearchDialogOption } from '../../shared/components/search
           <h2>{{ t('events.detail.opponents') }}</h2>
         </header>
         @if (detail.stats.top_opponents.length > 0) {
-          <div class="overflow-x-auto">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>{{ t('common.name') }}</th>
-                  <th>{{ t('events.detail.battles_count') }}</th>
-                  <th>{{ t('events.detail.wins') }}</th>
-                  <th>{{ t('events.detail.losses') }}</th>
-                  <th>{{ t('events.detail.kill_fame') }}</th>
-                  <th>{{ t('battles.opponent') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (opponent of detail.stats.top_opponents; track opponentKey(opponent)) {
-                  <tr>
-                    <td class="font-medium">{{ opponent.guild_name || t('common.none') }}</td>
-                    <td>{{ opponent.battles }}</td>
-                    <td>{{ opponent.wins }}</td>
-                    <td>{{ opponent.losses }}</td>
-                    <td>{{ formatCompact(opponent.guild_kill_fame) }}</td>
-                    <td style="color: var(--color-text-secondary)">
-                      {{ formatCompact(opponent.opponent_kill_fame) }}
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
+          <app-data-table
+            [columns]="opponentsColumns"
+            [rows]="detail.stats.top_opponents"
+            [trackBy]="trackOpponent"
+          >
+            <ng-template dataTableCell="guild_name" let-row>
+              <span class="font-medium">{{ row.guild_name || t('common.none') }}</span>
+            </ng-template>
+            <ng-template dataTableCell="guild_kill_fame" let-row>
+              {{ formatCompact(row.guild_kill_fame) }}
+            </ng-template>
+            <ng-template dataTableCell="opponent_kill_fame" let-row>
+              <span style="color: var(--color-text-secondary)">{{
+                formatCompact(row.opponent_kill_fame)
+              }}</span>
+            </ng-template>
+          </app-data-table>
         } @else {
           <p class="event-detail__empty">{{ t('events.detail.no_opponents') }}</p>
         }
@@ -335,28 +347,38 @@ import { SearchDialog, SearchDialogOption } from '../../shared/components/search
             <div>
               <div class="flex justify-between items-center mb-2">
                 <span class="label">{{ t('events.detail.battle_ids') }}</span>
-                <button type="button" class="btn btn--outline text-xs" (click)="showBattleSearch.set(true)">
+                <button
+                  type="button"
+                  class="btn btn--outline text-xs"
+                  (click)="showBattleSearch.set(true)"
+                >
                   Add Battle
                 </button>
               </div>
-              
+
               <div class="flex flex-col gap-2">
                 @for (link of draftBattleLinks(); track link.id) {
                   <div class="flex items-center gap-2">
                     <div class="flex-1 input flex items-center bg-[var(--color-surface-1)]">
                       <span class="truncate">{{ link.title }}</span>
                     </div>
-                    <button type="button" class="btn btn--danger btn--icon whitespace-nowrap" (click)="removeDraftBattle(link.id)">
+                    <button
+                      type="button"
+                      class="btn btn--danger btn--icon whitespace-nowrap"
+                      (click)="removeDraftBattle(link.id)"
+                    >
                       <app-icon name="close" size="1rem" />
                     </button>
                   </div>
                 }
                 @if (draftBattleLinks().length === 0) {
-                  <p class="text-sm" style="color: var(--color-text-secondary)">No battles linked.</p>
+                  <p class="text-sm" style="color: var(--color-text-secondary)">
+                    No battles linked.
+                  </p>
                 }
               </div>
             </div>
-            
+
             <p class="text-xs" style="color: var(--color-text-secondary)">
               {{ t('events.detail.battle_ids_help') }}
             </p>
@@ -371,56 +393,44 @@ import { SearchDialog, SearchDialogOption } from '../../shared/components/search
           </form>
         }
         @if (detail.battles.length > 0) {
-          <div class="overflow-x-auto">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>{{ t('common.date') }}</th>
-                  <th>{{ t('common.status') }}</th>
-                  <th>{{ t('battles.players') }}</th>
-                  <th>{{ t('battles.kills') }}</th>
-                  <th>{{ t('battles.deaths') }}</th>
-                  <th>{{ t('battles.kill_fame') }}</th>
-                  <th>{{ t('battles.opponent') }}</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (battle of detail.battles; track battle.id) {
-                  <tr>
-                    <td class="font-medium">{{ battle.albionbb_battle_id }}</td>
-                    <td style="color: var(--color-text-secondary)">
-                      {{ formatDate(battle.battle_started_at) }}
-                    </td>
-                    <td>
-                      <span
-                        class="chip"
-                        [class.chip--success]="battle.is_win"
-                        [class.chip--danger]="!battle.is_win"
-                      >
-                        {{ battle.is_win ? t('events.detail.wins') : t('events.detail.losses') }}
-                      </span>
-                    </td>
-                    <td>{{ battle.guild_players_count }}</td>
-                    <td>{{ battle.guild_kills }}</td>
-                    <td>{{ battle.guild_deaths }}</td>
-                    <td>{{ formatCompact(battle.guild_kill_fame) }}</td>
-                    <td>{{ battle.opponent_guild_name ?? t('common.none') }}</td>
-                    <td>
-                      <button
-                        type="button"
-                        class="btn btn--ghost"
-                        (click)="openBattle(battle.albionbb_battle_id)"
-                      >
-                        {{ t('events.detail.open_battle') }}
-                      </button>
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
+          <app-data-table
+            [columns]="battlesColumns"
+            [rows]="detail.battles"
+            [trackBy]="trackBattle"
+          >
+            <ng-template dataTableCell="albionbb_battle_id" let-row>
+              <span class="font-medium">{{ row.albionbb_battle_id }}</span>
+            </ng-template>
+            <ng-template dataTableCell="battle_started_at" let-row>
+              <span style="color: var(--color-text-secondary)">{{
+                formatDate(row.battle_started_at)
+              }}</span>
+            </ng-template>
+            <ng-template dataTableCell="is_win" let-row>
+              <span
+                class="chip"
+                [class.chip--success]="row.is_win"
+                [class.chip--danger]="!row.is_win"
+              >
+                {{ row.is_win ? t('events.detail.wins') : t('events.detail.losses') }}
+              </span>
+            </ng-template>
+            <ng-template dataTableCell="guild_kill_fame" let-row>
+              {{ formatCompact(row.guild_kill_fame) }}
+            </ng-template>
+            <ng-template dataTableCell="opponent_guild_name" let-row>
+              {{ row.opponent_guild_name ?? t('common.none') }}
+            </ng-template>
+            <ng-template dataTableCell="actions" let-row>
+              <button
+                type="button"
+                class="btn btn--ghost"
+                (click)="openBattle(row.albionbb_battle_id)"
+              >
+                {{ t('events.detail.open_battle') }}
+              </button>
+            </ng-template>
+          </app-data-table>
         } @else {
           <p class="event-detail__empty">{{ t('events.detail.no_battles') }}</p>
         }
@@ -434,7 +444,11 @@ import { SearchDialog, SearchDialogOption } from '../../shared/components/search
               {{ formatNumber(totalSplitValue()) }}
             </span>
             @if (canEdit()) {
-              <button type="button" class="btn btn--tonal text-xs" (click)="showSplitSearch.set(true)">
+              <button
+                type="button"
+                class="btn btn--tonal text-xs"
+                (click)="showSplitSearch.set(true)"
+              >
                 Link Split
               </button>
             }
@@ -497,42 +511,34 @@ import { SearchDialog, SearchDialogOption } from '../../shared/components/search
           </section>
         }
         @if (splits().length > 0) {
-          <div class="overflow-x-auto">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>{{ t('common.name') }}</th>
-                  <th>{{ t('common.status') }}</th>
-                  <th>{{ t('splits.estimated') }}</th>
-                  <th>{{ t('splits.net_value') }}</th>
-                  @if (canEdit()) {
-                    <th></th>
-                  }
-                </tr>
-              </thead>
-              <tbody>
-                @for (split of splits(); track split.id) {
-                  <tr>
-                    <td class="font-medium">{{ split.note || 'Split #' + split.id }}</td>
-                    <td>
-                      <span class="chip">{{ split.status }}</span>
-                    </td>
-                    <td>{{ formatNumber(split.estimated_market_value) }}</td>
-                    <td [class.font-semibold]="split.net_value != null">
-                      {{ formatNumber(split.net_value ?? split.estimated_market_value) }}
-                    </td>
-                    @if (canEdit()) {
-                      <td>
-                        <button type="button" class="btn btn--danger btn--icon" (click)="unlinkSplit(split.id)" title="Unlink Split">
-                          <app-icon name="close" size="1rem" />
-                        </button>
-                      </td>
-                    }
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
+          <app-data-table [columns]="splitsColumns" [rows]="splits()" [trackBy]="trackSplit">
+            <ng-template dataTableCell="note" let-row>
+              <span class="font-medium">{{ row.note || 'Split #' + row.id }}</span>
+            </ng-template>
+            <ng-template dataTableCell="status" let-row>
+              <span class="chip">{{ row.status }}</span>
+            </ng-template>
+            <ng-template dataTableCell="estimated_market_value" let-row>
+              {{ formatNumber(row.estimated_market_value) }}
+            </ng-template>
+            <ng-template dataTableCell="net_value" let-row>
+              <span [class.font-semibold]="row.net_value != null">{{
+                formatNumber(row.net_value ?? row.estimated_market_value)
+              }}</span>
+            </ng-template>
+            @if (canEdit()) {
+              <ng-template dataTableCell="actions" let-row>
+                <button
+                  type="button"
+                  class="btn btn--danger btn--icon"
+                  (click)="unlinkSplit(row.id)"
+                  title="Unlink Split"
+                >
+                  <app-icon name="close" size="1rem" />
+                </button>
+              </ng-template>
+            }
+          </app-data-table>
         } @else {
           <p class="event-detail__empty">{{ t('events.detail.no_splits') }}</p>
         }
@@ -659,28 +665,23 @@ import { SearchDialog, SearchDialogOption } from '../../shared/components/search
             }
           </div>
         } @else {
-          <div class="overflow-x-auto">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>{{ t('common.username') }}</th>
-                  <th>{{ t('events.detail.primary_build') }}</th>
-                  <th>{{ t('events.detail.secondary_build') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (participant of detail.participants; track participant.user_id) {
-                  <tr>
-                    <td class="font-medium">{{ participant.username }}</td>
-                    <td>{{ participant.primary_build_name || t('common.none') }}</td>
-                    <td style="color: var(--color-text-secondary)">
-                      {{ participant.secondary_build_name ?? t('common.none') }}
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
+          <app-data-table
+            [columns]="participantsColumns"
+            [rows]="detail.participants"
+            [trackBy]="trackParticipant"
+          >
+            <ng-template dataTableCell="username" let-row>
+              <span class="font-medium">{{ row.username }}</span>
+            </ng-template>
+            <ng-template dataTableCell="primary_build_name" let-row>
+              {{ row.primary_build_name || t('common.none') }}
+            </ng-template>
+            <ng-template dataTableCell="secondary_build_name" let-row>
+              <span style="color: var(--color-text-secondary)">{{
+                row.secondary_build_name ?? t('common.none')
+              }}</span>
+            </ng-template>
+          </app-data-table>
         }
       </article>
     } @else {
@@ -698,7 +699,7 @@ import { SearchDialog, SearchDialogOption } from '../../shared/components/search
         (close)="showCompSearch.set(false)"
       />
     }
-    
+
     @if (showBattleSearch()) {
       <app-search-dialog
         title="Search Battles"
@@ -825,7 +826,7 @@ export class EventDetailPage {
   protected readonly showEditForm = signal(false);
   protected readonly saving = signal(false);
   protected readonly showBattleLinkForm = signal(false);
-  
+
   protected readonly showCompSearch = signal(false);
   protected readonly compSearchOptions = signal<SearchDialogOption[]>([]);
   protected readonly compSearchLoading = signal(false);
@@ -835,14 +836,11 @@ export class EventDetailPage {
   protected readonly battleSearchOptions = signal<SearchDialogOption[]>([]);
   protected readonly battleSearchLoading = signal(false);
   protected readonly battleLinksSaving = signal(false);
-  protected readonly draftBattleLinks = signal<{id: string, title: string}[]>([]);
+  protected readonly draftBattleLinks = signal<{ id: string; title: string }[]>([]);
   protected readonly comps = signal<CompSummary[]>([]);
   protected readonly splits = signal<SplitSummary[]>([]);
   protected readonly totalSplitValue = computed(() =>
-    this.splits().reduce(
-      (sum, s) => sum + Number(s.net_value ?? s.estimated_market_value),
-      0,
-    ),
+    this.splits().reduce((sum, s) => sum + Number(s.net_value ?? s.estimated_market_value), 0),
   );
 
   protected readonly showSplitSearch = signal(false);
@@ -914,6 +912,226 @@ export class EventDetailPage {
     this.participantsByRole().reduce((sum, group) => sum + group.target, 0),
   );
 
+  // Opponents table columns and trackBy
+  protected readonly opponentsColumns: readonly DataTableColumn<OpponentPerformanceView>[] = [
+    {
+      key: 'guild_name',
+      label: 'common.name',
+      sortable: true,
+      searchable: true,
+      accessor: (opp) => opp.guild_name || '',
+      comparator: (a, b) => (a.guild_name || '').localeCompare(b.guild_name || ''),
+    },
+    {
+      key: 'battles',
+      label: 'events.detail.battles_count',
+      sortable: true,
+      accessor: (opp) => opp.battles,
+      comparator: (a, b) => a.battles - b.battles,
+      align: 'right',
+    },
+    {
+      key: 'wins',
+      label: 'events.detail.wins',
+      sortable: true,
+      accessor: (opp) => opp.wins,
+      comparator: (a, b) => a.wins - b.wins,
+      align: 'right',
+    },
+    {
+      key: 'losses',
+      label: 'events.detail.losses',
+      sortable: true,
+      accessor: (opp) => opp.losses,
+      comparator: (a, b) => a.losses - b.losses,
+      align: 'right',
+    },
+    {
+      key: 'guild_kill_fame',
+      label: 'events.detail.kill_fame',
+      sortable: true,
+      accessor: (opp) => opp.guild_kill_fame,
+      comparator: (a, b) => a.guild_kill_fame - b.guild_kill_fame,
+      align: 'right',
+    },
+    {
+      key: 'opponent_kill_fame',
+      label: 'battles.opponent',
+      sortable: true,
+      accessor: (opp) => opp.opponent_kill_fame,
+      comparator: (a, b) => a.opponent_kill_fame - b.opponent_kill_fame,
+      align: 'right',
+    },
+  ];
+
+  protected readonly trackOpponent = (opponent: OpponentPerformanceView): unknown =>
+    `${opponent.guild_id || opponent.guild_name}`;
+
+  // Splits table columns and trackBy
+  protected readonly splitsColumns: readonly DataTableColumn<SplitSummary>[] = [
+    {
+      key: 'note',
+      label: 'common.name',
+      sortable: true,
+      searchable: true,
+      accessor: (split) => split.note || `Split #${split.id}`,
+      comparator: (a, b) => {
+        const aName = a.note || `Split #${a.id}`;
+        const bName = b.note || `Split #${b.id}`;
+        return aName.localeCompare(bName);
+      },
+    },
+    {
+      key: 'status',
+      label: 'common.status',
+      sortable: true,
+      accessor: (split) => split.status,
+      comparator: (a, b) => a.status.localeCompare(b.status),
+    },
+    {
+      key: 'estimated_market_value',
+      label: 'splits.estimated',
+      sortable: true,
+      accessor: (split) => split.estimated_market_value,
+      comparator: (a, b) => a.estimated_market_value - b.estimated_market_value,
+      align: 'right',
+    },
+    {
+      key: 'net_value',
+      label: 'splits.net_value',
+      sortable: true,
+      accessor: (split) => split.net_value ?? split.estimated_market_value,
+      comparator: (a, b) => {
+        const aVal = a.net_value ?? a.estimated_market_value;
+        const bVal = b.net_value ?? b.estimated_market_value;
+        return aVal - bVal;
+      },
+      align: 'right',
+    },
+    {
+      key: 'actions',
+      label: 'common.actions',
+      align: 'right',
+    },
+  ];
+
+  protected readonly trackSplit = (split: SplitSummary): unknown => split.id;
+
+  // Battles table columns and trackBy
+  protected readonly battlesColumns: readonly DataTableColumn<EventBattleSummary>[] = [
+    {
+      key: 'albionbb_battle_id',
+      label: 'events.detail.open_battle',
+      sortable: true,
+      accessor: (battle) => battle.albionbb_battle_id,
+      comparator: (a, b) => a.albionbb_battle_id.localeCompare(b.albionbb_battle_id),
+    },
+    {
+      key: 'battle_started_at',
+      label: 'common.date',
+      sortable: true,
+      accessor: (battle) => battle.battle_started_at,
+      comparator: (a, b) => a.battle_started_at.localeCompare(b.battle_started_at),
+    },
+    {
+      key: 'is_win',
+      label: 'common.status',
+      sortable: true,
+      accessor: (battle) => (battle.is_win ? 'win' : 'loss'),
+      comparator: (a, b) => Number(a.is_win) - Number(b.is_win),
+    },
+    {
+      key: 'guild_players_count',
+      label: 'battles.players',
+      sortable: true,
+      accessor: (battle) => battle.guild_players_count,
+      comparator: (a, b) => a.guild_players_count - b.guild_players_count,
+      align: 'right',
+    },
+    {
+      key: 'guild_kills',
+      label: 'battles.kills',
+      sortable: true,
+      accessor: (battle) => battle.guild_kills,
+      comparator: (a, b) => a.guild_kills - b.guild_kills,
+      align: 'right',
+    },
+    {
+      key: 'guild_deaths',
+      label: 'battles.deaths',
+      sortable: true,
+      accessor: (battle) => battle.guild_deaths,
+      comparator: (a, b) => a.guild_deaths - b.guild_deaths,
+      align: 'right',
+    },
+    {
+      key: 'guild_kill_fame',
+      label: 'battles.kill_fame',
+      sortable: true,
+      accessor: (battle) => battle.guild_kill_fame,
+      comparator: (a, b) => a.guild_kill_fame - b.guild_kill_fame,
+      align: 'right',
+    },
+    {
+      key: 'opponent_guild_name',
+      label: 'battles.opponent',
+      sortable: true,
+      searchable: true,
+      accessor: (battle) => battle.opponent_guild_name || '',
+      comparator: (a, b) => {
+        const aName = a.opponent_guild_name || '';
+        const bName = b.opponent_guild_name || '';
+        return aName.localeCompare(bName);
+      },
+    },
+    {
+      key: 'actions',
+      label: 'common.actions',
+      align: 'right',
+    },
+  ];
+
+  protected readonly trackBattle = (battle: EventBattleSummary): unknown => battle.id;
+
+  // Participants table columns and trackBy
+  protected readonly participantsColumns: readonly DataTableColumn<EventParticipant>[] = [
+    {
+      key: 'username',
+      label: 'common.username',
+      sortable: true,
+      searchable: true,
+      accessor: (participant) => participant.username,
+      comparator: (a, b) => a.username.localeCompare(b.username),
+    },
+    {
+      key: 'primary_build_name',
+      label: 'events.detail.primary_build',
+      sortable: true,
+      searchable: true,
+      accessor: (participant) => participant.primary_build_name || '',
+      comparator: (a, b) => {
+        const aName = a.primary_build_name || '';
+        const bName = b.primary_build_name || '';
+        return aName.localeCompare(bName);
+      },
+    },
+    {
+      key: 'secondary_build_name',
+      label: 'events.detail.secondary_build',
+      sortable: true,
+      searchable: true,
+      accessor: (participant) => participant.secondary_build_name || '',
+      comparator: (a, b) => {
+        const aName = a.secondary_build_name || '';
+        const bName = b.secondary_build_name || '';
+        return aName.localeCompare(bName);
+      },
+    },
+  ];
+
+  protected readonly trackParticipant = (participant: EventParticipant): unknown =>
+    participant.user_id;
+
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   constructor() {
@@ -929,16 +1147,22 @@ export class EventDetailPage {
     this.onBattleSearchFilter({ search: '', dateFrom: '', dateTo: '' });
   }
 
-  protected async onCompSearchFilter(filter: { search: string, dateFrom: string, dateTo: string }): Promise<void> {
+  protected async onCompSearchFilter(filter: {
+    search: string;
+    dateFrom: string;
+    dateTo: string;
+  }): Promise<void> {
     this.compSearchLoading.set(true);
     try {
       const params: Record<string, string> = {};
       if (filter.search) params['search'] = filter.search;
       if (filter.dateFrom) params['date_from'] = filter.dateFrom;
       if (filter.dateTo) params['date_to'] = filter.dateTo;
-      
-      const data = await firstValueFrom(this.api.get<PaginatedData<CompSummary>>('api/comps', params));
-      this.compSearchOptions.set(data.items.map(c => ({ id: String(c.id), title: c.name })));
+
+      const data = await firstValueFrom(
+        this.api.get<PaginatedData<CompSummary>>('api/comps', params),
+      );
+      this.compSearchOptions.set(data.items.map((c) => ({ id: String(c.id), title: c.name })));
     } finally {
       this.compSearchLoading.set(false);
     }
@@ -955,22 +1179,28 @@ export class EventDetailPage {
     this.draftCompTitle.set('');
   }
 
-  protected onBattleSearchFilter(filter: { search: string, dateFrom: string, dateTo: string }) {
+  protected onBattleSearchFilter(filter: { search: string; dateFrom: string; dateTo: string }) {
     this.doBattleSearch(filter);
   }
 
-  private async doBattleSearch(filter: { search: string, dateFrom: string, dateTo: string }): Promise<void> {
+  private async doBattleSearch(filter: {
+    search: string;
+    dateFrom: string;
+    dateTo: string;
+  }): Promise<void> {
     this.battleSearchLoading.set(true);
     try {
       const params: Record<string, string> = {};
       if (filter.search) params['search'] = filter.search;
       const data = await firstValueFrom(this.api.get<any>('api/albionbb/battles', params));
-      this.battleSearchOptions.set((data.items || []).map((b: any) => ({ 
-        id: b.id, 
-        title: `Battle ${b.id}`,
-        subtitle: `${b.total_players} players · ${b.total_kills} kills`,
-        chip: new Date(b.start_time).toLocaleString()
-      })));
+      this.battleSearchOptions.set(
+        (data.items || []).map((b: any) => ({
+          id: b.id,
+          title: `Battle ${b.id}`,
+          subtitle: `${b.total_players} players · ${b.total_kills} kills`,
+          chip: new Date(b.start_time).toLocaleString(),
+        })),
+      );
     } catch (err) {
       console.error(err);
     } finally {
@@ -980,35 +1210,43 @@ export class EventDetailPage {
 
   protected onBattleSelected(option: SearchDialogOption): void {
     const current = this.draftBattleLinks();
-    if (!current.find(b => b.id === String(option.id))) {
+    if (!current.find((b) => b.id === String(option.id))) {
       this.draftBattleLinks.set([...current, { id: String(option.id), title: option.title }]);
     }
     this.showBattleSearch.set(false);
   }
-  
+
   protected removeDraftBattle(id: string): void {
-    this.draftBattleLinks.update(list => list.filter(b => b.id !== id));
+    this.draftBattleLinks.update((list) => list.filter((b) => b.id !== id));
   }
 
-  protected onSplitSearchFilter(filter: { search: string, dateFrom: string, dateTo: string }) {
+  protected onSplitSearchFilter(filter: { search: string; dateFrom: string; dateTo: string }) {
     this.doSplitSearch(filter);
   }
 
-  private async doSplitSearch(filter: { search: string, dateFrom: string, dateTo: string }): Promise<void> {
+  private async doSplitSearch(filter: {
+    search: string;
+    dateFrom: string;
+    dateTo: string;
+  }): Promise<void> {
     this.splitSearchLoading.set(true);
     try {
       const params: Record<string, string> = { status: 'pending', limit: '50' };
       if (filter.search) params['search'] = filter.search;
       if (filter.dateFrom) params['date_from'] = filter.dateFrom;
       if (filter.dateTo) params['date_to'] = filter.dateTo;
-      
-      const data = await firstValueFrom(this.api.get<PaginatedData<SplitSummary>>('api/splits', params));
-      this.splitSearchOptions.set(data.items.map(s => ({
-        id: String(s.id),
-        title: s.note || `Split #${s.id}`,
-        subtitle: `Est. ${s.estimated_market_value} · By ${s.created_by_username}`,
-        chip: s.status
-      })));
+
+      const data = await firstValueFrom(
+        this.api.get<PaginatedData<SplitSummary>>('api/splits', params),
+      );
+      this.splitSearchOptions.set(
+        data.items.map((s) => ({
+          id: String(s.id),
+          title: s.note || `Split #${s.id}`,
+          subtitle: `Est. ${s.estimated_market_value} · By ${s.created_by_username}`,
+          chip: s.status,
+        })),
+      );
     } catch (err) {
       console.error(err);
     } finally {
@@ -1118,10 +1356,12 @@ export class EventDetailPage {
     if (!detail) {
       return;
     }
-    this.draftBattleLinks.set(detail.battles.map(b => ({
-      id: b.albionbb_battle_id,
-      title: `Battle ${b.albionbb_battle_id}`
-    })));
+    this.draftBattleLinks.set(
+      detail.battles.map((b) => ({
+        id: b.albionbb_battle_id,
+        title: `Battle ${b.albionbb_battle_id}`,
+      })),
+    );
     this.showBattleLinkForm.set(true);
   }
 
@@ -1133,7 +1373,7 @@ export class EventDetailPage {
     }
     this.battleLinksSaving.set(true);
     try {
-      const ids = this.draftBattleLinks().map(b => b.id);
+      const ids = this.draftBattleLinks().map((b) => b.id);
       const req: UpdateEventBattlesRequest = { battle_ids: ids };
       await firstValueFrom(this.api.put(`api/events/${detail.id}/battles`, req));
       this.toasts.success(this.t('events.detail.battles_saved'));
@@ -1326,7 +1566,9 @@ export class EventDetailPage {
     }
     this.loading.set(true);
     try {
-      const detail = await firstValueFrom(this.api.get<EventDetailView>(`api/events/${this.eventId}`));
+      const detail = await firstValueFrom(
+        this.api.get<EventDetailView>(`api/events/${this.eventId}`),
+      );
       this.event.set(detail);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -1382,7 +1624,6 @@ export class EventDetailPage {
     }
   }
 }
-
 
 /**
  * Converts an ISO UTC timestamp into the `YYYY-MM-DDTHH:mm` value expected by

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -16,8 +16,9 @@ import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 
-const PAGE_SIZE = 10;
+const TRANSACTIONS_LOAD_LIMIT = 1000;
 
 /**
  * Guild Bank ledger page.
@@ -29,7 +30,7 @@ const PAGE_SIZE = 10;
 @Component({
   selector: 'app-bank',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Loading],
+  imports: [PageHeader, EmptyState, Loading, DataTable],
   template: `
     <app-page-header [title]="t('bank.title')" [subtitle]="t('bank.subtitle')">
       @if (viewMode() === 'personal') {
@@ -88,17 +89,28 @@ const PAGE_SIZE = 10;
             {{ t('bank.transactions.title') }}
           </h2>
           @if (canAccept()) {
-            <div class="flex rounded-md border p-1 ml-0 sm:ml-4" style="border-color: var(--color-border)">
+            <div
+              class="flex rounded-md border p-1 ml-0 sm:ml-4"
+              style="border-color: var(--color-border)"
+            >
               <button
                 class="px-3 py-1 text-xs rounded"
-                [class]="viewMode() === 'personal' ? 'bg-surface-active font-medium' : 'text-secondary hover:bg-surface-hover'"
+                [class]="
+                  viewMode() === 'personal'
+                    ? 'bg-surface-active font-medium'
+                    : 'text-secondary hover:bg-surface-hover'
+                "
                 (click)="setViewMode('personal')"
               >
                 {{ t('bank.view.personal') }}
               </button>
               <button
                 class="px-3 py-1 text-xs rounded"
-                [class]="viewMode() === 'guild' ? 'bg-surface-active font-medium' : 'text-secondary hover:bg-surface-hover'"
+                [class]="
+                  viewMode() === 'guild'
+                    ? 'bg-surface-active font-medium'
+                    : 'text-secondary hover:bg-surface-hover'
+                "
                 (click)="setViewMode('guild')"
               >
                 {{ t('bank.view.guild') }}
@@ -124,80 +136,49 @@ const PAGE_SIZE = 10;
 
       @if (loading()) {
         <app-loading [label]="t('common.loading')" />
-      } @else if (transactions().length === 0) {
+      } @else if (filteredTransactions().length === 0) {
         <app-empty-state [message]="t('bank.transactions.empty')" icon="bank" />
       } @else {
-        <div class="overflow-x-auto">
-          <table class="table">
-            <thead>
-              <tr>
-                @if (viewMode() === 'guild') {
-                  <th>{{ t('common.player') }}</th>
-                }
-                <th>{{ t('common.status') }}</th>
-                <th>{{ t('common.amount') }}</th>
-                <th>{{ t('common.date') }}</th>
-                @if (viewMode() === 'guild') {
-                  <th></th>
-                }
-              </tr>
-            </thead>
-            <tbody>
-              @for (tx of transactions(); track tx.id) {
-                <tr>
-                  @if (viewMode() === 'guild') {
-                    <td class="font-medium text-sm">{{ tx.to_username }}</td>
-                  }
-                  <td>
-                    <span class="chip" [class]="statusChip(tx.status)">
-                      {{ tx.status }}
-                    </span>
-                  </td>
-                  <td style="font-variant-numeric: tabular-nums">
-                    {{ formatAmount(tx.amount) }}
-                  </td>
-                  <td style="color: var(--color-text-secondary)">
-                    {{ formatDate(tx.created_at) }}
-                  </td>
-                  @if (viewMode() === 'guild') {
-                    <td>
-                      @if (tx.status === 'requested') {
-                        <div class="flex gap-2 justify-end">
-                          <button class="btn btn--outline btn--sm text-success" (click)="acceptSingle(tx.id)">{{ t('common.accept') }}</button>
-                          <button class="btn btn--outline btn--sm text-error" (click)="rejectSingle(tx.id)">{{ t('common.reject') }}</button>
-                        </div>
-                      }
-                    </td>
-                  }
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-
-        <div class="mt-4 flex items-center justify-between">
-          <p class="text-xs" style="color: var(--color-text-secondary)">
-            {{ t('common.page') }} {{ page() }} {{ t('common.of') }} {{ totalPages() }}
-          </p>
-          <div class="flex gap-2">
-            <button
-              type="button"
-              class="btn btn--outline"
-              [disabled]="page() <= 1"
-              (click)="prev()"
-            >
-              {{ t('common.prev') }}
-            </button>
-            <button
-              type="button"
-              class="btn btn--outline"
-              [disabled]="page() >= totalPages()"
-              (click)="next()"
-            >
-              {{ t('common.next') }}
-            </button>
-          </div>
-        </div>
+        <app-data-table
+          [columns]="transactionColumns()"
+          [rows]="filteredTransactions()"
+          [trackBy]="trackTransaction"
+          [pageSize]="10"
+        >
+          <ng-template dataTableCell="status" let-row>
+            <span class="chip" [class]="statusChip(row.status)">
+              {{ row.status }}
+            </span>
+          </ng-template>
+          <ng-template dataTableCell="amount" let-row>
+            <span style="font-variant-numeric: tabular-nums">
+              {{ formatAmount(row.amount) }}
+            </span>
+          </ng-template>
+          <ng-template dataTableCell="created_at" let-row>
+            <span style="color: var(--color-text-secondary)">
+              {{ formatDate(row.created_at) }}
+            </span>
+          </ng-template>
+          <ng-template dataTableCell="to_username" let-row>
+            <span class="font-medium text-sm">{{ row.to_username }}</span>
+          </ng-template>
+          <ng-template dataTableCell="actions" let-row>
+            @if (row.status === 'requested') {
+              <div class="flex gap-2 justify-end">
+                <button
+                  class="btn btn--outline btn--sm text-success"
+                  (click)="acceptSingle(row.id)"
+                >
+                  {{ t('common.accept') }}
+                </button>
+                <button class="btn btn--outline btn--sm text-error" (click)="rejectSingle(row.id)">
+                  {{ t('common.reject') }}
+                </button>
+              </div>
+            }
+          </ng-template>
+        </app-data-table>
       }
     </section>
   `,
@@ -211,10 +192,70 @@ export class Bank {
   protected readonly balance = signal<BalanceSummary | null>(null);
   protected readonly transactions = signal<TransactionView[]>([]);
   protected readonly loading = signal(false);
-  protected readonly page = signal(1);
-  protected readonly totalPages = signal(1);
   protected readonly statusFilter = signal<TransactionStatus | ''>('');
   protected readonly viewMode = signal<'personal' | 'guild'>('personal');
+  protected readonly trackTransaction = (tx: TransactionView): unknown => tx.id;
+
+  /** Dynamic columns based on view mode - guild view includes player name and actions */
+  protected readonly transactionColumns = computed<DataTableColumn<TransactionView>[]>(() => {
+    const baseColumns: DataTableColumn<TransactionView>[] = [
+      {
+        key: 'status',
+        label: 'common.status',
+        sortable: true,
+        accessor: (tx) => tx.status,
+        comparator: (a, b) => a.status.localeCompare(b.status),
+      },
+      {
+        key: 'amount',
+        label: 'common.amount',
+        sortable: true,
+        accessor: (tx) => tx.amount,
+        comparator: (a, b) => a.amount - b.amount,
+        align: 'right',
+      },
+      {
+        key: 'created_at',
+        label: 'common.date',
+        sortable: true,
+        searchable: true,
+        accessor: (tx) => tx.created_at,
+        comparator: (a, b) => a.created_at.localeCompare(b.created_at),
+      },
+    ];
+
+    if (this.viewMode() === 'guild') {
+      return [
+        {
+          key: 'to_username',
+          label: 'common.player',
+          sortable: true,
+          searchable: true,
+          accessor: (tx) => tx.to_username,
+          comparator: (a, b) => a.to_username.localeCompare(b.to_username),
+        },
+        ...baseColumns,
+        {
+          key: 'actions',
+          label: 'common.actions',
+          sortable: false,
+          accessor: () => null,
+        },
+      ];
+    }
+
+    return baseColumns;
+  });
+
+  /** Client-side filtered transactions based on status filter */
+  protected readonly filteredTransactions = computed(() => {
+    const filter = this.statusFilter();
+    const allTransactions = this.transactions();
+    if (!filter) {
+      return allTransactions;
+    }
+    return allTransactions.filter((tx) => tx.status === filter);
+  });
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
@@ -229,34 +270,14 @@ export class Bank {
   protected onStatusChange(event: Event): void {
     const value = (event.target as HTMLSelectElement).value as TransactionStatus | '';
     this.statusFilter.set(value);
-    this.page.set(1);
-    void this.loadTransactions();
   }
 
   protected setViewMode(mode: 'personal' | 'guild'): void {
     if (this.viewMode() === mode) return;
     this.viewMode.set(mode);
-    this.page.set(1);
     if (mode === 'guild') {
       this.statusFilter.set('requested');
     }
-    void this.loadTransactions();
-  }
-
-  protected async next(): Promise<void> {
-    if (this.page() >= this.totalPages()) {
-      return;
-    }
-    this.page.update((p) => p + 1);
-    await this.loadTransactions();
-  }
-
-  protected async prev(): Promise<void> {
-    if (this.page() <= 1) {
-      return;
-    }
-    this.page.update((p) => p - 1);
-    await this.loadTransactions();
   }
 
   protected async requestWithdrawal(): Promise<void> {
@@ -264,40 +285,27 @@ export class Bank {
   }
 
   protected async acceptWithdrawals(): Promise<void> {
-    await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept', { all: true });
+    await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept', {
+      all: true,
+    });
   }
 
   protected async rejectWithdrawals(): Promise<void> {
-    await this.mutate('api/bank/transactions/withdraw/reject', 'bank.withdraw.reject', { all: true });
+    await this.mutate('api/bank/transactions/withdraw/reject', 'bank.withdraw.reject', {
+      all: true,
+    });
   }
 
   protected async acceptSingle(id: number): Promise<void> {
-    await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept', { transaction_ids: [id] });
+    await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept', {
+      transaction_ids: [id],
+    });
   }
 
   protected async rejectSingle(id: number): Promise<void> {
-    await this.mutate('api/bank/transactions/withdraw/reject', 'bank.withdraw.reject', { transaction_ids: [id] });
-  }
-
-  protected formatAmount(value: number | undefined | null): string {
-    if (value === undefined || value === null) {
-      return '—';
-    }
-    return value.toLocaleString();
-  }
-
-  protected formatDate(iso: string): string {
-    return new Date(iso).toLocaleDateString();
-  }
-
-  protected statusChip(status: TransactionStatus): string {
-    if (status === 'pending') {
-      return 'chip chip--warning';
-    }
-    if (status === 'withdrawn') {
-      return 'chip chip--success';
-    }
-    return 'chip';
+    await this.mutate('api/bank/transactions/withdraw/reject', 'bank.withdraw.reject', {
+      transaction_ids: [id],
+    });
   }
 
   private async load(): Promise<void> {
@@ -316,22 +324,16 @@ export class Bank {
   private async loadTransactions(): Promise<void> {
     this.loading.set(true);
     try {
-      const filter = this.statusFilter();
       const params: Record<string, string | number | boolean> = {
-        page: this.page(),
-        limit: PAGE_SIZE,
+        limit: TRANSACTIONS_LOAD_LIMIT,
       };
-      if (filter) {
-        params['status'] = filter;
-      }
       if (this.viewMode() === 'guild') {
         params['global'] = true;
       }
       const data = await firstValueFrom(
-        this.api.get<PaginatedData<TransactionView>>('api/bank/transactions', params),
+        this.api.get<{ items: TransactionView[] }>('api/bank/transactions', params),
       );
       this.transactions.set(data.items);
-      this.totalPages.set(data.total_pages);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -339,13 +341,47 @@ export class Bank {
     }
   }
 
-  private async mutate(path: string, successKey: TranslationKey, body: WithdrawRequest): Promise<void> {
+  private async mutate(
+    path: string,
+    successKey: TranslationKey,
+    body: WithdrawRequest,
+  ): Promise<void> {
     try {
       await firstValueFrom(this.api.post<TransactionView[]>(path, body));
       this.toasts.success(this.translate.t(successKey));
       await this.load();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    }
+  }
+
+  /** Formats a silver amount with locale-aware grouping and no decimals. */
+  protected formatAmount(value: number | null | undefined): string {
+    if (value === null || value === undefined) {
+      return '0';
+    }
+    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
+  }
+
+  /** Formats an ISO timestamp as a localized date string. */
+  protected formatDate(iso: string | null | undefined): string {
+    if (!iso) {
+      return '—';
+    }
+    return new Date(iso).toLocaleDateString();
+  }
+
+  /** Maps a transaction status to its semantic chip class. */
+  protected statusChip(status: TransactionStatus): string {
+    switch (status) {
+      case 'pending':
+        return 'chip chip--info';
+      case 'requested':
+        return 'chip chip--warning';
+      case 'withdrawn':
+        return 'chip chip--success';
+      default:
+        return 'chip';
     }
   }
 }

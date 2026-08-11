@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -18,8 +18,13 @@ import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTableFilterOption,
+} from '../../shared/components/data-table/data-table';
 
-const PAGE_SIZE = 10;
+const ENTRIES_LOAD_LIMIT = 1000;
 
 type SiphonedIngestRow = SiphonedIngestRequest['rows'][number];
 type EntryDraft = Record<'occurred_at' | 'player_name' | 'reason' | 'amount', string>;
@@ -57,7 +62,7 @@ function emptyEntryDraft(): EntryDraft {
 @Component({
   selector: 'app-siphoned',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Loading],
+  imports: [PageHeader, EmptyState, Loading, DataTable],
   template: `
     <app-page-header [title]="t('siphoned.title')" [subtitle]="t('siphoned.subtitle')">
       @if (canIngest()) {
@@ -242,49 +247,32 @@ function emptyEntryDraft(): EntryDraft {
       @if (entries().length === 0) {
         <app-empty-state [message]="t('common.empty')" icon="activity" />
       } @else {
-        <div class="overflow-x-auto card">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>{{ t('common.date') }}</th>
-                <th>{{ t('common.name') }}</th>
-                <th>{{ t('common.status') }}</th>
-                <th>{{ t('common.amount') }}</th>
-                @if (canIngest()) {
-                  <th>Actions</th>
-                }
-              </tr>
-            </thead>
-            <tbody>
-              @for (entry of entries(); track entry.id) {
-                <tr>
-                  <td>{{ formatDate(entry.occurred_at) }}</td>
-                  <td>{{ entry.player_name }}</td>
-                  <td>
-                    <span class="chip">{{ entry.reason }}</span>
-                  </td>
-                  <td>{{ formatAmount(entry.amount) }}</td>
-                  @if (canIngest()) {
-                    <td>
-                      <div class="flex gap-2">
-                        <button type="button" class="btn btn--ghost" (click)="editEntry(entry)">
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          class="btn btn--danger"
-                          (click)="deleteEntry(entry.id)"
-                        >
-                          {{ t('common.delete') }}
-                        </button>
-                      </div>
-                    </td>
-                  }
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
+        <app-data-table
+          [columns]="entryColumns()"
+          [rows]="entries()"
+          [trackBy]="trackEntry"
+          [pageSize]="10"
+        >
+          <ng-template dataTableCell="occurred_at" let-row>
+            {{ formatDate(row.occurred_at) }}
+          </ng-template>
+          <ng-template dataTableCell="reason" let-row>
+            <span class="chip">{{ row.reason }}</span>
+          </ng-template>
+          <ng-template dataTableCell="amount" let-row>
+            {{ formatAmount(row.amount) }}
+          </ng-template>
+          <ng-template dataTableCell="actions" let-row>
+            @if (canIngest()) {
+              <div class="flex gap-2">
+                <button type="button" class="btn btn--ghost" (click)="editEntry(row)">Edit</button>
+                <button type="button" class="btn btn--danger" (click)="deleteEntry(row.id)">
+                  {{ t('common.delete') }}
+                </button>
+              </div>
+            }
+          </ng-template>
+        </app-data-table>
       }
     } @else {
       @if (batches().length === 0) {
@@ -332,6 +320,66 @@ export class Siphoned {
   protected readonly lastUpdatedAt = signal<string | null>(null);
   protected readonly editingEntryId = signal<number | null>(null);
   protected readonly entryDraft = signal<EntryDraft>(emptyEntryDraft());
+  protected readonly trackEntry = (entry: SiphonedEntryView): unknown => entry.id;
+
+  /** Dynamic columns for entries table - actions column only included when user can ingest */
+  protected readonly entryColumns = computed<DataTableColumn<SiphonedEntryView>[]>(() => {
+    const baseColumns: DataTableColumn<SiphonedEntryView>[] = [
+      {
+        key: 'occurred_at',
+        label: 'common.date',
+        sortable: true,
+        searchable: true,
+        accessor: (entry) => entry.occurred_at,
+        comparator: (a, b) => a.occurred_at.localeCompare(b.occurred_at),
+      },
+      {
+        key: 'player_name',
+        label: 'common.name',
+        sortable: true,
+        searchable: true,
+        accessor: (entry) => entry.player_name,
+        comparator: (a, b) => a.player_name.localeCompare(b.player_name),
+      },
+      {
+        key: 'reason',
+        label: 'common.status',
+        sortable: true,
+        searchable: true,
+        accessor: (entry) => entry.reason,
+        comparator: (a, b) => a.reason.localeCompare(b.reason),
+        filterOptions: this.reasonFilterOptions(),
+      },
+      {
+        key: 'amount',
+        label: 'common.amount',
+        sortable: true,
+        accessor: (entry) => entry.amount,
+        comparator: (a, b) => a.amount - b.amount,
+        align: 'right',
+      },
+    ];
+
+    if (this.canIngest()) {
+      return [
+        ...baseColumns,
+        {
+          key: 'actions',
+          label: 'common.actions',
+          sortable: false,
+          accessor: () => null,
+        },
+      ];
+    }
+
+    return baseColumns;
+  });
+
+  /** Builds filter options from unique reason values in the entries */
+  protected readonly reasonFilterOptions = computed<DataTableFilterOption[]>(() => {
+    const uniqueReasons = new Set(this.entries().map((entry) => entry.reason));
+    return [...uniqueReasons].sort().map((reason) => ({ value: reason, label: reason }));
+  });
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
@@ -340,9 +388,8 @@ export class Siphoned {
     void this.load();
   }
 
-  protected canIngest(): boolean {
-    return this.auth.hasPermission('siphoned.ingest');
-  }
+  /** Whether the current user can ingest new entries (officer permission) */
+  protected readonly canIngest = computed(() => this.auth.hasPermission('siphoned.ingest'));
 
   protected toggleIngestForm(): void {
     this.showIngestForm.update((isVisible) => !isVisible);
@@ -831,7 +878,7 @@ export class Siphoned {
         const page = await firstValueFrom(
           this.api.get<PaginatedData<SiphonedEntryView>>('api/siphoned/entries', {
             page: 1,
-            limit: PAGE_SIZE,
+            limit: ENTRIES_LOAD_LIMIT,
           }),
         );
         this.entries.set(page.items);

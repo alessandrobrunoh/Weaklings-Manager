@@ -9,6 +9,7 @@ import type {
   OcrResult,
   PaginatedData,
   SplitDetail,
+  SplitParticipant,
   SplitStatus,
   SplitSummary,
   UpdateSplitRequest,
@@ -22,7 +23,11 @@ import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
-import { SearchDialog, SearchDialogOption } from '../../shared/components/search-dialog/search-dialog';
+import {
+  SearchDialog,
+  SearchDialogOption,
+} from '../../shared/components/search-dialog/search-dialog';
+import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 
 const PAGE_SIZE = 10;
 
@@ -49,7 +54,7 @@ interface SplitParticipantDraft {
 @Component({
   selector: 'app-splits',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Icon, Loading, SearchDialog],
+  imports: [PageHeader, EmptyState, Icon, Loading, SearchDialog, DataTable],
   template: `
     <app-page-header [title]="t('splits.title')" [subtitle]="t('splits.subtitle')">
       <button type="button" class="btn btn--primary" (click)="toggleCreateForm()">
@@ -77,11 +82,19 @@ interface SplitParticipantDraft {
                 <div class="flex-1 input flex items-center bg-[var(--color-surface-1)]">
                   <span class="truncate">{{ draftEventTitle() || 'No event linked' }}</span>
                 </div>
-                <button type="button" class="btn btn--outline whitespace-nowrap" (click)="showEventSearch.set(true)">
+                <button
+                  type="button"
+                  class="btn btn--outline whitespace-nowrap"
+                  (click)="showEventSearch.set(true)"
+                >
                   Link Event
                 </button>
                 @if (draftEventId()) {
-                  <button type="button" class="btn btn--danger whitespace-nowrap" (click)="unlinkDraftEvent()">
+                  <button
+                    type="button"
+                    class="btn btn--danger whitespace-nowrap"
+                    (click)="unlinkDraftEvent()"
+                  >
                     <app-icon name="close" size="1rem" />
                   </button>
                 }
@@ -471,11 +484,19 @@ interface SplitParticipantDraft {
                   <div class="flex-1 input flex items-center bg-[var(--color-surface-1)]">
                     <span class="truncate">{{ editEventTitle() || 'No event linked' }}</span>
                   </div>
-                  <button type="button" class="btn btn--outline whitespace-nowrap" (click)="showEditEventSearch.set(true)">
+                  <button
+                    type="button"
+                    class="btn btn--outline whitespace-nowrap"
+                    (click)="showEditEventSearch.set(true)"
+                  >
                     Link Event
                   </button>
                   @if (editEventId()) {
-                    <button type="button" class="btn btn--danger whitespace-nowrap" (click)="unlinkEditEvent()">
+                    <button
+                      type="button"
+                      class="btn btn--danger whitespace-nowrap"
+                      (click)="unlinkEditEvent()"
+                    >
                       <app-icon name="close" size="1rem" />
                     </button>
                   }
@@ -642,6 +663,43 @@ export class Splits {
   protected readonly editEventTitle = signal('');
 
   protected t = (key: TranslationKey) => this.translate.t(key);
+
+  /** Columns configuration for the participants table in detail view */
+  protected readonly participantColumns: readonly DataTableColumn<SplitParticipant>[] = [
+    {
+      key: 'username',
+      label: 'common.username',
+      sortable: true,
+      searchable: true,
+      accessor: (participant) => participant.username,
+      comparator: (a, b) => a.username.localeCompare(b.username),
+    },
+    {
+      key: 'weight',
+      label: 'splits.weight',
+      sortable: true,
+      accessor: (participant) => participant.weight,
+      comparator: (a, b) => a.weight - b.weight,
+      align: 'right',
+    },
+    {
+      key: 'share_amount',
+      label: 'splits.share',
+      sortable: true,
+      accessor: (participant) => participant.share_amount,
+      comparator: (a, b) => (a.share_amount ?? 0) - (b.share_amount ?? 0),
+      align: 'right',
+    },
+    {
+      key: 'actions',
+      label: '',
+      align: 'center',
+    },
+  ];
+
+  /** Track function for participants by user_id */
+  protected readonly trackByParticipant = (participant: SplitParticipant): unknown =>
+    participant.user_id;
 
   constructor() {
     void this.load();
@@ -1079,27 +1137,31 @@ export class Splits {
     this.showCreateForm.set(false);
   }
 
-  protected async onEventSearchFilter(filters: { search: string; dateFrom: string; dateTo: string }) {
+  protected async onEventSearchFilter(filters: {
+    search: string;
+    dateFrom: string;
+    dateTo: string;
+  }) {
     this.eventSearchLoading.set(true);
     try {
       const params: Record<string, string> = {
         page: '1',
-        limit: '50'
+        limit: '50',
       };
       if (filters.search) params['search'] = filters.search;
       if (filters.dateFrom) params['date_from'] = filters.dateFrom;
       if (filters.dateTo) params['date_to'] = filters.dateTo;
-      
+
       const res = await firstValueFrom(
-        this.api.get<PaginatedData<EventView>>('/api/events', params)
+        this.api.get<PaginatedData<EventView>>('/api/events', params),
       );
       this.eventSearchOptions.set(
-        res.items.map(e => ({
+        res.items.map((e) => ({
           id: e.id,
           title: e.title,
           subtitle: this.formatDate(e.event_date_utc),
-          chip: e.status
-        }))
+          chip: e.status,
+        })),
       );
     } catch (err) {
       this.toasts.error(err instanceof Error ? err.message : this.t('common.error'));

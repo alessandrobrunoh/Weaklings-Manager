@@ -38,6 +38,10 @@ export const es: TranslationDict = {
   'common.date': 'Fecha',
   'common.amount': 'Importe',
   'common.optional': 'opcional',
+  'common.add': 'Añadir',
+  'common.clone': 'Clonar',
+  'common.description': 'Descripción',
+  'common.open': 'Abrir',
 
   'nav.dashboard': 'Panel',
   'nav.bank': 'Banco',
@@ -108,6 +112,8 @@ export const es: TranslationDict = {
   'splits.net_value': 'Valor neto',
   'splits.estimated': 'Estimado',
   'splits.match_ocr': 'Emparejar desde captura',
+  'splits.weight': 'Peso',
+  'splits.share': 'Cuota',
 
   'events.title': 'Eventos',
   'events.subtitle': 'Programa y gestiona las actividades de la hermandad.',

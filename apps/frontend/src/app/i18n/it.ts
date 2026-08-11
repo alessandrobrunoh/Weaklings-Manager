@@ -38,6 +38,10 @@ export const it: TranslationDict = {
   'common.date': 'Data',
   'common.amount': 'Importo',
   'common.optional': 'opzionale',
+  'common.add': 'Aggiungi',
+  'common.clone': 'Clona',
+  'common.description': 'Descrizione',
+  'common.open': 'Apri',
 
   'nav.dashboard': 'Cruscotto',
   'nav.bank': 'Banca',
@@ -108,6 +112,8 @@ export const it: TranslationDict = {
   'splits.net_value': 'Valore netto',
   'splits.estimated': 'Stimato',
   'splits.match_ocr': 'Abbina da screenshot',
+  'splits.weight': 'Peso',
+  'splits.share': 'Quota',
 
   'events.title': 'Eventi',
   'events.subtitle': 'Pianifica e gestisci le attività della gilda.',

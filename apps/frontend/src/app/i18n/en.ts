@@ -41,6 +41,10 @@ export const en = {
   'common.date': 'Date',
   'common.amount': 'Amount',
   'common.optional': 'optional',
+  'common.add': 'Add',
+  'common.clone': 'Clone',
+  'common.description': 'Description',
+  'common.open': 'Open',
 
   // Nav
   'nav.dashboard': 'Dashboard',
@@ -118,6 +122,8 @@ export const en = {
   'splits.net_value': 'Net value',
   'splits.estimated': 'Estimated',
   'splits.match_ocr': 'Match from screenshot',
+  'splits.weight': 'Weight',
+  'splits.share': 'Share',
 
   // Events
   'events.title': 'Events',

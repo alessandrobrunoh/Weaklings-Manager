@@ -17,11 +17,13 @@
  * };
  * ```
  */
+import type { TranslationKey } from '../../../i18n/en';
+
 export interface DataTableColumn<T> {
   /** Stable identifier persisted in the URL / state. */
   readonly key: string;
-  /** i18n translation key rendered in the header cell. */
-  readonly label: string;
+  /** i18n translation key rendered in the header cell. Empty string hides the header label. */
+  readonly label: TranslationKey | '';
   /** Whether the user can sort by this column. Defaults to `false`. */
   readonly sortable?: boolean;
   /** Whether the column participates in the global search. */

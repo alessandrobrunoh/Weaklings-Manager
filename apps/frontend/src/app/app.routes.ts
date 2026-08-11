@@ -62,6 +62,15 @@ export const routes: Routes = [
         loadComponent: () => import('./features/comps/comps').then((m) => m.Comps),
       },
       {
+        path: 'comps/builds/:buildId',
+        loadComponent: () =>
+          import('./features/comps/comp-build-detail').then((m) => m.CompBuildDetailPage),
+      },
+      {
+        path: 'comps/:compId',
+        loadComponent: () => import('./features/comps/comp-detail').then((m) => m.CompDetailPage),
+      },
+      {
         path: 'siphoned',
         loadComponent: () => import('./features/siphoned/siphoned').then((m) => m.Siphoned),
       },
