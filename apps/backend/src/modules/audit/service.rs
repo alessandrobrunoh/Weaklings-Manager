@@ -30,7 +30,7 @@ impl AuditService {
         // Send to Discord audit log channel if configured
         if let Some(channel_id) = &cfg.discord_audit_log_channel_id {
             if let Some(token) = &cfg.discord_bot_token {
-                let message = format!(
+                let mut message = format!(
                     "**Audit Log:** `{}`\n**Entity:** `{:?}` (ID: {:?})\n**User ID:** {:?}\n**Details:**\n```json\n{}\n```",
                     action,
                     entity_type,
@@ -38,7 +38,9 @@ impl AuditService {
                     user_id,
                     details.map(|v| v.to_string()).unwrap_or_default()
                 );
-                Self::send_discord_message(channel_id, token, &message).await;
+                Self::truncate_discord_msg(&mut message);
+                let payload = serde_json::json!({ "content": message });
+                Self::send_discord_payload(channel_id, token, payload).await;
             }
         }
 
@@ -46,14 +48,30 @@ impl AuditService {
         if let Some(channel_id) = &cfg.discord_transaction_spam_channel_id {
             if let Some(token) = &cfg.discord_bot_token {
                 if entity_type == Some("TRANSACTION") {
-                    let message = format!(
+                    let mut message = format!(
                         "**Transaction Activity:** `{}`\n**Entity ID:** {:?}\n**User ID:** {:?}\n**Details:**\n```json\n{}\n```",
                         action,
                         entity_id,
                         user_id,
                         serde_json::to_string_pretty(&inserted.details).unwrap_or_default()
                     );
-                    Self::send_discord_message(channel_id, token, &message).await;
+                    Self::truncate_discord_msg(&mut message);
+                    
+                    let mut payload = serde_json::json!({ "content": message });
+                    
+                    if action == "WITHDRAW_REQUESTED" {
+                        payload["components"] = serde_json::json!([{
+                            "type": 1,
+                            "components": [{
+                                "type": 2,
+                                "style": 5,
+                                "label": "Review on Dashboard",
+                                "url": format!("{}/bank", cfg.frontend_url)
+                            }]
+                        }]);
+                    }
+                    
+                    Self::send_discord_payload(channel_id, token, payload).await;
                 }
             }
         }
@@ -61,27 +79,55 @@ impl AuditService {
         Ok(inserted)
     }
 
-    async fn send_discord_message(channel_id: &str, token: &str, content: &str) {
+    fn truncate_discord_msg(content: &mut String) {
+        if content.len() > 1900 {
+            content.truncate(1900);
+            content.push_str("\n... (truncated)");
+            if content.contains("```json") {
+                content.push_str("\n```");
+            }
+        }
+    }
+
+    async fn send_discord_payload(channel_id: &str, token: &str, payload: serde_json::Value) {
         let client = Client::new();
         let url = format!(
             "https://discord.com/api/v10/channels/{}/messages",
             channel_id
         );
 
-        let mut truncated_content = content.to_string();
-        if truncated_content.len() > 1900 {
-            truncated_content.truncate(1900);
-            truncated_content.push_str("\n... (truncated)");
-            if content.ends_with("```") {
-                truncated_content.push_str("\n```");
+        let mut current_payload = payload.clone();
+        for attempt in 1..=3 {
+            let resp = client
+                .post(&url)
+                .header("Authorization", format!("Bot {}", token))
+                .json(&current_payload)
+                .send()
+                .await;
+                
+            match resp {
+                Ok(res) if res.status() == reqwest::StatusCode::TOO_MANY_REQUESTS => {
+                    if let Ok(json) = res.json::<serde_json::Value>().await {
+                        if let Some(retry_after) = json.get("retry_after").and_then(|v| v.as_f64()) {
+                            tracing::warn!("Discord rate limited. Retrying after {} seconds...", retry_after);
+                            tokio::time::sleep(std::time::Duration::from_secs_f64(retry_after)).await;
+                            continue;
+                        }
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+                Ok(res) if !res.status().is_success() => {
+                    let status = res.status();
+                    let text = res.text().await.unwrap_or_default();
+                    tracing::warn!("Failed to send Discord message. Status: {}, Body: {}", status, text);
+                    break;
+                }
+                Err(e) => {
+                    tracing::warn!("Error sending Discord message: {}", e);
+                    break;
+                }
+                _ => break, // Success
             }
         }
-
-        let _ = client
-            .post(&url)
-            .header("Authorization", format!("Bot {}", token))
-            .json(&json!({ "content": truncated_content }))
-            .send()
-            .await;
     }
 }

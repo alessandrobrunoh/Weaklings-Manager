@@ -57,6 +57,7 @@ export const en = {
   'nav.albion': 'Albion Link',
   'nav.users': 'Members',
   'nav.admin': 'Admin',
+  'nav.audit': 'Audit Logs',
   'nav.settings': 'Settings',
   'nav.profile': 'Profile',
   'nav.logout': 'Sign out',
@@ -292,6 +293,15 @@ export const en = {
   'validation.required': 'This field is required.',
   'validation.min': 'Must be at least {min}.',
   'validation.positive': 'Must be a positive number.',
+
+  // Audit
+  'audit.title': 'Audit Logs',
+  'audit.subtitle': 'System-wide activity log of everything happening on the platform.',
+  'audit.date': 'Date',
+  'audit.action': 'Action',
+  'audit.entity': 'Entity',
+  'audit.user': 'User',
+  'audit.details': 'Details',
 } as const;
 
 export type TranslationKey = keyof typeof en;

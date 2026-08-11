@@ -18,6 +18,7 @@ import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
+import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import type { IconName } from '../../shared/components/icon/icon';
 
 const TRANSACTIONS_LOAD_LIMIT = 1000;
@@ -32,7 +33,7 @@ const TRANSACTIONS_LOAD_LIMIT = 1000;
 @Component({
   selector: 'app-bank',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Loading, DataTable, Icon],
+  imports: [PageHeader, EmptyState, Loading, DataTable, DataTableCell, Icon],
   styles: [
     `
       .bank__view-toggle {

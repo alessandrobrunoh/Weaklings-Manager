@@ -53,6 +53,7 @@ export const es: TranslationDict = {
   'nav.albion': 'Enlace Albion',
   'nav.users': 'Miembros',
   'nav.admin': 'Administración',
+  'nav.audit': 'Registros de Auditoría',
   'nav.settings': 'Ajustes',
   'nav.profile': 'Perfil',
   'nav.logout': 'Salir',
@@ -273,4 +274,13 @@ export const es: TranslationDict = {
   'validation.required': 'Este campo es obligatorio.',
   'validation.min': 'Debe ser al menos {min}.',
   'validation.positive': 'Debe ser un número positivo.',
+
+  // Audit
+  'audit.title': 'Registros de Auditoría',
+  'audit.subtitle': 'Registro de actividades del sistema de todo lo que ocurre en la plataforma.',
+  'audit.date': 'Fecha',
+  'audit.action': 'Acción',
+  'audit.entity': 'Entidad',
+  'audit.user': 'Usuario',
+  'audit.details': 'Detalles',
 };

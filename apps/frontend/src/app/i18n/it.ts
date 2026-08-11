@@ -50,9 +50,10 @@ export const it: TranslationDict = {
   'nav.battles': 'Battaglie',
   'nav.comps': 'Composizioni',
   'nav.siphoned': 'Siphoned',
-  'nav.albion': 'Collegamento Albion',
+  'nav.albion': 'Collega Albion',
   'nav.users': 'Membri',
   'nav.admin': 'Amministrazione',
+  'nav.audit': 'Audit Logs',
   'nav.settings': 'Impostazioni',
   'nav.profile': 'Profilo',
   'nav.logout': 'Esci',
@@ -272,4 +273,13 @@ export const it: TranslationDict = {
   'validation.required': 'Questo campo è obbligatorio.',
   'validation.min': 'Deve essere almeno {min}.',
   'validation.positive': 'Deve essere un numero positivo.',
+
+  // Audit
+  'audit.title': 'Audit Logs',
+  'audit.subtitle': 'Log delle attività di sistema di tutto ciò che accade sulla piattaforma.',
+  'audit.date': 'Data',
+  'audit.action': 'Azione',
+  'audit.entity': 'Entità',
+  'audit.user': 'Utente',
+  'audit.details': 'Dettagli',
 };

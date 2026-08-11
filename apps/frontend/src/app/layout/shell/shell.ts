@@ -106,6 +106,12 @@ export class Shell {
           labelKey: 'nav.admin',
           roles: ['Officer', 'Admin', 'SuperAdmin'],
         },
+        {
+          path: '/audit',
+          icon: 'activity',
+          labelKey: 'nav.audit',
+          roles: ['Officer', 'Admin', 'SuperAdmin'],
+        },
         { path: '/profile', icon: 'settings', labelKey: 'nav.profile' },
       ],
     },

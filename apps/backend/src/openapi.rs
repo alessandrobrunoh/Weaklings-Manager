@@ -8,6 +8,7 @@ use utoipa::OpenApi;
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        crate::modules::audit::router::list_audit_logs,
         crate::modules::users::router::get_my_profile,
         crate::modules::users::router::list_users,
         crate::modules::users::router::create_user,
@@ -99,6 +100,9 @@ use utoipa::OpenApi;
     ),
     components(
         schemas(
+            crate::modules::audit::router::AuditLogResponse,
+            crate::modules::audit::router::PaginatedAuditLogResponse,
+            crate::modules::audit::router::ApiResponsePaginatedAuditLogs,
             crate::modules::users::service::UserProfile,
             crate::modules::users::service::UserFilters,
             crate::pagination::PaginationParams,
