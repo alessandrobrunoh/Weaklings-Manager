@@ -510,7 +510,7 @@ impl EventService {
         if let Some((active_comp, capacity)) = active {
             Ok((active_comp, capacity))
         } else {
-            Err(AppError::Validation("La comp è piena".to_string()))
+            Err(AppError::Validation("The composition is full".to_string()))
         }
     }
 
@@ -1481,7 +1481,7 @@ impl EventService {
 
         if taken_count >= primary_cb.quantity as usize {
             return Err(AppError::Validation(format!(
-                "Il ruolo primario per la build '{}' è già al completo (limite comp: {})",
+                "The primary role for build '{}' is already full (comp limit: {})",
                 req.primary_build_id, primary_cb.quantity
             )));
         }

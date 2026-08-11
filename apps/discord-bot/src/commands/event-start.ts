@@ -38,7 +38,7 @@ export async function execute(
 
       if (channel?.isTextBased() && !channel.isDMBased() && "send" in channel) {
         await channel.send({
-          content: `🚨 <@&${eventRoleId}> L'evento **${event.title}** è **INIZIATO (LIVE)** 🟢!`,
+          content: `🚨 <@&${eventRoleId}> The event **${event.title}** is now **LIVE** 🟢!`,
           allowedMentions: { roles: [eventRoleId] },
         });
       }

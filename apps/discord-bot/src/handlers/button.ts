@@ -193,7 +193,7 @@ async function handleEventButton(
 
       const selectMenu = new StringSelectMenuBuilder()
         .setCustomId(`event:join_role:${eventId}:${interaction.message.id}`)
-        .setPlaceholder("Seleziona il tuo Ruolo")
+        .setPlaceholder("Select your Role")
         .addOptions(
           availableRoles.map((role) =>
             new StringSelectMenuOptionBuilder()

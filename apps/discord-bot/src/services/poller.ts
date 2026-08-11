@@ -161,7 +161,7 @@ export class Poller {
 
       for (const event of upcomingEvents) {
         await channel.send({
-          content: `🚨 <@&${eventRoleId}> L'evento **${event.title}** inizia tra meno di 1 ora! Preparatevi!`,
+          content: `🚨 <@&${eventRoleId}> The event **${event.title}** starts in less than 1 hour! Get ready!`,
           allowedMentions: { roles: [eventRoleId] },
         });
 

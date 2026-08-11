@@ -53,7 +53,7 @@ const STATUS_LABEL: Record<string, string> = {
   auto_stopped: "AUTO-STOPPED ⚠️",
 };
 
-// ── Embed dettaglio evento ───────────────────────────────────────────────────
+// ── Event detail embed ───────────────────────────────────────────────────────
 
 export function buildEventEmbed(
   event: EventView | EventDetailView,
@@ -89,7 +89,7 @@ export function buildEventEmbed(
     footerText: `Event #${event.id} • Weaklings Guild Manager`,
   });
 
-  // Se è un EventDetailView con partecipanti, mostriamo la lista raggruppata
+  // For EventDetailView with participants, show the roster grouped by build.
   const detail = event as EventDetailView;
   if (detail.participants?.length > 0) {
     const buildCounts: Record<string, number> = {};
@@ -151,7 +151,7 @@ export function buildEventSummaryEmbed(
   return embed;
 }
 
-// ── Bottoni partecipazione evento ────────────────────────────────────────────
+// ── Event participation buttons ──────────────────────────────────────────────
 
 export function buildEventManageActionRow(
   eventId: number,
@@ -159,7 +159,7 @@ export function buildEventManageActionRow(
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(`event:manage:${eventId}`)
-      .setLabel("Gestisci Partecipazione")
+      .setLabel("Manage Participation")
       .setEmoji("📋")
       .setStyle(ButtonStyle.Primary),
   );

@@ -6,7 +6,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
     ports:
-      - "5432:5432"
+      - "5434:5434"
     volumes:
       - pgdata:/var/lib/postgresql
     restart: unless-stopped
@@ -30,6 +30,7 @@ services:
       - MISTRAL_API_KEY=${MISTRAL_API_KEY}
       - ALBION_API_REGION=${ALBION_API_REGION}
       - DISCORD_BATTLES_CTA_CHANNEL_ID=${DISCORD_BATTLES_CTA_CHANNEL_ID}
+      - EVENT_PING_ROLE_ID=${EVENT_PING_ROLE_ID}
       - DISCORD_EVENT_ROLE_ID=${DISCORD_EVENT_ROLE_ID}
     depends_on:
       - database
