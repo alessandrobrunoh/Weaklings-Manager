@@ -10,8 +10,8 @@ use std::str::FromStr;
 
 use sea_orm::prelude::Decimal;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
-    PaginatorTrait, QueryFilter, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
+    EntityTrait, PaginatorTrait, QueryFilter, TransactionTrait,
 };
 
 use crate::errors::AppError;
@@ -20,6 +20,9 @@ use crate::modules::bank::entities::ActiveModel as TransactionActiveModel;
 use crate::modules::bank::service::TYPE_SPLIT_CREDIT;
 use crate::modules::bank::status::TransactionStatus;
 use crate::modules::events::entities::event::Entity as EventEntity;
+use crate::modules::events::entities::event_participation::{
+    Column as EventParticipationColumn, Entity as EventParticipationEntity,
+};
 use crate::modules::users::entities::{Column as UserColumn, Entity as UserEntity};
 use crate::pagination::{PaginatedData, PaginationParams};
 
@@ -60,6 +63,28 @@ async fn validate_event_link(
     }
 
     Err(AppError::NotFound(format!("Event {event_id} not found")))
+}
+
+/// Default weight assigned to split participants imported from a linked event.
+///
+/// Events only record who signed up, not how the loot should be weighted, so imported
+/// participants receive this baseline. Officers can still tune weights afterwards via
+/// `add_or_update_participant`.
+const IMPORTED_EVENT_PARTICIPANT_WEIGHT: i32 = 1;
+
+/// Resolves the user ids of every player signed up to `event_id`.
+///
+/// Returns an empty `Vec` when the event has no sign-ups yet; callers must decide how to
+/// react (e.g. refusing to wipe a split's roster when linking an empty event).
+async fn event_participant_ids<C>(db: &C, event_id: i64) -> Result<Vec<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let participations = EventParticipationEntity::find()
+        .filter(EventParticipationColumn::EventId.eq(event_id))
+        .all(db)
+        .await?;
+    Ok(participations.into_iter().map(|p| p.user_id).collect())
 }
 
 /// Resolves the event title for a linked split summary.
@@ -197,22 +222,44 @@ impl SplitService {
         creator_id: i64,
         req: CreateSplitRequest,
     ) -> Result<SplitDetail, AppError> {
-        if req.participants.is_empty() {
+        validate_event_link(db, req.event_id).await?;
+
+        // When no participants are provided but an event is linked, the split's roster is
+        // seeded from the event's sign-ups. Each imported participant starts with the
+        // baseline event weight.
+        let mut participants = req.participants;
+        if participants.is_empty()
+            && let Some(event_id) = req.event_id
+        {
+            let event_user_ids = event_participant_ids(db, event_id).await?;
+            if event_user_ids.is_empty() {
+                return Err(AppError::Validation(format!(
+                    "event {event_id} has no participants to import"
+                )));
+            }
+            participants = event_user_ids
+                .into_iter()
+                .map(|user_id| UpsertParticipantRequest {
+                    user_id,
+                    weight: IMPORTED_EVENT_PARTICIPANT_WEIGHT,
+                })
+                .collect();
+        }
+
+        if participants.is_empty() {
             return Err(AppError::Validation(
                 "a split must be requested with at least one participant".to_string(),
             ));
         }
-        if req.participants.iter().any(|p| p.weight <= 0) {
+        if participants.iter().any(|p| p.weight <= 0) {
             return Err(AppError::Validation("weight must be positive".to_string()));
         }
-        let mut seen = HashSet::with_capacity(req.participants.len());
-        if !req.participants.iter().all(|p| seen.insert(p.user_id)) {
+        let mut seen = HashSet::with_capacity(participants.len());
+        if !participants.iter().all(|p| seen.insert(p.user_id)) {
             return Err(AppError::Validation(
                 "participants must not contain duplicate user ids".to_string(),
             ));
         }
-
-        validate_event_link(db, req.event_id).await?;
 
         let txn = db.begin().await?;
 
@@ -229,7 +276,7 @@ impl SplitService {
         };
         let inserted = active.insert(&txn).await?;
 
-        for participant in &req.participants {
+        for participant in &participants {
             let active = ParticipantActiveModel {
                 split_id: Set(inserted.id),
                 user_id: Set(participant.user_id),
@@ -311,9 +358,15 @@ impl SplitService {
 
     /// Updates mutable split values while the split is still pending.
     ///
+    /// Linking an event (`event_id` set to `Some(Some(id))`) has a side effect: the split's
+    /// roster is synchronized with the event's participants. Participants already in the
+    /// split keep their weights; participants absent from the event are dropped; event
+    /// sign-ups not yet in the split are added with [`IMPORTED_EVENT_PARTICIPANT_WEIGHT`].
+    ///
     /// # Errors
     ///
-    /// Returns `AppError::Validation` if the split is not pending.
+    /// * Returns `AppError::Validation` if the split is not pending, or the linked event has
+    ///   no participants to import.
     pub async fn update_split(
         &self,
         db: &DatabaseConnection,
@@ -338,13 +391,102 @@ impl SplitService {
             let trimmed = note.trim().to_string();
             active.note = Set((!trimmed.is_empty()).then_some(trimmed));
         }
-        if let Some(event_id) = req.event_id {
-            validate_event_link(db, event_id).await?;
-            active.event_id = Set(event_id);
+
+        let linked_event_id = req.event_id;
+        let is_linking_event = matches!(linked_event_id, Some(Some(_)));
+
+        if let Some(Some(event_id)) = linked_event_id {
+            validate_event_link(db, Some(event_id)).await?;
         }
 
-        let updated = active.update(db).await?;
+        let txn = db.begin().await?;
+
+        if let Some(event_id_opt) = linked_event_id {
+            active.event_id = Set(event_id_opt);
+        }
+
+        let updated = active.update(&txn).await?;
+
+        if let Some(Some(event_id)) = linked_event_id {
+            self.sync_participants_from_event(&txn, updated.id, event_id)
+                .await?;
+        }
+
+        txn.commit().await?;
+
+        if is_linking_event {
+            // Re-read after the participant sync so the returned detail reflects the new roster.
+            return self.get_split(db, updated.id).await;
+        }
+
         self.to_detail(db, updated).await
+    }
+
+    /// Synchronizes a split's roster with the participants of a linked event.
+    ///
+    /// Implemented as a set reconciliation over user ids:
+    /// - participants present in the split but absent from the event are deleted;
+    /// - participants present in the event but absent from the split are inserted with
+    ///   [`IMPORTED_EVENT_PARTICIPANT_WEIGHT`];
+    /// - participants in both keep their existing weight untouched.
+    ///
+    /// Refuses to run when the event has no sign-ups, since that would silently empty the
+    /// split and leave it impossible to complete.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::Validation` if the linked event has no participants.
+    async fn sync_participants_from_event<C>(
+        &self,
+        db: &C,
+        split_id: i64,
+        event_id: i64,
+    ) -> Result<(), AppError>
+    where
+        C: ConnectionTrait,
+    {
+        let event_user_ids = event_participant_ids(db, event_id).await?;
+        if event_user_ids.is_empty() {
+            return Err(AppError::Validation(format!(
+                "cannot link event {event_id}: the event has no participants to import"
+            )));
+        }
+
+        let event_user_set: HashSet<i64> = event_user_ids.into_iter().collect();
+
+        let existing = ParticipantEntity::find()
+            .filter(ParticipantColumn::SplitId.eq(split_id))
+            .all(db)
+            .await?;
+        let existing_user_set: HashSet<i64> = existing.iter().map(|p| p.user_id).collect();
+
+        let to_remove: Vec<i64> = existing_user_set
+            .difference(&event_user_set)
+            .copied()
+            .collect();
+        if !to_remove.is_empty() {
+            ParticipantEntity::delete_many()
+                .filter(ParticipantColumn::SplitId.eq(split_id))
+                .filter(ParticipantColumn::UserId.is_in(to_remove))
+                .exec(db)
+                .await?;
+        }
+
+        let to_add: Vec<i64> = event_user_set
+            .difference(&existing_user_set)
+            .copied()
+            .collect();
+        for user_id in to_add {
+            let active = ParticipantActiveModel {
+                split_id: Set(split_id),
+                user_id: Set(user_id),
+                weight: Set(IMPORTED_EVENT_PARTICIPANT_WEIGHT),
+                ..Default::default()
+            };
+            active.insert(db).await?;
+        }
+
+        Ok(())
     }
 
     /// Deletes a split entirely.

@@ -107,6 +107,9 @@ pub struct CreateSplitRequest {
     #[schema(example = "Ancient Avalon boss drop")]
     pub note: Option<String>,
     /// Optional event id to connect the split to an event's post-activity statistics.
+    ///
+    /// When `participants` is empty and this is set, the split's roster is seeded from the
+    /// event's sign-ups (each with the default event weight).
     #[schema(example = 42)]
     pub event_id: Option<i64>,
     /// The participants to distribute the loot to, with their relative weights. Must be
@@ -135,6 +138,11 @@ pub struct UpdateSplitRequest {
     /// New free-text note. Send an empty string to clear it.
     pub note: Option<String>,
     /// New event link. `null` clears the association.
+    ///
+    /// Side effect: setting this to `Some(event_id)` synchronizes the split's participants
+    /// with the event's sign-ups — existing participants absent from the event are removed,
+    /// event sign-ups not yet in the split are added with a default weight, and participants
+    /// in both keep their current weight.
     pub event_id: Option<Option<i64>>,
 }
 
