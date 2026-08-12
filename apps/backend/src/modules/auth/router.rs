@@ -249,6 +249,16 @@ pub async fn get_me(
     )
 )]
 pub async fn logout(jar: CookieJar) -> (CookieJar, Json<ApiResponse<()>>) {
-    let jar = jar.remove(Cookie::from("session_user"));
+    // The removal cookie must match the attributes used when the session was created
+    // (see `discord_callback`). Browsers only delete a cookie when path/domain/samesite
+    // align — omitting path here would default to the request path (`/api/auth/logout`)
+    // and leave the real cookie on `/` intact, so logout would silently no-op.
+    let jar = jar.remove(
+        Cookie::build(("session_user", ""))
+            .path("/")
+            .http_only(true)
+            .same_site(SameSite::Lax)
+            .max_age(time::Duration::ZERO),
+    );
     (jar, Json(ApiResponse::new(())))
 }
