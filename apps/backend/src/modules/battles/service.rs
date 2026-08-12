@@ -33,8 +33,9 @@ use super::models::{
 const MY_BATTLES_MAX_UPSTREAM_PAGES: u64 = 5;
 
 /// Minimum number of players from the configured guild required for a battle to
-/// be considered relevant to the Weaklings wrapper.
-const DEFAULT_MIN_GUILD_PLAYERS: i64 = 5;
+/// be considered relevant to the Weaklings wrapper. `1` means any battle with
+/// at least one Weaklings participant is included.
+const DEFAULT_MIN_GUILD_PLAYERS: i64 = 1;
 
 /// How long a hydrated `/battles` page stays fresh in the local cache.
 const LIST_CACHE_TTL: Duration = Duration::from_secs(60);

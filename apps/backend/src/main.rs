@@ -2,6 +2,7 @@
 //!
 //! Configures and runs the Axum web server exposing modular REST APIs and `OpenAPI` docs.
 
+mod battle_sync;
 mod config;
 pub mod errors;
 mod event_sessions;
@@ -87,6 +88,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     event_sessions::spawn(db.clone(), albionbb_service.clone(), cfg.clone());
+    battle_sync::spawn(db.clone(), battles_service.clone(), albiondata_service.clone());
 
     let app = Router::new()
         .nest("/api", modules::router())

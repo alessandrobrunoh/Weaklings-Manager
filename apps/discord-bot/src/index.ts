@@ -96,7 +96,50 @@ async function main(): Promise<void> {
   });
 
   // ── Login ────────────────────────────────────────────────────────────────
-  await client.login(config.DISCORD_BOT_TOKEN);
+  await loginWithBackoff(client, config.DISCORD_BOT_TOKEN);
+}
+
+/**
+ * Logs in with retry + backoff instead of letting a failed login crash the
+ * process.
+ *
+ * Discord enforces a daily budget on gateway session starts. A container that
+ * `process.exit(1)`s on every failed login gets restarted instantly by
+ * Docker's `restart: unless-stopped`, which burns through that budget in a
+ * tight loop and locks the bot out for the rest of the day. This retries
+ * in-process instead, honoring the "resets at <timestamp>" hint Discord
+ * includes in that specific error when present, and falling back to capped
+ * exponential backoff otherwise.
+ */
+async function loginWithBackoff(client: Client, token: string): Promise<void> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      await client.login(token);
+      return;
+    } catch (err) {
+      attempt++;
+      const message = err instanceof Error ? err.message : String(err);
+      const waitMs = resolveResetDelayMs(message) ?? Math.min(30_000 * attempt, 5 * 60_000);
+      console.error(`[Bot] Login attempt ${attempt} failed: ${message}`);
+      console.error(`[Bot] Retrying in ${Math.round(waitMs / 1000)}s…`);
+      await sleep(waitMs);
+    }
+  }
+}
+
+/** Parses discord.js's "…resets at 2026-08-12T19:39:07.744Z" hint, if present. */
+function resolveResetDelayMs(message: string): number | null {
+  const match = message.match(/resets at ([^\s]+)/i);
+  if (!match) return null;
+  const resetAt = new Date(match[1]).getTime();
+  if (Number.isNaN(resetAt)) return null;
+  const delta = resetAt - Date.now() + 5_000; // small buffer past the reset
+  return Math.max(5_000, delta);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 main().catch((err) => {

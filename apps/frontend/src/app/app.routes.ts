@@ -1,6 +1,6 @@
 import { Routes } from '@angular/router';
 
-import { authGuard, roleGuard } from './core/guards/auth.guard';
+import { authGuard, redirectIfAuthenticatedGuard, roleGuard } from './core/guards/auth.guard';
 
 /**
  * Top-level routes.
@@ -102,6 +102,7 @@ export const routes: Routes = [
   },
   {
     path: 'login',
+    canActivate: [redirectIfAuthenticatedGuard],
     loadComponent: () => import('./features/auth/login').then((m) => m.Login),
   },
   { path: '**', redirectTo: '' },

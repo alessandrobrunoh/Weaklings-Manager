@@ -29,7 +29,7 @@
             "outputMode": "server",
             "prerender": false,
             "security": {
-              "allowedHosts": ["193.70.42.29"]
+              "allowedHosts": ["193.70.42.29", "193.70.42.29:5000"]
             },
             "ssr": {
               "entry": "src/server.ts"

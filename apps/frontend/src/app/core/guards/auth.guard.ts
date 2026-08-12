@@ -26,6 +26,31 @@ export const authGuard: CanActivateFn = async () => {
   return router.createUrlTree(['/login']);
 };
 
+/**
+ * Route guard for the public `/login` page.
+ *
+ * Probes the session (same as `authGuard`) and redirects straight to
+ * `/dashboard` when a valid session already exists, so an already-logged-in
+ * user never sees the login screen — e.g. when hitting `/login` directly in
+ * a new tab, where the synchronous `isAuthenticated` signal hasn't been
+ * populated yet.
+ */
+export const redirectIfAuthenticatedGuard: CanActivateFn = async () => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+
+  if (auth.isAuthenticated()) {
+    return router.createUrlTree(['/dashboard']);
+  }
+
+  const profile = await auth.load();
+  if (profile) {
+    return router.createUrlTree(['/dashboard']);
+  }
+
+  return true;
+};
+
 const ELEVATED_ROLES: ReadonlyArray<Role> = ['Officer', 'Admin', 'SuperAdmin'];
 
 /**
