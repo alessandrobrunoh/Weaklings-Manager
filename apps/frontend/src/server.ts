@@ -90,14 +90,25 @@ function createProxyRequest(req: Request): StreamingRequestInit {
  */
 function writeProxyResponse(upstreamResponse: globalThis.Response, res: Response): void {
   res.status(upstreamResponse.status);
-  upstreamResponse.headers.forEach((value, key) => res.setHeader(key, value));
+
+  upstreamResponse.headers.forEach((value, key) => {
+    const lowerKey = key.toLowerCase();
+
+    if (lowerKey === 'content-encoding' || lowerKey === 'content-length') {
+      return;
+    }
+
+    res.setHeader(key, value);
+  });
 
   if (!upstreamResponse.body) {
     res.end();
     return;
   }
 
-  const upstreamBody = upstreamResponse.body as unknown as Parameters<typeof Readable.fromWeb>[0];
+  const upstreamBody =
+    upstreamResponse.body as unknown as Parameters<typeof Readable.fromWeb>[0];
+
   Readable.fromWeb(upstreamBody).pipe(res);
 }
 
