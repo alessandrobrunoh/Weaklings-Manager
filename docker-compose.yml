@@ -44,6 +44,7 @@ services:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
       - PORT=${PORT}
       - API_REWRITE_URL=http://backend:3000
+      - NG_ALLOWED_HOSTS=193.70.42.29
     depends_on:
       - backend
     restart: unless-stopped
