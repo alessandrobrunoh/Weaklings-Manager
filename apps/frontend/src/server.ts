@@ -64,7 +64,11 @@ function createProxyRequest(req: Request): StreamingRequestInit {
   headers.delete('host');
 
   if (req.method === 'GET' || req.method === 'HEAD') {
-    return { headers, method: req.method };
+    return {
+      headers,
+      method: req.method,
+      redirect: 'manual',
+    };
   }
 
   return {
@@ -72,6 +76,7 @@ function createProxyRequest(req: Request): StreamingRequestInit {
     duplex: 'half',
     headers,
     method: req.method,
+    redirect: 'manual',
   };
 }
 
