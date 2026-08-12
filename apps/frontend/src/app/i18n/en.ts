@@ -55,6 +55,7 @@ export const en = {
   'nav.battles': 'Battles',
   'nav.comps': 'Compositions',
   'nav.siphoned': 'Siphoned',
+  'nav.regears': 'Regears',
   'nav.albion': 'Albion Link',
   'nav.users': 'Members',
   'nav.admin': 'Admin',
@@ -206,6 +207,22 @@ export const en = {
   'events.detail.filled_of': 'of',
   'events.detail.slots_left': 'slots left',
   'events.detail.comp_full': 'composition full',
+  'events.detail.manage_participants': 'Manage participants',
+  'events.detail.manage_participants_help':
+    'Add members manually or reshuffle build assignments before starting the event.',
+  'events.detail.add_participant': 'Add member',
+  'events.detail.search_member': 'Search member',
+  'events.detail.assign_builds': 'Assign builds',
+  'events.detail.no_builds_assigned':
+    'Pick a primary build before adding this member to the roster.',
+  'events.detail.participant_added': 'Member added to the roster.',
+  'events.detail.participant_updated': 'Build assignment updated.',
+  'events.detail.participant_removed': 'Member removed from the roster.',
+  'events.detail.remove_participant': 'Remove from event',
+  'events.detail.member_already_in': 'This member is already in the roster.',
+  'events.detail.select_player': 'Select player',
+  'events.detail.unassigned': 'Unassigned members',
+  'events.detail.no_build_items': 'No items configured for this build yet.',
 
   // Battles
   'battles.title': 'Battles',

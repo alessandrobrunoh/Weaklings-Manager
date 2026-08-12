@@ -1389,6 +1389,57 @@ impl EventService {
         user_id: i64,
         req: ParticipateEventRequest,
     ) -> Result<EventDetailView, AppError> {
+        self.apply_participation(
+            db,
+            event_id,
+            user_id,
+            req.primary_build_id,
+            req.secondary_build_id,
+        )
+        .await
+    }
+
+    /// Officer/creator endpoint payload: same shape as `ParticipateEventRequest`
+    /// but the target user is supplied by the route rather than the session.
+    pub async fn set_participant(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+        target_user_id: i64,
+        req: super::models::SetParticipantRequest,
+    ) -> Result<EventDetailView, AppError> {
+        // Make sure the target user exists so we fail fast with a 404 instead
+        // of leaving an orphan participation row behind.
+        let user_exists = crate::modules::users::entities::Entity::find_by_id(target_user_id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("User {target_user_id} not found")))?;
+        let _ = user_exists;
+
+        self.apply_participation(
+            db,
+            event_id,
+            target_user_id,
+            req.primary_build_id,
+            req.secondary_build_id,
+        )
+        .await
+    }
+
+    /// Inserts (or updates) a single participation row after validating event,
+    /// build existence, comp membership and slot availability.
+    ///
+    /// Shared by both the self-service `participate` and the officer-driven
+    /// `set_participant` so the rules never drift between the two paths.
+    async fn apply_participation(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+        user_id: i64,
+        primary_build_id: i64,
+        secondary_build_id: Option<i64>,
+    ) -> Result<EventDetailView, AppError> {
         // Validate event exists
         let event_model = event::Entity::find_by_id(event_id)
             .one(db)
@@ -1397,19 +1448,18 @@ impl EventService {
             .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
 
         // Validate builds exist in DB
-        let primary_exists = build::Entity::find_by_id(req.primary_build_id)
+        let primary_exists = build::Entity::find_by_id(primary_build_id)
             .count(db)
             .await
             .map_err(AppError::Database)?
             > 0;
         if !primary_exists {
             return Err(AppError::NotFound(format!(
-                "Primary build {} not found",
-                req.primary_build_id
+                "Primary build {primary_build_id} not found"
             )));
         }
 
-        if let Some(sec_id) = req.secondary_build_id {
+        if let Some(sec_id) = secondary_build_id {
             let secondary_exists = build::Entity::find_by_id(sec_id)
                 .count(db)
                 .await
@@ -1417,8 +1467,7 @@ impl EventService {
                 > 0;
             if !secondary_exists {
                 return Err(AppError::NotFound(format!(
-                    "Secondary build {} not found",
-                    sec_id
+                    "Secondary build {sec_id} not found"
                 )));
             }
         }
@@ -1454,21 +1503,21 @@ impl EventService {
         // Verify primary build exists in active comp
         let primary_cb = active_comp_builds
             .iter()
-            .find(|cb| cb.build_id == req.primary_build_id)
+            .find(|cb| cb.build_id == primary_build_id)
             .ok_or_else(|| {
                 AppError::Validation(format!(
-                    "Primary build {} is not allowed in comp {}",
-                    req.primary_build_id, active_comp.name
+                    "Primary build {primary_build_id} is not allowed in comp {}",
+                    active_comp.name
                 ))
             })?;
 
         // Verify secondary build exists in active comp (if provided)
-        if let Some(sec_id) = req.secondary_build_id {
+        if let Some(sec_id) = secondary_build_id {
             let exists = active_comp_builds.iter().any(|cb| cb.build_id == sec_id);
             if !exists {
                 return Err(AppError::Validation(format!(
-                    "Secondary build {} is not allowed in comp {}",
-                    sec_id, active_comp.name
+                    "Secondary build {sec_id} is not allowed in comp {}",
+                    active_comp.name
                 )));
             }
         }
@@ -1476,29 +1525,29 @@ impl EventService {
         // Verify primary build slot availability
         let taken_count = current_participations
             .iter()
-            .filter(|p| p.user_id != user_id && p.primary_build_id == req.primary_build_id)
+            .filter(|p| p.user_id != user_id && p.primary_build_id == primary_build_id)
             .count();
 
         if taken_count >= primary_cb.quantity as usize {
             return Err(AppError::Validation(format!(
                 "The primary role for build '{}' is already full (comp limit: {})",
-                req.primary_build_id, primary_cb.quantity
+                primary_build_id, primary_cb.quantity
             )));
         }
 
         // Save or update
         if let Some(p) = existing {
             let mut active: event_participation::ActiveModel = p.clone().into();
-            active.primary_build_id = Set(req.primary_build_id);
-            active.secondary_build_id = Set(req.secondary_build_id);
+            active.primary_build_id = Set(primary_build_id);
+            active.secondary_build_id = Set(secondary_build_id);
             active.updated_at = Set(chrono::Utc::now().into());
             active.update(db).await.map_err(AppError::Database)?;
         } else {
             let active = event_participation::ActiveModel {
                 event_id: Set(event_id),
                 user_id: Set(user_id),
-                primary_build_id: Set(req.primary_build_id),
-                secondary_build_id: Set(req.secondary_build_id),
+                primary_build_id: Set(primary_build_id),
+                secondary_build_id: Set(secondary_build_id),
                 ..Default::default()
             };
             active.insert(db).await.map_err(AppError::Database)?;

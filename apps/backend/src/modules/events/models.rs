@@ -309,3 +309,21 @@ pub struct ParticipateEventRequest {
     /// The optional backup/secondary build ID.
     pub secondary_build_id: Option<i64>,
 }
+
+/// Request body used by event creators / officers with `events.manage` to
+/// forcibly set the build assignment of an arbitrary guild member.
+///
+/// Mirrors [`ParticipateEventRequest`] but is intended for the
+/// `PUT /api/events/{id}/participants/{user_id}` route, so the target user is
+/// picked from the URL instead of being inferred from the session.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[schema(example = json!({
+    "primary_build_id": 5,
+    "secondary_build_id": 7
+}))]
+pub struct SetParticipantRequest {
+    /// The primary build ID to assign (must have available slots in active comp).
+    pub primary_build_id: i64,
+    /// The optional backup/secondary build ID to assign.
+    pub secondary_build_id: Option<i64>,
+}

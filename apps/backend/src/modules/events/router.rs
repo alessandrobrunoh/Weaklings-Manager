@@ -3,7 +3,7 @@
 use axum::{
     Extension, Json, Router,
     extract::{Path, Query},
-    routing::{get, post},
+    routing::{get, post, put},
 };
 
 use crate::config::Config;
@@ -15,10 +15,11 @@ use crate::responses::{
     ApiResponse, ApiResponseEventDetail, ApiResponseEventList, ApiResponseEventView,
 };
 use axum::http::StatusCode;
+use sea_orm::EntityTrait;
 
 use super::models::{
     CreateEventRequest, EventDetailView, EventFilters, EventView, ParticipateEventRequest,
-    UpdateEventBattlesRequest, UpdateEventRequest,
+    SetParticipantRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
 use super::service::{BattleLinkingContext, EventService};
 use crate::modules::albionbb::client::normalize_server;
@@ -35,6 +36,10 @@ pub fn router() -> Router {
         .route(
             "/{id}/participate",
             post(participate).delete(cancel_participation),
+        )
+        .route(
+            "/{id}/participants/{user_id}",
+            put(set_participant).delete(remove_participant),
         )
         .route("/{id}/start", post(start_event))
         .route("/{id}/stop", post(stop_event))
@@ -266,6 +271,121 @@ async fn cancel_participation(
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     let service = EventService::new();
     let detail = service.cancel_participation(&db, id, user.user_id).await?;
+    Ok(Json(ApiResponse::new(detail)))
+}
+
+/// Guard for endpoints that mutate an event's participant roster on behalf of
+/// someone other than the caller: either the event's creator or any user with
+/// `events.manage` may act. Everyone else gets a 403.
+///
+/// We intentionally avoid `UserContext::require` here because the policy is an
+/// OR between role-based permission and ownership of the row, not a single
+/// permission gate.
+async fn require_event_management_authority(
+    user: &UserContext,
+    perms: &Permissions,
+    db: &sea_orm::DatabaseConnection,
+    event_id: i64,
+) -> Result<(), AppError> {
+    if user.is_superadmin()
+        || perms
+            .check(user.is_superadmin(), &user.roles, Permission::EventsManage)
+            .await
+    {
+        return Ok(());
+    }
+
+    let owner_id = super::entities::event::Entity::find_by_id(event_id)
+        .one(db)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?
+        .created_by;
+
+    if owner_id == user.user_id {
+        return Ok(());
+    }
+
+    Err(AppError::Forbidden(
+        "Only the event creator or users with events.manage may manage participants".to_string(),
+    ))
+}
+
+/// Inserts or updates a participant on behalf of an arbitrary guild member.
+///
+/// Restricted to the event creator or users holding `events.manage`.
+#[utoipa::path(
+    put,
+    path = "/api/events/{id}/participants/{user_id}",
+    tag = "events",
+    summary = "Set participant build assignment",
+    description = "Officer / event-creator endpoint for inserting or updating the build \
+        assignment of an arbitrary guild member. Useful when a member cannot sign themselves up \
+        (e.g. they are offline) or when the organiser wants to reshuffle builds right before \
+        starting the event. The same comp / slot-availability rules as `POST /events/{id}/participate` \
+        apply. Returns the refreshed `EventDetailView`.",
+    security(("session_cookie" = [])),
+    params(
+        ("id" = i64, Path, description = "Event ID"),
+        ("user_id" = i64, Path, description = "Internal user ID of the target member")
+    ),
+    request_body(content = SetParticipantRequest, description = "Build IDs to assign"),
+    responses(
+        (status = 200, description = "Participant upserted", body = ApiResponseEventDetail),
+        (status = 400, description = "Validation error (e.g. comp full, build not allowed)", body = ProblemDetails),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - caller is not creator and lacks events.manage", body = ProblemDetails),
+        (status = 404, description = "Event / user / build not found", body = ProblemDetails)
+    )
+)]
+async fn set_participant(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path((id, target_user_id)): Path<(i64, i64)>,
+    Json(req): Json<SetParticipantRequest>,
+) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
+    require_event_management_authority(&user, &perms, &db, id).await?;
+    let service = EventService::new();
+    let detail = service
+        .set_participant(&db, id, target_user_id, req)
+        .await?;
+    Ok(Json(ApiResponse::new(detail)))
+}
+
+/// Removes a participant from an event on behalf of an arbitrary guild member.
+///
+/// Restricted to the event creator or users holding `events.manage`.
+#[utoipa::path(
+    delete,
+    path = "/api/events/{id}/participants/{user_id}",
+    tag = "events",
+    summary = "Remove a participant",
+    description = "Officer / event-creator endpoint for removing an arbitrary guild member from the \
+        event roster. Returns the refreshed `EventDetailView`.",
+    security(("session_cookie" = [])),
+    params(
+        ("id" = i64, Path, description = "Event ID"),
+        ("user_id" = i64, Path, description = "Internal user ID of the target member")
+    ),
+    responses(
+        (status = 200, description = "Participant removed", body = ApiResponseEventDetail),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - caller is not creator and lacks events.manage", body = ProblemDetails),
+        (status = 404, description = "Event / participation not found", body = ProblemDetails)
+    )
+)]
+async fn remove_participant(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path((id, target_user_id)): Path<(i64, i64)>,
+) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
+    require_event_management_authority(&user, &perms, &db, id).await?;
+    let service = EventService::new();
+    let detail = service
+        .cancel_participation(&db, id, target_user_id)
+        .await?;
     Ok(Json(ApiResponse::new(detail)))
 }
 

@@ -414,3 +414,34 @@ impl From<PaginatedData<crate::modules::siphoned::models::EntryView>> for Pagina
         }
     }
 }
+
+/// Concrete paginated `DeathView` response schema for `OpenAPI` (regear module).
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PaginatedDeathView {
+    /// List of regear deaths on the current page.
+    pub items: Vec<crate::modules::regear::models::DeathView>,
+    /// Total number of items across all pages.
+    #[schema(example = 42)]
+    pub total_items: u64,
+    /// Total number of pages.
+    #[schema(example = 5)]
+    pub total_pages: u64,
+    /// The current page number (1-indexed).
+    #[schema(example = 1)]
+    pub current_page: u64,
+    /// The number of items per page.
+    #[schema(example = 50)]
+    pub limit: u64,
+}
+
+impl From<PaginatedData<crate::modules::regear::models::DeathView>> for PaginatedDeathView {
+    fn from(data: PaginatedData<crate::modules::regear::models::DeathView>) -> Self {
+        Self {
+            items: data.items,
+            total_items: data.total_items,
+            total_pages: data.total_pages,
+            current_page: data.current_page,
+            limit: data.limit,
+        }
+    }
+}

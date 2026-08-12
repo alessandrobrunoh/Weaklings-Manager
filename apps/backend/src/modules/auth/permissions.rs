@@ -75,6 +75,18 @@ pub enum Permission {
     /// View audit logs
     #[strum(serialize = "audit.view")]
     AuditView,
+    /// View the regear queue (own deaths by default; officer queue with adjudicate). Member+.
+    #[strum(serialize = "regear.view")]
+    RegearView,
+    /// Request a regear for one of the caller's deaths. Member+.
+    #[strum(serialize = "regear.request")]
+    RegearRequest,
+    /// Accept or reject a pending regear request. Officer+.
+    #[strum(serialize = "regear.adjudicate")]
+    RegearAdjudicate,
+    /// Update guild-wide regear settings (caps, slot mask, pricing). Admin+.
+    #[strum(serialize = "regear.settings.manage")]
+    RegearSettingsManage,
 }
 
 impl Permission {

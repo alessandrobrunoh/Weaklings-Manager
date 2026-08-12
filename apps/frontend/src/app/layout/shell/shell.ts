@@ -97,6 +97,7 @@ export class Shell {
         { path: '/battles', icon: 'shield', labelKey: 'nav.battles' },
         { path: '/comps', icon: 'package', labelKey: 'nav.comps' },
         { path: '/siphoned', icon: 'activity', labelKey: 'nav.siphoned' },
+        { path: '/regears', icon: 'shield', labelKey: 'nav.regears' },
         { path: '/users', icon: 'users', labelKey: 'nav.users' },
       ],
     },

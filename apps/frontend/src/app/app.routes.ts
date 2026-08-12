@@ -80,6 +80,10 @@ export const routes: Routes = [
         loadComponent: () => import('./features/siphoned/siphoned').then((m) => m.Siphoned),
       },
       {
+        path: 'regears',
+        loadComponent: () => import('./features/regears/regears').then((m) => m.Regears),
+      },
+      {
         path: 'users',
         loadComponent: () => import('./features/users/users').then((m) => m.Users),
       },

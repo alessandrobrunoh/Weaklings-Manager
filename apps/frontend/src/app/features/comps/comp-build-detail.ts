@@ -12,12 +12,14 @@ import type {
   PaginatedData,
   UpdateBuildRequest,
 } from '../../core/models/api.models';
+import { searchAlbionEquipmentCatalog } from '../../shared/data/albion-equipment-catalog';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 
@@ -60,21 +62,22 @@ const ROLE_LABELS: Record<BuildRole, string> = {
   brawler: 'Brawler',
 };
 
-const ITEM_TIERS = ['T4', 'T4.1', 'T4.2', 'T4.3', 'T5', 'T5.1', 'T6', 'T6.1', 'T7', 'T7.1', 'T8', 'T8.1', 'T8.2', 'T8.3'];
-
-/** Maps an equipment slot to the OpenAlbion item `type` used for search filtering. */
-const SLOT_TO_OPENALBION_TYPE: Partial<Record<BuildSlot, string>> = {
-  weapon: 'weapon',
-  off_hand: 'offhand',
-  head: 'head',
-  armor: 'armor',
-  shoes: 'shoes',
-  cape: 'cape',
-  bag: 'bag',
-  potion: 'consumable',
-  food: 'food',
-  mount: 'mount',
-};
+const ITEM_TIERS = [
+  'T4',
+  'T4.1',
+  'T4.2',
+  'T4.3',
+  'T5',
+  'T5.1',
+  'T6',
+  'T6.1',
+  'T7',
+  'T7.1',
+  'T8',
+  'T8.1',
+  'T8.2',
+  'T8.3',
+];
 
 /**
  * Build detail page.
@@ -91,19 +94,32 @@ const SLOT_TO_OPENALBION_TYPE: Partial<Record<BuildSlot, string>> = {
 @Component({
   selector: 'app-comp-build-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, PageHeader, EmptyState, Loading],
+  imports: [RouterLink, PageHeader, EmptyState, Loading, EquipmentGrid],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
     } @else if (build(); as current) {
-      <app-page-header [title]="current.name" [subtitle]="roleLabel(current.role) + ' · ' + (current.category_name || 'No category')">
+      <app-page-header
+        [title]="current.name"
+        [subtitle]="roleLabel(current.role) + ' · ' + (current.category_name || 'No category')"
+      >
         <div class="flex flex-wrap gap-2">
           <a class="btn btn--ghost" routerLink="/comps">← {{ t('comps.title') }}</a>
           @if (canManage()) {
-            <button type="button" class="btn btn--outline" (click)="toggleEdit()" [disabled]="saving()">
+            <button
+              type="button"
+              class="btn btn--outline"
+              (click)="toggleEdit()"
+              [disabled]="saving()"
+            >
               {{ editing() ? t('common.close') : t('common.edit') }}
             </button>
-            <button type="button" class="btn btn--danger" (click)="deleteBuild()" [disabled]="saving()">
+            <button
+              type="button"
+              class="btn btn--danger"
+              (click)="deleteBuild()"
+              [disabled]="saving()"
+            >
               {{ t('common.delete') }}
             </button>
           }
@@ -115,11 +131,20 @@ const SLOT_TO_OPENALBION_TYPE: Partial<Record<BuildSlot, string>> = {
           <div class="grid gap-4 md:grid-cols-2">
             <label>
               <span class="label">{{ t('common.name') }}</span>
-              <input class="input" type="text" [value]="editName()" (input)="onEditNameChange($event)" />
+              <input
+                class="input"
+                type="text"
+                [value]="editName()"
+                (input)="onEditNameChange($event)"
+              />
             </label>
             <label>
               <span class="label">Category</span>
-              <select class="select" [value]="editCategoryId()" (change)="onEditCategoryChange($event)">
+              <select
+                class="select"
+                [value]="editCategoryId()"
+                (change)="onEditCategoryChange($event)"
+              >
                 <option value="">No category</option>
                 @for (category of buildCategories(); track category.id) {
                   <option [value]="category.id">{{ category.name }}</option>
@@ -138,16 +163,25 @@ const SLOT_TO_OPENALBION_TYPE: Partial<Record<BuildSlot, string>> = {
           </label>
           <label>
             <span class="label">{{ t('common.description') }}</span>
-            <textarea class="textarea" rows="3" [value]="editDescription()" (input)="onEditDescriptionChange($event)"></textarea>
+            <textarea
+              class="textarea"
+              rows="3"
+              [value]="editDescription()"
+              (input)="onEditDescriptionChange($event)"
+            ></textarea>
           </label>
           <div class="flex justify-end gap-2">
-            <button type="button" class="btn btn--ghost" (click)="toggleEdit()">{{ t('common.cancel') }}</button>
-            <button type="submit" class="btn btn--primary" [disabled]="saving()">{{ t('common.save') }}</button>
+            <button type="button" class="btn btn--ghost" (click)="toggleEdit()">
+              {{ t('common.cancel') }}
+            </button>
+            <button type="submit" class="btn btn--primary" [disabled]="saving()">
+              {{ t('common.save') }}
+            </button>
           </div>
         </form>
       }
 
-      <section class="card grid gap-3 p-5" aria-label="Equipment slots">
+      <section class="card grid gap-4 p-5" aria-label="Equipment slots">
         <header class="flex items-center justify-between gap-3">
           <h2 class="text-lg font-semibold" style="color: var(--color-text)">
             Equipment ({{ itemsBySlot().length }}/{{ SLOT_ORDER.length }})
@@ -155,84 +189,24 @@ const SLOT_TO_OPENALBION_TYPE: Partial<Record<BuildSlot, string>> = {
           <span class="chip">{{ current.item_count }} item(s)</span>
         </header>
 
-        @for (slot of SLOT_ORDER; track slot) {
-          @let entry = itemForSlot(slot);
-          <div
-            class="grid gap-3 rounded-lg p-3 sm:grid-cols-[10rem_3rem_1fr_1fr_auto]"
-            style="background-color: var(--color-surface-1)"
-          >
-            <span class="font-medium self-center" style="color: var(--color-text)">{{ slotLabel(slot) }}</span>
-            @if (entry) {
-              @if (entry.openalbion_item_icon) {
-                <img
-                  [src]="entry.openalbion_item_icon"
-                  [alt]="entry.openalbion_item_name"
-                  class="self-center"
-                  style="width: 2.5rem; height: 2.5rem; object-fit: contain"
-                />
-              } @else {
-                <span class="self-center text-2xl">—</span>
-              }
-              <div class="self-center">
-                <p class="font-medium" style="color: var(--color-text)">{{ entry.openalbion_item_name }}</p>
-                <p class="text-xs" style="color: var(--color-text-secondary)">
-                  #{{ entry.openalbion_item_id }} · {{ entry.openalbion_item_type }}
-                </p>
-              </div>
-              <span class="self-center chip">{{ entry.openalbion_item_tier || '—' }}</span>
-              @if (canManage()) {
-                <div class="flex items-center gap-2">
-                  <button type="button" class="btn btn--outline btn--sm" (click)="startSlotEdit(slot, entry!)">
-                    {{ t('common.edit') }}
-                  </button>
-                  <button type="button" class="btn btn--danger btn--sm" (click)="removeItem(slot)" [disabled]="saving()">
-                    {{ t('common.delete') }}
-                  </button>
-                </div>
-              }
-            } @else {
-              <span class="self-center text-2xl">+</span>
-              <span class="self-center text-sm" style="color: var(--color-text-secondary)">Empty slot</span>
-              <span></span>
-              @if (canManage()) {
-                <button type="button" class="btn btn--tonal btn--sm self-center" (click)="startSlotEdit(slot, null)">
-                  {{ t('common.add') }}
-                </button>
-              }
-            }
-
-            @if (editingSlot() === slot && canManage()) {
-              <div class="grid gap-2 sm:col-span-5 sm:grid-cols-[8rem_1fr_1fr_auto]">
-                <select class="select" [value]="draftTier()" (change)="onDraftTierChange($event)">
-                  @for (tier of ITEM_TIERS; track tier) {
-                    <option [value]="tier">{{ tier }}</option>
-                  }
-                </select>
-                <input
-                  class="input"
-                  type="search"
-                  placeholder="Search item"
-                  [value]="draftSearch()"
-                  (input)="onDraftSearchChange($event)"
-                />
-                <select class="select" [value]="draftItemId()" (change)="onDraftItemChange($event)">
-                  <option value="">{{ searchLoading() ? t('common.loading') : 'Select item' }}</option>
-                  @for (item of searchResults(); track item.id) {
-                    <option [value]="item.id">{{ item.name }} · {{ item.tier }}</option>
-                  }
-                </select>
-                <div class="flex gap-2">
-                  <button type="button" class="btn btn--primary btn--sm" (click)="saveSlot(slot)" [disabled]="saving()">
-                    {{ t('common.save') }}
-                  </button>
-                  <button type="button" class="btn btn--ghost btn--sm" (click)="cancelSlotEdit()">
-                    {{ t('common.cancel') }}
-                  </button>
-                </div>
-              </div>
-            }
-          </div>
-        }
+        <app-equipment-grid
+          [items]="itemsBySlot()"
+          [canManage]="canManage()"
+          [editingSlot]="editingSlot()"
+          [draftTier]="draftTier()"
+          [draftSearch]="draftSearch()"
+          [draftItemId]="draftItemId()"
+          [searchResults]="searchResults()"
+          [searchLoading]="searchLoading()"
+          [tiers]="ITEM_TIERS"
+          (slotToggle)="onSlotToggle($event)"
+          (tierChange)="onDraftTierChangeValue($event)"
+          (searchChange)="onDraftSearchChangeValue($event)"
+          (itemSelect)="onDraftItemChangeValue($event)"
+          (saveSlot)="saveSlot($event)"
+          (cancelEdit)="cancelSlotEdit()"
+          (removeItem)="removeItem($event)"
+        />
       </section>
     } @else if (!loading()) {
       <app-empty-state message="Build not found" icon="package" />
@@ -249,7 +223,14 @@ export class CompBuildDetailPage {
 
   protected readonly SLOT_ORDER = SLOT_ORDER;
   protected readonly ITEM_TIERS = ITEM_TIERS;
-  protected readonly roles: BuildRole[] = ['healer', 'support', 'dps', 'tank', 'battle_mount', 'brawler'];
+  protected readonly roles: BuildRole[] = [
+    'healer',
+    'support',
+    'dps',
+    'tank',
+    'battle_mount',
+    'brawler',
+  ];
 
   protected readonly loading = signal(true);
   protected readonly saving = signal(false);
@@ -295,6 +276,21 @@ export class CompBuildDetailPage {
     return SLOT_LABELS[slot] ?? slot;
   }
 
+  /**
+   * Toggle the equipment popover for a slot.
+   *
+   * Selecting the active slot again closes the popover; otherwise we
+   * pre-fill the draft from the existing persisted item so officers can
+   * tweak tier without re-searching from scratch.
+   */
+  protected onSlotToggle(slot: BuildSlot): void {
+    if (this.editingSlot() === slot) {
+      this.cancelSlotEdit();
+      return;
+    }
+    this.startSlotEdit(slot);
+  }
+
   protected itemForSlot(slot: BuildSlot): BuildItemSlot | null {
     return this.itemsBySlot().find((item) => item.slot === slot) ?? null;
   }
@@ -326,7 +322,8 @@ export class CompBuildDetailPage {
     this.editRole.set((event.target as HTMLSelectElement).value);
   }
 
-  protected startSlotEdit(slot: BuildSlot, current: BuildItemSlot | null): void {
+  protected startSlotEdit(slot: BuildSlot): void {
+    const current = this.itemForSlot(slot);
     this.editingSlot.set(slot);
     this.draftTier.set(current?.openalbion_item_tier ?? 'T8');
     this.draftSearch.set(current?.openalbion_item_name ?? '');
@@ -347,13 +344,13 @@ export class CompBuildDetailPage {
     this.searchResults.set([]);
   }
 
-  protected onDraftTierChange(event: Event): void {
-    this.draftTier.set((event.target as HTMLSelectElement).value);
+  protected onDraftTierChangeValue(tier: string): void {
+    this.draftTier.set(tier);
     void this.runItemSearch();
   }
 
-  protected onDraftSearchChange(event: Event): void {
-    this.draftSearch.set((event.target as HTMLInputElement).value);
+  protected onDraftSearchChangeValue(query: string): void {
+    this.draftSearch.set(query);
     if (this.searchTimer) {
       clearTimeout(this.searchTimer);
     }
@@ -362,10 +359,9 @@ export class CompBuildDetailPage {
     }, 250);
   }
 
-  protected onDraftItemChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
-    this.draftItemId.set(value);
-    const item = this.searchResults().find((result) => String(result.id) === value);
+  protected onDraftItemChangeValue(itemId: string): void {
+    this.draftItemId.set(itemId);
+    const item = this.searchResults().find((result) => String(result.id) === itemId);
     if (item) {
       this.draftItemName.set(item.name);
       this.draftItemType.set(item.type);
@@ -429,11 +425,14 @@ export class CompBuildDetailPage {
     if (this.editDescription()) request.description = this.editDescription();
     const categoryId = this.editCategoryId() ? Number(this.editCategoryId()) : undefined;
     if (categoryId && categoryId !== build.category_id) request.category_id = categoryId;
-    if (this.editRole() && this.editRole() !== build.role) request.role = this.editRole() as BuildRole;
+    if (this.editRole() && this.editRole() !== build.role)
+      request.role = this.editRole() as BuildRole;
 
     this.saving.set(true);
     try {
-      const updated = await firstValueFrom(this.api.patch<BuildDetail>(`api/comps/builds/${build.id}`, request));
+      const updated = await firstValueFrom(
+        this.api.patch<BuildDetail>(`api/comps/builds/${build.id}`, request),
+      );
       this.build.set(updated);
       this.editing.set(false);
       this.toasts.success('Build updated');
@@ -461,34 +460,18 @@ export class CompBuildDetailPage {
     }
   }
 
-  private async runItemSearch(): Promise<void> {
+  private runItemSearch(): void {
     const slot = this.editingSlot();
     if (!slot) {
-      return;
-    }
-    const query = this.draftSearch().trim();
-    if (query.length < 2) {
       this.searchResults.set([]);
       return;
     }
+
     this.searchLoading.set(true);
-    try {
-      const tier = Number(this.draftTier().replace('T', ''));
-      const response = await firstValueFrom(
-        this.api.get<PaginatedData<OpenAlbionItem>>('api/openalbion/items', {
-          q: query,
-          type: SLOT_TO_OPENALBION_TYPE[slot] ?? '',
-          tier,
-          page: 1,
-          limit: 25,
-        }),
-      );
-      this.searchResults.set(response.items);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.searchLoading.set(false);
-    }
+    this.searchResults.set(
+      searchAlbionEquipmentCatalog(this.draftSearch(), slot, this.draftTier()),
+    );
+    this.searchLoading.set(false);
   }
 
   private async load(buildId: number): Promise<void> {
@@ -500,7 +483,9 @@ export class CompBuildDetailPage {
     try {
       const [build, categories] = await Promise.all([
         firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${buildId}`)),
-        firstValueFrom(this.api.get<BuildCategoryView[]>('api/comps/build-categories')).catch(() => []),
+        firstValueFrom(this.api.get<BuildCategoryView[]>('api/comps/build-categories')).catch(
+          () => [],
+        ),
       ]);
       this.build.set(build);
       this.buildCategories.set(categories);

@@ -14,6 +14,7 @@ pub mod comps;
 pub mod events;
 pub mod health;
 pub mod openalbion;
+pub mod regear;
 pub mod siphoned;
 pub mod splits;
 pub mod users;
@@ -39,6 +40,7 @@ pub fn router() -> Router {
         .nest("/comps", comps::router())
         .nest("/events", events::router())
         .nest("/siphoned", siphoned::router())
+        .nest("/regear", regear::router())
         .nest("/admin", admin::router())
         .nest("/utils", utils::router())
         .nest("/audit", audit::router())

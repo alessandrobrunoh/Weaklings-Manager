@@ -98,6 +98,17 @@ use utoipa::OpenApi;
         crate::modules::siphoned::router::get_balance,
         crate::modules::siphoned::router::list_batches,
         crate::modules::siphoned::router::delete_batch,
+        crate::modules::regear::router::list_deaths,
+        crate::modules::regear::router::get_death,
+        crate::modules::regear::router::request_regear,
+        crate::modules::regear::router::list_pending_requests,
+        crate::modules::regear::router::accept_request,
+        crate::modules::regear::router::reject_request,
+        crate::modules::regear::router::list_event_deaths,
+        crate::modules::regear::router::run_extraction,
+        crate::modules::regear::router::get_settings,
+        crate::modules::regear::router::update_settings,
+        crate::modules::regear::router::get_my_summary,
     ),
     components(
         schemas(
@@ -249,6 +260,17 @@ use utoipa::OpenApi;
             crate::responses::ApiResponsePlayerBalanceDetail,
             crate::responses::ApiResponseBatchSummaryList,
             crate::responses::ApiResponseDeletedCount,
+            crate::modules::regear::models::BreakdownRow,
+            crate::modules::regear::models::DeathView,
+            crate::modules::regear::models::DeathFilters,
+            crate::modules::regear::models::RegearSettingsView,
+            crate::modules::regear::models::UpdateRegearSettingsRequest,
+            crate::modules::regear::models::AcceptRegearRequest,
+            crate::modules::regear::models::RejectRegearRequest,
+            crate::modules::regear::models::RegearBudgetSummary,
+            crate::modules::regear::models::ExtractionReport,
+            crate::modules::regear::status::RegearStatus,
+            crate::pagination::PaginatedDeathView,
         )
     ),
     tags(
@@ -270,6 +292,7 @@ use utoipa::OpenApi;
         (name = "comps", description = "Compositions and builds: comps group reusable builds of Albion Online items; builds are per-slot loadouts sourced from OpenAlbion. Two DB-creatable category tables (build categories, comp categories)."),
         (name = "events", description = "Events and participations: schedule events with compositions and let logged-in players sign up using build roles with automatic variant capacity scaling."),
         (name = "siphoned", description = "Guild Siphoned Energy ledger: bulk-import the Albion Online in-game export as immutable rows, browse the ledger, and compute per-player balances (who is in debt to the guild)."),
+        (name = "regear", description = "Call-To-Arms gear reimbursement: deaths are extracted from CTA-linked battles, members request regear one death at a time, officers accept (crediting a Guild Bank `regear_credit` row) or reject (terminal)."),
         (name = "admin", description = "Administrative operations: permission cache reload."),
         (name = "utils", description = "Generic, reusable backend utilities not tied to any specific domain — currently just image OCR via Mistral AI.")
     ),

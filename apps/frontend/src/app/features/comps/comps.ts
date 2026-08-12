@@ -24,12 +24,17 @@ import type {
   UpdateCompRequest,
   PaginatedData,
 } from '../../core/models/api.models';
+import {
+  albionEquipmentIconUrl,
+  searchAlbionEquipmentCatalog,
+} from '../../shared/data/albion-equipment-catalog';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 
@@ -48,7 +53,7 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
 @Component({
   selector: 'app-comps',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, PageHeader, EmptyState, Loading],
+  imports: [RouterLink, PageHeader, EmptyState, Loading, EquipmentGrid],
   template: `
     <app-page-header [title]="t('comps.title')" [subtitle]="t('comps.subtitle')">
       <div class="flex flex-wrap gap-2">
@@ -243,74 +248,35 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
             </select>
           </label>
 
-          <section class="surface grid gap-3 p-4" aria-label="Build items">
+          <section class="surface grid gap-4 p-4" aria-label="Build items">
             <header class="flex items-center justify-between gap-3">
               <div>
                 <h3 class="text-sm font-semibold" style="color: var(--color-text)">Equipment</h3>
                 <p class="text-xs" style="color: var(--color-text-secondary)">
-                  Search OpenAlbion by item name; ID and item type are filled automatically.
+                  Click any slot to search OpenAlbion and pick an item.
                 </p>
               </div>
               <span class="chip">{{ draftItems().length }}/{{ slots.length }}</span>
             </header>
 
-            <div class="grid gap-3 lg:grid-cols-[10rem_8rem_1fr_1fr_auto]">
-              <select class="select" [value]="draftItemSlot()" (change)="onItemSlotChange($event)">
-                @for (slot of availableSlots(); track slot) {
-                  <option [value]="slot">{{ slotLabel(slot) }}</option>
-                }
-              </select>
-              <select class="select" [value]="draftItemTier()" (change)="onItemTierChange($event)">
-                @for (tier of itemTiers; track tier) {
-                  <option [value]="tier">{{ tier }}</option>
-                }
-              </select>
-              <input
-                class="input"
-                type="search"
-                placeholder="Search item name"
-                [value]="draftItemSearch()"
-                (input)="onItemSearchChange($event)"
-              />
-              <select
-                class="select"
-                [value]="draftSelectedItemId()"
-                (change)="onSelectedItemChange($event)"
-              >
-                <option value="">
-                  {{ itemSearchLoading() ? t('common.loading') : 'Select item' }}
-                </option>
-                @for (item of itemSearchResults(); track item.id) {
-                  <option [value]="item.id">{{ item.name }} · {{ item.tier }}</option>
-                }
-              </select>
-              <button type="button" class="btn btn--tonal" (click)="addItemToDraft()">Add</button>
-            </div>
-
-            @if (draftItems().length > 0) {
-              <div class="grid gap-2">
-                @for (item of draftItems(); track item.slot) {
-                  <div
-                    class="flex flex-wrap items-center justify-between gap-3 rounded-lg px-3 py-2"
-                    style="background-color: var(--color-surface-1)"
-                  >
-                    <span>
-                      <strong>{{ slotLabel(item.slot) }}</strong> · {{ item.openalbion_item_name }}
-                      <span class="text-xs" style="color: var(--color-text-secondary)">
-                        #{{ item.openalbion_item_id }} · {{ item.openalbion_item_type }}
-                      </span>
-                    </span>
-                    <button
-                      type="button"
-                      class="btn btn--ghost"
-                      (click)="removeDraftItem(item.slot)"
-                    >
-                      {{ t('common.delete') }}
-                    </button>
-                  </div>
-                }
-              </div>
-            }
+            <app-equipment-grid
+              [items]="draftItems()"
+              [canManage]="true"
+              [editingSlot]="draftItemSlot()"
+              [draftTier]="draftItemTier()"
+              [draftSearch]="draftItemSearch()"
+              [draftItemId]="draftSelectedItemId()"
+              [searchResults]="itemSearchResults()"
+              [searchLoading]="itemSearchLoading()"
+              [tiers]="itemTiers"
+              (slotToggle)="onSlotToggle($event)"
+              (tierChange)="onPopoverTierChange($event)"
+              (searchChange)="onPopoverSearchChange($event)"
+              (itemSelect)="onPopoverItemSelect($event)"
+              (saveSlot)="onPopoverSave()"
+              (cancelEdit)="onPopoverCancel()"
+              (removeItem)="removeDraftItem($event)"
+            />
           </section>
         } @else {
           <label>
@@ -612,7 +578,7 @@ export class Comps {
   protected readonly selectedBuildId = signal('');
   protected readonly selectedBuildQuantity = signal(1);
   protected readonly draftBuildEntries = signal<Array<{ build_id: number; quantity: number }>>([]);
-  protected readonly draftItemSlot = signal<BuildSlot>('weapon');
+  protected readonly draftItemSlot = signal<BuildSlot | null>(null);
   protected readonly draftItemType = signal('');
   protected readonly draftItemId = signal('');
   protected readonly draftItemName = signal('');
@@ -643,6 +609,13 @@ export class Comps {
     'off_hand',
   ];
   protected readonly itemTiers: readonly string[] = ['T4', 'T5', 'T6', 'T7', 'T8'];
+
+  /**
+   * Idle handle for the debounced search request triggered from the
+   * equipment popover. Reset on every keystroke so we never fire two
+   * overlapping OpenAlbion requests.
+   */
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
@@ -844,20 +817,44 @@ export class Comps {
     this.selectedBuildQuantity.set(Math.max(1, Number((event.target as HTMLInputElement).value)));
   }
 
-  protected onItemSlotChange(event: Event): void {
-    this.draftItemSlot.set((event.target as HTMLSelectElement).value as BuildSlot);
+  /**
+   * Toggle the equipment popover for a slot.
+   *
+   * Clicking the same slot a second time closes it, matching the user's
+   * expectation from the inline clear button on the right side of the card.
+   */
+  protected onSlotToggle(slot: BuildSlot): void {
+    if (this.draftItemSlot() === slot) {
+      this.onPopoverCancel();
+      return;
+    }
+    this.draftItemSlot.set(slot);
+    this.resetDraftItemFields();
+    void this.searchItems();
+  }
+
+  protected onPopoverTierChange(tier: string): void {
+    this.draftItemTier.set(tier);
     this.clearSelectedItem();
     void this.searchItems();
   }
 
-  protected onItemSearchChange(event: Event): void {
-    this.draftItemSearch.set((event.target as HTMLInputElement).value);
+  /**
+   * Debounced search input — keeps request volume low when the user types
+   * a long query and matches the build-detail page UX.
+   */
+  protected onPopoverSearchChange(query: string): void {
+    this.draftItemSearch.set(query);
     this.clearSelectedItem();
-    void this.searchItems();
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+    }
+    this.searchTimer = setTimeout(() => {
+      void this.searchItems();
+    }, 250);
   }
 
-  protected onSelectedItemChange(event: Event): void {
-    const itemId = (event.target as HTMLSelectElement).value;
+  protected onPopoverItemSelect(itemId: string): void {
     this.draftSelectedItemId.set(itemId);
     const item = this.itemSearchResults().find((candidate) => String(candidate.id) === itemId);
     if (!item) {
@@ -871,10 +868,20 @@ export class Comps {
     this.draftItemIcon.set(this.itemIconUrl(item));
   }
 
-  protected onItemTierChange(event: Event): void {
-    this.draftItemTier.set((event.target as HTMLSelectElement).value);
+  protected onPopoverSave(): void {
+    this.addItemToDraft();
+    this.onPopoverCancel();
+  }
+
+  protected onPopoverCancel(): void {
+    this.draftItemSlot.set(null);
+    this.resetDraftItemFields();
+  }
+
+  private resetDraftItemFields(): void {
+    this.draftItemSearch.set('');
+    this.itemSearchResults.set([]);
     this.clearSelectedItem();
-    void this.searchItems();
   }
 
   protected addBuildToDraft(): void {
@@ -912,8 +919,13 @@ export class Comps {
       return;
     }
 
+    const slot = this.draftItemSlot();
+    if (!slot) {
+      return;
+    }
+
     const item: BuildItemSlot = {
-      slot: this.draftItemSlot(),
+      slot,
       openalbion_item_type: itemType,
       openalbion_item_id: itemId,
       openalbion_item_name: itemName,
@@ -931,17 +943,10 @@ export class Comps {
       ...items.filter((existing) => existing.slot !== item.slot),
       item,
     ]);
-    this.resetDraftItem();
   }
 
   protected removeDraftItem(slot: BuildSlot): void {
     this.draftItems.update((items) => items.filter((item) => item.slot !== slot));
-  }
-
-  protected availableSlots(): readonly BuildSlot[] {
-    const usedSlots = new Set(this.draftItems().map((item) => item.slot));
-    const available = this.slots.filter((slot) => !usedSlots.has(slot));
-    return available.length > 0 ? available : this.slots;
   }
 
   protected buildName(buildId: number): string {
@@ -975,7 +980,7 @@ export class Comps {
     if (!item.identifier) {
       return '';
     }
-    return `https://render.albiononline.com/v1/item/${encodeURIComponent(item.identifier)}.png?quality=1&size=64`;
+    return albionEquipmentIconUrl(item.identifier);
   }
 
   protected compPerformance(compId: number): CompPerformanceView | null {
@@ -1205,16 +1210,8 @@ export class Comps {
     this.selectedBuildQuantity.set(1);
     this.draftBuildEntries.set([]);
     this.draftItems.set([]);
-    this.resetDraftItem();
+    this.onPopoverCancel();
     this.showCreateForm.set(false);
-  }
-
-  private resetDraftItem(): void {
-    const nextSlot = this.availableSlots()[0] ?? 'weapon';
-    this.draftItemSlot.set(nextSlot);
-    this.draftItemSearch.set('');
-    this.itemSearchResults.set([]);
-    this.clearSelectedItem();
   }
 
   private clearSelectedItem(): void {
@@ -1233,46 +1230,18 @@ export class Comps {
     return `T${normalized.split('.')[0]}`;
   }
 
-  private openAlbionItemTypeForSlot(
-    slot: BuildSlot,
-  ): 'weapon' | 'armor' | 'accessory' | 'consumable' {
-    if (slot === 'weapon' || slot === 'off_hand') {
-      return 'weapon';
-    }
-    if (slot === 'potion' || slot === 'food') {
-      return 'consumable';
-    }
-    if (slot === 'mount') {
-      return 'accessory';
-    }
-    return 'armor';
-  }
-
-  private async searchItems(): Promise<void> {
-    const query = this.draftItemSearch().trim();
-    if (query.length < 2) {
+  private searchItems(): void {
+    const slot = this.draftItemSlot();
+    if (!slot) {
       this.itemSearchResults.set([]);
       return;
     }
 
     this.itemSearchLoading.set(true);
-    try {
-      const tier = Number(this.draftItemTier().replace('T', ''));
-      const response = await firstValueFrom(
-        this.api.get<PaginatedData<OpenAlbionItem>>('api/openalbion/items', {
-          q: query,
-          type: this.openAlbionItemTypeForSlot(this.draftItemSlot()),
-          tier,
-          page: 1,
-          limit: 25,
-        }),
-      );
-      this.itemSearchResults.set(response.items);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.itemSearchLoading.set(false);
-    }
+    this.itemSearchResults.set(
+      searchAlbionEquipmentCatalog(this.draftItemSearch(), slot, this.draftItemTier()),
+    );
+    this.itemSearchLoading.set(false);
   }
 
   private async loadFormOptions(): Promise<void> {

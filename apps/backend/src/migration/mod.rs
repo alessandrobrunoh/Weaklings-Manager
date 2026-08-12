@@ -33,6 +33,8 @@ mod m20260811_000004_link_splits_to_events;
 mod m20260811_000005_create_guild_battle_snapshots;
 mod m20260811_000006_create_audit_logs_table;
 mod m20260812_000001_add_call_to_arms_to_events;
+mod m20260812_000002_create_regear_tables;
+mod m20260812_000003_seed_regear_permissions;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -70,6 +72,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260811_000005_create_guild_battle_snapshots::Migration),
             Box::new(m20260811_000006_create_audit_logs_table::Migration),
             Box::new(m20260812_000001_add_call_to_arms_to_events::Migration),
+            Box::new(m20260812_000002_create_regear_tables::Migration),
+            Box::new(m20260812_000003_seed_regear_permissions::Migration),
         ]
     }
 }

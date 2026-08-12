@@ -6,7 +6,10 @@ import type {
   BattleDetail,
   BattleLossEstimate,
   BattleSummary,
+  BuildDetail,
+  BuildItemSlot,
   BuildRole,
+  BuildSlot,
   CompBuildEntry,
   CompDetail,
   CompSummary,
@@ -20,6 +23,7 @@ import type {
   SplitSummary,
   UpdateEventBattlesRequest,
   UpdateEventRequest,
+  UserProfile,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
@@ -822,6 +826,103 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
           </app-data-table>
         }
       </article>
+
+      @if (detail.status === 'scheduled' && canManageParticipants()) {
+        <article class="event-detail__board mt-5 surface">
+          @if (compLoading()) {
+            <p class="event-detail__board-empty">{{ t('common.loading') }}</p>
+          } @else if (availableBuilds().length === 0) {
+            <p class="event-detail__board-empty">{{ t('events.detail.no_builds') }}</p>
+          } @else {
+            <div class="event-detail__board-header">
+              <span class="event-detail__board-comp">
+                {{ t('events.detail.comp') }}: {{ detail.active_comp_name }}
+              </span>
+              <span class="event-detail__board-count">
+                {{ filledSlotsCount() }} / {{ compSlots().length }}
+              </span>
+            </div>
+
+            <div class="event-detail__board-body">
+              @for (group of compSlotsByRole(); track group.role) {
+                <section class="event-detail__board-group">
+                  <h3 class="event-detail__board-role">{{ t(roleLabel(group.role)) }}</h3>
+
+                  @for (slot of group.slots; track slot.key) {
+                    <div
+                      class="event-detail__board-slot"
+                      (mouseenter)="onSlotHover(slot)"
+                      (mouseleave)="onSlotLeave()"
+                    >
+                      <span class="event-detail__board-slot-icon" [class]="roleChip(slot.role)">
+                        @if (weaponRenderIconUrl(slot); as icon) {
+                          <img
+                            class="event-detail__board-slot-render"
+                            [src]="icon"
+                            [alt]="slot.build.name"
+                            loading="lazy"
+                          />
+                        } @else {
+                          <span class="event-detail__board-slot-glyph">{{
+                            roleGlyph(slot.role)
+                          }}</span>
+                        }
+                      </span>
+                      <span class="event-detail__board-slot-name">{{ slot.build.name }}</span>
+                      <select
+                        class="select event-detail__board-slot-select"
+                        [value]="slotAssignmentValue(slot)"
+                        (change)="onSlotAssign(slot, $event)"
+                        [disabled]="slotSavingKey() === slot.key"
+                      >
+                        <option value="">{{ t('events.detail.select_player') }}</option>
+                        @for (
+                          participant of slotParticipantOptions(slot);
+                          track participant.user_id
+                        ) {
+                          <option [value]="participant.user_id">
+                            {{ participant.username }}
+                          </option>
+                        }
+                        <option value="__add__">+ {{ t('events.detail.add_participant') }}</option>
+                      </select>
+
+                      @if (slotTooltipVisible(slot)) {
+                        <div class="event-detail__tooltip" role="tooltip">
+                          <div class="event-detail__tooltip-items">
+                            @for (item of slotTooltipItems(slot.buildId); track item.slot) {
+                              <div class="event-detail__tooltip-item">
+                                @if (item.openalbion_item_icon) {
+                                  <img
+                                    [src]="renderItemIconUrl(item)"
+                                    [alt]="item.openalbion_item_name"
+                                    loading="lazy"
+                                  />
+                                } @else {
+                                  <span class="event-detail__tooltip-item-placeholder">
+                                    {{ slotGlyph(item.slot) }}
+                                  </span>
+                                }
+                                <span class="event-detail__tooltip-item-name">
+                                  {{ item.openalbion_item_name }}
+                                </span>
+                              </div>
+                            } @empty {
+                              <span class="event-detail__tooltip-empty">
+                                {{ t('events.detail.no_build_items') }}
+                              </span>
+                            }
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  }
+                </section>
+              }
+            </div>
+          }
+        </article>
+      }
     } @else {
       <app-empty-state [message]="t('common.empty')" icon="calendar" />
     }
@@ -860,6 +961,87 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
         (select)="onSplitSelected($event)"
         (close)="showSplitSearch.set(false)"
       />
+    }
+
+    @if (showMemberSearch()) {
+      <app-search-dialog
+        [title]="t('events.detail.add_participant')"
+        [options]="memberSearchOptions()"
+        [loading]="memberSearchLoading()"
+        [showDateFilters]="false"
+        (filterChange)="onMemberSearchFilter($event)"
+        (select)="onMemberSelected($event)"
+        (close)="closeMemberSearch()"
+      />
+    }
+
+    @if (draftMember(); as member) {
+      <div class="modal-backdrop" (click)="closeMemberForm()">
+        <div class="modal-card" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
+          <header class="event-detail__section-header">
+            <h2>{{ t('events.detail.assign_builds') }} · {{ member.title }}</h2>
+            <button
+              type="button"
+              class="btn btn--ghost btn--icon"
+              (click)="closeMemberForm()"
+              aria-label="Close"
+            >
+              <app-icon name="close" size="1rem" />
+            </button>
+          </header>
+          <form class="grid gap-3 p-4" (submit)="onAddMemberSubmit($event)">
+            @if (compLoading()) {
+              <app-loading [label]="t('common.loading')" />
+            } @else if (availableBuilds().length === 0) {
+              <p class="text-sm" style="color: var(--color-text-secondary)">
+                {{ t('events.detail.no_builds') }}
+              </p>
+            } @else {
+              <label>
+                <span class="label">{{ t('events.detail.primary_build') }} *</span>
+                <select
+                  class="select"
+                  [value]="draftMemberPrimaryBuildId()"
+                  (change)="onDraftMemberPrimaryChange($event)"
+                >
+                  <option value="">—</option>
+                  @for (entry of availableBuilds(); track entry.build_id) {
+                    <option [value]="entry.build_id">
+                      {{ entry.build.name }} · {{ entry.build.role }}
+                    </option>
+                  }
+                </select>
+              </label>
+              <label>
+                <span class="label">{{ t('events.detail.secondary_build') }}</span>
+                <select
+                  class="select"
+                  [value]="draftMemberSecondaryBuildId()"
+                  (change)="onDraftMemberSecondaryChange($event)"
+                >
+                  <option value="">—</option>
+                  @for (entry of availableBuilds(); track entry.build_id) {
+                    <option [value]="entry.build_id">
+                      {{ entry.build.name }}
+                    </option>
+                  }
+                </select>
+              </label>
+            }
+            @if (memberError()) {
+              <p class="text-sm" style="color: var(--color-danger)">{{ memberError() }}</p>
+            }
+            <div class="flex justify-end gap-2">
+              <button type="button" class="btn btn--ghost" (click)="closeMemberForm()">
+                {{ t('common.cancel') }}
+              </button>
+              <button type="submit" class="btn btn--primary" [disabled]="memberSaving()">
+                {{ t('common.save') }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
     }
   `,
   styles: `
@@ -1046,6 +1228,174 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
       .event-detail__empty--compact {
         padding: 0;
       }
+
+      .event-detail__board {
+        border: 1px solid var(--color-border);
+        border-radius: 0.5rem;
+        overflow: hidden;
+      }
+      .event-detail__board-empty {
+        padding: 1.5rem;
+        text-align: center;
+        color: var(--color-text-secondary);
+      }
+      .event-detail__board-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        background: var(--color-surface-1);
+        border-bottom: 1px solid var(--color-border);
+        font-size: 0.875rem;
+        color: var(--color-text);
+      }
+      .event-detail__board-comp {
+        font-weight: 600;
+      }
+      .event-detail__board-count {
+        color: var(--color-text-secondary);
+      }
+      .event-detail__board-body {
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      .event-detail__board-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+      }
+      .event-detail__board-role {
+        font-size: 0.75rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--color-text-secondary);
+        margin: 0 0 0.25rem 0.25rem;
+      }
+      .event-detail__board-slot {
+        position: relative;
+        display: grid;
+        grid-template-columns: 2.25rem minmax(7rem, 1fr) minmax(0, 1.4fr);
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.35rem 0.6rem;
+        border-radius: 0.4rem;
+        transition: background-color 120ms ease;
+      }
+      .event-detail__board-slot:hover {
+        background: var(--color-surface-1);
+      }
+      .event-detail__board-slot-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 2.25rem;
+        height: 2.25rem;
+        border-radius: 0.4rem;
+        background: var(--color-surface-1);
+        overflow: hidden;
+      }
+      .event-detail__board-slot-render {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+      .event-detail__board-slot-glyph {
+        font-size: 1rem;
+        color: var(--color-text-secondary);
+      }
+      .event-detail__board-slot-name {
+        font-weight: 600;
+        color: var(--color-text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .event-detail__board-slot-select {
+        width: 100%;
+      }
+      @media (max-width: 36rem) {
+        .event-detail__board-slot {
+          grid-template-columns: 2.25rem 1fr;
+        }
+        .event-detail__board-slot-select {
+          grid-column: 1 / -1;
+        }
+      }
+
+      .event-detail__tooltip {
+        position: absolute;
+        top: calc(100% + 0.4rem);
+        left: 2.5rem;
+        z-index: 50;
+        min-width: 18rem;
+        max-width: 26rem;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: 0.6rem;
+        padding: 0.6rem;
+        box-shadow: 0 0.6rem 1.5rem rgba(0, 0, 0, 0.35);
+      }
+      .event-detail__tooltip-items {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(5rem, 1fr));
+        gap: 0.5rem;
+      }
+      .event-detail__tooltip-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.2rem;
+        text-align: center;
+      }
+      .event-detail__tooltip-item img {
+        width: 3rem;
+        height: 3rem;
+        object-fit: contain;
+        background: var(--color-surface-1);
+        border-radius: 0.3rem;
+      }
+      .event-detail__tooltip-item-placeholder {
+        width: 3rem;
+        height: 3rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.4rem;
+        background: var(--color-surface-1);
+        border-radius: 0.3rem;
+      }
+      .event-detail__tooltip-item-name {
+        font-size: 0.7rem;
+        color: var(--color-text);
+        word-break: break-word;
+      }
+      .event-detail__tooltip-empty {
+        color: var(--color-text-secondary);
+        font-size: 0.8rem;
+      }
+
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+        padding: 1rem;
+      }
+      .modal-card {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: 0.75rem;
+        max-width: 32rem;
+        width: 100%;
+        max-height: 90vh;
+        overflow-y: auto;
+      }
     }
   `,
 })
@@ -1115,6 +1465,57 @@ export class EventDetailPage {
   protected readonly availableBuilds = signal<CompBuildEntry[]>([]);
   protected readonly draftPrimaryBuildId = signal('');
   protected readonly draftSecondaryBuildId = signal('');
+
+  /** True for the event creator OR any user holding `events.manage`. */
+  protected readonly canManageParticipants = computed(() => {
+    const detail = this.event();
+    const userId = this.auth.profile()?.user_id ?? null;
+    if (userId === null) {
+      return false;
+    }
+    return this.canManage() || detail?.created_by === userId;
+  });
+
+  /** Member picker state for the manual-add dialog. */
+  protected readonly showMemberSearch = signal(false);
+  protected readonly memberSearchOptions = signal<SearchDialogOption[]>([]);
+  protected readonly memberSearchLoading = signal(false);
+  protected readonly draftMember = signal<SearchDialogOption | null>(null);
+  protected readonly draftMemberPrimaryBuildId = signal('');
+  protected readonly draftMemberSecondaryBuildId = signal('');
+  protected readonly memberSaving = signal(false);
+  protected readonly memberError = signal<string | null>(null);
+
+  /**
+   * Draft board model: every comp build slot becomes a row in the grid.
+   * `slotKey` is `${build_id}#${slotIndex}` and is stable across renders.
+   */
+  protected readonly slotAssignments = signal<Map<string, number | null>>(new Map());
+  protected readonly slotSavingKey = signal<string | null>(null);
+  protected readonly slotRemovingKey = signal<string | null>(null);
+  /**
+   * Build detail cache for hover tooltips and row icons. Preloaded in bulk
+   * when the management board opens so the weapon render is visible immediately.
+   */
+  protected readonly buildDetails = signal<Map<number, BuildDetail>>(new Map());
+  protected readonly buildDetailsLoading = signal<Set<number>>(new Set());
+  protected readonly hoveredSlotKey = signal<string | null>(null);
+  /**
+   * Maps each `build_id` to its weapon `BuildItemSlot` so row icons can render
+   * the Albion item render without a separate lookup per row.
+   */
+  protected readonly buildWeaponByBuildId = computed<Map<number, BuildItemSlot>>(() => {
+    const map = new Map<number, BuildItemSlot>();
+    for (const [buildId, detail] of this.buildDetails()) {
+      const weapon = detail.items.find((item) => item.slot === 'weapon');
+      if (weapon) {
+        map.set(buildId, weapon);
+      }
+    }
+    return map;
+  });
+  /** Build id preselected when the user opens the manual-add dialog from a slot. */
+  private readonly pendingAddSlotBuildId = signal<number | null>(null);
   protected readonly currentParticipant = computed<EventParticipant | null>(() => {
     const detail = this.event();
     const userId = this.auth.profile()?.user_id ?? null;
@@ -1166,6 +1567,109 @@ export class EventDetailPage {
   protected readonly participantsTarget = computed(() =>
     this.participantsByRole().reduce((sum, group) => sum + group.target, 0),
   );
+
+  /**
+   * Flat list of draft-board slots derived from the active comp.
+   * Each `CompBuildEntry` with `quantity` N expands into N slot rows so the
+   * UI can render a seat for every filled position, not just per build.
+   */
+  protected readonly compSlots = computed<CompSlotRow[]>(() => {
+    const slots: CompSlotRow[] = [];
+    for (const entry of this.availableBuilds()) {
+      for (let slotIndex = 0; slotIndex < entry.quantity; slotIndex++) {
+        const key = `${entry.build_id}#${slotIndex}`;
+        slots.push({
+          key,
+          buildId: entry.build_id,
+          build: entry.build,
+          slotIndex,
+          role: entry.build.role,
+        });
+      }
+    }
+    return slots;
+  });
+  /** Same list regrouped by role, preserving ROLE_ORDER for stable rendering. */
+  protected readonly compSlotsByRole = computed<CompSlotGroup[]>(() => {
+    const groups = new Map<BuildRole, CompSlotRow[]>();
+    for (const slot of this.compSlots()) {
+      let bucket = groups.get(slot.role);
+      if (!bucket) {
+        bucket = [];
+        groups.set(slot.role, bucket);
+      }
+      bucket.push(slot);
+    }
+    return ROLE_ORDER.filter((role) => groups.has(role)).map((role) => ({
+      role,
+      slots: groups.get(role) ?? [],
+    }));
+  });
+  /**
+   * Mirror of `compSlots` rebuilt whenever the backend snapshot changes so the
+   * initial assignment state is recomputed. Local edits go into
+   * `slotAssignments` which overrides these defaults until saved.
+   */
+  protected readonly initialSlotAssignments = computed<Map<string, number | null>>(() => {
+    const slots = this.compSlots();
+    const detail = this.event();
+    const assignments = new Map<string, number | null>();
+    if (slots.length === 0 || !detail) {
+      return assignments;
+    }
+    // Group participants by their primary build id so we can pop them off as
+    // we walk the slots, leaving surplus participants unassigned.
+    const byBuild = new Map<number, EventParticipant[]>();
+    for (const participant of detail.participants) {
+      const bucket = byBuild.get(participant.primary_build_id);
+      if (bucket) {
+        bucket.push(participant);
+      } else {
+        byBuild.set(participant.primary_build_id, [participant]);
+      }
+    }
+    for (const slot of slots) {
+      const bucket = byBuild.get(slot.buildId);
+      const next = bucket?.shift();
+      assignments.set(slot.key, next ? next.user_id : null);
+    }
+    return assignments;
+  });
+  /** Participants not assigned to any slot (orphans after a comp swap). */
+  protected readonly unassignedParticipants = computed<EventParticipant[]>(() => {
+    const detail = this.event();
+    if (!detail) {
+      return [];
+    }
+    const assigned = new Set<number>();
+    for (const value of this.resolvedAssignments().values()) {
+      if (value !== null) {
+        assigned.add(value);
+      }
+    }
+    return detail.participants.filter((participant) => !assigned.has(participant.user_id));
+  });
+  /**
+   * Local overrides layered on top of `initialSlotAssignments` so we can show
+   * drafts before they hit the backend.
+   */
+  protected readonly resolvedAssignments = computed<Map<string, number | null>>(() => {
+    const merged = new Map<string, number | null>(this.initialSlotAssignments());
+    for (const [key, value] of this.slotAssignments()) {
+      merged.set(key, value);
+    }
+    return merged;
+  });
+  /** Number of slots currently filled in the resolved state. */
+  protected readonly filledSlotsCount = computed(() => {
+    let count = 0;
+    for (const value of this.resolvedAssignments().values()) {
+      if (value !== null) {
+        count++;
+      }
+    }
+    return count;
+  });
   protected readonly outcomeChartRows = computed<ChartMetric[]>(() => {
     const stats = this.event()?.stats;
     if (!stats) {
@@ -1806,6 +2310,387 @@ export class EventDetailPage {
     }
   }
 
+  /**
+   * Returns the user id currently assigned to a slot, honouring local draft
+   * overrides. Returns `null` when the slot is empty.
+   */
+  protected slotAssignment(slot: CompSlotRow): number | null {
+    return this.resolvedAssignments().get(slot.key) ?? null;
+  }
+
+  /**
+   * Stringified assignment for `<select [value]>` bindings. Angular templates
+   * cannot reference the global `String` constructor, so we expose this helper
+   * to coerce numbers into option values.
+   */
+  protected slotAssignmentValue(slot: CompSlotRow): string {
+    const value = this.slotAssignment(slot);
+    return value === null ? '' : String(value);
+  }
+
+  /**
+   * True when the slot's local draft differs from the persisted snapshot.
+   * Drives the per-row Save button enabled state.
+   */
+  protected isSlotDirty(slot: CompSlotRow): boolean {
+    const initial = this.initialSlotAssignments().get(slot.key) ?? null;
+    const current = this.slotAssignment(slot);
+    return initial !== current;
+  }
+
+  /**
+   * Fires when an officer picks or clears a player on a slot. Auto-saves
+   * immediately — no Submit button. When the slot had a previous occupant
+   * who is being replaced, the old user's participation is deleted first.
+   */
+  protected async onSlotAssign(slot: CompSlotRow, event: Event): Promise<void> {
+    const value = (event.target as HTMLSelectElement).value;
+    if (value === '__add__') {
+      this.pendingAddSlotBuildId.set(slot.buildId);
+      this.openMemberSearch();
+      (event.target as HTMLSelectElement).value = this.slotAssignmentValue(slot);
+      return;
+    }
+
+    const userId = value ? Number(value) : null;
+    const detail = this.event();
+    if (!detail) {
+      return;
+    }
+
+    // Optimistically update local state.
+    const next = new Map(this.slotAssignments());
+    if (userId !== null) {
+      for (const [key, assigned] of next) {
+        if (assigned === userId && key !== slot.key) {
+          next.set(key, null);
+        }
+      }
+    }
+    next.set(slot.key, userId);
+    this.slotAssignments.set(next);
+
+    this.slotSavingKey.set(slot.key);
+    try {
+      if (userId === null) {
+        // Slot cleared: delete the previous occupant if one was persisted.
+        const previous = this.initialSlotAssignments().get(slot.key) ?? null;
+        if (previous !== null) {
+          const updated = await firstValueFrom(
+            this.api.delete<EventDetailView>(`api/events/${detail.id}/participants/${previous}`),
+          );
+          if (updated) {
+            this.event.set(updated);
+          }
+        }
+      } else {
+        const updated = await firstValueFrom(
+          this.api.put<EventDetailView>(`api/events/${detail.id}/participants/${userId}`, {
+            primary_build_id: slot.buildId,
+          }),
+        );
+        this.event.set(updated);
+      }
+      this.slotAssignments.update((map) => {
+        const cleaned = new Map(map);
+        cleaned.delete(slot.key);
+        return cleaned;
+      });
+    } catch (error) {
+      // Revert local state on failure.
+      this.slotAssignments.update((map) => {
+        const reverted = new Map(map);
+        reverted.delete(slot.key);
+        return reverted;
+      });
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.slotSavingKey.set(null);
+    }
+  }
+
+  /** Toggles tooltip visibility on hover. Build details are preloaded. */
+  protected onSlotHover(slot: CompSlotRow): void {
+    this.hoveredSlotKey.set(slot.key);
+  }
+
+  protected onSlotLeave(): void {
+    this.hoveredSlotKey.set(null);
+  }
+
+  protected slotTooltipItems(buildId: number): BuildItemSlot[] {
+    const detail = this.buildDetails().get(buildId);
+    if (!detail) {
+      return [];
+    }
+    return [...detail.items].sort(sortBySlotOrder);
+  }
+
+  protected slotTooltipVisible(slot: CompSlotRow): boolean {
+    return this.hoveredSlotKey() === slot.key && this.buildDetails().has(slot.buildId);
+  }
+
+  /**
+   * Converts any stored icon reference into Sandbox Interactive's public PNG
+   * render endpoint. Older build rows may still hold CDN/OpenAlbion URLs; this
+   * extracts the Albion item identifier (for example `T8_2H_HAMMER_UNDEAD`)
+   * and rebuilds the canonical render URL used by Albion itself.
+   */
+  protected weaponRenderIconUrl(slot: CompSlotRow): string {
+    const weapon = this.buildWeaponByBuildId().get(slot.buildId);
+    return weapon ? this.renderItemIconUrl(weapon) : '';
+  }
+
+  protected renderItemIconUrl(item: BuildItemSlot): string {
+    const icon = item.openalbion_item_icon?.trim();
+    if (!icon) {
+      return '';
+    }
+    const identifier = icon
+      .split('/')
+      .pop()
+      ?.split('?')
+      .shift()
+      ?.split('@')
+      .shift()
+      ?.replace(/\.png$/i, '')
+      .trim();
+    if (!identifier) {
+      return icon;
+    }
+    return `https://render.albiononline.com/v1/item/${encodeURIComponent(identifier)}.png?quality=1&size=96`;
+  }
+
+  /**
+   * Resolves a slot's local assignment to the corresponding participant row
+   * so the template can render the username next to the dropdown.
+   */
+  protected slotParticipant(slot: CompSlotRow): EventParticipant | null {
+    const userId = this.slotAssignment(slot);
+    if (userId === null) {
+      return null;
+    }
+    return this.event()?.participants.find((participant) => participant.user_id === userId) ?? null;
+  }
+
+  /**
+   * Users available to assign to a slot. Includes the slot's current occupant
+   * plus any user not yet pinned to another slot, so the dropdown stays valid
+   * after each pick.
+   */
+  protected slotParticipantOptions(slot: CompSlotRow): EventParticipant[] {
+    const detail = this.event();
+    if (!detail) {
+      return [];
+    }
+    const assignedElsewhere = new Set<number>();
+    for (const [key, value] of this.resolvedAssignments()) {
+      if (key !== slot.key && value !== null) {
+        assignedElsewhere.add(value);
+      }
+    }
+    return detail.participants.filter((participant) => !assignedElsewhere.has(participant.user_id));
+  }
+
+  /** Persists the local draft for a single slot via the officer endpoint. */
+  protected async saveSlot(slot: CompSlotRow): Promise<void> {
+    const detail = this.event();
+    if (!detail) {
+      return;
+    }
+    const userId = this.slotAssignment(slot);
+    if (userId === null) {
+      this.toasts.error(this.t('events.detail.no_builds_assigned'));
+      return;
+    }
+
+    this.slotSavingKey.set(slot.key);
+    try {
+      const updated = await firstValueFrom(
+        this.api.put<EventDetailView>(`api/events/${detail.id}/participants/${userId}`, {
+          primary_build_id: slot.buildId,
+        }),
+      );
+      this.event.set(updated);
+      this.slotAssignments.update((map) => {
+        const next = new Map(map);
+        next.delete(slot.key);
+        return next;
+      });
+      this.toasts.success(this.t('events.detail.participant_updated'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.slotSavingKey.set(null);
+    }
+  }
+
+  /**
+   * Empties a slot on the draft board. If the user is persisted on the
+   * backend, we DELETE their participation; otherwise we just clear the
+   * local override.
+   */
+  protected async clearSlot(slot: CompSlotRow): Promise<void> {
+    const detail = this.event();
+    if (!detail) {
+      return;
+    }
+    const userId = this.slotAssignment(slot);
+    if (userId === null) {
+      // Nothing to clear: just drop any local override.
+      this.slotAssignments.update((map) => {
+        const next = new Map(map);
+        next.set(slot.key, null);
+        return next;
+      });
+      return;
+    }
+
+    const participant = detail.participants.find((p) => p.user_id === userId);
+    if (
+      participant &&
+      !window.confirm(`${this.t('events.detail.remove_participant')} — ${participant.username}?`)
+    ) {
+      return;
+    }
+
+    this.slotRemovingKey.set(slot.key);
+    try {
+      const updated = await firstValueFrom(
+        this.api.delete<EventDetailView>(`api/events/${detail.id}/participants/${userId}`),
+      );
+      if (updated) {
+        this.event.set(updated);
+      } else {
+        await this.load();
+      }
+      this.slotAssignments.update((map) => {
+        const next = new Map(map);
+        next.set(slot.key, null);
+        return next;
+      });
+      this.toasts.success(this.t('events.detail.participant_removed'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.slotRemovingKey.set(null);
+    }
+  }
+
+  /** Opens the member search dialog used to manually add someone. */
+  protected openMemberSearch(): void {
+    this.showMemberSearch.set(true);
+    if (this.memberSearchOptions().length === 0) {
+      void this.onMemberSearchFilter({ search: '', dateFrom: '', dateTo: '' });
+    }
+  }
+
+  protected closeMemberSearch(): void {
+    this.showMemberSearch.set(false);
+  }
+
+  protected async onMemberSearchFilter(filter: {
+    search: string;
+    dateFrom: string;
+    dateTo: string;
+  }): Promise<void> {
+    this.memberSearchLoading.set(true);
+    try {
+      const params: Record<string, string> = { limit: '50' };
+      if (filter.search) {
+        params['username'] = filter.search;
+      }
+      const data = await firstValueFrom(
+        this.api.get<PaginatedData<UserProfile>>('api/users', params),
+      );
+      const existing = new Set((this.event()?.participants ?? []).map((p) => p.user_id));
+      this.memberSearchOptions.set(
+        data.items
+          .filter((user) => !existing.has(user.id))
+          .map((user) => ({
+            id: user.id,
+            title: user.username,
+            subtitle: user.email || undefined,
+            chip: user.role,
+          })),
+      );
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.memberSearchLoading.set(false);
+    }
+  }
+
+  /** User picked from the search dialog: open the build assignment form. */
+  protected onMemberSelected(option: SearchDialogOption): void {
+    this.draftMember.set(option);
+    // Pre-fill the primary build when the dialog was triggered from a slot.
+    const preselectedBuildId = this.pendingAddSlotBuildId();
+    this.draftMemberPrimaryBuildId.set(
+      preselectedBuildId !== null ? String(preselectedBuildId) : '',
+    );
+    this.draftMemberSecondaryBuildId.set('');
+    this.memberError.set(null);
+    this.showMemberSearch.set(false);
+    this.pendingAddSlotBuildId.set(null);
+    if (this.availableBuilds().length === 0) {
+      void this.loadActiveComp();
+    }
+  }
+
+  protected closeMemberForm(): void {
+    this.draftMember.set(null);
+    this.draftMemberPrimaryBuildId.set('');
+    this.draftMemberSecondaryBuildId.set('');
+    this.memberError.set(null);
+  }
+
+  protected onDraftMemberPrimaryChange(event: Event): void {
+    this.draftMemberPrimaryBuildId.set((event.target as HTMLSelectElement).value);
+    this.memberError.set(null);
+  }
+
+  protected onDraftMemberSecondaryChange(event: Event): void {
+    this.draftMemberSecondaryBuildId.set((event.target as HTMLSelectElement).value);
+  }
+
+  protected async onAddMemberSubmit(submit: SubmitEvent): Promise<void> {
+    submit.preventDefault();
+    const detail = this.event();
+    const member = this.draftMember();
+    if (!detail || !member) {
+      return;
+    }
+    const primaryBuildId = Number(this.draftMemberPrimaryBuildId());
+    if (primaryBuildId <= 0) {
+      this.memberError.set(this.t('events.detail.no_builds_assigned'));
+      return;
+    }
+
+    const body: ParticipateEventRequest = { primary_build_id: primaryBuildId };
+    const secondaryRaw = this.draftMemberSecondaryBuildId();
+    if (secondaryRaw) {
+      const secondaryBuildId = Number(secondaryRaw);
+      if (secondaryBuildId > 0 && secondaryBuildId !== primaryBuildId) {
+        body.secondary_build_id = secondaryBuildId;
+      }
+    }
+
+    this.memberSaving.set(true);
+    try {
+      const updated = await firstValueFrom(
+        this.api.put<EventDetailView>(`api/events/${detail.id}/participants/${member.id}`, body),
+      );
+      this.event.set(updated);
+      this.closeMemberForm();
+      this.toasts.success(this.t('events.detail.participant_added'));
+    } catch (error) {
+      this.memberError.set(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.memberSaving.set(false);
+    }
+  }
+
   protected async start(id: number): Promise<void> {
     await this.mutate(`api/events/${id}/start`, 'POST', {});
   }
@@ -1855,6 +2740,26 @@ export class EventDetailPage {
 
   protected roleChip(role: BuildRole): string {
     return ROLE_CHIP[role];
+  }
+
+  /**
+   * Compact glyph shown in the slot row's leading badge. Kept short so it fits
+   * in a 1.5rem square without overflowing on narrow screens.
+   */
+  protected roleGlyph(role: BuildRole): string {
+    return ROLE_GLYPH[role] ?? '•';
+  }
+
+  /**
+   * Fallback icon for equipment slots that lack a remote image, mirroring the
+   * Albion paperdoll layout the user is already familiar with.
+   */
+  protected slotGlyph(slot: BuildSlot): string {
+    return SLOT_GLYPH[slot] ?? '•';
+  }
+
+  protected slotLabel(slot: BuildSlot): string {
+    return SLOT_LABELS[slot] ?? slot;
   }
 
   protected fillPercent(current: number, target: number): number {
@@ -1932,11 +2837,39 @@ export class EventDetailPage {
     try {
       const comp = await firstValueFrom(this.api.get<CompDetail>(`api/comps/${compId}`));
       this.availableBuilds.set(comp.builds ?? []);
+      // Preload every build's details so the row weapon render and tooltip
+      // items are available without per-row hover requests.
+      void this.preloadBuildDetails(comp.builds ?? []);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.compLoading.set(false);
     }
+  }
+
+  /**
+   * Fetches `BuildDetail` for every build in the comp in parallel and merges
+   * the results into `buildDetails`. Already-cached builds are skipped so
+   * repeated calls (e.g. after a comp swap) only fetch the new entries.
+   */
+  private async preloadBuildDetails(entries: readonly CompBuildEntry[]): Promise<void> {
+    const cache = this.buildDetails();
+    const missing = entries.filter((entry) => !cache.has(entry.build_id));
+    if (missing.length === 0) {
+      return;
+    }
+    const results = await Promise.allSettled(
+      missing.map((entry) =>
+        firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${entry.build_id}`)),
+      ),
+    );
+    const next = new Map(this.buildDetails());
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        next.set(missing[index].build_id, result.value);
+      }
+    });
+    this.buildDetails.set(next);
   }
 
   private async loadLinkedBattleLosses(detail: EventDetailView): Promise<void> {
@@ -2083,6 +3016,45 @@ const ROLE_CHIP: Readonly<Record<BuildRole, string>> = {
   brawler: 'chip',
 };
 
+/**
+ * Unicode role icons rendered as plain text so the slot row stays light and
+ * doesn't depend on a font-icon set when used inside a tooltip.
+ */
+const ROLE_GLYPH: Readonly<Record<BuildRole, string>> = {
+  tank: '♜',
+  healer: '✚',
+  support: '✦',
+  dps: '⚒',
+  battle_mount: '♞',
+  brawler: '◈',
+};
+
+const SLOT_GLYPH: Readonly<Record<BuildSlot, string>> = {
+  weapon: '⚔',
+  off_hand: '◉',
+  head: '⛑',
+  armor: '▣',
+  shoes: '👞',
+  cape: '🜂',
+  bag: '🎒',
+  potion: '⚗',
+  food: '🍲',
+  mount: '♞',
+};
+
+const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
+  weapon: 'Weapon',
+  off_hand: 'Off-hand',
+  head: 'Head',
+  armor: 'Armor',
+  shoes: 'Shoes',
+  cape: 'Cape',
+  bag: 'Bag',
+  potion: 'Potion',
+  food: 'Food',
+  mount: 'Mount',
+};
+
 /** Aggregates participants and target capacity for a single role bucket. */
 interface RoleGrouping {
   readonly role: BuildRole;
@@ -2095,4 +3067,38 @@ interface ChartMetric {
   readonly value: number;
   readonly color: string;
   readonly target?: number;
+}
+
+/**
+ * One seat on the draft board: a build instance plus the role it belongs to.
+ * `key` is `${build_id}#${slotIndex}` so Angular can `trackBy` it.
+ */
+interface CompSlotRow {
+  readonly key: string;
+  readonly buildId: number;
+  readonly build: import('../../core/models/api.models').BuildSummary;
+  readonly slotIndex: number;
+  readonly role: BuildRole;
+}
+
+interface CompSlotGroup {
+  readonly role: BuildRole;
+  readonly slots: readonly CompSlotRow[];
+}
+
+const SLOT_ORDER: BuildSlot[] = [
+  'weapon',
+  'off_hand',
+  'head',
+  'armor',
+  'shoes',
+  'cape',
+  'bag',
+  'potion',
+  'food',
+  'mount',
+];
+
+function sortBySlotOrder(left: BuildItemSlot, right: BuildItemSlot): number {
+  return SLOT_ORDER.indexOf(left.slot) - SLOT_ORDER.indexOf(right.slot);
 }

@@ -312,13 +312,19 @@ impl CompService {
             let slot = parse_slot(&item)?;
             item_views.push(BuildItemView {
                 slot,
-                openalbion_item_type: item.openalbion_item_type,
+                openalbion_item_type: item.openalbion_item_type.clone(),
                 openalbion_item_id: item.openalbion_item_id,
-                openalbion_item_name: item.openalbion_item_name,
-                openalbion_item_icon: item.openalbion_item_icon,
-                openalbion_item_tier: item.openalbion_item_tier,
+                openalbion_item_name: item.openalbion_item_name.clone(),
+                openalbion_item_icon: item.openalbion_item_icon.clone(),
+                openalbion_item_tier: item.openalbion_item_tier.clone(),
             });
         }
+
+        // Resolve missing icon URLs by hitting the OpenAlbion catalog.
+        // Items saved before the icon-normalization pipeline was wired up have
+        // a null `openalbion_item_icon`; we fill it in at read time so the
+        // frontend always gets a usable render.albiononline.com URL.
+        self.resolve_missing_icons(&mut item_views).await?;
 
         let summary = self.to_build_summary(db, build).await?;
 
@@ -326,6 +332,80 @@ impl CompService {
             summary,
             items: item_views,
         })
+    }
+
+    ///
+    /// For every `BuildItemView` whose `openalbion_item_icon` is `None`, looks
+    /// up the item in the OpenAlbion catalog (batched by `openalbion_item_type`)
+    /// and fills in the `render.albiononline.com` PNG URL derived from the
+    /// item's identifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::Validation` for invalid stored item types and
+    /// `AppError::UpstreamService` when OpenAlbion cannot provide the catalog
+    /// needed to derive the render URL.
+    async fn resolve_missing_icons(
+        &self,
+        item_views: &mut [BuildItemView],
+    ) -> Result<(), AppError> {
+        use crate::modules::openalbion::client::OpenAlbionApiClient;
+        use crate::modules::openalbion::client::OpenAlbionItemType;
+        use crate::modules::openalbion::client::OpenAlbionWeaponFilters;
+
+        let missing: Vec<&mut BuildItemView> = item_views
+            .iter_mut()
+            .filter(|v| v.openalbion_item_icon.is_none())
+            .collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+
+        // Collect the set of (item_type, item_id) pairs we need to resolve.
+        let mut needed_by_type: std::collections::HashMap<String, HashSet<i64>> =
+            std::collections::HashMap::new();
+        for v in &missing {
+            needed_by_type
+                .entry(v.openalbion_item_type.clone())
+                .or_default()
+                .insert(v.openalbion_item_id);
+        }
+
+        // Build an id → icon lookup by fetching each item type's catalog.
+        let client = OpenAlbionApiClient::new();
+        let mut icon_map: std::collections::HashMap<i64, String> = std::collections::HashMap::new();
+
+        for (type_str, ids) in &needed_by_type {
+            let item_type = OpenAlbionItemType::from_str(type_str).map_err(|message| {
+                AppError::Validation(format!(
+                    "Failed to resolve build item icon because item type '{type_str}' is invalid: {message}"
+                ))
+            })?;
+            let filters = OpenAlbionWeaponFilters::default();
+            let items = client.get_items(item_type, &filters).await.map_err(|error| {
+                AppError::UpstreamService(format!(
+                    "Failed to resolve build item icon for item type '{type_str}' because OpenAlbion returned an error: {error}"
+                ))
+            })?;
+            for item in items {
+                if ids.contains(&item.id) {
+                    if let Some(icon) = item.icon {
+                        icon_map.insert(item.id, icon);
+                    }
+                }
+            }
+        }
+
+        // Apply resolved icons back into the views.
+        for v in item_views.iter_mut() {
+            if v.openalbion_item_icon.is_none() {
+                if let Some(icon) = icon_map.get(&v.openalbion_item_id) {
+                    v.openalbion_item_icon = Some(icon.clone());
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Lists builds with optional filtering by role, category, and name substring, paginated.

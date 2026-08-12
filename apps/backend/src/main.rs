@@ -88,7 +88,16 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     event_sessions::spawn(db.clone(), albionbb_service.clone(), cfg.clone());
-    battle_sync::spawn(db.clone(), battles_service.clone(), albiondata_service.clone());
+    battle_sync::spawn(
+        db.clone(),
+        battles_service.clone(),
+        albiondata_service.clone(),
+    );
+
+    let regear_guild_context = modules::regear::router::RegearGuildContext {
+        guild_id: cfg.albion_guild_id.clone(),
+        server: modules::albionbb::client::normalize_server(Some(&cfg.albion_api_region)),
+    };
 
     let app = Router::new()
         .nest("/api", modules::router())
@@ -99,6 +108,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(axum::Extension(albiondata_service))
         .layer(axum::Extension(albionbb_service))
         .layer(axum::Extension(battles_service))
+        .layer(axum::Extension(regear_guild_context))
         .layer(axum::Extension(permissions.clone()))
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive());

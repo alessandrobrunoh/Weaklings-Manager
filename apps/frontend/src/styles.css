@@ -446,4 +446,255 @@
     background-color: var(--color-border-strong);
     border-radius: var(--radius-full);
   }
+
+  /* -----------------------------------------------------------------
+     Equipment grid — character-sheet style layout for build loadouts.
+     Mirrors the in-game paper doll: 3×3 gear grid with the mount
+     centred below. Each cell is an interactive slot card.
+     ----------------------------------------------------------------- */
+  .equipment-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    width: 100%;
+  }
+
+  /*
+   * Slot placement uses named grid areas so the layout reads like an
+   * Albion character sheet regardless of the source order:
+   *
+   *   bag · head · cape
+   *   weapon · armor · off_hand
+   *   potion · shoes · food
+   *        · mount ·
+   */
+  .equipment-grid--paperdoll {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(4, auto);
+    grid-template-areas:
+      'bag head cape'
+      'weapon armor off_hand'
+      'potion shoes food'
+      '. mount .';
+    max-width: 32rem;
+    margin-inline: auto;
+  }
+
+  .equipment-slot--bag {
+    grid-area: bag;
+  }
+  .equipment-slot--head {
+    grid-area: head;
+  }
+  .equipment-slot--cape {
+    grid-area: cape;
+  }
+  .equipment-slot--weapon {
+    grid-area: weapon;
+  }
+  .equipment-slot--armor {
+    grid-area: armor;
+  }
+  .equipment-slot--off_hand {
+    grid-area: off_hand;
+  }
+  .equipment-slot--potion {
+    grid-area: potion;
+  }
+  .equipment-slot--shoes {
+    grid-area: shoes;
+  }
+  .equipment-slot--food {
+    grid-area: food;
+  }
+  .equipment-slot--mount {
+    grid-area: mount;
+  }
+
+  .equipment-slot {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    aspect-ratio: 1 / 1;
+    padding: 0.5rem;
+    background-color: var(--color-surface-1);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text-secondary);
+    text-align: center;
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease,
+      transform 120ms ease,
+      box-shadow 120ms ease;
+  }
+
+  .equipment-slot--interactive {
+    cursor: pointer;
+  }
+
+  .equipment-slot--interactive:hover {
+    border-color: var(--color-primary);
+    background-color: var(--color-surface-hover);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-1);
+  }
+
+  .equipment-slot--filled {
+    background-color: var(--color-surface);
+    border-color: var(--color-border-strong);
+    color: var(--color-text);
+  }
+
+  .equipment-slot--editing {
+    z-index: 30;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-primary-container);
+  }
+
+  .equipment-slot__icon {
+    width: 3rem;
+    height: 3rem;
+    object-fit: contain;
+    pointer-events: none;
+  }
+
+  .equipment-slot__placeholder {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: var(--radius-sm);
+    background-color: var(--color-surface-2);
+    color: var(--color-text-disabled);
+    font-size: 1.5rem;
+    line-height: 1;
+  }
+
+  .equipment-slot__label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .equipment-slot__name {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--color-text);
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .equipment-slot__tier {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.25rem;
+    font-size: 0.625rem;
+    font-weight: 700;
+    padding: 0.05rem 0.35rem;
+    border-radius: var(--radius-sm);
+    background-color: var(--color-primary-container);
+    color: var(--color-primary);
+  }
+
+  .equipment-slot__trigger {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+  }
+
+  .equipment-slot__clear {
+    position: absolute;
+    top: 0.25rem;
+    left: 0.25rem;
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    padding: 0;
+    border-radius: var(--radius-full);
+    border: none;
+    background-color: var(--color-surface-2);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .equipment-slot__clear:hover {
+    background-color: var(--color-error);
+    color: #fff;
+  }
+
+  /*
+   * Equipment slot popover — opens below the clicked slot to host the
+   * searchable select. Stays anchored to the slot via `position: absolute`
+   * with a high z-index to escape any container stacking context.
+   */
+  .equipment-popover {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 40;
+    width: 18rem;
+    max-width: 80vw;
+    padding: 0.75rem;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-3);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  /* Small arrow pointing back to the slot. */
+  .equipment-popover::before {
+    content: '';
+    position: absolute;
+    top: -0.4rem;
+    left: 50%;
+    width: 0.75rem;
+    height: 0.75rem;
+    transform: translateX(-50%) rotate(45deg);
+    background-color: var(--color-surface);
+    border-top: 1px solid var(--color-border-strong);
+    border-left: 1px solid var(--color-border-strong);
+  }
+
+  /* Edge-anchored variant: opens along the slot's left edge so it stays
+     on-screen when the slot sits in the rightmost column. */
+  .equipment-popover--align-left {
+    left: 0;
+    transform: none;
+  }
+
+  .equipment-popover--align-left::before {
+    left: calc((min(100%, 4.5rem)) / 2);
+  }
+
+  .equipment-popover--align-right {
+    left: auto;
+    right: 0;
+    transform: none;
+  }
+
+  .equipment-popover--align-right::before {
+    left: auto;
+    right: calc((min(100%, 4.5rem)) / 2);
+  }
 }

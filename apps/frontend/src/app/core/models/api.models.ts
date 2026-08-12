@@ -47,7 +47,11 @@ export type PermissionKey =
   | 'comps.comps.manage'
   | 'events.manage'
   | 'siphoned.ingest'
-  | 'siphoned.view';
+  | 'siphoned.view'
+  | 'regear.view'
+  | 'regear.request'
+  | 'regear.adjudicate'
+  | 'regear.settings.manage';
 
 export interface DiscordUserProfile {
   id: string;
@@ -674,6 +678,97 @@ export interface SiphonedBatchSummary {
 
 export interface DeletedCount {
   deleted_count: number;
+}
+
+/* ----------------------------- Regear ------------------------------ */
+
+export type RegearStatus = 'available' | 'pending' | 'approved' | 'rejected';
+
+export type RegearBuildSlot =
+  'weapon' | 'off_hand' | 'head' | 'armor' | 'shoes' | 'cape' | 'bag' | 'potion' | 'food' | 'mount';
+
+export interface RegearBreakdownRow {
+  slot: RegearBuildSlot;
+  item_id: string;
+  quality: number;
+  unit_price: number | string;
+  quantity: number;
+  included: boolean;
+}
+
+export interface RegearDeathView {
+  id: number;
+  event_id: number;
+  event_title: string;
+  event_battle_id: number;
+  albionbb_battle_id: string;
+  albion_kill_event_id: string;
+  killed_at: string;
+  user_id: number | null;
+  player_name: string;
+  primary_build_id: number | null;
+  primary_build_name: string | null;
+  loadout_json: Record<string, unknown>;
+  auto_estimate_total: number | string;
+  auto_estimate_breakdown: RegearBreakdownRow[];
+  status: RegearStatus;
+  requested_at: string | null;
+  decided_at: string | null;
+  decided_by_user_id: number | null;
+  final_amount: number | string | null;
+  final_breakdown: RegearBreakdownRow[] | null;
+  officer_note: string | null;
+  bank_transaction_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RegearDeathFilters {
+  event_id?: number;
+  status?: RegearStatus;
+  user_id?: number;
+  global?: boolean;
+  bank_transaction_id?: number;
+}
+
+export interface RegearSettingsView {
+  max_regears_per_event: number;
+  max_regears_per_month: number;
+  enabled_slots_mask: number;
+  pricing_location: string;
+  pricing_fallback_strategy: 'cheapest_any' | 'strict';
+}
+
+export interface UpdateRegearSettingsRequest {
+  max_regears_per_event?: number;
+  max_regears_per_month?: number;
+  enabled_slots_mask?: number;
+  pricing_location?: string;
+  pricing_fallback_strategy?: 'cheapest_any' | 'strict';
+}
+
+export interface AcceptRegearRequest {
+  final_amount: number | string;
+  breakdown: RegearBreakdownRow[];
+  note?: string;
+}
+
+export interface RejectRegearRequest {
+  note: string;
+}
+
+export interface RegearBudgetSummary {
+  per_event_used: number;
+  per_event_max: number;
+  per_month_used: number;
+  per_month_max: number;
+}
+
+export interface RegearExtractionReport {
+  event_id: number;
+  battles_scanned: number;
+  deaths_inserted: number;
+  deaths_skipped: number;
 }
 
 /* ------------------------------ Admin ------------------------------- */
