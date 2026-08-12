@@ -4,13 +4,99 @@ import {
   isMainModule,
   writeResponseToNodeResponse,
 } from '@angular/ssr/node';
-import express from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 
 const browserDistFolder = join(import.meta.dirname, '../browser');
+const backendProxyTarget = process.env['API_REWRITE_URL'];
 
 const app = express();
 const angularApp = new AngularNodeAppEngine();
+
+/**
+ * Server-side API gateway for SSR requests.
+ *
+ * Relative `/api` calls made during Angular rendering must reach the backend
+ * service, not this frontend server. Without this handoff, SSR recursively
+ * renders itself until the Node heap is exhausted.
+ *
+ * Side effects: performs network I/O and streams backend responses to the
+ * original client. Safe to call concurrently because it stores no request state.
+ *
+ * @example
+ * ```ts
+ * app.use('/api', proxyBackendRequest);
+ * ```
+ */
+async function proxyBackendRequest(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (!backendProxyTarget) {
+    res.status(502).json({ error: 'API_REWRITE_URL is not configured.' });
+    return;
+  }
+
+  try {
+    const upstreamUrl = new URL(req.originalUrl, backendProxyTarget);
+    const upstreamResponse = await fetch(upstreamUrl, createProxyRequest(req));
+    writeProxyResponse(upstreamResponse, res);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Fetch-compatible request options for forwarding Express requests.
+ *
+ * Node fetch requires `duplex: 'half'` when a streamed request body is present,
+ * while GET and HEAD must not include a body. The original host header is also
+ * removed so the backend receives the target service host.
+ *
+ * @example
+ * ```ts
+ * const init = createProxyRequest(req);
+ * await fetch('http://backend:3000/api/auth/me', init);
+ * ```
+ */
+function createProxyRequest(req: Request): RequestInit {
+  const headers = new Headers(req.headers as Record<string, string>);
+  headers.delete('host');
+
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    return { headers, method: req.method };
+  }
+
+  return {
+    body: req,
+    duplex: 'half' as RequestDuplex,
+    headers,
+    method: req.method,
+  };
+}
+
+/**
+ * Streams backend responses without buffering large payloads in memory.
+ *
+ * Headers are copied before the body starts so cookies, redirects, and content
+ * types remain backend-owned. If the backend returns no body, the response ends
+ * immediately.
+ *
+ * @example
+ * ```ts
+ * const response = await fetch('http://backend:3000/api/auth/me');
+ * writeProxyResponse(response, res);
+ * ```
+ */
+function writeProxyResponse(upstreamResponse: globalThis.Response, res: Response): void {
+  res.status(upstreamResponse.status);
+  upstreamResponse.headers.forEach((value, key) => res.setHeader(key, value));
+
+  if (!upstreamResponse.body) {
+    res.end();
+    return;
+  }
+
+  Readable.fromWeb(upstreamResponse.body).pipe(res);
+}
 
 /**
  * Example Express Rest API endpoints can be defined here.
@@ -23,6 +109,9 @@ const angularApp = new AngularNodeAppEngine();
  * });
  * ```
  */
+
+app.use('/api', proxyBackendRequest);
+app.use('/scalar', proxyBackendRequest);
 
 /**
  * Serve static files from /browser
@@ -41,9 +130,7 @@ app.use(
 app.use((req, res, next) => {
   angularApp
     .handle(req)
-    .then((response) =>
-      response ? writeResponseToNodeResponse(response, res) : next(),
-    )
+    .then((response) => (response ? writeResponseToNodeResponse(response, res) : next()))
     .catch(next);
 });
 
