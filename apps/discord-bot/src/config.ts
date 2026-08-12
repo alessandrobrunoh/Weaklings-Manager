@@ -24,6 +24,8 @@ const Env = z.object({
   EVENT_PING_ROLE_ID: z.string().optional(),
   /** How often (ms) the polling service checks for new events/battles. */
   POLL_INTERVAL_MS: z.coerce.number().default(60_000),
+  /** Writable directory used to persist poller checkpoints between restarts. */
+  POLLER_STATE_DIR: z.string().min(1).default("/app/data"),
 });
 
 export type Config = z.infer<typeof Env>;

@@ -8,8 +8,7 @@ import { buildBattleEmbed } from "../embeds/battle.embed.js";
 import { GUILD_NAME } from "../embeds/theme.js";
 import { config, getEventRoleId } from "../config.js";
 
-const STATE_DIR = "data";
-const STATE_FILE = join(STATE_DIR, "poller-state.json");
+const STATE_FILE_NAME = "poller-state.json";
 
 interface PollerState {
   lastEventId: number;
@@ -17,35 +16,99 @@ interface PollerState {
   pinged1hEvents: number[];
 }
 
-function loadState(): PollerState {
-  if (!existsSync(STATE_DIR)) {
-    mkdirSync(STATE_DIR, { recursive: true });
-  }
-  const defaultState: PollerState = {
+function createDefaultState(): PollerState {
+  return {
     lastEventId: 0,
     lastBattleId: 0,
     pinged1hEvents: [],
   };
-  if (!existsSync(STATE_FILE)) {
-    return defaultState;
-  }
+}
+
+/**
+ * Keeps poller checkpoint files in a dedicated writable directory.
+ *
+ * The container runs as a non-root user, so relying on the process working
+ * directory is fragile. This helper centralizes directory creation and gives
+ * startup a clear failure when deployment permissions are wrong.
+ *
+ * @example
+ * ```ts
+ * ensureStateDirectory("/app/data");
+ * ```
+ */
+function ensureStateDirectory(stateDirectory: string): void {
   try {
-    const parsed = JSON.parse(readFileSync(STATE_FILE, "utf-8"));
-    return {
-      lastEventId: parsed.lastEventId ?? 0,
-      lastBattleId: parsed.lastBattleId ?? 0,
-      pinged1hEvents: parsed.pinged1hEvents ?? [],
-    };
-  } catch {
-    return defaultState;
+    if (!existsSync(stateDirectory)) {
+      mkdirSync(stateDirectory, { recursive: true });
+    }
+  } catch (error) {
+    throw new Error(
+      `Failed to prepare poller state directory at ${stateDirectory}`,
+      {
+        cause: error,
+      },
+    );
   }
 }
 
-function saveState(state: PollerState): void {
-  if (!existsSync(STATE_DIR)) {
-    mkdirSync(STATE_DIR, { recursive: true });
+/**
+ * Restores poller progress without losing the bot on corrupt JSON.
+ *
+ * A malformed checkpoint should not prevent Discord commands from coming
+ * online, but filesystem permission errors must still fail loudly because the
+ * service would otherwise spam duplicate announcements after each restart.
+ *
+ * @example
+ * ```ts
+ * const state = loadState("/app/data");
+ * console.log(state.lastEventId);
+ * ```
+ */
+function loadState(stateDirectory: string): PollerState {
+  ensureStateDirectory(stateDirectory);
+
+  const stateFile = join(stateDirectory, STATE_FILE_NAME);
+  if (!existsSync(stateFile)) {
+    return createDefaultState();
   }
-  writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
+
+  try {
+    const parsedState = JSON.parse(
+      readFileSync(stateFile, "utf-8"),
+    ) as Partial<PollerState>;
+    return {
+      lastEventId: parsedState.lastEventId ?? 0,
+      lastBattleId: parsedState.lastBattleId ?? 0,
+      pinged1hEvents: parsedState.pinged1hEvents ?? [],
+    };
+  } catch (error) {
+    console.warn(
+      `[Poller] Ignoring unreadable state file at ${stateFile}:`,
+      error,
+    );
+    return createDefaultState();
+  }
+}
+
+/**
+ * Persists progress after each successful Discord announcement.
+ *
+ * The write is synchronous on purpose: a crash immediately after sending a
+ * message must not roll the checkpoint back and re-announce the same event or
+ * battle on the next start.
+ *
+ * @example
+ * ```ts
+ * saveState("/app/data", { lastEventId: 42, lastBattleId: 7, pinged1hEvents: [] });
+ * ```
+ */
+function saveState(stateDirectory: string, state: PollerState): void {
+  ensureStateDirectory(stateDirectory);
+  writeFileSync(
+    join(stateDirectory, STATE_FILE_NAME),
+    JSON.stringify(state, null, 2),
+    "utf-8",
+  );
 }
 
 /**
@@ -54,6 +117,7 @@ function saveState(state: PollerState): void {
  */
 export class Poller {
   private readonly state: PollerState;
+  private readonly stateDirectory = config.POLLER_STATE_DIR;
   private timer: NodeJS.Timeout | undefined;
 
   constructor(
@@ -63,7 +127,7 @@ export class Poller {
     private readonly battlesChannelId: string,
     private readonly intervalMs: number,
   ) {
-    this.state = loadState();
+    this.state = loadState(this.stateDirectory);
     console.log(
       `[Poller] Starting — last event ID: ${this.state.lastEventId}, last battle ID: ${this.state.lastBattleId}`,
     );
@@ -119,7 +183,7 @@ export class Poller {
         });
 
         this.state.lastEventId = event.id;
-        saveState(this.state);
+        saveState(this.stateDirectory, this.state);
         console.log(`[Poller] Announced event #${event.id}: ${event.title}`);
       }
     } catch (err) {
@@ -166,14 +230,14 @@ export class Poller {
         });
 
         this.state.pinged1hEvents.push(event.id);
-        saveState(this.state);
+        saveState(this.stateDirectory, this.state);
         console.log(`[Poller] Pinged 1h warning for event #${event.id}`);
       }
 
       // Cleanup old pinged events (keep last 50)
       if (this.state.pinged1hEvents.length > 50) {
         this.state.pinged1hEvents = this.state.pinged1hEvents.slice(-50);
-        saveState(this.state);
+        saveState(this.stateDirectory, this.state);
       }
     } catch (err) {
       console.error("[Poller] Failed to check upcoming events:", err);
@@ -206,7 +270,7 @@ export class Poller {
         await channel.send({ embeds: [embed] });
 
         this.state.lastBattleId = battle.battle_id;
-        saveState(this.state);
+        saveState(this.stateDirectory, this.state);
         console.log(`[Poller] Announced battle #${battle.battle_id}`);
       }
     } catch (err) {

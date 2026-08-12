@@ -61,9 +61,13 @@ services:
       - EVENT_ROLE_ID=${EVENT_ROLE_ID}
       - GUILD_NAME=${GUILD_NAME}
       - POLL_INTERVAL_MS=${POLL_INTERVAL_MS}
+      - POLLER_STATE_DIR=/app/data
+    volumes:
+      - discord_bot_data:/app/data
     depends_on:
       - backend
     restart: unless-stopped
 
 volumes:
   pgdata:
+  discord_bot_data:

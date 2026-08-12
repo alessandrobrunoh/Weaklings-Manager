@@ -31,7 +31,10 @@ FROM node:22-slim AS runtime
 # Run as a non-root user for defence-in-depth: limits blast radius if the
 # process is ever compromised via a dependency vulnerability.
 WORKDIR /app
-RUN groupadd --system bot && useradd --system --gid bot --create-home bot
+RUN groupadd --system bot \
+  && useradd --system --gid bot --create-home bot \
+  && mkdir -p /app/data \
+  && chown -R bot:bot /app/data
 
 COPY --from=builder --chown=bot:bot /app/package.json ./package.json
 COPY --from=builder --chown=bot:bot /app/node_modules ./node_modules
