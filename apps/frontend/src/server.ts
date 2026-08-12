@@ -9,6 +9,8 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 
 const browserDistFolder = join(import.meta.dirname, '../browser');
+type StreamingRequestInit = RequestInit & { duplex?: 'half' };
+
 const backendProxyTarget = process.env['API_REWRITE_URL'];
 
 const app = express();
@@ -57,7 +59,7 @@ async function proxyBackendRequest(req: Request, res: Response, next: NextFuncti
  * await fetch('http://backend:3000/api/auth/me', init);
  * ```
  */
-function createProxyRequest(req: Request): RequestInit {
+function createProxyRequest(req: Request): StreamingRequestInit {
   const headers = new Headers(req.headers as Record<string, string>);
   headers.delete('host');
 
@@ -66,8 +68,8 @@ function createProxyRequest(req: Request): RequestInit {
   }
 
   return {
-    body: req,
-    duplex: 'half' as RequestDuplex,
+    body: req as unknown as BodyInit,
+    duplex: 'half',
     headers,
     method: req.method,
   };
@@ -95,7 +97,8 @@ function writeProxyResponse(upstreamResponse: globalThis.Response, res: Response
     return;
   }
 
-  Readable.fromWeb(upstreamResponse.body).pipe(res);
+  const upstreamBody = upstreamResponse.body as unknown as Parameters<typeof Readable.fromWeb>[0];
+  Readable.fromWeb(upstreamBody).pipe(res);
 }
 
 /**
