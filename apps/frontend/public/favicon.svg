@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 112">
+  <defs>
+    <linearGradient id="gemGradient" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#fecaca" />
+      <stop offset="0.45" stop-color="#dc2626" />
+      <stop offset="1" stop-color="#450a0a" />
+    </linearGradient>
+  </defs>
+  <path fill="none" stroke="#dc2626" stroke-width="4" stroke-linejoin="round" opacity="0.9" d="M60 8 110 78H10L60 8Z" />
+  <path fill="none" stroke="#dc2626" stroke-width="4" stroke-linejoin="round" opacity="0.9" d="M60 32 94 86H26L60 32Z" />
+  <path fill="url(#gemGradient)" stroke="#dc2626" stroke-width="3" stroke-linejoin="round" d="M60 42 88 72 74 104H46L32 72 60 42Z" />
+  <path fill="none" stroke="#dc2626" stroke-width="1.5" stroke-linejoin="round" opacity="0.45" d="M60 42v62M32 72h56M60 42 46 104M60 42l14 62" />
+  <circle cx="60" cy="82" r="3.5" fill="#fff" opacity="0.9" />
+</svg>
