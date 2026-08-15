@@ -42,5 +42,9 @@ COPY --from=builder --chown=bot:bot /app/dist ./dist
 
 USER bot
 
+# Keep poller checkpoints under the image-owned writable directory even when
+# the container is launched without the repository Compose environment block.
+ENV POLLER_STATE_DIR=/app/data
+
 # Discord bot is a long-running polling process; no inbound port needed.
 CMD ["node", "dist/index.js"]
