@@ -2,7 +2,6 @@ use super::entities::{self, ActiveModel};
 use crate::config::Config;
 use reqwest::Client;
 use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
-use serde_json::json;
 
 pub struct AuditService;
 
@@ -148,15 +147,15 @@ impl AuditService {
         channel_id: &str,
         token: &str,
         payload: serde_json::Value,
-    ) {
+    ) -> Option<serde_json::Value> {
         let client = Client::new();
         let url = format!(
             "https://discord.com/api/v10/channels/{}/messages",
             channel_id
         );
 
-        let mut current_payload = payload.clone();
-        for attempt in 1..=3 {
+        let current_payload = payload.clone();
+        for _attempt in 1..=3 {
             let resp = client
                 .post(&url)
                 .header("Authorization", format!("Bot {}", token))
@@ -188,14 +187,22 @@ impl AuditService {
                         status,
                         text
                     );
-                    break;
+                    return None;
                 }
                 Err(e) => {
                     tracing::warn!("Error sending Discord message: {}", e);
-                    break;
+                    return None;
                 }
-                _ => break, // Success
+                Ok(res) => match res.json::<serde_json::Value>().await {
+                    Ok(json) => return Some(json),
+                    Err(e) => {
+                        tracing::warn!("Discord message sent but response parsing failed: {}", e);
+                        return None;
+                    }
+                },
             }
         }
+
+        None
     }
 }

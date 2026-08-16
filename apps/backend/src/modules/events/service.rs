@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
+use reqwest::Client;
 use sea_orm::sea_query::{Expr, Func};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
@@ -23,6 +24,7 @@ use crate::modules::albionbb::client::{
     AlbionBbBattleSummary, AlbionBbBattlesFilters, AlbionBbGuild,
 };
 use crate::modules::albionbb::service::AlbionBbService;
+use crate::modules::audit::service::AuditService;
 use crate::modules::battles::entities::{
     Column as GuildBattleSnapshotColumn, Entity as GuildBattleSnapshotEntity,
 };
@@ -87,6 +89,32 @@ fn format_event_timestamp(event_date_utc: &str) -> String {
         }
         Err(_) => event_date_utc.to_string(),
     }
+}
+
+/// Compact Discord thread title that stays within Discord's API constraints.
+///
+/// Discord rejects thread names above 100 UTF-8 characters, so this helper trims by `char`
+/// boundaries instead of byte offsets. It performs no I/O and is safe to use before best-effort
+/// Discord side effects.
+///
+/// # Example
+/// ```ignore
+/// let name = build_event_thread_name("ZvZ Castle Fight");
+/// assert_eq!(name, "Event: ZvZ Castle Fight");
+/// ```
+fn build_event_thread_name(event_title: &str) -> String {
+    const MAX_THREAD_NAME_CHARS: usize = 100;
+
+    let fallback_title = "Call to Arms";
+    let trimmed_title = event_title.trim();
+    let title = if trimmed_title.is_empty() {
+        fallback_title
+    } else {
+        trimmed_title
+    };
+    let thread_name = format!("Event: {title}");
+
+    thread_name.chars().take(MAX_THREAD_NAME_CHARS).collect()
 }
 
 /// Incremental accumulator for opponent analytics.
@@ -934,7 +962,7 @@ impl EventService {
             self.announce_call_to_arms(&event_view).await;
         }
 
-        let _ = crate::modules::audit::service::AuditService::log(
+        let _ = AuditService::log(
             db,
             "EVENT_CREATED",
             Some("EVENT"),
@@ -978,12 +1006,83 @@ impl EventService {
             "allowed_mentions": allowed_mentions
         });
 
-        crate::modules::audit::service::AuditService::send_discord_payload(
-            &channel_id,
-            &token,
-            payload,
-        )
-        .await;
+        let Some(message_response) =
+            AuditService::send_discord_payload(&channel_id, &token, payload).await
+        else {
+            return;
+        };
+        let Some(message_id) = message_response.get("id").and_then(|value| value.as_str()) else {
+            tracing::warn!(
+                event_id = event_view.id,
+                "Discord CTA message response did not include an id"
+            );
+            return;
+        };
+
+        self.create_call_to_arms_thread(&channel_id, &token, message_id, event_view)
+            .await;
+    }
+
+    /// Creates a Discord thread attached to the CTA announcement message.
+    ///
+    /// Thread creation is intentionally best-effort because Discord permissions can differ between
+    /// channels: event creation remains successful, while failures are logged with Discord's body to
+    /// make missing `Create Public Threads` or `Send Messages in Threads` permissions actionable.
+    ///
+    /// # Example
+    /// ```ignore
+    /// service.create_call_to_arms_thread("123", "bot-token", "456", &event_view).await;
+    /// ```
+    async fn create_call_to_arms_thread(
+        &self,
+        channel_id: &str,
+        token: &str,
+        message_id: &str,
+        event_view: &EventView,
+    ) {
+        let client = Client::new();
+        let url = format!(
+            "https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}/threads"
+        );
+        let payload = serde_json::json!({
+            "name": build_event_thread_name(&event_view.title),
+            "auto_archive_duration": 1440
+        });
+
+        match client
+            .post(url)
+            .header("Authorization", format!("Bot {token}"))
+            .json(&payload)
+            .send()
+            .await
+        {
+            Ok(response) if response.status().is_success() => {
+                tracing::info!(
+                    event_id = event_view.id,
+                    message_id = message_id,
+                    "Discord CTA thread created"
+                );
+            }
+            Ok(response) => {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_else(|e| e.to_string());
+                tracing::warn!(
+                    event_id = event_view.id,
+                    message_id = message_id,
+                    status = %status,
+                    body = %body,
+                    "Failed to create Discord CTA thread"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    event_id = event_view.id,
+                    message_id = message_id,
+                    error = %e,
+                    "Error creating Discord CTA thread"
+                );
+            }
+        }
     }
 
     /// Updates an existing event.
