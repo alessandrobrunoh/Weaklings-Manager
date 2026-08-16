@@ -1065,7 +1065,10 @@ impl EventService {
             }
             Ok(response) => {
                 let status = response.status();
-                let body = response.text().await.unwrap_or_else(|e| e.to_string());
+                let body = match response.text().await {
+                    Ok(text) => text,
+                    Err(e) => e.to_string(),
+                };
                 tracing::warn!(
                     event_id = event_view.id,
                     message_id = message_id,
