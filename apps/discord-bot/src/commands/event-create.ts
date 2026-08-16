@@ -1,62 +1,10 @@
-import {
-  ChatInputCommandInteraction,
-  Message,
-  SlashCommandBuilder,
-  ThreadAutoArchiveDuration,
-} from "discord.js";
+import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
 import type { ApiClient } from "../api/client.js";
 import type { EventView, CreateEventRequest } from "../api/types.js";
 import { config, getEventRoleId } from "../config.js";
 import { buildEventAnnouncementContent } from "../embeds/event.embed.js";
 import { createResponseEmbed } from "../embeds/theme.js";
-
-/**
- * Discord thread names are capped at 100 characters, so event titles must be trimmed without
- * slicing through UTF-16 surrogate pairs. Keeping this logic local makes the announcement path
- * independent from backend formatting and avoids rejecting otherwise valid events.
- *
- * @example
- * const name = buildEventThreadName('Bomb with ally');
- * // "Event: Bomb with ally"
- */
-function buildEventThreadName(eventTitle: string): string {
-  const maxThreadNameCharacters = 100;
-  const normalizedTitle = eventTitle.trim() || "Call to Arms";
-  const threadName = `Event: ${normalizedTitle}`;
-
-  return Array.from(threadName).slice(0, maxThreadNameCharacters).join("");
-}
-
-/**
- * Opens the tactical discussion thread on the announcement message users can already see.
- *
- * Discord may accept the message but reject the thread when the bot lacks `Create Public Threads`
- * or `Send Messages in Threads`; this helper logs the root Discord error while keeping the event
- * creation command successful.
- *
- * @example
- * const wasCreated = await createEventAnnouncementThread(message, event);
- * if (!wasCreated) console.warn('Thread permissions need review');
- */
-async function createEventAnnouncementThread(
-  message: Message,
-  event: EventView,
-): Promise<boolean> {
-  try {
-    await message.startThread({
-      name: buildEventThreadName(event.title),
-      autoArchiveDuration: ThreadAutoArchiveDuration.OneDay,
-      reason: `Event #${event.id} call-to-arms discussion`,
-    });
-    return true;
-  } catch (error: unknown) {
-    console.warn(
-      `Failed to create Discord thread for event #${event.id} on message ${message.id}:`,
-      error,
-    );
-    return false;
-  }
-}
+import { createEventAnnouncementThread } from "../services/event-announcement-thread.js";
 
 export const data = new SlashCommandBuilder()
   .setName("event-create")
@@ -152,6 +100,7 @@ export async function execute(
   const wasThreadCreated = await createEventAnnouncementThread(
     announcementMessage,
     event,
+    "EventCreateCommand",
   );
 
   if (!wasThreadCreated) {

@@ -1,12 +1,14 @@
-import { Client, GatewayIntentBits, Events } from 'discord.js';
-import { config } from './config.js';
-import { ApiClient } from './api/client.js';
-import { commands } from './commands/index.js';
-import { handleButton } from './handlers/button.js';
-import { handleSelectMenu } from './handlers/select.js';
-import { Poller } from './services/poller.js';
-import { registerCommands } from './services/registry.js';
-import { createResponseEmbed } from './embeds/theme.js';
+import { Client, GatewayIntentBits, Events } from "discord.js";
+import { config } from "./config.js";
+import { ApiClient } from "./api/client.js";
+import { commands } from "./commands/index.js";
+import { handleButton } from "./handlers/button.js";
+import { handleSelectMenu } from "./handlers/select.js";
+import { Poller } from "./services/poller.js";
+import { registerCommands } from "./services/registry.js";
+import { createResponseEmbed } from "./embeds/theme.js";
+
+const THREAD_AUTOCREATE_BUILD_MARKER = "event-thread-autocreate-2026-08-16";
 
 /**
  * Albion Guild Manager — Discord Bot
@@ -15,7 +17,8 @@ import { createResponseEmbed } from './embeds/theme.js';
  * wires up interaction handlers, and starts the polling service.
  */
 async function main(): Promise<void> {
-  console.log('🤖 Albion Guild Manager Bot starting…');
+  console.log("🤖 Albion Guild Manager Bot starting…");
+  console.log(`[Bot] Build marker: ${THREAD_AUTOCREATE_BUILD_MARKER}`);
 
   // Create the API client (shared across all handlers)
   const api = new ApiClient(config.BACKEND_URL, config.BOT_API_SECRET);
@@ -35,19 +38,30 @@ async function main(): Promise<void> {
       const command = commands.get(interaction.commandName);
       if (!command) {
         console.warn(`[Bot] Unknown command: ${interaction.commandName}`);
-        const warnEmbed = createResponseEmbed('warning', 'Unknown Command', 'Command not recognized by bot system.', 'COMMAND ERROR');
-        await interaction.reply({ embeds: [warnEmbed], flags: ['Ephemeral'] });
+        const warnEmbed = createResponseEmbed(
+          "warning",
+          "Unknown Command",
+          "Command not recognized by bot system.",
+          "COMMAND ERROR",
+        );
+        await interaction.reply({ embeds: [warnEmbed], flags: ["Ephemeral"] });
         return;
       }
 
       try {
         await command.execute(interaction, api);
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'An unexpected error occurred.';
+        const message =
+          err instanceof Error ? err.message : "An unexpected error occurred.";
         console.error(`[Bot] Error in /${interaction.commandName}:`, err);
 
-        const errEmbed = createResponseEmbed('error', 'Command Error', message, 'COMMAND FAILED');
-        const reply = { embeds: [errEmbed], flags: ['Ephemeral'] as any };
+        const errEmbed = createResponseEmbed(
+          "error",
+          "Command Error",
+          message,
+          "COMMAND FAILED",
+        );
+        const reply = { embeds: [errEmbed], flags: ["Ephemeral"] as any };
         if (interaction.replied || interaction.deferred) {
           await interaction.followUp(reply);
         } else {
@@ -86,13 +100,13 @@ async function main(): Promise<void> {
 
     // Graceful shutdown
     const shutdown = (): void => {
-      console.log('[Bot] Shutting down…');
+      console.log("[Bot] Shutting down…");
       poller.stop();
       readyClient.destroy();
       process.exit(0);
     };
-    process.once('SIGINT', shutdown);
-    process.once('SIGTERM', shutdown);
+    process.once("SIGINT", shutdown);
+    process.once("SIGTERM", shutdown);
   });
 
   // ── Login ────────────────────────────────────────────────────────────────
@@ -120,7 +134,8 @@ async function loginWithBackoff(client: Client, token: string): Promise<void> {
     } catch (err) {
       attempt++;
       const message = err instanceof Error ? err.message : String(err);
-      const waitMs = resolveResetDelayMs(message) ?? Math.min(30_000 * attempt, 5 * 60_000);
+      const waitMs =
+        resolveResetDelayMs(message) ?? Math.min(30_000 * attempt, 5 * 60_000);
       console.error(`[Bot] Login attempt ${attempt} failed: ${message}`);
       console.error(`[Bot] Retrying in ${Math.round(waitMs / 1000)}s…`);
       await sleep(waitMs);
@@ -143,6 +158,6 @@ function sleep(ms: number): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error('❌ Fatal error:', err);
+  console.error("❌ Fatal error:", err);
   process.exit(1);
 });
