@@ -7,7 +7,10 @@ import { buildEventAnnouncementContent } from "../embeds/event.embed.js";
 import { buildBattleEmbed } from "../embeds/battle.embed.js";
 import { GUILD_NAME } from "../embeds/theme.js";
 import { config, getEventRoleId } from "../config.js";
-import { createEventAnnouncementThread } from "./event-announcement-thread.js";
+import {
+  createEventAnnouncementThread,
+  sendEventSignupMessage,
+} from "./event-announcement-thread.js";
 
 const STATE_FILE_NAME = "poller-state.json";
 
@@ -182,11 +185,14 @@ export class Poller {
             ? { roles: [eventRoleId] }
             : { parse: [] },
         });
-        await createEventAnnouncementThread(
+        const thread = await createEventAnnouncementThread(
           announcementMessage,
           event,
           "Poller",
         );
+        if (thread) {
+          await sendEventSignupMessage(thread, event, "Poller");
+        }
 
         this.state.lastEventId = event.id;
         saveState(this.stateDirectory, this.state);

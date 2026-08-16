@@ -4,7 +4,10 @@ import type { EventView, CreateEventRequest } from "../api/types.js";
 import { config, getEventRoleId } from "../config.js";
 import { buildEventAnnouncementContent } from "../embeds/event.embed.js";
 import { createResponseEmbed } from "../embeds/theme.js";
-import { createEventAnnouncementThread } from "../services/event-announcement-thread.js";
+import {
+  createEventAnnouncementThread,
+  sendEventSignupMessage,
+} from "../services/event-announcement-thread.js";
 
 export const data = new SlashCommandBuilder()
   .setName("event-create")
@@ -97,17 +100,33 @@ export async function execute(
     content: buildEventAnnouncementContent(event, eventRoleId),
     allowedMentions: eventRoleId ? { roles: [eventRoleId] } : { parse: [] },
   });
-  const wasThreadCreated = await createEventAnnouncementThread(
+  const thread = await createEventAnnouncementThread(
     announcementMessage,
     event,
     "EventCreateCommand",
   );
 
-  if (!wasThreadCreated) {
+  if (!thread) {
     const warningEmbed = createResponseEmbed(
       "warning",
       "Guild Event Created",
       `Event **#${event.id}** was scheduled and announced, but Discord rejected the thread creation. Check bot permissions in this channel: \`Create Public Threads\` and \`Send Messages in Threads\`.`,
+      "GUILD EVENT",
+    );
+    await interaction.editReply({ embeds: [warningEmbed] });
+    return;
+  }
+
+  const wasSignupMessageSent = await sendEventSignupMessage(
+    thread,
+    event,
+    "EventCreateCommand",
+  );
+  if (!wasSignupMessageSent) {
+    const warningEmbed = createResponseEmbed(
+      "warning",
+      "Guild Event Created",
+      `Event **#${event.id}** was scheduled and the thread was created, but Discord rejected the signup message inside the thread. Check \`Send Messages in Threads\` for the bot.`,
       "GUILD EVENT",
     );
     await interaction.editReply({ embeds: [warningEmbed] });

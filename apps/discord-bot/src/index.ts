@@ -8,7 +8,7 @@ import { Poller } from "./services/poller.js";
 import { registerCommands } from "./services/registry.js";
 import { createResponseEmbed } from "./embeds/theme.js";
 
-const THREAD_AUTOCREATE_BUILD_MARKER = "event-thread-autocreate-2026-08-16";
+const THREAD_AUTOCREATE_BUILD_MARKER = "event-thread-signup-message-2026-08-16";
 
 /**
  * Albion Guild Manager — Discord Bot
