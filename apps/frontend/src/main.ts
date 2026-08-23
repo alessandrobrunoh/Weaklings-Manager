@@ -1,3 +1,7 @@
+// Global stylesheet. Under the Angular CLI this was declared in
+// angular.json; with Vite the entry point owns it.
+import './styles.css';
+
 import { bootstrapApplication } from '@angular/platform-browser';
 import { appConfig } from './app/app.config';
 import { App } from './app/app';
