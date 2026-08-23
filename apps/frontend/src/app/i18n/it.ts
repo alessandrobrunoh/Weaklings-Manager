@@ -333,6 +333,11 @@ export const it: TranslationDict = {
   'events.createSplit': 'Crea uno split correlato',
   'events.createSplitHint': 'Crea uno split vuoto già collegato all\'evento. Inserisci il bottino dopo lo scontro; i partecipanti arrivano dalle iscrizioni.',
 
+  'splits.batch.select': 'Seleziona tutti i pendenti',
+  'splits.batch.selectOne': 'Seleziona questo split',
+  'splits.batch.complete': 'Completa selezionati',
+  'splits.batch.completed': 'split completati',
+
   // Albion settings
   'albionSettings.title': 'Account Albion',
   'albionSettings.subtitle': 'Il collegamento del personaggio e le ricerche dal vivo sull\'API di Albion.',

@@ -2,6 +2,8 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
+import { validateBuildName } from '../../shared/validation/build-validation';
+
 import type {
   BuildCategoryView,
   BuildDetail,
@@ -420,13 +422,35 @@ export class CompBuildDetailPage {
     if (!build) {
       return;
     }
+    // The name is validated even when unchanged: the previous version only
+    // applied it `if (editName())`, so clearing the field was silently ignored
+    // rather than rejected, and the user was told the save succeeded.
+    const nameError = validateBuildName(this.editName(), {
+      existingNames: [],
+      currentName: build.name,
+    });
+    if (nameError) {
+      this.toasts.error(nameError.message);
+      return;
+    }
+
     const request: UpdateBuildRequest = {};
-    if (this.editName() && this.editName() !== build.name) request.name = this.editName();
-    if (this.editDescription()) request.description = this.editDescription();
+    const name = this.editName().trim();
+    if (name !== build.name) request.name = name;
+    // Compared against the current value rather than tested for truthiness, so
+    // an emptied description actually clears instead of being ignored.
+    if (this.editDescription() !== (build.description ?? '')) {
+      request.description = this.editDescription();
+    }
     const categoryId = this.editCategoryId() ? Number(this.editCategoryId()) : undefined;
     if (categoryId && categoryId !== build.category_id) request.category_id = categoryId;
     if (this.editRole() && this.editRole() !== build.role)
       request.role = this.editRole() as BuildRole;
+
+    if (Object.keys(request).length === 0) {
+      this.editing.set(false);
+      return;
+    }
 
     this.saving.set(true);
     try {

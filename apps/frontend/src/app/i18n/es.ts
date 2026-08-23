@@ -332,6 +332,11 @@ export const es: TranslationDict = {
   'events.createSplit': 'Crear un reparto correlacionado',
   'events.createSplitHint': 'Crea un reparto vacío ya vinculado a este evento. Rellena el botín tras el combate; su lista sale de las inscripciones.',
 
+  'splits.batch.select': 'Seleccionar todos los pendientes',
+  'splits.batch.selectOne': 'Seleccionar este reparto',
+  'splits.batch.complete': 'Completar seleccionados',
+  'splits.batch.completed': 'repartos completados',
+
   // Albion settings
   'albionSettings.title': 'Cuenta de Albion',
   'albionSettings.subtitle': 'El vínculo de tu personaje y búsquedas en vivo contra la API de Albion.',

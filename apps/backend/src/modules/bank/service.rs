@@ -299,8 +299,12 @@ impl BankService {
         req: &AcceptWithdrawalRequest,
     ) -> Result<Vec<TransactionView>, AppError> {
         let ids: Vec<i64> = if req.all.unwrap_or(false) {
-            TransactionEntity::find()
-                .filter(Column::Status.eq(TransactionStatus::Requested.to_string()))
+            let mut query = TransactionEntity::find()
+                .filter(Column::Status.eq(TransactionStatus::Requested.to_string()));
+            if let Some(user_id) = req.user_id {
+                query = query.filter(Column::ToUserId.eq(user_id));
+            }
+            query
                 .all(db)
                 .await?
                 .into_iter()
@@ -386,8 +390,12 @@ impl BankService {
         req: &RejectWithdrawalRequest,
     ) -> Result<Vec<TransactionView>, AppError> {
         let ids: Vec<i64> = if req.all.unwrap_or(false) {
-            TransactionEntity::find()
-                .filter(Column::Status.eq(TransactionStatus::Requested.to_string()))
+            let mut query = TransactionEntity::find()
+                .filter(Column::Status.eq(TransactionStatus::Requested.to_string()));
+            if let Some(user_id) = req.user_id {
+                query = query.filter(Column::ToUserId.eq(user_id));
+            }
+            query
                 .all(db)
                 .await?
                 .into_iter()
@@ -597,6 +605,7 @@ mod tests {
                 &db,
                 officer,
                 &AcceptWithdrawalRequest {
+                    user_id: None,
                     transaction_ids: Some(vec![tx_id]),
                     all: None,
                 },
@@ -622,6 +631,7 @@ mod tests {
                 &db,
                 officer,
                 &AcceptWithdrawalRequest {
+                    user_id: None,
                     transaction_ids: Some(vec![tx_id]),
                     all: None,
                 },
@@ -669,6 +679,7 @@ mod tests {
                 &db,
                 officer,
                 &RejectWithdrawalRequest {
+                    user_id: None,
                     transaction_ids: Some(vec![tx_id]),
                     all: None,
                 },
@@ -685,6 +696,7 @@ mod tests {
                 &db,
                 officer,
                 &AcceptWithdrawalRequest {
+                    user_id: None,
                     transaction_ids: Some(vec![tx_id]),
                     all: None,
                 },
@@ -710,6 +722,7 @@ mod tests {
                 &db,
                 officer,
                 &AcceptWithdrawalRequest {
+                    user_id: None,
                     transaction_ids: Some(vec![tx_id]),
                     all: None,
                 },

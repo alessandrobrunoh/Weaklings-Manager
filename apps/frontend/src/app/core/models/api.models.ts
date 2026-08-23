@@ -565,6 +565,7 @@ export interface BuildItemSlot {
 export interface BuildSummary {
   id: number;
   name: string;
+  description: string | null;
   role: BuildRole;
   category_id: number;
   category_name: string | null;
@@ -1107,4 +1108,17 @@ export interface GuildReport {
   timeline: TimelineEntry[];
   leaderboards: ReportLeaderboards;
   data_quality: ReportDataQuality;
+}
+
+/** One split that could not be completed in a batch, and why. */
+export interface BatchFailure {
+  split_id: number;
+  reason: string;
+}
+
+/** Outcome of completing several splits at once. */
+export interface CompleteSplitsBatchResult {
+  completed: number[];
+  failed: BatchFailure[];
+  total_distributed: string;
 }

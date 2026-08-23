@@ -352,6 +352,11 @@ export const en = {
   'events.createSplit': 'Create a correlated split',
   'events.createSplitHint': 'Creates an empty split already linked to this event. Fill in the haul after the fight; its roster comes from the sign-ups.',
 
+  'splits.batch.select': 'Select all pending',
+  'splits.batch.selectOne': 'Select this split',
+  'splits.batch.complete': 'Complete selected',
+  'splits.batch.completed': 'splits completed',
+
   // Albion settings
   'albionSettings.title': 'Albion account',
   'albionSettings.subtitle': 'Your character link, and live lookups against the Albion API.',

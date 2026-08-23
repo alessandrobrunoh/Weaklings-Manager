@@ -197,3 +197,36 @@ pub struct SplitFilters {
     /// Filter by created_at date (inclusive).
     pub date_to: Option<String>,
 }
+
+/// Request body to complete several splits in one action.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct CompleteSplitsBatchRequest {
+    /// The splits to complete. Each must currently be `pending`.
+    #[schema(example = json!([4, 5, 6]))]
+    pub split_ids: Vec<i64>,
+}
+
+/// Outcome of a batch completion.
+///
+/// Reports per-split results rather than failing the whole call on the first
+/// problem: an officer settling a night's worth of splits should not lose the
+/// ones that worked because a later one had already been paid out.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct CompleteSplitsBatchResult {
+    /// Splits that were completed and paid out.
+    pub completed: Vec<i64>,
+    /// Splits that could not be completed, with the reason.
+    pub failed: Vec<BatchFailure>,
+    /// Total silver distributed across the completed splits.
+    #[schema(value_type = String, example = "1250000")]
+    pub total_distributed: Decimal,
+}
+
+/// One split that could not be completed, and why.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct BatchFailure {
+    /// The split that failed.
+    pub split_id: i64,
+    /// Human-readable reason.
+    pub reason: String,
+}

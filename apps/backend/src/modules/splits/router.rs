@@ -14,8 +14,9 @@ use crate::pagination::{PaginatedSplitSummary, PaginationParams};
 use crate::responses::{ApiResponse, ApiResponseMatchedParticipantList, ApiResponseSplitDetail};
 
 use super::models::{
-    CreateSplitRequest, MatchParticipantsRequest, MatchedParticipant, SplitDetail, SplitFilters,
-    UpdateSplitRequest, UpsertParticipantRequest,
+    CompleteSplitsBatchRequest, CompleteSplitsBatchResult, CreateSplitRequest,
+    MatchParticipantsRequest, MatchedParticipant, SplitDetail, SplitFilters, UpdateSplitRequest,
+    UpsertParticipantRequest,
 };
 use super::service::SplitService;
 
@@ -57,6 +58,7 @@ pub fn router() -> Router {
             "/{id}/participants/{user_id}",
             axum::routing::delete(remove_participant),
         )
+        .route("/complete-batch", post(complete_splits_batch))
         .route("/{id}/complete", post(complete_split))
         .route("/{id}/not-completed", post(not_completed_split))
         .route("/{id}/lost", post(lost_split))
@@ -470,4 +472,40 @@ async fn match_participants(
     let service = SplitService::new();
     let matched = service.match_participants(&db, &body.names).await?;
     Ok(Json(ApiResponse::new(matched)))
+}
+
+/// Completes several splits in one action.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` without `splits.manage`, or `400` if no ids were
+/// supplied.
+#[utoipa::path(
+    post,
+    path = "/api/splits/complete-batch",
+    tag = "splits",
+    summary = "Complete several splits at once",
+    description = "Pays out each listed split and credits its participants. Splits are \
+        processed independently: one that cannot be completed — already paid out, no \
+        participants — is reported in `failed` while the rest still go through, so settling a \
+        night's splits is not lost to a single bad entry.",
+    security(("session_cookie" = ["splits.manage"])),
+    request_body = CompleteSplitsBatchRequest,
+    responses(
+        (status = 200, description = "Batch processed", body = CompleteSplitsBatchResult),
+        (status = 400, description = "No split ids supplied", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks splits.manage", body = ProblemDetails)
+    )
+)]
+pub async fn complete_splits_batch(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Json(body): Json<CompleteSplitsBatchRequest>,
+) -> Result<Json<ApiResponse<CompleteSplitsBatchResult>>, AppError> {
+    user.require(&perms, Permission::SplitsManage).await?;
+    let result = SplitService::new()
+        .complete_splits_batch(&db, &body.split_ids, user.user_id)
+        .await?;
+    Ok(Json(ApiResponse::new(result)))
 }

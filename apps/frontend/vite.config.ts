@@ -16,7 +16,7 @@ import { defineConfig } from 'vite';
  *   would only ever produce the signed-out shell.
  */
 export default defineConfig(({ mode }) => ({
-  root: __dirname,
+  root: import.meta.dirname,
   publicDir: 'public',
   build: {
     outDir: 'dist/client',

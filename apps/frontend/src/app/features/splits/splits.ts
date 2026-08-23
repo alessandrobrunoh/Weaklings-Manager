@@ -1,8 +1,9 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
 import type {
   AlbionGuildMember,
+  CompleteSplitsBatchResult,
   CreateSplitRequest,
   EventView,
   MatchedParticipant,
@@ -328,13 +329,56 @@ interface SplitParticipantDraft {
     } @else if (splits().length === 0) {
       <app-empty-state [message]="t('common.empty')" icon="swords" />
     } @else {
+      @if (canAct() && pendingSplits().length > 0) {
+        <div
+          class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-3"
+          style="border-color: var(--color-border); background-color: var(--color-surface-2)"
+        >
+          <label class="flex items-center gap-2 text-sm">
+            <input
+              class="checkbox"
+              type="checkbox"
+              [checked]="allPendingSelected()"
+              (change)="toggleAllPending($event)"
+            />
+            <span>
+              {{ t('splits.batch.select') }}
+              @if (selectedCount() > 0) {
+                <strong>({{ selectedCount() }})</strong>
+              }
+            </span>
+          </label>
+          <button
+            type="button"
+            class="btn btn--primary btn--sm"
+            [disabled]="selectedCount() === 0 || batchRunning()"
+            (click)="completeSelected()"
+          >
+            {{ t('splits.batch.complete') }}
+          </button>
+        </div>
+      }
+
       <div class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         @for (split of splits(); track split.id) {
           <article class="card p-5 cursor-pointer" (click)="openSplit(split.id)">
             <header class="mb-3 flex items-start justify-between gap-2">
-              <h3 class="text-base font-semibold" style="color: var(--color-text)">
-                {{ split.note || 'Split #' + split.id }}
-              </h3>
+              <div class="flex min-w-0 items-start gap-2">
+                @if (canAct() && split.status === 'pending') {
+                  <!-- Stop the click reaching the card, which opens the split. -->
+                  <input
+                    class="checkbox mt-1 shrink-0"
+                    type="checkbox"
+                    [checked]="isSelected(split.id)"
+                    (click)="$event.stopPropagation()"
+                    (change)="toggleSelected(split.id, $event)"
+                    [attr.aria-label]="t('splits.batch.selectOne')"
+                  />
+                }
+                <h3 class="truncate text-base font-semibold" style="color: var(--color-text)">
+                  {{ split.note || 'Split #' + split.id }}
+                </h3>
+              </div>
               <span class="chip" [class]="statusChip(split.status)">{{ split.status }}</span>
             </header>
             <p class="mb-3 text-xs" style="color: var(--color-text-secondary)">
@@ -630,6 +674,9 @@ export class Splits {
 
   protected readonly splits = signal<SplitSummary[]>([]);
   protected readonly loading = signal(false);
+  /** Splits ticked for batch completion. */
+  private readonly selectedIds = signal<ReadonlySet<number>>(new Set());
+  protected readonly batchRunning = signal(false);
   protected readonly page = signal(1);
   protected readonly totalPages = signal(1);
   protected readonly statusFilter = signal<SplitStatus | ''>('');
@@ -996,6 +1043,80 @@ export class Splits {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.saving.set(false);
+    }
+  }
+
+  /** Splits eligible for batch completion. */
+  protected readonly pendingSplits = computed(() =>
+    this.splits().filter((split) => split.status === 'pending'),
+  );
+
+  protected readonly selectedCount = computed(() => this.selectedIds().size);
+
+  protected readonly allPendingSelected = computed(() => {
+    const pending = this.pendingSplits();
+    return pending.length > 0 && pending.every((split) => this.selectedIds().has(split.id));
+  });
+
+  protected isSelected(id: number): boolean {
+    return this.selectedIds().has(id);
+  }
+
+  protected toggleSelected(id: number, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.selectedIds.update((current) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  }
+
+  protected toggleAllPending(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    const next: ReadonlySet<number> = checked
+      ? new Set<number>(this.pendingSplits().map((split) => split.id))
+      : new Set<number>();
+    this.selectedIds.set(next);
+  }
+
+  /**
+   * Completes every selected split in one call.
+   *
+   * The backend processes them independently, so a split that cannot be paid
+   * out is reported rather than losing the ones that succeeded. Both outcomes
+   * are surfaced: silently dropping failures would leave an officer believing
+   * they had settled more than they had.
+   */
+  protected async completeSelected(): Promise<void> {
+    const ids = [...this.selectedIds()];
+    if (ids.length === 0) {
+      return;
+    }
+    this.batchRunning.set(true);
+    try {
+      const result = await firstValueFrom(
+        this.api.post<CompleteSplitsBatchResult>('api/splits/complete-batch', {
+          split_ids: ids,
+        }),
+      );
+      this.selectedIds.set(new Set<number>());
+      if (result.completed.length > 0) {
+        this.toasts.success(
+          `${result.completed.length} ${this.t('splits.batch.completed')}`,
+        );
+      }
+      for (const failure of result.failed) {
+        this.toasts.error(`Split #${failure.split_id}: ${failure.reason}`);
+      }
+      await this.load();
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.batchRunning.set(false);
     }
   }
 

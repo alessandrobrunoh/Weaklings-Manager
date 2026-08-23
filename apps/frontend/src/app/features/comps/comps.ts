@@ -2,6 +2,12 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
+import {
+  summarizeErrors,
+  validateBuildDraft,
+  validateBuildName,
+} from '../../shared/validation/build-validation';
+
 import type {
   BuildCategoryView,
   BuildDetail,
@@ -1057,13 +1063,39 @@ export class Comps {
   private async createItem(): Promise<void> {
     const name = this.draftName().trim();
     const categoryId = Number(this.draftCategoryId());
-    if (!name || categoryId <= 0) {
-      this.toasts.error(this.t('validation.required'));
-      return;
-    }
-    if (this.tab() === 'comps' && this.draftBuildEntries().length === 0) {
-      this.toasts.error(this.t('validation.required'));
-      return;
+
+    if (this.tab() === 'builds') {
+      // Builds get the full check, including the weapon requirement and a
+      // duplicate-name test the database has no unique index to enforce.
+      const errors = validateBuildDraft(
+        {
+          name: this.draftName(),
+          categoryId: categoryId > 0 ? categoryId : null,
+          role: this.draftRole(),
+          filledSlots: this.draftItems().map((item) => item.slot),
+        },
+        { existingNames: this.builds().map((build) => build.name) },
+      );
+      if (errors.length > 0) {
+        this.toasts.error(summarizeErrors(errors));
+        return;
+      }
+    } else {
+      const nameError = validateBuildName(this.draftName(), {
+        existingNames: this.comps().map((comp) => comp.name),
+      });
+      if (nameError) {
+        this.toasts.error(nameError.message);
+        return;
+      }
+      if (categoryId <= 0) {
+        this.toasts.error(this.t('validation.required'));
+        return;
+      }
+      if (this.draftBuildEntries().length === 0) {
+        this.toasts.error(this.t('validation.required'));
+        return;
+      }
     }
 
     this.saving.set(true);
