@@ -956,7 +956,17 @@ impl EventService {
         .await
         .map_err(AppError::Database)?;
 
+        let event_id = event_model.id;
         let event_view = self.to_event_view(db, event_model).await?;
+
+        if req.create_split {
+            // Best-effort: an event is still perfectly usable without its
+            // split, so a failure here is logged rather than rolling back a
+            // successfully created event.
+            if let Err(e) = create_linked_split(db, creator_id, event_id, &event_view.title).await {
+                tracing::warn!(event_id, error = %e, "failed to create the correlated split");
+            }
+        }
 
         if req.call_to_arms {
             self.announce_call_to_arms(&event_view).await;
@@ -1803,6 +1813,7 @@ mod tests {
                     call_to_arms: false,
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    create_split: false,
                 },
             )
             .await
@@ -1848,6 +1859,7 @@ mod tests {
                     call_to_arms: false,
                     comp_id: base_comp,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    create_split: false,
                 },
             )
             .await
@@ -1933,6 +1945,7 @@ mod tests {
                     call_to_arms: false,
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    create_split: false,
                 },
             )
             .await
@@ -1985,4 +1998,36 @@ mod tests {
 
         assert_eq!(success_detail.participants.len(), 2);
     }
+}
+
+/// Creates an empty loot split already attached to an event.
+///
+/// Values start at zero and the roster starts empty: the split exists so the
+/// link is in place, and the officer fills in the haul once the fight is over.
+/// Participants are seeded from the event's sign-ups the first time the split
+/// is updated, which is later than creation time and therefore more accurate.
+async fn create_linked_split(
+    db: &DatabaseConnection,
+    creator_id: i64,
+    event_id: i64,
+    event_title: &str,
+) -> Result<(), AppError> {
+    use crate::modules::splits::entities::split;
+    use crate::modules::splits::status::SplitStatus;
+    use sea_orm::prelude::Decimal;
+
+    split::ActiveModel {
+        created_by: Set(creator_id),
+        status: Set(SplitStatus::Pending.to_string()),
+        estimated_market_value: Set(Decimal::ZERO),
+        repair_value: Set(Decimal::ZERO),
+        bags_value: Set(Decimal::ZERO),
+        note: Set(Some(format!("Auto-created for event: {event_title}"))),
+        event_id: Set(Some(event_id)),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .map_err(AppError::Database)?;
+    Ok(())
 }

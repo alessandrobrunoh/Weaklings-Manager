@@ -89,6 +89,21 @@ import { PageHeader } from '../../shared/components/page-header/page-header';
           <span>{{ t('events.call_to_arms') }}</span>
         </label>
 
+        <label class="flex items-start gap-2">
+          <input
+            class="checkbox mt-0.5"
+            type="checkbox"
+            [checked]="draftCreateSplit()"
+            (change)="onCreateSplitChange($event)"
+          />
+          <span>
+            {{ t('events.createSplit') }}
+            <span class="mt-0.5 block text-xs" style="color: var(--color-text-secondary)">
+              {{ t('events.createSplitHint') }}
+            </span>
+          </span>
+        </label>
+
         @if (compError()) {
           <p class="text-sm" style="color: var(--color-danger)">{{ compError() }}</p>
         }
@@ -119,6 +134,8 @@ export class EventCreatePage {
   protected readonly draftCompId = signal('');
   protected readonly draftScheduledAt = signal(defaultScheduledAt());
   protected readonly draftCallToArms = signal(false);
+  /** Pre-create the loot split so it is already attached to the event. */
+  protected readonly draftCreateSplit = signal(false);
   protected readonly compError = signal<string | null>(null);
 
   protected t = (key: TranslationKey) => this.translate.t(key);
@@ -149,6 +166,10 @@ export class EventCreatePage {
   }
 
   /** Two-way bind helper for the call-to-arms checkbox. */
+  protected onCreateSplitChange(event: Event): void {
+    this.draftCreateSplit.set((event.target as HTMLInputElement).checked);
+  }
+
   protected onCallToArmsChange(event: Event): void {
     this.draftCallToArms.set((event.target as HTMLInputElement).checked);
   }
@@ -179,6 +200,7 @@ export class EventCreatePage {
       comp_id: compId,
       event_date_utc: new Date(this.draftScheduledAt()).toISOString(),
       call_to_arms: this.draftCallToArms(),
+      create_split: this.draftCreateSplit(),
     };
     const description = this.draftDescription().trim();
     if (description) {

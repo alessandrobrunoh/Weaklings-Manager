@@ -87,7 +87,12 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         battles_server,
     );
 
-    event_sessions::spawn(db.clone(), albionbb_service.clone(), cfg.clone());
+    event_sessions::spawn(
+        db.clone(),
+        albionbb_service.clone(),
+        albiondata_service.clone(),
+        cfg.clone(),
+    );
     // Guild identity for scouting comes from config, never a hardcoded name.
     let intel_guild_context = modules::events::service::BattleLinkingContext::new(
         &cfg.albion_guild_id,

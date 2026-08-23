@@ -349,6 +349,9 @@ export const en = {
   'audit.user': 'User',
   'audit.details': 'Details',
 
+  'events.createSplit': 'Create a correlated split',
+  'events.createSplitHint': 'Creates an empty split already linked to this event. Fill in the haul after the fight; its roster comes from the sign-ups.',
+
   // Albion settings
   'albionSettings.title': 'Albion account',
   'albionSettings.subtitle': 'Your character link, and live lookups against the Albion API.',

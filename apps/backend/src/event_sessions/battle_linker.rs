@@ -7,9 +7,11 @@
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 use crate::errors::AppError;
+use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::events::entities::event;
 use crate::modules::events::service::{BattleLinkingContext, EventService};
+use crate::modules::regear::extractor::{ExtractionGuildContext, RegearExtractor};
 
 /// Re-links battles for every session still awaiting linkage.
 ///
@@ -24,7 +26,9 @@ use crate::modules::events::service::{BattleLinkingContext, EventService};
 pub async fn refresh_pending_links(
     db: &DatabaseConnection,
     albionbb: &AlbionBbService,
+    albiondata: &AlbionDataService,
     context: &BattleLinkingContext,
+    guild: &ExtractionGuildContext,
 ) -> Result<(), AppError> {
     let pending_sessions = event::Entity::find()
         .filter(
@@ -38,7 +42,7 @@ pub async fn refresh_pending_links(
 
     for session in pending_sessions {
         if EventService::linker_is_done(&session) {
-            finalize_expired_link(db, session.id).await;
+            finalize_expired_link(db, albiondata, guild, session.id).await;
             continue;
         }
         link_or_retry(db, albionbb, context, session.id).await;
@@ -48,9 +52,54 @@ pub async fn refresh_pending_links(
 }
 
 /// Finalizes a session whose grace period has elapsed, logging any failure.
-async fn finalize_expired_link(db: &DatabaseConnection, event_id: i64) {
+///
+/// Finalizing is also the moment regears become extractable: the battles are
+/// linked and will not change again, so every guild death in them is now
+/// known. Running earlier would miss whatever AlbionBB had not yet ingested.
+async fn finalize_expired_link(
+    db: &DatabaseConnection,
+    albiondata: &AlbionDataService,
+    guild: &ExtractionGuildContext,
+    event_id: i64,
+) {
     if let Err(e) = EventService::finalize_link(db, event_id, false).await {
         tracing::warn!(event_id = event_id, error = %e, "finalize_link failed");
+        return;
+    }
+    extract_regears(db, albiondata, guild, event_id).await;
+}
+
+/// Extracts regear candidates for a finalized event.
+///
+/// Idempotent by construction — the extractor skips deaths it has already
+/// recorded — so a retry on a later tick cannot duplicate rows.
+///
+/// Failures are logged and swallowed. Extraction depends on live market prices,
+/// and an upstream hiccup must not stop sessions from finalizing; officers can
+/// always re-run it by hand from the regear page.
+async fn extract_regears(
+    db: &DatabaseConnection,
+    albiondata: &AlbionDataService,
+    guild: &ExtractionGuildContext,
+    event_id: i64,
+) {
+    let extractor = RegearExtractor::new(db, albiondata, guild.clone());
+    match extractor.extract_for_event(event_id).await {
+        Ok(report) if report.deaths_inserted > 0 => {
+            tracing::info!(
+                event_id = event_id,
+                inserted = report.deaths_inserted,
+                skipped = report.deaths_skipped,
+                "auto-extracted regear candidates"
+            );
+        }
+        Ok(_) => {}
+        // Non-CTA events have no regear entitlement; that is the normal case
+        // for most sessions, not a problem worth warning about.
+        Err(AppError::Validation(_)) => {}
+        Err(e) => {
+            tracing::warn!(event_id = event_id, error = %e, "regear auto-extraction failed");
+        }
     }
 }
 

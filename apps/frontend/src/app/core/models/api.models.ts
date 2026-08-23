@@ -319,6 +319,8 @@ export interface CreateEventRequest {
   call_to_arms?: boolean;
   comp_id: number;
   event_date_utc: string;
+  /** Also create an empty loot split already linked to this event. */
+  create_split?: boolean;
 }
 
 export interface UpdateEventRequest {
