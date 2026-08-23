@@ -1,7 +1,9 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { DatePipe, DecimalPipe } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
 
 import type {
+  RegearBudgetSummary,
   AlbionLinkStatus,
   BalanceSummary,
   BattleSummary,
@@ -70,7 +72,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
 @Component({
   selector: 'app-profile',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, Loading, DataTable],
+  imports: [DatePipe, DecimalPipe, PageHeader, Loading, DataTable],
   template: `
     <app-page-header title="Profile" subtitle="Your account, economy and fight performance." />
 
@@ -137,6 +139,92 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
               </div>
               <strong>{{ formatCompact(row.value) }}</strong>
             </div>
+          }
+        </article>
+      </section>
+
+      <!-- Attendance, regear and splits: the three areas the profile used to
+           say nothing about, even though the data existed. -->
+      <section class="mt-5 grid gap-4 xl:grid-cols-3">
+        <article class="surface p-5">
+          <h2 class="profile__panel-title">Attendance</h2>
+          @if (userMetrics(); as m) {
+            <div class="profile__bar-row">
+              <span>Signed up</span>
+              <div class="profile__bar">
+                <span [style.width.%]="clampPercent(m.attendance_rate)"></span>
+              </div>
+              <strong>{{ m.events_attended }} / {{ m.events_total }}</strong>
+            </div>
+            <p class="mt-3 text-sm" style="color: var(--color-text-secondary)">
+              {{ m.attendance_rate | number: '1.0-0' }}% of guild events.
+              @if (m.attendance_streak > 0) {
+                Current streak: <strong>{{ m.attendance_streak }}</strong>.
+              }
+            </p>
+            @if (m.next_event_title) {
+              <p class="mt-2 text-sm" style="color: var(--color-primary)">
+                Next: {{ m.next_event_title }}
+                <span style="color: var(--color-text-secondary)">
+                  · {{ m.next_event_at | date: 'MMM d, HH:mm' }}
+                </span>
+              </p>
+            } @else {
+              <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
+                Not signed up for anything upcoming.
+              </p>
+            }
+          }
+        </article>
+
+        <article class="surface p-5">
+          <h2 class="profile__panel-title">Regear</h2>
+          @if (userMetrics(); as m) {
+            <div class="profile__bar-row">
+              <span>Monthly cap</span>
+              <div class="profile__bar profile__bar--fight">
+                <span [style.width.%]="regearCapPercent()"></span>
+              </div>
+              <strong>{{ budget()?.per_month_used ?? 0 }} / {{ budget()?.per_month_max ?? 0 }}</strong>
+            </div>
+            <dl class="mt-3 grid grid-cols-2 gap-y-1.5 text-sm">
+              <dt style="color: var(--color-text-secondary)">Claimed</dt>
+              <dd class="text-right">{{ m.regears_claimed }}</dd>
+              <dt style="color: var(--color-text-secondary)">Awaiting decision</dt>
+              <dd class="text-right" [style.color]="m.regears_pending > 0 ? 'var(--color-warning)' : null">
+                {{ m.regears_pending }}
+              </dd>
+              <dt style="color: var(--color-text-secondary)">Approved</dt>
+              <dd class="text-right" style="color: var(--color-success)">{{ m.regears_approved }}</dd>
+              <dt style="color: var(--color-text-secondary)">Reimbursed</dt>
+              <dd class="text-right">{{ formatAmount(m.regear_silver) }}</dd>
+            </dl>
+          }
+        </article>
+
+        <article class="surface p-5">
+          <h2 class="profile__panel-title">Loot splits</h2>
+          @if (userMetrics(); as m) {
+            <dl class="grid grid-cols-2 gap-y-1.5 text-sm">
+              <dt style="color: var(--color-text-secondary)">Splits joined</dt>
+              <dd class="text-right">{{ m.splits_joined }}</dd>
+              <dt style="color: var(--color-text-secondary)">Total earned</dt>
+              <dd class="text-right" style="color: var(--color-success)">
+                {{ formatAmount(m.split_earnings) }}
+              </dd>
+              <dt style="color: var(--color-text-secondary)">Average per split</dt>
+              <dd class="text-right">{{ formatAmount(averageSplitShare()) }}</dd>
+            </dl>
+            <div class="profile__bar-row mt-4">
+              <span>Kills / deaths</span>
+              <div class="profile__bar profile__bar--fight">
+                <span [style.width.%]="killShare()"></span>
+              </div>
+              <strong>{{ m.kills }} / {{ m.deaths }}</strong>
+            </div>
+            <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
+              {{ m.battles_fought }} battles · {{ formatCompact(m.kill_fame) }} kill fame
+            </p>
           }
         </article>
       </section>
@@ -338,6 +426,8 @@ export class Settings {
   protected readonly battles = signal<BattleSummary[]>([]);
   protected readonly albionLink = signal<AlbionLinkStatus | null>(null);
   protected readonly userMetrics = signal<UserMetrics | null>(null);
+  /** Regear cap usage, for the monthly progress bar. */
+  protected readonly budget = signal<RegearBudgetSummary | null>(null);
   protected readonly profile = this.auth.profile;
 
   protected readonly transactionColumns: readonly DataTableColumn<TransactionView>[] = [
@@ -435,6 +525,36 @@ export class Settings {
       align: 'right',
     },
   ];
+
+  /** Clamps a percentage into the 0-100 a progress bar can render. */
+  protected clampPercent(value: number): number {
+    return Math.min(100, Math.max(0, Math.round(value)));
+  }
+
+  /** How much of the monthly regear allowance is spent. */
+  protected regearCapPercent(): number {
+    const budget = this.budget();
+    if (!budget || budget.per_month_max <= 0) {
+      return 0;
+    }
+    return this.clampPercent((budget.per_month_used / budget.per_month_max) * 100);
+  }
+
+  /** Mean payout per split joined; zero when the member has joined none. */
+  protected averageSplitShare(): number {
+    const m = this.userMetrics();
+    if (!m || m.splits_joined <= 0) {
+      return 0;
+    }
+    return Math.round(m.split_earnings / m.splits_joined);
+  }
+
+  /** Kills as a share of kills plus deaths, for the ratio bar. */
+  protected killShare(): number {
+    const m = this.userMetrics();
+    const total = (m?.kills ?? 0) + (m?.deaths ?? 0);
+    return total === 0 ? 0 : this.clampPercent(((m?.kills ?? 0) / total) * 100);
+  }
 
   protected readonly profileMetrics = computed<ProfileMetric[]>(() => {
     const balance = this.balance();
@@ -571,7 +691,7 @@ export class Settings {
   private async load(): Promise<void> {
     this.loading.set(true);
     try {
-      const [balance, transactions, albionLink, battles, metrics] = await Promise.all([
+      const [balance, transactions, albionLink, battles, metrics, budget] = await Promise.all([
         firstValueFrom(this.api.get<BalanceSummary>('api/bank/balance')),
         firstValueFrom(
           this.api.get<PaginatedData<TransactionView>>('api/bank/transactions', {
@@ -584,12 +704,18 @@ export class Settings {
           this.api.get<PaginatedData<BattleSummary>>('api/battles/me', { page: 1, limit: 50 }),
         ).catch(() => emptyPaginatedBattles()),
         firstValueFrom(this.api.get<UserMetrics>('api/users/me/metrics')).catch(() => null),
+        // Members without `regear.view` simply see no cap bar, rather than
+        // the whole profile failing on a permission they do not need.
+        firstValueFrom(this.api.get<RegearBudgetSummary>('api/regear/me/summary')).catch(
+          () => null,
+        ),
       ]);
       this.balance.set(balance);
       this.transactions.set(transactions.items);
       this.albionLink.set(albionLink);
       this.battles.set(battles.items);
       this.userMetrics.set(metrics);
+      this.budget.set(budget);
       await this.loadSiphoned(albionLink.albion_player_name ?? this.profile()?.username ?? '');
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

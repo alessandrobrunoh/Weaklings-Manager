@@ -79,6 +79,22 @@ export interface UserMetrics {
   events_attended: number;
   total_estimated_loss: number;
   top_estimated_loss: number;
+  /** Events the guild ran, so attendance reads as a rate, not a bare count. */
+  events_total: number;
+  attendance_rate: number;
+  attendance_streak: number;
+  next_event_title: string | null;
+  next_event_at: string | null;
+  battles_fought: number;
+  kills: number;
+  deaths: number;
+  kill_fame: number;
+  regears_claimed: number;
+  regears_pending: number;
+  regears_approved: number;
+  regear_silver: number;
+  splits_joined: number;
+  split_earnings: number;
 }
 
 export interface UserFilters {
