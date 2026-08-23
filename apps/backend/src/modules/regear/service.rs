@@ -35,7 +35,11 @@ use super::status::RegearStatus;
 pub const TYPE_REGEAR_CREDIT: &str = "regear_credit";
 
 /// Rolling window (in days) for the per-month regear cap.
-const PER_MONTH_WINDOW_DAYS: i64 = 30;
+///
+/// Shared with the intel report, which surfaces how much of the cap each
+/// member has used. The two must agree, or officers would be shown a usage
+/// figure that the enforcement below does not actually apply.
+pub(crate) const PER_MONTH_WINDOW_DAYS: i64 = 30;
 
 /// Service for executing regear business logic.
 pub struct RegearService;

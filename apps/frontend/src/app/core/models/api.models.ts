@@ -990,6 +990,7 @@ export interface ReportMemberRow {
   deaths: number;
   kill_death_ratio: number;
   kill_fame: number;
+  death_fame: number;
   silver_lost: number;
   regears_claimed: number;
   regear_silver: number;
@@ -1057,6 +1058,7 @@ export interface ReportLeaderboards {
   kills: LeaderboardEntry[];
   deaths: LeaderboardEntry[];
   kill_fame: LeaderboardEntry[];
+  death_fame: LeaderboardEntry[];
   silver_lost: LeaderboardEntry[];
   split_earnings: LeaderboardEntry[];
   regear_silver: LeaderboardEntry[];

@@ -118,6 +118,7 @@ use utoipa::OpenApi;
         crate::modules::intel::router::counters,
         crate::modules::intel::router::threats_to_comp,
         crate::modules::intel::router::matchup_matrix,
+        crate::modules::intel::router::leaderboards,
         crate::modules::intel::router::guild_report,
         crate::modules::intel::router::refresh_guild_report,
     ),

@@ -19,7 +19,9 @@ use crate::modules::intel::models::{
     UpdateScoutRequest,
 };
 use crate::modules::intel::cache::ReportCache;
-use crate::modules::intel::report::{build_guild_report, DateRange, GuildReport, ReportParams};
+use crate::modules::intel::report::{
+    build_guild_report, DateRange, GuildReport, ReportLeaderboards, ReportParams,
+};
 use crate::modules::intel::service::IntelService;
 use crate::pagination::{PaginatedScoutedComp, PaginationParams};
 use crate::responses::ApiResponse;
@@ -100,6 +102,7 @@ pub fn router() -> Router {
         .route("/scouts/{id}/counters", get(counters))
         .route("/comps/{comp_id}/threats", get(threats_to_comp))
         .route("/matchups", get(matchup_matrix))
+        .route("/leaderboards", get(leaderboards))
         .route("/report", get(guild_report))
         .route("/report/refresh", post(refresh_guild_report))
 }
@@ -506,4 +509,51 @@ pub async fn refresh_guild_report(
     let report = build_guild_report(&db, &guild_context(&cfg), range).await?;
     cache.put(range, &report);
     Ok(Json(ApiResponse::new(report)))
+}
+
+/// Member leaderboards for a window.
+///
+/// Split out from the full report deliberately. Rankings are something every
+/// member should see, while the report around them carries silver flow and
+/// per-member bank balances that are officer business — so this endpoint is
+/// gated at `intel.view` and returns only the boards.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` without `intel.view`, or `400` for a bad window.
+#[utoipa::path(
+    get,
+    path = "/api/intel/leaderboards",
+    tag = "intel",
+    summary = "Member leaderboards",
+    description = "Attendance, kills, deaths, kill and death fame, silver lost, split \
+        earnings, regear silver and siphoned energy, each ranked over the window and computed \
+        from real activity rather than stored counters. Members with nothing to show are \
+        omitted rather than padding the tail with zeroes. Defaults to the last 30 days.",
+    security(("session_cookie" = ["intel.view"])),
+    params(ReportParams),
+    responses(
+        (status = 200, description = "Leaderboards computed", body = ReportLeaderboards),
+        (status = 400, description = "Invalid window", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks intel.view", body = ProblemDetails)
+    )
+)]
+pub async fn leaderboards(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Extension(cache): Extension<ReportCache>,
+    Query(params): Query<ReportParams>,
+) -> Result<Json<ApiResponse<ReportLeaderboards>>, AppError> {
+    user.require(&perms, Permission::IntelView).await?;
+    let range = DateRange::resolve(params.from.as_deref(), params.to.as_deref())?;
+    // Shares the report's cache: an officer who already opened the dashboard
+    // has paid for this computation, and vice versa.
+    if let Some(cached) = cache.get(range) {
+        return Ok(Json(ApiResponse::new(cached.leaderboards)));
+    }
+    let report = build_guild_report(&db, &guild_context(&cfg), range).await?;
+    cache.put(range, &report);
+    Ok(Json(ApiResponse::new(report.leaderboards)))
 }

@@ -1,20 +1,9 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
-import type {
-  AlbionGuildMember,
-  BattleDetail,
-  BattlePlayer,
-  EventDetailView,
-  EventView,
-  PaginatedData,
-  PlayerLossEstimate,
-  SiphonedPlayerBalance,
-  SplitDetail,
-  SplitSummary,
-} from '../../core/models/api.models';
-import { ApiService } from '../../core/services/api.service';
+import type { LeaderboardEntry as BoardEntry, ReportLeaderboards } from '../../core/models/api.models';
 import { AuthService } from '../../core/services/auth.service';
+import { IntelService } from '../../core/services/intel.service';
 import { TranslateService } from '../../core/services/translate.service';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import type { TranslationKey } from '../../i18n/en';
@@ -40,6 +29,22 @@ interface LeaderboardTab {
   readonly unitKey: TranslationKey;
 }
 
+/**
+ * Which board backs each tab.
+ *
+ * `deaths` ranks silver lost rather than a death count — that is what the tab
+ * has always shown, and the label is kept for continuity.
+ */
+const BOARD_FOR_TAB: Record<LeaderboardKey, (b: ReportLeaderboards) => BoardEntry[]> = {
+  payout: (b) => b.split_earnings,
+  deaths: (b) => b.silver_lost,
+  kills: (b) => b.kills,
+  attendance: (b) => b.attendance,
+  killfame: (b) => b.kill_fame,
+  deathfame: (b) => b.death_fame,
+  siphoned: (b) => b.siphoned,
+};
+
 /** Loading state held per leaderboard so tabs feel instant after first load. */
 interface TabState {
   readonly entries: ReadonlyArray<LeaderboardEntry>;
@@ -53,35 +58,17 @@ const LOADING_STATE: TabState = { entries: [], isLoading: true, hasError: false 
 
 const ERROR_STATE: TabState = { entries: [], isLoading: false, hasError: true };
 
-/**
- * Number of detail calls each leaderboard will trigger at most. Kept small on
- * purpose — the goal is a quick top-3 snapshot, not a full audit of guild data.
- */
-const DETAIL_FETCH_LIMIT = 10;
-
 /** Always shown slot count, even when fewer entries are available. */
 const PODIUM_SIZE = 3;
-
-/** Per-player battle stats tracked by the guild member leaderboards. */
-type BattlePlayerMetric = 'kills' | 'kill_fame' | 'death_fame';
-
-/** Roster page size; the backend paginates locally after one upstream call. */
-const ROSTER_PAGE_SIZE = 500;
-
-/** Safety cap on roster pages (way beyond any realistic guild size). */
-const ROSTER_MAX_PAGES = 10;
 
 /**
  * Cross-module top-3 rankings surfaced as a single tabbed view.
  *
- * There is no dedicated leaderboard endpoint on the backend, so each tab
- * aggregates a bounded sample of recent activity client-side. Loads are
- * best-effort: a failing source only blanks its own tab. Results are cached
- * per-tab so switching back and forth is instant after the first visit.
+ * Every board comes from one backend call, computed over the full window from
+ * real activity. Tab switching is instant because all boards arrive together.
  *
  * # Side effects
- * Performs one paginated list call plus up to `DETAIL_FETCH_LIMIT` detail
- * calls per tab on first activation. Subsequent activations reuse the cache.
+ * One request on first load, and one more if the user asks to refresh.
  */
 @Component({
   selector: 'app-leaderboards',
@@ -507,8 +494,8 @@ const ROSTER_MAX_PAGES = 10;
   ],
 })
 export class Leaderboards {
-  private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly intel = inject(IntelService);
   private readonly translate = inject(TranslateService);
 
   protected readonly tabs: ReadonlyArray<LeaderboardTab> = [
@@ -617,7 +604,7 @@ export class Leaderboards {
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   constructor() {
-    void this.loadTab('payout');
+    void this.loadAll();
   }
 
   protected selectTab(key: LeaderboardKey): void {
@@ -625,299 +612,57 @@ export class Leaderboards {
       return;
     }
     this.activeTab.set(key);
-    if (!this.loadedTabs().has(key)) {
-      void this.loadTab(key);
-    }
   }
 
   protected reloadActive(): void {
-    void this.loadTab(this.activeTab(), { force: true });
+    void this.loadAll({ force: true });
   }
 
   protected formatValue(value: number): string {
     return value.toLocaleString();
   }
 
-  private async loadTab(key: LeaderboardKey, opts: { force?: boolean } = {}): Promise<void> {
-    if (!opts.force && this.loadedTabs().has(key)) {
+  /**
+   * Loads every board in one call.
+   *
+   * Previously each tab aggregated client-side over its own set of list and
+   * detail requests, capped at the ten most recent splits or battles — so the
+   * rankings were a partial snapshot, and switching tabs meant more round
+   * trips. The backend now computes all boards over the full window from real
+   * activity, cached, so one request fills the page.
+   */
+  private async loadAll(opts: { force?: boolean } = {}): Promise<void> {
+    if (!opts.force && this.loadedTabs().size > 0) {
       return;
     }
-    this.patchState(key, LOADING_STATE);
+    for (const tab of this.tabs) {
+      this.patchState(tab.key, LOADING_STATE);
+    }
     try {
-      const entries = await this.fetchEntries(key);
-      this.patchState(key, { entries, isLoading: false, hasError: false });
-      this.loadedTabs.update((set) => new Set(set).add(key));
+      const boards = await firstValueFrom(this.intel.leaderboards());
+      for (const tab of this.tabs) {
+        this.patchState(tab.key, {
+          entries: (BOARD_FOR_TAB[tab.key](boards) ?? []).map((row) => ({
+            name: row.username,
+            value: row.value,
+          })),
+          isLoading: false,
+          hasError: false,
+        });
+      }
+      this.loadedTabs.set(new Set(this.tabs.map((tab) => tab.key)));
     } catch {
-      this.patchState(key, ERROR_STATE);
+      for (const tab of this.tabs) {
+        this.patchState(tab.key, ERROR_STATE);
+      }
     }
   }
 
   private patchState(key: LeaderboardKey, next: TabState): void {
     this.stateByTab.update((map) => ({ ...map, [key]: next }));
   }
-
-  private async fetchEntries(key: LeaderboardKey): Promise<ReadonlyArray<LeaderboardEntry>> {
-    switch (key) {
-      case 'payout':
-        return this.fetchPayout();
-      case 'deaths':
-        return this.fetchEstimatedDeaths();
-      case 'kills':
-        return this.fetchKills();
-      case 'attendance':
-        return this.fetchAttendance();
-      case 'killfame':
-        return this.fetchGuildBattleMetric('kill_fame');
-      case 'deathfame':
-        return this.fetchGuildBattleMetric('death_fame');
-      case 'siphoned':
-        return this.fetchSiphoned();
-    }
-  }
-
-  /** Aggregate `share_amount` from recent completed split details. */
-  private async fetchPayout(): Promise<ReadonlyArray<LeaderboardEntry>> {
-    const list = await firstValueFrom(
-      this.api.get<PaginatedData<SplitSummary>>('api/splits', {
-        status: 'completed',
-        page: 1,
-        limit: DETAIL_FETCH_LIMIT,
-      }),
-    );
-    const details = await this.fetchAllSettled(
-      list.items.map((split) =>
-        firstValueFrom(this.api.get<SplitDetail>(`api/splits/${split.id}`)),
-      ),
-    );
-
-    return this.topEntries(details, (detail) =>
-      detail.participants.map((participant) => ({
-        name: participant.username,
-        value: participant.share_amount ?? 0,
-      })),
-    );
-  }
-
-  /** Aggregate `estimated_loss` per player across recent battle details. */
-  private async fetchEstimatedDeaths(): Promise<ReadonlyArray<LeaderboardEntry>> {
-    const battles = await this.fetchBattleDetails();
-    return this.topEntries(battles, (battle) =>
-      this.playerLossRows(battle.estimated_losses?.players ?? []),
-    );
-  }
-
-  /** Aggregate `kills` per guild member across recent battle details. */
-  private async fetchKills(): Promise<ReadonlyArray<LeaderboardEntry>> {
-    return this.fetchGuildBattleMetric('kills');
-  }
-
-  /**
-   * Aggregate a per-player battle stat (`kills` / `kill_fame` / `death_fame`)
-   * restricted to the configured guild's roster. Falls back to the battle
-   * presence heuristic only if the roster endpoint is unreachable.
-   */
-  private async fetchGuildBattleMetric(
-    metric: BattlePlayerMetric,
-  ): Promise<ReadonlyArray<LeaderboardEntry>> {
-    const [battles, rosterNames] = await Promise.all([
-      this.fetchBattleDetails(),
-      this.fetchRosterNames().catch(() => null),
-    ]);
-    const guildName = rosterNames === null ? this.detectGuildName(battles) : null;
-    return this.topEntries(battles, (battle) =>
-      battle.players
-        .filter((player) =>
-          rosterNames === null
-            ? this.isGuildPlayer(player, guildName)
-            : this.isGuildMember(player, rosterNames),
-        )
-        .map((player) => ({ name: player.name, value: player[metric] })),
-    );
-  }
-
-  /**
-   * Rank players by siphoned energy deposited to the guild. The backend
-   * balances endpoint already aggregates per-player totals server-side, so a
-   * single list call replaces the detail fan-out other tabs need.
-   */
-  private async fetchSiphoned(): Promise<ReadonlyArray<LeaderboardEntry>> {
-    const balances = await firstValueFrom(
-      this.api.get<SiphonedPlayerBalance[]>('api/siphoned/balances'),
-    );
-    return balances
-      .map((balance) => ({ name: balance.player_name, value: Number(balance.total_deposited) }))
-      .filter((entry) => entry.value > 0)
-      .sort((a, b) => b.value - a.value)
-      .slice(0, PODIUM_SIZE);
-  }
-
-  /** Count participant appearances across recent event details. */
-  private async fetchAttendance(): Promise<ReadonlyArray<LeaderboardEntry>> {
-    const list = await firstValueFrom(
-      this.api.get<PaginatedData<EventView>>('api/events', {
-        page: 1,
-        limit: DETAIL_FETCH_LIMIT,
-      }),
-    );
-    const details = await this.fetchAllSettled(
-      list.items.map((event) =>
-        firstValueFrom(this.api.get<EventDetailView>(`api/events/${event.id}`)),
-      ),
-    );
-
-    return this.topEntries(details, (event) =>
-      event.participants.map((participant) => ({ name: participant.username, value: 1 })),
-    );
-  }
-
-  private async fetchBattleDetails(): Promise<ReadonlyArray<BattleDetail>> {
-    const list = await firstValueFrom(
-      this.api.get<PaginatedData<{ battle_id: number }>>('api/battles', { page: 1 }),
-    );
-    const ids = list.items.slice(0, DETAIL_FETCH_LIMIT).map((battle) => battle.battle_id);
-    return this.fetchAllSettled(
-      ids.map((id) => firstValueFrom(this.api.get<BattleDetail>(`api/battles/${id}`))),
-    );
-  }
-
-  /**
-   * Fetch the configured guild's roster once and cache it for the session.
-   * Concurrent callers share the in-flight promise instead of duplicating the
-   * upstream Albion API request.
-   */
-  private rosterPromise: Promise<ReadonlySet<string>> | null = null;
-
-  private fetchRosterNames(): Promise<ReadonlySet<string>> {
-    if (this.rosterPromise === null) {
-      this.rosterPromise = this.loadRosterNames().catch((error) => {
-        this.rosterPromise = null;
-        throw error;
-      });
-    }
-    return this.rosterPromise;
-  }
-
-  private async loadRosterNames(): Promise<ReadonlySet<string>> {
-    const names = new Set<string>();
-    let page = 1;
-    let totalItems = Number.POSITIVE_INFINITY;
-    while (names.size < totalItems && page <= ROSTER_MAX_PAGES) {
-      const roster = await firstValueFrom(
-        this.api.get<PaginatedData<AlbionGuildMember>>('api/albion/guild/roster', {
-          page,
-          limit: ROSTER_PAGE_SIZE,
-        }),
-      );
-      totalItems = roster.total_items;
-      for (const member of roster.items) {
-        names.add(member.name.trim().toLowerCase());
-      }
-      if (roster.items.length === 0) {
-        break;
-      }
-      page += 1;
-    }
-    return names;
-  }
-
-  /** Exact membership check against the roster, case-insensitive. */
-  private isGuildMember(player: BattlePlayer, rosterNames: ReadonlySet<string>): boolean {
-    return rosterNames.has(player.name.trim().toLowerCase());
-  }
-
-  /**
-   * Project each item into per-player rows, sum by name and slice the top 3.
-   * Used by every leaderboard so aggregation rules stay identical.
-   */
-  private topEntries<T>(
-    items: ReadonlyArray<T>,
-    toRows: (item: T) => ReadonlyArray<{ name: string; value: number }>,
-  ): ReadonlyArray<LeaderboardEntry> {
-    const totals = new Map<string, number>();
-    for (const item of items) {
-      for (const row of toRows(item)) {
-        const trimmed = row.name.trim();
-        if (trimmed.length === 0 || row.value <= 0) {
-          continue;
-        }
-        totals.set(trimmed, (totals.get(trimmed) ?? 0) + row.value);
-      }
-    }
-    return Array.from(totals.entries())
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, PODIUM_SIZE);
-  }
-
-  private playerLossRows(
-    players: ReadonlyArray<PlayerLossEstimate>,
-  ): ReadonlyArray<{ name: string; value: number }> {
-    return players.map((player) => ({
-      name: player.player_name,
-      value: player.estimated_loss,
-    }));
-  }
-
-  /**
-   * Fallback used only when the roster endpoint is unreachable. Picks the
-   * guild present in the most distinct battles (our guild is in every battle
-   * returned by `/battles`), tie-broken by total player appearances.
-   */
-  private detectGuildName(battles: ReadonlyArray<BattleDetail>): string | null {
-    const presence = new Map<string, number>();
-    const members = new Map<string, number>();
-    for (const battle of battles) {
-      const inBattle = new Set<string>();
-      for (const player of battle.players) {
-        if (!player.guild_name) {
-          continue;
-        }
-        inBattle.add(player.guild_name);
-        members.set(player.guild_name, (members.get(player.guild_name) ?? 0) + 1);
-      }
-      for (const name of inBattle) {
-        presence.set(name, (presence.get(name) ?? 0) + 1);
-      }
-    }
-
-    let bestName: string | null = null;
-    let bestPresence = 0;
-    let bestMembers = 0;
-    for (const [name, count] of presence) {
-      const memberCount = members.get(name) ?? 0;
-      if (count > bestPresence || (count === bestPresence && memberCount > bestMembers)) {
-        bestName = name;
-        bestPresence = count;
-        bestMembers = memberCount;
-      }
-    }
-    return bestName;
-  }
-
-  private isGuildPlayer(player: BattlePlayer, guildName: string | null): boolean {
-    if (guildName === null) {
-      return true;
-    }
-    return player.guild_name === guildName;
-  }
-
-  /**
-   * Run a batch of promises without short-circuiting on rejection.
-   * Rejections are swallowed because partial data is still useful for a top-3.
-   */
-  private async fetchAllSettled<T>(promises: ReadonlyArray<Promise<T>>): Promise<ReadonlyArray<T>> {
-    const results: Array<PromiseSettledResult<T>> = await Promise.allSettled(promises);
-    const fulfilled: Array<T> = [];
-    for (const result of results) {
-      if (result.status === 'fulfilled') {
-        fulfilled.push(result.value);
-      }
-    }
-    return fulfilled;
-  }
 }
 
-/** Per-tab accent palettes used by the panel header icon. */
 const ACCENT_BG: Record<LeaderboardKey, string> = {
   payout: 'var(--color-primary-container)',
   deaths: 'var(--color-error-container)',

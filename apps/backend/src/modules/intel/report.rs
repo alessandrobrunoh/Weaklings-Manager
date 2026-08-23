@@ -167,6 +167,10 @@ pub struct ReportOperations {
     pub role_fill: HashMap<String, i64>,
     /// Members with no signups in the window.
     pub inactive_members: Vec<String>,
+    /// Per-event regear cap currently configured.
+    pub regear_cap_per_event: i64,
+    /// Per-month regear cap currently configured.
+    pub regear_cap_per_month: i64,
 }
 
 /// Silver in and out.
@@ -210,8 +214,12 @@ pub struct MemberRow {
     pub deaths: i64,
     pub kill_death_ratio: f64,
     pub kill_fame: i64,
+    pub death_fame: i64,
     pub silver_lost: i64,
     pub regears_claimed: i64,
+    /// Approved regears inside the rolling cap window, using the same
+    /// definition the enforcement path applies.
+    pub regears_used_this_month: i64,
     pub regear_silver: i64,
     pub split_earnings: i64,
     pub bank_pending: i64,
@@ -291,6 +299,7 @@ pub struct ReportLeaderboards {
     pub kills: Vec<LeaderboardEntry>,
     pub deaths: Vec<LeaderboardEntry>,
     pub kill_fame: Vec<LeaderboardEntry>,
+    pub death_fame: Vec<LeaderboardEntry>,
     pub silver_lost: Vec<LeaderboardEntry>,
     pub split_earnings: Vec<LeaderboardEntry>,
     pub regear_silver: Vec<LeaderboardEntry>,
@@ -343,6 +352,10 @@ struct RawData {
     comps: Vec<comp::Model>,
     comp_builds: Vec<comp_build::Model>,
     builds: Vec<build::Model>,
+    /// Approved regears inside the rolling cap window, regardless of the
+    /// report's own range — the cap is measured on its own clock.
+    monthly_approvals: Vec<regear::regear_death::Model>,
+    regear_settings: Option<regear::regear_setting::Model>,
     scouts: Vec<scouted_comp::Model>,
     scout_links: Vec<scouted_comp_battle::Model>,
 }
@@ -467,6 +480,19 @@ async fn load(db: &DatabaseConnection, range: DateRange) -> Result<RawData, AppE
         comps: comp::Entity::find().all(db).await?,
         comp_builds: comp_build::Entity::find().all(db).await?,
         builds: build::Entity::find().all(db).await?,
+        monthly_approvals: regear::regear_death::Entity::find()
+            .filter(regear::regear_death::Column::Status.eq("approved"))
+            .filter(
+                regear::regear_death::Column::DecidedAt.gte(
+                    chrono::Utc::now()
+                        - chrono::Duration::days(
+                            crate::modules::regear::service::PER_MONTH_WINDOW_DAYS,
+                        ),
+                ),
+            )
+            .all(db)
+            .await?,
+        regear_settings: regear::regear_setting::Entity::find().one(db).await?,
         scouts: scouted_comp::Entity::find()
             .filter(scouted_comp::Column::IsArchived.eq(false))
             .all(db)
@@ -747,6 +773,14 @@ fn compute_operations(raw: &RawData, _range: &DateRange) -> ReportOperations {
         role_need,
         role_fill,
         inactive_members,
+        regear_cap_per_event: raw
+            .regear_settings
+            .as_ref()
+            .map_or(0, |s| i64::from(s.max_regears_per_event)),
+        regear_cap_per_month: raw
+            .regear_settings
+            .as_ref()
+            .map_or(0, |s| i64::from(s.max_regears_per_month)),
     }
 }
 
@@ -881,19 +915,20 @@ fn compute_members(
         .collect();
 
     // Per-user combat totals, resolved from snapshots by character name.
-    let mut combat: HashMap<i64, (i64, i64, i64, i64, i64)> = HashMap::new();
+    let mut combat: HashMap<i64, (i64, i64, i64, i64, i64, i64)> = HashMap::new();
     for fight in fights {
         for player in &fight.our_players {
             let key = player.name.to_ascii_lowercase();
             let Some(user_id) = name_to_user.get(&key).copied() else {
                 continue;
             };
-            let entry = combat.entry(user_id).or_insert((0, 0, 0, 0, 0));
+            let entry = combat.entry(user_id).or_insert((0, 0, 0, 0, 0, 0));
             entry.0 += 1; // fights
             entry.1 += player.kills;
             entry.2 += player.deaths;
             entry.3 += player.kill_fame;
-            entry.4 += fight.per_player_loss.get(&key).copied().unwrap_or(0);
+            entry.4 += player.death_fame;
+            entry.5 += fight.per_player_loss.get(&key).copied().unwrap_or(0);
         }
     }
 
@@ -931,6 +966,14 @@ fn compute_members(
         }
     }
 
+    let monthly_by_user: HashMap<i64, i64> =
+        raw.monthly_approvals.iter().fold(HashMap::new(), |mut a, r| {
+            if let Some(user_id) = r.user_id {
+                *a.entry(user_id).or_insert(0) += 1;
+            }
+            a
+        });
+
     let siphoned_by_name: HashMap<String, i64> =
         raw.siphoned.iter().fold(HashMap::new(), |mut a, e| {
             *a.entry(e.player_name.to_ascii_lowercase()).or_insert(0) += to_i64(e.amount);
@@ -945,8 +988,8 @@ fn compute_members(
                 .discord_id
                 .as_deref()
                 .and_then(|d| link_by_discord.get(d).copied());
-            let (fights_n, kills, deaths, fame, lost) =
-                combat.get(&u.id).copied().unwrap_or((0, 0, 0, 0, 0));
+            let (fights_n, kills, deaths, fame, death_fame, lost) =
+                combat.get(&u.id).copied().unwrap_or((0, 0, 0, 0, 0, 0));
             let signed = signups.get(&u.id).copied().unwrap_or(0);
             let siphoned = link
                 .map(|l| l.albion_player_name.to_ascii_lowercase())
@@ -967,8 +1010,10 @@ fn compute_members(
                 deaths,
                 kill_death_ratio: kill_death_ratio(kills, deaths),
                 kill_fame: fame,
+                death_fame,
                 silver_lost: lost,
                 regears_claimed: regear_count.get(&u.id).copied().unwrap_or(0),
+                regears_used_this_month: monthly_by_user.get(&u.id).copied().unwrap_or(0),
                 regear_silver: regear_silver.get(&u.id).copied().unwrap_or(0),
                 split_earnings: split_by_user.get(&u.id).copied().unwrap_or(0),
                 bank_pending: bank_pending_by_user.get(&u.id).copied().unwrap_or(0),
@@ -1222,6 +1267,7 @@ fn compute_leaderboards(members: &[MemberRow]) -> ReportLeaderboards {
         kills: board(members, |m| m.kills),
         deaths: board(members, |m| m.deaths),
         kill_fame: board(members, |m| m.kill_fame),
+        death_fame: board(members, |m| m.death_fame),
         silver_lost: board(members, |m| m.silver_lost),
         split_earnings: board(members, |m| m.split_earnings),
         regear_silver: board(members, |m| m.regear_silver),
@@ -1261,8 +1307,10 @@ mod tests {
             deaths: 0,
             kill_death_ratio: 0.0,
             kill_fame: 0,
+            death_fame: 0,
             silver_lost: 0,
             regears_claimed: 0,
+            regears_used_this_month: 0,
             regear_silver: 0,
             split_earnings: 0,
             bank_pending: 0,

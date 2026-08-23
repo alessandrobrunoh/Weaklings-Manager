@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 import { ApiService } from './api.service';
 import type {
   GuildReport,
+  ReportLeaderboards,
   MatchupReport,
   PaginatedData,
   ScoutOutcome,
@@ -76,6 +77,16 @@ export class IntelService {
   /** Scouts ranked by resemblance to one of our comps. */
   threatsToComp(compId: number, limit = 5): Observable<SimilarityHit[]> {
     return this.api.get<SimilarityHit[]>(`/api/intel/comps/${compId}/threats`, { limit });
+  }
+
+  /**
+   * Member leaderboards for a window.
+   *
+   * Split from the full report because rankings are member-visible while the
+   * surrounding report is not, so this needs only `intel.view`.
+   */
+  leaderboards(from?: string, to?: string): Observable<ReportLeaderboards> {
+    return this.api.get<ReportLeaderboards>('/api/intel/leaderboards', { from, to });
   }
 
   /**

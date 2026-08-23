@@ -117,7 +117,8 @@ export class Shell {
           labelKey: 'nav.audit',
           roles: ['Officer', 'Admin', 'SuperAdmin'],
         },
-        { path: '/profile', icon: 'settings', labelKey: 'nav.profile' },
+        { path: '/profile', icon: 'users', labelKey: 'nav.profile' },
+        { path: '/settings', icon: 'settings', labelKey: 'nav.settings' },
       ],
     },
   ];

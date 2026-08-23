@@ -110,7 +110,11 @@ export const routes: Routes = [
         path: 'profile',
         loadComponent: () => import('./features/settings/settings').then((m) => m.Settings),
       },
-      { path: 'settings', redirectTo: 'profile' },
+      {
+        path: 'settings',
+        loadComponent: () =>
+          import('./features/albion-settings/albion-settings').then((m) => m.AlbionSettings),
+      },
     ],
   },
   {
