@@ -15,6 +15,7 @@ use tokio::time::interval;
 use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::battles::entities::{Column as SnapshotColumn, Entity as SnapshotEntity};
 use crate::modules::battles::service::BattlesService;
+use crate::modules::events::service::BattleLinkingContext;
 
 /// Tick interval for the sync worker. Battles that fall off page 1 between
 /// ticks are already covered by whichever tick first saw them.
@@ -22,12 +23,17 @@ const TICK_INTERVAL: Duration = Duration::from_secs(120);
 
 /// Spawns the battle-sync worker on the current runtime. Returns immediately;
 /// the task runs until the process exits.
-pub fn spawn(db: DatabaseConnection, battles: BattlesService, albiondata: AlbionDataService) {
+pub fn spawn(
+    db: DatabaseConnection,
+    battles: BattlesService,
+    albiondata: AlbionDataService,
+    guild_ctx: BattleLinkingContext,
+) {
     tokio::spawn(async move {
         let mut ticker = interval(TICK_INTERVAL);
         loop {
             ticker.tick().await;
-            if let Err(e) = run_cycle(&db, &battles, &albiondata).await {
+            if let Err(e) = run_cycle(&db, &battles, &albiondata, &guild_ctx).await {
                 tracing::warn!(error = %e, "battle-sync worker cycle failed");
             }
         }
@@ -40,6 +46,7 @@ async fn run_cycle(
     db: &DatabaseConnection,
     battles: &BattlesService,
     albiondata: &AlbionDataService,
+    guild_ctx: &BattleLinkingContext,
 ) -> Result<(), crate::errors::AppError> {
     let page = battles.list_guild_battles(None, 1).await?;
 
@@ -65,6 +72,16 @@ async fn run_cycle(
                 "battle-sync: failed to fetch/persist battle detail, will retry next tick"
             );
         }
+    }
+
+    // Second phase: scout whatever is now persisted. Runs after the loop above
+    // so a battle's snapshot is guaranteed to exist before we try to read it.
+    // Failures are logged, never propagated — scouting must not be able to
+    // stall snapshot persistence.
+    match crate::modules::intel::auto_scout::scout_recent_snapshots(db, guild_ctx).await {
+        Ok(0) => {}
+        Ok(count) => tracing::info!(battles = count, "battle-sync: scouted new battles"),
+        Err(e) => tracing::warn!(error = %e, "battle-sync: intel scouting pass failed"),
     }
 
     Ok(())

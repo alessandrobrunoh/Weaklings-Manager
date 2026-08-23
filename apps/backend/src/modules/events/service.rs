@@ -216,7 +216,7 @@ struct LinkedBattleSnapshot {
 }
 
 /// Computes a percentage and safely handles empty denominators.
-fn ratio_percent(part: i64, total: i64) -> f64 {
+pub(crate) fn ratio_percent(part: i64, total: i64) -> f64 {
     if total == 0 {
         return 0.0;
     }
@@ -225,7 +225,7 @@ fn ratio_percent(part: i64, total: i64) -> f64 {
 }
 
 /// Computes K/D while avoiding division by zero.
-fn kill_death_ratio(kills: i64, deaths: i64) -> f64 {
+pub(crate) fn kill_death_ratio(kills: i64, deaths: i64) -> f64 {
     if deaths == 0 {
         return kills as f64;
     }
@@ -234,7 +234,7 @@ fn kill_death_ratio(kills: i64, deaths: i64) -> f64 {
 }
 
 /// Ranks the most relevant opponents for the current analytics scope.
-fn build_top_opponents(battle_rows: &[event_battle::Model]) -> Vec<OpponentPerformanceView> {
+pub(crate) fn build_top_opponents(battle_rows: &[event_battle::Model]) -> Vec<OpponentPerformanceView> {
     let mut rollups: HashMap<String, OpponentRollup> = HashMap::new();
 
     for battle in battle_rows {
@@ -886,7 +886,7 @@ impl EventService {
     }
 
     /// Builds analytics rollups from persisted battle snapshots.
-    fn build_performance_stats(battle_rows: &[event_battle::Model]) -> BattlePerformanceStats {
+    pub(crate) fn build_performance_stats(battle_rows: &[event_battle::Model]) -> BattlePerformanceStats {
         if battle_rows.is_empty() {
             return BattlePerformanceStats::default();
         }

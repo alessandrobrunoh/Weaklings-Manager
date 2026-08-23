@@ -88,10 +88,17 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     event_sessions::spawn(db.clone(), albionbb_service.clone(), cfg.clone());
+    // Guild identity for scouting comes from config, never a hardcoded name.
+    let intel_guild_context = modules::events::service::BattleLinkingContext::new(
+        &cfg.albion_guild_id,
+        &cfg.albion_allied_guild_ids(),
+        &cfg.albion_allied_guild_names(),
+    );
     battle_sync::spawn(
         db.clone(),
         battles_service.clone(),
         albiondata_service.clone(),
+        intel_guild_context,
     );
 
     let regear_guild_context = modules::regear::router::RegearGuildContext {
@@ -109,6 +116,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(axum::Extension(albionbb_service))
         .layer(axum::Extension(battles_service))
         .layer(axum::Extension(regear_guild_context))
+        .layer(axum::Extension(modules::intel::cache::ReportCache::new()))
         .layer(axum::Extension(permissions.clone()))
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive());

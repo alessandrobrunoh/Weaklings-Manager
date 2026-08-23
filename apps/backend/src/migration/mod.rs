@@ -35,6 +35,8 @@ mod m20260811_000006_create_audit_logs_table;
 mod m20260812_000001_add_call_to_arms_to_events;
 mod m20260812_000002_create_regear_tables;
 mod m20260812_000003_seed_regear_permissions;
+mod m20260823_000001_create_scouted_comps;
+mod m20260823_000002_seed_intel_permissions;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -74,6 +76,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260812_000001_add_call_to_arms_to_events::Migration),
             Box::new(m20260812_000002_create_regear_tables::Migration),
             Box::new(m20260812_000003_seed_regear_permissions::Migration),
+            Box::new(m20260823_000001_create_scouted_comps::Migration),
+            Box::new(m20260823_000002_seed_intel_permissions::Migration),
         ]
     }
 }

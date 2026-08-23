@@ -13,6 +13,7 @@ pub mod battles;
 pub mod comps;
 pub mod events;
 pub mod health;
+pub mod intel;
 pub mod openalbion;
 pub mod regear;
 pub mod siphoned;
@@ -44,4 +45,5 @@ pub fn router() -> Router {
         .nest("/admin", admin::router())
         .nest("/utils", utils::router())
         .nest("/audit", audit::router())
+        .nest("/intel", intel::router())
 }

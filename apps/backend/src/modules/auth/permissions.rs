@@ -87,6 +87,15 @@ pub enum Permission {
     /// Update guild-wide regear settings (caps, slot mask, pricing). Admin+.
     #[strum(serialize = "regear.settings.manage")]
     RegearSettingsManage,
+    /// View scouted enemy comps, similarity scores and matchup tallies. Member+.
+    #[strum(serialize = "intel.view")]
+    IntelView,
+    /// Create / edit / merge / archive scouted comps and trigger manual scouting. Officer+.
+    #[strum(serialize = "intel.manage")]
+    IntelManage,
+    /// View the full guild report aggregate (silver flows, attendance, leaderboards). Officer+.
+    #[strum(serialize = "intel.report.view")]
+    IntelReportView,
 }
 
 impl Permission {
@@ -144,6 +153,6 @@ mod tests {
 
     #[test]
     fn all_contains_every_variant() {
-        assert_eq!(Permission::all().len(), 13);
+        assert_eq!(Permission::all().len(), 20);
     }
 }
