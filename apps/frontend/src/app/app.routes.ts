@@ -63,6 +63,15 @@ export const routes: Routes = [
         loadComponent: () => import('./features/battles/battles').then((m) => m.Battles),
       },
       {
+        path: 'intel',
+        loadComponent: () => import('./features/intel/intel').then((m) => m.Intel),
+      },
+      {
+        path: 'intel/:scoutId',
+        loadComponent: () =>
+          import('./features/intel/intel-detail').then((m) => m.IntelDetailPage),
+      },
+      {
         path: 'comps',
         loadComponent: () => import('./features/comps/comps').then((m) => m.Comps),
       },

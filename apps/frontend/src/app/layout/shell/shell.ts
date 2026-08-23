@@ -95,6 +95,7 @@ export class Shell {
         { path: '/splits', icon: 'swords', labelKey: 'nav.splits' },
         { path: '/events', icon: 'calendar', labelKey: 'nav.events' },
         { path: '/battles', icon: 'shield', labelKey: 'nav.battles' },
+        { path: '/intel', icon: 'scan', labelKey: 'nav.intel' },
         { path: '/comps', icon: 'package', labelKey: 'nav.comps' },
         { path: '/siphoned', icon: 'activity', labelKey: 'nav.siphoned' },
         { path: '/regears', icon: 'shield', labelKey: 'nav.regears' },

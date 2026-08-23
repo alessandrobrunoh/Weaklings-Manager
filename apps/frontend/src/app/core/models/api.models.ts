@@ -776,3 +776,315 @@ export interface RegearExtractionReport {
 export interface AdminMessage {
   message: string;
 }
+
+/* ------------------------------- Intel ------------------------------ */
+
+/** Engagement bracket a scouted composition falls into. */
+export type IntelScoutCategory = 'gank' | 'small_scale' | 'zvz';
+
+/** One enemy player observed in a scouted composition. */
+export interface ScoutedPlayer {
+  name: string;
+  role: string;
+  /**
+   * Main-hand weapon. Absent when the player never appeared in the kill feed,
+   * which is the normal case for most of a large enemy force.
+   */
+  weapon: string | null;
+  /** True when the role came from the keyword fallback, not a curated build. */
+  role_inferred: boolean;
+  item_power: number;
+}
+
+/** Summary of a scouted enemy composition. */
+export interface ScoutedCompSummary {
+  id: number;
+  name: string;
+  opponent_guild_id: string | null;
+  opponent_guild_name: string;
+  opponent_alliance_name: string | null;
+  category: IntelScoutCategory;
+  player_count: number;
+  /**
+   * How many observed players contributed a weapon. Lower than `player_count`
+   * whenever the kill feed covered only part of the fight, which weakens the
+   * weapon half of every similarity score involving this scout.
+   */
+  weapon_sample_size: number;
+  full_weapon_coverage: boolean;
+  avg_ip: number;
+  roles: Record<string, number>;
+  weapons: Record<string, number>;
+  source_battle_count: number;
+  threat_score: number;
+  is_archived: boolean;
+  notes: string | null;
+  first_seen_at: string;
+  saved_at: string;
+}
+
+/** One cell of the matchup matrix. */
+export interface MatchupRow {
+  our_comp_id: number;
+  our_comp_name: string;
+  scouted_comp_id: number;
+  battles: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+}
+
+/** How much of the underlying battle data could be attributed to a comp. */
+export interface MatchupCoverage {
+  total_battles: number;
+  battles_with_comp: number;
+}
+
+/** The matchup matrix plus the caveat that explains its gaps. */
+export interface MatchupReport {
+  rows: MatchupRow[];
+  coverage: MatchupCoverage;
+}
+
+/** Our comp ranked as an answer to a scouted composition. */
+export interface CounterSuggestion {
+  comp_id: number;
+  comp_name: string;
+  similarity: number;
+  battles: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  /** True when we have actually fought this pairing, rather than inferred it. */
+  tested: boolean;
+}
+
+/** One scored comparison against another composition. */
+export interface SimilarityHit {
+  id: number;
+  name: string;
+  score: number;
+  full_weapon_coverage: boolean;
+}
+
+/** Full dossier for one scouted composition. */
+export interface ScoutedCompDetail extends ScoutedCompSummary {
+  players: ScoutedPlayer[];
+  source_battle_ids: number[];
+  fingerprint: string;
+  matchups: MatchupRow[];
+  matchup_coverage: MatchupCoverage;
+  recommended_counter: CounterSuggestion | null;
+}
+
+/** The result of scouting a battle. */
+export interface ScoutOutcome {
+  scouted_comp_id: number | null;
+  name: string;
+  opponent_guild_name: string;
+  category: IntelScoutCategory;
+  player_count: number;
+  weapon_sample_size: number;
+  merged: boolean;
+  already_linked: boolean;
+}
+
+/** Body of a scout update. */
+export interface UpdateScoutRequest {
+  name?: string;
+  notes?: string;
+  category?: IntelScoutCategory;
+  is_archived?: boolean;
+}
+
+/* --------------------------- Intel report --------------------------- */
+
+/** One battle, scored so the best and worst can be surfaced. */
+export interface FightSummary {
+  battle_id: number;
+  started_at: string;
+  is_win: boolean;
+  kills: number;
+  deaths: number;
+  kill_fame: number;
+  opponent: string | null;
+  score: number;
+}
+
+/** Headline combat performance. */
+export interface ReportOverview {
+  fights: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  kills: number;
+  deaths: number;
+  kill_death_ratio: number;
+  kill_fame: number;
+  silver_lost: number;
+  avg_item_power: number;
+  enemy_avg_item_power: number;
+  item_power_delta: number;
+  win_streak: number;
+  best_fight: FightSummary | null;
+  worst_fight: FightSummary | null;
+  attributed_fights: number;
+}
+
+/** Roster, attendance and role coverage. */
+export interface ReportOperations {
+  roster: number;
+  officers: number;
+  unlinked: number;
+  events_total: number;
+  events_live: number;
+  events_scheduled: number;
+  events_finished: number;
+  call_to_arms: number;
+  cta_rate: number;
+  attendance: number;
+  slots: number;
+  fill_rate: number;
+  role_need: Record<string, number>;
+  role_fill: Record<string, number>;
+  inactive_members: string[];
+}
+
+/**
+ * Silver flow.
+ *
+ * `outflow_splits`, `outflow_regear` and `outflow_other` are slices of
+ * `outflow_total`, not additions to it — they sum to it exactly.
+ */
+export interface ReportEconomy {
+  loot_in: number;
+  outflow_total: number;
+  outflow_splits: number;
+  outflow_regear: number;
+  outflow_other: number;
+  net: number;
+  bank_pending: number;
+  bank_requested: number;
+  bank_withdrawn: number;
+  regear_open: number;
+  regear_paid: number;
+  split_pending: number;
+  split_completed: number;
+  siphoned_net: number;
+  fame_per_player: number;
+  fame_per_million_lost: number;
+}
+
+/** One member's contribution over the window. */
+export interface ReportMemberRow {
+  user_id: number;
+  username: string;
+  albion_name: string | null;
+  role: string;
+  is_officer: boolean;
+  linked: boolean;
+  events_signed: number;
+  fill_rate: number;
+  fights: number;
+  kills: number;
+  deaths: number;
+  kill_death_ratio: number;
+  kill_fame: number;
+  silver_lost: number;
+  regears_claimed: number;
+  regear_silver: number;
+  split_earnings: number;
+  bank_pending: number;
+  siphoned: number;
+}
+
+/** One of our comps and how it has performed. */
+export interface ReportCompRow {
+  comp_id: number;
+  name: string;
+  seats: number;
+  events: number;
+  fights: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  kills: number;
+  deaths: number;
+  fill_rate: number;
+}
+
+/** One scouted opponent and our record against them. */
+export interface ReportEnemyRow {
+  scouted_comp_id: number;
+  name: string;
+  opponent_guild_name: string;
+  category: IntelScoutCategory;
+  player_count: number;
+  wins: number;
+  losses: number;
+  threat_score: number;
+  last_seen: string;
+  counter_comp_name: string | null;
+}
+
+export interface WeaponShare {
+  weapon: string;
+  count: number;
+}
+
+export interface HourBucket {
+  hour: number;
+  fights: number;
+  wins: number;
+  losses: number;
+}
+
+export interface TimelineEntry {
+  at: string;
+  kind: 'battle' | 'event' | 'scout';
+  title: string;
+  detail: string;
+}
+
+export interface LeaderboardEntry {
+  user_id: number;
+  username: string;
+  value: number;
+}
+
+export interface ReportLeaderboards {
+  attendance: LeaderboardEntry[];
+  kills: LeaderboardEntry[];
+  deaths: LeaderboardEntry[];
+  kill_fame: LeaderboardEntry[];
+  silver_lost: LeaderboardEntry[];
+  split_earnings: LeaderboardEntry[];
+  regear_silver: LeaderboardEntry[];
+  siphoned: LeaderboardEntry[];
+}
+
+/** Caveats that explain gaps in the report's numbers. */
+export interface ReportDataQuality {
+  total_battles: number;
+  attributed_battles: number;
+  /** Albion characters seen in battle that map to no linked member. */
+  unlinked_players: string[];
+}
+
+/** The whole guild report. */
+export interface GuildReport {
+  from: string;
+  to: string;
+  overview: ReportOverview;
+  operations: ReportOperations;
+  economy: ReportEconomy;
+  members: ReportMemberRow[];
+  comps: ReportCompRow[];
+  enemies: ReportEnemyRow[];
+  our_meta: WeaponShare[];
+  enemy_meta: WeaponShare[];
+  hours: HourBucket[];
+  timeline: TimelineEntry[];
+  leaderboards: ReportLeaderboards;
+  data_quality: ReportDataQuality;
+}
