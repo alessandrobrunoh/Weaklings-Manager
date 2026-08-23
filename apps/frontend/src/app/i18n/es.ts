@@ -280,8 +280,6 @@ export const es: TranslationDict = {
   'users.title': 'Miembros',
   'users.subtitle': 'Directorio de miembros de la hermandad.',
 
-  'admin.title': 'Administración',
-  'admin.subtitle': 'Herramientas operativas para oficiales.',
   'admin.permissions.reload': 'Recargar caché de permisos',
   'admin.permissions.reloaded': 'Caché de permisos recargada.',
 
@@ -336,6 +334,25 @@ export const es: TranslationDict = {
   'splits.batch.selectOne': 'Seleccionar este reparto',
   'splits.batch.complete': 'Completar seleccionados',
   'splits.batch.completed': 'repartos completados',
+
+  'admin.title': 'Administración',
+  'admin.subtitle': 'Autorización, y dónde están el resto de los ajustes.',
+  'admin.permissions.title': 'Permisos por rol',
+  'admin.permissions.hint': 'Los roles vienen de Discord — cada inicio de sesión realinea el rol con los de Discord — así que aquí se controla qué puede hacer cada rol. Los cambios se aplican al instante.',
+  'admin.permissions.permission': 'Permiso',
+  'admin.permissions.priority': 'prioridad',
+  'admin.reload': 'Recargar caché',
+  'admin.reloaded': 'Caché de permisos recargada.',
+  'admin.elsewhere.title': 'Ajustes en otras páginas',
+  'admin.elsewhere.hint': 'Viven junto a las funciones que configuran, en vez de duplicarse aquí.',
+  'admin.link.regear': 'Ajustes de regear',
+  'admin.link.regearHint': 'Límites, mercado de referencia y ranuras reembolsadas.',
+  'admin.link.comps': 'Comps y builds',
+  'admin.link.compsHint': 'Categorías, builds y composiciones.',
+  'admin.link.users': 'Miembros',
+  'admin.link.usersHint': 'La plantilla y sus vínculos de Albion.',
+  'admin.link.audit': 'Registro de auditoría',
+  'admin.link.auditHint': 'Cada acción que modifica, y quién la hizo.',
 
   // Albion settings
   'albionSettings.title': 'Cuenta de Albion',

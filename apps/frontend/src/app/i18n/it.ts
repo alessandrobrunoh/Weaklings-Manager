@@ -280,8 +280,6 @@ export const it: TranslationDict = {
   'users.title': 'Membri',
   'users.subtitle': 'Elenco dei membri della gilda.',
 
-  'admin.title': 'Amministrazione',
-  'admin.subtitle': 'Strumenti operativi per gli officer.',
   'admin.permissions.reload': 'Ricarica cache permessi',
   'admin.permissions.reloaded': 'Cache permessi ricaricata.',
 
@@ -337,6 +335,25 @@ export const it: TranslationDict = {
   'splits.batch.selectOne': 'Seleziona questo split',
   'splits.batch.complete': 'Completa selezionati',
   'splits.batch.completed': 'split completati',
+
+  'admin.title': 'Amministrazione',
+  'admin.subtitle': 'Autorizzazioni, e dove stanno le altre impostazioni.',
+  'admin.permissions.title': 'Permessi dei ruoli',
+  'admin.permissions.hint': 'I ruoli arrivano da Discord — a ogni login il ruolo viene riallineato a quelli Discord — quindi qui si controlla cosa ciascun ruolo può fare. Le modifiche sono immediate.',
+  'admin.permissions.permission': 'Permesso',
+  'admin.permissions.priority': 'priorità',
+  'admin.reload': 'Ricarica cache',
+  'admin.reloaded': 'Cache dei permessi ricaricata.',
+  'admin.elsewhere.title': 'Impostazioni altrove',
+  'admin.elsewhere.hint': 'Stanno accanto alle funzioni che configurano, invece di essere duplicate qui.',
+  'admin.link.regear': 'Impostazioni regear',
+  'admin.link.regearHint': 'Tetti, mercato di riferimento e slot rimborsati.',
+  'admin.link.comps': 'Comp e build',
+  'admin.link.compsHint': 'Categorie, build e composizioni.',
+  'admin.link.users': 'Membri',
+  'admin.link.usersHint': 'Organico e collegamenti Albion.',
+  'admin.link.audit': 'Registro attività',
+  'admin.link.auditHint': 'Ogni azione che modifica, con chi l\u2019ha fatta.',
 
   // Albion settings
   'albionSettings.title': 'Account Albion',

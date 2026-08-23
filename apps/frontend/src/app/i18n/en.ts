@@ -299,7 +299,7 @@ export const en = {
 
   // Admin
   'admin.title': 'Administration',
-  'admin.subtitle': 'Operational tools for officers.',
+  'admin.subtitle': 'Authorization, and where the rest of the settings live.',
   'admin.permissions.reload': 'Reload permission cache',
   'admin.permissions.reloaded': 'Permission cache reloaded.',
 
@@ -466,6 +466,24 @@ export const en = {
   'intel.detail.firstSeen': 'First seen',
   'intel.detail.lastSeen': 'Last seen',
   'intel.detail.notFound': 'That scouted composition no longer exists.',
+
+  // Administration
+  'admin.permissions.title': 'Role permissions',
+  'admin.permissions.hint': 'Roles come from Discord — every login refreshes a member\'s role from their Discord roles — so what is controlled here is what each role may do. Changes apply immediately.',
+  'admin.permissions.permission': 'Permission',
+  'admin.permissions.priority': 'priority',
+  'admin.reload': 'Reload cache',
+  'admin.reloaded': 'Permission cache reloaded.',
+  'admin.elsewhere.title': 'Settings elsewhere',
+  'admin.elsewhere.hint': 'These live next to the features they configure rather than being duplicated here.',
+  'admin.link.regear': 'Regear settings',
+  'admin.link.regearHint': 'Caps, pricing location and which slots are reimbursed.',
+  'admin.link.comps': 'Comps and builds',
+  'admin.link.compsHint': 'Categories, builds and compositions.',
+  'admin.link.users': 'Members',
+  'admin.link.usersHint': 'The roster and its Albion links.',
+  'admin.link.audit': 'Audit log',
+  'admin.link.auditHint': 'Every mutating action, with who did it.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

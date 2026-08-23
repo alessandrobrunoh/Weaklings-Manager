@@ -1122,3 +1122,19 @@ export interface CompleteSplitsBatchResult {
   failed: BatchFailure[];
   total_distributed: string;
 }
+
+/* ------------------------------- Admin ------------------------------ */
+
+/** One role and the permissions granted to it. */
+export interface RolePermissionsView {
+  role_id: string;
+  role_name: string;
+  priority: number;
+  permissions: string[];
+}
+
+/** The authorization matrix, plus every key that could be granted. */
+export interface PermissionMatrix {
+  roles: RolePermissionsView[];
+  available_permissions: string[];
+}
