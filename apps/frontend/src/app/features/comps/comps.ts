@@ -472,7 +472,7 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
 
                 @if (compPerformance(asComp(item).id); as performance) {
                   <section
-                    class="mt-4 grid grid-cols-2 gap-2 rounded-xl border p-3 text-xs"
+                    class="mt-4 grid grid-cols-2 gap-2 rounded-lg border p-3 text-xs"
                     style="border-color: var(--color-border)"
                   >
                     <span>Events: {{ performance.events_with_battles }}</span>

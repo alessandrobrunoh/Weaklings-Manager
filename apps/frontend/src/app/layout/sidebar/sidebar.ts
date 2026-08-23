@@ -46,7 +46,7 @@ export interface NavSection {
           <div class="mb-4">
             <p
               class="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider"
-              style="color: var(--color-text-disabled)"
+              style="color: var(--color-text-secondary)"
             >
               {{ t(section.headingKey) }}
             </p>

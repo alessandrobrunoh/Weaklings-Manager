@@ -1,6 +1,7 @@
 /* =================================================================
    Albion Guild Manager — Global stylesheet
-   Material-inspired, minimal, light & dark themes via CSS variables.
+   Warm near-monochrome editorial system: paper page, cream cards,
+   hairline depth, pill actions, and red as the single accent.
    Tailwind v4 imports and theme-aware token layer.
    ================================================================= */
 
@@ -14,80 +15,110 @@
    Light theme is the default; the `.dark` block overrides below.
    ----------------------------------------------------------------- */
 @layer base {
+  /* ---------------------------------------------------------------
+     Palette — a warm, near-monochrome editorial system.
+
+     Depth comes from surface tone and a single hairline ring, never
+     from stacked shadows. Colour is rationed: the page is paper,
+     cream and ink, and the one saturated element is the primary red,
+     which carries the role a pure-black pill carries in the source
+     system. Status colours survive because a dashboard has to be able
+     to signal state, but they are desaturated toward the warm register
+     so they read as part of the same family.
+     --------------------------------------------------------------- */
   :root {
-    /* Surfaces */
-    --color-bg: #f8fafc;
-    --color-surface: #ffffff;
-    --color-surface-1: #f8fafc;
-    --color-surface-2: #eef2f7;
-    --color-surface-hover: #f1f5f9;
-    --color-border: #e2e8f0;
-    --color-border-strong: #cbd5e1;
+    /* Surfaces: paper page, cream cards, sand for warm wash zones. */
+    --color-bg: #ffffff;
+    --color-surface: #f9f8f6;
+    --color-surface-1: #f9f8f6;
+    --color-surface-2: #f2ede5;
+    --color-surface-hover: #f2ede5;
+    --color-border: #d5d9e2;
+    --color-border-strong: #b9bfcc;
 
-    /* Text */
-    --color-text: #0f172a;
-    --color-text-secondary: #475569;
-    --color-text-disabled: #94a3b8;
+    /* Ink, never pure black — the slight lift keeps dark surfaces warm. */
+    --color-text: #0a0a0a;
+    --color-text-secondary: #545454;
+    --color-text-disabled: #9d9d9d;
+    --color-text-heading: #3b3b3b;
 
-    /* Accent (Google blue) */
+    /* The single chromatic commitment. */
     --color-primary: #b91c1c;
     --color-primary-hover: #991b1b;
-    --color-primary-container: #fee2e2;
+    --color-primary-container: #fbeaea;
     --color-on-primary: #ffffff;
-    --color-logo-glow: rgba(239, 68, 68, 0.45);
+    --color-logo-glow: rgba(185, 28, 28, 0.14);
 
-    /* Status */
-    --color-success: #1e8e3e;
-    --color-success-container: #e6f4ea;
-    --color-warning: #f9ab00;
-    --color-warning-container: #fef7e0;
-    --color-error: #d93025;
-    --color-error-container: #fce8e6;
+    /* Status — muted into the warm register. */
+    --color-success: #1e7a3c;
+    --color-success-container: #e8f2ea;
+    --color-warning: #a8620a;
+    --color-warning-container: #f9eddc;
+    --color-error: #c0392b;
+    --color-error-container: #fbeae8;
 
-    /* Shape & elevation */
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 18px;
+    /* Aliases referenced by feature pages. Previously undefined, which
+       left form errors rendering in the inherited body colour. */
+    --color-danger: var(--color-error);
+    --color-info: var(--color-primary);
+    --color-accent-gold: #ffbd2e;
+
+    /* Shape — binary by design: pills, or cream cards. */
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 16px;
     --radius-full: 9999px;
 
-    --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
-    --shadow-2: 0 8px 24px rgba(15, 23, 42, 0.08);
-    --shadow-3: 0 20px 48px rgba(15, 23, 42, 0.18);
+    /* Elevation — a hairline ring is the depth cue; the heavier shadows
+       exist only for surfaces that genuinely float above the page. */
+    --shadow-1: 0 0 0 1px rgba(10, 10, 10, 0.06);
+    --shadow-2: 0 0 0 1px rgba(10, 10, 10, 0.06), 0 8px 24px rgba(10, 10, 10, 0.06);
+    --shadow-3: 0 0 0 1px rgba(10, 10, 10, 0.06), 0 18px 40px -24px rgba(15, 23, 42, 0.28);
 
-    --font-sans: 'Google Sans', 'Roboto', 'Inter', system-ui, -apple-system, sans-serif;
+    /* Type — an editorial sans for UI, the same family at display sizes
+       for headings, and a mono that marks technical territory: ids,
+       timestamps, silver amounts, item codes. */
+    --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-display: 'Inter Tight', 'Inter', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --font-wordmark: 'Cinzel', 'Times New Roman', serif;
 
     color-scheme: light;
   }
 
+  /* The dark counterpart keeps the same grammar: ink page, charcoal
+     cards, hairline rings. It is a tonal inversion, not a second
+     design. */
   .dark {
-    --color-bg: #09090b;
-    --color-surface: #111113;
-    --color-surface-1: #18181b;
-    --color-surface-2: #27272a;
-    --color-surface-hover: #1f1f23;
-    --color-border: #27272a;
-    --color-border-strong: #3f3f46;
+    --color-bg: #0a0a0a;
+    --color-surface: #151515;
+    --color-surface-1: #151515;
+    --color-surface-2: #1f1f1f;
+    --color-surface-hover: #1f1f1f;
+    --color-border: #2a2a2a;
+    --color-border-strong: #3d3d3d;
 
-    --color-text: #fafafa;
-    --color-text-secondary: #a1a1aa;
-    --color-text-disabled: #71717a;
+    --color-text: #f5f4f2;
+    --color-text-secondary: #9d9d9d;
+    --color-text-disabled: #6b6b6b;
+    --color-text-heading: #d4d2ce;
 
     --color-primary: #f87171;
     --color-primary-hover: #fca5a5;
-    --color-primary-container: #3f1518;
+    --color-primary-container: #33191a;
     --color-on-primary: #180708;
-    --color-logo-glow: rgba(248, 113, 113, 0.55);
+    --color-logo-glow: rgba(248, 113, 113, 0.16);
 
-    --color-success: #81c995;
-    --color-success-container: #1e3a25;
-    --color-warning: #fdd663;
-    --color-warning-container: #3d3210;
-    --color-error: #f28b82;
-    --color-error-container: #4a1d18;
+    --color-success: #6fbf85;
+    --color-success-container: #16301d;
+    --color-warning: #e0a35c;
+    --color-warning-container: #33260f;
+    --color-error: #e8837a;
+    --color-error-container: #3a1714;
 
-    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
-    --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.35);
-    --shadow-3: 0 20px 48px rgba(0, 0, 0, 0.55);
+    --shadow-1: 0 0 0 1px rgba(255, 255, 255, 0.06);
+    --shadow-2: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 8px 24px rgba(0, 0, 0, 0.45);
+    --shadow-3: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 18px 40px -24px rgba(0, 0, 0, 0.7);
 
     color-scheme: dark;
   }
@@ -100,7 +131,8 @@
   body {
     margin: 0;
     background:
-      radial-gradient(circle at top, var(--color-logo-glow), transparent 28rem), var(--color-bg);
+      radial-gradient(60rem 32rem at 50% -12rem, var(--color-logo-glow), transparent 70%),
+      var(--color-bg);
     color: var(--color-text);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
@@ -143,11 +175,9 @@
   }
 
   .card {
-    background-color: color-mix(in srgb, var(--color-surface) 96%, transparent);
+    background-color: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-1);
-    backdrop-filter: blur(8px);
   }
 
   .card:hover {
@@ -159,9 +189,9 @@
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    padding: 0.5rem 1rem;
+    padding: 0.5rem 1.25rem;
     min-height: 40px;
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-full);
     border: 1px solid transparent;
     font-weight: 500;
     font-size: 0.875rem;
@@ -187,8 +217,6 @@
 
   .btn--primary:hover:not(:disabled) {
     background-color: var(--color-primary-hover);
-    box-shadow: var(--shadow-1);
-    transform: translateY(-1px);
   }
 
   .btn--tonal {
@@ -232,6 +260,7 @@
 
   /* Compact button variant for in-cell actions (tables, dense toolbars). */
   .btn--sm {
+    border-radius: var(--radius-full);
     min-height: 32px;
     padding: 0.25rem 0.625rem;
     font-size: 0.8125rem;
@@ -241,6 +270,7 @@
 
   /* Compact icon-only button: square, no padding, accessible hit area. */
   .btn--icon {
+    border-radius: var(--radius-full);
     min-height: 32px;
     min-width: 32px;
     padding: 0;
@@ -283,7 +313,7 @@
   .textarea:focus {
     outline: none;
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px var(--color-primary-container);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
   }
 
   .label {
@@ -539,8 +569,7 @@
   .equipment-slot--interactive:hover {
     border-color: var(--color-primary);
     background-color: var(--color-surface-hover);
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-1);
+    border-color: var(--color-border-strong);
   }
 
   .equipment-slot--filled {
@@ -552,7 +581,7 @@
   .equipment-slot--editing {
     z-index: 30;
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px var(--color-primary-container);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
   }
 
   .equipment-slot__icon {
@@ -696,5 +725,48 @@
   .equipment-popover--align-right::before {
     left: auto;
     right: calc((min(100%, 4.5rem)) / 2);
+  }
+}
+
+/* -----------------------------------------------------------------
+   Technical voice.
+
+   Mono marks content that is machine-shaped rather than editorial:
+   silver amounts, item power, battle ids, timestamps. Applying it via
+   a class keeps the decision at the call site instead of guessing from
+   element type.
+   ----------------------------------------------------------------- */
+@layer components {
+  .mono,
+  .tabular {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  /* Section labels: small, uppercase, quiet — the reference system's
+     meta-label treatment. */
+  .eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    /* Secondary, not disabled: these are real labels and must clear AA. */
+    color: var(--color-text-secondary);
+  }
+
+  /* Display headings sit tight to the grid: near-1.0 line height and
+     negative tracking, scaled for a dense dashboard rather than a
+     marketing hero. */
+  .display {
+    font-family: var(--font-display);
+    font-weight: 500;
+    line-height: 1.1;
+    letter-spacing: -0.025em;
+  }
+
+  .wordmark {
+    font-family: var(--font-wordmark);
+    letter-spacing: 0.02em;
   }
 }
