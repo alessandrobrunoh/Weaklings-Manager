@@ -463,4 +463,13 @@ export const es: TranslationDict = {
   'intel.detail.firstSeen': 'Primer avistamiento',
   'intel.detail.lastSeen': 'Último avistamiento',
   'intel.detail.notFound': 'Esa composición observada ya no existe.',
+
+  // Battle detail
+  'battles.gear': 'Equipo',
+  'battles.showGear': 'Mostrar',
+  'battles.hideGear': 'Ocultar',
+  'battles.lostGear': 'Equipo perdido',
+  'battles.unlinked': 'Sin evento',
+  'battles.linkedEventHint': 'El evento durante el cual se libró.',
+  'battles.unlinkedHint': 'Encontrada por la sincronización automática y nunca vinculada a un evento, así que no se puede atribuir a una comp.',
 };

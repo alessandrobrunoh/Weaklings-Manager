@@ -434,6 +434,13 @@ export interface GuildLossEstimate {
 }
 
 export interface BattleDetail extends BattleSummary {
+  /**
+   * The guild event this battle was fought under.
+   *
+   * Null means the background sync found it and it was never linked, so it
+   * cannot be attributed to one of our compositions.
+   */
+  linked_event: LinkedEvent | null;
   players: BattlePlayer[];
   kills: BattleKillEvent[];
   estimated_losses: BattleLossEstimate;
@@ -552,6 +559,13 @@ export interface UpdateCompCategoryRequest {
 
 export type BuildSlot =
   'weapon' | 'off_hand' | 'head' | 'armor' | 'shoes' | 'cape' | 'bag' | 'potion' | 'food' | 'mount';
+
+/** The guild event a battle was fought under. */
+export interface LinkedEvent {
+  id: number;
+  title: string;
+  call_to_arms: boolean;
+}
 
 export interface BuildItemSlot {
   slot: BuildSlot;

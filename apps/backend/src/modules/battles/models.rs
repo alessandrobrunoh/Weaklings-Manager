@@ -155,6 +155,24 @@ pub struct BattleDetail {
     pub kills: Vec<BattleKillEvent>,
     /// Market-based loss estimate from victim equipment, when Albion Data is reachable.
     pub estimated_losses: BattleLossEstimate,
+    /// The guild event this battle was fought under, when it was linked to one.
+    ///
+    /// AlbionBB knows nothing about our events, so this is resolved locally.
+    /// Its absence is meaningful rather than missing data: a battle with no
+    /// event was picked up by the background sync and cannot be attributed to
+    /// a composition.
+    pub linked_event: Option<LinkedEvent>,
+}
+
+/// The event a battle belongs to.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct LinkedEvent {
+    /// Event id, for linking through to it.
+    pub id: i64,
+    /// Event title.
+    pub title: String,
+    /// Whether the event was a call-to-arms, which is what entitles regears.
+    pub call_to_arms: bool,
 }
 
 impl From<&AlbionBbGuild> for BattleGuildSummary {
@@ -255,6 +273,7 @@ impl BattleDetail {
             players: detail.players.iter().map(BattlePlayer::from).collect(),
             kills: kills.iter().map(BattleKillEvent::from).collect(),
             estimated_losses: BattleLossEstimate::default(),
+            linked_event: None,
         }
     }
 }

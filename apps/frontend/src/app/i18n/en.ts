@@ -484,6 +484,15 @@ export const en = {
   'admin.link.usersHint': 'The roster and its Albion links.',
   'admin.link.audit': 'Audit log',
   'admin.link.auditHint': 'Every mutating action, with who did it.',
+
+  // Battle detail
+  'battles.gear': 'Gear',
+  'battles.showGear': 'Show gear',
+  'battles.hideGear': 'Hide',
+  'battles.lostGear': 'Gear lost',
+  'battles.unlinked': 'No event',
+  'battles.linkedEventHint': 'The event this battle was fought under.',
+  'battles.unlinkedHint': 'Found by the background sync and never linked to an event, so it cannot be attributed to a composition.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

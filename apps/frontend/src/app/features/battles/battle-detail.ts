@@ -2,12 +2,16 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
+import { RouterLink } from '@angular/router';
+
 import type {
   BattleDetail,
   BattleGuildSummary,
   BattleKillEvent,
   BattlePlayer,
   BattleSummary,
+  BuildItemSlot,
+  BuildSlot,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -15,12 +19,32 @@ import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { Loading } from '../../shared/components/loading/loading';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
+import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
 
 const CHART_LIMIT = 8;
 const ALBION_RENDER_ITEM_BASE_URL = 'https://render.albiononline.com/v1/item';
 
 type DetailTab = 'fight' | 'guild' | 'players' | 'timeline';
 type KillSide = 'killer' | 'victim';
+
+/**
+ * AlbionBB equipment keys mapped to the slot names builds use.
+ *
+ * Kept in the same order the paperdoll lays out, so a loadout reads the same
+ * whether it came from a build or from a kill feed.
+ */
+const EQUIPMENT_SLOTS: Readonly<Record<string, BuildSlot>> = {
+  MainHand: 'weapon',
+  OffHand: 'off_hand',
+  Head: 'head',
+  Armor: 'armor',
+  Shoes: 'shoes',
+  Cape: 'cape',
+  Bag: 'bag',
+  Potion: 'potion',
+  Food: 'food',
+  Mount: 'mount',
+};
 type RawObject = Record<string, unknown>;
 
 interface BattleChartMetric {
@@ -48,7 +72,7 @@ interface BattleKpiCard {
 @Component({
   selector: 'app-battle-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Loading, DataTable],
+  imports: [Loading, DataTable, EquipmentGrid, RouterLink],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
@@ -67,6 +91,25 @@ interface BattleKpiCard {
                 <span class="chip chip--success"
                   >{{ t('battles.winner') }} · {{ winner.name }}</span
                 >
+              }
+              <!-- AlbionBB knows nothing about our events, so an unlinked
+                   battle is one the background sync found on its own and
+                   cannot be attributed to a composition. -->
+              @if (detail.linked_event; as event) {
+                <a
+                  class="chip chip--info no-underline"
+                  [routerLink]="['/events', event.id]"
+                  [title]="t('battles.linkedEventHint')"
+                >
+                  {{ event.title }}
+                  @if (event.call_to_arms) {
+                    · {{ t('events.call_to_arms') }}
+                  }
+                </a>
+              } @else {
+                <span class="chip" [title]="t('battles.unlinkedHint')">
+                  {{ t('battles.unlinked') }}
+                </span>
               }
             </div>
             <p style="color: var(--color-text-secondary)">
@@ -570,7 +613,32 @@ interface BattleKpiCard {
               {{ formatDecimal(row.killer_item_power) }} →
               {{ formatDecimal(row.victim_item_power) }}
             </ng-template>
+            <ng-template dataTableCell="loadout" let-row>
+              @if (hasLoadout(row)) {
+                <button
+                  type="button"
+                  class="btn btn--ghost btn--sm"
+                  [attr.aria-expanded]="expandedKill() === row.event_id"
+                  (click)="toggleKillLoadout(row.event_id)"
+                >
+                  {{ expandedKill() === row.event_id ? t('battles.hideGear') : t('battles.showGear') }}
+                </button>
+              } @else {
+                <span style="color: var(--color-text-disabled)">—</span>
+              }
+            </ng-template>
           </app-data-table>
+
+          <!-- What the victim actually lost. The kill feed carries the whole
+               loadout; only the weapon used to be shown. -->
+          @if (expandedKillDetail(); as kill) {
+            <div class="border-t p-4" style="border-color: var(--color-border)">
+              <h3 class="eyebrow mb-3">
+                {{ t('battles.lostGear') }} — {{ kill.victim.name }}
+              </h3>
+              <app-equipment-grid [items]="participantLoadout(kill, 'victim')" />
+            </div>
+          }
         </article>
       }
     }
@@ -709,6 +777,9 @@ export class BattleDetailPage {
   private readonly translate = inject(TranslateService);
 
   protected readonly battle = signal<BattleDetail | null>(null);
+  /** Kill whose loadout is expanded, by upstream event id. */
+  protected readonly expandedKill = signal<number | null>(null);
+
   protected readonly loading = signal(false);
   protected readonly tab = signal<DetailTab>('fight');
   protected readonly weaponChart = computed(() => this.buildWeaponChart());
@@ -923,7 +994,20 @@ export class BattleDetailPage {
       comparator: (a, b) => a.killer_item_power - b.killer_item_power,
       align: 'right',
     },
+    {
+      key: 'loadout',
+      label: 'battles.gear',
+      sortable: false,
+      accessor: () => '',
+      align: 'right',
+    },
   ];
+
+  /** The kill currently expanded in the timeline, if it is still on the page. */
+  protected readonly expandedKillDetail = computed(() => {
+    const id = this.expandedKill();
+    return id === null ? null : (this.killRows().find((kill) => kill.event_id === id) ?? null);
+  });
 
   protected readonly killRows = computed(() => {
     const detail = this.battle();
@@ -1261,6 +1345,58 @@ export class BattleDetailPage {
       .map(([type, count]) => ({ type, count }))
       .sort((leftWeapon, rightWeapon) => rightWeapon.count - leftWeapon.count)
       .slice(0, CHART_LIMIT);
+  }
+
+  /**
+   * Reads a participant's whole loadout out of the raw kill payload.
+   *
+   * The backend preserves the upstream kill event verbatim precisely so the
+   * frontend can render fields it did not model; until now only the main hand
+   * was read, and the other nine slots — the bulk of what a death actually
+   * costs — were discarded. Slot keys are mapped to the same vocabulary builds
+   * use, so the existing equipment grid renders it unchanged.
+   */
+  protected participantLoadout(kill: BattleKillEvent, side: KillSide): BuildItemSlot[] {
+    const participantKey = side === 'killer' ? 'Killer' : 'Victim';
+    const participant =
+      this.readObject(kill.raw, participantKey) ??
+      this.readObject(kill.raw, participantKey.toLowerCase());
+    const equipment =
+      this.readObject(participant, 'Equipment') ?? this.readObject(participant, 'equipment');
+    if (!equipment) {
+      return [];
+    }
+
+    const items: BuildItemSlot[] = [];
+    for (const [upstreamKey, slot] of Object.entries(EQUIPMENT_SLOTS)) {
+      const entry =
+        this.readObject(equipment, upstreamKey) ??
+        this.readObject(equipment, upstreamKey.charAt(0).toLowerCase() + upstreamKey.slice(1));
+      const type = this.readString(entry, 'Type') ?? this.readString(entry, 'type');
+      if (!type?.trim()) {
+        continue;
+      }
+      items.push({
+        slot,
+        openalbion_item_type: slot,
+        // The upstream payload carries no numeric id; the grid keys on the
+        // slot, so a stable placeholder is enough.
+        openalbion_item_id: 0,
+        openalbion_item_name: type,
+        openalbion_item_icon: this.itemIconUrl(type),
+        openalbion_item_tier: null,
+      });
+    }
+    return items;
+  }
+
+  /** Whether a kill carries enough equipment detail to be worth expanding. */
+  protected hasLoadout(kill: BattleKillEvent): boolean {
+    return this.participantLoadout(kill, 'victim').length > 0;
+  }
+
+  protected toggleKillLoadout(eventId: number): void {
+    this.expandedKill.update((current) => (current === eventId ? null : eventId));
   }
 
   /** Reads nested `Killer/Victim -> Equipment -> MainHand -> Type` safely from raw JSON. */
