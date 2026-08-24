@@ -12,6 +12,7 @@ import type {
   GuildReport,
   MatchupReport,
   ScoutedCompSummary,
+  TrendBucket,
 } from '../../core/models/api.models';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { Icon } from '../../shared/components/icon/icon';
@@ -168,6 +169,98 @@ const CARD_WEAPON_LIMIT = 4;
                 }
               </section>
             </div>
+          } @else {
+            <app-empty-state icon="alert" [message]="t('intel.reportUnavailable')" [hint]="t('intel.reportUnavailableHint')" />
+          }
+        }
+
+        @case ('trends') {
+          @if (report(); as r) {
+            @if (r.trends.length === 0) {
+              <app-empty-state icon="chart" [message]="t('common.empty')" />
+            } @else {
+              <div class="card overflow-x-auto">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>{{ t('intel.trends.week') }}</th>
+                      <th class="text-right">{{ t('intel.fights') }}</th>
+                      <th class="text-right">{{ t('intel.record') }}</th>
+                      <th class="w-40">{{ t('intel.winRate') }}</th>
+                      <th class="text-right">{{ t('intel.trends.attendance') }}</th>
+                      <th class="text-right">{{ t('intel.trends.net') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (week of r.trends; track week.week_start) {
+                      <tr>
+                        <td>{{ week.week_start | date: 'MMM d' }}</td>
+                        <td class="mono text-right">{{ week.fights }}</td>
+                        <td class="mono text-right">
+                          <span style="color: var(--color-success)">{{ week.wins }}</span>
+                          <span style="color: var(--color-text-disabled)">/</span>
+                          <span style="color: var(--color-error)">{{ week.losses }}</span>
+                        </td>
+                        <td>
+                          @if (week.fights > 0) {
+                            <app-meter
+                              [label]="''"
+                              [value]="week.wins"
+                              [max]="week.fights"
+                              [display]="weekWinRate(week) + '%'"
+                              [tone]="weekWinRate(week) >= 50 ? 'success' : 'danger'"
+                            />
+                          } @else {
+                            <span style="color: var(--color-text-disabled)">—</span>
+                          }
+                        </td>
+                        <td class="mono text-right">
+                          {{ week.attendance }}
+                          @if (week.events > 0) {
+                            <span class="text-xs" style="color: var(--color-text-secondary)">
+                              ({{ week.events }} {{ t('intel.events') }})
+                            </span>
+                          }
+                        </td>
+                        <td class="mono text-right" [style.color]="weekNet(week) >= 0 ? 'var(--color-success)' : 'var(--color-error)'">
+                          {{ weekNet(week) | number: '1.0-0' }}
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Week-over-week deltas on the headline measures, so a single
+                   number ("62% win rate") reads alongside its direction. -->
+              @if (weekOverWeek(); as delta) {
+                <div class="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                  <app-stat-card
+                    [label]="t('intel.trends.winRateDelta')"
+                    [value]="formatDelta(delta.winRate) + 'pp'"
+                    [tone]="delta.winRate >= 0 ? 'success' : 'danger'"
+                  />
+                  <app-stat-card
+                    [label]="t('intel.trends.attendanceDelta')"
+                    [value]="formatDelta(delta.attendance)"
+                    [tone]="delta.attendance >= 0 ? 'success' : 'danger'"
+                  />
+                  <app-stat-card
+                    [label]="t('intel.trends.netDelta')"
+                    [value]="formatDelta(delta.net)"
+                    [tone]="delta.net >= 0 ? 'success' : 'danger'"
+                  />
+                  <app-stat-card
+                    [label]="t('intel.trends.fightsDelta')"
+                    [value]="formatDelta(delta.fights)"
+                    [tone]="delta.fights >= 0 ? 'success' : 'danger'"
+                  />
+                </div>
+                <p class="mt-3 text-xs" style="color: var(--color-text-secondary)">
+                  {{ t('intel.trends.deltaHint') }}
+                </p>
+              }
+            }
           } @else {
             <app-empty-state icon="alert" [message]="t('intel.reportUnavailable')" [hint]="t('intel.reportUnavailableHint')" />
           }
@@ -623,6 +716,7 @@ export class Intel {
    */
   protected readonly tabs: ViewToggleOption[] = [
     { id: 'overview', label: 'Overview' },
+    { id: 'trends', label: 'Trends' },
     { id: 'ops', label: 'Operations' },
     { id: 'enemies', label: 'Enemies' },
     { id: 'matchups', label: 'Matchups' },
@@ -754,6 +848,50 @@ export class Intel {
   protected barHeight(value: number): number {
     const HISTOGRAM_PX = 150;
     return Math.round((value / this.peakHour()) * HISTOGRAM_PX);
+  }
+
+  /** A week's net silver: what came in from splits minus what left the bank. */
+  protected weekNet(week: TrendBucket): number {
+    return week.loot_in - week.outflow;
+  }
+
+  /** A week's win rate, 0-100; zero on a quiet week rather than NaN. */
+  protected weekWinRate(week: TrendBucket): number {
+    return week.fights === 0 ? 0 : Math.round((week.wins / week.fights) * 100);
+  }
+
+  /**
+   * Compares the most recent week against the one before it.
+   *
+   * Deliberately last-vs-previous rather than last-vs-average: a single
+   * outlier week should not get smoothed away by a season's worth of history,
+   * since the point of this card is "did this week go better or worse than
+   * the last one", not a long-run baseline.
+   */
+  protected weekOverWeek(): {
+    winRate: number;
+    attendance: number;
+    net: number;
+    fights: number;
+  } | null {
+    const weeks = this.report()?.trends ?? [];
+    if (weeks.length < 2) {
+      return null;
+    }
+    const current = weeks[weeks.length - 1];
+    const previous = weeks[weeks.length - 2];
+    return {
+      winRate: this.weekWinRate(current) - this.weekWinRate(previous),
+      attendance: current.attendance - previous.attendance,
+      net: this.weekNet(current) - this.weekNet(previous),
+      fights: current.fights - previous.fights,
+    };
+  }
+
+  /** Signs a delta so a drop reads as "-12" rather than a bare "12". */
+  protected formatDelta(value: number): string {
+    const rounded = Math.round(value);
+    return rounded > 0 ? `+${rounded}` : String(rounded);
   }
 
   protected scoutName(id: number): string {

@@ -473,4 +473,13 @@ export const it: TranslationDict = {
   'battles.unlinked': 'Nessun evento',
   'battles.linkedEventHint': 'L\'evento durante il quale è stata combattuta.',
   'battles.unlinkedHint': 'Trovata dalla sincronizzazione automatica e mai collegata a un evento, quindi non attribuibile a una comp.',
+  // Intel trends
+  'intel.trends.week': 'Settimana del',
+  'intel.trends.attendance': 'Presenze',
+  'intel.trends.net': 'Argento netto',
+  'intel.trends.winRateDelta': 'Vittorie vs settimana scorsa',
+  'intel.trends.attendanceDelta': 'Presenze vs settimana scorsa',
+  'intel.trends.netDelta': 'Argento netto vs settimana scorsa',
+  'intel.trends.fightsDelta': 'Scontri vs settimana scorsa',
+  'intel.trends.deltaHint': 'Confronta la settimana più recente con quella precedente, così una settimana particolarmente buona o negativa non viene appiattita da una media più lunga.',
 };

@@ -1066,6 +1066,27 @@ export interface WeaponShare {
   count: number;
 }
 
+/**
+ * One calendar week's activity, Monday-anchored in UTC.
+ *
+ * Every metric on the report is a total over the window; a trend needs
+ * direction, which only a series of these gives you.
+ */
+export interface TrendBucket {
+  week_start: string;
+  fights: number;
+  wins: number;
+  losses: number;
+  kills: number;
+  deaths: number;
+  kill_fame: number;
+  silver_lost: number;
+  events: number;
+  attendance: number;
+  loot_in: number;
+  outflow: number;
+}
+
 export interface HourBucket {
   hour: number;
   fights: number;
@@ -1119,6 +1140,8 @@ export interface GuildReport {
   our_meta: WeaponShare[];
   enemy_meta: WeaponShare[];
   hours: HourBucket[];
+  /** One entry per calendar week, oldest first, including quiet weeks. */
+  trends: TrendBucket[];
   timeline: TimelineEntry[];
   leaderboards: ReportLeaderboards;
   data_quality: ReportDataQuality;

@@ -274,6 +274,32 @@ pub struct HourBucket {
     pub losses: i64,
 }
 
+/// One calendar week's activity, Monday-anchored in UTC.
+///
+/// Every metric on the guild report is a total over the window; a total says
+/// nothing about direction. Trends exist so "62% win rate" can be read
+/// alongside "up from 48% three weeks ago" instead of standing alone.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct TrendBucket {
+    /// Monday 00:00 UTC of this week, RFC 3339.
+    pub week_start: String,
+    pub fights: i64,
+    pub wins: i64,
+    pub losses: i64,
+    pub kills: i64,
+    pub deaths: i64,
+    pub kill_fame: i64,
+    pub silver_lost: i64,
+    /// Events scheduled with a date inside this week.
+    pub events: i64,
+    /// Sign-ups across those events.
+    pub attendance: i64,
+    /// Silver from splits completed this week.
+    pub loot_in: i64,
+    /// Silver withdrawn from the bank this week.
+    pub outflow: i64,
+}
+
 /// One entry in the unified activity feed.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct TimelineEntry {
@@ -331,6 +357,10 @@ pub struct GuildReport {
     /// Weapon distribution across every scouted enemy composition.
     pub enemy_meta: Vec<WeaponShare>,
     pub hours: Vec<HourBucket>,
+    /// One entry per calendar week in the window, oldest first, including
+    /// weeks with no activity — a trend needs an unbroken axis, not just
+    /// the weeks that happened to have something in them.
+    pub trends: Vec<TrendBucket>,
     pub timeline: Vec<TimelineEntry>,
     pub leaderboards: ReportLeaderboards,
     pub data_quality: ReportDataQuality,
@@ -391,6 +421,7 @@ pub async fn build_guild_report(
     let enemies = compute_enemies(&raw, &matchup_rows);
     let (our_meta, enemy_meta) = compute_meta(&raw, &fights, &classifier);
     let hours = compute_hours(&fights);
+    let trends = compute_trends(&raw, &fights, &range);
     let timeline = compute_timeline(&raw, &fights);
     let leaderboards = compute_leaderboards(&members);
     let data_quality = ReportDataQuality {
@@ -411,6 +442,7 @@ pub async fn build_guild_report(
         our_meta,
         enemy_meta,
         hours,
+        trends,
         timeline,
         leaderboards,
         data_quality,
@@ -1193,6 +1225,136 @@ fn compute_hours(fights: &[Fight]) -> Vec<HourBucket> {
     buckets
 }
 
+/// Start of the Monday-anchored UTC week containing `dt`.
+///
+/// Every caller routes through this one function, so two timestamps that
+/// belong to the same week always produce the same map key regardless of the
+/// offset they arrived with — the offset is normalized to UTC before the week
+/// boundary is computed.
+fn week_start_utc(dt: DateTimeWithTimeZone) -> DateTimeWithTimeZone {
+    use chrono::Datelike;
+    let utc = dt.with_timezone(&chrono::Utc);
+    let days_since_monday = i64::from(utc.weekday().num_days_from_monday());
+    let monday = utc.date_naive() - chrono::Duration::days(days_since_monday);
+    monday.and_hms_opt(0, 0, 0).unwrap_or_default().and_utc().into()
+}
+
+/// Weekly activity across the window.
+///
+/// Buckets are pre-seeded for every week between `range.from` and `range.to`
+/// before anything is folded in, so a quiet week renders as a zero rather than
+/// a gap — the difference matters when the whole point is to read a trend off
+/// the shape of the series. Nothing here re-queries: everything folds from the
+/// same bulk load the rest of the report uses, including figures whose date
+/// column (`finalized_at`, `withdrawn_at`) can fall slightly outside the load
+/// window's own filter column (`created_at`) — those contributions are simply
+/// dropped rather than triggering a second query for a handful of edge rows.
+fn compute_trends(raw: &RawData, fights: &[Fight], range: &DateRange) -> Vec<TrendBucket> {
+    let start_week = week_start_utc(range.from);
+    let end_week = week_start_utc(range.to);
+
+    let mut order: Vec<DateTimeWithTimeZone> = Vec::new();
+    let mut cursor = start_week;
+    loop {
+        order.push(cursor);
+        if cursor >= end_week {
+            break;
+        }
+        cursor += chrono::Duration::weeks(1);
+    }
+
+    let mut buckets: HashMap<DateTimeWithTimeZone, TrendBucket> = order
+        .iter()
+        .map(|week| {
+            (
+                *week,
+                TrendBucket {
+                    week_start: week.to_rfc3339(),
+                    fights: 0,
+                    wins: 0,
+                    losses: 0,
+                    kills: 0,
+                    deaths: 0,
+                    kill_fame: 0,
+                    silver_lost: 0,
+                    events: 0,
+                    attendance: 0,
+                    loot_in: 0,
+                    outflow: 0,
+                },
+            )
+        })
+        .collect();
+
+    for fight in fights {
+        let Some(bucket) = buckets.get_mut(&week_start_utc(fight.started_at)) else {
+            continue;
+        };
+        bucket.fights += 1;
+        if fight.is_win {
+            bucket.wins += 1;
+        } else {
+            bucket.losses += 1;
+        }
+        bucket.kills += fight.kills;
+        bucket.deaths += fight.deaths;
+        bucket.kill_fame += fight.kill_fame;
+        bucket.silver_lost += fight.silver_lost;
+    }
+
+    // Participations carry no date of their own; attendance is bucketed by
+    // the week of the event they signed up for.
+    let mut event_week: HashMap<i64, DateTimeWithTimeZone> = HashMap::new();
+    for event_row in &raw.events {
+        let key = week_start_utc(event_row.event_date_utc);
+        event_week.insert(event_row.id, key);
+        if let Some(bucket) = buckets.get_mut(&key) {
+            bucket.events += 1;
+        }
+    }
+    for participation in &raw.participations {
+        let Some(key) = event_week.get(&participation.event_id) else {
+            continue;
+        };
+        if let Some(bucket) = buckets.get_mut(key) {
+            bucket.attendance += 1;
+        }
+    }
+
+    for split in &raw.splits {
+        if split.status != "completed" {
+            continue;
+        }
+        // A split is created, then completed later — bucket by when it
+        // actually paid out, falling back to creation for the rare row
+        // completed without that timestamp ever being set.
+        let paid_at = split.finalized_at.unwrap_or(split.created_at);
+        if let Some(bucket) = buckets.get_mut(&week_start_utc(paid_at)) {
+            let net = to_i64(split.estimated_market_value)
+                - to_i64(split.repair_value)
+                - to_i64(split.bags_value);
+            bucket.loot_in += net.max(0);
+        }
+    }
+
+    for tx in &raw.transactions {
+        if tx.status != "withdrawn" {
+            continue;
+        }
+        let Some(withdrawn_at) = tx.withdrawn_at else {
+            continue;
+        };
+        if let Some(bucket) = buckets.get_mut(&week_start_utc(withdrawn_at)) {
+            bucket.outflow += to_i64(tx.amount);
+        }
+    }
+
+    order
+        .into_iter()
+        .filter_map(|week| buckets.remove(&week))
+        .collect()
+}
+
 fn compute_timeline(raw: &RawData, fights: &[Fight]) -> Vec<TimelineEntry> {
     let mut entries: Vec<(DateTimeWithTimeZone, TimelineEntry)> = Vec::new();
 
@@ -1373,5 +1535,255 @@ mod tests {
     fn decimal_conversion_is_lossy_but_never_panics() {
         assert_eq!(to_i64(Decimal::new(1_500, 0)), 1_500);
         assert_eq!(to_i64(Decimal::MAX), 0);
+    }
+
+    fn ts(raw: &str) -> DateTimeWithTimeZone {
+        raw.parse().unwrap()
+    }
+
+    fn empty_raw() -> RawData {
+        RawData {
+            snapshots: Vec::new(),
+            events: Vec::new(),
+            event_battles: Vec::new(),
+            participations: Vec::new(),
+            transactions: Vec::new(),
+            regears: Vec::new(),
+            splits: Vec::new(),
+            split_participants: Vec::new(),
+            siphoned: Vec::new(),
+            users: Vec::new(),
+            links: Vec::new(),
+            comps: Vec::new(),
+            comp_builds: Vec::new(),
+            builds: Vec::new(),
+            monthly_approvals: Vec::new(),
+            regear_settings: None,
+            scouts: Vec::new(),
+            scout_links: Vec::new(),
+        }
+    }
+
+    fn fight(started_at: &str, is_win: bool, kills: i64, deaths: i64) -> Fight {
+        Fight {
+            battle_id: 1,
+            started_at: ts(started_at),
+            is_win,
+            kills,
+            deaths,
+            kill_fame: 100_000,
+            silver_lost: 50_000,
+            opponent: None,
+            our_players: Vec::new(),
+            enemy_players: Vec::new(),
+            weapons: std::collections::BTreeMap::new(),
+            per_player_loss: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn week_start_lands_on_monday_midnight_utc() {
+        // 2026-08-19 is a Wednesday; its week starts Monday 2026-08-17.
+        assert_eq!(
+            week_start_utc(ts("2026-08-19T14:30:00Z")).to_rfc3339(),
+            ts("2026-08-17T00:00:00+00:00").to_rfc3339(),
+        );
+    }
+
+    #[test]
+    fn week_start_is_idempotent_on_a_monday() {
+        let monday = ts("2026-08-17T00:00:00Z");
+        assert_eq!(week_start_utc(monday), monday);
+    }
+
+    #[test]
+    fn week_start_rolls_a_sunday_back_six_days() {
+        assert_eq!(
+            week_start_utc(ts("2026-08-23T23:59:59Z")).to_rfc3339(),
+            ts("2026-08-17T00:00:00+00:00").to_rfc3339(),
+        );
+    }
+
+    #[test]
+    fn week_start_normalizes_a_non_utc_offset() {
+        // 2026-08-19T02:00:00+05:00 is 2026-08-18T21:00:00Z, still the same week.
+        assert_eq!(
+            week_start_utc(ts("2026-08-19T02:00:00+05:00")),
+            week_start_utc(ts("2026-08-18T21:00:00Z")),
+        );
+    }
+
+    #[test]
+    fn trends_seed_every_week_in_range_even_when_empty() {
+        let range = DateRange {
+            from: ts("2026-08-03T00:00:00Z"),
+            to: ts("2026-08-20T00:00:00Z"),
+        };
+        let buckets = compute_trends(&empty_raw(), &[], &range);
+        // Aug 3 (Mon) .. Aug 17 (Mon) inclusive = 3 weekly buckets.
+        assert_eq!(buckets.len(), 3);
+        assert!(buckets.iter().all(|b| b.fights == 0 && b.attendance == 0));
+    }
+
+    #[test]
+    fn trends_are_ordered_oldest_first() {
+        let range = DateRange {
+            from: ts("2026-08-03T00:00:00Z"),
+            to: ts("2026-08-20T00:00:00Z"),
+        };
+        let buckets = compute_trends(&empty_raw(), &[], &range);
+        let starts: Vec<&str> = buckets.iter().map(|b| b.week_start.as_str()).collect();
+        let mut sorted = starts.clone();
+        sorted.sort_unstable();
+        assert_eq!(starts, sorted);
+    }
+
+    #[test]
+    fn trends_fold_fights_into_their_week() {
+        let range = DateRange {
+            from: ts("2026-08-03T00:00:00Z"),
+            to: ts("2026-08-20T00:00:00Z"),
+        };
+        let fights = vec![
+            fight("2026-08-19T10:00:00Z", true, 5, 1),
+            fight("2026-08-20T10:00:00Z", false, 2, 4),
+        ];
+        let buckets = compute_trends(&empty_raw(), &fights, &range);
+        let week_of_19th = buckets
+            .iter()
+            .find(|b| b.week_start == week_start_utc(ts("2026-08-19T00:00:00Z")).to_rfc3339())
+            .unwrap();
+        assert_eq!(week_of_19th.fights, 2);
+        assert_eq!(week_of_19th.wins, 1);
+        assert_eq!(week_of_19th.losses, 1);
+        assert_eq!(week_of_19th.kills, 7);
+        assert_eq!(week_of_19th.deaths, 5);
+    }
+
+    #[test]
+    fn trends_drop_a_fight_outside_the_bucketed_range_without_panicking() {
+        let range = DateRange {
+            from: ts("2026-08-17T00:00:00Z"),
+            to: ts("2026-08-20T00:00:00Z"),
+        };
+        let fights = vec![fight("2026-01-01T00:00:00Z", true, 3, 0)];
+        let buckets = compute_trends(&empty_raw(), &fights, &range);
+        assert!(buckets.iter().all(|b| b.fights == 0));
+    }
+
+    #[test]
+    fn trends_bucket_attendance_by_the_events_own_week() {
+        let range = DateRange {
+            from: ts("2026-08-03T00:00:00Z"),
+            to: ts("2026-08-20T00:00:00Z"),
+        };
+        let mut raw = empty_raw();
+        raw.events.push(event::Model {
+            id: 1,
+            title: "Ganks".to_string(),
+            description: None,
+            call_to_arms: true,
+            comp_id: 1,
+            created_by: 1,
+            event_date_utc: ts("2026-08-19T20:00:00Z"),
+            created_at: ts("2026-08-01T00:00:00Z"),
+            updated_at: ts("2026-08-01T00:00:00Z"),
+            status: "stopped".to_string(),
+            started_at: None,
+            stopped_at: None,
+            auto_stop_deadline: None,
+            link_status: "completed".to_string(),
+            link_attempts: 1,
+            link_last_error: None,
+            link_battles_completed_at: None,
+        });
+        raw.participations.push(event_participation::Model {
+            id: 1,
+            event_id: 1,
+            user_id: 42,
+            primary_build_id: 1,
+            secondary_build_id: None,
+            created_at: ts("2026-08-01T00:00:00Z"),
+            updated_at: ts("2026-08-01T00:00:00Z"),
+        });
+
+        let buckets = compute_trends(&raw, &[], &range);
+        let week = buckets
+            .iter()
+            .find(|b| b.week_start == week_start_utc(ts("2026-08-19T00:00:00Z")).to_rfc3339())
+            .unwrap();
+        assert_eq!(week.events, 1);
+        assert_eq!(week.attendance, 1);
+    }
+
+    #[test]
+    fn trends_bucket_loot_and_outflow_and_ignore_the_rest() {
+        let range = DateRange {
+            from: ts("2026-08-03T00:00:00Z"),
+            to: ts("2026-08-20T00:00:00Z"),
+        };
+        let mut raw = empty_raw();
+        // Completed split, paid out inside the window: counted.
+        raw.splits.push(split::Model {
+            id: 1,
+            created_by: 1,
+            status: "completed".to_string(),
+            estimated_market_value: Decimal::new(100_000, 0),
+            repair_value: Decimal::new(10_000, 0),
+            bags_value: Decimal::new(5_000, 0),
+            net_value: None,
+            note: None,
+            event_id: None,
+            created_at: ts("2026-08-01T00:00:00Z"),
+            finalized_at: Some(ts("2026-08-19T00:00:00Z")),
+        });
+        // Pending split: ignored regardless of date.
+        raw.splits.push(split::Model {
+            id: 2,
+            created_by: 1,
+            status: "pending".to_string(),
+            estimated_market_value: Decimal::new(999_999, 0),
+            repair_value: Decimal::ZERO,
+            bags_value: Decimal::ZERO,
+            net_value: None,
+            note: None,
+            event_id: None,
+            created_at: ts("2026-08-19T00:00:00Z"),
+            finalized_at: None,
+        });
+        // Withdrawn transaction: counted.
+        raw.transactions.push(transaction::Model {
+            id: 1,
+            from_user_id: None,
+            to_user_id: 1,
+            amount: Decimal::new(42_000, 0),
+            status: "withdrawn".to_string(),
+            r#type: "split_credit".to_string(),
+            split_id: Some(1),
+            created_at: ts("2026-08-18T00:00:00Z"),
+            requested_at: Some(ts("2026-08-18T00:00:00Z")),
+            withdrawn_at: Some(ts("2026-08-19T00:00:00Z")),
+        });
+        // Requested but not yet withdrawn: ignored.
+        raw.transactions.push(transaction::Model {
+            id: 2,
+            from_user_id: None,
+            to_user_id: 1,
+            amount: Decimal::new(7_000, 0),
+            status: "requested".to_string(),
+            r#type: "split_credit".to_string(),
+            split_id: None,
+            created_at: ts("2026-08-18T00:00:00Z"),
+            requested_at: Some(ts("2026-08-18T00:00:00Z")),
+            withdrawn_at: None,
+        });
+
+        let buckets = compute_trends(&raw, &[], &range);
+        let week = buckets
+            .iter()
+            .find(|b| b.week_start == week_start_utc(ts("2026-08-19T00:00:00Z")).to_rfc3339())
+            .unwrap();
+        assert_eq!(week.loot_in, 85_000);
+        assert_eq!(week.outflow, 42_000);
     }
 }

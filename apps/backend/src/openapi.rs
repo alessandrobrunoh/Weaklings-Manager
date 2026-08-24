@@ -317,6 +317,7 @@ use utoipa::OpenApi;
             crate::modules::intel::report::EnemyRow,
             crate::modules::intel::report::WeaponShare,
             crate::modules::intel::report::HourBucket,
+            crate::modules::intel::report::TrendBucket,
             crate::modules::intel::report::TimelineEntry,
             crate::pagination::PaginatedScoutedComp,
             crate::pagination::PaginatedDeathView,

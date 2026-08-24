@@ -493,6 +493,16 @@ export const en = {
   'battles.unlinked': 'No event',
   'battles.linkedEventHint': 'The event this battle was fought under.',
   'battles.unlinkedHint': 'Found by the background sync and never linked to an event, so it cannot be attributed to a composition.',
+
+  // Intel trends
+  'intel.trends.week': 'Week of',
+  'intel.trends.attendance': 'Attendance',
+  'intel.trends.net': 'Net silver',
+  'intel.trends.winRateDelta': 'Win rate vs last week',
+  'intel.trends.attendanceDelta': 'Attendance vs last week',
+  'intel.trends.netDelta': 'Net silver vs last week',
+  'intel.trends.fightsDelta': 'Fights vs last week',
+  'intel.trends.deltaHint': 'Compares the most recent week against the one before it, so a single good or bad week is not smoothed away by a longer average.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

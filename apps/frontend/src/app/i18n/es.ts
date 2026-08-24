@@ -472,4 +472,13 @@ export const es: TranslationDict = {
   'battles.unlinked': 'Sin evento',
   'battles.linkedEventHint': 'El evento durante el cual se libró.',
   'battles.unlinkedHint': 'Encontrada por la sincronización automática y nunca vinculada a un evento, así que no se puede atribuir a una comp.',
+  // Intel trends
+  'intel.trends.week': 'Semana del',
+  'intel.trends.attendance': 'Asistencia',
+  'intel.trends.net': 'Plata neta',
+  'intel.trends.winRateDelta': 'Victorias vs semana pasada',
+  'intel.trends.attendanceDelta': 'Asistencia vs semana pasada',
+  'intel.trends.netDelta': 'Plata neta vs semana pasada',
+  'intel.trends.fightsDelta': 'Combates vs semana pasada',
+  'intel.trends.deltaHint': 'Compara la semana más reciente con la anterior, así una sola semana buena o mala no se diluye en un promedio más largo.',
 };

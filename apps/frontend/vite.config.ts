@@ -1,6 +1,7 @@
 /// <reference types="vitest" />
 import analog from '@analogjs/platform';
-import { defineConfig } from 'vite';
+import { resolve } from 'node:path';
+import { defineConfig, loadEnv } from 'vite';
 
 /**
  * Vite + Analog configuration.
@@ -15,43 +16,51 @@ import { defineConfig } from 'vite';
  * - Nothing is prerendered. Every route is auth-gated, so build-time rendering
  *   would only ever produce the signed-out shell.
  */
-export default defineConfig(({ mode }) => ({
-  root: import.meta.dirname,
-  publicDir: 'public',
-  build: {
-    outDir: 'dist/client',
-    target: ['es2022'],
-    reportCompressedSize: true,
-  },
-  resolve: {
-    mainFields: ['module'],
-  },
-  plugins: [
-    analog({
-      ssr: true,
-      static: false,
-      prerender: {
-        routes: [],
-      },
-      nitro: {
-        preset: 'node-server',
-      },
-    }),
-  ],
-  server: {
-    proxy: {
-      '/api': { target: 'http://localhost:3000', changeOrigin: true, secure: false },
-      '/scalar': { target: 'http://localhost:3000', changeOrigin: true, secure: false },
+export default defineConfig(({ mode }) => {
+  // Load the shared repository environment so local frontend development uses
+  // the same backend port as `cargo run`.
+  const env = loadEnv(mode, resolve(import.meta.dirname, '../..'), '');
+  Object.assign(process.env, env);
+  const backendTarget = env.API_REWRITE_URL ?? `http://localhost:${env.BACKEND_PORT ?? '3000'}`;
+
+  return {
+    root: import.meta.dirname,
+    publicDir: 'public',
+    build: {
+      outDir: 'dist/client',
+      target: ['es2022'],
+      reportCompressedSize: true,
     },
-  },
-  test: {
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: ['src/test-setup.ts'],
-    include: ['**/*.spec.ts'],
-    reporters: ['default'],
-  },
-  define: {
-    'import.meta.vitest': mode !== 'production',
-  },
-}));
+    resolve: {
+      mainFields: ['module'],
+    },
+    plugins: [
+      analog({
+        ssr: true,
+        static: false,
+        prerender: {
+          routes: [],
+        },
+        nitro: {
+          preset: 'node-server',
+        },
+      }),
+    ],
+    server: {
+      proxy: {
+        '/api': { target: backendTarget, changeOrigin: true, secure: false },
+        '/scalar': { target: backendTarget, changeOrigin: true, secure: false },
+      },
+    },
+    test: {
+      globals: true,
+      environment: 'jsdom',
+      setupFiles: ['src/test-setup.ts'],
+      include: ['**/*.spec.ts'],
+      reporters: ['default'],
+    },
+    define: {
+      'import.meta.vitest': mode !== 'production',
+    },
+  };
+});
