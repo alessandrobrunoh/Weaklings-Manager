@@ -147,7 +147,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
             />
           </label>
           <label>
-            <span class="label">{{ t('common.optional') }}</span>
+            <span class="label">{{ t('common.description') }}</span>
             <textarea
               class="textarea"
               rows="3"
@@ -552,7 +552,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
               <span
                 class="chip"
                 [class.chip--success]="row.is_win"
-                [class.chip--danger]="!row.is_win"
+                [class.chip--error]="!row.is_win"
               >
                 {{ row.is_win ? t('events.detail.wins') : t('events.detail.losses') }}
               </span>
@@ -3011,7 +3011,7 @@ const ROLE_CHIP: Readonly<Record<BuildRole, string>> = {
   tank: 'chip chip--info',
   healer: 'chip chip--success',
   support: 'chip chip--warning',
-  dps: 'chip chip--danger',
+  dps: 'chip chip--error',
   battle_mount: 'chip',
   brawler: 'chip',
 };

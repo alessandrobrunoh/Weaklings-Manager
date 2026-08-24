@@ -42,6 +42,7 @@ export const it: TranslationDict = {
   'common.clone': 'Clona',
   'common.description': 'Descrizione',
   'common.open': 'Apri',
+  'common.view': 'Visualizza',
 
   'nav.dashboard': 'Cruscotto',
   'nav.leaderboards': 'Classifiche',
@@ -137,6 +138,7 @@ export const it: TranslationDict = {
   'events.start': 'Avvia',
   'events.stop': 'Ferma',
   'events.participate': 'Partecipa',
+  'events.viewAndJoin': 'Vedi e partecipa',
   'events.leave': 'Lascia',
   'events.detail.back': 'Torna agli eventi',
   'events.detail.performance': 'Performance',

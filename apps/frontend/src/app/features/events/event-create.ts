@@ -48,7 +48,7 @@ import { PageHeader } from '../../shared/components/page-header/page-header';
         </label>
 
         <label>
-          <span class="label">{{ t('common.optional') }}</span>
+          <span class="label">{{ t('common.description') }}</span>
           <textarea
             class="textarea"
             rows="3"

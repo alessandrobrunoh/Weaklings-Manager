@@ -45,6 +45,7 @@ export const en = {
   'common.clone': 'Clone',
   'common.description': 'Description',
   'common.open': 'Open',
+  'common.view': 'View',
 
   // Nav
   'nav.dashboard': 'Dashboard',
@@ -148,6 +149,7 @@ export const en = {
   'events.start': 'Start',
   'events.stop': 'Stop',
   'events.participate': 'Join',
+  'events.viewAndJoin': 'View & join',
   'events.leave': 'Leave',
   'events.detail.back': 'Back to events',
   'events.detail.performance': 'Performance',

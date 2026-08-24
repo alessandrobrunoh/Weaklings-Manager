@@ -42,6 +42,7 @@ export const es: TranslationDict = {
   'common.clone': 'Clonar',
   'common.description': 'Descripción',
   'common.open': 'Abrir',
+  'common.view': 'Ver',
 
   'nav.dashboard': 'Panel',
   'nav.leaderboards': 'Rankings',
@@ -137,6 +138,7 @@ export const es: TranslationDict = {
   'events.start': 'Iniciar',
   'events.stop': 'Detener',
   'events.participate': 'Unirse',
+  'events.viewAndJoin': 'Ver y unirse',
   'events.leave': 'Salir',
   'events.detail.back': 'Volver a eventos',
   'events.detail.performance': 'Rendimiento',

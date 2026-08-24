@@ -2,6 +2,8 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
+import { validateBuildName } from '../../shared/validation/build-validation';
+
 import type {
   BuildCategoryView,
   BuildRole,
@@ -327,7 +329,7 @@ export class CompDetailPage {
     if (!this.editing() && this.comp()) {
       const current = this.comp()!;
       this.editName.set(current.name);
-      this.editDescription.set('');
+      this.editDescription.set(current.description ?? '');
       this.editCategoryId.set(current.category_id ? String(current.category_id) : '');
       this.editParentId.set(current.parent_id ? String(current.parent_id) : '');
     }
@@ -383,14 +385,37 @@ export class CompDetailPage {
     if (!comp) {
       return;
     }
+
+    // Validated even when unchanged: the previous version only applied the
+    // name `if (editName())`, so clearing the field was silently ignored
+    // instead of rejected, and the save still reported success.
+    const nameError = validateBuildName(this.editName(), {
+      existingNames: [],
+      currentName: comp.name,
+    });
+    if (nameError) {
+      this.toasts.error(nameError.message);
+      return;
+    }
+
     const request: UpdateCompRequest = {};
-    if (this.editName() && this.editName() !== comp.name) request.name = this.editName();
-    if (this.editDescription()) request.description = this.editDescription();
+    const name = this.editName().trim();
+    if (name !== comp.name) request.name = name;
+    // Compared against the current value rather than tested for truthiness,
+    // so an emptied description actually clears instead of being dropped.
+    if (this.editDescription() !== (comp.description ?? '')) {
+      request.description = this.editDescription();
+    }
     const categoryId = this.editCategoryId() ? Number(this.editCategoryId()) : undefined;
     if (categoryId && categoryId !== comp.category_id) request.category_id = categoryId;
     const parentId = this.editParentId() ? Number(this.editParentId()) : null;
     if ((parentId ?? null) !== (comp.parent_id ?? null)) {
       request.parent_id = parentId ?? undefined;
+    }
+
+    if (Object.keys(request).length === 0) {
+      this.editing.set(false);
+      return;
     }
 
     this.saving.set(true);

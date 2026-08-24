@@ -83,7 +83,7 @@ const PAGE_SIZE = 10;
             <footer class="flex flex-wrap gap-2">
               @if (event.status === 'scheduled') {
                 <button type="button" class="btn btn--tonal" (click)="join(event.id)">
-                  {{ t('events.participate') }}
+                  {{ t('events.viewAndJoin') }}
                 </button>
                 <button type="button" class="btn btn--outline" (click)="leave(event.id)">
                   {{ t('events.leave') }}
@@ -100,7 +100,7 @@ const PAGE_SIZE = 10;
                 </button>
               }
               <button type="button" class="btn btn--outline" (click)="openEventDetail(event.id)">
-                Stats
+                {{ t('common.view') }}
               </button>
               @if (canManage()) {
                 <button type="button" class="btn btn--danger" (click)="deleteEvent(event.id)">
@@ -182,7 +182,7 @@ export class Events {
     return 'chip';
   }
 
-  /** Redirects to the detail page where build selection is performed. */
+  /** Opens the detail page, where picking a build is what actually joins. */
   protected async join(id: number): Promise<void> {
     void this.router.navigate(['/events', id]);
   }

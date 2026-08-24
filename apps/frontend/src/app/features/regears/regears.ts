@@ -471,18 +471,6 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; label: string }> = [
         max-height: 90vh;
         overflow-y: auto;
       }
-      .chip--success {
-        background: var(--color-success-bg, rgba(34, 197, 94, 0.15));
-        color: var(--color-success);
-      }
-      .chip--error {
-        background: var(--color-error-bg, rgba(239, 68, 68, 0.15));
-        color: var(--color-error);
-      }
-      .chip--warning {
-        background: var(--color-warning-bg, rgba(234, 179, 8, 0.15));
-        color: var(--color-warning);
-      }
     `,
   ],
 })

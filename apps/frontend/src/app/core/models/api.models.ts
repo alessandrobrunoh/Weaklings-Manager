@@ -601,6 +601,7 @@ export interface CompBuildEntry {
 export interface CompSummary {
   id: number;
   name: string;
+  description: string | null;
   category_id: number;
   category_name: string | null;
   created_by_username: string;

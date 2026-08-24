@@ -679,6 +679,7 @@ impl CompService {
         Ok(CompSummary {
             id: comp.id,
             name: comp.name,
+            description: comp.description,
             category_id: comp.category_id,
             category_name,
             created_by_username,

@@ -55,7 +55,7 @@ const ROSTER_LOAD_LIMIT = 500;
       </ng-template>
       <ng-template dataTableCell="user" let-row>
         @if (row.user_id) {
-          <span class="chip chip--outline" style="font-size: 0.8rem; padding: 2px 6px;"
+          <span class="chip chip--info" style="font-size: 0.8rem; padding: 2px 6px;"
             >User #{{ row.user_id }}</span
           >
         } @else {

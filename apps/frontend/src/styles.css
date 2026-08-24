@@ -316,6 +316,13 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
   }
 
+  /* Compact variant for a dense row — a per-item price field inside a table,
+     for example — mirroring .btn--sm's reduced padding and type size. */
+  .input--sm {
+    padding: 0.3125rem 0.625rem;
+    font-size: 0.8125rem;
+  }
+
   .label {
     display: block;
     margin-bottom: 0.375rem;
