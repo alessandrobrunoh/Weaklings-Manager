@@ -1,4 +1,13 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  ElementRef,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -105,7 +114,7 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; label: string }> = [
       <app-loading label="Loading…" />
     } @else if (tab() === 'settings') {
       <section class="card p-5">
-        <h3 class="mb-4 text-lg font-semibold">Regear Settings</h3>
+        <h2 class="mb-4 text-lg font-semibold">Regear Settings</h2>
         @if (settingsLoading()) {
           <app-loading label="Loading settings…" />
         } @else if (settings(); as s) {
@@ -189,14 +198,14 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; label: string }> = [
             <article class="card p-4">
               <header class="mb-2 flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <h3 class="font-semibold">
+                  <h2 class="font-semibold">
                     {{ death.player_name }}
                     @if (death.primary_build_name; as buildName) {
                       <span class="text-sm" style="color: var(--color-text-secondary)">
                         (signed up: {{ buildName }})
                       </span>
                     }
-                  </h3>
+                  </h2>
                   <p class="text-xs" style="color: var(--color-text-secondary)">
                     {{ death.event_title }} —
                     <a [routerLink]="['/battles', death.albionbb_battle_id]" class="link">
@@ -309,9 +318,17 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; label: string }> = [
 
     <!-- Accept dialog -->
     @if (acceptDialog(); as dialog) {
-      <div class="dialog-backdrop" (click)="closeAcceptDialog()">
-        <div class="dialog" (click)="$event.stopPropagation()">
-          <h3 class="mb-3 text-lg font-semibold">
+      <div class="dialog-backdrop" (click)="closeAcceptDialog()" (keydown.escape)="closeAcceptDialog()">
+        <div
+          #acceptPanel
+          class="dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="accept-dialog-title"
+          tabindex="-1"
+          (click)="$event.stopPropagation()"
+        >
+          <h3 id="accept-dialog-title" class="mb-3 text-lg font-semibold">
             Accept regear for {{ dialog.death.player_name }}
           </h3>
           <p class="mb-3 text-sm" style="color: var(--color-text-secondary)">
@@ -385,9 +402,17 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; label: string }> = [
 
     <!-- Reject dialog -->
     @if (rejectDialog(); as dialog) {
-      <div class="dialog-backdrop" (click)="closeRejectDialog()">
-        <div class="dialog" (click)="$event.stopPropagation()">
-          <h3 class="mb-3 text-lg font-semibold">
+      <div class="dialog-backdrop" (click)="closeRejectDialog()" (keydown.escape)="closeRejectDialog()">
+        <div
+          #rejectPanel
+          class="dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reject-dialog-title"
+          tabindex="-1"
+          (click)="$event.stopPropagation()"
+        >
+          <h3 id="reject-dialog-title" class="mb-3 text-lg font-semibold">
             Reject regear for {{ dialog.death.player_name }}
           </h3>
           <p class="mb-2 text-sm" style="color: var(--color-error)">
@@ -487,6 +512,16 @@ export class Regears {
   } | null>(null);
   protected readonly rejectDialog = signal<{ death: RegearDeathView; note: string } | null>(null);
 
+  /**
+   * Neither dialog is a native `<dialog>`, so nothing moves focus into it on
+   * open or gives it back to whatever triggered it on close — a keyboard
+   * user opening "Accept" stayed focused on a button now hidden behind the
+   * backdrop, with no indication a dialog had appeared at all.
+   */
+  private readonly acceptPanel = viewChild<ElementRef<HTMLElement>>('acceptPanel');
+  private readonly rejectPanel = viewChild<ElementRef<HTMLElement>>('rejectPanel');
+  private previouslyFocused: HTMLElement | null = null;
+
   protected readonly canAdjudicate = computed(() => this.auth.hasPermission('regear.adjudicate'));
   protected readonly canManageSettings = computed(() =>
     this.auth.hasPermission('regear.settings.manage'),
@@ -508,6 +543,17 @@ export class Regears {
 
   constructor() {
     void this.load();
+
+    effect(() => {
+      const open = this.acceptDialog() !== null || this.rejectDialog() !== null;
+      if (open) {
+        this.previouslyFocused = document.activeElement as HTMLElement | null;
+        (this.acceptPanel() ?? this.rejectPanel())?.nativeElement.focus();
+      } else if (this.previouslyFocused) {
+        this.previouslyFocused.focus();
+        this.previouslyFocused = null;
+      }
+    });
   }
 
   protected switchTab(next: string): void {

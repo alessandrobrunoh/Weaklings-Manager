@@ -148,9 +148,9 @@ interface BattleScopeStats {
                   [attr.aria-label]="'Select battle ' + battle.battle_id"
                 />
                 <div>
-                  <h3 class="text-lg font-semibold" style="color: var(--color-text)">
+                  <h2 class="text-lg font-semibold" style="color: var(--color-text)">
                     #{{ battle.battle_id }}
-                  </h3>
+                  </h2>
                   <p class="text-xs" style="color: var(--color-text-secondary)">
                     {{ formatDate(battle.start_time) }} · {{ formatDuration(battle) }}
                   </p>

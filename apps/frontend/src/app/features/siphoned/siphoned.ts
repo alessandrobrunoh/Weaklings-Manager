@@ -138,9 +138,9 @@ function emptyEntryDraft(): EntryDraft {
           @for (balance of balances(); track balance.player_name) {
             <article class="card p-5">
               <div class="mb-3 flex items-start justify-between gap-3">
-                <h3 class="font-semibold" style="color: var(--color-text)">
+                <h2 class="font-semibold" style="color: var(--color-text)">
                   {{ balance.player_name }}
-                </h3>
+                </h2>
                 <span
                   class="chip"
                   [class.chip--error]="toNumber(balance.net) < 0"
