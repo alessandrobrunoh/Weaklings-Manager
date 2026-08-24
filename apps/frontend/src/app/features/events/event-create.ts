@@ -198,10 +198,22 @@ export class EventCreatePage {
       return;
     }
 
+    // The datetime-local input has no native `required` that actually
+    // fires — `submit.preventDefault()` above runs unconditionally, so the
+    // browser's own constraint validation never gets a chance to block
+    // this. Without this check, a cleared field reached `new Date('')`,
+    // whose `.toISOString()` throws uncaught: the form went silently dead,
+    // no toast, `saving` never reset.
+    const scheduledAt = new Date(this.draftScheduledAt());
+    if (Number.isNaN(scheduledAt.getTime())) {
+      this.toasts.error(this.t('validation.required'));
+      return;
+    }
+
     const request: CreateEventRequest = {
       title,
       comp_id: compId,
-      event_date_utc: new Date(this.draftScheduledAt()).toISOString(),
+      event_date_utc: scheduledAt.toISOString(),
       call_to_arms: this.draftCallToArms(),
       create_split: this.draftCreateSplit(),
     };
