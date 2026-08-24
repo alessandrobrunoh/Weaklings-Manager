@@ -695,6 +695,14 @@ export class Splits {
   protected readonly draftBags = signal(0);
   protected readonly rawNames = signal('');
   protected readonly participants = signal<SplitParticipantDraft[]>([]);
+  /**
+   * Once an officer hand-edits a weight, adding or removing a participant
+   * must not silently blow that away by re-splitting everyone evenly again
+   * — it only fills in the new/departing share. Full rebuilds (parsing raw
+   * names, an OCR pass, clearing the form) reset this: those replace the
+   * whole roster, so starting from an even split is the correct default.
+   */
+  protected readonly weightsCustomized = signal(false);
   protected readonly selectedSplit = signal<SplitDetail | null>(null);
   protected readonly editNote = signal('');
   protected readonly editEstimated = signal(0);
@@ -818,6 +826,7 @@ export class Splits {
 
   protected onWeightChange(userId: number, event: Event): void {
     const weight = Math.max(1, Number((event.target as HTMLInputElement).value));
+    this.weightsCustomized.set(true);
     this.participants.update((participants) =>
       participants.map((participant) =>
         participant.user_id === userId ? { ...participant, weight } : participant,
@@ -848,7 +857,11 @@ export class Splits {
     const nextParticipants = this.participants().filter(
       (participant) => participant.user_id !== userId,
     );
-    this.participants.set(this.redistributeWeights(nextParticipants));
+    // Leave everyone else's hand-tuned share alone; only auto-balance while
+    // the roster is still at its untouched, evenly-split default.
+    this.participants.set(
+      this.weightsCustomized() ? nextParticipants : this.redistributeWeights(nextParticipants),
+    );
   }
 
   protected async addRosterMember(member: AlbionGuildMember): Promise<void> {
@@ -875,7 +888,14 @@ export class Splits {
         this.closeParticipantDialog();
         return;
       }
-      this.participants.set(this.redistributeWeights([...this.participants(), draft]));
+      // Same rule as remove: don't reset hand-tuned weights just because one
+      // more person joined. They start at the draft default (1%) and the
+      // officer adjusts from there, same as any other manually-added share.
+      this.participants.set(
+        this.weightsCustomized()
+          ? [...this.participants(), draft]
+          : this.redistributeWeights([...this.participants(), draft]),
+      );
       this.closeParticipantDialog();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -918,6 +938,9 @@ export class Splits {
       const matched = await firstValueFrom(
         this.api.post<MatchedParticipant[]>('api/splits/match-participants', { names }),
       );
+      // Parsing raw names/OCR replaces the whole roster, so an even split is
+      // the right starting point again.
+      this.weightsCustomized.set(false);
       this.participants.set(this.redistributeWeights(this.toDraftParticipants(matched)));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -929,6 +952,7 @@ export class Splits {
   protected clearParticipants(): void {
     this.rawNames.set('');
     this.participants.set([]);
+    this.weightsCustomized.set(false);
   }
 
   private async searchParticipantRoster(): Promise<void> {

@@ -651,6 +651,16 @@ interface BattleKpiCard {
         font-weight: 700;
         margin-bottom: 1rem;
       }
+      /* The label/bar/value grid below has a hard minimum width (two
+         minmax(8rem, ...) tracks plus an auto value column); on a narrow
+         phone that's wider than the viewport. Without this the whole page
+         body was forced into horizontal scroll to show it. Scoping the
+         scroll container to only the panels that actually hold rows (via
+         :has()) keeps every other .surface card unaffected. */
+      .surface:has(.battle-detail__bar-row),
+      .surface:has(.battle-detail__weapon-row) {
+        overflow-x: auto;
+      }
       .battle-detail__bar-row,
       .battle-detail__weapon-row {
         align-items: center;
@@ -658,6 +668,7 @@ interface BattleKpiCard {
         gap: 0.75rem;
         grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 2fr) auto;
         margin-top: 0.75rem;
+        min-width: max-content;
       }
       .battle-detail__bar {
         background: var(--color-surface-2);

@@ -102,6 +102,7 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
             class="input"
             type="text"
             placeholder="Category name"
+            [attr.aria-label]="t('common.name')"
             [value]="categoryDraftName()"
             (input)="onCategoryDraftNameChange($event)"
           />
@@ -109,6 +110,7 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
             class="input"
             type="text"
             placeholder="Description"
+            [attr.aria-label]="t('common.description')"
             [value]="categoryDraftDescription()"
             (input)="onCategoryDraftDescriptionChange($event)"
           />
@@ -354,6 +356,18 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
       <app-view-toggle [options]="tabOptions()" [active]="tab()" (activeChange)="switchTab($event)" />
     </div>
 
+    <div class="mb-4 max-w-sm">
+      <label class="sr-only" for="comps-search">{{ t('common.search') }}</label>
+      <input
+        id="comps-search"
+        class="input"
+        type="search"
+        [placeholder]="t('common.search')"
+        [value]="searchQuery()"
+        (input)="onSearchQueryChange($event)"
+      />
+    </div>
+
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
     } @else if (items().length === 0) {
@@ -526,6 +540,8 @@ export class Comps {
   protected readonly loading = signal(false);
   protected readonly page = signal(1);
   protected readonly totalPages = signal(1);
+  protected readonly searchQuery = signal('');
+  private listSearchTimer: ReturnType<typeof setTimeout> | null = null;
   protected readonly comps = signal<CompSummary[]>([]);
   protected readonly builds = signal<BuildSummary[]>([]);
   protected readonly buildCategories = signal<BuildCategoryView[]>([]);
@@ -746,6 +762,20 @@ export class Comps {
     this.showCreateForm.set(false);
     this.cancelEditItem();
     void this.load();
+  }
+
+  /** Debounced list search — filters server-side via the same `q` param the
+   *  backend already supports, so it searches the whole dataset rather than
+   *  just whatever page happens to be loaded. */
+  protected onSearchQueryChange(event: Event): void {
+    this.searchQuery.set((event.target as HTMLInputElement).value);
+    if (this.listSearchTimer) {
+      clearTimeout(this.listSearchTimer);
+    }
+    this.listSearchTimer = setTimeout(() => {
+      this.page.set(1);
+      void this.load();
+    }, 250);
   }
 
   protected canCreateCurrent(): boolean {
@@ -1285,6 +1315,10 @@ export class Comps {
     this.loading.set(true);
     try {
       const params: Record<string, string | number> = { page: this.page(), limit: PAGE_SIZE };
+      const query = this.searchQuery().trim();
+      if (query) {
+        params['q'] = query;
+      }
       if (this.tab() === 'comps') {
         const data = await firstValueFrom(
           this.api.get<PaginatedData<CompSummary>>('api/comps', params),

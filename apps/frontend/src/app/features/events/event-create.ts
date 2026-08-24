@@ -38,10 +38,7 @@ import { PageHeader } from '../../shared/components/page-header/page-header';
   template: `
     <app-page-header [title]="t('events.new')" [subtitle]="t('events.subtitle')" />
 
-    @if (loading()) {
-      <app-loading [label]="t('common.loading')" />
-    } @else {
-      <form class="card grid gap-4 p-5" (submit)="onSubmit($event)">
+    <form class="card grid gap-4 p-5" (submit)="onSubmit($event)">
         <label>
           <span class="label">{{ t('common.name') }}</span>
           <input class="input" type="text" [value]="draftTitle()" (input)="onTitleChange($event)" />
@@ -60,8 +57,13 @@ import { PageHeader } from '../../shared/components/page-header/page-header';
         <div class="grid gap-4 sm:grid-cols-2">
           <label>
             <span class="label">{{ t('events.detail.comp') }}</span>
-            <select class="select" [value]="draftCompId()" (change)="onCompChange($event)">
-              <option value="">—</option>
+            <select
+              class="select"
+              [value]="draftCompId()"
+              [disabled]="loading()"
+              (change)="onCompChange($event)"
+            >
+              <option value="">{{ loading() ? t('common.loading') : '—' }}</option>
               @for (comp of comps(); track comp.id) {
                 <option [value]="comp.id">{{ comp.name }}</option>
               }
@@ -73,6 +75,7 @@ import { PageHeader } from '../../shared/components/page-header/page-header';
             <input
               class="input"
               type="datetime-local"
+              [attr.min]="minScheduledAt"
               [value]="draftScheduledAt()"
               (input)="onScheduledAtChange($event)"
             />
@@ -117,7 +120,6 @@ import { PageHeader } from '../../shared/components/page-header/page-header';
           </button>
         </div>
       </form>
-    }
   `,
 })
 export class EventCreatePage {
@@ -133,6 +135,7 @@ export class EventCreatePage {
   protected readonly draftDescription = signal('');
   protected readonly draftCompId = signal('');
   protected readonly draftScheduledAt = signal(defaultScheduledAt());
+  protected readonly minScheduledAt = minScheduledAt();
   protected readonly draftCallToArms = signal(false);
   /** Pre-create the loot split so it is already attached to the event. */
   protected readonly draftCreateSplit = signal(false);
@@ -235,15 +238,23 @@ export class EventCreatePage {
   }
 }
 
-/**
- * Snap to the next whole hour so the default event time is human-readable.
- *
- * Uses UTC milliseconds then formats as `YYYY-MM-DDTHH:mm` in the user's local
- * timezone so the value round-trips through `<input type="datetime-local">`.
- */
+/** Formats a `Date` as `YYYY-MM-DDTHH:mm` in the user's local timezone, the
+ *  shape `<input type="datetime-local">` round-trips through. */
+function formatDatetimeLocal(date: Date): string {
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** Snap to the next whole hour so the default event time is human-readable. */
 function defaultScheduledAt(): string {
   const nextHour = new Date(Date.now() + 60 * 60 * 1000);
   nextHour.setMinutes(0, 0, 0);
-  const pad = (value: number): string => String(value).padStart(2, '0');
-  return `${nextHour.getFullYear()}-${pad(nextHour.getMonth() + 1)}-${pad(nextHour.getDate())}T${pad(nextHour.getHours())}:${pad(nextHour.getMinutes())}`;
+  return formatDatetimeLocal(nextHour);
+}
+
+/** Floor for the date picker — the form has no business scheduling an event
+ *  in the past. Uses "now" rather than the snapped-forward default so an
+ *  officer can still pick a moment sooner than the next whole hour. */
+function minScheduledAt(): string {
+  return formatDatetimeLocal(new Date());
 }

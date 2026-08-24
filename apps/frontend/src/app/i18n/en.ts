@@ -237,6 +237,7 @@ export const en = {
   'events.detail.select_player': 'Select player',
   'events.detail.unassigned': 'Unassigned members',
   'events.detail.no_build_items': 'No items configured for this build yet.',
+  'events.detail.view_loadout': 'View loadout',
 
   // Battles
   'battles.title': 'Battles',

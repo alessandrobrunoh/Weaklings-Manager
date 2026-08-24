@@ -225,6 +225,7 @@ export const es: TranslationDict = {
   'events.detail.select_player': 'Seleccionar jugador',
   'events.detail.unassigned': 'Miembros sin asignar',
   'events.detail.no_build_items': 'No hay items configurados para esta build.',
+  'events.detail.view_loadout': 'Ver equipo',
 
   'battles.title': 'Batallas',
   'battles.subtitle': 'Batallas recientes de la hermandad.',

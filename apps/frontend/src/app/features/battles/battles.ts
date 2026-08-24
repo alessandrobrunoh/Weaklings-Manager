@@ -161,7 +161,7 @@ interface BattleScopeStats {
               }
             </header>
 
-            <dl class="mb-4 grid grid-cols-4 gap-2 text-center">
+            <dl class="mb-4 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
               <div class="battle-list__metric">
                 <dt>{{ t('battles.players') }}</dt>
                 <dd>{{ formatAmount(battle.total_players) }}</dd>

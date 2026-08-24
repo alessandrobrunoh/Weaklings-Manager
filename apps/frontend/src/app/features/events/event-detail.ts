@@ -857,7 +857,14 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
                       (mouseenter)="onSlotHover(slot)"
                       (mouseleave)="onSlotLeave()"
                     >
-                      <span class="event-detail__board-slot-icon" [class]="roleChip(slot.role)">
+                      <button
+                        type="button"
+                        class="event-detail__board-slot-icon"
+                        [class]="roleChip(slot.role)"
+                        [attr.aria-label]="t('events.detail.view_loadout') + ': ' + slot.build.name"
+                        [attr.aria-expanded]="slotTooltipVisible(slot)"
+                        (click)="toggleSlotTooltip(slot)"
+                      >
                         @if (weaponRenderIconUrl(slot); as icon) {
                           <img
                             class="event-detail__board-slot-render"
@@ -870,7 +877,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
                             roleGlyph(slot.role)
                           }}</span>
                         }
-                      </span>
+                      </button>
                       <span class="event-detail__board-slot-name">{{ slot.build.name }}</span>
                       <select
                         class="select event-detail__board-slot-select"
@@ -1051,10 +1058,18 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
   `,
   styles: `
     @layer components {
+      /* Sticky only from sm up. On a phone this hero stacks the title,
+         description and a wrapped row of join/leave/edit buttons — easily
+         over half the viewport tall. Pinning that at all times left barely
+         any room to see the event content it's supposed to introduce. */
       .event-detail__hero {
-        position: sticky;
-        top: 0;
         z-index: 10;
+      }
+      @media (min-width: 640px) {
+        .event-detail__hero {
+          position: sticky;
+          top: 0;
+        }
       }
       .event-detail__label {
         color: var(--color-text-disabled);
@@ -1298,9 +1313,16 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
         justify-content: center;
         width: 2.25rem;
         height: 2.25rem;
+        border: none;
         border-radius: 0.4rem;
         background: var(--color-surface-1);
         overflow: hidden;
+        padding: 0;
+        cursor: pointer;
+      }
+      .event-detail__board-slot-icon:focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: 2px;
       }
       .event-detail__board-slot-render {
         width: 100%;
@@ -1506,6 +1528,7 @@ export class EventDetailPage {
   protected readonly buildDetails = signal<Map<number, BuildDetail>>(new Map());
   protected readonly buildDetailsLoading = signal<Set<number>>(new Set());
   protected readonly hoveredSlotKey = signal<string | null>(null);
+  protected readonly pinnedSlotKey = signal<string | null>(null);
   /**
    * Maps each `build_id` to its weapon `BuildItemSlot` so row icons can render
    * the Albion item render without a separate lookup per row.
@@ -2416,13 +2439,23 @@ export class EventDetailPage {
     }
   }
 
-  /** Toggles tooltip visibility on hover. Build details are preloaded. */
+  /** Shows the tooltip on hover. Build details are preloaded. */
   protected onSlotHover(slot: CompSlotRow): void {
     this.hoveredSlotKey.set(slot.key);
   }
 
   protected onSlotLeave(): void {
     this.hoveredSlotKey.set(null);
+  }
+
+  /**
+   * Tap/click-to-pin fallback for the loadout tooltip. `mouseenter` never
+   * fires on touch, so without this the equipment preview was entirely
+   * unreachable on phones and tablets — this also gives keyboard users a
+   * real activation instead of relying on hover.
+   */
+  protected toggleSlotTooltip(slot: CompSlotRow): void {
+    this.pinnedSlotKey.update((current) => (current === slot.key ? null : slot.key));
   }
 
   protected slotTooltipItems(buildId: number): BuildItemSlot[] {
@@ -2434,7 +2467,8 @@ export class EventDetailPage {
   }
 
   protected slotTooltipVisible(slot: CompSlotRow): boolean {
-    return this.hoveredSlotKey() === slot.key && this.buildDetails().has(slot.buildId);
+    const isActive = this.hoveredSlotKey() === slot.key || this.pinnedSlotKey() === slot.key;
+    return isActive && this.buildDetails().has(slot.buildId);
   }
 
   /**

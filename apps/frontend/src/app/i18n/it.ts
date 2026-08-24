@@ -226,6 +226,7 @@ export const it: TranslationDict = {
   'events.detail.select_player': 'Seleziona giocatore',
   'events.detail.unassigned': 'Membri non assegnati',
   'events.detail.no_build_items': 'Nessun item configurato per questa build.',
+  'events.detail.view_loadout': 'Vedi equipaggiamento',
 
   'battles.title': 'Battaglie',
   'battles.subtitle': 'Battaglie recenti che coinvolgono la gilda.',
