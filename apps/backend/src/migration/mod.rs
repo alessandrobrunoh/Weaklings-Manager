@@ -37,6 +37,7 @@ mod m20260812_000002_create_regear_tables;
 mod m20260812_000003_seed_regear_permissions;
 mod m20260823_000001_create_scouted_comps;
 mod m20260823_000002_seed_intel_permissions;
+mod m20260824_000001_widen_scouted_comp_fingerprint;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -78,6 +79,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260812_000003_seed_regear_permissions::Migration),
             Box::new(m20260823_000001_create_scouted_comps::Migration),
             Box::new(m20260823_000002_seed_intel_permissions::Migration),
+            Box::new(m20260824_000001_widen_scouted_comp_fingerprint::Migration),
         ]
     }
 }
