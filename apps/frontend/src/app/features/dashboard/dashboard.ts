@@ -8,7 +8,6 @@ import type {
   EventView,
   GuildBankSummary,
   PaginatedData,
-  SplitStatus,
   SplitSummary,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
@@ -17,6 +16,7 @@ import { TranslateService } from '../../core/services/translate.service';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import type { TranslationKey } from '../../i18n/en';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
 
 interface QuickAction {
   readonly path: string;
@@ -46,7 +46,7 @@ interface DashboardStat {
 @Component({
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, PageHeader, RouterLink],
+  imports: [Icon, PageHeader, RouterLink, StatusChip],
   template: `
     <app-page-header [title]="welcomeText()" [subtitle]="t('app.tagline')" [actions]="false" />
 
@@ -171,13 +171,7 @@ interface DashboardStat {
                       {{ event.comp_name }} · {{ formatEventDate(event.event_date_utc) }}
                     </p>
                   </div>
-                  <span
-                    class="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
-                    [style.backgroundColor]="statusBg(event.status)"
-                    [style.color]="statusFg(event.status)"
-                  >
-                    {{ event.status }}
-                  </span>
+                  <app-status-chip [value]="event.status" />
                 </a>
               </li>
             }
@@ -227,13 +221,7 @@ interface DashboardStat {
                   <span class="text-sm font-semibold tabular-nums">
                     {{ formatValue(split.estimated_market_value) }}
                   </span>
-                  <span
-                    class="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
-                    [style.backgroundColor]="splitStatusBg(split.status)"
-                    [style.color]="splitStatusFg(split.status)"
-                  >
-                    {{ split.status }}
-                  </span>
+                  <app-status-chip [value]="split.status" />
                 </a>
               </li>
             }
@@ -460,45 +448,6 @@ export class Dashboard {
     return 'var(--color-text-disabled)';
   }
 
-  protected statusBg(status: EventStatus): string {
-    if (status === 'live') return 'var(--color-success-container)';
-    if (status === 'scheduled') return 'var(--color-primary-container)';
-    if (status === 'stopped') return 'var(--color-surface-2)';
-    return 'var(--color-warning-container)';
-  }
-
-  protected statusFg(status: EventStatus): string {
-    if (status === 'live') return 'var(--color-success)';
-    if (status === 'scheduled') return 'var(--color-primary)';
-    if (status === 'stopped') return 'var(--color-text-secondary)';
-    return 'var(--color-warning)';
-  }
-
-  protected splitStatusBg(status: SplitStatus): string {
-    switch (status) {
-      case 'completed':
-        return 'var(--color-success-container)';
-      case 'pending':
-        return 'var(--color-warning-container)';
-      case 'lost':
-        return 'var(--color-error-container)';
-      default:
-        return 'var(--color-surface-2)';
-    }
-  }
-
-  protected splitStatusFg(status: SplitStatus): string {
-    switch (status) {
-      case 'completed':
-        return 'var(--color-success)';
-      case 'pending':
-        return 'var(--color-warning)';
-      case 'lost':
-        return 'var(--color-error)';
-      default:
-        return 'var(--color-text-secondary)';
-    }
-  }
 }
 
 const TONE_BG: Record<StatTone, string> = {

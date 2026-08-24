@@ -5,7 +5,10 @@ import type { LeaderboardEntry as BoardEntry, ReportLeaderboards } from '../../c
 import { AuthService } from '../../core/services/auth.service';
 import { IntelService } from '../../core/services/intel.service';
 import { TranslateService } from '../../core/services/translate.service';
+import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 import type { TranslationKey } from '../../i18n/en';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
 
@@ -73,7 +76,7 @@ const PODIUM_SIZE = 3;
 @Component({
   selector: 'app-leaderboards',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, PageHeader],
+  imports: [EmptyState, Icon, Loading, PageHeader, ViewToggle],
   template: `
     <app-page-header
       [title]="t('leaderboards.title')"
@@ -82,20 +85,8 @@ const PODIUM_SIZE = 3;
     />
 
     <!-- Segmented tab bar -->
-    <div class="tabs" role="tablist" [attr.aria-label]="t('leaderboards.title')">
-      @for (tab of visibleTabs(); track tab.key) {
-        <button
-          type="button"
-          role="tab"
-          class="tab"
-          [class.tab--active]="activeTab() === tab.key"
-          [attr.aria-selected]="activeTab() === tab.key"
-          (click)="selectTab(tab.key)"
-        >
-          <app-icon [name]="tab.icon" size="0.95rem" />
-          <span>{{ t(tab.labelKey) }}</span>
-        </button>
-      }
+    <div class="mb-6">
+      <app-view-toggle [options]="tabOptions()" [active]="activeTab()" (activeChange)="selectTab($event)" />
     </div>
 
     <!-- Active panel -->
@@ -116,10 +107,7 @@ const PODIUM_SIZE = 3;
       </header>
 
       @if (activeState().isLoading) {
-        <div class="state state--loading" role="status" aria-live="polite">
-          <span class="spinner" aria-hidden="true"></span>
-          <span>{{ t('common.loading') }}</span>
-        </div>
+        <app-loading [label]="t('common.loading')" />
       } @else if (activeState().hasError) {
         <div class="state state--error" role="alert">
           <span>{{ t('common.error') }}</span>
@@ -128,10 +116,7 @@ const PODIUM_SIZE = 3;
           </button>
         </div>
       } @else if (activeEntries().length === 0) {
-        <div class="state state--empty">
-          <app-icon name="trophy" size="1.75rem" class="state__icon" />
-          <span>{{ t('leaderboards.empty') }}</span>
-        </div>
+        <app-empty-state icon="trophy" [message]="t('leaderboards.empty')" />
       } @else {
         <!-- Podium: 2nd | 1st | 3rd, tallest pedestal in the center -->
         <div class="podium">
@@ -179,57 +164,6 @@ const PODIUM_SIZE = 3;
   `,
   styles: [
     `
-      /* ---------- Tab bar ---------- */
-
-      .tabs {
-        display: flex;
-        gap: 0.25rem;
-        width: 100%;
-        margin-bottom: 1.5rem;
-        padding: 0.3rem;
-        background: var(--color-surface-2);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-full);
-        overflow-x: auto;
-        scrollbar-width: none;
-      }
-
-      .tabs::-webkit-scrollbar {
-        display: none;
-      }
-
-      .tab {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        flex: 1 0 auto;
-        gap: 0.4rem;
-        padding: 0.45rem 0.75rem;
-        border: none;
-        border-radius: var(--radius-full);
-        background: transparent;
-        color: var(--color-text-secondary);
-        font-size: 0.78rem;
-        font-weight: 600;
-        cursor: pointer;
-        white-space: nowrap;
-        transition:
-          background-color 140ms ease,
-          color 140ms ease,
-          box-shadow 140ms ease;
-      }
-
-      .tab:hover {
-        background: var(--color-surface-hover);
-        color: var(--color-text);
-      }
-
-      .tab--active {
-        background: var(--color-surface);
-        color: var(--color-primary);
-        box-shadow: var(--shadow-1);
-      }
-
       /* ---------- Panel ---------- */
 
       .panel {
@@ -290,14 +224,6 @@ const PODIUM_SIZE = 3;
         color: var(--color-error);
       }
 
-      .state--empty {
-        flex-direction: column;
-      }
-
-      .state__icon {
-        opacity: 0.45;
-      }
-
       .link-btn {
         background: none;
         border: none;
@@ -309,21 +235,6 @@ const PODIUM_SIZE = 3;
 
       .link-btn:hover {
         text-decoration: underline;
-      }
-
-      .spinner {
-        width: 1.1rem;
-        height: 1.1rem;
-        border-radius: 50%;
-        border: 2px solid var(--color-text-disabled);
-        border-top-color: var(--color-primary);
-        animation: leaderboard-spin 0.7s linear infinite;
-      }
-
-      @keyframes leaderboard-spin {
-        to {
-          transform: rotate(360deg);
-        }
       }
 
       /* ---------- Podium ---------- */
@@ -558,6 +469,10 @@ export class Leaderboards {
     this.tabs.filter((tab) => tab.key !== 'siphoned' || this.auth.hasPermission('siphoned.view')),
   );
 
+  protected readonly tabOptions = computed<ViewToggleOption[]>(() =>
+    this.visibleTabs().map((tab) => ({ id: tab.key, label: this.t(tab.labelKey), icon: tab.icon })),
+  );
+
   private readonly stateByTab = signal<Record<LeaderboardKey, TabState>>({
     payout: LOADING_STATE,
     deaths: EMPTY_STATE,
@@ -607,11 +522,14 @@ export class Leaderboards {
     void this.loadAll();
   }
 
-  protected selectTab(key: LeaderboardKey): void {
+  protected selectTab(key: string): void {
+    if (!this.tabs.some((tab) => tab.key === key)) {
+      return;
+    }
     if (this.activeTab() === key) {
       return;
     }
-    this.activeTab.set(key);
+    this.activeTab.set(key as LeaderboardKey);
   }
 
   protected reloadActive(): void {

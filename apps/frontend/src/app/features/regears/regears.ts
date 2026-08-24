@@ -19,9 +19,17 @@ import { ToastService } from '../../core/services/toast.service';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import {
+  ViewToggle,
+  type ViewToggleOption,
+} from '../../shared/components/view-toggle/view-toggle';
 
 /** Tab toggle inside the Regears page. */
 type RegearTab = 'mine' | 'queue' | 'history' | 'settings';
+
+function isRegearTab(value: string): value is RegearTab {
+  return value === 'mine' || value === 'queue' || value === 'history' || value === 'settings';
+}
 
 /** Editing copy of a breakdown row used in the officer queue modal. */
 interface EditableBreakdownRow extends RegearBreakdownRow {
@@ -63,53 +71,15 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; label: string }> = [
 @Component({
   selector: 'app-regears',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, EmptyState, Loading, PageHeader],
+  imports: [RouterLink, EmptyState, Loading, PageHeader, ViewToggle],
   template: `
     <app-page-header
       title="Regears"
       subtitle="Request gear reimbursement for Call-To-Arms deaths."
     />
 
-    <div
-      class="mb-4 inline-flex gap-1 p-1"
-      style="background-color: var(--color-surface-1); border-radius: var(--radius-md)"
-    >
-      <button
-        type="button"
-        class="btn btn--ghost"
-        [class.btn--tonal]="tab() === 'mine'"
-        (click)="switchTab('mine')"
-      >
-        My Deaths
-      </button>
-      @if (canAdjudicate()) {
-        <button
-          type="button"
-          class="btn btn--ghost"
-          [class.btn--tonal]="tab() === 'queue'"
-          (click)="switchTab('queue')"
-        >
-          Officer Queue
-        </button>
-        <button
-          type="button"
-          class="btn btn--ghost"
-          [class.btn--tonal]="tab() === 'history'"
-          (click)="switchTab('history')"
-        >
-          History
-        </button>
-      }
-      @if (canManageSettings()) {
-        <button
-          type="button"
-          class="btn btn--ghost"
-          [class.btn--tonal]="tab() === 'settings'"
-          (click)="switchTab('settings')"
-        >
-          Settings
-        </button>
-      }
+    <div class="mb-4">
+      <app-view-toggle [options]="tabOptions()" [active]="tab()" (activeChange)="switchTab($event)" />
     </div>
 
     @if (tab() === 'mine') {
@@ -483,6 +453,23 @@ export class Regears {
   protected readonly slotBits = SLOT_BITS;
 
   protected readonly tab = signal<RegearTab>('mine');
+
+  /**
+   * Note: labels here are plain strings, not translated — this whole page
+   * predates the app's i18n rollout (no `t()` helper exists in it at all).
+   * Left as-is rather than translating it as a side effect of an unrelated
+   * fix; full i18n for this page is a separate, larger piece of work.
+   */
+  protected readonly tabOptions = computed<ViewToggleOption[]>(() => {
+    const options: ViewToggleOption[] = [{ id: 'mine', label: 'My Deaths' }];
+    if (this.canAdjudicate()) {
+      options.push({ id: 'queue', label: 'Officer Queue' }, { id: 'history', label: 'History' });
+    }
+    if (this.canManageSettings()) {
+      options.push({ id: 'settings', label: 'Settings' });
+    }
+    return options;
+  });
   protected readonly loading = signal(false);
   protected readonly acting = signal(false);
   protected readonly deaths = signal<RegearDeathView[]>([]);
@@ -523,7 +510,10 @@ export class Regears {
     void this.load();
   }
 
-  protected switchTab(next: RegearTab): void {
+  protected switchTab(next: string): void {
+    if (!isRegearTab(next)) {
+      return;
+    }
     this.tab.set(next);
     void this.load();
   }

@@ -7,10 +7,14 @@ import {
   viewChildren,
 } from '@angular/core';
 
+import { Icon, type IconName } from '../icon/icon';
+
 /** One segment of the toggle. */
 export interface ViewToggleOption {
   readonly id: string;
   readonly label: string;
+  /** Optional leading icon, for toggles dense enough to need one (e.g. many segments). */
+  readonly icon?: IconName;
 }
 
 /**
@@ -33,6 +37,7 @@ export interface ViewToggleOption {
 @Component({
   selector: 'app-view-toggle',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Icon],
   template: `
     <div class="overflow-x-auto scrollbar-thin">
       <div
@@ -46,7 +51,7 @@ export interface ViewToggleOption {
             #tab
             type="button"
             role="tab"
-            class="whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-medium"
+            class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-medium"
             [attr.aria-selected]="option.id === active()"
             [attr.tabindex]="option.id === active() ? 0 : -1"
             [style.background-color]="option.id === active() ? 'var(--color-surface)' : 'transparent'"
@@ -55,6 +60,9 @@ export interface ViewToggleOption {
             "
             (click)="select(i)"
           >
+            @if (option.icon) {
+              <app-icon [name]="option.icon" size="0.95rem" />
+            }
             {{ option.label }}
           </button>
         }

@@ -246,6 +246,7 @@ export const en = {
   'battles.next_refresh': 'Next refresh in',
   'battles.refresh_now': 'Refresh now',
   'battles.players': 'Players',
+  'battles.timeline': 'Timeline',
   'battles.kills': 'Kills',
   'battles.visible_battles': 'Visible battles',
   'battles.total_fame': 'Total fame',

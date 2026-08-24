@@ -234,6 +234,7 @@ export const it: TranslationDict = {
   'battles.next_refresh': 'Prossimo aggiornamento tra',
   'battles.refresh_now': 'Aggiorna ora',
   'battles.players': 'Giocatori',
+  'battles.timeline': 'Cronologia',
   'battles.kills': 'Uccisioni',
   'battles.visible_battles': 'Battaglie visibili',
   'battles.total_fame': 'Fama totale',

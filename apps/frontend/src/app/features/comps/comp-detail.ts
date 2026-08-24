@@ -241,29 +241,34 @@ const ROLE_LABELS: Record<BuildRole, string> = {
             </div>
 
             @if (perf.stats.top_opponents.length > 0) {
-              <div class="surface mt-2 overflow-hidden rounded-lg">
-                <table class="w-full text-sm">
-                  <thead style="background-color: var(--color-surface-1)">
+              <!-- Shared .table class (thead/hover/borders come from the
+                   design system) inside a horizontal-scroll wrapper, matching
+                   every other table in the app — this one used to clip its
+                   rightmost columns with overflow-hidden instead of
+                   scrolling them into view on narrow screens. -->
+              <div class="mt-2 overflow-x-auto">
+                <table class="table">
+                  <thead>
                     <tr>
-                      <th class="p-3 text-left font-semibold" style="color: var(--color-text)">Opponent</th>
-                      <th class="p-3 text-right font-semibold" style="color: var(--color-text)">Battles</th>
-                      <th class="p-3 text-right font-semibold" style="color: var(--color-text)">W-L</th>
-                      <th class="p-3 text-right font-semibold" style="color: var(--color-text)">Win %</th>
-                      <th class="p-3 text-right font-semibold" style="color: var(--color-text)">Our fame</th>
-                      <th class="p-3 text-right font-semibold" style="color: var(--color-text)">Their fame</th>
+                      <th class="text-left">Opponent</th>
+                      <th class="text-right">Battles</th>
+                      <th class="text-right">W-L</th>
+                      <th class="text-right">Win %</th>
+                      <th class="text-right">Our fame</th>
+                      <th class="text-right">Their fame</th>
                     </tr>
                   </thead>
                   <tbody>
                     @for (opponent of perf.stats.top_opponents; track opponentKey(opponent)) {
-                      <tr style="border-top: 1px solid var(--color-border)">
-                        <td class="p-3" style="color: var(--color-text)">{{ opponent.guild_name }}</td>
-                        <td class="p-3 text-right" style="color: var(--color-text-secondary)">{{ opponent.battles }}</td>
-                        <td class="p-3 text-right" style="color: var(--color-text)">{{ opponent.wins }}-{{ opponent.losses }}</td>
-                        <td class="p-3 text-right" [style.color]="winRateColor(opponentBattlesWinRate(opponent))">
+                      <tr>
+                        <td>{{ opponent.guild_name }}</td>
+                        <td class="text-right">{{ opponent.battles }}</td>
+                        <td class="text-right">{{ opponent.wins }}-{{ opponent.losses }}</td>
+                        <td class="text-right" [style.color]="winRateColor(opponentBattlesWinRate(opponent))">
                           {{ formatPercent(opponentBattlesWinRate(opponent)) }}
                         </td>
-                        <td class="p-3 text-right" style="color: var(--color-text-secondary)">{{ formatNumber(opponent.guild_kill_fame) }}</td>
-                        <td class="p-3 text-right" style="color: var(--color-text-secondary)">{{ formatNumber(opponent.opponent_kill_fame) }}</td>
+                        <td class="text-right">{{ formatNumber(opponent.guild_kill_fame) }}</td>
+                        <td class="text-right">{{ formatNumber(opponent.opponent_kill_fame) }}</td>
                       </tr>
                     }
                   </tbody>

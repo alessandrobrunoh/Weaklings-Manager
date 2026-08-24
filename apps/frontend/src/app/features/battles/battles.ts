@@ -25,12 +25,20 @@ import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import {
+  ViewToggle,
+  type ViewToggleOption,
+} from '../../shared/components/view-toggle/view-toggle';
 
 const PAGE_SIZE = 10;
 const PREVIEW_GUILD_LIMIT = 3;
 const BATTLE_REFRESH_INTERVAL_SECONDS = 5 * 60;
 
 type BattleTab = 'guild' | 'me';
+
+function isBattleTab(value: string): value is BattleTab {
+  return value === 'guild' || value === 'me';
+}
 
 interface BattleScopeStats {
   readonly battles: number;
@@ -55,7 +63,7 @@ interface BattleScopeStats {
 @Component({
   selector: 'app-battles',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Loading],
+  imports: [PageHeader, EmptyState, Loading, ViewToggle],
   template: `
     <app-page-header
       [title]="t('battles.title')"
@@ -64,24 +72,7 @@ interface BattleScopeStats {
     />
 
     <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-      <nav class="inline-flex gap-1 rounded-full p-1" style="background: var(--color-surface-1)">
-        <button
-          type="button"
-          class="btn btn--ghost"
-          [class.btn--tonal]="tab() === 'guild'"
-          (click)="switchTab('guild')"
-        >
-          {{ t('battles.guild') }}
-        </button>
-        <button
-          type="button"
-          class="btn btn--ghost"
-          [class.btn--tonal]="tab() === 'me'"
-          (click)="switchTab('me')"
-        >
-          {{ t('battles.my') }}
-        </button>
-      </nav>
+      <app-view-toggle [options]="tabOptions()" [active]="tab()" (activeChange)="switchTab($event)" />
       <div class="flex flex-wrap items-center gap-2">
         <span class="chip battle-list__refresh-chip">
           {{ t('battles.next_refresh') }} {{ refreshCountdown() }}
@@ -290,6 +281,11 @@ export class Battles {
   protected readonly battles = signal<BattleSummary[]>([]);
   protected readonly loading = signal(false);
   protected readonly tab = signal<BattleTab>('guild');
+
+  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
+    { id: 'guild', label: this.t('battles.guild') },
+    { id: 'me', label: this.t('battles.my') },
+  ]);
   protected readonly page = signal(1);
   protected readonly totalItems = signal(0);
   protected readonly totalPages = signal(1);
@@ -358,8 +354,8 @@ export class Battles {
   }
 
   /** Changes source list and resets pagination to avoid stale pages between tabs. */
-  protected switchTab(tab: BattleTab): void {
-    if (this.tab() === tab) {
+  protected switchTab(tab: string): void {
+    if (!isBattleTab(tab) || this.tab() === tab) {
       return;
     }
     this.tab.set(tab);

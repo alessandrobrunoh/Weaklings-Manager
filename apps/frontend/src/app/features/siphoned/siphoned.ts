@@ -23,6 +23,16 @@ import {
   type DataTableColumn,
   type DataTableFilterOption,
 } from '../../shared/components/data-table/data-table';
+import {
+  ViewToggle,
+  type ViewToggleOption,
+} from '../../shared/components/view-toggle/view-toggle';
+
+type SiphonedTab = 'balances' | 'entries' | 'batches';
+
+function isSiphonedTab(value: string): value is SiphonedTab {
+  return value === 'balances' || value === 'entries' || value === 'batches';
+}
 
 const ENTRIES_LOAD_LIMIT = 1000;
 
@@ -62,7 +72,7 @@ function emptyEntryDraft(): EntryDraft {
 @Component({
   selector: 'app-siphoned',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Loading, DataTable],
+  imports: [PageHeader, EmptyState, Loading, DataTable, ViewToggle],
   template: `
     <app-page-header [title]="t('siphoned.title')" [subtitle]="t('siphoned.subtitle')">
       @if (canIngest()) {
@@ -111,34 +121,8 @@ function emptyEntryDraft(): EntryDraft {
       </form>
     }
 
-    <div
-      class="mb-4 inline-flex gap-1 p-1"
-      style="background-color: var(--color-surface-1); border-radius: var(--radius-md)"
-    >
-      <button
-        type="button"
-        class="btn btn--ghost"
-        [class.btn--tonal]="tab() === 'balances'"
-        (click)="switchTab('balances')"
-      >
-        {{ t('siphoned.balances') }}
-      </button>
-      <button
-        type="button"
-        class="btn btn--ghost"
-        [class.btn--tonal]="tab() === 'entries'"
-        (click)="switchTab('entries')"
-      >
-        {{ t('siphoned.entries') }}
-      </button>
-      <button
-        type="button"
-        class="btn btn--ghost"
-        [class.btn--tonal]="tab() === 'batches'"
-        (click)="switchTab('batches')"
-      >
-        {{ t('siphoned.batches') }}
-      </button>
+    <div class="mb-4">
+      <app-view-toggle [options]="tabOptions()" [active]="tab()" (activeChange)="switchTab($event)" />
     </div>
 
     @if (loading()) {
@@ -309,7 +293,13 @@ export class Siphoned {
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
 
-  protected readonly tab = signal<'balances' | 'entries' | 'batches'>('balances');
+  protected readonly tab = signal<SiphonedTab>('balances');
+
+  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
+    { id: 'balances', label: this.t('siphoned.balances') },
+    { id: 'entries', label: this.t('siphoned.entries') },
+    { id: 'batches', label: this.t('siphoned.batches') },
+  ]);
   protected readonly loading = signal(false);
   protected readonly saving = signal(false);
   protected readonly showIngestForm = signal(false);
@@ -399,8 +389,8 @@ export class Siphoned {
     this.rawExport.set((event.target as HTMLTextAreaElement).value);
   }
 
-  protected switchTab(tab: 'balances' | 'entries' | 'batches'): void {
-    if (this.tab() === tab) {
+  protected switchTab(tab: string): void {
+    if (!isSiphonedTab(tab) || this.tab() === tab) {
       return;
     }
     this.tab.set(tab);

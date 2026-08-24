@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -43,6 +43,7 @@ import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 
 const PAGE_SIZE = 10;
 
@@ -59,7 +60,7 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
 @Component({
   selector: 'app-comps',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, PageHeader, EmptyState, Loading, EquipmentGrid],
+  imports: [RouterLink, PageHeader, EmptyState, Loading, EquipmentGrid, ViewToggle],
   template: `
     <app-page-header [title]="t('comps.title')" [subtitle]="t('comps.subtitle')">
       <div class="flex flex-wrap gap-2">
@@ -87,27 +88,11 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
           </p>
         </header>
 
-        <div
-          class="inline-flex w-fit gap-1 rounded-full p-1"
-          style="background: var(--color-surface-1)"
-        >
-          <button
-            type="button"
-            class="btn btn--ghost"
-            [class.btn--tonal]="categoryKind() === 'build'"
-            (click)="switchCategoryKind('build')"
-          >
-            {{ t('comps.builds') }}
-          </button>
-          <button
-            type="button"
-            class="btn btn--ghost"
-            [class.btn--tonal]="categoryKind() === 'comp'"
-            (click)="switchCategoryKind('comp')"
-          >
-            {{ t('comps.comps') }}
-          </button>
-        </div>
+        <app-view-toggle
+          [options]="categoryKindOptions()"
+          [active]="categoryKind()"
+          (activeChange)="switchCategoryKind($event)"
+        />
 
         <form
           class="surface grid gap-3 p-4 md:grid-cols-[1fr_1fr_auto]"
@@ -365,26 +350,8 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
       </form>
     }
 
-    <div
-      class="mb-4 inline-flex gap-1 p-1"
-      style="background-color: var(--color-surface-1); border-radius: var(--radius-full)"
-    >
-      <button
-        type="button"
-        class="btn btn--ghost"
-        [class.btn--tonal]="tab() === 'comps'"
-        (click)="switchTab('comps')"
-      >
-        {{ t('comps.comps') }}
-      </button>
-      <button
-        type="button"
-        class="btn btn--ghost"
-        [class.btn--tonal]="tab() === 'builds'"
-        (click)="switchTab('builds')"
-      >
-        {{ t('comps.builds') }}
-      </button>
+    <div class="mb-4">
+      <app-view-toggle [options]="tabOptions()" [active]="tab()" (activeChange)="switchTab($event)" />
     </div>
 
     @if (loading()) {
@@ -552,6 +519,10 @@ export class Comps {
   private readonly translate = inject(TranslateService);
 
   protected readonly tab = signal<'comps' | 'builds'>('comps');
+  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
+    { id: 'comps', label: this.t('comps.comps') },
+    { id: 'builds', label: this.t('comps.builds') },
+  ]);
   protected readonly loading = signal(false);
   protected readonly page = signal(1);
   protected readonly totalPages = signal(1);
@@ -566,6 +537,10 @@ export class Comps {
   protected readonly showCreateForm = signal(false);
   protected readonly showCategoryManager = signal(false);
   protected readonly categoryKind = signal<CategoryKind>('build');
+  protected readonly categoryKindOptions = computed<ViewToggleOption[]>(() => [
+    { id: 'build', label: this.t('comps.builds') },
+    { id: 'comp', label: this.t('comps.comps') },
+  ]);
   protected readonly categoryDraftName = signal('');
   protected readonly categoryDraftDescription = signal('');
   protected readonly editingCategoryId = signal<number | null>(null);
@@ -654,11 +629,14 @@ export class Comps {
     this.cancelCategoryEdit();
   }
 
-  protected switchCategoryKind(kind: CategoryKind): void {
-    if (this.categoryKind() === kind) {
+  protected switchCategoryKind(next: string): void {
+    if (next !== 'build' && next !== 'comp') {
       return;
     }
-    this.categoryKind.set(kind);
+    if (this.categoryKind() === next) {
+      return;
+    }
+    this.categoryKind.set(next);
     this.resetCategoryDraft();
     this.cancelCategoryEdit();
   }
@@ -756,11 +734,14 @@ export class Comps {
     }
   }
 
-  protected switchTab(tab: 'comps' | 'builds'): void {
-    if (this.tab() === tab) {
+  protected switchTab(next: string): void {
+    if (next !== 'comps' && next !== 'builds') {
       return;
     }
-    this.tab.set(tab);
+    if (this.tab() === next) {
+      return;
+    }
+    this.tab.set(next);
     this.page.set(1);
     this.showCreateForm.set(false);
     this.cancelEditItem();

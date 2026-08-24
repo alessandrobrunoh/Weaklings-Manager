@@ -18,6 +18,7 @@ import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import type { IconName } from '../../shared/components/icon/icon';
@@ -34,42 +35,9 @@ const TRANSACTIONS_LOAD_LIMIT = 1000;
 @Component({
   selector: 'app-bank',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Loading, DataTable, DataTableCell, Icon],
+  imports: [PageHeader, EmptyState, Loading, DataTable, DataTableCell, Icon, ViewToggle],
   styles: [
     `
-      .bank__view-toggle {
-        display: inline-flex;
-        gap: 0.125rem;
-        padding: 0.25rem;
-        border-radius: var(--radius-md);
-        background-color: var(--color-surface-2);
-        border: 1px solid var(--color-border);
-      }
-
-      .bank__view-btn {
-        padding: 0.375rem 0.875rem;
-        border: none;
-        background: transparent;
-        color: var(--color-text-secondary);
-        font-size: 0.8125rem;
-        font-weight: 500;
-        border-radius: var(--radius-sm);
-        cursor: pointer;
-        transition:
-          background-color 120ms ease,
-          color 120ms ease;
-      }
-
-      .bank__view-btn:hover:not(.bank__view-btn--active) {
-        color: var(--color-text);
-      }
-
-      .bank__view-btn--active {
-        background-color: var(--color-surface);
-        color: var(--color-text);
-        font-weight: 600;
-        box-shadow: var(--shadow-1);
-      }
     `,
   ],
   template: `
@@ -130,24 +98,7 @@ const TRANSACTIONS_LOAD_LIMIT = 1000;
             {{ t('bank.transactions.title') }}
           </h2>
           @if (canAccept()) {
-            <div class="bank__view-toggle">
-              <button
-                type="button"
-                class="bank__view-btn"
-                [class.bank__view-btn--active]="viewMode() === 'personal'"
-                (click)="setViewMode('personal')"
-              >
-                {{ t('bank.view.personal') }}
-              </button>
-              <button
-                type="button"
-                class="bank__view-btn"
-                [class.bank__view-btn--active]="viewMode() === 'guild'"
-                (click)="setViewMode('guild')"
-              >
-                {{ t('bank.view.guild') }}
-              </button>
-            </div>
+            <app-view-toggle [options]="viewOptions()" [active]="viewMode()" (activeChange)="setViewMode($event)" />
           }
         </div>
         <label class="flex items-center gap-2">
@@ -257,6 +208,10 @@ export class Bank {
   protected readonly loading = signal(false);
   protected readonly statusFilter = signal<TransactionStatus | ''>('');
   protected readonly viewMode = signal<'personal' | 'guild'>('personal');
+  protected readonly viewOptions = computed<ViewToggleOption[]>(() => [
+    { id: 'personal', label: this.t('bank.view.personal') },
+    { id: 'guild', label: this.t('bank.view.guild') },
+  ]);
   protected readonly trackTransaction = (tx: TransactionView): unknown => tx.id;
 
   /** Dynamic columns based on view mode - guild view includes player name and actions */
@@ -365,10 +320,11 @@ export class Bank {
     this.statusFilter.set(value);
   }
 
-  protected setViewMode(mode: 'personal' | 'guild'): void {
-    if (this.viewMode() === mode) return;
-    this.viewMode.set(mode);
-    if (mode === 'guild') {
+  protected setViewMode(next: string): void {
+    if (next !== 'personal' && next !== 'guild') return;
+    if (this.viewMode() === next) return;
+    this.viewMode.set(next);
+    if (next === 'guild') {
       this.statusFilter.set('requested');
     }
     void this.loadTransactions();

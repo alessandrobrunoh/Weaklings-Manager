@@ -20,11 +20,19 @@ import type { TranslationKey } from '../../i18n/en';
 import { Loading } from '../../shared/components/loading/loading';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
+import {
+  ViewToggle,
+  type ViewToggleOption,
+} from '../../shared/components/view-toggle/view-toggle';
 
 const CHART_LIMIT = 8;
 const ALBION_RENDER_ITEM_BASE_URL = 'https://render.albiononline.com/v1/item';
 
 type DetailTab = 'fight' | 'guild' | 'players' | 'timeline';
+
+function isDetailTab(value: string): value is DetailTab {
+  return value === 'fight' || value === 'guild' || value === 'players' || value === 'timeline';
+}
 type KillSide = 'killer' | 'victim';
 
 /**
@@ -72,7 +80,7 @@ interface BattleKpiCard {
 @Component({
   selector: 'app-battle-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Loading, DataTable, EquipmentGrid, RouterLink],
+  imports: [Loading, DataTable, EquipmentGrid, RouterLink, ViewToggle],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
@@ -116,43 +124,11 @@ interface BattleKpiCard {
               {{ formatDate(detail.start_time) }} · {{ formatDuration(detail) }}
             </p>
           </div>
-          <nav
-            class="inline-flex gap-1 rounded-full p-1"
-            style="background: var(--color-surface-1)"
-          >
-            <button
-              type="button"
-              class="btn btn--ghost"
-              [class.btn--tonal]="tab() === 'fight'"
-              (click)="switchTab('fight')"
-            >
-              {{ t('battles.fight_info') }}
-            </button>
-            <button
-              type="button"
-              class="btn btn--ghost"
-              [class.btn--tonal]="tab() === 'guild'"
-              (click)="switchTab('guild')"
-            >
-              {{ t('battles.guild_info') }}
-            </button>
-            <button
-              type="button"
-              class="btn btn--ghost"
-              [class.btn--tonal]="tab() === 'players'"
-              (click)="switchTab('players')"
-            >
-              Players
-            </button>
-            <button
-              type="button"
-              class="btn btn--ghost"
-              [class.btn--tonal]="tab() === 'timeline'"
-              (click)="switchTab('timeline')"
-            >
-              Timeline
-            </button>
-          </nav>
+          <app-view-toggle
+            [options]="tabOptions()"
+            [active]="tab()"
+            (activeChange)="switchTab($event)"
+          />
         </div>
       </header>
 
@@ -782,6 +758,13 @@ export class BattleDetailPage {
 
   protected readonly loading = signal(false);
   protected readonly tab = signal<DetailTab>('fight');
+
+  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
+    { id: 'fight', label: this.t('battles.fight_info') },
+    { id: 'guild', label: this.t('battles.guild_info') },
+    { id: 'players', label: this.t('battles.players') },
+    { id: 'timeline', label: this.t('battles.timeline') },
+  ]);
   protected readonly weaponChart = computed(() => this.buildWeaponChart());
   protected readonly maxWeaponCount = computed(() =>
     Math.max(...this.weaponChart().map((weapon) => weapon.count), 0),
@@ -1028,8 +1011,10 @@ export class BattleDetailPage {
   }
 
   /** Switches between fight-wide and guild-specific analytics. */
-  protected switchTab(tab: DetailTab): void {
-    this.tab.set(tab);
+  protected switchTab(tab: string): void {
+    if (isDetailTab(tab)) {
+      this.tab.set(tab);
+    }
   }
 
   /** Formats local date/time according to the browser locale. */

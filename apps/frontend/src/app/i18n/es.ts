@@ -233,6 +233,7 @@ export const es: TranslationDict = {
   'battles.next_refresh': 'Próxima actualización en',
   'battles.refresh_now': 'Actualizar ahora',
   'battles.players': 'Jugadores',
+  'battles.timeline': 'Cronología',
   'battles.kills': 'Bajas',
   'battles.visible_battles': 'Batallas visibles',
   'battles.total_fame': 'Fama total',
