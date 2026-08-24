@@ -20,7 +20,7 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
         class="h-1.5 overflow-hidden rounded-full"
         style="background-color: var(--color-surface-2)"
         role="img"
-        [attr.aria-label]="label() + ': ' + (display() || percent() + '%')"
+        [attr.aria-label]="ariaLabel()"
       >
         <span
           class="block h-full rounded-full"
@@ -46,6 +46,15 @@ export class Meter {
       return 0;
     }
     return Math.min(100, Math.max(0, Math.round((this.value() / max) * 100)));
+  });
+
+  /** Some callers pass an empty label when the surrounding context (a table
+   *  row, say) already names the row — but blindly prefixing `label() + ': '`
+   *  in that case produced a stray leading colon like ": 62%". */
+  protected readonly ariaLabel = computed(() => {
+    const figure = this.display() || `${this.percent()}%`;
+    const label = this.label();
+    return label ? `${label}: ${figure}` : figure;
   });
 
   protected barColor(): string {

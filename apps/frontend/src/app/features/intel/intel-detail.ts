@@ -1,5 +1,5 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -292,8 +292,18 @@ export class IntelDetailPage {
       .join(' ');
   }
 
+  /**
+   * `scoutId` is a route-bound input, not a one-time constructor param.
+   * Angular's default route-reuse strategy keeps this component instance
+   * alive across navigations within the same route config (e.g. clicking a
+   * "similar comp" link from one dossier to another) — without watching
+   * the signal here, the URL and `scoutId()` change but the page keeps
+   * showing the previous scout until a hard refresh.
+   */
   constructor() {
-    void this.load();
+    effect(() => {
+      void this.load();
+    });
   }
 
   protected async load(): Promise<void> {

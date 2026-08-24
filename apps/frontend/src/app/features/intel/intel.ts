@@ -64,7 +64,7 @@ const CARD_WEAPON_LIMIT = 4;
   ],
   template: `
     <app-page-header [title]="t('intel.title')" [subtitle]="t('intel.subtitle')">
-      <app-view-toggle [options]="tabs" [active]="tab()" (activeChange)="tab.set($event)" />
+      <app-view-toggle [options]="tabs()" [active]="tab()" (activeChange)="tab.set($event)" />
     </app-page-header>
 
     @if (loading()) {
@@ -139,7 +139,7 @@ const CARD_WEAPON_LIMIT = 4;
                     >
                       <span>
                         <span class="eyebrow" [style.color]="f.is_win ? 'var(--color-success)' : 'var(--color-error)'">
-                          {{ fight.label }}
+                          {{ fight.label }} · {{ f.is_win ? t('common.win') : t('common.loss') }}
                         </span>
                         <span class="mt-0.5 block text-sm" style="color: var(--color-text)">
                           {{ f.opponent ?? t('intel.unknownOpponent') }}
@@ -409,9 +409,11 @@ const CARD_WEAPON_LIMIT = 4;
               </p>
               <div class="flex h-40 items-end gap-1">
                 @for (bucket of r.hours; track bucket.hour) {
-                  <div
-                    class="flex flex-1 flex-col justify-end gap-px"
+                  <button
+                    type="button"
+                    class="flex flex-1 flex-col justify-end gap-px border-0 bg-transparent p-0 cursor-pointer"
                     [title]="bucket.hour + ':00 — ' + bucket.wins + 'W ' + bucket.losses + 'L'"
+                    [attr.aria-label]="bucket.hour + ':00 — ' + bucket.wins + ' ' + t('common.win') + ', ' + bucket.losses + ' ' + t('common.loss')"
                   >
                     <span
                       class="w-full rounded-t-sm"
@@ -423,7 +425,7 @@ const CARD_WEAPON_LIMIT = 4;
                       style="background-color: var(--color-error)"
                       [style.height.px]="barHeight(bucket.losses)"
                     ></span>
-                  </div>
+                  </button>
                 }
               </div>
               <div class="mt-2 flex justify-between text-[10px]" style="color: var(--color-text-disabled)">
@@ -540,11 +542,13 @@ const CARD_WEAPON_LIMIT = 4;
               class="input max-w-xs"
               type="search"
               [placeholder]="t('intel.search')"
+              [attr.aria-label]="t('intel.search')"
               [ngModel]="query()"
               (ngModelChange)="query.set($event)"
             />
             <select
               class="select max-w-[10rem]"
+              [attr.aria-label]="t('common.category')"
               [ngModel]="category()"
               (ngModelChange)="category.set($event)"
             >
@@ -719,18 +723,18 @@ export class Intel {
    * for a battle anywhere in this pipeline, so it is replaced by an
    * hour-of-day view, which the data does support.
    */
-  protected readonly tabs: ViewToggleOption[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'trends', label: 'Trends' },
-    { id: 'ops', label: 'Operations' },
-    { id: 'enemies', label: 'Enemies' },
-    { id: 'matchups', label: 'Matchups' },
-    { id: 'comps', label: 'Comps' },
-    { id: 'roster', label: 'Roster' },
-    { id: 'timing', label: 'Timing' },
-    { id: 'meta', label: 'Meta' },
-    { id: 'economy', label: 'Economy' },
-  ];
+  protected readonly tabs = computed<ViewToggleOption[]>(() => [
+    { id: 'overview', label: this.t('intel.nav.overview') },
+    { id: 'trends', label: this.t('intel.nav.trends') },
+    { id: 'ops', label: this.t('intel.nav.ops') },
+    { id: 'enemies', label: this.t('intel.nav.enemies') },
+    { id: 'matchups', label: this.t('intel.nav.matchups') },
+    { id: 'comps', label: this.t('intel.nav.comps') },
+    { id: 'roster', label: this.t('intel.nav.roster') },
+    { id: 'timing', label: this.t('intel.nav.timing') },
+    { id: 'meta', label: this.t('intel.nav.meta') },
+    { id: 'economy', label: this.t('intel.nav.economy') },
+  ]);
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
@@ -912,8 +916,14 @@ export class Intel {
     this.loadFailed.set(false);
     try {
       const [library, matchups, report] = await Promise.all([
+        // The headline stat cards (always visible, independent of the
+        // active tab) are derived from the library, so a failure here is
+        // treated as fatal for the whole page — same as before.
         firstValueFrom(this.intel.listScouts({ limit: SCOUT_PAGE_LIMIT, sort: 'threat' })),
-        firstValueFrom(this.intel.matchups()),
+        // Only the Matchups tab needs this. A failure/timeout here must not
+        // blank Operations/Comps/Roster/Timing/Meta/Economy, which only
+        // depend on `report` below — same reasoning as its own `.catch()`.
+        firstValueFrom(this.intel.matchups()).catch(() => null),
         // The report needs `intel.report.view`, which members may not hold.
         // A member should still get the scout library rather than an error
         // page, so this arm degrades instead of failing the whole load.
