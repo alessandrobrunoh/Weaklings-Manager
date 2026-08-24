@@ -236,7 +236,10 @@ export class AlbionSettings {
     }
   }
 
+  /** Unlinking drops the identity every regear/split/battle lookup in the
+   *  app resolves through — a misclick has real consequences elsewhere. */
   protected async unlink(): Promise<void> {
+    if (!confirm(this.t('common.confirm'))) return;
     this.unlinking.set(true);
     try {
       await firstValueFrom(this.api.delete<null>('api/albion/link'));

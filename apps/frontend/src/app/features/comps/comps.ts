@@ -735,7 +735,10 @@ export class Comps {
     }
   }
 
+  /** A category is shared by every build/comp that references it — at least
+   *  as consequential as deleting one of those, which does confirm. */
   protected async deleteCategory(categoryId: number): Promise<void> {
+    if (!confirm(this.t('common.confirm'))) return;
     this.savingCategory.set(true);
     try {
       const path =

@@ -210,10 +210,16 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
                     <td>
                       <span class="capitalize">{{ player.role.replace('_', ' ') }}</span>
                       @if (player.role_inferred) {
+                        <!-- decorative=false: the default hides the icon from
+                             the accessibility tree via aria-hidden, which
+                             would silently swallow this aria-label too — the
+                             "inferred, not observed" signal is real content
+                             here, not decoration. -->
                         <app-icon
                           name="info"
                           size="0.8rem"
                           class="ml-1 align-middle"
+                          [decorative]="false"
                           [attr.aria-label]="t('intel.detail.inferredRole')"
                         />
                       }

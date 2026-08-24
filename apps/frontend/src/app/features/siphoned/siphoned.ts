@@ -488,6 +488,7 @@ export class Siphoned {
   }
 
   protected async deleteEntry(entryId: number): Promise<void> {
+    if (!confirm(this.t('common.confirm'))) return;
     try {
       await firstValueFrom(this.api.delete(`api/siphoned/entries/${entryId}`));
       this.toasts.success(this.t('common.delete'));
@@ -497,7 +498,10 @@ export class Siphoned {
     }
   }
 
+  /** A batch is a whole import — potentially hundreds of rows — hence a
+   *  message that says so, rather than the app's bare one-word confirm. */
   protected async deleteBatch(batchId: string): Promise<void> {
+    if (!confirm(this.t('siphoned.confirmDeleteBatch'))) return;
     try {
       await firstValueFrom(this.api.delete(`api/siphoned/batches/${encodeURIComponent(batchId)}`));
       await this.refreshLastUpdated();

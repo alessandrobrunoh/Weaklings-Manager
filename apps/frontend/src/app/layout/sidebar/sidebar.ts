@@ -45,17 +45,19 @@ export interface NavSection {
         @for (section of visibleSections(); track section.headingKey) {
           <div class="mb-4">
             <p
+              [id]="section.headingKey"
               class="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider"
               style="color: var(--color-text-secondary)"
             >
               {{ t(section.headingKey) }}
             </p>
-            <ul class="flex flex-col gap-0.5" role="list">
+            <ul class="flex flex-col gap-0.5" role="list" [attr.aria-labelledby]="section.headingKey">
               @for (item of section.items; track item.path) {
                 <li>
                   <a
                     [routerLink]="item.path"
                     routerLinkActive="nav-link--active"
+                    [ariaCurrentWhenActive]="'page'"
                     class="nav-link"
                     (click)="navigate.emit()"
                   >

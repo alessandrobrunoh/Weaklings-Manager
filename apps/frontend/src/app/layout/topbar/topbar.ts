@@ -33,15 +33,17 @@ import type { NavSection } from '../sidebar/sidebar';
         class="btn btn--ghost md:hidden"
         style="min-width: 40px; padding: 0.5rem"
         (click)="menuToggle.emit()"
-        [attr.aria-label]="t('nav.section.main')"
+        [attr.aria-label]="t('nav.openMenu')"
       >
         <app-icon name="menu" />
       </button>
 
       <div class="flex-1"></div>
 
-      <!-- Language picker -->
-      <label class="hidden sm:flex items-center gap-2" [attr.aria-label]="t('language.label')">
+      <!-- Language picker: visible at every width. It used to be hidden
+           below sm, and there is no language control anywhere in the sidebar
+           or drawer either — a mobile user could not change language at all. -->
+      <label class="flex items-center gap-2" [attr.aria-label]="t('language.label')">
         <select
           class="select"
           style="width: auto; padding: 0.4rem 0.6rem; font-size: 0.8125rem"
@@ -83,7 +85,8 @@ import type { NavSection } from '../sidebar/sidebar';
           <span
             class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold"
             style="background-color: var(--color-primary-container); color: var(--color-primary)"
-            [attr.aria-label]="profile.username"
+            [attr.aria-label]="profile.username + ' · ' + profile.highest_role"
+            [title]="profile.username + ' · ' + profile.highest_role"
           >
             {{ initials(profile.username) }}
           </span>

@@ -378,13 +378,31 @@ export class Bank {
     await this.mutate('api/bank/transactions/withdraw', 'bank.withdraw.request', { all: true });
   }
 
+  /**
+   * Pays out every currently-requested withdrawal, guild-wide, in one action.
+   *
+   * There is no per-row selection step before this — `all: true` is the whole
+   * request — so the confirm is the only thing standing between one click and
+   * moving every pending payout at once. It states the actual amount rather
+   * than a bare "Confirm", since that is the number that makes the stakes
+   * legible.
+   */
   protected async acceptWithdrawals(): Promise<void> {
+    const amount = this.formatAmount(this.balance()?.requested_total);
+    if (!window.confirm(this.t('bank.withdraw.confirmAcceptAll').replace('{amount}', amount))) {
+      return;
+    }
     await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept', {
       all: true,
     });
   }
 
+  /** Rejects every currently-requested withdrawal, guild-wide. See `acceptWithdrawals`. */
   protected async rejectWithdrawals(): Promise<void> {
+    const amount = this.formatAmount(this.balance()?.requested_total);
+    if (!window.confirm(this.t('bank.withdraw.confirmRejectAll').replace('{amount}', amount))) {
+      return;
+    }
     await this.mutate('api/bank/transactions/withdraw/reject', 'bank.withdraw.reject', {
       all: true,
     });

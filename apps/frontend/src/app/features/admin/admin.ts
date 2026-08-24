@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -7,6 +7,7 @@ import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
@@ -33,7 +34,7 @@ interface SettingsLink {
 @Component({
   selector: 'app-admin',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, Loading, PageHeader, RouterLink],
+  imports: [EmptyState, Icon, Loading, PageHeader, RouterLink],
   template: `
     <app-page-header [title]="t('admin.title')" [subtitle]="t('admin.subtitle')" />
 
@@ -73,15 +74,22 @@ interface SettingsLink {
               <tr>
                 <td class="mono text-xs">{{ permission }}</td>
                 @for (role of data.roles; track role.role_id) {
-                  <td class="text-center">
-                    <input
-                      class="checkbox"
-                      type="checkbox"
-                      [checked]="hasPermission(role, permission)"
-                      [disabled]="saving()"
-                      (change)="toggle(role, permission, $event)"
-                      [attr.aria-label]="permission + ' for ' + role.role_name"
-                    />
+                  <td class="text-center p-0">
+                    <!-- The checkbox itself stays the usual 16px, but the
+                         label wraps the full cell so the actual tap target
+                         is the whole square — a bare 16px control in a dense
+                         per-role grid is well under any reasonable touch
+                         target size. -->
+                    <label class="flex items-center justify-center p-3">
+                      <input
+                        class="checkbox"
+                        type="checkbox"
+                        [checked]="hasPermission(role, permission)"
+                        [disabled]="isSaving(role, permission)"
+                        (change)="toggle(role, permission, $event)"
+                        [attr.aria-label]="permission + ' for ' + role.role_name"
+                      />
+                    </label>
                   </td>
                 }
               </tr>
@@ -115,6 +123,11 @@ interface SettingsLink {
           }
         </ul>
       </section>
+    } @else {
+      <app-empty-state
+        icon="alert"
+        [message]="t('admin.loadError')"
+      />
     }
   `,
 })
@@ -124,7 +137,8 @@ export class Admin {
   private readonly translate = inject(TranslateService);
 
   protected readonly loading = signal(true);
-  protected readonly saving = signal(false);
+  /** Keys of `(role, permission)` pairs currently being saved. */
+  private readonly savingKeys = signal<ReadonlySet<string>>(new Set());
   protected readonly matrix = signal<PermissionMatrix | null>(null);
 
   protected t = (key: TranslationKey) => this.translate.t(key);
@@ -140,11 +154,24 @@ export class Admin {
     return role.permissions.includes(permission);
   }
 
+  private cellKey(role: RolePermissionsView, permission: string): string {
+    return `${role.role_id}:${permission}`;
+  }
+
+  protected isSaving(role: RolePermissionsView, permission: string): boolean {
+    return this.savingKeys().has(this.cellKey(role, permission));
+  }
+
   /**
    * Grants or revokes one permission.
    *
    * The whole set is sent rather than a delta, so the result does not depend
    * on what the server happened to hold when the request arrived.
+   *
+   * Only the cell being changed disables — the previous version gated the
+   * *entire* matrix behind one `saving` flag, so toggling a single checkbox
+   * froze every other role and permission until the request returned, which
+   * on a slow connection read as the whole page being unresponsive.
    */
   protected async toggle(
     role: RolePermissionsView,
@@ -156,7 +183,8 @@ export class Admin {
       ? [...role.permissions, permission]
       : role.permissions.filter((p) => p !== permission);
 
-    this.saving.set(true);
+    const key = this.cellKey(role, permission);
+    this.savingKeys.update((keys) => new Set(keys).add(key));
     try {
       const updated = await firstValueFrom(
         this.api.put<PermissionMatrix>(
@@ -171,7 +199,11 @@ export class Admin {
       // not leave the grid showing something the server did not accept.
       await this.load();
     } finally {
-      this.saving.set(false);
+      this.savingKeys.update((keys) => {
+        const next = new Set(keys);
+        next.delete(key);
+        return next;
+      });
     }
   }
 

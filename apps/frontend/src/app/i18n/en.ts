@@ -66,6 +66,7 @@ export const en = {
   'nav.profile': 'Profile',
   'nav.logout': 'Sign out',
   'nav.section.main': 'Main',
+  'nav.openMenu': 'Open menu',
   'nav.section.guild': 'Guild',
   'nav.section.system': 'System',
 
@@ -114,6 +115,8 @@ export const en = {
   'bank.balance.payouts': 'Payouts',
   'bank.withdraw.request': 'Request withdrawal',
   'bank.withdraw.accept': 'Accept payouts',
+  'bank.withdraw.confirmAcceptAll': 'Pay out every requested withdrawal — {amount} silver total? This cannot be undone.',
+  'bank.withdraw.confirmRejectAll': 'Reject every requested withdrawal — {amount} silver total? This cannot be undone.',
   'bank.withdraw.reject': 'Reject payouts',
   'bank.view.personal': 'My Ledger',
   'bank.view.guild': 'Guild Requests',
@@ -177,6 +180,14 @@ export const en = {
   'events.detail.split_net': 'Net paid',
   'events.detail.split_participant_entries': 'Participant entries',
   'events.detail.comp': 'Composition',
+  'events.detail.no_comp_linked': 'No comp linked',
+  'events.detail.link_comp': 'Link comp',
+  'events.detail.unlink_comp': 'Unlink composition',
+  'events.detail.remove_battle': 'Remove battle',
+  'events.detail.add_battle': 'Add battle',
+  'events.detail.no_battles_linked': 'No battles linked.',
+  'events.detail.link_split': 'Link split',
+  'events.detail.unlink_split': 'Unlink split',
   'events.detail.comp_capacity': 'Capacity',
   'events.detail.primary_build': 'Primary build',
   'events.detail.secondary_build': 'Secondary build',
@@ -289,6 +300,7 @@ export const en = {
 
   // Siphoned
   'siphoned.title': 'Siphoned Energy',
+  'siphoned.confirmDeleteBatch': 'Delete this entire batch — every entry it imported? This cannot be undone.',
   'siphoned.subtitle': 'Track deposits, withdrawals, debts, and import batches.',
   'siphoned.ingest': 'Import export',
   'siphoned.balances': 'Balances',
@@ -301,6 +313,7 @@ export const en = {
 
   // Admin
   'admin.title': 'Administration',
+  'admin.loadError': 'Couldn\'t load the permission matrix. Try reloading the page.',
   'admin.subtitle': 'Authorization, and where the rest of the settings live.',
   'admin.permissions.reload': 'Reload permission cache',
   'admin.permissions.reloaded': 'Permission cache reloaded.',

@@ -160,20 +160,21 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
               <span class="label">{{ t('events.detail.comp') }}</span>
               <div class="flex items-center gap-2">
                 <div class="flex-1 input flex items-center bg-[var(--color-surface-1)]">
-                  <span class="truncate">{{ draftCompTitle() || 'No comp linked' }}</span>
+                  <span class="truncate">{{ draftCompTitle() || t('events.detail.no_comp_linked') }}</span>
                 </div>
                 <button
                   type="button"
                   class="btn btn--outline whitespace-nowrap"
                   (click)="showCompSearch.set(true)"
                 >
-                  Link Comp
+                  {{ t('events.detail.link_comp') }}
                 </button>
                 @if (draftCompId()) {
                   <button
                     type="button"
                     class="btn btn--danger whitespace-nowrap"
                     (click)="unlinkComp()"
+                    [attr.aria-label]="t('events.detail.unlink_comp')"
                   >
                     <app-icon name="close" size="1rem" />
                   </button>
@@ -494,7 +495,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
                   class="btn btn--outline text-xs"
                   (click)="showBattleSearch.set(true)"
                 >
-                  Add Battle
+                  {{ t('events.detail.add_battle') }}
                 </button>
               </div>
 
@@ -508,6 +509,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
                       type="button"
                       class="btn btn--danger btn--icon whitespace-nowrap"
                       (click)="removeDraftBattle(link.id)"
+                      [attr.aria-label]="t('events.detail.remove_battle')"
                     >
                       <app-icon name="close" size="1rem" />
                     </button>
@@ -515,7 +517,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
                 }
                 @if (draftBattleLinks().length === 0) {
                   <p class="text-sm" style="color: var(--color-text-secondary)">
-                    No battles linked.
+                    {{ t('events.detail.no_battles_linked') }}
                   </p>
                 }
               </div>
@@ -591,7 +593,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
                 class="btn btn--tonal text-xs"
                 (click)="showSplitSearch.set(true)"
               >
-                Link Split
+                {{ t('events.detail.link_split') }}
               </button>
             }
           </div>
@@ -674,7 +676,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
                   type="button"
                   class="btn btn--danger btn--icon"
                   (click)="unlinkSplit(row.id)"
-                  title="Unlink Split"
+                  [attr.aria-label]="t('events.detail.unlink_split')"
                 >
                   <app-icon name="close" size="1rem" />
                 </button>
@@ -953,7 +955,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
 
     @if (showSplitSearch()) {
       <app-search-dialog
-        title="Link Split"
+        [title]="t('events.detail.link_split')"
         [options]="splitSearchOptions()"
         [loading]="splitSearchLoading()"
         [showDateFilters]="true"
@@ -2081,6 +2083,7 @@ export class EventDetailPage {
   }
 
   protected async unlinkSplit(splitId: number): Promise<void> {
+    if (!confirm(this.t('common.confirm'))) return;
     try {
       await firstValueFrom(this.api.put(`api/splits/${splitId}`, { event_id: null }));
       this.toasts.success(this.t('events.detail.battles_saved'));
@@ -2695,7 +2698,10 @@ export class EventDetailPage {
     await this.mutate(`api/events/${id}/start`, 'POST', {});
   }
 
+  /** Stopping closes participation and triggers regear extraction from every
+   *  linked battle — a real, mostly-irreversible consequence, unlike `leave`. */
   protected async stop(id: number): Promise<void> {
+    if (!confirm(this.t('common.confirm'))) return;
     await this.mutate(`api/events/${id}/stop`, 'POST', {});
   }
 
