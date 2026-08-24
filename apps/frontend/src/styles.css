@@ -36,10 +36,15 @@
     --color-border: #d5d9e2;
     --color-border-strong: #b9bfcc;
 
-    /* Ink, never pure black — the slight lift keeps dark surfaces warm. */
+    /* Ink, never pure black — the slight lift keeps dark surfaces warm.
+       --color-text-disabled reads as "disabled" but is used across the app
+       for ordinary secondary content too (separators, captions, small
+       labels) — #9d9d9d only cleared 2.7:1, well under AA. #6a6a6a clears
+       4.5:1 on every surface tone while staying visibly lighter than
+       --color-text-secondary. */
     --color-text: #0a0a0a;
     --color-text-secondary: #545454;
-    --color-text-disabled: #9d9d9d;
+    --color-text-disabled: #6a6a6a;
     --color-text-heading: #3b3b3b;
 
     /* The single chromatic commitment. */
@@ -49,10 +54,14 @@
     --color-on-primary: #ffffff;
     --color-logo-glow: rgba(185, 28, 28, 0.14);
 
-    /* Status — muted into the warm register. */
+    /* Status — muted into the warm register. --color-warning is darkened
+       slightly from the source amber (#a8620a): at that value, warning text
+       on --color-warning-container only cleared 4.12:1 — under the 4.5:1
+       AA floor for normal-size text, which is exactly how status chips
+       render it. */
     --color-success: #1e7a3c;
     --color-success-container: #e8f2ea;
-    --color-warning: #a8620a;
+    --color-warning: #955709;
     --color-warning-container: #f9eddc;
     --color-error: #c0392b;
     --color-error-container: #fbeae8;
@@ -100,7 +109,7 @@
 
     --color-text: #f5f4f2;
     --color-text-secondary: #9d9d9d;
-    --color-text-disabled: #6b6b6b;
+    --color-text-disabled: #8f8f8f;
     --color-text-heading: #d4d2ce;
 
     --color-primary: #f87171;
