@@ -16,6 +16,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import {
@@ -72,7 +73,7 @@ function emptyEntryDraft(): EntryDraft {
 @Component({
   selector: 'app-siphoned',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Loading, DataTable, ViewToggle],
+  imports: [PageHeader, EmptyState, ErrorState, Loading, DataTable, ViewToggle],
   template: `
     <app-page-header [title]="t('siphoned.title')" [subtitle]="t('siphoned.subtitle')">
       @if (canIngest()) {
@@ -127,6 +128,8 @@ function emptyEntryDraft(): EntryDraft {
 
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
+    } @else if (loadFailed()) {
+      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     } @else if (tab() === 'balances') {
       @if (balances().length === 0) {
         <app-empty-state [message]="t('common.empty')" icon="activity" />
@@ -301,6 +304,7 @@ export class Siphoned {
     { id: 'batches', label: this.t('siphoned.batches') },
   ]);
   protected readonly loading = signal(false);
+  protected readonly loadFailed = signal(false);
   protected readonly saving = signal(false);
   protected readonly showIngestForm = signal(false);
   protected readonly rawExport = signal('');
@@ -857,8 +861,9 @@ export class Siphoned {
     this.balances.set(balances);
   }
 
-  private async load(): Promise<void> {
+  protected async load(): Promise<void> {
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       if (this.tab() === 'balances') {
         const balances = await firstValueFrom(
@@ -885,6 +890,7 @@ export class Siphoned {
       this.batches.set(batches);
       this.lastUpdatedAt.set(batches[0]?.ingested_at ?? null);
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

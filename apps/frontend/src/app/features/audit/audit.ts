@@ -37,6 +37,8 @@ const ROSTER_LOAD_LIMIT = 500;
       [columns]="columns"
       [rows]="logs()"
       [loading]="loading()"
+      [error]="loadFailed()"
+      (retry)="load()"
       [trackBy]="trackById"
       [pageSize]="20"
       emptyIcon="activity"
@@ -84,6 +86,7 @@ export class Audit {
 
   protected readonly logs = signal<AuditLog[]>([]);
   protected readonly loading = signal(false);
+  protected readonly loadFailed = signal(false);
   protected readonly trackById = (log: AuditLog): unknown => log.id;
 
   protected readonly columns: readonly DataTableColumn<AuditLog>[] = [
@@ -133,8 +136,9 @@ export class Audit {
     void this.load();
   }
 
-  private async load(): Promise<void> {
+  protected async load(): Promise<void> {
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       const data = await firstValueFrom(
         this.api.get<{ items: AuditLog[]; total_items: number }>('api/audit', {
@@ -145,6 +149,7 @@ export class Audit {
       // Backend already returns sorted by desc, but data table allows resort.
       this.logs.set(data.items);
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

@@ -14,6 +14,7 @@ import {
 import { TranslateService } from '../../../core/services/translate.service';
 import type { TranslationKey } from '../../../i18n/en';
 import { EmptyState } from '../empty-state/empty-state';
+import { ErrorState } from '../error-state/error-state';
 import { type IconName } from '../icon/icon';
 import { Loading } from '../loading/loading';
 import { DataTableCell } from './data-table-cell';
@@ -73,7 +74,7 @@ const DEFAULT_PAGE_SIZES: readonly number[] = [10, 25, 50, 100];
 @Component({
   selector: 'app-data-table',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EmptyState, Loading, NgTemplateOutlet],
+  imports: [EmptyState, ErrorState, Loading, NgTemplateOutlet],
   templateUrl: './data-table.html',
   styleUrl: './data-table.css',
 })
@@ -88,6 +89,17 @@ export class DataTable<T> {
 
   /** Optional loading flag rendered instead of the table body. */
   readonly loading = input(false);
+
+  /**
+   * Set when the load that would have populated `rows` failed. Takes
+   * precedence over the empty state so a failed fetch never reads as "there
+   * is nothing here" — see `ErrorState`. Clear it before retrying so the
+   * table falls back to its normal loading/empty/data states.
+   */
+  readonly error = input(false);
+
+  /** Emitted when the user presses retry on the error state. */
+  readonly retry = output<void>();
 
   /** Optional empty state message. */
   readonly emptyLabel = input<TranslationKey>('common.empty');

@@ -8,6 +8,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
@@ -34,7 +35,7 @@ interface SettingsLink {
 @Component({
   selector: 'app-admin',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EmptyState, Icon, Loading, PageHeader, RouterLink],
+  imports: [EmptyState, ErrorState, Icon, Loading, PageHeader, RouterLink],
   template: `
     <app-page-header [title]="t('admin.title')" [subtitle]="t('admin.subtitle')" />
 
@@ -124,9 +125,10 @@ interface SettingsLink {
         </ul>
       </section>
     } @else {
-      <app-empty-state
-        icon="alert"
+      <app-error-state
         [message]="t('admin.loadError')"
+        [retryLabel]="t('common.retry')"
+        (retry)="load()"
       />
     }
   `,
@@ -221,7 +223,7 @@ export class Admin {
     void this.load();
   }
 
-  private async load(): Promise<void> {
+  protected async load(): Promise<void> {
     this.loading.set(true);
     try {
       this.matrix.set(await firstValueFrom(this.api.get<PermissionMatrix>('api/admin/permissions')));

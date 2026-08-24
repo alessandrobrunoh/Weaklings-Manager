@@ -31,6 +31,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import {
@@ -58,7 +59,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
 @Component({
   selector: 'app-event-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EmptyState, Loading, SearchDialog, Icon, DataTable],
+  imports: [EmptyState, ErrorState, Loading, SearchDialog, Icon, DataTable],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
@@ -925,6 +926,8 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
           }
         </article>
       }
+    } @else if (loadFailed()) {
+      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     } @else {
       <app-empty-state [message]="t('common.empty')" icon="calendar" />
     }
@@ -1413,6 +1416,7 @@ export class EventDetailPage {
   protected readonly event = signal<EventDetailView | null>(null);
   protected readonly eventLossEstimate = signal<BattleLossEstimate>(emptyLossEstimate());
   protected readonly loading = signal(false);
+  protected readonly loadFailed = signal(false);
   protected readonly canEdit = signal(false);
   protected readonly showEditForm = signal(false);
   protected readonly saving = signal(false);
@@ -2797,11 +2801,12 @@ export class EventDetailPage {
     return opponent.guild_id ?? opponent.guild_name;
   }
 
-  private async load(): Promise<void> {
+  protected async load(): Promise<void> {
     if (!this.eventId) {
       return;
     }
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       const detail = await firstValueFrom(
         this.api.get<EventDetailView>(`api/events/${this.eventId}`),
@@ -2810,6 +2815,7 @@ export class EventDetailPage {
       this.eventLossEstimate.set(detail.estimated_losses ?? emptyLossEstimate());
       await Promise.all([this.loadActiveComp(), this.loadLinkedBattleLosses(detail)]);
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

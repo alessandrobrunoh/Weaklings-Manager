@@ -9,6 +9,7 @@ import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import type { ScoutedCompDetail, SimilarityHit } from '../../core/models/api.models';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { Meter } from '../../shared/components/meter/meter';
@@ -32,6 +33,7 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
     DatePipe,
     DecimalPipe,
     EmptyState,
+    ErrorState,
     Icon,
     Loading,
     Meter,
@@ -43,6 +45,8 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
   template: `
     @if (loading()) {
       <app-loading />
+    } @else if (loadFailed()) {
+      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     } @else if (!scout()) {
       <app-empty-state icon="alert" [message]="t('intel.detail.notFound')" />
     } @else {
@@ -247,6 +251,7 @@ export class IntelDetailPage {
   readonly scoutId = input.required<string>();
 
   protected readonly loading = signal(true);
+  protected readonly loadFailed = signal(false);
   protected readonly scout = signal<ScoutedCompDetail | null>(null);
   protected readonly similar = signal<SimilarityHit[]>([]);
 
@@ -291,13 +296,14 @@ export class IntelDetailPage {
     void this.load();
   }
 
-  private async load(): Promise<void> {
+  protected async load(): Promise<void> {
     const id = Number(this.scoutId());
     if (!Number.isFinite(id)) {
       this.loading.set(false);
       return;
     }
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       const detail = await firstValueFrom(this.intel.getScout(id));
       this.scout.set(detail);
@@ -308,6 +314,7 @@ export class IntelDetailPage {
         this.similar.set([]);
       }
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
       this.scout.set(null);
     } finally {

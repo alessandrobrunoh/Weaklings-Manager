@@ -23,6 +23,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 
@@ -52,7 +53,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
 @Component({
   selector: 'app-comp-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, PageHeader, EmptyState, Loading],
+  imports: [RouterLink, PageHeader, EmptyState, ErrorState, Loading],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
@@ -278,6 +279,8 @@ const ROLE_LABELS: Record<BuildRole, string> = {
           }
         </section>
       }
+    } @else if (loadFailed()) {
+      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load(compId)" />
     } @else if (!loading()) {
       <app-empty-state message="Composition not found" icon="package" />
     }
@@ -292,6 +295,7 @@ export class CompDetailPage {
   private readonly router = inject(Router);
 
   protected readonly loading = signal(true);
+  protected readonly loadFailed = signal(false);
   protected readonly saving = signal(false);
   protected readonly comp = signal<CompDetail | null>(null);
   protected readonly parentComp = signal<CompSummary | null>(null);
@@ -321,9 +325,10 @@ export class CompDetailPage {
     this.compSummaries().filter((sibling) => sibling.id !== this.comp()?.id),
   );
 
+  protected readonly compId = Number(this.route.snapshot.paramMap.get('compId'));
+
   constructor() {
-    const compId = Number(this.route.snapshot.paramMap.get('compId'));
-    void this.load(compId);
+    void this.load(this.compId);
   }
 
   protected roleLabel(role: BuildRole): string {
@@ -571,12 +576,13 @@ export class CompDetailPage {
     return value.toFixed(2);
   }
 
-  private async load(compId: number): Promise<void> {
+  protected async load(compId: number): Promise<void> {
     if (!Number.isFinite(compId) || compId <= 0) {
       this.loading.set(false);
       return;
     }
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       const [comp, performance, categories, builds, summaries] = await Promise.all([
         firstValueFrom(this.api.get<CompDetail>(`api/comps/${compId}`)),
@@ -599,6 +605,7 @@ export class CompDetailPage {
         this.parentComp.set(parent);
       }
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

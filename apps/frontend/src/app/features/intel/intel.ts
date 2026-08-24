@@ -15,6 +15,7 @@ import type {
   TrendBucket,
 } from '../../core/models/api.models';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { Meter } from '../../shared/components/meter/meter';
@@ -50,6 +51,7 @@ const CARD_WEAPON_LIMIT = 4;
     DatePipe,
     DecimalPipe,
     EmptyState,
+    ErrorState,
     FormsModule,
     Icon,
     Loading,
@@ -67,6 +69,8 @@ const CARD_WEAPON_LIMIT = 4;
 
     @if (loading()) {
       <app-loading />
+    } @else if (loadFailed()) {
+      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     } @else {
       <!-- Headline numbers, always visible so the tabs never hide the shape
            of the library. -->
@@ -702,6 +706,7 @@ export class Intel {
   private readonly translate = inject(TranslateService);
 
   protected readonly loading = signal(true);
+  protected readonly loadFailed = signal(false);
   protected readonly scouts = signal<ScoutedCompSummary[]>([]);
   protected readonly matchups = signal<MatchupReport | null>(null);
   protected readonly report = signal<GuildReport | null>(null);
@@ -902,8 +907,9 @@ export class Intel {
     void this.load();
   }
 
-  private async load(): Promise<void> {
+  protected async load(): Promise<void> {
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       const [library, matchups, report] = await Promise.all([
         firstValueFrom(this.intel.listScouts({ limit: SCOUT_PAGE_LIMIT, sort: 'threat' })),
@@ -917,6 +923,7 @@ export class Intel {
       this.matchups.set(matchups);
       this.report.set(report);
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

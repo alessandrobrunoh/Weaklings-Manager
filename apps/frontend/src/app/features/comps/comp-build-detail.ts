@@ -21,6 +21,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
@@ -96,7 +97,7 @@ const ITEM_TIERS = [
 @Component({
   selector: 'app-comp-build-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, PageHeader, EmptyState, Loading, EquipmentGrid],
+  imports: [RouterLink, PageHeader, EmptyState, ErrorState, Loading, EquipmentGrid],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
@@ -210,6 +211,8 @@ const ITEM_TIERS = [
           (removeItem)="removeItem($event)"
         />
       </section>
+    } @else if (loadFailed()) {
+      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load(buildId)" />
     } @else if (!loading()) {
       <app-empty-state message="Build not found" icon="package" />
     }
@@ -235,6 +238,7 @@ export class CompBuildDetailPage {
   ];
 
   protected readonly loading = signal(true);
+  protected readonly loadFailed = signal(false);
   protected readonly saving = signal(false);
   protected readonly build = signal<BuildDetail | null>(null);
   protected readonly buildCategories = signal<BuildCategoryView[]>([]);
@@ -265,9 +269,10 @@ export class CompBuildDetailPage {
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
+  protected readonly buildId = Number(this.route.snapshot.paramMap.get('buildId'));
+
   constructor() {
-    const buildId = Number(this.route.snapshot.paramMap.get('buildId'));
-    void this.load(buildId);
+    void this.load(this.buildId);
   }
 
   protected roleLabel(role: BuildRole): string {
@@ -498,12 +503,13 @@ export class CompBuildDetailPage {
     this.searchLoading.set(false);
   }
 
-  private async load(buildId: number): Promise<void> {
+  protected async load(buildId: number): Promise<void> {
     if (!Number.isFinite(buildId) || buildId <= 0) {
       this.loading.set(false);
       return;
     }
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       const [build, categories] = await Promise.all([
         firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${buildId}`)),
@@ -514,6 +520,7 @@ export class CompBuildDetailPage {
       this.build.set(build);
       this.buildCategories.set(categories);
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

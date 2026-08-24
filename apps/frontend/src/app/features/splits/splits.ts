@@ -21,6 +21,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
@@ -55,7 +56,7 @@ interface SplitParticipantDraft {
 @Component({
   selector: 'app-splits',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Icon, Loading, SearchDialog, DataTable],
+  imports: [PageHeader, EmptyState, ErrorState, Icon, Loading, SearchDialog, DataTable],
   template: `
     <app-page-header [title]="t('splits.title')" [subtitle]="t('splits.subtitle')">
       <button type="button" class="btn btn--primary" (click)="toggleCreateForm()">
@@ -326,6 +327,8 @@ interface SplitParticipantDraft {
 
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
+    } @else if (loadFailed()) {
+      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     } @else if (splits().length === 0) {
       <app-empty-state [message]="t('common.empty')" icon="swords" />
     } @else {
@@ -674,6 +677,7 @@ export class Splits {
 
   protected readonly splits = signal<SplitSummary[]>([]);
   protected readonly loading = signal(false);
+  protected readonly loadFailed = signal(false);
   /** Splits ticked for batch completion. */
   private readonly selectedIds = signal<ReadonlySet<number>>(new Set());
   protected readonly batchRunning = signal(false);
@@ -1313,8 +1317,9 @@ export class Splits {
     this.editEventTitle.set('');
   }
 
-  private async load(): Promise<void> {
+  protected async load(): Promise<void> {
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       const filter = this.statusFilter();
       const params: Record<string, string | number> = { page: this.page(), limit: PAGE_SIZE };
@@ -1327,6 +1332,7 @@ export class Splits {
       this.splits.set(data.items);
       this.totalPages.set(data.total_pages);
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

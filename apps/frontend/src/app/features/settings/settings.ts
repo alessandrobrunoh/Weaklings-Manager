@@ -19,6 +19,7 @@ import { ThemeService, type ThemePreference } from '../../core/services/theme.se
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService, type Language } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
@@ -72,7 +73,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
 @Component({
   selector: 'app-profile',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, DecimalPipe, PageHeader, Loading, DataTable],
+  imports: [DatePipe, DecimalPipe, PageHeader, Loading, ErrorState, DataTable],
   template: `
     <app-page-header title="Profile" subtitle="Your account, economy and fight performance." />
 
@@ -92,6 +93,13 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
         </div>
       </section>
 
+      @if (loadFailed()) {
+        <app-error-state
+          [message]="t('common.error')"
+          [retryLabel]="t('common.retry')"
+          (retry)="load()"
+        />
+      } @else {
       <section class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         @for (metric of profileMetrics(); track metric.label) {
           <article class="surface p-4">
@@ -276,6 +284,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
           }}</ng-template>
         </app-data-table>
       </article>
+      }
 
       <section class="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <section class="card p-6">
@@ -419,6 +428,7 @@ export class Settings {
   private readonly toasts = inject(ToastService);
 
   protected readonly loading = signal(false);
+  protected readonly loadFailed = signal(false);
   protected readonly balance = signal<BalanceSummary | null>(null);
   protected readonly transactions = signal<TransactionView[]>([]);
   protected readonly siphonedBalance = signal<SiphonedPlayerBalance | null>(null);
@@ -688,8 +698,9 @@ export class Settings {
     this.toasts.success(this.translate.languageLabels[value]);
   }
 
-  private async load(): Promise<void> {
+  protected async load(): Promise<void> {
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       const [balance, transactions, albionLink, battles, metrics, budget] = await Promise.all([
         firstValueFrom(this.api.get<BalanceSummary>('api/bank/balance')),
@@ -718,6 +729,7 @@ export class Settings {
       this.budget.set(budget);
       await this.loadSiphoned(albionLink.albion_player_name ?? this.profile()?.username ?? '');
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

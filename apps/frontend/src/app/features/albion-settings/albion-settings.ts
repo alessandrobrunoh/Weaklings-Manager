@@ -14,6 +14,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
@@ -36,7 +37,7 @@ const MIN_QUERY_LENGTH = 2;
 @Component({
   selector: 'app-albion-settings',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, DecimalPipe, EmptyState, FormsModule, Icon, Loading, PageHeader, StatCard],
+  imports: [DatePipe, DecimalPipe, EmptyState, ErrorState, FormsModule, Icon, Loading, PageHeader, StatCard],
   template: `
     <app-page-header [title]="t('albionSettings.title')" [subtitle]="t('albionSettings.subtitle')" />
 
@@ -78,6 +79,12 @@ const MIN_QUERY_LENGTH = 2;
             {{ t('albionSettings.link.notLinkedHint') }}
           </p>
         }
+      } @else if (linkLoadFailed()) {
+        <app-error-state
+          [message]="t('common.error')"
+          [retryLabel]="t('common.retry')"
+          (retry)="loadLink()"
+        />
       }
     </section>
 
@@ -199,6 +206,7 @@ export class AlbionSettings {
   private readonly translate = inject(TranslateService);
 
   protected readonly linkLoading = signal(true);
+  protected readonly linkLoadFailed = signal(false);
   protected readonly link = signal<AlbionLinkStatus | null>(null);
   protected readonly unlinking = signal(false);
 
@@ -225,11 +233,13 @@ export class AlbionSettings {
     void this.loadLink();
   }
 
-  private async loadLink(): Promise<void> {
+  protected async loadLink(): Promise<void> {
     this.linkLoading.set(true);
+    this.linkLoadFailed.set(false);
     try {
       this.link.set(await firstValueFrom(this.api.get<AlbionLinkStatus>('api/albion/link/me')));
     } catch (error) {
+      this.linkLoadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.linkLoading.set(false);

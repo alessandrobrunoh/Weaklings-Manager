@@ -17,6 +17,7 @@ import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
@@ -80,7 +81,7 @@ interface BattleKpiCard {
 @Component({
   selector: 'app-battle-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Loading, DataTable, EquipmentGrid, RouterLink, ViewToggle],
+  imports: [ErrorState, Loading, DataTable, EquipmentGrid, RouterLink, ViewToggle],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
@@ -617,6 +618,8 @@ interface BattleKpiCard {
           }
         </article>
       }
+    } @else {
+      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     }
   `,
   styles: `
@@ -1293,7 +1296,7 @@ export class BattleDetailPage {
   }
 
   /** Fetches battle id from the route and loads the full analytics payload. */
-  private async load(): Promise<void> {
+  protected async load(): Promise<void> {
     const battleId = Number(this.route.snapshot.paramMap.get('battleId'));
     if (battleId <= 0) {
       this.toasts.error(this.t('common.error'));

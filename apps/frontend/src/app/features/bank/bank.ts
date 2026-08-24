@@ -15,6 +15,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
@@ -35,7 +36,7 @@ const TRANSACTIONS_LOAD_LIMIT = 1000;
 @Component({
   selector: 'app-bank',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Loading, DataTable, DataTableCell, Icon, ViewToggle],
+  imports: [PageHeader, EmptyState, ErrorState, Loading, DataTable, DataTableCell, Icon, ViewToggle],
   styles: [
     `
     `,
@@ -120,6 +121,12 @@ const TRANSACTIONS_LOAD_LIMIT = 1000;
 
       @if (loading()) {
         <app-loading [label]="t('common.loading')" />
+      } @else if (transactionsLoadFailed()) {
+        <app-error-state
+          [message]="t('common.error')"
+          [retryLabel]="t('common.retry')"
+          (retry)="loadTransactions()"
+        />
       } @else if (filteredTransactions().length === 0) {
         <app-empty-state [message]="t('bank.transactions.empty')" icon="bank" />
       } @else {
@@ -206,6 +213,7 @@ export class Bank {
   protected readonly balance = signal<BalanceSummary | null>(null);
   protected readonly transactions = signal<TransactionView[]>([]);
   protected readonly loading = signal(false);
+  protected readonly transactionsLoadFailed = signal(false);
   protected readonly statusFilter = signal<TransactionStatus | ''>('');
   protected readonly viewMode = signal<'personal' | 'guild'>('personal');
   protected readonly viewOptions = computed<ViewToggleOption[]>(() => [
@@ -389,8 +397,9 @@ export class Bank {
     }
   }
 
-  private async loadTransactions(): Promise<void> {
+  protected async loadTransactions(): Promise<void> {
     this.loading.set(true);
+    this.transactionsLoadFailed.set(false);
     try {
       const params: Record<string, string | number | boolean> = {
         limit: TRANSACTIONS_LOAD_LIMIT,
@@ -403,6 +412,7 @@ export class Bank {
       );
       this.transactions.set(data.items);
     } catch (error) {
+      this.transactionsLoadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

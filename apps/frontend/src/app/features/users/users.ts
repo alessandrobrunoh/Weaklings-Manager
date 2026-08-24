@@ -35,6 +35,8 @@ const ROSTER_LOAD_LIMIT = 1000;
       [columns]="columns"
       [rows]="users()"
       [loading]="loading()"
+      [error]="loadFailed()"
+      (retry)="load()"
       [trackBy]="trackById"
       [pageSize]="10"
       emptyIcon="users"
@@ -58,6 +60,7 @@ export class Users {
 
   protected readonly users = signal<UserProfile[]>([]);
   protected readonly loading = signal(false);
+  protected readonly loadFailed = signal(false);
   protected readonly trackById = (user: UserProfile): unknown => user.id;
 
   protected readonly columns: readonly DataTableColumn<UserProfile>[] = [
@@ -111,8 +114,9 @@ export class Users {
     return 'chip';
   }
 
-  private async load(): Promise<void> {
+  protected async load(): Promise<void> {
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       const data = await firstValueFrom(
         this.api.get<{ items: UserProfile[]; total_items: number }>('api/users', {
@@ -122,6 +126,7 @@ export class Users {
       );
       this.users.set(data.items);
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

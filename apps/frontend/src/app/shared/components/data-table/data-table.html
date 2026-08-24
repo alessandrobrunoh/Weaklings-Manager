@@ -1,5 +1,11 @@
 @if (loading()) {
   <app-loading [label]="t('common.loading')" />
+} @else if (error()) {
+  <app-error-state
+    [message]="t('common.error')"
+    [retryLabel]="t('common.retry')"
+    (retry)="retry.emit()"
+  />
 } @else {
   @if (showToolbar()) {
     <div class="data-table__toolbar">
