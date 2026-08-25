@@ -1,13 +1,8 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
 import type { ApiClient } from "../api/client.js";
 import type { EventView, CreateEventRequest } from "../api/types.js";
-import { buildEventAnnouncementContent } from "../embeds/event.embed.js";
-import { getSettingsService } from "../services/settings.js";
 import { createResponseEmbed } from "../embeds/theme.js";
-import {
-  createEventAnnouncementThread,
-  sendEventSignupMessage,
-} from "../services/event-announcement-thread.js";
+import { getPoller } from "../services/poller.js";
 
 export const data = new SlashCommandBuilder()
   .setName("event-create")
@@ -43,6 +38,26 @@ export const data = new SlashCommandBuilder()
       .setRequired(false),
   );
 
+/**
+ * Creates the event via the API and confirms ephemerally. It deliberately does
+ * *not* post its own announcement or open its own thread in `interaction.channel`.
+ *
+ * That used to happen here, which meant a bot-created event got announced
+ * *twice* — once immediately in whatever channel the command happened to be
+ * run from, and again ~`POLL_INTERVAL_MS` later by the poller, which treats
+ * any event with `id > lastEventId` as new regardless of how it was created.
+ * A call-to-arms event added a *third* announcement on top, from the
+ * backend's own direct-to-Discord CTA post (`EventService::announce_call_to_arms`,
+ * fired by the same `POST /api/events` this command calls) — three messages,
+ * up to three different channels, three separate signup threads for the
+ * same event.
+ *
+ * The poller is the only path that also covers events created from the web
+ * app, so it stays the single source of truth for the events-channel
+ * announcement + signup thread. This command just asks it to run right away
+ * (`pollNow`) instead of waiting for the next tick, so the announcement still
+ * appears promptly.
+ */
 export async function execute(
   interaction: ChatInputCommandInteraction,
   api: ApiClient,
@@ -82,53 +97,24 @@ export async function execute(
     interaction.user.id,
   );
 
-  // Acknowledge the command ephemerally
   const noticeEmbed = createResponseEmbed(
     "success",
     "Guild Event Created",
-    `Event **#${event.id}** is now scheduled.`,
+    `Event **#${event.id}** is now scheduled. It will be announced in the events channel` +
+      (callToArms ? " and the call-to-arms channel " : " ") +
+      "shortly.",
     "GUILD EVENT",
   );
   await interaction.editReply({ embeds: [noticeEmbed] });
 
-  // Ensure we are in a text channel that supports outbound messages.
-  const channel = interaction.channel;
-  if (!channel?.isTextBased() || !("send" in channel)) return;
-
-  const eventRoleId = await getSettingsService().eventRoleId();
-  const announcementMessage = await channel.send({
-    content: buildEventAnnouncementContent(event, eventRoleId),
-    allowedMentions: eventRoleId ? { roles: [eventRoleId] } : { parse: [] },
-  });
-  const thread = await createEventAnnouncementThread(
-    announcementMessage,
-    event,
-    "EventCreateCommand",
-  );
-
-  if (!thread) {
-    const warningEmbed = createResponseEmbed(
-      "warning",
-      "Guild Event Created",
-      `Event **#${event.id}** was scheduled and announced, but Discord rejected the thread creation. Check bot permissions in this channel: \`Create Public Threads\` and \`Send Messages in Threads\`.`,
-      "GUILD EVENT",
-    );
-    await interaction.editReply({ embeds: [warningEmbed] });
-    return;
-  }
-
-  const wasSignupMessageSent = await sendEventSignupMessage(
-    thread,
-    event,
-    "EventCreateCommand",
-  );
-  if (!wasSignupMessageSent) {
-    const warningEmbed = createResponseEmbed(
-      "warning",
-      "Guild Event Created",
-      `Event **#${event.id}** was scheduled and the thread was created, but Discord rejected the signup message inside the thread. Check \`Send Messages in Threads\` for the bot.`,
-      "GUILD EVENT",
-    );
-    await interaction.editReply({ embeds: [warningEmbed] });
+  // Best-effort: ask the poller to announce it now rather than waiting for
+  // its next scheduled tick. If the poller isn't registered yet (startup
+  // race) or the immediate check fails, the scheduled tick still picks the
+  // event up — this is purely a "make it feel instant" nicety, not the only
+  // path that announces it.
+  try {
+    await getPoller()?.pollNow();
+  } catch (err) {
+    console.warn("[EventCreateCommand] Immediate poll after creation failed:", err);
   }
 }

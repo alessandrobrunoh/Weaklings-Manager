@@ -287,6 +287,28 @@ impl RegearService {
         )
         .await;
 
+        // Separate `TRANSACTION`-tagged entry for the bank credit itself — the
+        // entry above is tagged `REGEAR_DEATH` (a regear workflow state
+        // change), which `AuditService::log`'s transaction-spam channel
+        // filter only matches on `entity_type == "TRANSACTION"`. Without
+        // this, every regear payout was invisible in that channel even
+        // though it is exactly the kind of bank ledger activity it exists
+        // to surface — the same class of event `WITHDRAW_ACCEPTED` and
+        // splits' `TRANSACTION_CREATED` already tag correctly.
+        let _ = crate::modules::audit::service::AuditService::log(
+            db,
+            "TRANSACTION_CREATED",
+            Some("TRANSACTION"),
+            Some(inserted_bank.id),
+            Some(officer_user_id),
+            Some(serde_json::json!({
+                "amount": req.final_amount.to_string(),
+                "type": TYPE_REGEAR_CREDIT,
+                "target_user_id": user_id,
+            })),
+        )
+        .await;
+
         to_view_with_joins(db, updated).await
     }
 

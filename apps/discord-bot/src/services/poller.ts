@@ -124,6 +124,10 @@ export class Poller {
   private readonly state: PollerState;
   private readonly stateDirectory = config.POLLER_STATE_DIR;
   private timer: NodeJS.Timeout | undefined;
+  /** Guards against a manually-triggered check overlapping a scheduled one —
+   *  both would otherwise read the same stale `lastEventId`/`lastBattleId`
+   *  and could announce the same event or battle twice. */
+  private polling = false;
 
   constructor(
     private readonly client: Client,
@@ -148,12 +152,31 @@ export class Poller {
     if (this.timer) clearInterval(this.timer);
   }
 
+  /**
+   * Runs one poll cycle immediately instead of waiting for the next scheduled
+   * tick — used by `/event-create` so a bot-created event is announced right
+   * away rather than up to `intervalMs` later, while still going through
+   * this single announcement path (see services/poller.ts module docs) so it
+   * is never posted a second time.
+   */
+  async pollNow(): Promise<void> {
+    await this.poll();
+  }
+
   private async poll(): Promise<void> {
-    await Promise.allSettled([
-      this.checkNewEvents(),
-      this.checkNewBattles(),
-      this.checkUpcomingEvents(),
-    ]);
+    if (this.polling) {
+      return;
+    }
+    this.polling = true;
+    try {
+      await Promise.allSettled([
+        this.checkNewEvents(),
+        this.checkNewBattles(),
+        this.checkUpcomingEvents(),
+      ]);
+    } finally {
+      this.polling = false;
+    }
   }
 
   /** Fetches the latest events and announces any with ID > lastEventId. */
@@ -306,4 +329,21 @@ export class Poller {
       return null;
     }
   }
+}
+
+let instance: Poller | null = null;
+
+/** Registers the process-wide `Poller` singleton. Call once from `index.ts` at startup. */
+export function registerPoller(poller: Poller): void {
+  instance = poller;
+}
+
+/**
+ * Returns the singleton registered by {@link registerPoller}, or `null` before startup has
+ * finished constructing it. Callers that only want a best-effort immediate check (like
+ * `/event-create`) should treat `null` as "the scheduled tick will pick it up instead" rather
+ * than an error.
+ */
+export function getPoller(): Poller | null {
+  return instance;
 }

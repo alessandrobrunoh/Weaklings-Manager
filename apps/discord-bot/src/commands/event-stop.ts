@@ -3,6 +3,7 @@ import type { ApiClient } from '../api/client.js';
 import type { EventDetailView } from '../api/types.js';
 import { buildEventEmbed } from '../embeds/event.embed.js';
 import { createResponseEmbed } from '../embeds/theme.js';
+import { getSettingsService } from '../services/settings.js';
 
 export const data = new SlashCommandBuilder()
   .setName('event-stop')
@@ -36,4 +37,21 @@ export async function execute(
   await interaction.editReply({
     embeds: [noticeEmbed, embed],
   });
+
+  // Public notice in the events channel, mirroring /event-start's "now LIVE"
+  // ping — without this, an event's end was invisible outside this ephemeral
+  // reply, even though its start was announced to everyone.
+  try {
+    const eventsChannelId = await getSettingsService().eventsChannelId();
+    if (eventsChannelId) {
+      const channel = await interaction.client.channels.fetch(eventsChannelId);
+      if (channel?.isTextBased() && !channel.isDMBased() && 'send' in channel) {
+        await channel.send({
+          content: `⏹️ The event **${event.title}** has been stopped.`,
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Failed to post event-stopped notice', err);
+  }
 }

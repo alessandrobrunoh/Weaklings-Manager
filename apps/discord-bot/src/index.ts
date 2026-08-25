@@ -4,7 +4,7 @@ import { ApiClient } from "./api/client.js";
 import { commands } from "./commands/index.js";
 import { handleButton } from "./handlers/button.js";
 import { handleSelectMenu } from "./handlers/select.js";
-import { Poller } from "./services/poller.js";
+import { Poller, registerPoller } from "./services/poller.js";
 import { initSettingsService } from "./services/settings.js";
 import { registerCommands } from "./services/registry.js";
 import { createResponseEmbed } from "./embeds/theme.js";
@@ -94,6 +94,7 @@ async function main(): Promise<void> {
 
     // Start the polling service after the client is ready
     const poller = new Poller(readyClient, api, settings, config.POLL_INTERVAL_MS);
+    registerPoller(poller);
     poller.start();
 
     // Graceful shutdown
