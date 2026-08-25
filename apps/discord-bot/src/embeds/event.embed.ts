@@ -21,7 +21,7 @@ import { BOT_COLORS, createBaseEmbed } from "./theme.js";
  */
 export function buildEventAnnouncementContent(
   event: EventView,
-  eventRoleId: string | undefined,
+  eventRoleId: string | null | undefined,
 ): string {
   const timestamp = Math.floor(new Date(event.event_date_utc).getTime() / 1000);
   const description = event.description?.trim() || "*No description provided.*";

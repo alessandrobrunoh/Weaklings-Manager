@@ -51,7 +51,8 @@ export type PermissionKey =
   | 'regear.view'
   | 'regear.request'
   | 'regear.adjudicate'
-  | 'regear.settings.manage';
+  | 'regear.settings.manage'
+  | 'admin.settings.manage';
 
 export interface DiscordUserProfile {
   id: string;
@@ -1176,3 +1177,23 @@ export interface PermissionMatrix {
   roles: RolePermissionsView[];
   available_permissions: string[];
 }
+
+/**
+ * The guild's Discord integration settings — channel/role IDs that used to live only in
+ * deployment env vars. Every field is nullable: an unset channel means the code that would post
+ * there skips it.
+ */
+export interface GuildSettingsView {
+  discord_events_channel_id: string | null;
+  discord_battles_channel_id: string | null;
+  discord_battles_cta_channel_id: string | null;
+  discord_audit_log_channel_id: string | null;
+  discord_transaction_spam_channel_id: string | null;
+  discord_event_role_id: string | null;
+}
+
+/**
+ * Request body for `PUT /admin/settings`. Partial update: a field absent here is left unchanged;
+ * an empty string clears it.
+ */
+export type UpdateGuildSettingsRequest = Partial<GuildSettingsView>;

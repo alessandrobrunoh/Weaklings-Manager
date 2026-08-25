@@ -519,6 +519,25 @@ export const en = {
   'admin.link.usersHint': 'The roster and its Albion links.',
   'admin.link.audit': 'Audit log',
   'admin.link.auditHint': 'Every mutating action, with who did it.',
+  'admin.discord.title': 'Discord integration',
+  'admin.discord.hint':
+    'Channel and role IDs the bot and backend post to. Moved off deployment env vars — a change here takes effect without redeploying either.',
+  'admin.discord.eventsChannel': 'Events channel',
+  'admin.discord.eventsChannelHint': 'Where new events are announced.',
+  'admin.discord.battlesChannel': 'Battles channel',
+  'admin.discord.battlesChannelHint': 'Where new battles are posted.',
+  'admin.discord.ctaChannel': 'Call-to-arms channel',
+  'admin.discord.ctaChannelHint': 'Urgent call-to-arms events get a separate announcement here.',
+  'admin.discord.auditLogChannel': 'Audit log channel',
+  'admin.discord.auditLogChannelHint': 'Receives a copy of every audit log entry.',
+  'admin.discord.transactionSpamChannel': 'Transaction activity channel',
+  'admin.discord.transactionSpamChannelHint': 'Receives bank ledger activity.',
+  'admin.discord.eventRole': 'Event ping role',
+  'admin.discord.eventRoleHint':
+    'Pinged by event announcements, the 1-hour reminder, and start notices.',
+  'admin.discord.placeholder': 'Not set',
+  'admin.discord.save': 'Save',
+  'admin.discord.saved': 'Discord settings saved.',
 
   // Battle detail
   'battles.gear': 'Gear',

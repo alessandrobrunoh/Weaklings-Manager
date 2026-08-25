@@ -18,7 +18,11 @@ use axum::{
 };
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
 
-use super::models::{PermissionMatrix, RolePermissionsView, UpdateRolePermissionsRequest};
+use super::models::{
+    GuildSettingsView, PermissionMatrix, RolePermissionsView, UpdateGuildSettingsRequest,
+    UpdateRolePermissionsRequest,
+};
+use super::service::AdminService;
 use crate::modules::auth::entities::{role, role_permission};
 
 /// Creates the router for the admin module.
@@ -27,6 +31,7 @@ pub fn router() -> Router {
         .route("/permissions", get(get_permission_matrix))
         .route("/permissions/reload", post(reload_permissions))
         .route("/roles/{role_id}/permissions", put(update_role_permissions))
+        .route("/settings", get(get_guild_settings).put(update_guild_settings))
 }
 
 /// Reload the in-memory permission cache from the `role_permissions` table.
@@ -195,4 +200,68 @@ pub async fn update_role_permissions(
     perms.reload(&db).await?;
 
     get_permission_matrix(user, Extension(perms), Extension(db)).await
+}
+
+
+/// Read the guild's Discord integration settings.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` if the caller lacks `admin.settings.manage`.
+#[utoipa::path(
+    get,
+    path = "/api/admin/settings",
+    tag = "admin",
+    summary = "Read the guild's Discord integration settings",
+    description = "Returns the singleton `guild_settings` row: the channel/role IDs that used to \
+        live only in deployment env vars (events/battles/CTA/audit-log/transaction-spam channels, \
+        and the event-ping role). The bot reads this same endpoint at startup and on a refresh \
+        interval, so an edit here takes effect without redeploying the bot. Requires \
+        `admin.settings.manage`.",
+    security(("session_cookie" = ["admin.settings.manage"])),
+    responses(
+        (status = 200, description = "Settings retrieved", body = GuildSettingsView),
+        (status = 401, description = "Unauthorized", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks admin.settings.manage", body = ProblemDetails)
+    )
+)]
+async fn get_guild_settings(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<GuildSettingsView>>, AppError> {
+    user.require(&perms, Permission::AdminSettingsManage).await?;
+    let settings = AdminService::get_guild_settings(&db).await?;
+    Ok(Json(ApiResponse::new(settings)))
+}
+
+/// Update the guild's Discord integration settings.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` if the caller lacks `admin.settings.manage`.
+#[utoipa::path(
+    put,
+    path = "/api/admin/settings",
+    tag = "admin",
+    summary = "Update the guild's Discord integration settings",
+    description = "Partial update: only the fields present in the body are changed; a present but \
+        empty string clears that field. Requires `admin.settings.manage`.",
+    security(("session_cookie" = ["admin.settings.manage"])),
+    request_body(content = UpdateGuildSettingsRequest, description = "Fields to update. All fields are optional; absent fields are left unchanged, empty strings clear."),
+    responses(
+        (status = 200, description = "Settings updated", body = GuildSettingsView),
+        (status = 401, description = "Unauthorized", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks admin.settings.manage", body = ProblemDetails)
+    )
+)]
+async fn update_guild_settings(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Json(req): Json<UpdateGuildSettingsRequest>,
+) -> Result<Json<ApiResponse<GuildSettingsView>>, AppError> {
+    user.require(&perms, Permission::AdminSettingsManage).await?;
+    let settings = AdminService::update_guild_settings(&db, user.user_id, &req).await?;
+    Ok(Json(ApiResponse::new(settings)))
 }

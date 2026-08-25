@@ -969,7 +969,7 @@ impl EventService {
         }
 
         if req.call_to_arms {
-            self.announce_call_to_arms(&event_view).await;
+            self.announce_call_to_arms(db, &event_view).await;
         }
 
         let _ = AuditService::log(
@@ -993,19 +993,24 @@ impl EventService {
     /// Fires only when the operator configured `DISCORD_BATTLES_CTA_CHANNEL_ID` together with
     /// `DISCORD_BOT_TOKEN`; otherwise the event is still created normally. Best-effort by design:
     /// a Discord outage must never roll back event creation, so failures are only logged.
-    async fn announce_call_to_arms(&self, event_view: &EventView) {
+    async fn announce_call_to_arms(&self, db: &DatabaseConnection, event_view: &EventView) {
         let Ok(cfg) = Config::try_from_env() else {
-            return;
-        };
-
-        let Some(channel_id) = cfg.discord_battles_cta_channel_id else {
             return;
         };
         let Some(token) = cfg.discord_bot_token else {
             return;
         };
 
-        let event_role_id = cfg.discord_event_role_id.as_deref();
+        // Moved off env vars into `guild_settings` so an admin can change these without a
+        // redeploy — the bot token itself stays a deployment secret above.
+        let Ok(settings) = crate::modules::admin::service::AdminService::get_guild_settings(db).await else {
+            return;
+        };
+        let Some(channel_id) = settings.discord_battles_cta_channel_id else {
+            return;
+        };
+
+        let event_role_id = settings.discord_event_role_id.as_deref();
         let message = build_event_announcement_content(event_view, event_role_id);
         let allowed_mentions = event_role_id
             .map(|role_id| serde_json::json!({ "roles": [role_id] }))

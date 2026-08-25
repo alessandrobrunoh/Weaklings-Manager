@@ -252,3 +252,17 @@ export interface AlbionGuildMember {
   name: string;
 }
 
+/**
+ * The guild's Discord integration settings — channel/role IDs configured from the admin
+ * Settings page instead of this process's own env vars. Every field is nullable: an unset
+ * channel means "skip this notification", same as the env vars they replaced.
+ */
+export interface GuildSettingsView {
+  discord_events_channel_id: string | null;
+  discord_battles_channel_id: string | null;
+  discord_battles_cta_channel_id: string | null;
+  discord_audit_log_channel_id: string | null;
+  discord_transaction_spam_channel_id: string | null;
+  discord_event_role_id: string | null;
+}
+

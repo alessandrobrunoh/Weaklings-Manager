@@ -7,6 +7,11 @@ use serde::Deserialize;
 /// Compiled-in version from `Cargo.toml` — set automatically at compile time.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// The Discord channel/role IDs that used to live here (audit log, transaction spam, CTA
+/// announcements, event-ping role) now live in the `guild_settings` DB table instead — see
+/// `modules::admin::service::AdminService` — so an admin can change them from the web app
+/// without a redeploy. `discord_bot_token` below stays here: it is a deployment secret, not a
+/// setting.
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     /// Port the HTTP server binds to (default: 3000).
@@ -57,14 +62,6 @@ pub struct Config {
     /// Request timeout in seconds for Albion Online Data requests. Defaults to 30.
     #[serde(default = "default_albiondata_timeout")]
     pub albiondata_request_timeout_secs: u64,
-    /// Discord channel ID for audit logs (optional).
-    pub discord_audit_log_channel_id: Option<String>,
-    /// Discord channel ID for transaction spam (optional).
-    pub discord_transaction_spam_channel_id: Option<String>,
-    /// Discord channel ID where call-to-arms events are announced (optional).
-    pub discord_battles_cta_channel_id: Option<String>,
-    /// Discord role ID pinged by event announcements (optional).
-    pub discord_event_role_id: Option<String>,
 }
 
 fn default_backend_port() -> u16 {

@@ -5,6 +5,7 @@ import { commands } from "./commands/index.js";
 import { handleButton } from "./handlers/button.js";
 import { handleSelectMenu } from "./handlers/select.js";
 import { Poller } from "./services/poller.js";
+import { initSettingsService } from "./services/settings.js";
 import { registerCommands } from "./services/registry.js";
 import { createResponseEmbed } from "./embeds/theme.js";
 
@@ -22,6 +23,9 @@ async function main(): Promise<void> {
 
   // Create the API client (shared across all handlers)
   const api = new ApiClient(config.BACKEND_URL, config.BOT_API_SECRET);
+  // Channel/role IDs now live in the backend's admin Settings instead of this
+  // process's own env vars — see services/settings.ts.
+  const settings = initSettingsService(api);
 
   // Register slash commands with Discord (guild-scoped = instant refresh)
   await registerCommands();
@@ -89,13 +93,7 @@ async function main(): Promise<void> {
     console.log(`✅ Logged in as ${readyClient.user.tag}`);
 
     // Start the polling service after the client is ready
-    const poller = new Poller(
-      readyClient,
-      api,
-      config.DISCORD_EVENTS_CHANNEL_ID,
-      config.DISCORD_BATTLES_CHANNEL_ID,
-      config.POLL_INTERVAL_MS,
-    );
+    const poller = new Poller(readyClient, api, settings, config.POLL_INTERVAL_MS);
     poller.start();
 
     // Graceful shutdown

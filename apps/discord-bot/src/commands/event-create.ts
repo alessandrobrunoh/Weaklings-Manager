@@ -1,8 +1,8 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
 import type { ApiClient } from "../api/client.js";
 import type { EventView, CreateEventRequest } from "../api/types.js";
-import { config, getEventRoleId } from "../config.js";
 import { buildEventAnnouncementContent } from "../embeds/event.embed.js";
+import { getSettingsService } from "../services/settings.js";
 import { createResponseEmbed } from "../embeds/theme.js";
 import {
   createEventAnnouncementThread,
@@ -95,7 +95,7 @@ export async function execute(
   const channel = interaction.channel;
   if (!channel?.isTextBased() || !("send" in channel)) return;
 
-  const eventRoleId = getEventRoleId(config);
+  const eventRoleId = await getSettingsService().eventRoleId();
   const announcementMessage = await channel.send({
     content: buildEventAnnouncementContent(event, eventRoleId),
     allowedMentions: eventRoleId ? { roles: [eventRoleId] } : { parse: [] },

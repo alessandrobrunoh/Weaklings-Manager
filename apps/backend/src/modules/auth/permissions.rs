@@ -96,6 +96,10 @@ pub enum Permission {
     /// View the full guild report aggregate (silver flows, attendance, leaderboards). Officer+.
     #[strum(serialize = "intel.report.view")]
     IntelReportView,
+    /// View and edit the guild's Discord integration settings (channel/role IDs), moved off
+    /// deployment env vars so an admin can change them without a redeploy. Admin-only.
+    #[strum(serialize = "admin.settings.manage")]
+    AdminSettingsManage,
 }
 
 impl Permission {
@@ -153,6 +157,6 @@ mod tests {
 
     #[test]
     fn all_contains_every_variant() {
-        assert_eq!(Permission::all().len(), 20);
+        assert_eq!(Permission::all().len(), 21);
     }
 }

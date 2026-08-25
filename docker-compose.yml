@@ -15,6 +15,10 @@ services:
     image: ghcr.io/alessandrobrunoh/weaklings-backend:latest
     ports:
       - "8001:3000"
+    # Discord channel/role IDs (CTA channel, audit log, transaction spam,
+    # event-ping role) used to be set here. They now live in the
+    # `guild_settings` DB table, editable from Admin > Discord integration
+    # in the web app — no redeploy needed to change them.
     environment:
       - RUST_LOG=${RUST_LOG}
       - BACKEND_PORT=${BACKEND_PORT}
@@ -30,9 +34,6 @@ services:
       - ALBION_GUILD_ID=${ALBION_GUILD_ID}
       - MISTRAL_API_KEY=${MISTRAL_API_KEY}
       - ALBION_API_REGION=${ALBION_API_REGION}
-      - DISCORD_BATTLES_CTA_CHANNEL_ID=${DISCORD_BATTLES_CTA_CHANNEL_ID}
-      - EVENT_PING_ROLE_ID=${EVENT_PING_ROLE_ID}
-      - DISCORD_EVENT_ROLE_ID=${DISCORD_EVENT_ROLE_ID}
     depends_on:
       - database
     restart: unless-stopped
@@ -50,15 +51,16 @@ services:
 
   discord-bot:
     image: ghcr.io/alessandrobrunoh/weaklings-discord-bot:latest
+    # Events/battles channel IDs and the event-ping role used to be set here
+    # too. The bot now fetches them from the backend's Admin > Discord
+    # integration settings at startup (and refreshes periodically), so they
+    # only need setting once, from the web app.
     environment:
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
       - DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
       - BACKEND_URL=http://backend:3000
       - BOT_API_SECRET=${BOT_API_SECRET}
-      - DISCORD_EVENTS_CHANNEL_ID=${DISCORD_EVENTS_CHANNEL_ID}
-      - DISCORD_BATTLES_CHANNEL_ID=${DISCORD_BATTLES_CHANNEL_ID}
-      - EVENT_ROLE_ID=${EVENT_ROLE_ID}
       - GUILD_NAME=${GUILD_NAME}
       - POLL_INTERVAL_MS=${POLL_INTERVAL_MS}
       - POLLER_STATE_DIR=/app/data

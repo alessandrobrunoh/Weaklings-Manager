@@ -6,7 +6,8 @@ import type { PaginatedData, EventView, BattleSummary } from "../api/types.js";
 import { buildEventAnnouncementContent } from "../embeds/event.embed.js";
 import { buildBattleEmbed } from "../embeds/battle.embed.js";
 import { GUILD_NAME } from "../embeds/theme.js";
-import { config, getEventRoleId } from "../config.js";
+import { config } from "../config.js";
+import type { SettingsService } from "./settings.js";
 import {
   createEventAnnouncementThread,
   sendEventSignupMessage,
@@ -127,8 +128,7 @@ export class Poller {
   constructor(
     private readonly client: Client,
     private readonly api: ApiClient,
-    private readonly eventsChannelId: string,
-    private readonly battlesChannelId: string,
+    private readonly settings: SettingsService,
     private readonly intervalMs: number,
   ) {
     this.state = loadState(this.stateDirectory);
@@ -174,10 +174,10 @@ export class Poller {
 
       if (newEvents.length === 0) return;
 
-      const channel = await this.getTextChannel(this.eventsChannelId);
+      const channel = await this.getTextChannel(await this.settings.eventsChannelId());
       if (!channel) return;
 
-      const eventRoleId = getEventRoleId(config);
+      const eventRoleId = await this.settings.eventRoleId();
       for (const event of newEvents) {
         const announcementMessage = await channel.send({
           content: buildEventAnnouncementContent(event, eventRoleId),
@@ -205,7 +205,7 @@ export class Poller {
 
   /** Checks for scheduled events starting in <= 1 hour and pings the role. */
   private async checkUpcomingEvents(): Promise<void> {
-    const eventRoleId = getEventRoleId(config);
+    const eventRoleId = await this.settings.eventRoleId();
     if (!eventRoleId) return;
 
     try {
@@ -232,7 +232,7 @@ export class Poller {
 
       if (upcomingEvents.length === 0) return;
 
-      const channel = await this.getTextChannel(this.eventsChannelId);
+      const channel = await this.getTextChannel(await this.settings.eventsChannelId());
       if (!channel) return;
 
       for (const event of upcomingEvents) {
@@ -274,7 +274,7 @@ export class Poller {
 
       if (newBattles.length === 0) return;
 
-      const channel = await this.getTextChannel(this.battlesChannelId);
+      const channel = await this.getTextChannel(await this.settings.battlesChannelId());
       if (!channel) return;
 
       for (const battle of newBattles) {
@@ -290,7 +290,10 @@ export class Poller {
     }
   }
 
-  private async getTextChannel(channelId: string): Promise<TextChannel | null> {
+  private async getTextChannel(channelId: string | null): Promise<TextChannel | null> {
+    if (!channelId) {
+      return null;
+    }
     try {
       const channel = await this.client.channels.fetch(channelId);
       if (!channel || !channel.isTextBased()) {

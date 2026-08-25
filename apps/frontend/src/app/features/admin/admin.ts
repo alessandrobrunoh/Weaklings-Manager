@@ -1,9 +1,15 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
-import type { PermissionMatrix, RolePermissionsView } from '../../core/models/api.models';
+import type {
+  GuildSettingsView,
+  PermissionMatrix,
+  RolePermissionsView,
+  UpdateGuildSettingsRequest,
+} from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
@@ -19,6 +25,15 @@ interface SettingsLink {
   readonly labelKey: TranslationKey;
   readonly hintKey: TranslationKey;
 }
+
+const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
+  discord_events_channel_id: '',
+  discord_battles_channel_id: '',
+  discord_battles_cta_channel_id: '',
+  discord_audit_log_channel_id: '',
+  discord_transaction_spam_channel_id: '',
+  discord_event_role_id: '',
+};
 
 /**
  * Administration console.
@@ -124,6 +139,106 @@ interface SettingsLink {
           }
         </ul>
       </section>
+
+      @if (canManageDiscordSettings()) {
+        <section class="card p-5">
+          <h2 class="eyebrow mb-1">{{ t('admin.discord.title') }}</h2>
+          <p class="mb-4 max-w-2xl text-xs" style="color: var(--color-text-secondary)">
+            {{ t('admin.discord.hint') }}
+          </p>
+
+          @if (guildSettingsLoading()) {
+            <app-loading />
+          } @else {
+            <form class="grid gap-4 sm:grid-cols-2" (submit)="saveGuildSettings($event)">
+              <label>
+                <span class="label">{{ t('admin.discord.eventsChannel') }}</span>
+                <input
+                  class="input mono"
+                  type="text"
+                  [placeholder]="t('admin.discord.placeholder')"
+                  [value]="guildSettingsDraft().discord_events_channel_id"
+                  (input)="updateDraftField('discord_events_channel_id', $event)"
+                />
+                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                  {{ t('admin.discord.eventsChannelHint') }}
+                </span>
+              </label>
+              <label>
+                <span class="label">{{ t('admin.discord.battlesChannel') }}</span>
+                <input
+                  class="input mono"
+                  type="text"
+                  [placeholder]="t('admin.discord.placeholder')"
+                  [value]="guildSettingsDraft().discord_battles_channel_id"
+                  (input)="updateDraftField('discord_battles_channel_id', $event)"
+                />
+                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                  {{ t('admin.discord.battlesChannelHint') }}
+                </span>
+              </label>
+              <label>
+                <span class="label">{{ t('admin.discord.ctaChannel') }}</span>
+                <input
+                  class="input mono"
+                  type="text"
+                  [placeholder]="t('admin.discord.placeholder')"
+                  [value]="guildSettingsDraft().discord_battles_cta_channel_id"
+                  (input)="updateDraftField('discord_battles_cta_channel_id', $event)"
+                />
+                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                  {{ t('admin.discord.ctaChannelHint') }}
+                </span>
+              </label>
+              <label>
+                <span class="label">{{ t('admin.discord.eventRole') }}</span>
+                <input
+                  class="input mono"
+                  type="text"
+                  [placeholder]="t('admin.discord.placeholder')"
+                  [value]="guildSettingsDraft().discord_event_role_id"
+                  (input)="updateDraftField('discord_event_role_id', $event)"
+                />
+                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                  {{ t('admin.discord.eventRoleHint') }}
+                </span>
+              </label>
+              <label>
+                <span class="label">{{ t('admin.discord.auditLogChannel') }}</span>
+                <input
+                  class="input mono"
+                  type="text"
+                  [placeholder]="t('admin.discord.placeholder')"
+                  [value]="guildSettingsDraft().discord_audit_log_channel_id"
+                  (input)="updateDraftField('discord_audit_log_channel_id', $event)"
+                />
+                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                  {{ t('admin.discord.auditLogChannelHint') }}
+                </span>
+              </label>
+              <label>
+                <span class="label">{{ t('admin.discord.transactionSpamChannel') }}</span>
+                <input
+                  class="input mono"
+                  type="text"
+                  [placeholder]="t('admin.discord.placeholder')"
+                  [value]="guildSettingsDraft().discord_transaction_spam_channel_id"
+                  (input)="updateDraftField('discord_transaction_spam_channel_id', $event)"
+                />
+                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                  {{ t('admin.discord.transactionSpamChannelHint') }}
+                </span>
+              </label>
+
+              <div class="sm:col-span-2">
+                <button type="submit" class="btn btn--primary" [disabled]="guildSettingsSaving()">
+                  {{ t('admin.discord.save') }}
+                </button>
+              </div>
+            </form>
+          }
+        </section>
+      }
     } @else {
       <app-error-state
         [message]="t('admin.loadError')"
@@ -135,6 +250,7 @@ interface SettingsLink {
 })
 export class Admin {
   private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
 
@@ -142,6 +258,18 @@ export class Admin {
   /** Keys of `(role, permission)` pairs currently being saved. */
   private readonly savingKeys = signal<ReadonlySet<string>>(new Set());
   protected readonly matrix = signal<PermissionMatrix | null>(null);
+
+  /** Gates the whole Discord settings section — these are more sensitive than
+   *  the page's own Officer+ route guard, so a non-admin never even sees the
+   *  form or triggers the fetch that would 403. */
+  protected readonly canManageDiscordSettings = computed(() =>
+    this.auth.hasPermission('admin.settings.manage'),
+  );
+  protected readonly guildSettingsLoading = signal(true);
+  protected readonly guildSettingsSaving = signal(false);
+  protected readonly guildSettingsDraft = signal<Record<keyof GuildSettingsView, string>>({
+    ...EMPTY_GUILD_SETTINGS_DRAFT,
+  });
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
@@ -221,6 +349,11 @@ export class Admin {
 
   constructor() {
     void this.load();
+    if (this.canManageDiscordSettings()) {
+      void this.loadGuildSettings();
+    } else {
+      this.guildSettingsLoading.set(false);
+    }
   }
 
   protected async load(): Promise<void> {
@@ -233,4 +366,61 @@ export class Admin {
       this.loading.set(false);
     }
   }
+
+  private async loadGuildSettings(): Promise<void> {
+    this.guildSettingsLoading.set(true);
+    try {
+      const settings = await firstValueFrom(
+        this.api.get<GuildSettingsView>('api/admin/settings'),
+      );
+      this.guildSettingsDraft.set(toDraft(settings));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.guildSettingsLoading.set(false);
+    }
+  }
+
+  protected updateDraftField(field: keyof GuildSettingsView, event: Event): void {
+    const value = (event.target as HTMLInputElement).value;
+    this.guildSettingsDraft.update((draft) => ({ ...draft, [field]: value }));
+  }
+
+  protected async saveGuildSettings(submit: SubmitEvent): Promise<void> {
+    submit.preventDefault();
+    this.guildSettingsSaving.set(true);
+    try {
+      const draft = this.guildSettingsDraft();
+      const body: UpdateGuildSettingsRequest = {
+        discord_events_channel_id: draft.discord_events_channel_id.trim(),
+        discord_battles_channel_id: draft.discord_battles_channel_id.trim(),
+        discord_battles_cta_channel_id: draft.discord_battles_cta_channel_id.trim(),
+        discord_audit_log_channel_id: draft.discord_audit_log_channel_id.trim(),
+        discord_transaction_spam_channel_id: draft.discord_transaction_spam_channel_id.trim(),
+        discord_event_role_id: draft.discord_event_role_id.trim(),
+      };
+      const updated = await firstValueFrom(
+        this.api.put<GuildSettingsView>('api/admin/settings', body),
+      );
+      this.guildSettingsDraft.set(toDraft(updated));
+      this.toasts.success(this.t('admin.discord.saved'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.guildSettingsSaving.set(false);
+    }
+  }
+}
+
+/** `null` reads oddly in a text input — the form works in empty strings, same
+ *  convention the backend's own PUT handler normalizes back to `null`. */
+function toDraft(settings: GuildSettingsView): Record<keyof GuildSettingsView, string> {
+  return {
+    discord_events_channel_id: settings.discord_events_channel_id ?? '',
+    discord_battles_channel_id: settings.discord_battles_channel_id ?? '',
+    discord_battles_cta_channel_id: settings.discord_battles_cta_channel_id ?? '',
+    discord_audit_log_channel_id: settings.discord_audit_log_channel_id ?? '',
+    discord_transaction_spam_channel_id: settings.discord_transaction_spam_channel_id ?? '',
+    discord_event_role_id: settings.discord_event_role_id ?? '',
+  };
 }

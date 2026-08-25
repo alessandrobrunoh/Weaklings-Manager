@@ -267,10 +267,12 @@ npm run dev   # watch mode, loads ../../.env
 | `ALBIONDATA_REQUEST_TIMEOUT_SECS` | no | `30` | Albion Data Project timeout |
 | `DISCORD_BOT_TOKEN` | no | — | Bot token for server-side Discord calls |
 | `BOT_API_SECRET` | no | — | Enables bot-header auth (`X-Bot-Secret` / `X-Discord-Id`) |
-| `DISCORD_AUDIT_LOG_CHANNEL_ID` | no | — | Audit log notifications |
-| `DISCORD_TRANSACTION_SPAM_CHANNEL_ID` | no | — | Transaction spam notifications |
-| `DISCORD_BATTLES_CTA_CHANNEL_ID` | no | — | Call-to-arms announcements |
-| `DISCORD_EVENT_ROLE_ID` | no | — | Role pinged by event announcements |
+
+The audit-log channel, transaction-spam channel, call-to-arms channel and event-ping role used to
+be set via `DISCORD_AUDIT_LOG_CHANNEL_ID` / `DISCORD_TRANSACTION_SPAM_CHANNEL_ID` /
+`DISCORD_BATTLES_CTA_CHANNEL_ID` / `DISCORD_EVENT_ROLE_ID` here. They now live in the
+`guild_settings` DB table instead, editable from **Admin → Discord integration** in the web app —
+no redeploy needed to change one.
 
 ### Discord Bot (`apps/discord-bot`)
 
@@ -281,11 +283,13 @@ npm run dev   # watch mode, loads ../../.env
 | `DISCORD_GUILD_ID` | yes | Server ID for command registration |
 | `BACKEND_URL` | yes | Backend base URL |
 | `BOT_API_SECRET` | yes | Must match the backend's `BOT_API_SECRET` |
-| `DISCORD_EVENTS_CHANNEL_ID` | no | Channel for auto-announced events |
-| `DISCORD_BATTLES_CHANNEL_ID` | no | Channel for auto-announced battles |
-| `EVENT_ROLE_ID` | no | Role pinged by event announcements |
 | `GUILD_NAME` | no | Display name used in announcements |
 | `POLL_INTERVAL_MS` | no | Polling cadence for new events/battles |
+
+The events/battles channels and event-ping role used to be set here too (`DISCORD_EVENTS_CHANNEL_ID`
+/ `DISCORD_BATTLES_CHANNEL_ID` / `EVENT_ROLE_ID`). The bot now fetches them from the backend's
+**Admin → Discord integration** settings at startup and refreshes periodically, so a change there
+takes effect without redeploying the bot.
 
 See [apps/discord-bot/README.md](apps/discord-bot/README.md) for full bot setup instructions (creating the Discord application, gateway intents, and the invite link).
 

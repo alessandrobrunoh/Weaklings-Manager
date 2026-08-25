@@ -378,6 +378,25 @@ export const es: TranslationDict = {
   'admin.link.usersHint': 'La plantilla y sus vínculos de Albion.',
   'admin.link.audit': 'Registro de auditoría',
   'admin.link.auditHint': 'Cada acción que modifica, y quién la hizo.',
+  'admin.discord.title': 'Integración con Discord',
+  'admin.discord.hint':
+    'IDs de canal y rol donde publican el bot y el backend. Movidos fuera de las variables de entorno — un cambio aquí surte efecto sin redesplegar ninguno de los dos.',
+  'admin.discord.eventsChannel': 'Canal de eventos',
+  'admin.discord.eventsChannelHint': 'Donde se anuncian los eventos nuevos.',
+  'admin.discord.battlesChannel': 'Canal de batallas',
+  'admin.discord.battlesChannelHint': 'Donde se publican las batallas nuevas.',
+  'admin.discord.ctaChannel': 'Canal de call-to-arms',
+  'admin.discord.ctaChannelHint': 'Los eventos call-to-arms urgentes reciben aquí un anuncio aparte.',
+  'admin.discord.auditLogChannel': 'Canal de audit log',
+  'admin.discord.auditLogChannelHint': 'Recibe una copia de cada entrada del audit log.',
+  'admin.discord.transactionSpamChannel': 'Canal de actividad de transacciones',
+  'admin.discord.transactionSpamChannelHint': 'Recibe la actividad del registro del banco.',
+  'admin.discord.eventRole': 'Rol de ping de eventos',
+  'admin.discord.eventRoleHint':
+    'Mencionado por los anuncios de eventos, el recordatorio de 1 hora y los avisos de inicio.',
+  'admin.discord.placeholder': 'No configurado',
+  'admin.discord.save': 'Guardar',
+  'admin.discord.saved': 'Ajustes de Discord guardados.',
 
   // Albion settings
   'albionSettings.title': 'Cuenta de Albion',
