@@ -73,11 +73,11 @@ export function buildEventEmbed(
   const rosterCount = detail.participants?.length ?? 0;
 
   descLines.push(
-    `• 🗓️ **Date & Time:** <t:${ts}:F> (<t:${ts}:R>)`,
-    `• ⚡ **Status:** \`${status}\``,
-    `• ⚔️ **Composition:** **${event.comp_name}**`,
-    `• 👑 **Organizer:** **${event.created_by_username}**`,
-    `• 📋 **Roster:** ${rosterCount}/${detail.active_comp_capacity ?? "?"} filled`,
+    `🗓️ **Date & Time** — <t:${ts}:F> (<t:${ts}:R>)`,
+    `⚡ **Status** — ${status}`,
+    `⚔️ **Composition** — ${event.comp_name}`,
+    `👑 **Organizer** — ${event.created_by_username}`,
+    `📋 **Roster** — ${rosterCount}/${detail.active_comp_capacity ?? "?"} filled`,
     ...(event.call_to_arms
       ? ["", "🚨 **URGENT — CALL TO ARMS** — be online and ready!"]
       : []),
@@ -100,7 +100,11 @@ export function buildEventEmbed(
     const byBuild = new Map<string, string[]>();
     for (const p of detail.participants) {
       const names = byBuild.get(p.primary_build_name) ?? [];
-      names.push(p.username);
+      // A real @mention pings/links to the member, unlike plain text — falls
+      // back to a plain (not @-triggering) name for a participant whose
+      // Discord account isn't linked, since `<@undefined>` would render as
+      // broken literal text instead of quietly degrading.
+      names.push(p.discord_id ? `<@${p.discord_id}>` : p.username);
       byBuild.set(p.primary_build_name, names);
     }
 
@@ -203,15 +207,30 @@ export function buildEventSummaryEmbed(
 
 // ── Event participation buttons ──────────────────────────────────────────────
 
+/**
+ * Two explicit buttons instead of one "Manage Participation" button whose
+ * behaviour silently depended on whether *you* happened to already be signed
+ * up. Both are always visible to everyone on the shared signup message —
+ * that's a Discord constraint, not a choice: a message's components can't
+ * differ per viewer — so each button just responds sensibly no matter who
+ * clicks it: "Leave" tells a non-participant they aren't signed up instead
+ * of erroring, and "Join" lets an existing participant re-pick their build
+ * rather than refusing a second signup.
+ */
 export function buildEventManageActionRow(
   eventId: number,
 ): ActionRowBuilder<ButtonBuilder> {
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
-      .setCustomId(`event:manage:${eventId}`)
-      .setLabel("Manage Participation")
-      .setEmoji("📋")
-      .setStyle(ButtonStyle.Primary),
+      .setCustomId(`event:join:${eventId}`)
+      .setLabel("Join / Change Build")
+      .setEmoji("✅")
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`event:leave:${eventId}`)
+      .setLabel("Leave Event")
+      .setEmoji("🚪")
+      .setStyle(ButtonStyle.Danger),
   );
 
   return row;
