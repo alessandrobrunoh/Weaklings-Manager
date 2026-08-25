@@ -728,6 +728,7 @@ impl EventService {
             participant_views.push(EventParticipantView {
                 user_id: p.user_id,
                 username,
+                discord_id: user.discord_id.clone(),
                 primary_build_id: p.primary_build_id,
                 primary_build_name: primary_build.name,
                 secondary_build_id: p.secondary_build_id,

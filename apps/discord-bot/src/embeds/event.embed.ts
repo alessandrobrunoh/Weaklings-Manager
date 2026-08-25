@@ -69,11 +69,15 @@ export function buildEventEmbed(
     descLines.push(`*${event.description}*`, "");
   }
 
+  const detail = event as EventDetailView;
+  const rosterCount = detail.participants?.length ?? 0;
+
   descLines.push(
     `• 🗓️ **Date & Time:** <t:${ts}:F> (<t:${ts}:R>)`,
     `• ⚡ **Status:** \`${status}\``,
     `• ⚔️ **Composition:** **${event.comp_name}**`,
     `• 👑 **Organizer:** **${event.created_by_username}**`,
+    `• 📋 **Roster:** ${rosterCount}/${detail.active_comp_capacity ?? "?"} filled`,
     ...(event.call_to_arms
       ? ["", "🚨 **URGENT — CALL TO ARMS** — be online and ready!"]
       : []),
@@ -89,27 +93,46 @@ export function buildEventEmbed(
     footerText: `Event #${event.id} • Weaklings Guild Manager`,
   });
 
-  // For EventDetailView with participants, show the roster grouped by build.
-  const detail = event as EventDetailView;
-  if (detail.participants?.length > 0) {
-    const buildCounts: Record<string, number> = {};
+  // Who is actually signed up, grouped by build — not just how many, which
+  // told an officer nothing about *whether the right people* had signed up
+  // (e.g. three healers all on alts) short of opening the web app.
+  if (rosterCount > 0) {
+    const byBuild = new Map<string, string[]>();
     for (const p of detail.participants) {
-      buildCounts[p.primary_build_name] =
-        (buildCounts[p.primary_build_name] || 0) + 1;
+      const names = byBuild.get(p.primary_build_name) ?? [];
+      names.push(p.username);
+      byBuild.set(p.primary_build_name, names);
     }
 
-    const lines = Object.entries(buildCounts)
-      .map(([buildName, count]) => `• **${count}x** ${buildName}`)
-      .join("\n");
+    // Discord caps an embed at 25 fields total; this one is shared with a
+    // handful of others (description counts as the embed itself, not a
+    // field, so the real budget here is generous), but a comp with an
+    // unusually large number of distinct builds could still overflow it —
+    // fold the tail into a single "+N more roles" field rather than
+    // silently dropping fields past Discord's limit.
+    const MAX_BUILD_FIELDS = 23;
+    const entries = [...byBuild.entries()];
+    const shown = entries.slice(0, MAX_BUILD_FIELDS);
+    const overflow = entries.slice(MAX_BUILD_FIELDS);
 
-    embed.addFields({
-      name: `📋 Roster (${detail.participants.length}/${detail.active_comp_capacity} Filled)`,
-      value: lines,
-      inline: false,
-    });
+    for (const [buildName, names] of shown) {
+      embed.addFields({
+        name: `${buildName} (${names.length})`,
+        value: formatNameList(names),
+        inline: true,
+      });
+    }
+    if (overflow.length > 0) {
+      const overflowCount = overflow.reduce((sum, [, names]) => sum + names.length, 0);
+      embed.addFields({
+        name: `+${overflow.length} more roles`,
+        value: `${overflowCount} more player(s) — see the web app for the full roster.`,
+        inline: true,
+      });
+    }
   } else {
     embed.addFields({
-      name: `📋 Roster (0/${detail.active_comp_capacity ?? "?"})`,
+      name: "📋 Roster",
       value:
         "*No players registered yet. Click a role button below to sign up!*",
       inline: false,
@@ -117,6 +140,33 @@ export function buildEventEmbed(
   }
 
   return embed;
+}
+
+/**
+ * Renders a bulleted name list for one embed field, truncating rather than
+ * exceeding Discord's 1024-character field-value cap. A single very popular
+ * build (a whole raid signing up as the same tank, say) could otherwise push
+ * past that limit and get the field silently rejected by Discord instead of
+ * gracefully cut off.
+ */
+function formatNameList(names: string[]): string {
+  const FIELD_VALUE_LIMIT = 1024;
+  const SAFETY_MARGIN = 40; // room for the "+N more" line appended below
+
+  let value = "";
+  let shown = 0;
+  for (const name of names) {
+    const line = `• ${name}\n`;
+    if (value.length + line.length > FIELD_VALUE_LIMIT - SAFETY_MARGIN) break;
+    value += line;
+    shown++;
+  }
+
+  const remaining = names.length - shown;
+  if (remaining > 0) {
+    value += `*+${remaining} more*`;
+  }
+  return value.trim();
 }
 
 // ── Embed lista eventi ───────────────────────────────────────────────────────

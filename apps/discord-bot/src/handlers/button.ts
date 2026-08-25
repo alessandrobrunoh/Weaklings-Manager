@@ -3,6 +3,7 @@ import type { ApiClient } from "../api/client.js";
 import type {
   BuildRole,
   EventDetailView,
+  EventParticipant,
   PaginatedData,
   EventView,
   BattleSummary,
@@ -102,9 +103,13 @@ async function handleEventButton(
       return;
     }
 
-    // Check if user is already a participant
+    // Check if user is already a participant. `discord_id` only started
+    // being populated by the backend recently — before that this always
+    // compared against `undefined` and silently never matched, so the
+    // "leave" branch below was dead code: everyone, even someone already
+    // signed up, was sent through the "pick a role to join" flow instead.
     const isParticipant = event.participants?.some(
-      (p: any) => p.discord_id === interaction.user.id,
+      (p: EventParticipant) => p.discord_id === interaction.user.id,
     );
 
     if (isParticipant) {

@@ -157,6 +157,10 @@ pub struct EventParticipantView {
     pub user_id: i64,
     /// The username of the participant.
     pub username: String,
+    /// The participant's Discord user ID, if their account is linked. Lets a caller (the bot, in
+    /// particular) tell "this is me" apart from every other participant without a numeric
+    /// `user_id` neither side already has in hand.
+    pub discord_id: Option<String>,
     /// The primary build ID chosen by the participant.
     #[schema(example = 5)]
     pub primary_build_id: i64,
