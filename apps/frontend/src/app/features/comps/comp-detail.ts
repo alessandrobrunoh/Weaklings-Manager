@@ -2,6 +2,8 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
+import { validateBuildName } from '../../shared/validation/build-validation';
+
 import type {
   BuildCategoryView,
   BuildRole,
@@ -21,6 +23,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 
@@ -50,7 +53,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
 @Component({
   selector: 'app-comp-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, PageHeader, EmptyState, Loading],
+  imports: [RouterLink, PageHeader, EmptyState, ErrorState, Loading],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
@@ -239,29 +242,34 @@ const ROLE_LABELS: Record<BuildRole, string> = {
             </div>
 
             @if (perf.stats.top_opponents.length > 0) {
-              <div class="surface mt-2 overflow-hidden rounded-lg">
-                <table class="w-full text-sm">
-                  <thead style="background-color: var(--color-surface-1)">
+              <!-- Shared .table class (thead/hover/borders come from the
+                   design system) inside a horizontal-scroll wrapper, matching
+                   every other table in the app — this one used to clip its
+                   rightmost columns with overflow-hidden instead of
+                   scrolling them into view on narrow screens. -->
+              <div class="mt-2 overflow-x-auto">
+                <table class="table">
+                  <thead>
                     <tr>
-                      <th class="p-3 text-left font-semibold" style="color: var(--color-text)">Opponent</th>
-                      <th class="p-3 text-right font-semibold" style="color: var(--color-text)">Battles</th>
-                      <th class="p-3 text-right font-semibold" style="color: var(--color-text)">W-L</th>
-                      <th class="p-3 text-right font-semibold" style="color: var(--color-text)">Win %</th>
-                      <th class="p-3 text-right font-semibold" style="color: var(--color-text)">Our fame</th>
-                      <th class="p-3 text-right font-semibold" style="color: var(--color-text)">Their fame</th>
+                      <th class="text-left">Opponent</th>
+                      <th class="text-right">Battles</th>
+                      <th class="text-right">W-L</th>
+                      <th class="text-right">Win %</th>
+                      <th class="text-right">Our fame</th>
+                      <th class="text-right">Their fame</th>
                     </tr>
                   </thead>
                   <tbody>
                     @for (opponent of perf.stats.top_opponents; track opponentKey(opponent)) {
-                      <tr style="border-top: 1px solid var(--color-border)">
-                        <td class="p-3" style="color: var(--color-text)">{{ opponent.guild_name }}</td>
-                        <td class="p-3 text-right" style="color: var(--color-text-secondary)">{{ opponent.battles }}</td>
-                        <td class="p-3 text-right" style="color: var(--color-text)">{{ opponent.wins }}-{{ opponent.losses }}</td>
-                        <td class="p-3 text-right" [style.color]="winRateColor(opponentBattlesWinRate(opponent))">
+                      <tr>
+                        <td>{{ opponent.guild_name }}</td>
+                        <td class="text-right">{{ opponent.battles }}</td>
+                        <td class="text-right">{{ opponent.wins }}-{{ opponent.losses }}</td>
+                        <td class="text-right" [style.color]="winRateColor(opponentBattlesWinRate(opponent))">
                           {{ formatPercent(opponentBattlesWinRate(opponent)) }}
                         </td>
-                        <td class="p-3 text-right" style="color: var(--color-text-secondary)">{{ formatNumber(opponent.guild_kill_fame) }}</td>
-                        <td class="p-3 text-right" style="color: var(--color-text-secondary)">{{ formatNumber(opponent.opponent_kill_fame) }}</td>
+                        <td class="text-right">{{ formatNumber(opponent.guild_kill_fame) }}</td>
+                        <td class="text-right">{{ formatNumber(opponent.opponent_kill_fame) }}</td>
                       </tr>
                     }
                   </tbody>
@@ -271,6 +279,8 @@ const ROLE_LABELS: Record<BuildRole, string> = {
           }
         </section>
       }
+    } @else if (loadFailed()) {
+      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load(compId)" />
     } @else if (!loading()) {
       <app-empty-state message="Composition not found" icon="package" />
     }
@@ -285,6 +295,7 @@ export class CompDetailPage {
   private readonly router = inject(Router);
 
   protected readonly loading = signal(true);
+  protected readonly loadFailed = signal(false);
   protected readonly saving = signal(false);
   protected readonly comp = signal<CompDetail | null>(null);
   protected readonly parentComp = signal<CompSummary | null>(null);
@@ -314,9 +325,10 @@ export class CompDetailPage {
     this.compSummaries().filter((sibling) => sibling.id !== this.comp()?.id),
   );
 
+  protected readonly compId = Number(this.route.snapshot.paramMap.get('compId'));
+
   constructor() {
-    const compId = Number(this.route.snapshot.paramMap.get('compId'));
-    void this.load(compId);
+    void this.load(this.compId);
   }
 
   protected roleLabel(role: BuildRole): string {
@@ -327,7 +339,7 @@ export class CompDetailPage {
     if (!this.editing() && this.comp()) {
       const current = this.comp()!;
       this.editName.set(current.name);
-      this.editDescription.set('');
+      this.editDescription.set(current.description ?? '');
       this.editCategoryId.set(current.category_id ? String(current.category_id) : '');
       this.editParentId.set(current.parent_id ? String(current.parent_id) : '');
     }
@@ -383,14 +395,37 @@ export class CompDetailPage {
     if (!comp) {
       return;
     }
+
+    // Validated even when unchanged: the previous version only applied the
+    // name `if (editName())`, so clearing the field was silently ignored
+    // instead of rejected, and the save still reported success.
+    const nameError = validateBuildName(this.editName(), {
+      existingNames: [],
+      currentName: comp.name,
+    });
+    if (nameError) {
+      this.toasts.error(nameError.message);
+      return;
+    }
+
     const request: UpdateCompRequest = {};
-    if (this.editName() && this.editName() !== comp.name) request.name = this.editName();
-    if (this.editDescription()) request.description = this.editDescription();
+    const name = this.editName().trim();
+    if (name !== comp.name) request.name = name;
+    // Compared against the current value rather than tested for truthiness,
+    // so an emptied description actually clears instead of being dropped.
+    if (this.editDescription() !== (comp.description ?? '')) {
+      request.description = this.editDescription();
+    }
     const categoryId = this.editCategoryId() ? Number(this.editCategoryId()) : undefined;
     if (categoryId && categoryId !== comp.category_id) request.category_id = categoryId;
     const parentId = this.editParentId() ? Number(this.editParentId()) : null;
     if ((parentId ?? null) !== (comp.parent_id ?? null)) {
       request.parent_id = parentId ?? undefined;
+    }
+
+    if (Object.keys(request).length === 0) {
+      this.editing.set(false);
+      return;
     }
 
     this.saving.set(true);
@@ -541,12 +576,13 @@ export class CompDetailPage {
     return value.toFixed(2);
   }
 
-  private async load(compId: number): Promise<void> {
+  protected async load(compId: number): Promise<void> {
     if (!Number.isFinite(compId) || compId <= 0) {
       this.loading.set(false);
       return;
     }
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       const [comp, performance, categories, builds, summaries] = await Promise.all([
         firstValueFrom(this.api.get<CompDetail>(`api/comps/${compId}`)),
@@ -569,6 +605,7 @@ export class CompDetailPage {
         this.parentComp.set(parent);
       }
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

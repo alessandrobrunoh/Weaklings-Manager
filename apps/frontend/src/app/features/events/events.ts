@@ -2,20 +2,17 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
-import type {
-  EventDetailView,
-  EventStatus,
-  EventView,
-  PaginatedData,
-} from '../../core/models/api.models';
+import type { EventDetailView, EventView, PaginatedData } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
 
 const PAGE_SIZE = 10;
 
@@ -29,7 +26,7 @@ const PAGE_SIZE = 10;
 @Component({
   selector: 'app-events',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Loading],
+  imports: [PageHeader, EmptyState, ErrorState, Loading, StatusChip],
   template: `
     <app-page-header [title]="t('events.title')" [subtitle]="t('events.subtitle')">
       @if (canManage()) {
@@ -41,6 +38,8 @@ const PAGE_SIZE = 10;
 
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
+    } @else if (loadFailed()) {
+      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     } @else if (events().length === 0) {
       <app-empty-state [message]="t('common.empty')" icon="calendar" />
     } @else {
@@ -51,15 +50,13 @@ const PAGE_SIZE = 10;
               class="mb-3 flex cursor-pointer items-start justify-between gap-2"
               (click)="openEventDetail(event.id)"
             >
-              <h3 class="text-base font-semibold" style="color: var(--color-text)">
+              <h2 class="text-base font-semibold" style="color: var(--color-text)">
                 @if (event.call_to_arms) {
                   <span class="cta-star" title="{{ t('events.call_to_arms') }}">★</span>
                 }
                 {{ event.title }}
-              </h3>
-              <span class="chip" [class]="statusChip(event.status)">
-                {{ event.status }}
-              </span>
+              </h2>
+              <app-status-chip [value]="event.status" />
             </header>
 
             @if (event.description) {
@@ -83,7 +80,7 @@ const PAGE_SIZE = 10;
             <footer class="flex flex-wrap gap-2">
               @if (event.status === 'scheduled') {
                 <button type="button" class="btn btn--tonal" (click)="join(event.id)">
-                  {{ t('events.participate') }}
+                  {{ t('events.viewAndJoin') }}
                 </button>
                 <button type="button" class="btn btn--outline" (click)="leave(event.id)">
                   {{ t('events.leave') }}
@@ -100,7 +97,7 @@ const PAGE_SIZE = 10;
                 </button>
               }
               <button type="button" class="btn btn--outline" (click)="openEventDetail(event.id)">
-                Stats
+                {{ t('common.view') }}
               </button>
               @if (canManage()) {
                 <button type="button" class="btn btn--danger" (click)="deleteEvent(event.id)">
@@ -142,6 +139,7 @@ export class Events {
 
   protected readonly events = signal<EventView[]>([]);
   protected readonly loading = signal(false);
+  protected readonly loadFailed = signal(false);
   protected readonly page = signal(1);
   protected readonly totalPages = signal(1);
 
@@ -171,18 +169,7 @@ export class Events {
     return new Date(iso).toLocaleString();
   }
 
-  /** Maps event lifecycle to chip color modifiers. */
-  protected statusChip(status: EventStatus): string {
-    if (status === 'live') {
-      return 'chip chip--success';
-    }
-    if (status === 'auto_stopped') {
-      return 'chip chip--warning';
-    }
-    return 'chip';
-  }
-
-  /** Redirects to the detail page where build selection is performed. */
+  /** Opens the detail page, where picking a build is what actually joins. */
   protected async join(id: number): Promise<void> {
     void this.router.navigate(['/events', id]);
   }
@@ -197,8 +184,14 @@ export class Events {
     await this.mutate(`api/events/${id}/start`, 'POST', {});
   }
 
-  /** Stops a live event; reserved to officers/admins. */
+  /** Stops a live event; reserved to officers/admins. Stopping closes
+   *  participation and triggers regear extraction from every linked battle —
+   *  a real, mostly-irreversible consequence — so it needs the same confirm
+   *  guard event-detail.ts's identical action already has. */
   protected async stop(id: number): Promise<void> {
+    if (!window.confirm(this.t('common.confirm'))) {
+      return;
+    }
     await this.mutate(`api/events/${id}/stop`, 'POST', {});
   }
 
@@ -228,8 +221,9 @@ export class Events {
     await this.load();
   }
 
-  private async load(): Promise<void> {
+  protected async load(): Promise<void> {
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       const data = await firstValueFrom(
         this.api.get<PaginatedData<EventView>>('api/events', {
@@ -240,6 +234,7 @@ export class Events {
       this.events.set(data.items);
       this.totalPages.set(data.total_pages);
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

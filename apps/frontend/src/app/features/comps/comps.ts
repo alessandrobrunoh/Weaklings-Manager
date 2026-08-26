@@ -1,6 +1,12 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
+
+import {
+  summarizeErrors,
+  validateBuildDraft,
+  validateBuildName,
+} from '../../shared/validation/build-validation';
 
 import type {
   BuildCategoryView,
@@ -37,6 +43,7 @@ import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 
 const PAGE_SIZE = 10;
 
@@ -53,7 +60,7 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
 @Component({
   selector: 'app-comps',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, PageHeader, EmptyState, Loading, EquipmentGrid],
+  imports: [RouterLink, PageHeader, EmptyState, Loading, EquipmentGrid, ViewToggle],
   template: `
     <app-page-header [title]="t('comps.title')" [subtitle]="t('comps.subtitle')">
       <div class="flex flex-wrap gap-2">
@@ -81,27 +88,11 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
           </p>
         </header>
 
-        <div
-          class="inline-flex w-fit gap-1 rounded-full p-1"
-          style="background: var(--color-surface-1)"
-        >
-          <button
-            type="button"
-            class="btn btn--ghost"
-            [class.btn--tonal]="categoryKind() === 'build'"
-            (click)="switchCategoryKind('build')"
-          >
-            {{ t('comps.builds') }}
-          </button>
-          <button
-            type="button"
-            class="btn btn--ghost"
-            [class.btn--tonal]="categoryKind() === 'comp'"
-            (click)="switchCategoryKind('comp')"
-          >
-            {{ t('comps.comps') }}
-          </button>
-        </div>
+        <app-view-toggle
+          [options]="categoryKindOptions()"
+          [active]="categoryKind()"
+          (activeChange)="switchCategoryKind($event)"
+        />
 
         <form
           class="surface grid gap-3 p-4 md:grid-cols-[1fr_1fr_auto]"
@@ -111,6 +102,7 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
             class="input"
             type="text"
             placeholder="Category name"
+            [attr.aria-label]="t('common.name')"
             [value]="categoryDraftName()"
             (input)="onCategoryDraftNameChange($event)"
           />
@@ -118,6 +110,7 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
             class="input"
             type="text"
             placeholder="Description"
+            [attr.aria-label]="t('common.description')"
             [value]="categoryDraftDescription()"
             (input)="onCategoryDraftDescriptionChange($event)"
           />
@@ -359,26 +352,20 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
       </form>
     }
 
-    <div
-      class="mb-4 inline-flex gap-1 p-1"
-      style="background-color: var(--color-surface-1); border-radius: var(--radius-full)"
-    >
-      <button
-        type="button"
-        class="btn btn--ghost"
-        [class.btn--tonal]="tab() === 'comps'"
-        (click)="switchTab('comps')"
-      >
-        {{ t('comps.comps') }}
-      </button>
-      <button
-        type="button"
-        class="btn btn--ghost"
-        [class.btn--tonal]="tab() === 'builds'"
-        (click)="switchTab('builds')"
-      >
-        {{ t('comps.builds') }}
-      </button>
+    <div class="mb-4">
+      <app-view-toggle [options]="tabOptions()" [active]="tab()" (activeChange)="switchTab($event)" />
+    </div>
+
+    <div class="mb-4 max-w-sm">
+      <label class="sr-only" for="comps-search">{{ t('common.search') }}</label>
+      <input
+        id="comps-search"
+        class="input"
+        type="search"
+        [placeholder]="t('common.search')"
+        [value]="searchQuery()"
+        (input)="onSearchQueryChange($event)"
+      />
     </div>
 
     @if (loading()) {
@@ -472,7 +459,7 @@ type ManagedCategory = BuildCategoryView | CompCategoryView;
 
                 @if (compPerformance(asComp(item).id); as performance) {
                   <section
-                    class="mt-4 grid grid-cols-2 gap-2 rounded-xl border p-3 text-xs"
+                    class="mt-4 grid grid-cols-2 gap-2 rounded-lg border p-3 text-xs"
                     style="border-color: var(--color-border)"
                   >
                     <span>Events: {{ performance.events_with_battles }}</span>
@@ -546,9 +533,15 @@ export class Comps {
   private readonly translate = inject(TranslateService);
 
   protected readonly tab = signal<'comps' | 'builds'>('comps');
+  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
+    { id: 'comps', label: this.t('comps.comps') },
+    { id: 'builds', label: this.t('comps.builds') },
+  ]);
   protected readonly loading = signal(false);
   protected readonly page = signal(1);
   protected readonly totalPages = signal(1);
+  protected readonly searchQuery = signal('');
+  private listSearchTimer: ReturnType<typeof setTimeout> | null = null;
   protected readonly comps = signal<CompSummary[]>([]);
   protected readonly builds = signal<BuildSummary[]>([]);
   protected readonly buildCategories = signal<BuildCategoryView[]>([]);
@@ -560,6 +553,10 @@ export class Comps {
   protected readonly showCreateForm = signal(false);
   protected readonly showCategoryManager = signal(false);
   protected readonly categoryKind = signal<CategoryKind>('build');
+  protected readonly categoryKindOptions = computed<ViewToggleOption[]>(() => [
+    { id: 'build', label: this.t('comps.builds') },
+    { id: 'comp', label: this.t('comps.comps') },
+  ]);
   protected readonly categoryDraftName = signal('');
   protected readonly categoryDraftDescription = signal('');
   protected readonly editingCategoryId = signal<number | null>(null);
@@ -648,11 +645,14 @@ export class Comps {
     this.cancelCategoryEdit();
   }
 
-  protected switchCategoryKind(kind: CategoryKind): void {
-    if (this.categoryKind() === kind) {
+  protected switchCategoryKind(next: string): void {
+    if (next !== 'build' && next !== 'comp') {
       return;
     }
-    this.categoryKind.set(kind);
+    if (this.categoryKind() === next) {
+      return;
+    }
+    this.categoryKind.set(next);
     this.resetCategoryDraft();
     this.cancelCategoryEdit();
   }
@@ -729,7 +729,10 @@ export class Comps {
     }
   }
 
+  /** A category is shared by every build/comp that references it — at least
+   *  as consequential as deleting one of those, which does confirm. */
   protected async deleteCategory(categoryId: number): Promise<void> {
+    if (!confirm(this.t('common.confirm'))) return;
     this.savingCategory.set(true);
     try {
       const path =
@@ -747,15 +750,32 @@ export class Comps {
     }
   }
 
-  protected switchTab(tab: 'comps' | 'builds'): void {
-    if (this.tab() === tab) {
+  protected switchTab(next: string): void {
+    if (next !== 'comps' && next !== 'builds') {
       return;
     }
-    this.tab.set(tab);
+    if (this.tab() === next) {
+      return;
+    }
+    this.tab.set(next);
     this.page.set(1);
     this.showCreateForm.set(false);
     this.cancelEditItem();
     void this.load();
+  }
+
+  /** Debounced list search — filters server-side via the same `q` param the
+   *  backend already supports, so it searches the whole dataset rather than
+   *  just whatever page happens to be loaded. */
+  protected onSearchQueryChange(event: Event): void {
+    this.searchQuery.set((event.target as HTMLInputElement).value);
+    if (this.listSearchTimer) {
+      clearTimeout(this.listSearchTimer);
+    }
+    this.listSearchTimer = setTimeout(() => {
+      this.page.set(1);
+      void this.load();
+    }, 250);
   }
 
   protected canCreateCurrent(): boolean {
@@ -1057,13 +1077,39 @@ export class Comps {
   private async createItem(): Promise<void> {
     const name = this.draftName().trim();
     const categoryId = Number(this.draftCategoryId());
-    if (!name || categoryId <= 0) {
-      this.toasts.error(this.t('validation.required'));
-      return;
-    }
-    if (this.tab() === 'comps' && this.draftBuildEntries().length === 0) {
-      this.toasts.error(this.t('validation.required'));
-      return;
+
+    if (this.tab() === 'builds') {
+      // Builds get the full check, including the weapon requirement and a
+      // duplicate-name test the database has no unique index to enforce.
+      const errors = validateBuildDraft(
+        {
+          name: this.draftName(),
+          categoryId: categoryId > 0 ? categoryId : null,
+          role: this.draftRole(),
+          filledSlots: this.draftItems().map((item) => item.slot),
+        },
+        { existingNames: this.builds().map((build) => build.name) },
+      );
+      if (errors.length > 0) {
+        this.toasts.error(summarizeErrors(errors));
+        return;
+      }
+    } else {
+      const nameError = validateBuildName(this.draftName(), {
+        existingNames: this.comps().map((comp) => comp.name),
+      });
+      if (nameError) {
+        this.toasts.error(nameError.message);
+        return;
+      }
+      if (categoryId <= 0) {
+        this.toasts.error(this.t('validation.required'));
+        return;
+      }
+      if (this.draftBuildEntries().length === 0) {
+        this.toasts.error(this.t('validation.required'));
+        return;
+      }
     }
 
     this.saving.set(true);
@@ -1269,6 +1315,10 @@ export class Comps {
     this.loading.set(true);
     try {
       const params: Record<string, string | number> = { page: this.page(), limit: PAGE_SIZE };
+      const query = this.searchQuery().trim();
+      if (query) {
+        params['q'] = query;
+      }
       if (this.tab() === 'comps') {
         const data = await firstValueFrom(
           this.api.get<PaginatedData<CompSummary>>('api/comps', params),

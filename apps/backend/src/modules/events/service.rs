@@ -216,7 +216,7 @@ struct LinkedBattleSnapshot {
 }
 
 /// Computes a percentage and safely handles empty denominators.
-fn ratio_percent(part: i64, total: i64) -> f64 {
+pub(crate) fn ratio_percent(part: i64, total: i64) -> f64 {
     if total == 0 {
         return 0.0;
     }
@@ -225,7 +225,7 @@ fn ratio_percent(part: i64, total: i64) -> f64 {
 }
 
 /// Computes K/D while avoiding division by zero.
-fn kill_death_ratio(kills: i64, deaths: i64) -> f64 {
+pub(crate) fn kill_death_ratio(kills: i64, deaths: i64) -> f64 {
     if deaths == 0 {
         return kills as f64;
     }
@@ -234,7 +234,9 @@ fn kill_death_ratio(kills: i64, deaths: i64) -> f64 {
 }
 
 /// Ranks the most relevant opponents for the current analytics scope.
-fn build_top_opponents(battle_rows: &[event_battle::Model]) -> Vec<OpponentPerformanceView> {
+pub(crate) fn build_top_opponents(
+    battle_rows: &[event_battle::Model],
+) -> Vec<OpponentPerformanceView> {
     let mut rollups: HashMap<String, OpponentRollup> = HashMap::new();
 
     for battle in battle_rows {
@@ -728,6 +730,7 @@ impl EventService {
             participant_views.push(EventParticipantView {
                 user_id: p.user_id,
                 username,
+                discord_id: user.discord_id.clone(),
                 primary_build_id: p.primary_build_id,
                 primary_build_name: primary_build.name,
                 secondary_build_id: p.secondary_build_id,
@@ -886,7 +889,9 @@ impl EventService {
     }
 
     /// Builds analytics rollups from persisted battle snapshots.
-    fn build_performance_stats(battle_rows: &[event_battle::Model]) -> BattlePerformanceStats {
+    pub(crate) fn build_performance_stats(
+        battle_rows: &[event_battle::Model],
+    ) -> BattlePerformanceStats {
         if battle_rows.is_empty() {
             return BattlePerformanceStats::default();
         }
@@ -956,10 +961,20 @@ impl EventService {
         .await
         .map_err(AppError::Database)?;
 
+        let event_id = event_model.id;
         let event_view = self.to_event_view(db, event_model).await?;
 
+        if req.create_split {
+            // Best-effort: an event is still perfectly usable without its
+            // split, so a failure here is logged rather than rolling back a
+            // successfully created event.
+            if let Err(e) = create_linked_split(db, creator_id, event_id, &event_view.title).await {
+                tracing::warn!(event_id, error = %e, "failed to create the correlated split");
+            }
+        }
+
         if req.call_to_arms {
-            self.announce_call_to_arms(&event_view).await;
+            self.announce_call_to_arms(db, &event_view).await;
         }
 
         let _ = AuditService::log(
@@ -975,6 +990,15 @@ impl EventService {
         )
         .await;
 
+        try_award_event_xp(
+            db,
+            creator_id,
+            event_id,
+            crate::modules::progression::status::XpSource::EventCreate,
+            format!("event_create:{event_id}"),
+        )
+        .await;
+
         Ok(event_view)
     }
 
@@ -983,19 +1007,26 @@ impl EventService {
     /// Fires only when the operator configured `DISCORD_BATTLES_CTA_CHANNEL_ID` together with
     /// `DISCORD_BOT_TOKEN`; otherwise the event is still created normally. Best-effort by design:
     /// a Discord outage must never roll back event creation, so failures are only logged.
-    async fn announce_call_to_arms(&self, event_view: &EventView) {
+    async fn announce_call_to_arms(&self, db: &DatabaseConnection, event_view: &EventView) {
         let Ok(cfg) = Config::try_from_env() else {
-            return;
-        };
-
-        let Some(channel_id) = cfg.discord_battles_cta_channel_id else {
             return;
         };
         let Some(token) = cfg.discord_bot_token else {
             return;
         };
 
-        let event_role_id = cfg.discord_event_role_id.as_deref();
+        // Moved off env vars into `guild_settings` so an admin can change these without a
+        // redeploy — the bot token itself stays a deployment secret above.
+        let Ok(settings) =
+            crate::modules::admin::service::AdminService::get_guild_settings(db).await
+        else {
+            return;
+        };
+        let Some(channel_id) = settings.discord_battles_cta_channel_id else {
+            return;
+        };
+
+        let event_role_id = settings.discord_event_role_id.as_deref();
         let message = build_event_announcement_content(event_view, event_role_id);
         let allowed_mentions = event_role_id
             .map(|role_id| serde_json::json!({ "roles": [role_id] }))
@@ -1230,6 +1261,23 @@ impl EventService {
         active.updated_at = Set(now.into());
 
         let updated = active.update(db).await.map_err(AppError::Database)?;
+
+        let roster = event_participation::Entity::find()
+            .filter(event_participation::Column::EventId.eq(id))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        for participant in roster {
+            try_award_event_xp(
+                db,
+                participant.user_id,
+                id,
+                crate::modules::progression::status::XpSource::EventComplete,
+                format!("event_complete:{id}:{}", participant.user_id),
+            )
+            .await;
+        }
+
         self.to_event_view(db, updated).await
     }
 
@@ -1582,6 +1630,7 @@ impl EventService {
             .map_err(AppError::Database)?;
 
         let existing = current_participations.iter().find(|p| p.user_id == user_id);
+        let is_new = existing.is_none();
 
         // Calculate target size
         let target_size = if existing.is_some() {
@@ -1655,6 +1704,17 @@ impl EventService {
             active.insert(db).await.map_err(AppError::Database)?;
         }
 
+        if is_new {
+            try_award_event_xp(
+                db,
+                user_id,
+                event_id,
+                crate::modules::progression::status::XpSource::EventJoin,
+                format!("event_join:{event_id}:{user_id}"),
+            )
+            .await;
+        }
+
         self.get_event_detail(db, event_id).await
     }
 
@@ -1685,6 +1745,35 @@ impl EventService {
 impl Default for EventService {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Best-effort XP grant. Failures are logged and never fail the event mutation.
+async fn try_award_event_xp(
+    db: &DatabaseConnection,
+    user_id: i64,
+    event_id: i64,
+    source: crate::modules::progression::status::XpSource,
+    idempotency_key: String,
+) {
+    let spec = crate::modules::progression::models::AwardSpec {
+        user_id,
+        source,
+        base_amount: None,
+        idempotency_key,
+        actor_user_id: None,
+    };
+    if let Err(error) = crate::modules::progression::service::ProgressionService::new()
+        .award(db, spec)
+        .await
+    {
+        tracing::warn!(
+            event_id,
+            user_id,
+            source = source.as_str(),
+            error = %error,
+            "failed to award event XP"
+        );
     }
 }
 
@@ -1803,6 +1892,7 @@ mod tests {
                     call_to_arms: false,
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    create_split: false,
                 },
             )
             .await
@@ -1848,6 +1938,7 @@ mod tests {
                     call_to_arms: false,
                     comp_id: base_comp,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    create_split: false,
                 },
             )
             .await
@@ -1933,6 +2024,7 @@ mod tests {
                     call_to_arms: false,
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    create_split: false,
                 },
             )
             .await
@@ -1985,4 +2077,161 @@ mod tests {
 
         assert_eq!(success_detail.participants.len(), 2);
     }
+
+    async fn insert_covering_season(db: &DatabaseConnection) {
+        use crate::modules::progression::entities::ProgressionSeasonActiveModel;
+        let now = Utc::now();
+        ProgressionSeasonActiveModel {
+            name: Set("s25".into()),
+            starts_at: Set((now - ChronoDuration::days(1)).into()),
+            ends_at: Set((now + ChronoDuration::days(30)).into()),
+            is_active: Set(true),
+            updated_at: Set(now.into()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("season");
+    }
+
+    async fn ledger_keys(db: &DatabaseConnection, source: &str) -> Vec<String> {
+        use crate::modules::progression::entities::{
+            ProgressionXpLedgerColumn, ProgressionXpLedgerEntity,
+        };
+        ProgressionXpLedgerEntity::find()
+            .filter(ProgressionXpLedgerColumn::Source.eq(source))
+            .all(db)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|row| row.idempotency_key)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn event_join_xp_is_idempotent_on_resign() {
+        let db = seed_db().await;
+        insert_covering_season(&db).await;
+        let creator = insert_user(&db, "admin", "admin@example.com").await;
+        let player = insert_user(&db, "player1", "p1@example.com").await;
+        let build_cat = create_build_category(&db, "Weapons").await;
+        let b1 = create_build(&db, "Tank", build_cat).await;
+        let cat = create_comp_category(&db, "ZvZ").await;
+        let comp_id = create_comp(&db, "Comp", cat, None, vec![(b1, 2)]).await;
+        let service = EventService::new();
+        let event = service
+            .create_event(
+                &db,
+                creator,
+                CreateEventRequest {
+                    title: "XP Event".to_string(),
+                    description: None,
+                    call_to_arms: false,
+                    comp_id,
+                    event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    create_split: false,
+                },
+            )
+            .await
+            .unwrap();
+
+        let req = ParticipateEventRequest {
+            primary_build_id: b1,
+            secondary_build_id: None,
+        };
+        service
+            .participate(&db, event.id, player, req.clone())
+            .await
+            .unwrap();
+        service
+            .participate(&db, event.id, player, req)
+            .await
+            .unwrap();
+
+        let joins = ledger_keys(&db, "event_join").await;
+        assert_eq!(joins, vec![format!("event_join:{}:{player}", event.id)]);
+        let creates = ledger_keys(&db, "event_create").await;
+        assert_eq!(creates, vec![format!("event_create:{}", event.id)]);
+    }
+
+    #[tokio::test]
+    async fn event_complete_xp_awarded_on_stop() {
+        let db = seed_db().await;
+        insert_covering_season(&db).await;
+        let creator = insert_user(&db, "admin", "admin@example.com").await;
+        let player = insert_user(&db, "player1", "p1@example.com").await;
+        let build_cat = create_build_category(&db, "Weapons").await;
+        let b1 = create_build(&db, "Tank", build_cat).await;
+        let cat = create_comp_category(&db, "ZvZ").await;
+        let comp_id = create_comp(&db, "Comp", cat, None, vec![(b1, 2)]).await;
+        let service = EventService::new();
+        let event = service
+            .create_event(
+                &db,
+                creator,
+                CreateEventRequest {
+                    title: "Stop XP".to_string(),
+                    description: None,
+                    call_to_arms: false,
+                    comp_id,
+                    event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    create_split: false,
+                },
+            )
+            .await
+            .unwrap();
+        service
+            .participate(
+                &db,
+                event.id,
+                player,
+                ParticipateEventRequest {
+                    primary_build_id: b1,
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .unwrap();
+        service.start_event(&db, event.id).await.unwrap();
+        service.stop_event(&db, event.id, false).await.unwrap();
+        service.stop_event(&db, event.id, false).await.unwrap();
+
+        let completes = ledger_keys(&db, "event_complete").await;
+        assert_eq!(
+            completes,
+            vec![format!("event_complete:{}:{player}", event.id)]
+        );
+    }
+}
+
+/// Creates an empty loot split already attached to an event.
+///
+/// Values start at zero and the roster starts empty: the split exists so the
+/// link is in place, and the officer fills in the haul once the fight is over.
+/// Participants are seeded from the event's sign-ups the first time the split
+/// is updated, which is later than creation time and therefore more accurate.
+async fn create_linked_split(
+    db: &DatabaseConnection,
+    creator_id: i64,
+    event_id: i64,
+    event_title: &str,
+) -> Result<(), AppError> {
+    use crate::modules::splits::entities::split;
+    use crate::modules::splits::status::SplitStatus;
+    use sea_orm::prelude::Decimal;
+
+    split::ActiveModel {
+        created_by: Set(creator_id),
+        status: Set(SplitStatus::Pending.to_string()),
+        estimated_market_value: Set(Decimal::ZERO),
+        repair_value: Set(Decimal::ZERO),
+        bags_value: Set(Decimal::ZERO),
+        note: Set(Some(format!("Auto-created for event: {event_title}"))),
+        event_id: Set(Some(event_id)),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .map_err(AppError::Database)?;
+    Ok(())
 }

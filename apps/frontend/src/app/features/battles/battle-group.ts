@@ -6,6 +6,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -33,10 +34,12 @@ interface AggregatedGuildStats {
 @Component({
   selector: 'app-battle-group-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Loading, DataTable],
+  imports: [Loading, ErrorState, DataTable],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
+    } @else if (loadFailed()) {
+      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     } @else {
       <header class="card p-5">
         <button type="button" class="btn btn--ghost" (click)="backToBattles()">
@@ -204,6 +207,7 @@ export class BattleGroupPage {
   protected readonly battleIds = signal<number[]>([]);
   protected readonly battleDetails = signal<BattleDetail[]>([]);
   protected readonly loading = signal(false);
+  protected readonly loadFailed = signal(false);
   protected readonly totalFame = computed(() =>
     this.battleDetails().reduce((total, battle) => total + battle.total_fame, 0),
   );
@@ -333,7 +337,7 @@ export class BattleGroupPage {
   }
 
   /** Loads every requested battle detail and keeps ordering from the query string. */
-  private async load(): Promise<void> {
+  protected async load(): Promise<void> {
     const ids = (this.route.snapshot.queryParamMap.get('ids') ?? '')
       .split(',')
       .map((id) => Number(id.trim()))
@@ -346,12 +350,14 @@ export class BattleGroupPage {
 
     this.battleIds.set(ids);
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       const details = await Promise.all(
         ids.map((id) => firstValueFrom(this.api.get<BattleDetail>(`api/battles/${id}`))),
       );
       this.battleDetails.set(details);
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

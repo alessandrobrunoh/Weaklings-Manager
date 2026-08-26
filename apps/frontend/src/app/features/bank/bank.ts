@@ -15,9 +15,11 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import type { IconName } from '../../shared/components/icon/icon';
@@ -34,42 +36,9 @@ const TRANSACTIONS_LOAD_LIMIT = 1000;
 @Component({
   selector: 'app-bank',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Loading, DataTable, DataTableCell, Icon],
+  imports: [PageHeader, EmptyState, ErrorState, Loading, DataTable, DataTableCell, Icon, ViewToggle],
   styles: [
     `
-      .bank__view-toggle {
-        display: inline-flex;
-        gap: 0.125rem;
-        padding: 0.25rem;
-        border-radius: var(--radius-md);
-        background-color: var(--color-surface-2);
-        border: 1px solid var(--color-border);
-      }
-
-      .bank__view-btn {
-        padding: 0.375rem 0.875rem;
-        border: none;
-        background: transparent;
-        color: var(--color-text-secondary);
-        font-size: 0.8125rem;
-        font-weight: 500;
-        border-radius: var(--radius-sm);
-        cursor: pointer;
-        transition:
-          background-color 120ms ease,
-          color 120ms ease;
-      }
-
-      .bank__view-btn:hover:not(.bank__view-btn--active) {
-        color: var(--color-text);
-      }
-
-      .bank__view-btn--active {
-        background-color: var(--color-surface);
-        color: var(--color-text);
-        font-weight: 600;
-        box-shadow: var(--shadow-1);
-      }
     `,
   ],
   template: `
@@ -130,24 +99,7 @@ const TRANSACTIONS_LOAD_LIMIT = 1000;
             {{ t('bank.transactions.title') }}
           </h2>
           @if (canAccept()) {
-            <div class="bank__view-toggle">
-              <button
-                type="button"
-                class="bank__view-btn"
-                [class.bank__view-btn--active]="viewMode() === 'personal'"
-                (click)="setViewMode('personal')"
-              >
-                {{ t('bank.view.personal') }}
-              </button>
-              <button
-                type="button"
-                class="bank__view-btn"
-                [class.bank__view-btn--active]="viewMode() === 'guild'"
-                (click)="setViewMode('guild')"
-              >
-                {{ t('bank.view.guild') }}
-              </button>
-            </div>
+            <app-view-toggle [options]="viewOptions()" [active]="viewMode()" (activeChange)="setViewMode($event)" />
           }
         </div>
         <label class="flex items-center gap-2">
@@ -169,6 +121,12 @@ const TRANSACTIONS_LOAD_LIMIT = 1000;
 
       @if (loading()) {
         <app-loading [label]="t('common.loading')" />
+      } @else if (transactionsLoadFailed()) {
+        <app-error-state
+          [message]="t('common.error')"
+          [retryLabel]="t('common.retry')"
+          (retry)="loadTransactions()"
+        />
       } @else if (filteredTransactions().length === 0) {
         <app-empty-state [message]="t('bank.transactions.empty')" icon="bank" />
       } @else {
@@ -255,8 +213,13 @@ export class Bank {
   protected readonly balance = signal<BalanceSummary | null>(null);
   protected readonly transactions = signal<TransactionView[]>([]);
   protected readonly loading = signal(false);
+  protected readonly transactionsLoadFailed = signal(false);
   protected readonly statusFilter = signal<TransactionStatus | ''>('');
   protected readonly viewMode = signal<'personal' | 'guild'>('personal');
+  protected readonly viewOptions = computed<ViewToggleOption[]>(() => [
+    { id: 'personal', label: this.t('bank.view.personal') },
+    { id: 'guild', label: this.t('bank.view.guild') },
+  ]);
   protected readonly trackTransaction = (tx: TransactionView): unknown => tx.id;
 
   /** Dynamic columns based on view mode - guild view includes player name and actions */
@@ -365,10 +328,11 @@ export class Bank {
     this.statusFilter.set(value);
   }
 
-  protected setViewMode(mode: 'personal' | 'guild'): void {
-    if (this.viewMode() === mode) return;
-    this.viewMode.set(mode);
-    if (mode === 'guild') {
+  protected setViewMode(next: string): void {
+    if (next !== 'personal' && next !== 'guild') return;
+    if (this.viewMode() === next) return;
+    this.viewMode.set(next);
+    if (next === 'guild') {
       this.statusFilter.set('requested');
     }
     void this.loadTransactions();
@@ -378,13 +342,31 @@ export class Bank {
     await this.mutate('api/bank/transactions/withdraw', 'bank.withdraw.request', { all: true });
   }
 
+  /**
+   * Pays out every currently-requested withdrawal, guild-wide, in one action.
+   *
+   * There is no per-row selection step before this — `all: true` is the whole
+   * request — so the confirm is the only thing standing between one click and
+   * moving every pending payout at once. It states the actual amount rather
+   * than a bare "Confirm", since that is the number that makes the stakes
+   * legible.
+   */
   protected async acceptWithdrawals(): Promise<void> {
+    const amount = this.formatAmount(this.balance()?.requested_total);
+    if (!window.confirm(this.t('bank.withdraw.confirmAcceptAll').replace('{amount}', amount))) {
+      return;
+    }
     await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept', {
       all: true,
     });
   }
 
+  /** Rejects every currently-requested withdrawal, guild-wide. See `acceptWithdrawals`. */
   protected async rejectWithdrawals(): Promise<void> {
+    const amount = this.formatAmount(this.balance()?.requested_total);
+    if (!window.confirm(this.t('bank.withdraw.confirmRejectAll').replace('{amount}', amount))) {
+      return;
+    }
     await this.mutate('api/bank/transactions/withdraw/reject', 'bank.withdraw.reject', {
       all: true,
     });
@@ -415,8 +397,9 @@ export class Bank {
     }
   }
 
-  private async loadTransactions(): Promise<void> {
+  protected async loadTransactions(): Promise<void> {
     this.loading.set(true);
+    this.transactionsLoadFailed.set(false);
     try {
       const params: Record<string, string | number | boolean> = {
         limit: TRANSACTIONS_LOAD_LIMIT,
@@ -429,6 +412,7 @@ export class Bank {
       );
       this.transactions.set(data.items);
     } catch (error) {
+      this.transactionsLoadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

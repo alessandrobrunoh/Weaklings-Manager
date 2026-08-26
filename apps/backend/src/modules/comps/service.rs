@@ -288,6 +288,7 @@ impl CompService {
         Ok(BuildSummary {
             id: build.id,
             name: build.name,
+            description: build.description,
             role,
             category_id: build.category_id,
             category_name,
@@ -678,6 +679,7 @@ impl CompService {
         Ok(CompSummary {
             id: comp.id,
             name: comp.name,
+            description: comp.description,
             category_id: comp.category_id,
             category_name,
             created_by_username,

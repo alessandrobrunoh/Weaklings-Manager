@@ -61,6 +61,11 @@ pub struct BuildItemView {
 /// A build's summary, as shown in list views.
 #[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct BuildSummary {
+    /// Free-text description.
+    ///
+    /// Previously write-only: the update request could set it but no response
+    /// carried it back, so the edit form could never show what was stored.
+    pub description: Option<String>,
     /// The unique identifier of the build.
     #[schema(example = 1)]
     pub id: i64,
@@ -108,6 +113,12 @@ pub struct CompBuildView {
 /// A comp's summary, as shown in list views.
 #[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct CompSummary {
+    /// Free-text description.
+    ///
+    /// Previously write-only: `UpdateCompRequest` could set it but no
+    /// response carried it back, so the edit form could never show what was
+    /// stored.
+    pub description: Option<String>,
     /// The unique identifier of the comp.
     #[schema(example = 1)]
     pub id: i64,

@@ -2,6 +2,8 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
+import { validateBuildName } from '../../shared/validation/build-validation';
+
 import type {
   BuildCategoryView,
   BuildDetail,
@@ -19,6 +21,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
@@ -94,7 +97,7 @@ const ITEM_TIERS = [
 @Component({
   selector: 'app-comp-build-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, PageHeader, EmptyState, Loading, EquipmentGrid],
+  imports: [RouterLink, PageHeader, EmptyState, ErrorState, Loading, EquipmentGrid],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
@@ -208,6 +211,8 @@ const ITEM_TIERS = [
           (removeItem)="removeItem($event)"
         />
       </section>
+    } @else if (loadFailed()) {
+      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load(buildId)" />
     } @else if (!loading()) {
       <app-empty-state message="Build not found" icon="package" />
     }
@@ -233,6 +238,7 @@ export class CompBuildDetailPage {
   ];
 
   protected readonly loading = signal(true);
+  protected readonly loadFailed = signal(false);
   protected readonly saving = signal(false);
   protected readonly build = signal<BuildDetail | null>(null);
   protected readonly buildCategories = signal<BuildCategoryView[]>([]);
@@ -263,9 +269,10 @@ export class CompBuildDetailPage {
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
+  protected readonly buildId = Number(this.route.snapshot.paramMap.get('buildId'));
+
   constructor() {
-    const buildId = Number(this.route.snapshot.paramMap.get('buildId'));
-    void this.load(buildId);
+    void this.load(this.buildId);
   }
 
   protected roleLabel(role: BuildRole): string {
@@ -420,13 +427,35 @@ export class CompBuildDetailPage {
     if (!build) {
       return;
     }
+    // The name is validated even when unchanged: the previous version only
+    // applied it `if (editName())`, so clearing the field was silently ignored
+    // rather than rejected, and the user was told the save succeeded.
+    const nameError = validateBuildName(this.editName(), {
+      existingNames: [],
+      currentName: build.name,
+    });
+    if (nameError) {
+      this.toasts.error(nameError.message);
+      return;
+    }
+
     const request: UpdateBuildRequest = {};
-    if (this.editName() && this.editName() !== build.name) request.name = this.editName();
-    if (this.editDescription()) request.description = this.editDescription();
+    const name = this.editName().trim();
+    if (name !== build.name) request.name = name;
+    // Compared against the current value rather than tested for truthiness, so
+    // an emptied description actually clears instead of being ignored.
+    if (this.editDescription() !== (build.description ?? '')) {
+      request.description = this.editDescription();
+    }
     const categoryId = this.editCategoryId() ? Number(this.editCategoryId()) : undefined;
     if (categoryId && categoryId !== build.category_id) request.category_id = categoryId;
     if (this.editRole() && this.editRole() !== build.role)
       request.role = this.editRole() as BuildRole;
+
+    if (Object.keys(request).length === 0) {
+      this.editing.set(false);
+      return;
+    }
 
     this.saving.set(true);
     try {
@@ -474,12 +503,13 @@ export class CompBuildDetailPage {
     this.searchLoading.set(false);
   }
 
-  private async load(buildId: number): Promise<void> {
+  protected async load(buildId: number): Promise<void> {
     if (!Number.isFinite(buildId) || buildId <= 0) {
       this.loading.set(false);
       return;
     }
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       const [build, categories] = await Promise.all([
         firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${buildId}`)),
@@ -490,6 +520,7 @@ export class CompBuildDetailPage {
       this.build.set(build);
       this.buildCategories.set(categories);
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

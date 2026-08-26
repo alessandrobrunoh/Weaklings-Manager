@@ -3,7 +3,13 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
-import type { AlbionLinkStatus, BalanceSummary, EventView, PaginatedData } from '../api/types.js';
+import type {
+  AlbionLinkStatus,
+  BalanceSummary,
+  EventView,
+  PaginatedData,
+  ProgressionMeView,
+} from '../api/types.js';
 import { BOT_COLORS, createBaseEmbed } from '../embeds/theme.js';
 
 export const data = new SlashCommandBuilder()
@@ -17,18 +23,20 @@ export async function execute(
   await interaction.deferReply({ flags: ['Ephemeral'] });
 
   // Fetch everything in parallel
-  const [linkResult, balanceResult, eventsResult] = await Promise.allSettled([
+  const [linkResult, balanceResult, eventsResult, progressionResult] = await Promise.allSettled([
     api.get<AlbionLinkStatus>('api/albion/link/me', interaction.user.id),
     api.get<BalanceSummary>('api/bank/balance', interaction.user.id),
     api.get<PaginatedData<EventView>>('api/events', interaction.user.id, {
       page: 1,
       limit: 100,
     }),
+    api.get<ProgressionMeView>('api/progression/me', interaction.user.id),
   ]);
 
-  const link    = linkResult.status    === 'fulfilled' ? linkResult.value    : null;
-  const balance = balanceResult.status === 'fulfilled' ? balanceResult.value : null;
-  const events  = eventsResult.status  === 'fulfilled' ? eventsResult.value  : null;
+  const link        = linkResult.status        === 'fulfilled' ? linkResult.value        : null;
+  const balance     = balanceResult.status     === 'fulfilled' ? balanceResult.value     : null;
+  const events      = eventsResult.status      === 'fulfilled' ? eventsResult.value      : null;
+  const progression = progressionResult.status === 'fulfilled' ? progressionResult.value : null;
 
   // Count upcoming events
   const upcomingCount = events?.items.filter(
@@ -77,6 +85,15 @@ export async function execute(
     value: `• **Active Events:** **${upcomingCount}** scheduled`,
     inline: true,
   });
+
+  if (progression) {
+    const season = progression.season?.name ? ` (${progression.season.name})` : '';
+    embed.addFields({
+      name: '🏅 Season Rank',
+      value: `• **Level:** **${progression.level}**${season}\n• **XP:** **${progression.xp.toLocaleString('en-US')}**`,
+      inline: true,
+    });
+  }
 
   await interaction.editReply({ embeds: [embed] });
 }

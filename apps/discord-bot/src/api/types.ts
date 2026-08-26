@@ -75,7 +75,13 @@ export type PermissionKey =
   | 'comps.comps.manage'
   | 'events.manage'
   | 'siphoned.ingest'
-  | 'siphoned.view';
+  | 'siphoned.view'
+  | 'progression.view'
+  | 'progression.settings.manage'
+  | 'progression.adjust'
+  | 'warns.view'
+  | 'warns.issue'
+  | 'vod.submit';
 
 export interface DiscordUserProfile {
   id: string;
@@ -154,6 +160,7 @@ export interface EventView {
 export interface EventParticipant {
   user_id: number;
   username: string;
+  discord_id: string | null;
   primary_build_id: number;
   primary_build_name: string;
   secondary_build_id: number | null;
@@ -250,5 +257,120 @@ export interface AlbionPlayer {
 export interface AlbionGuildMember {
   id: string;
   name: string;
+}
+
+/**
+ * The guild's Discord integration settings — channel/role IDs configured from the admin
+ * Settings page instead of this process's own env vars. Every field is nullable: an unset
+ * channel means "skip this notification", same as the env vars they replaced.
+ */
+export interface GuildSettingsView {
+  discord_events_channel_id: string | null;
+  discord_battles_channel_id: string | null;
+  discord_battles_cta_channel_id: string | null;
+  discord_audit_log_channel_id: string | null;
+  discord_transaction_spam_channel_id: string | null;
+  discord_event_role_id: string | null;
+}
+
+/* -------------------------- Progression ----------------------------- */
+
+export interface ProgressionSeasonView {
+  id: number;
+  name: string;
+  starts_at: string;
+  ends_at: string;
+  is_active: boolean;
+}
+
+export interface ProgressionMeView {
+  season?: ProgressionSeasonView | null;
+  level: number;
+  xp: number;
+  xp_to_next: number;
+  next_level_at: number;
+  rank?: number | null;
+  multiplier: string | number;
+  lifetime_xp: number;
+}
+
+export interface ProgressionLeaderboardEntry {
+  user_id: number;
+  username: string;
+  xp: number;
+  level: number;
+  rank: number;
+}
+
+export interface AwardMessageRequest {
+  discord_id: string;
+  message_id: string;
+  channel_id: string;
+  length: number;
+}
+
+export interface AwardMessageResponse {
+  awarded: boolean;
+  reason?: string;
+}
+
+export interface AdjustXpRequest {
+  set_xp?: number;
+  add_xp?: number;
+  set_level?: number;
+  set_multiplier?: number;
+  multiplier_expires_at?: string;
+  reason: string;
+}
+
+export interface SubmitVodRequest {
+  url: string;
+  discord_thread_id: string;
+  discord_message_id: string;
+  forum_channel_id: string;
+  thread_owner_discord_id: string;
+}
+
+export interface VodReviewView {
+  id?: number;
+  user_id?: number;
+  url: string;
+  discord_thread_id?: string;
+  discord_message_id?: string;
+}
+
+export type WarnSeverity = 'note' | 'warn' | 'strike';
+
+export interface IssueWarnRequest {
+  user_id: number;
+  reason: string;
+  severity?: WarnSeverity;
+  multiplier?: number;
+  multiplier_expires_at?: string;
+}
+
+export interface WarnView {
+  id: number;
+  user_id: number;
+  username?: string;
+  issued_by_user_id?: number;
+  reason: string;
+  severity: WarnSeverity | string;
+  multiplier?: string | number | null;
+  multiplier_expires_at?: string | null;
+  revoked_at?: string | null;
+  revoked_by?: number | null;
+  created_at?: string;
+}
+
+export interface WarnEscalationView {
+  id: number;
+  user_id: number;
+  username?: string;
+  threshold_at_time: number;
+  warn_count_at_time: number;
+  opened_at: string;
+  acknowledged_at?: string | null;
+  acknowledged_by?: number | null;
 }
 

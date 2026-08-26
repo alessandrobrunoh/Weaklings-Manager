@@ -17,8 +17,8 @@ A Discord bot built with **discord.js v14** and **TypeScript** that mirrors the 
 | View Battles | `/battles [page]` |
 | View Members | `/users [search] [page]` |
 | Link Albion Account | `/link [player_id] [player_name]` |
-| Auto-announce Events | Polling → `DISCORD_EVENTS_CHANNEL_ID` |
-| Auto-announce Battles | Polling → `DISCORD_BATTLES_CHANNEL_ID` |
+| Auto-announce Events | Polling → events channel (Admin → Discord integration in the web app) |
+| Auto-announce Battles | Polling → battles channel (Admin → Discord integration in the web app) |
 
 ## Setup
 
@@ -40,12 +40,15 @@ DISCORD_CLIENT_ID=your_application_client_id
 DISCORD_GUILD_ID=your_server_id
 BACKEND_URL=http://localhost:3000
 BOT_API_SECRET=choose_a_strong_random_secret
-DISCORD_EVENTS_CHANNEL_ID=channel_id_for_event_announcements
-DISCORD_BATTLES_CHANNEL_ID=channel_id_for_battle_reports
 GUILD_NAME=YourInGameGuildName
 ```
 
 > **Backend setup**: The backend must also have `BOT_API_SECRET` set and must support the `X-Bot-Secret` / `X-Discord-Id` authentication headers.
+
+> **Channels and roles**: the events/battles announcement channels and the event-ping role are no
+> longer env vars here — set them once in the web app under **Admin → Discord integration** (after
+> logging in with an Admin account). The bot fetches them from the backend at startup and
+> refreshes periodically, so a change there takes effect without restarting the bot.
 
 ### 3. Install & Run
 

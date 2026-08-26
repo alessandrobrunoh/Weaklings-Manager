@@ -1,10 +1,12 @@
 import { Client, GatewayIntentBits, Events } from "discord.js";
 import { config } from "./config.js";
 import { ApiClient } from "./api/client.js";
+import type { AwardMessageRequest, AwardMessageResponse } from "./api/types.js";
 import { commands } from "./commands/index.js";
 import { handleButton } from "./handlers/button.js";
 import { handleSelectMenu } from "./handlers/select.js";
-import { Poller } from "./services/poller.js";
+import { Poller, registerPoller } from "./services/poller.js";
+import { initSettingsService } from "./services/settings.js";
 import { registerCommands } from "./services/registry.js";
 import { createResponseEmbed } from "./embeds/theme.js";
 
@@ -22,13 +24,20 @@ async function main(): Promise<void> {
 
   // Create the API client (shared across all handlers)
   const api = new ApiClient(config.BACKEND_URL, config.BOT_API_SECRET);
+  // Channel/role IDs now live in the backend's admin Settings instead of this
+  // process's own env vars — see services/settings.ts.
+  const settings = initSettingsService(api);
 
   // Register slash commands with Discord (guild-scoped = instant refresh)
   await registerCommands();
 
-  // Create the Discord client
+  // Message Content is a privileged intent that must be enabled in the Discord Developer Portal.
   const client = new Client({
-    intents: [GatewayIntentBits.Guilds],
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.MessageContent,
+    ],
   });
 
   // ── Interaction handler ──────────────────────────────────────────────────
@@ -84,18 +93,37 @@ async function main(): Promise<void> {
     }
   });
 
+  // ── Message XP (fire-and-forget; never reply in-channel) ─────────────────
+  client.on(Events.MessageCreate, (message) => {
+    if (message.author.bot) return;
+    if (!message.guild) return;
+    if (!message.content) return;
+
+    const body: AwardMessageRequest = {
+      discord_id: message.author.id,
+      message_id: message.id,
+      channel_id: message.channelId,
+      length: message.content.length,
+    };
+
+    void api
+      .post<AwardMessageResponse>(
+        "api/progression/award/message",
+        body,
+        message.author.id,
+      )
+      .catch((err: unknown) => {
+        console.error("[Bot] Message XP award failed:", err);
+      });
+  });
+
   // ── Ready handler ────────────────────────────────────────────────────────
   client.once(Events.ClientReady, (readyClient) => {
     console.log(`✅ Logged in as ${readyClient.user.tag}`);
 
     // Start the polling service after the client is ready
-    const poller = new Poller(
-      readyClient,
-      api,
-      config.DISCORD_EVENTS_CHANNEL_ID,
-      config.DISCORD_BATTLES_CHANNEL_ID,
-      config.POLL_INTERVAL_MS,
-    );
+    const poller = new Poller(readyClient, api, settings, config.POLL_INTERVAL_MS);
+    registerPoller(poller);
     poller.start();
 
     // Graceful shutdown

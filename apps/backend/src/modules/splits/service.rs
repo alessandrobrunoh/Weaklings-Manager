@@ -34,8 +34,8 @@ use super::entities::split_participant::{
     ActiveModel as ParticipantActiveModel, Column as ParticipantColumn, Entity as ParticipantEntity,
 };
 use super::models::{
-    CreateSplitRequest, MatchedParticipant, SplitDetail, SplitFilters, SplitParticipantView,
-    SplitSummary, UpdateSplitRequest, UpsertParticipantRequest,
+    BatchFailure, CompleteSplitsBatchResult, CreateSplitRequest, MatchedParticipant, SplitDetail,
+    SplitFilters, SplitParticipantView, SplitSummary, UpdateSplitRequest, UpsertParticipantRequest,
 };
 use super::status::SplitStatus;
 
@@ -687,6 +687,51 @@ impl SplitService {
     /// * Returns `AppError::Validation` if the split is not pending, has no participants, or the
     ///   net value is not positive.
     /// * Returns `AppError::Database` if the transaction fails.
+    /// Completes several splits in one action.
+    ///
+    /// Each split is completed independently and failures are collected rather
+    /// than aborting: settling a night's splits should not lose the ones that
+    /// worked because a later one was already paid out or had no participants.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::Validation` if no split ids were supplied.
+    pub async fn complete_splits_batch(
+        &self,
+        db: &DatabaseConnection,
+        split_ids: &[i64],
+        officer_user_id: i64,
+    ) -> Result<CompleteSplitsBatchResult, AppError> {
+        if split_ids.is_empty() {
+            return Err(AppError::Validation(
+                "must provide at least one split id".to_string(),
+            ));
+        }
+
+        let mut completed = Vec::new();
+        let mut failed = Vec::new();
+        let mut total_distributed = Decimal::ZERO;
+
+        for split_id in split_ids {
+            match self.complete_split(db, *split_id, officer_user_id).await {
+                Ok(detail) => {
+                    total_distributed += detail.summary.net_value.unwrap_or(Decimal::ZERO);
+                    completed.push(*split_id);
+                }
+                Err(err) => failed.push(BatchFailure {
+                    split_id: *split_id,
+                    reason: err.to_string(),
+                }),
+            }
+        }
+
+        Ok(CompleteSplitsBatchResult {
+            completed,
+            failed,
+            total_distributed,
+        })
+    }
+
     pub async fn complete_split(
         &self,
         db: &DatabaseConnection,

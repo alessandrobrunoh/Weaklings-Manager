@@ -28,6 +28,13 @@ import * as player from './player.js';
 import * as me from './me.js';
 import * as eventRoster from './event-roster.js';
 import * as roster from './roster.js';
+import * as rank from './rank.js';
+import * as leaderboard from './leaderboard.js';
+import * as vod from './vod.js';
+import * as xp from './xp.js';
+import * as warn from './warn.js';
+import * as warns from './warns.js';
+import * as unwarn from './unwarn.js';
 
 /**
  * All registered bot commands.
@@ -49,4 +56,11 @@ export const commands = new Map<string, BotCommand>([
   ['me', me],
   ['event-roster', eventRoster],
   ['roster', roster],
+  ['rank', rank],
+  ['leaderboard', leaderboard],
+  ['vod', vod],
+  ['xp', xp],
+  ['warn', warn],
+  ['warns', warns],
+  ['unwarn', unwarn],
 ]);

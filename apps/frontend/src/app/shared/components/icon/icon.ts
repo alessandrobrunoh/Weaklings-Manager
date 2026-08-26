@@ -16,6 +16,7 @@ export type IconName =
   | 'menu'
   | 'moon'
   | 'package'
+  | 'scan'
   | 'search'
   | 'settings'
   | 'shield'
@@ -136,6 +137,14 @@ export type IconName =
           <path d="M12 11 4.5 6.8" />
           <path d="M12 11v9" />
           <path d="m12 11 7.5-4.2" />
+        }
+        @case ('scan') {
+          <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+          <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+          <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+          <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+          <circle cx="12" cy="12" r="3" />
+          <path d="m14.2 14.2 2.3 2.3" />
         }
         @case ('search') {
           <circle cx="11" cy="11" r="7" />

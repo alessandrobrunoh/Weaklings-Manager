@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 
-# Stage 1: Build the Angular 21 application with SSR output.
-# Produces `dist/frontend/browser` (static assets) and
-# `dist/frontend/server/server.mjs` (Express SSR entrypoint).
+# Stage 1: Build the Analog (Angular + Vite) application with SSR output.
+# Produces `dist/analog/public` (static assets) and
+# `dist/analog/server/index.mjs` (Nitro SSR entrypoint).
 FROM node:22-slim AS builder
 WORKDIR /app
 
@@ -10,33 +10,28 @@ WORKDIR /app
 # to keep CI/local build outputs identical.
 RUN npm install -g npm@11.11.0
 
-# Layer-cache: copy manifests first so `npm ci` is only invalidated
+# Layer-cache: copy manifests first so the install is only invalidated
 # when package-lock.json actually changes.
 COPY package.json package-lock.json ./
-RUN npm ci
+# `--legacy-peer-deps` is required: @analogjs/platform declares optional peer
+# dependencies on the Nx toolchain, which this project does not use, and npm
+# would otherwise try to resolve them and fail on an unrelated conflict.
+RUN npm ci --legacy-peer-deps
 
-# Angular build needs the entire project sources (templates, styles, assets).
+# The build needs the whole project: templates, styles, assets, server routes.
 COPY . .
 
-# Production build (defaultConfiguration = production in angular.json).
 RUN npm run build
 
-# Stage 2: Minimal Node runtime serving the SSR Express server.
+# Stage 2: Minimal Node runtime serving the Nitro server.
+# The Nitro output bundles its dependencies, so no install is needed here.
 FROM node:22-slim AS runtime
-
 WORKDIR /app
 
-# SSR still requires express + @angular/* at runtime, so we install
-# only production dependencies (no dev tooling like tailwind/postcss).
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+COPY --from=builder /app/dist/analog ./dist/analog
 
-# Bring in the compiled bundles from the builder stage.
-COPY --from=builder /app/dist ./dist
-
-# Angular SSR Express server listens on $PORT (defaults to 4000).
 ENV PORT=3000
+ENV NODE_ENV=production
 EXPOSE 3000
 
-# `serve:ssr:frontend` resolves to: node dist/frontend/server/server.mjs
-CMD ["node", "dist/frontend/server/server.mjs"]
+CMD ["node", "dist/analog/server/index.mjs"]

@@ -37,6 +37,37 @@ pub struct UserProfile {
 /// The aggregated metrics for a user's profile.
 #[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct UserMetrics {
+    /// Events the guild ran in total, so attendance reads as a rate rather
+    /// than a bare count that means nothing on its own.
+    pub events_total: i64,
+    /// Share of guild events this member signed up for, 0-100.
+    pub attendance_rate: f64,
+    /// Consecutive most-recent events signed up for.
+    pub attendance_streak: i64,
+    /// The member's next scheduled event, if any.
+    pub next_event_title: Option<String>,
+    /// When that event starts, RFC 3339.
+    pub next_event_at: Option<String>,
+    /// Battles the member appeared in.
+    pub battles_fought: i64,
+    /// Kills across those battles.
+    pub kills: i64,
+    /// Deaths across those battles.
+    pub deaths: i64,
+    /// Kill fame earned.
+    pub kill_fame: i64,
+    /// Regear requests raised, in any state.
+    pub regears_claimed: i64,
+    /// Regear requests still awaiting a decision.
+    pub regears_pending: i64,
+    /// Regear requests approved.
+    pub regears_approved: i64,
+    /// Silver actually reimbursed through approved regears.
+    pub regear_silver: i64,
+    /// Loot splits the member took part in.
+    pub splits_joined: i64,
+    /// Silver received from split payouts.
+    pub split_earnings: i64,
     /// The name of the build the user signed up with the most.
     pub most_played_build: Option<String>,
     /// The number of events the user has attended/signed up for.
@@ -153,12 +184,154 @@ impl UserService {
             }
         }
 
+        let extras = self
+            .personal_activity(db, user_id as i64, &participations)
+            .await?;
+
         Ok(UserMetrics {
             events_attended,
             most_played_build,
             total_estimated_loss,
             top_estimated_loss,
+            ..extras
         })
+    }
+
+    /// Attendance, combat, regear and split figures for one member.
+    ///
+    /// Loaded in bulk — one query per table, then folded in memory — because
+    /// this runs on every profile view. Combat figures resolve through the
+    /// member's linked Albion character, so an unlinked member sees zeroes
+    /// there while their regear and split figures, which key off real foreign
+    /// keys, remain correct.
+    async fn personal_activity(
+        &self,
+        db: &DatabaseConnection,
+        user_id: i64,
+        participations: &[crate::modules::events::entities::event_participation::Model],
+    ) -> Result<UserMetrics, AppError> {
+        use crate::modules::events::entities::event;
+        use crate::modules::regear::entities::regear_death;
+        use crate::modules::splits::entities::split_participant;
+        use rust_decimal::prelude::ToPrimitive;
+
+        let events = event::Entity::find().all(db).await?;
+        let joined: std::collections::HashSet<i64> =
+            participations.iter().map(|p| p.event_id).collect();
+
+        // Newest first, so the streak is simply how far back attendance runs
+        // unbroken from the most recent event.
+        let mut ordered: Vec<&event::Model> = events.iter().collect();
+        ordered.sort_by_key(|e| std::cmp::Reverse(e.event_date_utc));
+        let attendance_streak = ordered
+            .iter()
+            .take_while(|e| joined.contains(&e.id))
+            .count() as i64;
+
+        let now: sea_orm::prelude::DateTimeWithTimeZone = chrono::Utc::now().into();
+        let next = ordered
+            .iter()
+            .rev()
+            .find(|e| e.event_date_utc > now && joined.contains(&e.id));
+
+        let regears = regear_death::Entity::find()
+            .filter(regear_death::Column::UserId.eq(user_id))
+            .all(db)
+            .await?;
+        let regear_silver = regears
+            .iter()
+            .filter(|r| r.status == "approved")
+            .map(|r| {
+                r.final_amount
+                    .unwrap_or(r.auto_estimate_total)
+                    .to_i64()
+                    .unwrap_or(0)
+            })
+            .sum();
+
+        let splits_joined = split_participant::Entity::find()
+            .filter(split_participant::Column::UserId.eq(user_id))
+            .count(db)
+            .await? as i64;
+
+        // Split payouts reach a member as bank transactions tagged with the
+        // split, which is the only place the actual paid amount lives.
+        let split_earnings = crate::modules::bank::entities::Entity::find()
+            .filter(crate::modules::bank::entities::Column::ToUserId.eq(user_id))
+            .filter(crate::modules::bank::entities::Column::SplitId.is_not_null())
+            .all(db)
+            .await?
+            .iter()
+            .map(|tx| tx.amount.to_i64().unwrap_or(0))
+            .sum();
+
+        let mut battles_fought = 0;
+        let mut kills = 0;
+        let mut deaths = 0;
+        let mut kill_fame = 0;
+        if let Some(name) = self.linked_character(db, user_id).await? {
+            let snapshots = GuildBattleSnapshotEntity::find().all(db).await?;
+            for snap in snapshots {
+                let Ok(players) = serde_json::from_str::<
+                    Vec<crate::modules::battles::models::BattlePlayer>,
+                >(&snap.players_json) else {
+                    continue;
+                };
+                if let Some(me) = players.iter().find(|p| p.name.eq_ignore_ascii_case(&name)) {
+                    battles_fought += 1;
+                    kills += me.kills;
+                    deaths += me.deaths;
+                    kill_fame += me.kill_fame;
+                }
+            }
+        }
+
+        let events_total = events.len() as i64;
+        Ok(UserMetrics {
+            events_attended: 0,
+            most_played_build: None,
+            total_estimated_loss: 0,
+            top_estimated_loss: 0,
+            events_total,
+            attendance_rate: if events_total > 0 {
+                (participations.len() as f64 / events_total as f64) * 100.0
+            } else {
+                0.0
+            },
+            attendance_streak,
+            next_event_title: next.map(|e| e.title.clone()),
+            next_event_at: next.map(|e| e.event_date_utc.to_rfc3339()),
+            battles_fought,
+            kills,
+            deaths,
+            kill_fame,
+            regears_claimed: regears.len() as i64,
+            regears_pending: regears.iter().filter(|r| r.status == "pending").count() as i64,
+            regears_approved: regears.iter().filter(|r| r.status == "approved").count() as i64,
+            regear_silver,
+            splits_joined,
+            split_earnings,
+        })
+    }
+
+    /// The Albion character name linked to a user, if any.
+    async fn linked_character(
+        &self,
+        db: &DatabaseConnection,
+        user_id: i64,
+    ) -> Result<Option<String>, AppError> {
+        use super::entities::Entity as UserEntity;
+
+        let Some(user) = UserEntity::find_by_id(user_id).one(db).await? else {
+            return Ok(None);
+        };
+        let Some(discord_id) = user.discord_id.as_deref() else {
+            return Ok(None);
+        };
+        Ok(AlbionLinkService::new()
+            .get_link_for_discord_user(db, discord_id)
+            .await?
+            .map(|link| link.albion_player_name))
     }
 
     /// Lists paginated and filtered users from the database.

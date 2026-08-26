@@ -1,11 +1,14 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { DatePipe, DecimalPipe } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
 
 import type {
+  RegearBudgetSummary,
   AlbionLinkStatus,
   BalanceSummary,
   BattleSummary,
   PaginatedData,
+  ProgressionMeView,
   SiphonedEntryView,
   SiphonedPlayerBalance,
   TransactionView,
@@ -17,6 +20,7 @@ import { ThemeService, type ThemePreference } from '../../core/services/theme.se
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService, type Language } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
@@ -70,7 +74,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
 @Component({
   selector: 'app-profile',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, Loading, DataTable],
+  imports: [DatePipe, DecimalPipe, PageHeader, Loading, ErrorState, DataTable],
   template: `
     <app-page-header title="Profile" subtitle="Your account, economy and fight performance." />
 
@@ -90,6 +94,55 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
         </div>
       </section>
 
+      @if (progression(); as xp) {
+        <article class="mt-5 surface p-5">
+          <h2 class="profile__panel-title">{{ t('profile.xp.title') }}</h2>
+          <p class="profile__sub" style="margin-top: 0">
+            {{ t('profile.xp.season') }}:
+            {{ xp.season?.name || t('profile.xp.noSeason') }}
+          </p>
+          <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <p class="profile__label">{{ t('profile.xp.level') }}</p>
+              <p class="profile__value">{{ xp.level }}</p>
+            </div>
+            <div>
+              <p class="profile__label">{{ t('profile.xp.xp') }}</p>
+              <p class="profile__value">{{ formatAmount(xp.xp) }}</p>
+            </div>
+            <div>
+              <p class="profile__label">{{ t('profile.xp.rank') }}</p>
+              <p class="profile__value">
+                {{ xp.rank != null ? '#' + xp.rank : t('profile.xp.unranked') }}
+              </p>
+            </div>
+            <div>
+              <p class="profile__label">{{ t('profile.xp.lifetime') }}</p>
+              <p class="profile__value">{{ formatAmount(xp.lifetime_xp) }}</p>
+            </div>
+          </div>
+          <div class="profile__bar-row">
+            <span>{{ t('profile.xp.toNext') }}</span>
+            <div class="profile__bar">
+              <span [style.width.%]="progressionBarPercent(xp)"></span>
+            </div>
+            <strong>{{ formatAmount(xp.xp) }} / {{ formatAmount(xp.xp + xp.xp_to_next) }}</strong>
+          </div>
+          @if (showMultiplier(xp.multiplier)) {
+            <p class="mt-3 text-sm" style="color: var(--color-warning)">
+              {{ t('profile.xp.multiplier') }}: ×{{ formatMultiplier(xp.multiplier) }}
+            </p>
+          }
+        </article>
+      }
+
+      @if (loadFailed()) {
+        <app-error-state
+          [message]="t('common.error')"
+          [retryLabel]="t('common.retry')"
+          (retry)="load()"
+        />
+      } @else {
       <section class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         @for (metric of profileMetrics(); track metric.label) {
           <article class="surface p-4">
@@ -141,6 +194,92 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
         </article>
       </section>
 
+      <!-- Attendance, regear and splits: the three areas the profile used to
+           say nothing about, even though the data existed. -->
+      <section class="mt-5 grid gap-4 xl:grid-cols-3">
+        <article class="surface p-5">
+          <h2 class="profile__panel-title">Attendance</h2>
+          @if (userMetrics(); as m) {
+            <div class="profile__bar-row">
+              <span>Signed up</span>
+              <div class="profile__bar">
+                <span [style.width.%]="clampPercent(m.attendance_rate)"></span>
+              </div>
+              <strong>{{ m.events_attended }} / {{ m.events_total }}</strong>
+            </div>
+            <p class="mt-3 text-sm" style="color: var(--color-text-secondary)">
+              {{ m.attendance_rate | number: '1.0-0' }}% of guild events.
+              @if (m.attendance_streak > 0) {
+                Current streak: <strong>{{ m.attendance_streak }}</strong>.
+              }
+            </p>
+            @if (m.next_event_title) {
+              <p class="mt-2 text-sm" style="color: var(--color-primary)">
+                Next: {{ m.next_event_title }}
+                <span style="color: var(--color-text-secondary)">
+                  · {{ m.next_event_at | date: 'MMM d, HH:mm' }}
+                </span>
+              </p>
+            } @else {
+              <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
+                Not signed up for anything upcoming.
+              </p>
+            }
+          }
+        </article>
+
+        <article class="surface p-5">
+          <h2 class="profile__panel-title">Regear</h2>
+          @if (userMetrics(); as m) {
+            <div class="profile__bar-row">
+              <span>Monthly cap</span>
+              <div class="profile__bar profile__bar--fight">
+                <span [style.width.%]="regearCapPercent()"></span>
+              </div>
+              <strong>{{ budget()?.per_month_used ?? 0 }} / {{ budget()?.per_month_max ?? 0 }}</strong>
+            </div>
+            <dl class="mt-3 grid grid-cols-2 gap-y-1.5 text-sm">
+              <dt style="color: var(--color-text-secondary)">Claimed</dt>
+              <dd class="text-right">{{ m.regears_claimed }}</dd>
+              <dt style="color: var(--color-text-secondary)">Awaiting decision</dt>
+              <dd class="text-right" [style.color]="m.regears_pending > 0 ? 'var(--color-warning)' : null">
+                {{ m.regears_pending }}
+              </dd>
+              <dt style="color: var(--color-text-secondary)">Approved</dt>
+              <dd class="text-right" style="color: var(--color-success)">{{ m.regears_approved }}</dd>
+              <dt style="color: var(--color-text-secondary)">Reimbursed</dt>
+              <dd class="text-right">{{ formatAmount(m.regear_silver) }}</dd>
+            </dl>
+          }
+        </article>
+
+        <article class="surface p-5">
+          <h2 class="profile__panel-title">Loot splits</h2>
+          @if (userMetrics(); as m) {
+            <dl class="grid grid-cols-2 gap-y-1.5 text-sm">
+              <dt style="color: var(--color-text-secondary)">Splits joined</dt>
+              <dd class="text-right">{{ m.splits_joined }}</dd>
+              <dt style="color: var(--color-text-secondary)">Total earned</dt>
+              <dd class="text-right" style="color: var(--color-success)">
+                {{ formatAmount(m.split_earnings) }}
+              </dd>
+              <dt style="color: var(--color-text-secondary)">Average per split</dt>
+              <dd class="text-right">{{ formatAmount(averageSplitShare()) }}</dd>
+            </dl>
+            <div class="profile__bar-row mt-4">
+              <span>Kills / deaths</span>
+              <div class="profile__bar profile__bar--fight">
+                <span [style.width.%]="killShare()"></span>
+              </div>
+              <strong>{{ m.kills }} / {{ m.deaths }}</strong>
+            </div>
+            <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
+              {{ m.battles_fought }} battles · {{ formatCompact(m.kill_fame) }} kill fame
+            </p>
+          }
+        </article>
+      </section>
+
       <section class="mt-5 grid gap-4 xl:grid-cols-2">
         <article class="surface overflow-hidden">
           <header class="profile__section-header"><h2>Recent bank ledger</h2></header>
@@ -188,6 +327,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
           }}</ng-template>
         </app-data-table>
       </article>
+      }
 
       <section class="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <section class="card p-6">
@@ -331,6 +471,7 @@ export class Settings {
   private readonly toasts = inject(ToastService);
 
   protected readonly loading = signal(false);
+  protected readonly loadFailed = signal(false);
   protected readonly balance = signal<BalanceSummary | null>(null);
   protected readonly transactions = signal<TransactionView[]>([]);
   protected readonly siphonedBalance = signal<SiphonedPlayerBalance | null>(null);
@@ -338,6 +479,10 @@ export class Settings {
   protected readonly battles = signal<BattleSummary[]>([]);
   protected readonly albionLink = signal<AlbionLinkStatus | null>(null);
   protected readonly userMetrics = signal<UserMetrics | null>(null);
+  /** Regear cap usage, for the monthly progress bar. */
+  protected readonly budget = signal<RegearBudgetSummary | null>(null);
+  /** Season XP snapshot; null when the endpoint failed so the rest of the profile still renders. */
+  protected readonly progression = signal<ProgressionMeView | null>(null);
   protected readonly profile = this.auth.profile;
 
   protected readonly transactionColumns: readonly DataTableColumn<TransactionView>[] = [
@@ -435,6 +580,36 @@ export class Settings {
       align: 'right',
     },
   ];
+
+  /** Clamps a percentage into the 0-100 a progress bar can render. */
+  protected clampPercent(value: number): number {
+    return Math.min(100, Math.max(0, Math.round(value)));
+  }
+
+  /** How much of the monthly regear allowance is spent. */
+  protected regearCapPercent(): number {
+    const budget = this.budget();
+    if (!budget || budget.per_month_max <= 0) {
+      return 0;
+    }
+    return this.clampPercent((budget.per_month_used / budget.per_month_max) * 100);
+  }
+
+  /** Mean payout per split joined; zero when the member has joined none. */
+  protected averageSplitShare(): number {
+    const m = this.userMetrics();
+    if (!m || m.splits_joined <= 0) {
+      return 0;
+    }
+    return Math.round(m.split_earnings / m.splits_joined);
+  }
+
+  /** Kills as a share of kills plus deaths, for the ratio bar. */
+  protected killShare(): number {
+    const m = this.userMetrics();
+    const total = (m?.kills ?? 0) + (m?.deaths ?? 0);
+    return total === 0 ? 0 : this.clampPercent(((m?.kills ?? 0) / total) * 100);
+  }
 
   protected readonly profileMetrics = computed<ProfileMetric[]>(() => {
     const balance = this.balance();
@@ -568,10 +743,34 @@ export class Settings {
     this.toasts.success(this.translate.languageLabels[value]);
   }
 
-  private async load(): Promise<void> {
+  /** XP bar fill: current / (current + remaining). Full when already at cap. */
+  protected progressionBarPercent(xp: ProgressionMeView): number {
+    const total = xp.xp + xp.xp_to_next;
+    if (total <= 0) {
+      return xp.xp > 0 ? 100 : 0;
+    }
+    return this.clampPercent((xp.xp / total) * 100);
+  }
+
+  /** Hide the multiplier chip when the account is running at the default 1×. */
+  protected showMultiplier(value: string | number): boolean {
+    return Math.abs(Number(value) - 1) > 1e-9;
+  }
+
+  protected formatMultiplier(value: string | number): string {
+    const n = Number(value);
+    if (!Number.isFinite(n)) {
+      return String(value);
+    }
+    return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+
+  protected async load(): Promise<void> {
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
-      const [balance, transactions, albionLink, battles, metrics] = await Promise.all([
+      const [balance, transactions, albionLink, battles, metrics, budget, progression] =
+        await Promise.all([
         firstValueFrom(this.api.get<BalanceSummary>('api/bank/balance')),
         firstValueFrom(
           this.api.get<PaginatedData<TransactionView>>('api/bank/transactions', {
@@ -584,14 +783,23 @@ export class Settings {
           this.api.get<PaginatedData<BattleSummary>>('api/battles/me', { page: 1, limit: 50 }),
         ).catch(() => emptyPaginatedBattles()),
         firstValueFrom(this.api.get<UserMetrics>('api/users/me/metrics')).catch(() => null),
+        // Members without `regear.view` simply see no cap bar, rather than
+        // the whole profile failing on a permission they do not need.
+        firstValueFrom(this.api.get<RegearBudgetSummary>('api/regear/me/summary')).catch(
+          () => null,
+        ),
+        firstValueFrom(this.api.get<ProgressionMeView>('api/progression/me')).catch(() => null),
       ]);
       this.balance.set(balance);
       this.transactions.set(transactions.items);
       this.albionLink.set(albionLink);
       this.battles.set(battles.items);
       this.userMetrics.set(metrics);
+      this.budget.set(budget);
+      this.progression.set(progression);
       await this.loadSiphoned(albionLink.albion_player_name ?? this.profile()?.username ?? '');
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

@@ -2,27 +2,43 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { firstValueFrom } from 'rxjs';
 
 import type {
-  AlbionGuildMember,
-  BattleDetail,
-  BattlePlayer,
-  EventDetailView,
-  EventView,
+  LeaderboardEntry as BoardEntry,
   PaginatedData,
-  PlayerLossEstimate,
-  SiphonedPlayerBalance,
-  SplitDetail,
-  SplitSummary,
+  ProgressionLeaderboardEntry,
+  ReportLeaderboards,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
+import { IntelService } from '../../core/services/intel.service';
 import { TranslateService } from '../../core/services/translate.service';
+import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 import type { TranslationKey } from '../../i18n/en';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
 
 /** Identifier matching every supported leaderboard. */
-type LeaderboardKey =
-  'payout' | 'deaths' | 'kills' | 'attendance' | 'killfame' | 'deathfame' | 'siphoned';
+type IntelLeaderboardKey =
+  | 'payout'
+  | 'deaths'
+  | 'kills'
+  | 'attendance'
+  | 'killfame'
+  | 'deathfame'
+  | 'siphoned';
+
+type LeaderboardKey = IntelLeaderboardKey | 'season';
+
+const INTEL_KEYS: readonly IntelLeaderboardKey[] = [
+  'payout',
+  'deaths',
+  'kills',
+  'attendance',
+  'killfame',
+  'deathfame',
+  'siphoned',
+];
 
 /** Single row in any leaderboard: a labelled performer and their metric. */
 interface LeaderboardEntry {
@@ -40,6 +56,22 @@ interface LeaderboardTab {
   readonly unitKey: TranslationKey;
 }
 
+/**
+ * Which board backs each tab.
+ *
+ * `deaths` ranks silver lost rather than a death count — that is what the tab
+ * has always shown, and the label is kept for continuity.
+ */
+const BOARD_FOR_TAB: Record<IntelLeaderboardKey, (b: ReportLeaderboards) => BoardEntry[]> = {
+  payout: (b) => b.split_earnings,
+  deaths: (b) => b.silver_lost,
+  kills: (b) => b.kills,
+  attendance: (b) => b.attendance,
+  killfame: (b) => b.kill_fame,
+  deathfame: (b) => b.death_fame,
+  siphoned: (b) => b.siphoned,
+};
+
 /** Loading state held per leaderboard so tabs feel instant after first load. */
 interface TabState {
   readonly entries: ReadonlyArray<LeaderboardEntry>;
@@ -53,40 +85,22 @@ const LOADING_STATE: TabState = { entries: [], isLoading: true, hasError: false 
 
 const ERROR_STATE: TabState = { entries: [], isLoading: false, hasError: true };
 
-/**
- * Number of detail calls each leaderboard will trigger at most. Kept small on
- * purpose — the goal is a quick top-3 snapshot, not a full audit of guild data.
- */
-const DETAIL_FETCH_LIMIT = 10;
-
 /** Always shown slot count, even when fewer entries are available. */
 const PODIUM_SIZE = 3;
-
-/** Per-player battle stats tracked by the guild member leaderboards. */
-type BattlePlayerMetric = 'kills' | 'kill_fame' | 'death_fame';
-
-/** Roster page size; the backend paginates locally after one upstream call. */
-const ROSTER_PAGE_SIZE = 500;
-
-/** Safety cap on roster pages (way beyond any realistic guild size). */
-const ROSTER_MAX_PAGES = 10;
 
 /**
  * Cross-module top-3 rankings surfaced as a single tabbed view.
  *
- * There is no dedicated leaderboard endpoint on the backend, so each tab
- * aggregates a bounded sample of recent activity client-side. Loads are
- * best-effort: a failing source only blanks its own tab. Results are cached
- * per-tab so switching back and forth is instant after the first visit.
+ * Every board comes from one backend call, computed over the full window from
+ * real activity. Tab switching is instant because all boards arrive together.
  *
  * # Side effects
- * Performs one paginated list call plus up to `DETAIL_FETCH_LIMIT` detail
- * calls per tab on first activation. Subsequent activations reuse the cache.
+ * One request on first load, and one more if the user asks to refresh.
  */
 @Component({
   selector: 'app-leaderboards',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, PageHeader],
+  imports: [EmptyState, Icon, Loading, PageHeader, ViewToggle],
   template: `
     <app-page-header
       [title]="t('leaderboards.title')"
@@ -95,20 +109,8 @@ const ROSTER_MAX_PAGES = 10;
     />
 
     <!-- Segmented tab bar -->
-    <div class="tabs" role="tablist" [attr.aria-label]="t('leaderboards.title')">
-      @for (tab of visibleTabs(); track tab.key) {
-        <button
-          type="button"
-          role="tab"
-          class="tab"
-          [class.tab--active]="activeTab() === tab.key"
-          [attr.aria-selected]="activeTab() === tab.key"
-          (click)="selectTab(tab.key)"
-        >
-          <app-icon [name]="tab.icon" size="0.95rem" />
-          <span>{{ t(tab.labelKey) }}</span>
-        </button>
-      }
+    <div class="mb-6">
+      <app-view-toggle [options]="tabOptions()" [active]="activeTab()" (activeChange)="selectTab($event)" />
     </div>
 
     <!-- Active panel -->
@@ -129,10 +131,7 @@ const ROSTER_MAX_PAGES = 10;
       </header>
 
       @if (activeState().isLoading) {
-        <div class="state state--loading" role="status" aria-live="polite">
-          <span class="spinner" aria-hidden="true"></span>
-          <span>{{ t('common.loading') }}</span>
-        </div>
+        <app-loading [label]="t('common.loading')" />
       } @else if (activeState().hasError) {
         <div class="state state--error" role="alert">
           <span>{{ t('common.error') }}</span>
@@ -141,10 +140,7 @@ const ROSTER_MAX_PAGES = 10;
           </button>
         </div>
       } @else if (activeEntries().length === 0) {
-        <div class="state state--empty">
-          <app-icon name="trophy" size="1.75rem" class="state__icon" />
-          <span>{{ t('leaderboards.empty') }}</span>
-        </div>
+        <app-empty-state icon="trophy" [message]="t('leaderboards.empty')" />
       } @else {
         <!-- Podium: 2nd | 1st | 3rd, tallest pedestal in the center -->
         <div class="podium">
@@ -192,57 +188,6 @@ const ROSTER_MAX_PAGES = 10;
   `,
   styles: [
     `
-      /* ---------- Tab bar ---------- */
-
-      .tabs {
-        display: flex;
-        gap: 0.25rem;
-        width: 100%;
-        margin-bottom: 1.5rem;
-        padding: 0.3rem;
-        background: var(--color-surface-2);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-full);
-        overflow-x: auto;
-        scrollbar-width: none;
-      }
-
-      .tabs::-webkit-scrollbar {
-        display: none;
-      }
-
-      .tab {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        flex: 1 0 auto;
-        gap: 0.4rem;
-        padding: 0.45rem 0.75rem;
-        border: none;
-        border-radius: var(--radius-full);
-        background: transparent;
-        color: var(--color-text-secondary);
-        font-size: 0.78rem;
-        font-weight: 600;
-        cursor: pointer;
-        white-space: nowrap;
-        transition:
-          background-color 140ms ease,
-          color 140ms ease,
-          box-shadow 140ms ease;
-      }
-
-      .tab:hover {
-        background: var(--color-surface-hover);
-        color: var(--color-text);
-      }
-
-      .tab--active {
-        background: var(--color-surface);
-        color: var(--color-primary);
-        box-shadow: var(--shadow-1);
-      }
-
       /* ---------- Panel ---------- */
 
       .panel {
@@ -303,14 +248,6 @@ const ROSTER_MAX_PAGES = 10;
         color: var(--color-error);
       }
 
-      .state--empty {
-        flex-direction: column;
-      }
-
-      .state__icon {
-        opacity: 0.45;
-      }
-
       .link-btn {
         background: none;
         border: none;
@@ -322,21 +259,6 @@ const ROSTER_MAX_PAGES = 10;
 
       .link-btn:hover {
         text-decoration: underline;
-      }
-
-      .spinner {
-        width: 1.1rem;
-        height: 1.1rem;
-        border-radius: 50%;
-        border: 2px solid var(--color-text-disabled);
-        border-top-color: var(--color-primary);
-        animation: leaderboard-spin 0.7s linear infinite;
-      }
-
-      @keyframes leaderboard-spin {
-        to {
-          transform: rotate(360deg);
-        }
       }
 
       /* ---------- Podium ---------- */
@@ -509,6 +431,7 @@ const ROSTER_MAX_PAGES = 10;
 export class Leaderboards {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly intel = inject(IntelService);
   private readonly translate = inject(TranslateService);
 
   protected readonly tabs: ReadonlyArray<LeaderboardTab> = [
@@ -561,6 +484,13 @@ export class Leaderboards {
       icon: 'activity',
       unitKey: 'leaderboards.unit.silver',
     },
+    {
+      key: 'season',
+      labelKey: 'leaderboards.tab.season',
+      hintKey: 'leaderboards.hint.season',
+      icon: 'trophy',
+      unitKey: 'leaderboards.unit.xp',
+    },
   ];
 
   /**
@@ -571,6 +501,10 @@ export class Leaderboards {
     this.tabs.filter((tab) => tab.key !== 'siphoned' || this.auth.hasPermission('siphoned.view')),
   );
 
+  protected readonly tabOptions = computed<ViewToggleOption[]>(() =>
+    this.visibleTabs().map((tab) => ({ id: tab.key, label: this.t(tab.labelKey), icon: tab.icon })),
+  );
+
   private readonly stateByTab = signal<Record<LeaderboardKey, TabState>>({
     payout: LOADING_STATE,
     deaths: EMPTY_STATE,
@@ -579,9 +513,11 @@ export class Leaderboards {
     killfame: EMPTY_STATE,
     deathfame: EMPTY_STATE,
     siphoned: EMPTY_STATE,
+    season: LOADING_STATE,
   });
 
-  private readonly loadedTabs = signal<ReadonlySet<LeaderboardKey>>(new Set());
+  private readonly loadedIntel = signal(false);
+  private readonly loadedSeason = signal(false);
 
   protected readonly activeTab = signal<LeaderboardKey>('payout');
 
@@ -617,307 +553,103 @@ export class Leaderboards {
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   constructor() {
-    void this.loadTab('payout');
+    void this.loadIntel();
+    void this.loadSeason();
   }
 
-  protected selectTab(key: LeaderboardKey): void {
+  protected selectTab(key: string): void {
+    if (!this.tabs.some((tab) => tab.key === key)) {
+      return;
+    }
     if (this.activeTab() === key) {
       return;
     }
-    this.activeTab.set(key);
-    if (!this.loadedTabs().has(key)) {
-      void this.loadTab(key);
-    }
+    this.activeTab.set(key as LeaderboardKey);
   }
 
   protected reloadActive(): void {
-    void this.loadTab(this.activeTab(), { force: true });
+    if (this.activeTab() === 'season') {
+      void this.loadSeason({ force: true });
+      return;
+    }
+    void this.loadIntel({ force: true });
   }
 
   protected formatValue(value: number): string {
     return value.toLocaleString();
   }
 
-  private async loadTab(key: LeaderboardKey, opts: { force?: boolean } = {}): Promise<void> {
-    if (!opts.force && this.loadedTabs().has(key)) {
+  /**
+   * Loads every intel board in one call.
+   *
+   * Previously each tab aggregated client-side over its own set of list and
+   * detail requests, capped at the ten most recent splits or battles — so the
+   * rankings were a partial snapshot, and switching tabs meant more round
+   * trips. The backend now computes all boards over the full window from real
+   * activity, cached, so one request fills the intel tabs. Season XP is a
+   * separate endpoint and must not share this failure path.
+   */
+  private async loadIntel(opts: { force?: boolean } = {}): Promise<void> {
+    if (!opts.force && this.loadedIntel()) {
       return;
     }
-    this.patchState(key, LOADING_STATE);
+    for (const key of INTEL_KEYS) {
+      this.patchState(key, LOADING_STATE);
+    }
     try {
-      const entries = await this.fetchEntries(key);
-      this.patchState(key, { entries, isLoading: false, hasError: false });
-      this.loadedTabs.update((set) => new Set(set).add(key));
+      const boards = await firstValueFrom(this.intel.leaderboards());
+      for (const key of INTEL_KEYS) {
+        this.patchState(key, {
+          entries: (BOARD_FOR_TAB[key](boards) ?? []).map((row) => ({
+            name: row.username,
+            value: row.value,
+          })),
+          isLoading: false,
+          hasError: false,
+        });
+      }
+      this.loadedIntel.set(true);
     } catch {
-      this.patchState(key, ERROR_STATE);
+      for (const key of INTEL_KEYS) {
+        this.patchState(key, ERROR_STATE);
+      }
+      this.loadedIntel.set(false);
+    }
+  }
+
+  /** Loads the season XP board independently of the intel report. */
+  private async loadSeason(opts: { force?: boolean } = {}): Promise<void> {
+    if (!opts.force && this.loadedSeason()) {
+      return;
+    }
+    this.patchState('season', LOADING_STATE);
+    try {
+      const data = await firstValueFrom(
+        this.api.get<PaginatedData<ProgressionLeaderboardEntry>>('api/progression/leaderboard', {
+          page: 1,
+          limit: 50,
+        }),
+      );
+      this.patchState('season', {
+        entries: (data.items ?? []).map((row) => ({
+          name: row.username,
+          value: row.xp,
+        })),
+        isLoading: false,
+        hasError: false,
+      });
+      this.loadedSeason.set(true);
+    } catch {
+      this.patchState('season', ERROR_STATE);
+      this.loadedSeason.set(false);
     }
   }
 
   private patchState(key: LeaderboardKey, next: TabState): void {
     this.stateByTab.update((map) => ({ ...map, [key]: next }));
   }
-
-  private async fetchEntries(key: LeaderboardKey): Promise<ReadonlyArray<LeaderboardEntry>> {
-    switch (key) {
-      case 'payout':
-        return this.fetchPayout();
-      case 'deaths':
-        return this.fetchEstimatedDeaths();
-      case 'kills':
-        return this.fetchKills();
-      case 'attendance':
-        return this.fetchAttendance();
-      case 'killfame':
-        return this.fetchGuildBattleMetric('kill_fame');
-      case 'deathfame':
-        return this.fetchGuildBattleMetric('death_fame');
-      case 'siphoned':
-        return this.fetchSiphoned();
-    }
-  }
-
-  /** Aggregate `share_amount` from recent completed split details. */
-  private async fetchPayout(): Promise<ReadonlyArray<LeaderboardEntry>> {
-    const list = await firstValueFrom(
-      this.api.get<PaginatedData<SplitSummary>>('api/splits', {
-        status: 'completed',
-        page: 1,
-        limit: DETAIL_FETCH_LIMIT,
-      }),
-    );
-    const details = await this.fetchAllSettled(
-      list.items.map((split) =>
-        firstValueFrom(this.api.get<SplitDetail>(`api/splits/${split.id}`)),
-      ),
-    );
-
-    return this.topEntries(details, (detail) =>
-      detail.participants.map((participant) => ({
-        name: participant.username,
-        value: participant.share_amount ?? 0,
-      })),
-    );
-  }
-
-  /** Aggregate `estimated_loss` per player across recent battle details. */
-  private async fetchEstimatedDeaths(): Promise<ReadonlyArray<LeaderboardEntry>> {
-    const battles = await this.fetchBattleDetails();
-    return this.topEntries(battles, (battle) =>
-      this.playerLossRows(battle.estimated_losses?.players ?? []),
-    );
-  }
-
-  /** Aggregate `kills` per guild member across recent battle details. */
-  private async fetchKills(): Promise<ReadonlyArray<LeaderboardEntry>> {
-    return this.fetchGuildBattleMetric('kills');
-  }
-
-  /**
-   * Aggregate a per-player battle stat (`kills` / `kill_fame` / `death_fame`)
-   * restricted to the configured guild's roster. Falls back to the battle
-   * presence heuristic only if the roster endpoint is unreachable.
-   */
-  private async fetchGuildBattleMetric(
-    metric: BattlePlayerMetric,
-  ): Promise<ReadonlyArray<LeaderboardEntry>> {
-    const [battles, rosterNames] = await Promise.all([
-      this.fetchBattleDetails(),
-      this.fetchRosterNames().catch(() => null),
-    ]);
-    const guildName = rosterNames === null ? this.detectGuildName(battles) : null;
-    return this.topEntries(battles, (battle) =>
-      battle.players
-        .filter((player) =>
-          rosterNames === null
-            ? this.isGuildPlayer(player, guildName)
-            : this.isGuildMember(player, rosterNames),
-        )
-        .map((player) => ({ name: player.name, value: player[metric] })),
-    );
-  }
-
-  /**
-   * Rank players by siphoned energy deposited to the guild. The backend
-   * balances endpoint already aggregates per-player totals server-side, so a
-   * single list call replaces the detail fan-out other tabs need.
-   */
-  private async fetchSiphoned(): Promise<ReadonlyArray<LeaderboardEntry>> {
-    const balances = await firstValueFrom(
-      this.api.get<SiphonedPlayerBalance[]>('api/siphoned/balances'),
-    );
-    return balances
-      .map((balance) => ({ name: balance.player_name, value: Number(balance.total_deposited) }))
-      .filter((entry) => entry.value > 0)
-      .sort((a, b) => b.value - a.value)
-      .slice(0, PODIUM_SIZE);
-  }
-
-  /** Count participant appearances across recent event details. */
-  private async fetchAttendance(): Promise<ReadonlyArray<LeaderboardEntry>> {
-    const list = await firstValueFrom(
-      this.api.get<PaginatedData<EventView>>('api/events', {
-        page: 1,
-        limit: DETAIL_FETCH_LIMIT,
-      }),
-    );
-    const details = await this.fetchAllSettled(
-      list.items.map((event) =>
-        firstValueFrom(this.api.get<EventDetailView>(`api/events/${event.id}`)),
-      ),
-    );
-
-    return this.topEntries(details, (event) =>
-      event.participants.map((participant) => ({ name: participant.username, value: 1 })),
-    );
-  }
-
-  private async fetchBattleDetails(): Promise<ReadonlyArray<BattleDetail>> {
-    const list = await firstValueFrom(
-      this.api.get<PaginatedData<{ battle_id: number }>>('api/battles', { page: 1 }),
-    );
-    const ids = list.items.slice(0, DETAIL_FETCH_LIMIT).map((battle) => battle.battle_id);
-    return this.fetchAllSettled(
-      ids.map((id) => firstValueFrom(this.api.get<BattleDetail>(`api/battles/${id}`))),
-    );
-  }
-
-  /**
-   * Fetch the configured guild's roster once and cache it for the session.
-   * Concurrent callers share the in-flight promise instead of duplicating the
-   * upstream Albion API request.
-   */
-  private rosterPromise: Promise<ReadonlySet<string>> | null = null;
-
-  private fetchRosterNames(): Promise<ReadonlySet<string>> {
-    if (this.rosterPromise === null) {
-      this.rosterPromise = this.loadRosterNames().catch((error) => {
-        this.rosterPromise = null;
-        throw error;
-      });
-    }
-    return this.rosterPromise;
-  }
-
-  private async loadRosterNames(): Promise<ReadonlySet<string>> {
-    const names = new Set<string>();
-    let page = 1;
-    let totalItems = Number.POSITIVE_INFINITY;
-    while (names.size < totalItems && page <= ROSTER_MAX_PAGES) {
-      const roster = await firstValueFrom(
-        this.api.get<PaginatedData<AlbionGuildMember>>('api/albion/guild/roster', {
-          page,
-          limit: ROSTER_PAGE_SIZE,
-        }),
-      );
-      totalItems = roster.total_items;
-      for (const member of roster.items) {
-        names.add(member.name.trim().toLowerCase());
-      }
-      if (roster.items.length === 0) {
-        break;
-      }
-      page += 1;
-    }
-    return names;
-  }
-
-  /** Exact membership check against the roster, case-insensitive. */
-  private isGuildMember(player: BattlePlayer, rosterNames: ReadonlySet<string>): boolean {
-    return rosterNames.has(player.name.trim().toLowerCase());
-  }
-
-  /**
-   * Project each item into per-player rows, sum by name and slice the top 3.
-   * Used by every leaderboard so aggregation rules stay identical.
-   */
-  private topEntries<T>(
-    items: ReadonlyArray<T>,
-    toRows: (item: T) => ReadonlyArray<{ name: string; value: number }>,
-  ): ReadonlyArray<LeaderboardEntry> {
-    const totals = new Map<string, number>();
-    for (const item of items) {
-      for (const row of toRows(item)) {
-        const trimmed = row.name.trim();
-        if (trimmed.length === 0 || row.value <= 0) {
-          continue;
-        }
-        totals.set(trimmed, (totals.get(trimmed) ?? 0) + row.value);
-      }
-    }
-    return Array.from(totals.entries())
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, PODIUM_SIZE);
-  }
-
-  private playerLossRows(
-    players: ReadonlyArray<PlayerLossEstimate>,
-  ): ReadonlyArray<{ name: string; value: number }> {
-    return players.map((player) => ({
-      name: player.player_name,
-      value: player.estimated_loss,
-    }));
-  }
-
-  /**
-   * Fallback used only when the roster endpoint is unreachable. Picks the
-   * guild present in the most distinct battles (our guild is in every battle
-   * returned by `/battles`), tie-broken by total player appearances.
-   */
-  private detectGuildName(battles: ReadonlyArray<BattleDetail>): string | null {
-    const presence = new Map<string, number>();
-    const members = new Map<string, number>();
-    for (const battle of battles) {
-      const inBattle = new Set<string>();
-      for (const player of battle.players) {
-        if (!player.guild_name) {
-          continue;
-        }
-        inBattle.add(player.guild_name);
-        members.set(player.guild_name, (members.get(player.guild_name) ?? 0) + 1);
-      }
-      for (const name of inBattle) {
-        presence.set(name, (presence.get(name) ?? 0) + 1);
-      }
-    }
-
-    let bestName: string | null = null;
-    let bestPresence = 0;
-    let bestMembers = 0;
-    for (const [name, count] of presence) {
-      const memberCount = members.get(name) ?? 0;
-      if (count > bestPresence || (count === bestPresence && memberCount > bestMembers)) {
-        bestName = name;
-        bestPresence = count;
-        bestMembers = memberCount;
-      }
-    }
-    return bestName;
-  }
-
-  private isGuildPlayer(player: BattlePlayer, guildName: string | null): boolean {
-    if (guildName === null) {
-      return true;
-    }
-    return player.guild_name === guildName;
-  }
-
-  /**
-   * Run a batch of promises without short-circuiting on rejection.
-   * Rejections are swallowed because partial data is still useful for a top-3.
-   */
-  private async fetchAllSettled<T>(promises: ReadonlyArray<Promise<T>>): Promise<ReadonlyArray<T>> {
-    const results: Array<PromiseSettledResult<T>> = await Promise.allSettled(promises);
-    const fulfilled: Array<T> = [];
-    for (const result of results) {
-      if (result.status === 'fulfilled') {
-        fulfilled.push(result.value);
-      }
-    }
-    return fulfilled;
-  }
 }
 
-/** Per-tab accent palettes used by the panel header icon. */
 const ACCENT_BG: Record<LeaderboardKey, string> = {
   payout: 'var(--color-primary-container)',
   deaths: 'var(--color-error-container)',
@@ -926,6 +658,7 @@ const ACCENT_BG: Record<LeaderboardKey, string> = {
   killfame: 'var(--color-warning-container)',
   deathfame: 'var(--color-error-container)',
   siphoned: 'var(--color-primary-container)',
+  season: 'var(--color-warning-container)',
 };
 
 const ACCENT_FG: Record<LeaderboardKey, string> = {
@@ -936,4 +669,5 @@ const ACCENT_FG: Record<LeaderboardKey, string> = {
   killfame: 'var(--color-warning)',
   deathfame: 'var(--color-error)',
   siphoned: 'var(--color-primary)',
+  season: 'var(--color-warning)',
 };

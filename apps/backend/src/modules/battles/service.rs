@@ -25,7 +25,8 @@ use super::entities::{
     ActiveModel as GuildBattleSnapshotActiveModel, Column as GuildBattleSnapshotColumn,
 };
 use super::models::{
-    BattleDetail, BattleLossEstimate, BattleSummary, GuildLossEstimate, PlayerLossEstimate,
+    BattleDetail, BattleLossEstimate, BattleSummary, GuildLossEstimate, LinkedEvent,
+    PlayerLossEstimate,
 };
 
 /// Upper bound on how many upstream battle-list pages `/me` will scan before
@@ -159,6 +160,7 @@ impl BattlesService {
         battle.estimated_losses = estimate_losses(albiondata, &kills, &loss_scope)
             .await
             .unwrap_or_default();
+        battle.linked_event = find_linked_event(db, battle_id).await.unwrap_or(None);
         if let Err(error) = persist_battle_snapshot(db, &battle).await {
             tracing::warn!(battle_id = battle.summary.battle_id, error = %error, "failed to persist guild battle snapshot");
         }
@@ -522,4 +524,32 @@ fn read_string(source: &Value, key: &str) -> Option<String> {
 
 fn read_i32(source: &Value, key: &str) -> Option<i32> {
     source.as_object()?.get(key)?.as_i64()?.try_into().ok()
+}
+
+/// Resolves the guild event a battle was fought under, if any.
+///
+/// Two hops, because `event_battles` stores the AlbionBB id as a string while
+/// callers hold it as an integer — a SQL cast would be Postgres-only and break
+/// the SQLite test backend.
+async fn find_linked_event(
+    db: &DatabaseConnection,
+    battle_id: i64,
+) -> Result<Option<LinkedEvent>, AppError> {
+    use crate::modules::events::entities::{event, event_battle};
+
+    let Some(link) = event_battle::Entity::find()
+        .filter(event_battle::Column::AlbionbbBattleId.eq(battle_id.to_string()))
+        .one(db)
+        .await?
+    else {
+        return Ok(None);
+    };
+    Ok(event::Entity::find_by_id(link.event_id)
+        .one(db)
+        .await?
+        .map(|row| LinkedEvent {
+            id: row.id,
+            title: row.title,
+            call_to_arms: row.call_to_arms,
+        }))
 }

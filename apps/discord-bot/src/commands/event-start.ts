@@ -1,7 +1,7 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder } from "discord.js";
 import type { ApiClient } from "../api/client.js";
 import type { EventDetailView } from "../api/types.js";
-import { config, getEventRoleId } from "../config.js";
+import { getSettingsService } from "../services/settings.js";
 import { createResponseEmbed } from "../embeds/theme.js";
 
 export const data = new SlashCommandBuilder()
@@ -29,12 +29,12 @@ export async function execute(
     interaction.user.id,
   );
 
-  const eventRoleId = getEventRoleId(config);
-  if (eventRoleId) {
+  const settings = getSettingsService();
+  const eventRoleId = await settings.eventRoleId();
+  const eventsChannelId = await settings.eventsChannelId();
+  if (eventRoleId && eventsChannelId) {
     try {
-      const channel = await interaction.client.channels.fetch(
-        config.DISCORD_EVENTS_CHANNEL_ID,
-      );
+      const channel = await interaction.client.channels.fetch(eventsChannelId);
 
       if (channel?.isTextBased() && !channel.isDMBased() && "send" in channel) {
         await channel.send({

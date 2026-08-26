@@ -1,5 +1,6 @@
 use super::entities::{self, ActiveModel};
 use crate::config::Config;
+use crate::modules::admin::service::AdminService;
 use reqwest::Client;
 use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
 
@@ -24,7 +25,10 @@ impl AuditService {
         };
 
         // Discord notifications are best-effort: a missing/misconfigured environment (e.g. unit
-        // tests) must never abort the audit row write or the surrounding request.
+        // tests) must never abort the audit row write or the surrounding request. The bot token
+        // itself is still a deployment secret (an env var, not something an admin edits), but the
+        // channel IDs now live in `guild_settings` — moved off env vars so they are editable from
+        // the admin UI without a redeploy.
         let cfg = match Config::try_from_env() {
             Ok(cfg) => cfg,
             Err(e) => {
@@ -35,6 +39,7 @@ impl AuditService {
                     .map_err(crate::errors::AppError::Database);
             }
         };
+        let guild_settings = AdminService::get_guild_settings(db).await.ok();
 
         let inserted = model.insert(db).await?;
 
@@ -68,7 +73,10 @@ impl AuditService {
         }
 
         // Send to Discord audit log channel if configured
-        if let Some(channel_id) = &cfg.discord_audit_log_channel_id {
+        let audit_channel_id = guild_settings
+            .as_ref()
+            .and_then(|s| s.discord_audit_log_channel_id.as_ref());
+        if let Some(channel_id) = audit_channel_id {
             if let Some(token) = &cfg.discord_bot_token {
                 let mut message = format!(
                     "**Audit Log:** `{}`\n**Entity:** `{:?}` (ID: {:?})\n**User:** {}{}\n**Details:**\n```json\n{}\n```",
@@ -86,7 +94,10 @@ impl AuditService {
         }
 
         // Send transaction spam to Discord if configured
-        if let Some(channel_id) = &cfg.discord_transaction_spam_channel_id {
+        let spam_channel_id = guild_settings
+            .as_ref()
+            .and_then(|s| s.discord_transaction_spam_channel_id.as_ref());
+        if let Some(channel_id) = spam_channel_id {
             if let Some(token) = &cfg.discord_bot_token {
                 if entity_type == Some("TRANSACTION") {
                     let mut message = format!(

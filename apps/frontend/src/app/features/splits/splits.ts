@@ -1,8 +1,9 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
 import type {
   AlbionGuildMember,
+  CompleteSplitsBatchResult,
   CreateSplitRequest,
   EventView,
   MatchedParticipant,
@@ -20,6 +21,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
@@ -54,7 +56,7 @@ interface SplitParticipantDraft {
 @Component({
   selector: 'app-splits',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Icon, Loading, SearchDialog, DataTable],
+  imports: [PageHeader, EmptyState, ErrorState, Icon, Loading, SearchDialog, DataTable],
   template: `
     <app-page-header [title]="t('splits.title')" [subtitle]="t('splits.subtitle')">
       <button type="button" class="btn btn--primary" (click)="toggleCreateForm()">
@@ -325,16 +327,61 @@ interface SplitParticipantDraft {
 
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
+    } @else if (loadFailed()) {
+      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     } @else if (splits().length === 0) {
       <app-empty-state [message]="t('common.empty')" icon="swords" />
     } @else {
+      @if (canAct() && pendingSplits().length > 0) {
+        <div
+          class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-3"
+          style="border-color: var(--color-border); background-color: var(--color-surface-2)"
+        >
+          <label class="flex items-center gap-2 text-sm">
+            <input
+              class="checkbox"
+              type="checkbox"
+              [checked]="allPendingSelected()"
+              (change)="toggleAllPending($event)"
+            />
+            <span>
+              {{ t('splits.batch.select') }}
+              @if (selectedCount() > 0) {
+                <strong>({{ selectedCount() }})</strong>
+              }
+            </span>
+          </label>
+          <button
+            type="button"
+            class="btn btn--primary btn--sm"
+            [disabled]="selectedCount() === 0 || batchRunning()"
+            (click)="completeSelected()"
+          >
+            {{ t('splits.batch.complete') }}
+          </button>
+        </div>
+      }
+
       <div class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         @for (split of splits(); track split.id) {
           <article class="card p-5 cursor-pointer" (click)="openSplit(split.id)">
             <header class="mb-3 flex items-start justify-between gap-2">
-              <h3 class="text-base font-semibold" style="color: var(--color-text)">
-                {{ split.note || 'Split #' + split.id }}
-              </h3>
+              <div class="flex min-w-0 items-start gap-2">
+                @if (canAct() && split.status === 'pending') {
+                  <!-- Stop the click reaching the card, which opens the split. -->
+                  <input
+                    class="checkbox mt-1 shrink-0"
+                    type="checkbox"
+                    [checked]="isSelected(split.id)"
+                    (click)="$event.stopPropagation()"
+                    (change)="toggleSelected(split.id, $event)"
+                    [attr.aria-label]="t('splits.batch.selectOne')"
+                  />
+                }
+                <h3 class="truncate text-base font-semibold" style="color: var(--color-text)">
+                  {{ split.note || 'Split #' + split.id }}
+                </h3>
+              </div>
               <span class="chip" [class]="statusChip(split.status)">{{ split.status }}</span>
             </header>
             <p class="mb-3 text-xs" style="color: var(--color-text-secondary)">
@@ -630,6 +677,10 @@ export class Splits {
 
   protected readonly splits = signal<SplitSummary[]>([]);
   protected readonly loading = signal(false);
+  protected readonly loadFailed = signal(false);
+  /** Splits ticked for batch completion. */
+  private readonly selectedIds = signal<ReadonlySet<number>>(new Set());
+  protected readonly batchRunning = signal(false);
   protected readonly page = signal(1);
   protected readonly totalPages = signal(1);
   protected readonly statusFilter = signal<SplitStatus | ''>('');
@@ -644,6 +695,14 @@ export class Splits {
   protected readonly draftBags = signal(0);
   protected readonly rawNames = signal('');
   protected readonly participants = signal<SplitParticipantDraft[]>([]);
+  /**
+   * Once an officer hand-edits a weight, adding or removing a participant
+   * must not silently blow that away by re-splitting everyone evenly again
+   * — it only fills in the new/departing share. Full rebuilds (parsing raw
+   * names, an OCR pass, clearing the form) reset this: those replace the
+   * whole roster, so starting from an even split is the correct default.
+   */
+  protected readonly weightsCustomized = signal(false);
   protected readonly selectedSplit = signal<SplitDetail | null>(null);
   protected readonly editNote = signal('');
   protected readonly editEstimated = signal(0);
@@ -767,6 +826,7 @@ export class Splits {
 
   protected onWeightChange(userId: number, event: Event): void {
     const weight = Math.max(1, Number((event.target as HTMLInputElement).value));
+    this.weightsCustomized.set(true);
     this.participants.update((participants) =>
       participants.map((participant) =>
         participant.user_id === userId ? { ...participant, weight } : participant,
@@ -797,7 +857,11 @@ export class Splits {
     const nextParticipants = this.participants().filter(
       (participant) => participant.user_id !== userId,
     );
-    this.participants.set(this.redistributeWeights(nextParticipants));
+    // Leave everyone else's hand-tuned share alone; only auto-balance while
+    // the roster is still at its untouched, evenly-split default.
+    this.participants.set(
+      this.weightsCustomized() ? nextParticipants : this.redistributeWeights(nextParticipants),
+    );
   }
 
   protected async addRosterMember(member: AlbionGuildMember): Promise<void> {
@@ -824,7 +888,14 @@ export class Splits {
         this.closeParticipantDialog();
         return;
       }
-      this.participants.set(this.redistributeWeights([...this.participants(), draft]));
+      // Same rule as remove: don't reset hand-tuned weights just because one
+      // more person joined. They start at the draft default (1%) and the
+      // officer adjusts from there, same as any other manually-added share.
+      this.participants.set(
+        this.weightsCustomized()
+          ? [...this.participants(), draft]
+          : this.redistributeWeights([...this.participants(), draft]),
+      );
       this.closeParticipantDialog();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -867,6 +938,9 @@ export class Splits {
       const matched = await firstValueFrom(
         this.api.post<MatchedParticipant[]>('api/splits/match-participants', { names }),
       );
+      // Parsing raw names/OCR replaces the whole roster, so an even split is
+      // the right starting point again.
+      this.weightsCustomized.set(false);
       this.participants.set(this.redistributeWeights(this.toDraftParticipants(matched)));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -878,6 +952,7 @@ export class Splits {
   protected clearParticipants(): void {
     this.rawNames.set('');
     this.participants.set([]);
+    this.weightsCustomized.set(false);
   }
 
   private async searchParticipantRoster(): Promise<void> {
@@ -996,6 +1071,80 @@ export class Splits {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.saving.set(false);
+    }
+  }
+
+  /** Splits eligible for batch completion. */
+  protected readonly pendingSplits = computed(() =>
+    this.splits().filter((split) => split.status === 'pending'),
+  );
+
+  protected readonly selectedCount = computed(() => this.selectedIds().size);
+
+  protected readonly allPendingSelected = computed(() => {
+    const pending = this.pendingSplits();
+    return pending.length > 0 && pending.every((split) => this.selectedIds().has(split.id));
+  });
+
+  protected isSelected(id: number): boolean {
+    return this.selectedIds().has(id);
+  }
+
+  protected toggleSelected(id: number, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.selectedIds.update((current) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  }
+
+  protected toggleAllPending(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    const next: ReadonlySet<number> = checked
+      ? new Set<number>(this.pendingSplits().map((split) => split.id))
+      : new Set<number>();
+    this.selectedIds.set(next);
+  }
+
+  /**
+   * Completes every selected split in one call.
+   *
+   * The backend processes them independently, so a split that cannot be paid
+   * out is reported rather than losing the ones that succeeded. Both outcomes
+   * are surfaced: silently dropping failures would leave an officer believing
+   * they had settled more than they had.
+   */
+  protected async completeSelected(): Promise<void> {
+    const ids = [...this.selectedIds()];
+    if (ids.length === 0) {
+      return;
+    }
+    this.batchRunning.set(true);
+    try {
+      const result = await firstValueFrom(
+        this.api.post<CompleteSplitsBatchResult>('api/splits/complete-batch', {
+          split_ids: ids,
+        }),
+      );
+      this.selectedIds.set(new Set<number>());
+      if (result.completed.length > 0) {
+        this.toasts.success(
+          `${result.completed.length} ${this.t('splits.batch.completed')}`,
+        );
+      }
+      for (const failure of result.failed) {
+        this.toasts.error(`Split #${failure.split_id}: ${failure.reason}`);
+      }
+      await this.load();
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.batchRunning.set(false);
     }
   }
 
@@ -1192,8 +1341,9 @@ export class Splits {
     this.editEventTitle.set('');
   }
 
-  private async load(): Promise<void> {
+  protected async load(): Promise<void> {
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       const filter = this.statusFilter();
       const params: Record<string, string | number> = { page: this.page(), limit: PAGE_SIZE };
@@ -1206,6 +1356,7 @@ export class Splits {
       this.splits.set(data.items);
       this.totalPages.set(data.total_pages);
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

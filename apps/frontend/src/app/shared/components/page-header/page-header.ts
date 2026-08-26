@@ -17,7 +17,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
   template: `
     <header class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 class="text-2xl font-semibold tracking-tight" style="color: var(--color-text)">
+        <h1 class="display text-2xl" style="color: var(--color-text)">
           {{ title() }}
         </h1>
         @if (subtitle()) {

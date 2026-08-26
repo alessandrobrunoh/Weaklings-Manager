@@ -51,7 +51,14 @@ export type PermissionKey =
   | 'regear.view'
   | 'regear.request'
   | 'regear.adjudicate'
-  | 'regear.settings.manage';
+  | 'regear.settings.manage'
+  | 'admin.settings.manage'
+  | 'progression.view'
+  | 'progression.settings.manage'
+  | 'progression.adjust'
+  | 'warns.view'
+  | 'warns.issue'
+  | 'vod.submit';
 
 export interface DiscordUserProfile {
   id: string;
@@ -79,6 +86,22 @@ export interface UserMetrics {
   events_attended: number;
   total_estimated_loss: number;
   top_estimated_loss: number;
+  /** Events the guild ran, so attendance reads as a rate, not a bare count. */
+  events_total: number;
+  attendance_rate: number;
+  attendance_streak: number;
+  next_event_title: string | null;
+  next_event_at: string | null;
+  battles_fought: number;
+  kills: number;
+  deaths: number;
+  kill_fame: number;
+  regears_claimed: number;
+  regears_pending: number;
+  regears_approved: number;
+  regear_silver: number;
+  splits_joined: number;
+  split_earnings: number;
 }
 
 export interface UserFilters {
@@ -282,6 +305,7 @@ export interface EventDetailView extends EventView {
 export interface EventParticipant {
   user_id: number;
   username: string;
+  discord_id: string | null;
   primary_build_id: number;
   primary_build_name: string;
   secondary_build_id: number | null;
@@ -319,6 +343,8 @@ export interface CreateEventRequest {
   call_to_arms?: boolean;
   comp_id: number;
   event_date_utc: string;
+  /** Also create an empty loot split already linked to this event. */
+  create_split?: boolean;
 }
 
 export interface UpdateEventRequest {
@@ -416,6 +442,13 @@ export interface GuildLossEstimate {
 }
 
 export interface BattleDetail extends BattleSummary {
+  /**
+   * The guild event this battle was fought under.
+   *
+   * Null means the background sync found it and it was never linked, so it
+   * cannot be attributed to one of our compositions.
+   */
+  linked_event: LinkedEvent | null;
   players: BattlePlayer[];
   kills: BattleKillEvent[];
   estimated_losses: BattleLossEstimate;
@@ -535,6 +568,13 @@ export interface UpdateCompCategoryRequest {
 export type BuildSlot =
   'weapon' | 'off_hand' | 'head' | 'armor' | 'shoes' | 'cape' | 'bag' | 'potion' | 'food' | 'mount';
 
+/** The guild event a battle was fought under. */
+export interface LinkedEvent {
+  id: number;
+  title: string;
+  call_to_arms: boolean;
+}
+
 export interface BuildItemSlot {
   slot: BuildSlot;
   openalbion_item_type: string;
@@ -547,6 +587,7 @@ export interface BuildItemSlot {
 export interface BuildSummary {
   id: number;
   name: string;
+  description: string | null;
   role: BuildRole;
   category_id: number;
   category_name: string | null;
@@ -568,6 +609,7 @@ export interface CompBuildEntry {
 export interface CompSummary {
   id: number;
   name: string;
+  description: string | null;
   category_id: number;
   category_name: string | null;
   created_by_username: string;
@@ -775,4 +817,535 @@ export interface RegearExtractionReport {
 
 export interface AdminMessage {
   message: string;
+}
+
+/* ------------------------------- Intel ------------------------------ */
+
+/** Engagement bracket a scouted composition falls into. */
+export type IntelScoutCategory = 'gank' | 'small_scale' | 'zvz';
+
+/** One enemy player observed in a scouted composition. */
+export interface ScoutedPlayer {
+  name: string;
+  role: string;
+  /**
+   * Main-hand weapon. Absent when the player never appeared in the kill feed,
+   * which is the normal case for most of a large enemy force.
+   */
+  weapon: string | null;
+  /** True when the role came from the keyword fallback, not a curated build. */
+  role_inferred: boolean;
+  item_power: number;
+}
+
+/** Summary of a scouted enemy composition. */
+export interface ScoutedCompSummary {
+  id: number;
+  name: string;
+  opponent_guild_id: string | null;
+  opponent_guild_name: string;
+  opponent_alliance_name: string | null;
+  category: IntelScoutCategory;
+  player_count: number;
+  /**
+   * How many observed players contributed a weapon. Lower than `player_count`
+   * whenever the kill feed covered only part of the fight, which weakens the
+   * weapon half of every similarity score involving this scout.
+   */
+  weapon_sample_size: number;
+  full_weapon_coverage: boolean;
+  avg_ip: number;
+  roles: Record<string, number>;
+  weapons: Record<string, number>;
+  source_battle_count: number;
+  threat_score: number;
+  is_archived: boolean;
+  notes: string | null;
+  first_seen_at: string;
+  saved_at: string;
+}
+
+/** One cell of the matchup matrix. */
+export interface MatchupRow {
+  our_comp_id: number;
+  our_comp_name: string;
+  scouted_comp_id: number;
+  battles: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+}
+
+/** How much of the underlying battle data could be attributed to a comp. */
+export interface MatchupCoverage {
+  total_battles: number;
+  battles_with_comp: number;
+}
+
+/** The matchup matrix plus the caveat that explains its gaps. */
+export interface MatchupReport {
+  rows: MatchupRow[];
+  coverage: MatchupCoverage;
+}
+
+/** Our comp ranked as an answer to a scouted composition. */
+export interface CounterSuggestion {
+  comp_id: number;
+  comp_name: string;
+  similarity: number;
+  battles: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  /** True when we have actually fought this pairing, rather than inferred it. */
+  tested: boolean;
+}
+
+/** One scored comparison against another composition. */
+export interface SimilarityHit {
+  id: number;
+  name: string;
+  score: number;
+  full_weapon_coverage: boolean;
+}
+
+/** Full dossier for one scouted composition. */
+export interface ScoutedCompDetail extends ScoutedCompSummary {
+  players: ScoutedPlayer[];
+  source_battle_ids: number[];
+  fingerprint: string;
+  matchups: MatchupRow[];
+  matchup_coverage: MatchupCoverage;
+  recommended_counter: CounterSuggestion | null;
+}
+
+/** The result of scouting a battle. */
+export interface ScoutOutcome {
+  scouted_comp_id: number | null;
+  name: string;
+  opponent_guild_name: string;
+  category: IntelScoutCategory;
+  player_count: number;
+  weapon_sample_size: number;
+  merged: boolean;
+  already_linked: boolean;
+}
+
+/** Body of a scout update. */
+export interface UpdateScoutRequest {
+  name?: string;
+  notes?: string;
+  category?: IntelScoutCategory;
+  is_archived?: boolean;
+}
+
+/* --------------------------- Intel report --------------------------- */
+
+/** One battle, scored so the best and worst can be surfaced. */
+export interface FightSummary {
+  battle_id: number;
+  started_at: string;
+  is_win: boolean;
+  kills: number;
+  deaths: number;
+  kill_fame: number;
+  opponent: string | null;
+  score: number;
+}
+
+/** Headline combat performance. */
+export interface ReportOverview {
+  fights: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  kills: number;
+  deaths: number;
+  kill_death_ratio: number;
+  kill_fame: number;
+  silver_lost: number;
+  avg_item_power: number;
+  enemy_avg_item_power: number;
+  item_power_delta: number;
+  win_streak: number;
+  best_fight: FightSummary | null;
+  worst_fight: FightSummary | null;
+  attributed_fights: number;
+}
+
+/** Roster, attendance and role coverage. */
+export interface ReportOperations {
+  roster: number;
+  officers: number;
+  unlinked: number;
+  events_total: number;
+  events_live: number;
+  events_scheduled: number;
+  events_finished: number;
+  call_to_arms: number;
+  cta_rate: number;
+  attendance: number;
+  slots: number;
+  fill_rate: number;
+  role_need: Record<string, number>;
+  role_fill: Record<string, number>;
+  inactive_members: string[];
+}
+
+/**
+ * Silver flow.
+ *
+ * `outflow_splits`, `outflow_regear` and `outflow_other` are slices of
+ * `outflow_total`, not additions to it — they sum to it exactly.
+ */
+export interface ReportEconomy {
+  loot_in: number;
+  outflow_total: number;
+  outflow_splits: number;
+  outflow_regear: number;
+  outflow_other: number;
+  net: number;
+  bank_pending: number;
+  bank_requested: number;
+  bank_withdrawn: number;
+  regear_open: number;
+  regear_paid: number;
+  split_pending: number;
+  split_completed: number;
+  siphoned_net: number;
+  fame_per_player: number;
+  fame_per_million_lost: number;
+}
+
+/** One member's contribution over the window. */
+export interface ReportMemberRow {
+  user_id: number;
+  username: string;
+  albion_name: string | null;
+  role: string;
+  is_officer: boolean;
+  linked: boolean;
+  events_signed: number;
+  fill_rate: number;
+  fights: number;
+  kills: number;
+  deaths: number;
+  kill_death_ratio: number;
+  kill_fame: number;
+  death_fame: number;
+  silver_lost: number;
+  regears_claimed: number;
+  regear_silver: number;
+  split_earnings: number;
+  bank_pending: number;
+  siphoned: number;
+}
+
+/** One of our comps and how it has performed. */
+export interface ReportCompRow {
+  comp_id: number;
+  name: string;
+  seats: number;
+  events: number;
+  fights: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  kills: number;
+  deaths: number;
+  fill_rate: number;
+}
+
+/** One scouted opponent and our record against them. */
+export interface ReportEnemyRow {
+  scouted_comp_id: number;
+  name: string;
+  opponent_guild_name: string;
+  category: IntelScoutCategory;
+  player_count: number;
+  wins: number;
+  losses: number;
+  threat_score: number;
+  last_seen: string;
+  counter_comp_name: string | null;
+}
+
+export interface WeaponShare {
+  weapon: string;
+  count: number;
+}
+
+/**
+ * One calendar week's activity, Monday-anchored in UTC.
+ *
+ * Every metric on the report is a total over the window; a trend needs
+ * direction, which only a series of these gives you.
+ */
+export interface TrendBucket {
+  week_start: string;
+  fights: number;
+  wins: number;
+  losses: number;
+  kills: number;
+  deaths: number;
+  kill_fame: number;
+  silver_lost: number;
+  events: number;
+  attendance: number;
+  loot_in: number;
+  outflow: number;
+}
+
+export interface HourBucket {
+  hour: number;
+  fights: number;
+  wins: number;
+  losses: number;
+}
+
+export interface TimelineEntry {
+  at: string;
+  kind: 'battle' | 'event' | 'scout';
+  title: string;
+  detail: string;
+}
+
+export interface LeaderboardEntry {
+  user_id: number;
+  username: string;
+  value: number;
+}
+
+export interface ReportLeaderboards {
+  attendance: LeaderboardEntry[];
+  kills: LeaderboardEntry[];
+  deaths: LeaderboardEntry[];
+  kill_fame: LeaderboardEntry[];
+  death_fame: LeaderboardEntry[];
+  silver_lost: LeaderboardEntry[];
+  split_earnings: LeaderboardEntry[];
+  regear_silver: LeaderboardEntry[];
+  siphoned: LeaderboardEntry[];
+}
+
+/** Caveats that explain gaps in the report's numbers. */
+export interface ReportDataQuality {
+  total_battles: number;
+  attributed_battles: number;
+  /** Albion characters seen in battle that map to no linked member. */
+  unlinked_players: string[];
+}
+
+/** The whole guild report. */
+export interface GuildReport {
+  from: string;
+  to: string;
+  overview: ReportOverview;
+  operations: ReportOperations;
+  economy: ReportEconomy;
+  members: ReportMemberRow[];
+  comps: ReportCompRow[];
+  enemies: ReportEnemyRow[];
+  our_meta: WeaponShare[];
+  enemy_meta: WeaponShare[];
+  hours: HourBucket[];
+  /** One entry per calendar week, oldest first, including quiet weeks. */
+  trends: TrendBucket[];
+  timeline: TimelineEntry[];
+  leaderboards: ReportLeaderboards;
+  data_quality: ReportDataQuality;
+}
+
+/** One split that could not be completed in a batch, and why. */
+export interface BatchFailure {
+  split_id: number;
+  reason: string;
+}
+
+/** Outcome of completing several splits at once. */
+export interface CompleteSplitsBatchResult {
+  completed: number[];
+  failed: BatchFailure[];
+  total_distributed: string;
+}
+
+/* ------------------------------- Admin ------------------------------ */
+
+/** One role and the permissions granted to it. */
+export interface RolePermissionsView {
+  role_id: string;
+  role_name: string;
+  priority: number;
+  permissions: string[];
+}
+
+/** The authorization matrix, plus every key that could be granted. */
+export interface PermissionMatrix {
+  roles: RolePermissionsView[];
+  available_permissions: string[];
+}
+
+/**
+ * The guild's Discord integration settings — channel/role IDs that used to live only in
+ * deployment env vars. Every field is nullable: an unset channel means the code that would post
+ * there skips it.
+ */
+export interface GuildSettingsView {
+  discord_events_channel_id: string | null;
+  discord_battles_channel_id: string | null;
+  discord_battles_cta_channel_id: string | null;
+  discord_audit_log_channel_id: string | null;
+  discord_transaction_spam_channel_id: string | null;
+  discord_event_role_id: string | null;
+}
+
+/**
+ * Request body for `PUT /admin/settings`. Partial update: a field absent here is left unchanged;
+ * an empty string clears it.
+ */
+export type UpdateGuildSettingsRequest = Partial<GuildSettingsView>;
+
+/** One row of the admin curve preview. */
+export interface LevelThresholdView {
+  level: number;
+  xp: number;
+}
+
+/** Guild-wide XP curve, rates, and warn threshold. */
+export interface ProgressionSettingsView {
+  xp_base: number;
+  xp_exponent: string | number;
+  max_level: number;
+  xp_message: number;
+  xp_event_create: number;
+  xp_event_join: number;
+  xp_event_complete: number;
+  xp_vod: number;
+  message_cooldown_secs: number;
+  message_min_chars: number;
+  warn_threshold: number;
+  vod_forum_channel_id: string | null;
+  message_channel_deny_list: string[];
+  level_preview: LevelThresholdView[];
+}
+
+/** Partial update of progression settings. */
+export type UpdateProgressionSettingsRequest = Partial<{
+  xp_base: number;
+  xp_exponent: number;
+  max_level: number;
+  xp_message: number;
+  xp_event_create: number;
+  xp_event_join: number;
+  xp_event_complete: number;
+  xp_vod: number;
+  message_cooldown_secs: number;
+  message_min_chars: number;
+  warn_threshold: number;
+  vod_forum_channel_id: string;
+  message_channel_deny_list: string[];
+}>;
+
+/** One Albion-aligned, admin-modellable XP season. */
+export interface ProgressionSeasonView {
+  id: number;
+  name: string;
+  starts_at: string;
+  ends_at: string;
+  is_active: boolean;
+}
+
+/** The caller's (or a target user's) season XP snapshot. */
+export interface ProgressionMeView {
+  season: ProgressionSeasonView | null;
+  level: number;
+  xp: number;
+  xp_to_next: number;
+  next_level_at: number;
+  rank: number | null;
+  multiplier: string | number;
+  lifetime_xp: number;
+}
+
+/** One ranked row on the season XP leaderboard. */
+export interface ProgressionLeaderboardEntry {
+  user_id: number;
+  username: string;
+  xp: number;
+  level: number;
+  rank: number;
+}
+
+/** Why a progression ledger row was written. */
+export type XpSource =
+  | 'message'
+  | 'event_create'
+  | 'event_join'
+  | 'event_complete'
+  | 'vod'
+  | 'admin_adjust';
+
+/** One append-only XP award (or admin adjust) row. */
+export interface ProgressionLedgerRow {
+  id: number;
+  user_id: number;
+  season_id: number;
+  source: XpSource | string;
+  base_amount: number;
+  applied_amount: number;
+  multiplier_at_time: string | number;
+  idempotency_key: string;
+  actor_user_id: number | null;
+  created_at: string;
+}
+
+/** Officer body for `POST /progression/users/{id}/adjust`. Omit unused fields. */
+export interface AdjustProgressionRequest {
+  set_xp?: number;
+  add_xp?: number;
+  set_level?: number;
+  set_multiplier?: number;
+  multiplier_expires_at?: string;
+  reason: string;
+}
+
+/** Warn severity stored on `user_warns`. */
+export type WarnSeverity = 'note' | 'warn' | 'strike';
+
+/** One row of the guild warn register. */
+export interface WarnView {
+  id: number;
+  user_id: number;
+  username?: string | null;
+  issued_by_user_id: number;
+  issued_by_username?: string | null;
+  reason: string;
+  severity: WarnSeverity;
+  multiplier?: string | number | null;
+  multiplier_expires_at?: string | null;
+  revoked_at: string | null;
+  revoked_by?: number | null;
+  created_at: string;
+}
+
+/** Body for `POST /warns`. */
+export interface CreateWarnRequest {
+  user_id: number;
+  reason: string;
+  severity: WarnSeverity;
+  multiplier?: number;
+  multiplier_expires_at?: string;
+}
+
+/** One admin-facing kick/handle reminder when the warn threshold is hit. */
+export interface WarnEscalationView {
+  id: number;
+  user_id: number;
+  username?: string | null;
+  threshold_at_time: number;
+  warn_count_at_time: number;
+  opened_at: string;
+  acknowledged_at: string | null;
+  acknowledged_by?: number | null;
+  closed_reason?: string | null;
 }

@@ -22,7 +22,9 @@ use battle_linker::refresh_pending_links;
 use crate::config::Config;
 use crate::errors::AppError;
 use crate::modules::albionbb::service::AlbionBbService;
+use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::events::service::{BattleLinkingContext, EventService};
+use crate::modules::regear::extractor::ExtractionGuildContext;
 
 /// Tick interval for the worker. Short enough that auto-stop latency stays
 /// within tens of seconds, long enough not to hammer the DB.
@@ -35,14 +37,19 @@ const TICK_INTERVAL: Duration = Duration::from_secs(30);
 /// ```ignore
 /// event_sessions::spawn(db.clone(), albionbb.clone(), cfg.clone());
 /// ```
-pub fn spawn(db: DatabaseConnection, albionbb: AlbionBbService, cfg: Config) {
+pub fn spawn(
+    db: DatabaseConnection,
+    albionbb: AlbionBbService,
+    albiondata: AlbionDataService,
+    cfg: Config,
+) {
     tokio::spawn(async move {
         let mut ticker = interval(TICK_INTERVAL);
         // Don't pile up ticks if a cycle takes longer than TICK_INTERVAL.
         // (default `MissedTickBehavior::Burst` is fine here.)
         loop {
             ticker.tick().await;
-            if let Err(e) = run_cycle(&db, &albionbb, &cfg).await {
+            if let Err(e) = run_cycle(&db, &albionbb, &albiondata, &cfg).await {
                 tracing::error!(error = %e, "event-sessions worker cycle failed");
             }
         }
@@ -56,6 +63,7 @@ pub fn spawn(db: DatabaseConnection, albionbb: AlbionBbService, cfg: Config) {
 async fn run_cycle(
     db: &DatabaseConnection,
     albionbb: &AlbionBbService,
+    albiondata: &AlbionDataService,
     cfg: &Config,
 ) -> Result<(), AppError> {
     auto_stop_expired_sessions(db, &EventService::new()).await?;
@@ -64,6 +72,14 @@ async fn run_cycle(
         &cfg.albion_allied_guild_ids(),
         &cfg.albion_allied_guild_names(),
     );
-    refresh_pending_links(db, albionbb, &context).await?;
+    let guild = ExtractionGuildContext {
+        guild_id: cfg.albion_guild_id.clone(),
+        // The extractor treats an empty region as "use the service default".
+        server: Some(crate::modules::albionbb::client::normalize_server(Some(
+            &cfg.albion_api_region,
+        )))
+        .filter(|region| !region.is_empty()),
+    };
+    refresh_pending_links(db, albionbb, albiondata, &context, &guild).await?;
     Ok(())
 }

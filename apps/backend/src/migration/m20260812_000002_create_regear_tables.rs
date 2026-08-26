@@ -67,7 +67,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(RegearDeaths::LoadoutJson).text().not_null())
                     .col(
                         ColumnDef::new(RegearDeaths::AutoEstimateTotal)
-                            .decimal_len(20, 0)
+                            .decimal_len(16, 0)
                             .not_null()
                             .default(0),
                     )
@@ -86,7 +86,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(RegearDeaths::RequestedAt).timestamp_with_time_zone())
                     .col(ColumnDef::new(RegearDeaths::DecidedAt).timestamp_with_time_zone())
                     .col(ColumnDef::new(RegearDeaths::DecidedByUserId).big_integer())
-                    .col(ColumnDef::new(RegearDeaths::FinalAmount).decimal_len(20, 0))
+                    .col(ColumnDef::new(RegearDeaths::FinalAmount).decimal_len(16, 0))
                     .col(ColumnDef::new(RegearDeaths::FinalBreakdownJson).text())
                     .col(ColumnDef::new(RegearDeaths::OfficerNote).text())
                     .col(ColumnDef::new(RegearDeaths::BankTransactionId).big_integer())

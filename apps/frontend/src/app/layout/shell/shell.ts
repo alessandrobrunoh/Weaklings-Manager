@@ -1,5 +1,14 @@
-import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import { filter } from 'rxjs';
 
 import { AlbionLinkGate } from '../../shared/components/albion-link-gate/albion-link-gate';
 import { Sidebar, type NavSection } from '../sidebar/sidebar';
@@ -52,7 +61,7 @@ import { Topbar } from '../topbar/topbar';
       <!-- Main column -->
       <div class="flex flex-1 flex-col overflow-hidden">
         <app-topbar (menuToggle)="toggleDrawer()" />
-        <main class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 scrollbar-thin">
+        <main #main class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 scrollbar-thin">
           <div class="mx-auto w-full max-w-7xl">
             <router-outlet />
           </div>
@@ -64,7 +73,30 @@ import { Topbar } from '../topbar/topbar';
   `,
 })
 export class Shell {
+  private readonly router = inject(Router);
+  private readonly main = viewChild<ElementRef<HTMLElement>>('main');
+
   protected readonly isDrawerOpen = signal(false);
+
+  constructor() {
+    // The router's own scroll restoration targets `window.scrollTo`, which is
+    // a no-op here: the root is `h-screen overflow-hidden`, so the window
+    // itself never scrolls — every page scrolls inside this `<main>`. Reset
+    // it by hand on each navigation, or a long scrolled page (an event
+    // detail, a battle breakdown) leaves its offset behind and the next page
+    // renders mid-scroll instead of from the top.
+    this.router.events
+      .pipe(
+        filter((event) => event instanceof NavigationEnd),
+        takeUntilDestroyed(),
+      )
+      .subscribe(() => {
+        const element = this.main()?.nativeElement;
+        if (element) {
+          element.scrollTop = 0;
+        }
+      });
+  }
 
   protected toggleDrawer(): void {
     this.isDrawerOpen.update((open) => !open);
@@ -95,10 +127,17 @@ export class Shell {
         { path: '/splits', icon: 'swords', labelKey: 'nav.splits' },
         { path: '/events', icon: 'calendar', labelKey: 'nav.events' },
         { path: '/battles', icon: 'shield', labelKey: 'nav.battles' },
+        { path: '/intel', icon: 'scan', labelKey: 'nav.intel' },
         { path: '/comps', icon: 'package', labelKey: 'nav.comps' },
         { path: '/siphoned', icon: 'activity', labelKey: 'nav.siphoned' },
         { path: '/regears', icon: 'shield', labelKey: 'nav.regears' },
         { path: '/users', icon: 'users', labelKey: 'nav.users' },
+        {
+          path: '/warns',
+          icon: 'alert',
+          labelKey: 'nav.warns',
+          roles: ['Officer', 'Admin', 'SuperAdmin'],
+        },
       ],
     },
     {
@@ -116,7 +155,8 @@ export class Shell {
           labelKey: 'nav.audit',
           roles: ['Officer', 'Admin', 'SuperAdmin'],
         },
-        { path: '/profile', icon: 'settings', labelKey: 'nav.profile' },
+        { path: '/profile', icon: 'users', labelKey: 'nav.profile' },
+        { path: '/settings', icon: 'settings', labelKey: 'nav.settings' },
       ],
     },
   ];

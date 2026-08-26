@@ -79,7 +79,7 @@ export async function sendEventSignupMessage(
 ): Promise<boolean> {
   try {
     await thread.send({
-      content: "Use the button below to join or leave this event.",
+      content: "✅ **Join / Change Build** to sign up or swap builds — 🚪 **Leave Event** to drop out.",
       embeds: [buildEventEmbed(event)],
       components: [buildEventManageActionRow(event.id)],
     });

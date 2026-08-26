@@ -445,3 +445,168 @@ impl From<PaginatedData<crate::modules::regear::models::DeathView>> for Paginate
         }
     }
 }
+
+/// Concrete paginated scouted-comp response schema for `OpenAPI`.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PaginatedScoutedComp {
+    /// List of scouted enemy compositions on the current page.
+    pub items: Vec<crate::modules::intel::models::ScoutedCompSummary>,
+    /// Total number of items across all pages.
+    #[schema(example = 42)]
+    pub total_items: u64,
+    /// Total number of pages.
+    #[schema(example = 5)]
+    pub total_pages: u64,
+    /// The current page number (1-indexed).
+    #[schema(example = 1)]
+    pub current_page: u64,
+    /// The number of items per page.
+    #[schema(example = 10)]
+    pub limit: u64,
+}
+
+impl From<PaginatedData<crate::modules::intel::models::ScoutedCompSummary>>
+    for PaginatedScoutedComp
+{
+    fn from(data: PaginatedData<crate::modules::intel::models::ScoutedCompSummary>) -> Self {
+        Self {
+            items: data.items,
+            total_items: data.total_items,
+            total_pages: data.total_pages,
+            current_page: data.current_page,
+            limit: data.limit,
+        }
+    }
+}
+
+/// Concrete paginated XP leaderboard response schema for OpenAPI.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PaginatedLeaderboardEntryView {
+    /// Leaderboard rows on the current page.
+    pub items: Vec<crate::modules::progression::models::LeaderboardEntryView>,
+    /// Total number of items across all pages.
+    #[schema(example = 42)]
+    pub total_items: u64,
+    /// Total number of pages.
+    #[schema(example = 5)]
+    pub total_pages: u64,
+    /// The current page number (1-indexed).
+    #[schema(example = 1)]
+    pub current_page: u64,
+    /// The number of items per page.
+    #[schema(example = 10)]
+    pub limit: u64,
+}
+
+impl From<PaginatedData<crate::modules::progression::models::LeaderboardEntryView>>
+    for PaginatedLeaderboardEntryView
+{
+    fn from(
+        data: PaginatedData<crate::modules::progression::models::LeaderboardEntryView>,
+    ) -> Self {
+        Self {
+            items: data.items,
+            total_items: data.total_items,
+            total_pages: data.total_pages,
+            current_page: data.current_page,
+            limit: data.limit,
+        }
+    }
+}
+
+/// Concrete paginated XP ledger response schema for OpenAPI.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PaginatedXpLedgerEntryView {
+    /// Ledger rows on the current page.
+    pub items: Vec<crate::modules::progression::models::XpLedgerEntryView>,
+    /// Total number of items across all pages.
+    #[schema(example = 42)]
+    pub total_items: u64,
+    /// Total number of pages.
+    #[schema(example = 5)]
+    pub total_pages: u64,
+    /// The current page number (1-indexed).
+    #[schema(example = 1)]
+    pub current_page: u64,
+    /// The number of items per page.
+    #[schema(example = 10)]
+    pub limit: u64,
+}
+
+impl From<PaginatedData<crate::modules::progression::models::XpLedgerEntryView>>
+    for PaginatedXpLedgerEntryView
+{
+    fn from(data: PaginatedData<crate::modules::progression::models::XpLedgerEntryView>) -> Self {
+        Self {
+            items: data.items,
+            total_items: data.total_items,
+            total_pages: data.total_pages,
+            current_page: data.current_page,
+            limit: data.limit,
+        }
+    }
+}
+
+/// Concrete paginated warn list response schema for OpenAPI.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PaginatedWarnView {
+    /// Warn rows on the current page.
+    pub items: Vec<crate::modules::warns::models::WarnView>,
+    /// Total number of items across all pages.
+    #[schema(example = 42)]
+    pub total_items: u64,
+    /// Total number of pages.
+    #[schema(example = 5)]
+    pub total_pages: u64,
+    /// The current page number (1-indexed).
+    #[schema(example = 1)]
+    pub current_page: u64,
+    /// The number of items per page.
+    #[schema(example = 10)]
+    pub limit: u64,
+}
+
+impl From<PaginatedData<crate::modules::warns::models::WarnView>> for PaginatedWarnView {
+    fn from(data: PaginatedData<crate::modules::warns::models::WarnView>) -> Self {
+        Self {
+            items: data.items,
+            total_items: data.total_items,
+            total_pages: data.total_pages,
+            current_page: data.current_page,
+            limit: data.limit,
+        }
+    }
+}
+
+/// Concrete paginated warn-escalation response schema for OpenAPI.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PaginatedWarnEscalationView {
+    /// Escalation rows on the current page.
+    pub items: Vec<crate::modules::warns::models::WarnEscalationView>,
+    /// Total number of items across all pages.
+    #[schema(example = 42)]
+    pub total_items: u64,
+    /// Total number of pages.
+    #[schema(example = 5)]
+    pub total_pages: u64,
+    /// The current page number (1-indexed).
+    #[schema(example = 1)]
+    pub current_page: u64,
+    /// The number of items per page.
+    #[schema(example = 10)]
+    pub limit: u64,
+}
+
+impl From<PaginatedData<crate::modules::warns::models::WarnEscalationView>>
+    for PaginatedWarnEscalationView
+{
+    fn from(data: PaginatedData<crate::modules::warns::models::WarnEscalationView>) -> Self {
+        Self {
+            items: data.items,
+            total_items: data.total_items,
+            total_pages: data.total_pages,
+            current_page: data.current_page,
+            limit: data.limit,
+        }
+    }
+}

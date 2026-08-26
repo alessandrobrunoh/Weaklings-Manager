@@ -157,6 +157,10 @@ pub struct EventParticipantView {
     pub user_id: i64,
     /// The username of the participant.
     pub username: String,
+    /// The participant's Discord user ID, if their account is linked. Lets a caller (the bot, in
+    /// particular) tell "this is me" apart from every other participant without a numeric
+    /// `user_id` neither side already has in hand.
+    pub discord_id: Option<String>,
     /// The primary build ID chosen by the participant.
     #[schema(example = 5)]
     pub primary_build_id: i64,
@@ -276,6 +280,14 @@ pub struct CreateEventRequest {
     pub comp_id: i64,
     /// The start date and time of the event (UTC, e.g. RFC3339).
     pub event_date_utc: String,
+    /// Also create an empty loot split already linked to this event.
+    ///
+    /// Saves the officer from creating the split by hand after the fight and
+    /// remembering to attach it. The split starts at zero with no participants;
+    /// its roster fills from the event's sign-ups when it is next updated, so
+    /// creating it up front costs nothing if the fight never happens.
+    #[serde(default)]
+    pub create_split: bool,
 }
 
 /// Request body to update an existing event.

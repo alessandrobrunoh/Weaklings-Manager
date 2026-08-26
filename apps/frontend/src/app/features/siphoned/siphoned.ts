@@ -16,6 +16,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import {
@@ -23,6 +24,16 @@ import {
   type DataTableColumn,
   type DataTableFilterOption,
 } from '../../shared/components/data-table/data-table';
+import {
+  ViewToggle,
+  type ViewToggleOption,
+} from '../../shared/components/view-toggle/view-toggle';
+
+type SiphonedTab = 'balances' | 'entries' | 'batches';
+
+function isSiphonedTab(value: string): value is SiphonedTab {
+  return value === 'balances' || value === 'entries' || value === 'batches';
+}
 
 const ENTRIES_LOAD_LIMIT = 1000;
 
@@ -62,7 +73,7 @@ function emptyEntryDraft(): EntryDraft {
 @Component({
   selector: 'app-siphoned',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Loading, DataTable],
+  imports: [PageHeader, EmptyState, ErrorState, Loading, DataTable, ViewToggle],
   template: `
     <app-page-header [title]="t('siphoned.title')" [subtitle]="t('siphoned.subtitle')">
       @if (canIngest()) {
@@ -111,38 +122,14 @@ function emptyEntryDraft(): EntryDraft {
       </form>
     }
 
-    <div
-      class="mb-4 inline-flex gap-1 p-1"
-      style="background-color: var(--color-surface-1); border-radius: var(--radius-md)"
-    >
-      <button
-        type="button"
-        class="btn btn--ghost"
-        [class.btn--tonal]="tab() === 'balances'"
-        (click)="switchTab('balances')"
-      >
-        {{ t('siphoned.balances') }}
-      </button>
-      <button
-        type="button"
-        class="btn btn--ghost"
-        [class.btn--tonal]="tab() === 'entries'"
-        (click)="switchTab('entries')"
-      >
-        {{ t('siphoned.entries') }}
-      </button>
-      <button
-        type="button"
-        class="btn btn--ghost"
-        [class.btn--tonal]="tab() === 'batches'"
-        (click)="switchTab('batches')"
-      >
-        {{ t('siphoned.batches') }}
-      </button>
+    <div class="mb-4">
+      <app-view-toggle [options]="tabOptions()" [active]="tab()" (activeChange)="switchTab($event)" />
     </div>
 
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
+    } @else if (loadFailed()) {
+      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     } @else if (tab() === 'balances') {
       @if (balances().length === 0) {
         <app-empty-state [message]="t('common.empty')" icon="activity" />
@@ -151,9 +138,9 @@ function emptyEntryDraft(): EntryDraft {
           @for (balance of balances(); track balance.player_name) {
             <article class="card p-5">
               <div class="mb-3 flex items-start justify-between gap-3">
-                <h3 class="font-semibold" style="color: var(--color-text)">
+                <h2 class="font-semibold" style="color: var(--color-text)">
                   {{ balance.player_name }}
-                </h3>
+                </h2>
                 <span
                   class="chip"
                   [class.chip--error]="toNumber(balance.net) < 0"
@@ -309,8 +296,15 @@ export class Siphoned {
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
 
-  protected readonly tab = signal<'balances' | 'entries' | 'batches'>('balances');
+  protected readonly tab = signal<SiphonedTab>('balances');
+
+  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
+    { id: 'balances', label: this.t('siphoned.balances') },
+    { id: 'entries', label: this.t('siphoned.entries') },
+    { id: 'batches', label: this.t('siphoned.batches') },
+  ]);
   protected readonly loading = signal(false);
+  protected readonly loadFailed = signal(false);
   protected readonly saving = signal(false);
   protected readonly showIngestForm = signal(false);
   protected readonly rawExport = signal('');
@@ -399,8 +393,8 @@ export class Siphoned {
     this.rawExport.set((event.target as HTMLTextAreaElement).value);
   }
 
-  protected switchTab(tab: 'balances' | 'entries' | 'batches'): void {
-    if (this.tab() === tab) {
+  protected switchTab(tab: string): void {
+    if (!isSiphonedTab(tab) || this.tab() === tab) {
       return;
     }
     this.tab.set(tab);
@@ -488,6 +482,7 @@ export class Siphoned {
   }
 
   protected async deleteEntry(entryId: number): Promise<void> {
+    if (!confirm(this.t('common.confirm'))) return;
     try {
       await firstValueFrom(this.api.delete(`api/siphoned/entries/${entryId}`));
       this.toasts.success(this.t('common.delete'));
@@ -497,7 +492,10 @@ export class Siphoned {
     }
   }
 
+  /** A batch is a whole import — potentially hundreds of rows — hence a
+   *  message that says so, rather than the app's bare one-word confirm. */
   protected async deleteBatch(batchId: string): Promise<void> {
+    if (!confirm(this.t('siphoned.confirmDeleteBatch'))) return;
     try {
       await firstValueFrom(this.api.delete(`api/siphoned/batches/${encodeURIComponent(batchId)}`));
       await this.refreshLastUpdated();
@@ -863,8 +861,9 @@ export class Siphoned {
     this.balances.set(balances);
   }
 
-  private async load(): Promise<void> {
+  protected async load(): Promise<void> {
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       if (this.tab() === 'balances') {
         const balances = await firstValueFrom(
@@ -891,6 +890,7 @@ export class Siphoned {
       this.batches.set(batches);
       this.lastUpdatedAt.set(batches[0]?.ingested_at ?? null);
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

@@ -1,4 +1,13 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  ElementRef,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -19,9 +28,17 @@ import { ToastService } from '../../core/services/toast.service';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import {
+  ViewToggle,
+  type ViewToggleOption,
+} from '../../shared/components/view-toggle/view-toggle';
 
 /** Tab toggle inside the Regears page. */
 type RegearTab = 'mine' | 'queue' | 'history' | 'settings';
+
+function isRegearTab(value: string): value is RegearTab {
+  return value === 'mine' || value === 'queue' || value === 'history' || value === 'settings';
+}
 
 /** Editing copy of a breakdown row used in the officer queue modal. */
 interface EditableBreakdownRow extends RegearBreakdownRow {
@@ -63,53 +80,15 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; label: string }> = [
 @Component({
   selector: 'app-regears',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, EmptyState, Loading, PageHeader],
+  imports: [RouterLink, EmptyState, Loading, PageHeader, ViewToggle],
   template: `
     <app-page-header
       title="Regears"
       subtitle="Request gear reimbursement for Call-To-Arms deaths."
     />
 
-    <div
-      class="mb-4 inline-flex gap-1 p-1"
-      style="background-color: var(--color-surface-1); border-radius: var(--radius-md)"
-    >
-      <button
-        type="button"
-        class="btn btn--ghost"
-        [class.btn--tonal]="tab() === 'mine'"
-        (click)="switchTab('mine')"
-      >
-        My Deaths
-      </button>
-      @if (canAdjudicate()) {
-        <button
-          type="button"
-          class="btn btn--ghost"
-          [class.btn--tonal]="tab() === 'queue'"
-          (click)="switchTab('queue')"
-        >
-          Officer Queue
-        </button>
-        <button
-          type="button"
-          class="btn btn--ghost"
-          [class.btn--tonal]="tab() === 'history'"
-          (click)="switchTab('history')"
-        >
-          History
-        </button>
-      }
-      @if (canManageSettings()) {
-        <button
-          type="button"
-          class="btn btn--ghost"
-          [class.btn--tonal]="tab() === 'settings'"
-          (click)="switchTab('settings')"
-        >
-          Settings
-        </button>
-      }
+    <div class="mb-4">
+      <app-view-toggle [options]="tabOptions()" [active]="tab()" (activeChange)="switchTab($event)" />
     </div>
 
     @if (tab() === 'mine') {
@@ -135,7 +114,7 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; label: string }> = [
       <app-loading label="Loading…" />
     } @else if (tab() === 'settings') {
       <section class="card p-5">
-        <h3 class="mb-4 text-lg font-semibold">Regear Settings</h3>
+        <h2 class="mb-4 text-lg font-semibold">Regear Settings</h2>
         @if (settingsLoading()) {
           <app-loading label="Loading settings…" />
         } @else if (settings(); as s) {
@@ -219,14 +198,14 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; label: string }> = [
             <article class="card p-4">
               <header class="mb-2 flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <h3 class="font-semibold">
+                  <h2 class="font-semibold">
                     {{ death.player_name }}
                     @if (death.primary_build_name; as buildName) {
                       <span class="text-sm" style="color: var(--color-text-secondary)">
                         (signed up: {{ buildName }})
                       </span>
                     }
-                  </h3>
+                  </h2>
                   <p class="text-xs" style="color: var(--color-text-secondary)">
                     {{ death.event_title }} —
                     <a [routerLink]="['/battles', death.albionbb_battle_id]" class="link">
@@ -339,9 +318,17 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; label: string }> = [
 
     <!-- Accept dialog -->
     @if (acceptDialog(); as dialog) {
-      <div class="dialog-backdrop" (click)="closeAcceptDialog()">
-        <div class="dialog" (click)="$event.stopPropagation()">
-          <h3 class="mb-3 text-lg font-semibold">
+      <div class="dialog-backdrop" (click)="closeAcceptDialog()" (keydown.escape)="closeAcceptDialog()">
+        <div
+          #acceptPanel
+          class="dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="accept-dialog-title"
+          tabindex="-1"
+          (click)="$event.stopPropagation()"
+        >
+          <h3 id="accept-dialog-title" class="mb-3 text-lg font-semibold">
             Accept regear for {{ dialog.death.player_name }}
           </h3>
           <p class="mb-3 text-sm" style="color: var(--color-text-secondary)">
@@ -415,9 +402,17 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; label: string }> = [
 
     <!-- Reject dialog -->
     @if (rejectDialog(); as dialog) {
-      <div class="dialog-backdrop" (click)="closeRejectDialog()">
-        <div class="dialog" (click)="$event.stopPropagation()">
-          <h3 class="mb-3 text-lg font-semibold">
+      <div class="dialog-backdrop" (click)="closeRejectDialog()" (keydown.escape)="closeRejectDialog()">
+        <div
+          #rejectPanel
+          class="dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reject-dialog-title"
+          tabindex="-1"
+          (click)="$event.stopPropagation()"
+        >
+          <h3 id="reject-dialog-title" class="mb-3 text-lg font-semibold">
             Reject regear for {{ dialog.death.player_name }}
           </h3>
           <p class="mb-2 text-sm" style="color: var(--color-error)">
@@ -471,18 +466,6 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; label: string }> = [
         max-height: 90vh;
         overflow-y: auto;
       }
-      .chip--success {
-        background: var(--color-success-bg, rgba(34, 197, 94, 0.15));
-        color: var(--color-success);
-      }
-      .chip--error {
-        background: var(--color-error-bg, rgba(239, 68, 68, 0.15));
-        color: var(--color-error);
-      }
-      .chip--warning {
-        background: var(--color-warning-bg, rgba(234, 179, 8, 0.15));
-        color: var(--color-warning);
-      }
     `,
   ],
 })
@@ -495,6 +478,23 @@ export class Regears {
   protected readonly slotBits = SLOT_BITS;
 
   protected readonly tab = signal<RegearTab>('mine');
+
+  /**
+   * Note: labels here are plain strings, not translated — this whole page
+   * predates the app's i18n rollout (no `t()` helper exists in it at all).
+   * Left as-is rather than translating it as a side effect of an unrelated
+   * fix; full i18n for this page is a separate, larger piece of work.
+   */
+  protected readonly tabOptions = computed<ViewToggleOption[]>(() => {
+    const options: ViewToggleOption[] = [{ id: 'mine', label: 'My Deaths' }];
+    if (this.canAdjudicate()) {
+      options.push({ id: 'queue', label: 'Officer Queue' }, { id: 'history', label: 'History' });
+    }
+    if (this.canManageSettings()) {
+      options.push({ id: 'settings', label: 'Settings' });
+    }
+    return options;
+  });
   protected readonly loading = signal(false);
   protected readonly acting = signal(false);
   protected readonly deaths = signal<RegearDeathView[]>([]);
@@ -511,6 +511,16 @@ export class Regears {
     note: string;
   } | null>(null);
   protected readonly rejectDialog = signal<{ death: RegearDeathView; note: string } | null>(null);
+
+  /**
+   * Neither dialog is a native `<dialog>`, so nothing moves focus into it on
+   * open or gives it back to whatever triggered it on close — a keyboard
+   * user opening "Accept" stayed focused on a button now hidden behind the
+   * backdrop, with no indication a dialog had appeared at all.
+   */
+  private readonly acceptPanel = viewChild<ElementRef<HTMLElement>>('acceptPanel');
+  private readonly rejectPanel = viewChild<ElementRef<HTMLElement>>('rejectPanel');
+  private previouslyFocused: HTMLElement | null = null;
 
   protected readonly canAdjudicate = computed(() => this.auth.hasPermission('regear.adjudicate'));
   protected readonly canManageSettings = computed(() =>
@@ -533,9 +543,23 @@ export class Regears {
 
   constructor() {
     void this.load();
+
+    effect(() => {
+      const open = this.acceptDialog() !== null || this.rejectDialog() !== null;
+      if (open) {
+        this.previouslyFocused = document.activeElement as HTMLElement | null;
+        (this.acceptPanel() ?? this.rejectPanel())?.nativeElement.focus();
+      } else if (this.previouslyFocused) {
+        this.previouslyFocused.focus();
+        this.previouslyFocused = null;
+      }
+    });
   }
 
-  protected switchTab(next: RegearTab): void {
+  protected switchTab(next: string): void {
+    if (!isRegearTab(next)) {
+      return;
+    }
     this.tab.set(next);
     void this.load();
   }

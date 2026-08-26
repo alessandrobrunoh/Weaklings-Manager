@@ -424,3 +424,103 @@ pub struct ApiResponseDeletedCount {
     /// The deletion result payload.
     pub data: crate::modules::siphoned::models::DeletedCount,
 }
+
+/// `OpenAPI` schema wrapper for the caller's season XP snapshot.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseProgressionMeView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Season XP, level, rank, multiplier, and lifetime total.
+    pub data: crate::modules::progression::models::ProgressionMeView,
+}
+
+/// `OpenAPI` schema wrapper for a message XP award result.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseAwardMessageView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Whether XP was granted and why not, if skipped.
+    pub data: crate::modules::progression::models::AwardMessageView,
+}
+
+/// `OpenAPI` schema wrapper for a paginated XP leaderboard.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponsePaginatedLeaderboardEntryView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Leaderboard page.
+    pub data: crate::pagination::PaginatedLeaderboardEntryView,
+}
+
+/// `OpenAPI` schema wrapper for a paginated XP ledger.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponsePaginatedXpLedgerEntryView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Ledger page.
+    pub data: crate::pagination::PaginatedXpLedgerEntryView,
+}
+
+/// `OpenAPI` schema wrapper for a claimed VOD review.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseVodReviewView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Claimed VOD row.
+    pub data: crate::modules::vods::models::VodReviewView,
+}
+
+/// `OpenAPI` schema wrapper for the caller's VOD review list.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseVodReviewViewList {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Claimed VOD rows.
+    pub data: Vec<crate::modules::vods::models::VodReviewView>,
+}
+
+/// `OpenAPI` schema wrapper for a warn row.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseWarnView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Warn row.
+    pub data: crate::modules::warns::models::WarnView,
+}
+
+/// `OpenAPI` schema wrapper for a paginated warn list.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponsePaginatedWarnView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Warn page.
+    pub data: crate::pagination::PaginatedWarnView,
+}
+
+/// `OpenAPI` schema wrapper for a warn escalation.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseWarnEscalationView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Escalation row.
+    pub data: crate::modules::warns::models::WarnEscalationView,
+}
+
+/// `OpenAPI` schema wrapper for a paginated escalation list.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponsePaginatedWarnEscalationView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Escalation page.
+    pub data: crate::pagination::PaginatedWarnEscalationView,
+}

@@ -1,4 +1,17 @@
-import { ChangeDetectionStrategy, Component, EventEmitter, inject, input, Output, signal } from '@angular/core';
+import {
+  afterNextRender,
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  EventEmitter,
+  HostListener,
+  inject,
+  input,
+  OnDestroy,
+  Output,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { Icon } from '../icon/icon';
 import { TranslateService } from '../../../core/services/translate.service';
 import { Loading } from '../loading/loading';
@@ -20,12 +33,17 @@ export interface SearchDialogOption {
     <div class="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div class="fixed inset-0 bg-black/60 backdrop-blur-sm" (click)="close.emit()"></div>
       <div
-        class="relative w-full max-w-2xl overflow-hidden rounded-xl shadow-2xl flex flex-col"
+        #panel
+        class="relative w-full max-w-2xl overflow-hidden rounded-2xl flex flex-col"
+        style="box-shadow: var(--shadow-3)"
         style="background: var(--color-surface); max-height: 90vh;"
+        role="dialog"
+        aria-modal="true"
+        [attr.aria-labelledby]="titleId"
       >
         <header class="flex items-center justify-between border-b p-4" style="border-color: var(--color-border)">
-          <h2 class="text-lg font-bold" style="color: var(--color-text)">{{ title() }}</h2>
-          <button type="button" class="btn btn--ghost" (click)="close.emit()">
+          <h2 [id]="titleId" class="text-lg font-bold" style="color: var(--color-text)">{{ title() }}</h2>
+          <button type="button" class="btn btn--ghost" [attr.aria-label]="t('common.close')" (click)="close.emit()">
             <app-icon name="close" size="1.25rem" />
           </button>
         </header>
@@ -36,9 +54,11 @@ export interface SearchDialogOption {
               <app-icon name="search" size="1rem" color="var(--color-text-secondary)" />
             </div>
             <input
+              #searchInputEl
               type="search"
               class="input pl-10"
               [placeholder]="placeholder()"
+              [attr.aria-label]="title()"
               [value]="searchQuery()"
               (input)="onSearchChange($event)"
             />
@@ -97,7 +117,7 @@ export interface SearchDialogOption {
     }
   `
 })
-export class SearchDialog {
+export class SearchDialog implements OnDestroy {
   title = input.required<string>();
   placeholder = input<string>('Search...');
   options = input.required<SearchDialogOption[]>();
@@ -112,8 +132,65 @@ export class SearchDialog {
   dateFrom = signal('');
   dateTo = signal('');
 
+  /** Stable per-instance id linking the dialog to its title for `aria-labelledby`. */
+  protected readonly titleId = `search-dialog-title-${Math.random().toString(36).slice(2)}`;
+
+  private readonly panel = viewChild<ElementRef<HTMLElement>>('panel');
+  private readonly searchInputEl = viewChild<ElementRef<HTMLInputElement>>('searchInputEl');
+  private previouslyFocused: HTMLElement | null = null;
+
   private readonly translate = inject(TranslateService);
   t = (key: TranslationKey | string) => this.translate.t(key as any);
+
+  /**
+   * This dialog is a bare `<div>` overlay, not a native `<dialog>`, so none
+   * of the browser's built-in focus handling applies. Without this a
+   * keyboard user opening it stayed focused on (or lost focus from) whatever
+   * triggered it, with no indication a modal had appeared, and closing it
+   * never returned them to where they were.
+   */
+  constructor() {
+    afterNextRender(() => {
+      this.previouslyFocused = document.activeElement as HTMLElement | null;
+      this.searchInputEl()?.nativeElement.focus();
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.previouslyFocused?.focus?.();
+  }
+
+  @HostListener('keydown.escape')
+  protected onEscape(): void {
+    this.close.emit();
+  }
+
+  /** Keeps Tab from leaving the dialog into the page behind the backdrop.
+   *  Typed as `Event` rather than `KeyboardEvent` because that's what
+   *  `@HostListener`'s dotted-key event binding actually infers. */
+  @HostListener('keydown.tab', ['$event'])
+  protected onTab(domEvent: Event): void {
+    const event = domEvent as KeyboardEvent;
+    const panelEl = this.panel()?.nativeElement;
+    if (!panelEl) {
+      return;
+    }
+    const focusable = panelEl.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    if (focusable.length === 0) {
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   protected onSearchChange(event: Event) {
     this.searchQuery.set((event.target as HTMLInputElement).value);

@@ -144,6 +144,13 @@ pub struct AcceptWithdrawalRequest {
     /// instead of listing `transaction_ids` individually.
     #[schema(example = true)]
     pub all: Option<bool>,
+    /// Restrict `all` to a single member.
+    ///
+    /// Without it `all: true` sweeps the whole guild, which is the wrong tool
+    /// when an officer wants to settle up with one person: they would have to
+    /// list that member's transaction ids by hand.
+    #[schema(example = 7)]
+    pub user_id: Option<i64>,
 }
 
 /// Request body for an officer to reject requested withdrawals.
@@ -157,4 +164,11 @@ pub struct RejectWithdrawalRequest {
     /// instead of listing `transaction_ids` individually.
     #[schema(example = true)]
     pub all: Option<bool>,
+    /// Restrict `all` to a single member.
+    ///
+    /// Without it `all: true` sweeps the whole guild, which is the wrong tool
+    /// when an officer wants to settle up with one person: they would have to
+    /// list that member's transaction ids by hand.
+    #[schema(example = 7)]
+    pub user_id: Option<i64>,
 }

@@ -1,4 +1,13 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  ElementRef,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -16,7 +25,6 @@ import type {
   EventBattleSummary,
   EventDetailView,
   EventParticipant,
-  EventStatus,
   OpponentPerformanceView,
   PaginatedData,
   ParticipateEventRequest,
@@ -31,6 +39,8 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import {
@@ -58,7 +68,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
 @Component({
   selector: 'app-event-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EmptyState, Loading, SearchDialog, Icon, DataTable],
+  imports: [EmptyState, ErrorState, Loading, SearchDialog, Icon, DataTable, StatusChip],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
@@ -77,7 +87,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
                 }
                 {{ detail.title }}
               </h1>
-              <span class="chip" [class]="statusChip(detail.status)">{{ detail.status }}</span>
+              <app-status-chip [value]="detail.status" />
             </div>
             <p class="text-sm" style="color: var(--color-text-secondary)">
               {{ formatDate(detail.event_date_utc) }} · {{ t('events.detail.comp') }}:
@@ -147,7 +157,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
             />
           </label>
           <label>
-            <span class="label">{{ t('common.optional') }}</span>
+            <span class="label">{{ t('common.description') }}</span>
             <textarea
               class="textarea"
               rows="3"
@@ -160,20 +170,21 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
               <span class="label">{{ t('events.detail.comp') }}</span>
               <div class="flex items-center gap-2">
                 <div class="flex-1 input flex items-center bg-[var(--color-surface-1)]">
-                  <span class="truncate">{{ draftCompTitle() || 'No comp linked' }}</span>
+                  <span class="truncate">{{ draftCompTitle() || t('events.detail.no_comp_linked') }}</span>
                 </div>
                 <button
                   type="button"
                   class="btn btn--outline whitespace-nowrap"
                   (click)="showCompSearch.set(true)"
                 >
-                  Link Comp
+                  {{ t('events.detail.link_comp') }}
                 </button>
                 @if (draftCompId()) {
                   <button
                     type="button"
                     class="btn btn--danger whitespace-nowrap"
                     (click)="unlinkComp()"
+                    [attr.aria-label]="t('events.detail.unlink_comp')"
                   >
                     <app-icon name="close" size="1rem" />
                   </button>
@@ -185,6 +196,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
               <input
                 class="input"
                 type="datetime-local"
+                [attr.min]="minScheduledAt"
                 [value]="draftScheduledAt()"
                 (input)="onScheduledAtChange($event)"
               />
@@ -317,13 +329,13 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
           </p>
         </article>
         <article class="surface p-4 sm:col-span-2 xl:col-span-4">
-          <p class="event-detail__label">Our guild estimated silver lost</p>
+          <p class="event-detail__label">{{ t('events.detail.our_guild_loss') }}</p>
           <p class="event-detail__value">
             {{ formatCompact(eventLossEstimate().total_estimated_loss) }}
           </p>
           <p class="event-detail__sub">
-            {{ eventLossEstimate().priced_items }} / {{ eventLossEstimate().total_items }} own-guild
-            victim items priced through AlbionData
+            {{ eventLossEstimate().priced_items }} / {{ eventLossEstimate().total_items }}
+            {{ t('events.detail.our_guild_loss_hint') }}
           </p>
         </article>
       </section>
@@ -397,7 +409,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
 
         <article class="surface p-4 xl:col-span-3">
           <header class="event-detail__chart-header">
-            <h2>Our guild losses by player</h2>
+            <h2>{{ t('events.detail.our_guild_losses_by_player') }}</h2>
             <span>{{ formatCompact(eventLossEstimate().total_estimated_loss) }}</span>
           </header>
           @if (lossPlayerChartRows().length > 0) {
@@ -494,7 +506,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
                   class="btn btn--outline text-xs"
                   (click)="showBattleSearch.set(true)"
                 >
-                  Add Battle
+                  {{ t('events.detail.add_battle') }}
                 </button>
               </div>
 
@@ -508,6 +520,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
                       type="button"
                       class="btn btn--danger btn--icon whitespace-nowrap"
                       (click)="removeDraftBattle(link.id)"
+                      [attr.aria-label]="t('events.detail.remove_battle')"
                     >
                       <app-icon name="close" size="1rem" />
                     </button>
@@ -515,7 +528,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
                 }
                 @if (draftBattleLinks().length === 0) {
                   <p class="text-sm" style="color: var(--color-text-secondary)">
-                    No battles linked.
+                    {{ t('events.detail.no_battles_linked') }}
                   </p>
                 }
               </div>
@@ -552,7 +565,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
               <span
                 class="chip"
                 [class.chip--success]="row.is_win"
-                [class.chip--danger]="!row.is_win"
+                [class.chip--error]="!row.is_win"
               >
                 {{ row.is_win ? t('events.detail.wins') : t('events.detail.losses') }}
               </span>
@@ -591,7 +604,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
                 class="btn btn--tonal text-xs"
                 (click)="showSplitSearch.set(true)"
               >
-                Link Split
+                {{ t('events.detail.link_split') }}
               </button>
             }
           </div>
@@ -655,10 +668,10 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
         @if (splits().length > 0) {
           <app-data-table [columns]="splitsColumns" [rows]="splits()" [trackBy]="trackSplit">
             <ng-template dataTableCell="note" let-row>
-              <span class="font-medium">{{ row.note || 'Split #' + row.id }}</span>
+              <span class="font-medium">{{ row.note || t('events.detail.split_number') + row.id }}</span>
             </ng-template>
             <ng-template dataTableCell="status" let-row>
-              <span class="chip">{{ row.status }}</span>
+              <app-status-chip [value]="row.status" />
             </ng-template>
             <ng-template dataTableCell="estimated_market_value" let-row>
               {{ formatNumber(row.estimated_market_value) }}
@@ -674,7 +687,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
                   type="button"
                   class="btn btn--danger btn--icon"
                   (click)="unlinkSplit(row.id)"
-                  title="Unlink Split"
+                  [attr.aria-label]="t('events.detail.unlink_split')"
                 >
                   <app-icon name="close" size="1rem" />
                 </button>
@@ -854,7 +867,14 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
                       (mouseenter)="onSlotHover(slot)"
                       (mouseleave)="onSlotLeave()"
                     >
-                      <span class="event-detail__board-slot-icon" [class]="roleChip(slot.role)">
+                      <button
+                        type="button"
+                        class="event-detail__board-slot-icon"
+                        [class]="roleChip(slot.role)"
+                        [attr.aria-label]="t('events.detail.view_loadout') + ': ' + slot.build.name"
+                        [attr.aria-expanded]="slotTooltipVisible(slot)"
+                        (click)="toggleSlotTooltip(slot)"
+                      >
                         @if (weaponRenderIconUrl(slot); as icon) {
                           <img
                             class="event-detail__board-slot-render"
@@ -867,7 +887,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
                             roleGlyph(slot.role)
                           }}</span>
                         }
-                      </span>
+                      </button>
                       <span class="event-detail__board-slot-name">{{ slot.build.name }}</span>
                       <select
                         class="select event-detail__board-slot-select"
@@ -923,13 +943,15 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
           }
         </article>
       }
+    } @else if (loadFailed()) {
+      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     } @else {
       <app-empty-state [message]="t('common.empty')" icon="calendar" />
     }
 
     @if (showCompSearch()) {
       <app-search-dialog
-        title="Link Comp"
+        [title]="t('events.detail.link_comp')"
         [options]="compSearchOptions()"
         [loading]="compSearchLoading()"
         [showDateFilters]="true"
@@ -941,7 +963,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
 
     @if (showBattleSearch()) {
       <app-search-dialog
-        title="Search Battles"
+        [title]="t('events.detail.search_battles')"
         [options]="battleSearchOptions()"
         [loading]="battleSearchLoading()"
         [showDateFilters]="false"
@@ -953,7 +975,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
 
     @if (showSplitSearch()) {
       <app-search-dialog
-        title="Link Split"
+        [title]="t('events.detail.link_split')"
         [options]="splitSearchOptions()"
         [loading]="splitSearchLoading()"
         [showDateFilters]="true"
@@ -976,15 +998,23 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
     }
 
     @if (draftMember(); as member) {
-      <div class="modal-backdrop" (click)="closeMemberForm()">
-        <div class="modal-card" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
+      <div class="modal-backdrop" (click)="closeMemberForm()" (keydown.escape)="closeMemberForm()">
+        <div
+          #assignBuildsPanel
+          class="modal-card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="assign-builds-title"
+          tabindex="-1"
+          (click)="$event.stopPropagation()"
+        >
           <header class="event-detail__section-header">
-            <h2>{{ t('events.detail.assign_builds') }} · {{ member.title }}</h2>
+            <h2 id="assign-builds-title">{{ t('events.detail.assign_builds') }} · {{ member.title }}</h2>
             <button
               type="button"
               class="btn btn--ghost btn--icon"
               (click)="closeMemberForm()"
-              aria-label="Close"
+              [attr.aria-label]="t('common.close')"
             >
               <app-icon name="close" size="1rem" />
             </button>
@@ -1046,10 +1076,18 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
   `,
   styles: `
     @layer components {
+      /* Sticky only from sm up. On a phone this hero stacks the title,
+         description and a wrapped row of join/leave/edit buttons — easily
+         over half the viewport tall. Pinning that at all times left barely
+         any room to see the event content it's supposed to introduce. */
       .event-detail__hero {
-        position: sticky;
-        top: 0;
         z-index: 10;
+      }
+      @media (min-width: 640px) {
+        .event-detail__hero {
+          position: sticky;
+          top: 0;
+        }
       }
       .event-detail__label {
         color: var(--color-text-disabled);
@@ -1293,9 +1331,16 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
         justify-content: center;
         width: 2.25rem;
         height: 2.25rem;
+        border: none;
         border-radius: 0.4rem;
         background: var(--color-surface-1);
         overflow: hidden;
+        padding: 0;
+        cursor: pointer;
+      }
+      .event-detail__board-slot-icon:focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: 2px;
       }
       .event-detail__board-slot-render {
         width: 100%;
@@ -1325,18 +1370,32 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
         }
       }
 
+      /* left: 2.5rem + min-width: 18rem alone can exceed a phone's viewport
+         width outright — now that a tap can pin this open (not just hover),
+         it needs to not run off-screen there too. max-width is clamped to
+         the viewport everywhere; below 30rem it also re-centers under the
+         slot row instead of hanging off a fixed left offset, since that
+         offset was sized for a wide desktop grid. */
       .event-detail__tooltip {
         position: absolute;
         top: calc(100% + 0.4rem);
         left: 2.5rem;
         z-index: 50;
         min-width: 18rem;
-        max-width: 26rem;
+        max-width: min(26rem, calc(100vw - 2rem));
         background: var(--color-surface);
         border: 1px solid var(--color-border);
         border-radius: 0.6rem;
         padding: 0.6rem;
         box-shadow: 0 0.6rem 1.5rem rgba(0, 0, 0, 0.35);
+      }
+      @media (max-width: 30rem) {
+        .event-detail__tooltip {
+          left: 50%;
+          transform: translateX(-50%);
+          min-width: 0;
+          width: calc(100vw - 2rem);
+        }
       }
       .event-detail__tooltip-items {
         display: grid;
@@ -1411,6 +1470,7 @@ export class EventDetailPage {
   protected readonly event = signal<EventDetailView | null>(null);
   protected readonly eventLossEstimate = signal<BattleLossEstimate>(emptyLossEstimate());
   protected readonly loading = signal(false);
+  protected readonly loadFailed = signal(false);
   protected readonly canEdit = signal(false);
   protected readonly showEditForm = signal(false);
   protected readonly saving = signal(false);
@@ -1457,6 +1517,14 @@ export class EventDetailPage {
   protected readonly draftCompId = signal('');
   protected readonly draftCallToArms = signal(false);
   protected readonly draftScheduledAt = signal('');
+  /** Floor for the reschedule date picker — mirrors event-create.ts's
+   *  minScheduledAt(), same local-time-via-UTC-offset trick toggleEditForm()
+   *  already uses below to populate the field itself. */
+  protected readonly minScheduledAt = (() => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+  })();
   protected readonly showJoinForm = signal(false);
   protected readonly joinFormLoading = signal(false);
   protected readonly compLoading = signal(false);
@@ -1481,6 +1549,11 @@ export class EventDetailPage {
   protected readonly memberSearchOptions = signal<SearchDialogOption[]>([]);
   protected readonly memberSearchLoading = signal(false);
   protected readonly draftMember = signal<SearchDialogOption | null>(null);
+  /** Same reasoning as regears.ts's dialog focus handling: this is a plain
+   *  overlay `<div>`, not a native <dialog>, so nothing moves focus into it
+   *  on open or gives it back on close without doing it by hand. */
+  private readonly assignBuildsPanel = viewChild<ElementRef<HTMLElement>>('assignBuildsPanel');
+  private previouslyFocusedMemberTrigger: HTMLElement | null = null;
   protected readonly draftMemberPrimaryBuildId = signal('');
   protected readonly draftMemberSecondaryBuildId = signal('');
   protected readonly memberSaving = signal(false);
@@ -1500,6 +1573,7 @@ export class EventDetailPage {
   protected readonly buildDetails = signal<Map<number, BuildDetail>>(new Map());
   protected readonly buildDetailsLoading = signal<Set<number>>(new Set());
   protected readonly hoveredSlotKey = signal<string | null>(null);
+  protected readonly pinnedSlotKey = signal<string | null>(null);
   /**
    * Maps each `build_id` to its weapon `BuildItemSlot` so row icons can render
    * the Albion item render without a separate lookup per row.
@@ -1957,6 +2031,16 @@ export class EventDetailPage {
     });
     this.onCompSearchFilter({ search: '', dateFrom: '', dateTo: '' });
     this.onBattleSearchFilter({ search: '', dateFrom: '', dateTo: '' });
+
+    effect(() => {
+      if (this.draftMember() !== null) {
+        this.previouslyFocusedMemberTrigger = document.activeElement as HTMLElement | null;
+        this.assignBuildsPanel()?.nativeElement.focus();
+      } else if (this.previouslyFocusedMemberTrigger) {
+        this.previouslyFocusedMemberTrigger.focus();
+        this.previouslyFocusedMemberTrigger = null;
+      }
+    });
   }
 
   protected async onCompSearchFilter(filter: {
@@ -2081,6 +2165,7 @@ export class EventDetailPage {
   }
 
   protected async unlinkSplit(splitId: number): Promise<void> {
+    if (!confirm(this.t('common.confirm'))) return;
     try {
       await firstValueFrom(this.api.put(`api/splits/${splitId}`, { event_id: null }));
       this.toasts.success(this.t('events.detail.battles_saved'));
@@ -2409,13 +2494,23 @@ export class EventDetailPage {
     }
   }
 
-  /** Toggles tooltip visibility on hover. Build details are preloaded. */
+  /** Shows the tooltip on hover. Build details are preloaded. */
   protected onSlotHover(slot: CompSlotRow): void {
     this.hoveredSlotKey.set(slot.key);
   }
 
   protected onSlotLeave(): void {
     this.hoveredSlotKey.set(null);
+  }
+
+  /**
+   * Tap/click-to-pin fallback for the loadout tooltip. `mouseenter` never
+   * fires on touch, so without this the equipment preview was entirely
+   * unreachable on phones and tablets — this also gives keyboard users a
+   * real activation instead of relying on hover.
+   */
+  protected toggleSlotTooltip(slot: CompSlotRow): void {
+    this.pinnedSlotKey.update((current) => (current === slot.key ? null : slot.key));
   }
 
   protected slotTooltipItems(buildId: number): BuildItemSlot[] {
@@ -2427,7 +2522,8 @@ export class EventDetailPage {
   }
 
   protected slotTooltipVisible(slot: CompSlotRow): boolean {
-    return this.hoveredSlotKey() === slot.key && this.buildDetails().has(slot.buildId);
+    const isActive = this.hoveredSlotKey() === slot.key || this.pinnedSlotKey() === slot.key;
+    return isActive && this.buildDetails().has(slot.buildId);
   }
 
   /**
@@ -2695,7 +2791,10 @@ export class EventDetailPage {
     await this.mutate(`api/events/${id}/start`, 'POST', {});
   }
 
+  /** Stopping closes participation and triggers regear extraction from every
+   *  linked battle — a real, mostly-irreversible consequence, unlike `leave`. */
   protected async stop(id: number): Promise<void> {
+    if (!confirm(this.t('common.confirm'))) return;
     await this.mutate(`api/events/${id}/stop`, 'POST', {});
   }
 
@@ -2777,25 +2876,16 @@ export class EventDetailPage {
     return Math.max(4, Math.round((value / maxValue) * 100));
   }
 
-  protected statusChip(status: EventStatus): string {
-    if (status === 'live') {
-      return 'chip chip--success';
-    }
-    if (status === 'auto_stopped') {
-      return 'chip chip--warning';
-    }
-    return 'chip';
-  }
-
   protected opponentKey(opponent: OpponentPerformanceView): string {
     return opponent.guild_id ?? opponent.guild_name;
   }
 
-  private async load(): Promise<void> {
+  protected async load(): Promise<void> {
     if (!this.eventId) {
       return;
     }
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       const detail = await firstValueFrom(
         this.api.get<EventDetailView>(`api/events/${this.eventId}`),
@@ -2804,6 +2894,7 @@ export class EventDetailPage {
       this.eventLossEstimate.set(detail.estimated_losses ?? emptyLossEstimate());
       await Promise.all([this.loadActiveComp(), this.loadLinkedBattleLosses(detail)]);
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);
@@ -3011,7 +3102,7 @@ const ROLE_CHIP: Readonly<Record<BuildRole, string>> = {
   tank: 'chip chip--info',
   healer: 'chip chip--success',
   support: 'chip chip--warning',
-  dps: 'chip chip--danger',
+  dps: 'chip chip--error',
   battle_mount: 'chip',
   brawler: 'chip',
 };

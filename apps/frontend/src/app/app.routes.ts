@@ -63,6 +63,15 @@ export const routes: Routes = [
         loadComponent: () => import('./features/battles/battles').then((m) => m.Battles),
       },
       {
+        path: 'intel',
+        loadComponent: () => import('./features/intel/intel').then((m) => m.Intel),
+      },
+      {
+        path: 'intel/:scoutId',
+        loadComponent: () =>
+          import('./features/intel/intel-detail').then((m) => m.IntelDetailPage),
+      },
+      {
         path: 'comps',
         loadComponent: () => import('./features/comps/comps').then((m) => m.Comps),
       },
@@ -88,6 +97,11 @@ export const routes: Routes = [
         loadComponent: () => import('./features/users/users').then((m) => m.Users),
       },
       {
+        path: 'warns',
+        canActivate: [roleGuard('Officer', 'Admin', 'SuperAdmin')],
+        loadComponent: () => import('./features/warns/warns').then((m) => m.Warns),
+      },
+      {
         path: 'admin',
         canActivate: [roleGuard('Officer', 'Admin', 'SuperAdmin')],
         loadComponent: () => import('./features/admin/admin').then((m) => m.Admin),
@@ -101,7 +115,11 @@ export const routes: Routes = [
         path: 'profile',
         loadComponent: () => import('./features/settings/settings').then((m) => m.Settings),
       },
-      { path: 'settings', redirectTo: 'profile' },
+      {
+        path: 'settings',
+        loadComponent: () =>
+          import('./features/albion-settings/albion-settings').then((m) => m.AlbionSettings),
+      },
     ],
   },
   {

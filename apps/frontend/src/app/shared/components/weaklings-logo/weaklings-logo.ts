@@ -87,20 +87,24 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
       line-height: 1;
     }
 
+    /* The wordmark is the one place the serif survives: it is the brand
+       signature, kept alongside the red as the two things that stay
+       recognisably Weaklings in an otherwise monochrome system. */
     .brand__name {
       color: var(--color-text);
-      font-size: 1rem;
-      font-weight: 800;
-      letter-spacing: 0.12em;
-      text-shadow: 0 0 14px var(--color-logo-glow);
+      font-family: var(--font-wordmark);
+      font-size: 1.0625rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
     }
 
     .brand__tagline {
       margin-top: 0.25rem;
       color: var(--color-primary);
-      font-size: 0.65rem;
-      font-weight: 700;
-      letter-spacing: 0.25em;
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      font-weight: 500;
+      letter-spacing: 0.22em;
     }
   `,
 })
