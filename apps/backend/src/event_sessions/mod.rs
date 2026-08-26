@@ -21,10 +21,10 @@ use battle_linker::refresh_pending_links;
 
 use crate::config::Config;
 use crate::errors::AppError;
-use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::albionbb::service::AlbionBbService;
-use crate::modules::regear::extractor::ExtractionGuildContext;
+use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::events::service::{BattleLinkingContext, EventService};
+use crate::modules::regear::extractor::ExtractionGuildContext;
 
 /// Tick interval for the worker. Short enough that auto-stop latency stays
 /// within tens of seconds, long enough not to hammer the DB.

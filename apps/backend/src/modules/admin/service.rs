@@ -4,7 +4,9 @@ use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
 
 use crate::errors::AppError;
 
-use super::entities::{ActiveModel as GuildSettingActiveModel, Entity as GuildSettingEntity, Model};
+use super::entities::{
+    ActiveModel as GuildSettingActiveModel, Entity as GuildSettingEntity, Model,
+};
 use super::models::{GuildSettingsView, UpdateGuildSettingsRequest};
 
 pub struct AdminService;

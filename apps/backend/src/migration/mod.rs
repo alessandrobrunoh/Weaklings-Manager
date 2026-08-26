@@ -40,6 +40,9 @@ mod m20260823_000002_seed_intel_permissions;
 mod m20260824_000001_widen_scouted_comp_fingerprint;
 mod m20260825_000001_create_guild_settings;
 mod m20260825_000002_seed_guild_settings_permission;
+mod m20260826_000001_create_progression_tables;
+mod m20260826_000002_seed_progression_permissions;
+mod m20260826_000003_create_vod_and_warn_tables;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -84,6 +87,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260824_000001_widen_scouted_comp_fingerprint::Migration),
             Box::new(m20260825_000001_create_guild_settings::Migration),
             Box::new(m20260825_000002_seed_guild_settings_permission::Migration),
+            Box::new(m20260826_000001_create_progression_tables::Migration),
+            Box::new(m20260826_000002_seed_progression_permissions::Migration),
+            Box::new(m20260826_000003_create_vod_and_warn_tables::Migration),
         ]
     }
 }

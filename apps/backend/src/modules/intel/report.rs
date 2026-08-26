@@ -41,10 +41,10 @@ use crate::modules::battles::models::{
 };
 use crate::modules::comps::entities::{build, comp, comp_build};
 use crate::modules::events::entities::{event, event_battle, event_participation};
-use crate::modules::events::service::{kill_death_ratio, ratio_percent, BattleLinkingContext};
+use crate::modules::events::service::{BattleLinkingContext, kill_death_ratio, ratio_percent};
 use crate::modules::intel::entities::{scouted_comp, scouted_comp_battle};
-use crate::modules::intel::matchups::{best_counter, matchups, MatchupRow};
-use crate::modules::intel::roles::{normalize_item_id, RoleClassifier};
+use crate::modules::intel::matchups::{MatchupRow, best_counter, matchups};
+use crate::modules::intel::roles::{RoleClassifier, normalize_item_id};
 use crate::modules::intel::scout::weapons_by_player;
 use crate::modules::intel::service::our_comp_profiles;
 use crate::modules::intel::similarity::ROLE_KEYS;
@@ -514,14 +514,12 @@ async fn load(db: &DatabaseConnection, range: DateRange) -> Result<RawData, AppE
         builds: build::Entity::find().all(db).await?,
         monthly_approvals: regear::regear_death::Entity::find()
             .filter(regear::regear_death::Column::Status.eq("approved"))
-            .filter(
-                regear::regear_death::Column::DecidedAt.gte(
-                    chrono::Utc::now()
-                        - chrono::Duration::days(
-                            crate::modules::regear::service::PER_MONTH_WINDOW_DAYS,
-                        ),
-                ),
-            )
+            .filter(regear::regear_death::Column::DecidedAt.gte(
+                chrono::Utc::now()
+                    - chrono::Duration::days(
+                        crate::modules::regear::service::PER_MONTH_WINDOW_DAYS,
+                    ),
+            ))
             .all(db)
             .await?,
         regear_settings: regear::regear_setting::Entity::find().one(db).await?,
@@ -752,7 +750,8 @@ fn compute_operations(raw: &RawData, _range: &DateRange) -> ReportOperations {
         }
     }
 
-    let mut role_need: HashMap<String, i64> = ROLE_KEYS.iter().map(|k| ((*k).to_string(), 0)).collect();
+    let mut role_need: HashMap<String, i64> =
+        ROLE_KEYS.iter().map(|k| ((*k).to_string(), 0)).collect();
     let mut role_fill: HashMap<String, i64> = role_need.clone();
     let mut slots = 0i64;
     for e in &raw.events {
@@ -770,10 +769,12 @@ fn compute_operations(raw: &RawData, _range: &DateRange) -> ReportOperations {
     }
 
     let signed_by_user: HashMap<i64, i64> =
-        raw.participations.iter().fold(HashMap::new(), |mut acc, p| {
-            *acc.entry(p.user_id).or_insert(0) += 1;
-            acc
-        });
+        raw.participations
+            .iter()
+            .fold(HashMap::new(), |mut acc, p| {
+                *acc.entry(p.user_id).or_insert(0) += 1;
+                acc
+            });
     let inactive_members = raw
         .users
         .iter()
@@ -885,9 +886,8 @@ fn compute_economy(raw: &RawData, overview: &ReportOverview) -> ReportEconomy {
         .map(split_net)
         .sum();
 
-    let regear_amount = |r: &regear::regear_death::Model| {
-        to_i64(r.final_amount.unwrap_or(r.auto_estimate_total))
-    };
+    let regear_amount =
+        |r: &regear::regear_death::Model| to_i64(r.final_amount.unwrap_or(r.auto_estimate_total));
     let regear_open: i64 = raw
         .regears
         .iter()
@@ -999,12 +999,14 @@ fn compute_members(
     }
 
     let monthly_by_user: HashMap<i64, i64> =
-        raw.monthly_approvals.iter().fold(HashMap::new(), |mut a, r| {
-            if let Some(user_id) = r.user_id {
-                *a.entry(user_id).or_insert(0) += 1;
-            }
-            a
-        });
+        raw.monthly_approvals
+            .iter()
+            .fold(HashMap::new(), |mut a, r| {
+                if let Some(user_id) = r.user_id {
+                    *a.entry(user_id).or_insert(0) += 1;
+                }
+                a
+            });
 
     let siphoned_by_name: HashMap<String, i64> =
         raw.siphoned.iter().fold(HashMap::new(), |mut a, e| {
@@ -1053,7 +1055,11 @@ fn compute_members(
             }
         })
         .collect();
-    rows.sort_by(|a, b| b.kills.cmp(&a.kills).then_with(|| a.username.cmp(&b.username)));
+    rows.sort_by(|a, b| {
+        b.kills
+            .cmp(&a.kills)
+            .then_with(|| a.username.cmp(&b.username))
+    });
     rows
 }
 
@@ -1236,7 +1242,11 @@ fn week_start_utc(dt: DateTimeWithTimeZone) -> DateTimeWithTimeZone {
     let utc = dt.with_timezone(&chrono::Utc);
     let days_since_monday = i64::from(utc.weekday().num_days_from_monday());
     let monday = utc.date_naive() - chrono::Duration::days(days_since_monday);
-    monday.and_hms_opt(0, 0, 0).unwrap_or_default().and_utc().into()
+    monday
+        .and_hms_opt(0, 0, 0)
+        .unwrap_or_default()
+        .and_utc()
+        .into()
 }
 
 /// Weekly activity across the window.
@@ -1489,11 +1499,8 @@ mod tests {
 
     #[test]
     fn date_range_rejects_an_inverted_window() {
-        let err = DateRange::resolve(
-            Some("2026-08-02T00:00:00Z"),
-            Some("2026-08-01T00:00:00Z"),
-        )
-        .unwrap_err();
+        let err = DateRange::resolve(Some("2026-08-02T00:00:00Z"), Some("2026-08-01T00:00:00Z"))
+            .unwrap_err();
         assert!(format!("{err}").contains("must not be after"));
     }
 

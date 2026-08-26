@@ -14,11 +14,11 @@ pub mod cache;
 pub mod entities;
 pub mod matchups;
 pub mod models;
-pub mod service;
 pub mod report;
 pub mod roles;
 pub mod router;
 pub mod scout;
+pub mod service;
 pub mod similarity;
 pub mod status;
 

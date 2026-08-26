@@ -87,8 +87,14 @@ mod tests {
 
     #[test]
     fn brackets_split_on_the_documented_boundaries() {
-        assert_eq!(IntelScoutCategory::from_player_count(1), IntelScoutCategory::Gank);
-        assert_eq!(IntelScoutCategory::from_player_count(3), IntelScoutCategory::Gank);
+        assert_eq!(
+            IntelScoutCategory::from_player_count(1),
+            IntelScoutCategory::Gank
+        );
+        assert_eq!(
+            IntelScoutCategory::from_player_count(3),
+            IntelScoutCategory::Gank
+        );
         assert_eq!(
             IntelScoutCategory::from_player_count(4),
             IntelScoutCategory::SmallScale
@@ -97,8 +103,14 @@ mod tests {
             IntelScoutCategory::from_player_count(8),
             IntelScoutCategory::SmallScale
         );
-        assert_eq!(IntelScoutCategory::from_player_count(9), IntelScoutCategory::Zvz);
-        assert_eq!(IntelScoutCategory::from_player_count(40), IntelScoutCategory::Zvz);
+        assert_eq!(
+            IntelScoutCategory::from_player_count(9),
+            IntelScoutCategory::Zvz
+        );
+        assert_eq!(
+            IntelScoutCategory::from_player_count(40),
+            IntelScoutCategory::Zvz
+        );
     }
 
     #[test]

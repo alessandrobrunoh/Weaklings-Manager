@@ -8,6 +8,7 @@ import type {
   BalanceSummary,
   BattleSummary,
   PaginatedData,
+  ProgressionMeView,
   SiphonedEntryView,
   SiphonedPlayerBalance,
   TransactionView,
@@ -92,6 +93,48 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
           }
         </div>
       </section>
+
+      @if (progression(); as xp) {
+        <article class="mt-5 surface p-5">
+          <h2 class="profile__panel-title">{{ t('profile.xp.title') }}</h2>
+          <p class="profile__sub" style="margin-top: 0">
+            {{ t('profile.xp.season') }}:
+            {{ xp.season?.name || t('profile.xp.noSeason') }}
+          </p>
+          <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <p class="profile__label">{{ t('profile.xp.level') }}</p>
+              <p class="profile__value">{{ xp.level }}</p>
+            </div>
+            <div>
+              <p class="profile__label">{{ t('profile.xp.xp') }}</p>
+              <p class="profile__value">{{ formatAmount(xp.xp) }}</p>
+            </div>
+            <div>
+              <p class="profile__label">{{ t('profile.xp.rank') }}</p>
+              <p class="profile__value">
+                {{ xp.rank != null ? '#' + xp.rank : t('profile.xp.unranked') }}
+              </p>
+            </div>
+            <div>
+              <p class="profile__label">{{ t('profile.xp.lifetime') }}</p>
+              <p class="profile__value">{{ formatAmount(xp.lifetime_xp) }}</p>
+            </div>
+          </div>
+          <div class="profile__bar-row">
+            <span>{{ t('profile.xp.toNext') }}</span>
+            <div class="profile__bar">
+              <span [style.width.%]="progressionBarPercent(xp)"></span>
+            </div>
+            <strong>{{ formatAmount(xp.xp) }} / {{ formatAmount(xp.xp + xp.xp_to_next) }}</strong>
+          </div>
+          @if (showMultiplier(xp.multiplier)) {
+            <p class="mt-3 text-sm" style="color: var(--color-warning)">
+              {{ t('profile.xp.multiplier') }}: ×{{ formatMultiplier(xp.multiplier) }}
+            </p>
+          }
+        </article>
+      }
 
       @if (loadFailed()) {
         <app-error-state
@@ -438,6 +481,8 @@ export class Settings {
   protected readonly userMetrics = signal<UserMetrics | null>(null);
   /** Regear cap usage, for the monthly progress bar. */
   protected readonly budget = signal<RegearBudgetSummary | null>(null);
+  /** Season XP snapshot; null when the endpoint failed so the rest of the profile still renders. */
+  protected readonly progression = signal<ProgressionMeView | null>(null);
   protected readonly profile = this.auth.profile;
 
   protected readonly transactionColumns: readonly DataTableColumn<TransactionView>[] = [
@@ -698,11 +743,34 @@ export class Settings {
     this.toasts.success(this.translate.languageLabels[value]);
   }
 
+  /** XP bar fill: current / (current + remaining). Full when already at cap. */
+  protected progressionBarPercent(xp: ProgressionMeView): number {
+    const total = xp.xp + xp.xp_to_next;
+    if (total <= 0) {
+      return xp.xp > 0 ? 100 : 0;
+    }
+    return this.clampPercent((xp.xp / total) * 100);
+  }
+
+  /** Hide the multiplier chip when the account is running at the default 1×. */
+  protected showMultiplier(value: string | number): boolean {
+    return Math.abs(Number(value) - 1) > 1e-9;
+  }
+
+  protected formatMultiplier(value: string | number): string {
+    const n = Number(value);
+    if (!Number.isFinite(n)) {
+      return String(value);
+    }
+    return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+
   protected async load(): Promise<void> {
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
-      const [balance, transactions, albionLink, battles, metrics, budget] = await Promise.all([
+      const [balance, transactions, albionLink, battles, metrics, budget, progression] =
+        await Promise.all([
         firstValueFrom(this.api.get<BalanceSummary>('api/bank/balance')),
         firstValueFrom(
           this.api.get<PaginatedData<TransactionView>>('api/bank/transactions', {
@@ -720,6 +788,7 @@ export class Settings {
         firstValueFrom(this.api.get<RegearBudgetSummary>('api/regear/me/summary')).catch(
           () => null,
         ),
+        firstValueFrom(this.api.get<ProgressionMeView>('api/progression/me')).catch(() => null),
       ]);
       this.balance.set(balance);
       this.transactions.set(transactions.items);
@@ -727,6 +796,7 @@ export class Settings {
       this.battles.set(battles.items);
       this.userMetrics.set(metrics);
       this.budget.set(budget);
+      this.progression.set(progression);
       await this.loadSiphoned(albionLink.albion_player_name ?? this.profile()?.username ?? '');
     } catch (error) {
       this.loadFailed.set(true);

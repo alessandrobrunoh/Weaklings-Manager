@@ -31,7 +31,10 @@ pub fn router() -> Router {
         .route("/permissions", get(get_permission_matrix))
         .route("/permissions/reload", post(reload_permissions))
         .route("/roles/{role_id}/permissions", put(update_role_permissions))
-        .route("/settings", get(get_guild_settings).put(update_guild_settings))
+        .route(
+            "/settings",
+            get(get_guild_settings).put(update_guild_settings),
+        )
 }
 
 /// Reload the in-memory permission cache from the `role_permissions` table.
@@ -112,7 +115,11 @@ pub async fn get_permission_matrix(
             }
         })
         .collect();
-    views.sort_by(|a, b| b.priority.cmp(&a.priority).then_with(|| a.role_name.cmp(&b.role_name)));
+    views.sort_by(|a, b| {
+        b.priority
+            .cmp(&a.priority)
+            .then_with(|| a.role_name.cmp(&b.role_name))
+    });
 
     let mut available_permissions: Vec<String> = Permission::all()
         .iter()
@@ -202,7 +209,6 @@ pub async fn update_role_permissions(
     get_permission_matrix(user, Extension(perms), Extension(db)).await
 }
 
-
 /// Read the guild's Discord integration settings.
 ///
 /// # Errors
@@ -230,7 +236,8 @@ async fn get_guild_settings(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<GuildSettingsView>>, AppError> {
-    user.require(&perms, Permission::AdminSettingsManage).await?;
+    user.require(&perms, Permission::AdminSettingsManage)
+        .await?;
     let settings = AdminService::get_guild_settings(&db).await?;
     Ok(Json(ApiResponse::new(settings)))
 }
@@ -261,7 +268,8 @@ async fn update_guild_settings(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<UpdateGuildSettingsRequest>,
 ) -> Result<Json<ApiResponse<GuildSettingsView>>, AppError> {
-    user.require(&perms, Permission::AdminSettingsManage).await?;
+    user.require(&perms, Permission::AdminSettingsManage)
+        .await?;
     let settings = AdminService::update_guild_settings(&db, user.user_id, &req).await?;
     Ok(Json(ApiResponse::new(settings)))
 }

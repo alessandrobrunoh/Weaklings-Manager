@@ -124,7 +124,8 @@ pub fn similarity(a: &CompProfile, b: &CompProfile) -> i32 {
         .map(|n| b.weapons.get(*n).copied().unwrap_or(0) as f64)
         .collect();
 
-    let blended = cosine(&role_a, &role_b) * ROLE_WEIGHT + cosine(&weapon_a, &weapon_b) * WEAPON_WEIGHT;
+    let blended =
+        cosine(&role_a, &role_b) * ROLE_WEIGHT + cosine(&weapon_a, &weapon_b) * WEAPON_WEIGHT;
 
     let size_a = a.size();
     let size_b = b.size();
@@ -172,7 +173,10 @@ mod tests {
     fn profile(roles: &[(&str, i64)], weapons: &[(&str, i64)]) -> CompProfile {
         CompProfile {
             roles: roles.iter().map(|(k, v)| ((*k).to_string(), *v)).collect(),
-            weapons: weapons.iter().map(|(k, v)| ((*k).to_string(), *v)).collect(),
+            weapons: weapons
+                .iter()
+                .map(|(k, v)| ((*k).to_string(), *v))
+                .collect(),
         }
     }
 

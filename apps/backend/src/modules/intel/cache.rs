@@ -40,10 +40,7 @@ impl ReportCache {
 
     fn key(range: DateRange) -> Key {
         const HOUR: i64 = 3600;
-        (
-            range.from.timestamp() / HOUR,
-            range.to.timestamp() / HOUR,
-        )
+        (range.from.timestamp() / HOUR, range.to.timestamp() / HOUR)
     }
 
     /// Returns a cached report when one is still fresh.

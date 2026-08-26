@@ -141,7 +141,12 @@ impl RoleClassifier {
             .all(db)
             .await?
             .into_iter()
-            .filter_map(|row| row.role.parse::<BuildRole>().ok().map(|role| (row.id, role)))
+            .filter_map(|row| {
+                row.role
+                    .parse::<BuildRole>()
+                    .ok()
+                    .map(|role| (row.id, role))
+            })
             .collect();
 
         let mut curated = HashMap::new();

@@ -25,7 +25,7 @@ use crate::modules::battles::models::{BattleGuildSummary, BattleKillEvent, Battl
 use crate::modules::events::service::BattleLinkingContext;
 use crate::modules::intel::entities::scouted_comp;
 use crate::modules::intel::roles::{RoleClassifier, RoleConfidence};
-use crate::modules::intel::similarity::{fingerprint_of, CompProfile};
+use crate::modules::intel::similarity::{CompProfile, fingerprint_of};
 use crate::modules::intel::status::IntelScoutCategory;
 
 /// Enemy compositions smaller than this are treated as noise, not a comp.
@@ -164,9 +164,7 @@ pub fn scout_from_snapshot(
     // Only scout battles we were actually part of. Without our guild in the
     // line-up there is no "us versus them" to record, and downstream matchup
     // tallies would read the absence as a loss.
-    let we_were_present = guilds
-        .iter()
-        .any(|guild| guild.id == guild_ctx.guild_id())
+    let we_were_present = guilds.iter().any(|guild| guild.id == guild_ctx.guild_id())
         || players
             .iter()
             .any(|player| player.guild_id == guild_ctx.guild_id());

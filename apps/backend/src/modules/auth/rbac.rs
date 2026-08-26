@@ -251,6 +251,47 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
     }))
 }
 
+/// Marker extracted when the request carries a valid `X-Bot-Secret`.
+///
+/// Unlike [`UserContext`], this does **not** require `X-Discord-Id` and does not 401 when the
+/// Discord user is unlinked. Used by bot-only endpoints such as message XP.
+pub struct BotSecret;
+
+impl<S> FromRequestParts<S> for BotSecret
+where
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        let provided_secret = parts
+            .headers
+            .get("X-Bot-Secret")
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| AppError::Unauthorized("Missing X-Bot-Secret".to_string()))?;
+
+        let cfg = parts
+            .extensions
+            .get::<Config>()
+            .ok_or_else(|| AppError::Internal("Config extension missing".to_string()))?;
+
+        let expected_secret = cfg.bot_api_secret.as_deref().ok_or_else(|| {
+            AppError::Unauthorized(
+                "Bot authentication is not configured on this server (BOT_API_SECRET not set)"
+                    .to_string(),
+            )
+        })?;
+
+        if provided_secret != expected_secret {
+            return Err(AppError::Unauthorized(
+                "Invalid bot secret (X-Bot-Secret mismatch)".to_string(),
+            ));
+        }
+
+        Ok(Self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

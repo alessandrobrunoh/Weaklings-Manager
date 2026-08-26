@@ -13,14 +13,14 @@ use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::modules::events::service::BattleLinkingContext;
-use crate::modules::intel::matchups::{matchups, MatchupReport};
+use crate::modules::intel::cache::ReportCache;
+use crate::modules::intel::matchups::{MatchupReport, matchups};
 use crate::modules::intel::models::{
     CounterSuggestion, ScoutFilters, ScoutOutcome, ScoutedCompDetail, SimilarityHit,
     UpdateScoutRequest,
 };
-use crate::modules::intel::cache::ReportCache;
 use crate::modules::intel::report::{
-    build_guild_report, DateRange, GuildReport, ReportLeaderboards, ReportParams,
+    DateRange, GuildReport, ReportLeaderboards, ReportParams, build_guild_report,
 };
 use crate::modules::intel::service::IntelService;
 use crate::pagination::{PaginatedScoutedComp, PaginationParams};
@@ -152,7 +152,9 @@ pub async fn list_scouts(
     let paginated = service
         .list_scouts(&db, &query.pagination(), &query.filters)
         .await?;
-    Ok(Json(ApiResponse::new(PaginatedScoutedComp::from(paginated))))
+    Ok(Json(ApiResponse::new(PaginatedScoutedComp::from(
+        paginated,
+    ))))
 }
 
 /// Full dossier for one scouted composition.

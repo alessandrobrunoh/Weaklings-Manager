@@ -8,9 +8,7 @@
 //! abort the surrounding sync cycle. Losing one scout is a much smaller
 //! problem than stalling snapshot persistence.
 
-use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
-};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 
 use crate::errors::AppError;
 use crate::modules::battles::entities::{Column as SnapshotColumn, Entity as SnapshotEntity};

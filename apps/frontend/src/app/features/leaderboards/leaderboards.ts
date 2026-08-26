@@ -1,7 +1,13 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
-import type { LeaderboardEntry as BoardEntry, ReportLeaderboards } from '../../core/models/api.models';
+import type {
+  LeaderboardEntry as BoardEntry,
+  PaginatedData,
+  ProgressionLeaderboardEntry,
+  ReportLeaderboards,
+} from '../../core/models/api.models';
+import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { IntelService } from '../../core/services/intel.service';
 import { TranslateService } from '../../core/services/translate.service';
@@ -13,8 +19,26 @@ import type { TranslationKey } from '../../i18n/en';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
 
 /** Identifier matching every supported leaderboard. */
-type LeaderboardKey =
-  'payout' | 'deaths' | 'kills' | 'attendance' | 'killfame' | 'deathfame' | 'siphoned';
+type IntelLeaderboardKey =
+  | 'payout'
+  | 'deaths'
+  | 'kills'
+  | 'attendance'
+  | 'killfame'
+  | 'deathfame'
+  | 'siphoned';
+
+type LeaderboardKey = IntelLeaderboardKey | 'season';
+
+const INTEL_KEYS: readonly IntelLeaderboardKey[] = [
+  'payout',
+  'deaths',
+  'kills',
+  'attendance',
+  'killfame',
+  'deathfame',
+  'siphoned',
+];
 
 /** Single row in any leaderboard: a labelled performer and their metric. */
 interface LeaderboardEntry {
@@ -38,7 +62,7 @@ interface LeaderboardTab {
  * `deaths` ranks silver lost rather than a death count — that is what the tab
  * has always shown, and the label is kept for continuity.
  */
-const BOARD_FOR_TAB: Record<LeaderboardKey, (b: ReportLeaderboards) => BoardEntry[]> = {
+const BOARD_FOR_TAB: Record<IntelLeaderboardKey, (b: ReportLeaderboards) => BoardEntry[]> = {
   payout: (b) => b.split_earnings,
   deaths: (b) => b.silver_lost,
   kills: (b) => b.kills,
@@ -405,6 +429,7 @@ const PODIUM_SIZE = 3;
   ],
 })
 export class Leaderboards {
+  private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private readonly intel = inject(IntelService);
   private readonly translate = inject(TranslateService);
@@ -459,6 +484,13 @@ export class Leaderboards {
       icon: 'activity',
       unitKey: 'leaderboards.unit.silver',
     },
+    {
+      key: 'season',
+      labelKey: 'leaderboards.tab.season',
+      hintKey: 'leaderboards.hint.season',
+      icon: 'trophy',
+      unitKey: 'leaderboards.unit.xp',
+    },
   ];
 
   /**
@@ -481,9 +513,11 @@ export class Leaderboards {
     killfame: EMPTY_STATE,
     deathfame: EMPTY_STATE,
     siphoned: EMPTY_STATE,
+    season: LOADING_STATE,
   });
 
-  private readonly loadedTabs = signal<ReadonlySet<LeaderboardKey>>(new Set());
+  private readonly loadedIntel = signal(false);
+  private readonly loadedSeason = signal(false);
 
   protected readonly activeTab = signal<LeaderboardKey>('payout');
 
@@ -519,7 +553,8 @@ export class Leaderboards {
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   constructor() {
-    void this.loadAll();
+    void this.loadIntel();
+    void this.loadSeason();
   }
 
   protected selectTab(key: string): void {
@@ -533,7 +568,11 @@ export class Leaderboards {
   }
 
   protected reloadActive(): void {
-    void this.loadAll({ force: true });
+    if (this.activeTab() === 'season') {
+      void this.loadSeason({ force: true });
+      return;
+    }
+    void this.loadIntel({ force: true });
   }
 
   protected formatValue(value: number): string {
@@ -541,26 +580,27 @@ export class Leaderboards {
   }
 
   /**
-   * Loads every board in one call.
+   * Loads every intel board in one call.
    *
    * Previously each tab aggregated client-side over its own set of list and
    * detail requests, capped at the ten most recent splits or battles — so the
    * rankings were a partial snapshot, and switching tabs meant more round
    * trips. The backend now computes all boards over the full window from real
-   * activity, cached, so one request fills the page.
+   * activity, cached, so one request fills the intel tabs. Season XP is a
+   * separate endpoint and must not share this failure path.
    */
-  private async loadAll(opts: { force?: boolean } = {}): Promise<void> {
-    if (!opts.force && this.loadedTabs().size > 0) {
+  private async loadIntel(opts: { force?: boolean } = {}): Promise<void> {
+    if (!opts.force && this.loadedIntel()) {
       return;
     }
-    for (const tab of this.tabs) {
-      this.patchState(tab.key, LOADING_STATE);
+    for (const key of INTEL_KEYS) {
+      this.patchState(key, LOADING_STATE);
     }
     try {
       const boards = await firstValueFrom(this.intel.leaderboards());
-      for (const tab of this.tabs) {
-        this.patchState(tab.key, {
-          entries: (BOARD_FOR_TAB[tab.key](boards) ?? []).map((row) => ({
+      for (const key of INTEL_KEYS) {
+        this.patchState(key, {
+          entries: (BOARD_FOR_TAB[key](boards) ?? []).map((row) => ({
             name: row.username,
             value: row.value,
           })),
@@ -568,11 +608,40 @@ export class Leaderboards {
           hasError: false,
         });
       }
-      this.loadedTabs.set(new Set(this.tabs.map((tab) => tab.key)));
+      this.loadedIntel.set(true);
     } catch {
-      for (const tab of this.tabs) {
-        this.patchState(tab.key, ERROR_STATE);
+      for (const key of INTEL_KEYS) {
+        this.patchState(key, ERROR_STATE);
       }
+      this.loadedIntel.set(false);
+    }
+  }
+
+  /** Loads the season XP board independently of the intel report. */
+  private async loadSeason(opts: { force?: boolean } = {}): Promise<void> {
+    if (!opts.force && this.loadedSeason()) {
+      return;
+    }
+    this.patchState('season', LOADING_STATE);
+    try {
+      const data = await firstValueFrom(
+        this.api.get<PaginatedData<ProgressionLeaderboardEntry>>('api/progression/leaderboard', {
+          page: 1,
+          limit: 50,
+        }),
+      );
+      this.patchState('season', {
+        entries: (data.items ?? []).map((row) => ({
+          name: row.username,
+          value: row.xp,
+        })),
+        isLoading: false,
+        hasError: false,
+      });
+      this.loadedSeason.set(true);
+    } catch {
+      this.patchState('season', ERROR_STATE);
+      this.loadedSeason.set(false);
     }
   }
 
@@ -589,6 +658,7 @@ const ACCENT_BG: Record<LeaderboardKey, string> = {
   killfame: 'var(--color-warning-container)',
   deathfame: 'var(--color-error-container)',
   siphoned: 'var(--color-primary-container)',
+  season: 'var(--color-warning-container)',
 };
 
 const ACCENT_FG: Record<LeaderboardKey, string> = {
@@ -599,4 +669,5 @@ const ACCENT_FG: Record<LeaderboardKey, string> = {
   killfame: 'var(--color-warning)',
   deathfame: 'var(--color-error)',
   siphoned: 'var(--color-primary)',
+  season: 'var(--color-warning)',
 };

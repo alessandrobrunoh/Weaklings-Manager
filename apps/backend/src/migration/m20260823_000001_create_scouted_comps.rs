@@ -39,7 +39,11 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(ScoutedComps::Name).string_len(160).not_null())
+                    .col(
+                        ColumnDef::new(ScoutedComps::Name)
+                            .string_len(160)
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(ScoutedComps::OpponentGuildId).string_len(64))
                     .col(
                         ColumnDef::new(ScoutedComps::OpponentGuildName)
@@ -216,10 +220,7 @@ impl MigrationTrait for Migration {
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_scouted_comp_battles_scout")
-                            .from(
-                                ScoutedCompBattles::Table,
-                                ScoutedCompBattles::ScoutedCompId,
-                            )
+                            .from(ScoutedCompBattles::Table, ScoutedCompBattles::ScoutedCompId)
                             .to(ScoutedComps::Table, ScoutedComps::Id)
                             .on_delete(ForeignKeyAction::Cascade),
                     )

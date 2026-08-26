@@ -13,14 +13,14 @@ use crate::modules::comps::entities::{build, build_item, comp, comp_build};
 use crate::modules::comps::status::BuildSlot;
 use crate::modules::events::service::BattleLinkingContext;
 use crate::modules::intel::entities::{scouted_comp, scouted_comp_battle};
-use crate::modules::intel::matchups::{best_counter, matchups, threat_score, MatchupReport};
+use crate::modules::intel::matchups::{MatchupReport, best_counter, matchups, threat_score};
 use crate::modules::intel::models::{
     CounterSuggestion, ScoutFilters, ScoutOutcome, ScoutedCompDetail, ScoutedCompSummary,
     SimilarityHit, UpdateScoutRequest,
 };
-use crate::modules::intel::roles::{normalize_item_id, RoleClassifier};
-use crate::modules::intel::scout::{is_same_comp, scout_from_snapshot, ScoutDraft, ScoutedPlayer};
-use crate::modules::intel::similarity::{similarity, CompProfile};
+use crate::modules::intel::roles::{RoleClassifier, normalize_item_id};
+use crate::modules::intel::scout::{ScoutDraft, ScoutedPlayer, is_same_comp, scout_from_snapshot};
+use crate::modules::intel::similarity::{CompProfile, similarity};
 use crate::modules::intel::status::IntelScoutCategory;
 use crate::pagination::{PaginatedData, PaginationParams};
 
@@ -56,7 +56,12 @@ impl IntelService {
         if let Some(guild_id) = filters.guild_id.as_deref().filter(|s| !s.is_empty()) {
             condition = condition.add(scouted_comp::Column::OpponentGuildId.eq(guild_id));
         }
-        if let Some(q) = filters.q.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some(q) = filters
+            .q
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
             let pattern = format!("%{q}%");
             condition = condition.add(
                 Condition::any()
@@ -97,8 +102,10 @@ impl IntelService {
     ) -> Result<ScoutedCompDetail, AppError> {
         let model = load_scout(db, id).await?;
         let battle_ids = source_battle_ids(db, id).await?;
-        let players: Vec<ScoutedPlayer> = serde_json::from_str(&model.players_json)
-            .map_err(|err| AppError::Internal(format!("malformed players_json on scout {id}: {err}")))?;
+        let players: Vec<ScoutedPlayer> =
+            serde_json::from_str(&model.players_json).map_err(|err| {
+                AppError::Internal(format!("malformed players_json on scout {id}: {err}"))
+            })?;
         let MatchupReport { rows, coverage } = matchups(db, &[id]).await?;
         let recommended_counter = best_counter(&rows, id).map(|best| CounterSuggestion {
             comp_id: best.our_comp_id,
@@ -161,7 +168,9 @@ impl IntelService {
     /// Deletes a scout. Its battle links cascade away with it.
     pub async fn delete_scout(&self, db: &DatabaseConnection, id: i64) -> Result<(), AppError> {
         let model = load_scout(db, id).await?;
-        scouted_comp::Entity::delete_by_id(model.id).exec(db).await?;
+        scouted_comp::Entity::delete_by_id(model.id)
+            .exec(db)
+            .await?;
         Ok(())
     }
 
@@ -195,7 +204,10 @@ impl IntelService {
             return Ok(Vec::new());
         }
         if dry_run {
-            return Ok(drafts.iter().map(|d| outcome_from_draft(d, None, false, false)).collect());
+            return Ok(drafts
+                .iter()
+                .map(|d| outcome_from_draft(d, None, false, false))
+                .collect());
         }
 
         let existing = scouted_comp::Entity::find().all(db).await?;
@@ -372,8 +384,7 @@ impl IntelService {
                 id: row.id,
                 name: row.name.clone(),
                 score: similarity(&target_profile, &profile),
-                full_weapon_coverage: target_full
-                    && row.weapon_sample_size >= row.player_count,
+                full_weapon_coverage: target_full && row.weapon_sample_size >= row.player_count,
             });
         }
         hits.sort_by_key(|hit| std::cmp::Reverse(hit.score));
@@ -469,10 +480,7 @@ impl IntelService {
 }
 
 /// Loads a scout or reports a clean 404.
-async fn load_scout(
-    db: &DatabaseConnection,
-    id: i64,
-) -> Result<scouted_comp::Model, AppError> {
+async fn load_scout(db: &DatabaseConnection, id: i64) -> Result<scouted_comp::Model, AppError> {
     scouted_comp::Entity::find_by_id(id)
         .one(db)
         .await?
@@ -553,7 +561,10 @@ fn profile_from_model(model: &scouted_comp::Model) -> Result<CompProfile, AppErr
     })?;
     let weapons: BTreeMap<String, i64> =
         serde_json::from_str(&model.weapons_json).map_err(|err| {
-            AppError::Internal(format!("malformed weapons_json on scout {}: {err}", model.id))
+            AppError::Internal(format!(
+                "malformed weapons_json on scout {}: {err}",
+                model.id
+            ))
         })?;
     Ok(CompProfile { roles, weapons })
 }

@@ -40,10 +40,7 @@ impl MigrationTrait for Migration {
                 &Query::insert()
                     .into_table(RolePermissions::Table)
                     .columns([RolePermissions::RoleId, RolePermissions::Permission])
-                    .values_panic([
-                        admin_role_id.clone().into(),
-                        "admin.settings.manage".into(),
-                    ])
+                    .values_panic([admin_role_id.clone().into(), "admin.settings.manage".into()])
                     .on_conflict(OnConflict::new().do_nothing().to_owned())
                     .to_owned(),
             ),

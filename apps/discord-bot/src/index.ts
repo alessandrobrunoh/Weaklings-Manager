@@ -1,6 +1,7 @@
 import { Client, GatewayIntentBits, Events } from "discord.js";
 import { config } from "./config.js";
 import { ApiClient } from "./api/client.js";
+import type { AwardMessageRequest, AwardMessageResponse } from "./api/types.js";
 import { commands } from "./commands/index.js";
 import { handleButton } from "./handlers/button.js";
 import { handleSelectMenu } from "./handlers/select.js";
@@ -30,9 +31,13 @@ async function main(): Promise<void> {
   // Register slash commands with Discord (guild-scoped = instant refresh)
   await registerCommands();
 
-  // Create the Discord client
+  // Message Content is a privileged intent that must be enabled in the Discord Developer Portal.
   const client = new Client({
-    intents: [GatewayIntentBits.Guilds],
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.MessageContent,
+    ],
   });
 
   // ── Interaction handler ──────────────────────────────────────────────────
@@ -86,6 +91,30 @@ async function main(): Promise<void> {
       await handleSelectMenu(interaction, api);
       return;
     }
+  });
+
+  // ── Message XP (fire-and-forget; never reply in-channel) ─────────────────
+  client.on(Events.MessageCreate, (message) => {
+    if (message.author.bot) return;
+    if (!message.guild) return;
+    if (!message.content) return;
+
+    const body: AwardMessageRequest = {
+      discord_id: message.author.id,
+      message_id: message.id,
+      channel_id: message.channelId,
+      length: message.content.length,
+    };
+
+    void api
+      .post<AwardMessageResponse>(
+        "api/progression/award/message",
+        body,
+        message.author.id,
+      )
+      .catch((err: unknown) => {
+        console.error("[Bot] Message XP award failed:", err);
+      });
   });
 
   // ── Ready handler ────────────────────────────────────────────────────────

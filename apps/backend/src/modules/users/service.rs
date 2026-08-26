@@ -184,7 +184,9 @@ impl UserService {
             }
         }
 
-        let extras = self.personal_activity(db, user_id as i64, &participations).await?;
+        let extras = self
+            .personal_activity(db, user_id as i64, &participations)
+            .await?;
 
         Ok(UserMetrics {
             events_attended,
@@ -270,17 +272,12 @@ impl UserService {
         if let Some(name) = self.linked_character(db, user_id).await? {
             let snapshots = GuildBattleSnapshotEntity::find().all(db).await?;
             for snap in snapshots {
-                let Ok(players) =
-                    serde_json::from_str::<Vec<crate::modules::battles::models::BattlePlayer>>(
-                        &snap.players_json,
-                    )
-                else {
+                let Ok(players) = serde_json::from_str::<
+                    Vec<crate::modules::battles::models::BattlePlayer>,
+                >(&snap.players_json) else {
                     continue;
                 };
-                if let Some(me) = players
-                    .iter()
-                    .find(|p| p.name.eq_ignore_ascii_case(&name))
-                {
+                if let Some(me) = players.iter().find(|p| p.name.eq_ignore_ascii_case(&name)) {
                     battles_fought += 1;
                     kills += me.kills;
                     deaths += me.deaths;

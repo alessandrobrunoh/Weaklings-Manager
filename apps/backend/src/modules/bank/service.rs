@@ -304,12 +304,7 @@ impl BankService {
             if let Some(user_id) = req.user_id {
                 query = query.filter(Column::ToUserId.eq(user_id));
             }
-            query
-                .all(db)
-                .await?
-                .into_iter()
-                .map(|tx| tx.id)
-                .collect()
+            query.all(db).await?.into_iter().map(|tx| tx.id).collect()
         } else {
             match &req.transaction_ids {
                 Some(ids) if !ids.is_empty() => ids.clone(),
@@ -395,12 +390,7 @@ impl BankService {
             if let Some(user_id) = req.user_id {
                 query = query.filter(Column::ToUserId.eq(user_id));
             }
-            query
-                .all(db)
-                .await?
-                .into_iter()
-                .map(|tx| tx.id)
-                .collect()
+            query.all(db).await?.into_iter().map(|tx| tx.id).collect()
         } else {
             match &req.transaction_ids {
                 Some(ids) if !ids.is_empty() => ids.clone(),

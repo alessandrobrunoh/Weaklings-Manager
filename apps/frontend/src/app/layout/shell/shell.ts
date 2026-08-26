@@ -132,6 +132,12 @@ export class Shell {
         { path: '/siphoned', icon: 'activity', labelKey: 'nav.siphoned' },
         { path: '/regears', icon: 'shield', labelKey: 'nav.regears' },
         { path: '/users', icon: 'users', labelKey: 'nav.users' },
+        {
+          path: '/warns',
+          icon: 'alert',
+          labelKey: 'nav.warns',
+          roles: ['Officer', 'Admin', 'SuperAdmin'],
+        },
       ],
     },
     {

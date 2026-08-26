@@ -100,6 +100,24 @@ pub enum Permission {
     /// deployment env vars so an admin can change them without a redeploy. Admin-only.
     #[strum(serialize = "admin.settings.manage")]
     AdminSettingsManage,
+    /// View own season XP / level / rank and the guild XP leaderboard. Member+.
+    #[strum(serialize = "progression.view")]
+    ProgressionView,
+    /// Edit the XP curve, rates, warn threshold, and seasons. Admin+.
+    #[strum(serialize = "progression.settings.manage")]
+    ProgressionSettingsManage,
+    /// Add/set another member's XP, level, or multiplier. Officer+.
+    #[strum(serialize = "progression.adjust")]
+    ProgressionAdjust,
+    /// View the guild warn register. Officer+.
+    #[strum(serialize = "warns.view")]
+    WarnsView,
+    /// Issue or revoke a warn. Officer+.
+    #[strum(serialize = "warns.issue")]
+    WarnsIssue,
+    /// Claim a VOD review for XP. Member+.
+    #[strum(serialize = "vod.submit")]
+    VodSubmit,
 }
 
 impl Permission {
@@ -157,6 +175,6 @@ mod tests {
 
     #[test]
     fn all_contains_every_variant() {
-        assert_eq!(Permission::all().len(), 21);
+        assert_eq!(Permission::all().len(), 27);
     }
 }

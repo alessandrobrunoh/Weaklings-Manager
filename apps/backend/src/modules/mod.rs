@@ -15,11 +15,14 @@ pub mod events;
 pub mod health;
 pub mod intel;
 pub mod openalbion;
+pub mod progression;
 pub mod regear;
 pub mod siphoned;
 pub mod splits;
 pub mod users;
 pub mod utils;
+pub mod vods;
+pub mod warns;
 
 use axum::Router;
 
@@ -46,4 +49,7 @@ pub fn router() -> Router {
         .nest("/utils", utils::router())
         .nest("/audit", audit::router())
         .nest("/intel", intel::router())
+        .nest("/progression", progression::router())
+        .nest("/vods", vods::router())
+        .nest("/warns", warns::router())
 }

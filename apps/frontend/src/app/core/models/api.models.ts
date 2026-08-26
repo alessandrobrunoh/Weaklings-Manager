@@ -52,7 +52,13 @@ export type PermissionKey =
   | 'regear.request'
   | 'regear.adjudicate'
   | 'regear.settings.manage'
-  | 'admin.settings.manage';
+  | 'admin.settings.manage'
+  | 'progression.view'
+  | 'progression.settings.manage'
+  | 'progression.adjust'
+  | 'warns.view'
+  | 'warns.issue'
+  | 'vod.submit';
 
 export interface DiscordUserProfile {
   id: string;
@@ -1198,3 +1204,148 @@ export interface GuildSettingsView {
  * an empty string clears it.
  */
 export type UpdateGuildSettingsRequest = Partial<GuildSettingsView>;
+
+/** One row of the admin curve preview. */
+export interface LevelThresholdView {
+  level: number;
+  xp: number;
+}
+
+/** Guild-wide XP curve, rates, and warn threshold. */
+export interface ProgressionSettingsView {
+  xp_base: number;
+  xp_exponent: string | number;
+  max_level: number;
+  xp_message: number;
+  xp_event_create: number;
+  xp_event_join: number;
+  xp_event_complete: number;
+  xp_vod: number;
+  message_cooldown_secs: number;
+  message_min_chars: number;
+  warn_threshold: number;
+  vod_forum_channel_id: string | null;
+  message_channel_deny_list: string[];
+  level_preview: LevelThresholdView[];
+}
+
+/** Partial update of progression settings. */
+export type UpdateProgressionSettingsRequest = Partial<{
+  xp_base: number;
+  xp_exponent: number;
+  max_level: number;
+  xp_message: number;
+  xp_event_create: number;
+  xp_event_join: number;
+  xp_event_complete: number;
+  xp_vod: number;
+  message_cooldown_secs: number;
+  message_min_chars: number;
+  warn_threshold: number;
+  vod_forum_channel_id: string;
+  message_channel_deny_list: string[];
+}>;
+
+/** One Albion-aligned, admin-modellable XP season. */
+export interface ProgressionSeasonView {
+  id: number;
+  name: string;
+  starts_at: string;
+  ends_at: string;
+  is_active: boolean;
+}
+
+/** The caller's (or a target user's) season XP snapshot. */
+export interface ProgressionMeView {
+  season: ProgressionSeasonView | null;
+  level: number;
+  xp: number;
+  xp_to_next: number;
+  next_level_at: number;
+  rank: number | null;
+  multiplier: string | number;
+  lifetime_xp: number;
+}
+
+/** One ranked row on the season XP leaderboard. */
+export interface ProgressionLeaderboardEntry {
+  user_id: number;
+  username: string;
+  xp: number;
+  level: number;
+  rank: number;
+}
+
+/** Why a progression ledger row was written. */
+export type XpSource =
+  | 'message'
+  | 'event_create'
+  | 'event_join'
+  | 'event_complete'
+  | 'vod'
+  | 'admin_adjust';
+
+/** One append-only XP award (or admin adjust) row. */
+export interface ProgressionLedgerRow {
+  id: number;
+  user_id: number;
+  season_id: number;
+  source: XpSource | string;
+  base_amount: number;
+  applied_amount: number;
+  multiplier_at_time: string | number;
+  idempotency_key: string;
+  actor_user_id: number | null;
+  created_at: string;
+}
+
+/** Officer body for `POST /progression/users/{id}/adjust`. Omit unused fields. */
+export interface AdjustProgressionRequest {
+  set_xp?: number;
+  add_xp?: number;
+  set_level?: number;
+  set_multiplier?: number;
+  multiplier_expires_at?: string;
+  reason: string;
+}
+
+/** Warn severity stored on `user_warns`. */
+export type WarnSeverity = 'note' | 'warn' | 'strike';
+
+/** One row of the guild warn register. */
+export interface WarnView {
+  id: number;
+  user_id: number;
+  username?: string | null;
+  issued_by_user_id: number;
+  issued_by_username?: string | null;
+  reason: string;
+  severity: WarnSeverity;
+  multiplier?: string | number | null;
+  multiplier_expires_at?: string | null;
+  revoked_at: string | null;
+  revoked_by?: number | null;
+  created_at: string;
+}
+
+/** Body for `POST /warns`. */
+export interface CreateWarnRequest {
+  user_id: number;
+  reason: string;
+  severity: WarnSeverity;
+  multiplier?: number;
+  multiplier_expires_at?: string;
+}
+
+/** One admin-facing kick/handle reminder when the warn threshold is hit. */
+export interface WarnEscalationView {
+  id: number;
+  user_id: number;
+  username?: string | null;
+  threshold_at_time: number;
+  warn_count_at_time: number;
+  opened_at: string;
+  acknowledged_at: string | null;
+  acknowledged_by?: number | null;
+  closed_reason?: string | null;
+}

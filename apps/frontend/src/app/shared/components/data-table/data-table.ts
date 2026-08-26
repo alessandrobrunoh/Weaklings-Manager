@@ -134,6 +134,15 @@ export class DataTable<T> {
   /** Emitted whenever any state relevant to data fetching changes. */
   readonly pageChange = output<DataTablePageChange>();
 
+  /**
+   * When true, body rows are clickable and emit `rowClick`. Officers use this
+   * on the members table to open the XP adjust drawer; members never see it.
+   */
+  readonly rowClickable = input(false);
+
+  /** Emitted when a clickable row is activated (click or Enter/Space). */
+  readonly rowClick = output<T>();
+
   /** Per-column projected cell templates (`*dataTableCell="'key'"`). */
   readonly cellDirectives = contentChildren(DataTableCell);
 
@@ -273,6 +282,23 @@ export class DataTable<T> {
       return '';
     }
     return current.direction === 'asc' ? '▲' : '▼';
+  }
+
+  protected onRowClick(row: T): void {
+    if (!this.rowClickable()) {
+      return;
+    }
+    this.rowClick.emit(row);
+  }
+
+  protected onRowKeydown(event: KeyboardEvent, row: T): void {
+    if (!this.rowClickable()) {
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      this.rowClick.emit(row);
+    }
   }
 
   protected columnAlign(column: DataTableColumn<T>): string {

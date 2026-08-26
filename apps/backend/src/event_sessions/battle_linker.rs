@@ -7,8 +7,8 @@
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 use crate::errors::AppError;
-use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::albionbb::service::AlbionBbService;
+use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::events::entities::event;
 use crate::modules::events::service::{BattleLinkingContext, EventService};
 use crate::modules::regear::extractor::{ExtractionGuildContext, RegearExtractor};
