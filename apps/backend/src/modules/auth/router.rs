@@ -15,6 +15,7 @@ use axum::{
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use rand::distributions::{Alphanumeric, DistString};
+use sea_orm::EntityTrait;
 use serde::Deserialize;
 
 /// Query parameters returned by Discord to the callback URI.
@@ -195,11 +196,11 @@ pub async fn discord_callback(
     path = "/api/auth/me",
     tag = "auth",
     summary = "Check whether the caller is logged in, and get their profile/roles",
-    description = "Call this on app load to bootstrap auth state: reads and parses the `session_user` \
-        cookie (does not touch the database or make any external call). A `200` means the browser \
-        has a valid session and `data` is the current user's profile, including `roles` (ordered \
-        highest-priority first) and `highest_role`. A `401` means \"not logged in\" — render the \
-        Discord login button linking to `GET /api/auth/discord/login`.",
+    description = "Call this on app load to bootstrap auth state: reads the `session_user` cookie, \
+        re-resolves Discord guild roles against linked gestionale roles when a bot token is \
+        configured (so an admin linking a Discord role takes effect without a fresh OAuth login), \
+        and returns the profile with `roles`, `highest_role`, and `permissions`. A `401` means \
+        \"not logged in\" — render the Discord login button linking to `GET /api/auth/discord/login`.",
     responses(
         (status = 200, description = "Active session found; data is the logged-in user's Discord profile", body = ApiResponseDiscordUserProfile),
         (status = 401, description = "Unauthorized - no active session or invalid/expired session cookie", body = ProblemDetails)
@@ -210,7 +211,7 @@ pub async fn get_me(
     Extension(cfg): Extension<Config>,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
-) -> Result<Json<ApiResponse<DiscordUserProfile>>, AppError> {
+) -> Result<(CookieJar, Json<ApiResponse<DiscordUserProfile>>), AppError> {
     let session_cookie = jar
         .get("session_user")
         .ok_or_else(|| AppError::Unauthorized("No active session".to_string()))?;
@@ -224,15 +225,76 @@ pub async fn get_me(
     profile.username =
         crate::modules::users::display_name::resolve_by_id(&db, profile.user_id).await?;
     profile.is_superadmin = profile.id == cfg.super_admin_discord_id;
-    if profile.is_superadmin && !profile.roles.iter().any(|role| role == "SuperAdmin") {
+
+    // Re-map Discord guild roles onto gestionale roles so linking a Discord role in admin
+    // takes effect on the next page load, without forcing a full OAuth round-trip.
+    // If Discord is unreachable the cookie's previous role list is kept (fail closed on
+    // connectivity, not on "member has no linked roles").
+    let service = AuthService::new();
+    if let Some(role_ids) = service
+        .fetch_guild_member_role_ids(
+            &profile.id,
+            "",
+            &cfg.discord_guild_id,
+            cfg.discord_bot_token.as_deref(),
+        )
+        .await
+    {
+        if profile.is_superadmin {
+            profile.roles = vec!["SuperAdmin".to_string()];
+            profile.highest_role = "SuperAdmin".to_string();
+        } else {
+            let db_roles = crate::modules::auth::entities::role::Entity::find()
+                .all(&db)
+                .await?;
+            let (roles, highest) =
+                crate::modules::auth::service::resolve_linked_roles(&role_ids, &db_roles);
+            profile.roles = roles;
+            profile.highest_role = highest;
+        }
+        persist_session_highest_role(&db, profile.user_id, &profile.highest_role).await?;
+    } else if profile.is_superadmin && !profile.roles.iter().any(|role| role == "SuperAdmin") {
         profile.roles.insert(0, "SuperAdmin".to_string());
         profile.highest_role = "SuperAdmin".to_string();
     }
+
     profile.permissions = perms
         .granted_permissions(profile.is_superadmin, &profile.roles)
         .await;
 
-    Ok(Json(ApiResponse::new(profile)))
+    let profile_json = serde_json::to_string(&profile)
+        .map_err(|e| AppError::Internal(format!("Failed to serialize session: {e}")))?;
+    let jar = jar.add(
+        Cookie::build(("session_user", profile_json))
+            .path("/")
+            .http_only(true)
+            .same_site(SameSite::Lax)
+            .max_age(time::Duration::days(7)),
+    );
+
+    Ok((jar, Json(ApiResponse::new(profile))))
+}
+
+async fn persist_session_highest_role(
+    db: &sea_orm::DatabaseConnection,
+    user_id: i64,
+    highest_role: &str,
+) -> Result<(), AppError> {
+    if user_id <= 0 {
+        return Ok(());
+    }
+    use crate::modules::users::entities::{ActiveModel as UserActive, Entity as UserEntity};
+    use sea_orm::{ActiveModelTrait, EntityTrait};
+    let Some(existing) = UserEntity::find_by_id(user_id).one(db).await? else {
+        return Ok(());
+    };
+    if existing.role == highest_role {
+        return Ok(());
+    }
+    let mut active: UserActive = existing.into();
+    active.role = sea_orm::Set(highest_role.to_string());
+    active.update(db).await?;
+    Ok(())
 }
 
 /// Logs out the user by deleting the `session_user` cookie.

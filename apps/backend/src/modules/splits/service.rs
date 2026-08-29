@@ -11,7 +11,7 @@ use std::str::FromStr;
 use sea_orm::prelude::Decimal;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, PaginatorTrait, QueryFilter, TransactionTrait,
+    EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, TransactionTrait,
 };
 
 use crate::errors::AppError;
@@ -26,16 +26,26 @@ use crate::modules::events::entities::event_participation::{
 use crate::modules::users::entities::{Column as UserColumn, Entity as UserEntity};
 use crate::pagination::{PaginatedData, PaginationParams};
 
+use super::city::SplitIslandCity;
 use super::entities::split::{
     ActiveModel as SplitActiveModel, Column as SplitColumn, Entity as SplitEntity,
     Model as SplitModel,
+};
+use super::entities::split_island::{
+    ActiveModel as IslandActiveModel, Column as IslandColumn, Entity as IslandEntity,
+    Model as IslandModel,
+};
+use super::entities::split_island_tab::{
+    ActiveModel as TabActiveModel, Column as TabColumn, Entity as TabEntity, Model as TabModel,
 };
 use super::entities::split_participant::{
     ActiveModel as ParticipantActiveModel, Column as ParticipantColumn, Entity as ParticipantEntity,
 };
 use super::models::{
-    BatchFailure, CompleteSplitsBatchResult, CreateSplitRequest, MatchedParticipant, SplitDetail,
-    SplitFilters, SplitParticipantView, SplitSummary, UpdateSplitRequest, UpsertParticipantRequest,
+    BatchFailure, CompleteSplitsBatchResult, CreateIslandRequest, CreateIslandTabRequest,
+    CreateSplitRequest, MatchedParticipant, SplitDetail, SplitFilters, SplitIslandTabView,
+    SplitIslandView, SplitParticipantView, SplitSummary, UpdateIslandRequest,
+    UpdateIslandTabRequest, UpdateSplitRequest, UpsertParticipantRequest,
 };
 use super::status::SplitStatus;
 
@@ -103,6 +113,147 @@ async fn event_title(
     Ok(title)
 }
 
+struct SplitLocation {
+    island_id: Option<i64>,
+    island_name: Option<String>,
+    island_city: Option<String>,
+    island_tab_id: Option<i64>,
+    island_tab_name: Option<String>,
+}
+
+async fn split_location(
+    db: &DatabaseConnection,
+    island_tab_id: Option<i64>,
+) -> Result<SplitLocation, AppError> {
+    let Some(tab_id) = island_tab_id else {
+        return Ok(SplitLocation {
+            island_id: None,
+            island_name: None,
+            island_city: None,
+            island_tab_id: None,
+            island_tab_name: None,
+        });
+    };
+
+    let Some(tab) = TabEntity::find_by_id(tab_id).one(db).await? else {
+        return Ok(SplitLocation {
+            island_id: None,
+            island_name: None,
+            island_city: None,
+            island_tab_id: Some(tab_id),
+            island_tab_name: None,
+        });
+    };
+
+    let island = IslandEntity::find_by_id(tab.island_id).one(db).await?;
+    Ok(SplitLocation {
+        island_id: Some(tab.island_id),
+        island_name: island.as_ref().map(|island| island.name.clone()),
+        island_city: island.as_ref().map(|island| island.city.clone()),
+        island_tab_id: Some(tab.id),
+        island_tab_name: Some(tab.name),
+    })
+}
+
+fn parse_city(raw: &str) -> Result<SplitIslandCity, AppError> {
+    SplitIslandCity::from_str(raw.trim()).map_err(AppError::Validation)
+}
+
+fn trim_required_name(raw: &str, field: &str) -> Result<String, AppError> {
+    let name = raw.trim().to_string();
+    if name.is_empty() {
+        return Err(AppError::Validation(format!("{field} is required")));
+    }
+    Ok(name)
+}
+
+/// Confirms `island_tab_id` points at a real catalog tab.
+///
+/// # Errors
+///
+/// Returns [`AppError::NotFound`] when the tab does not exist.
+pub(crate) async fn require_island_tab(
+    db: &DatabaseConnection,
+    island_tab_id: i64,
+) -> Result<TabModel, AppError> {
+    TabEntity::find_by_id(island_tab_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("island tab {island_tab_id} not found")))
+}
+
+async fn island_name_taken(
+    db: &DatabaseConnection,
+    city: &str,
+    name: &str,
+    except_id: Option<i64>,
+) -> Result<bool, AppError> {
+    let islands = IslandEntity::find()
+        .filter(IslandColumn::City.eq(city))
+        .all(db)
+        .await?;
+    Ok(islands.iter().any(|island| {
+        except_id != Some(island.id) && island.name.eq_ignore_ascii_case(name)
+    }))
+}
+
+async fn tab_name_taken(
+    db: &DatabaseConnection,
+    island_id: i64,
+    name: &str,
+    except_id: Option<i64>,
+) -> Result<bool, AppError> {
+    let tabs = TabEntity::find()
+        .filter(TabColumn::IslandId.eq(island_id))
+        .all(db)
+        .await?;
+    Ok(tabs
+        .iter()
+        .any(|tab| except_id != Some(tab.id) && tab.name.eq_ignore_ascii_case(name)))
+}
+
+async fn tab_is_referenced(db: &DatabaseConnection, tab_id: i64) -> Result<bool, AppError> {
+    Ok(SplitEntity::find()
+        .filter(SplitColumn::IslandTabId.eq(tab_id))
+        .count(db)
+        .await?
+        > 0)
+}
+
+fn to_island_view(island: IslandModel, tabs: Vec<TabModel>) -> SplitIslandView {
+    let city = SplitIslandCity::from_str(&island.city).unwrap_or(SplitIslandCity::Lymhurst);
+    let mut tabs = tabs;
+    tabs.sort_by(|a, b| {
+        a.sort_order
+            .cmp(&b.sort_order)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    SplitIslandView {
+        id: island.id,
+        name: island.name,
+        city,
+        tabs: tabs
+            .into_iter()
+            .map(|tab| SplitIslandTabView {
+                id: tab.id,
+                name: tab.name,
+                sort_order: tab.sort_order,
+            })
+            .collect(),
+    }
+}
+
+async fn load_island_view(
+    db: &DatabaseConnection,
+    island: IslandModel,
+) -> Result<SplitIslandView, AppError> {
+    let tabs = TabEntity::find()
+        .filter(TabColumn::IslandId.eq(island.id))
+        .all(db)
+        .await?;
+    Ok(to_island_view(island, tabs))
+}
+
 /// Service for executing business logic operations related to loot splits.
 pub struct SplitService;
 
@@ -126,6 +277,7 @@ impl SplitService {
             .count(db)
             .await?;
         let linked_event_title = event_title(db, split.event_id).await?;
+        let location = split_location(db, split.island_tab_id).await?;
 
         Ok(SplitSummary {
             id: split.id,
@@ -138,6 +290,11 @@ impl SplitService {
             note: split.note,
             event_id: split.event_id,
             event_title: linked_event_title,
+            island_id: location.island_id,
+            island_name: location.island_name,
+            island_city: location.island_city,
+            island_tab_id: location.island_tab_id,
+            island_tab_name: location.island_tab_name,
             created_at: split.created_at.to_rfc3339(),
             finalized_at: split.finalized_at.map(|dt| dt.to_rfc3339()),
             participant_count,
@@ -261,6 +418,8 @@ impl SplitService {
             ));
         }
 
+        require_island_tab(db, req.island_tab_id).await?;
+
         let txn = db.begin().await?;
 
         let active = SplitActiveModel {
@@ -272,6 +431,7 @@ impl SplitService {
             net_value: Set(None),
             note: Set(req.note),
             event_id: Set(req.event_id),
+            island_tab_id: Set(Some(req.island_tab_id)),
             ..Default::default()
         };
         let inserted = active.insert(&txn).await?;
@@ -397,6 +557,11 @@ impl SplitService {
 
         if let Some(Some(event_id)) = linked_event_id {
             validate_event_link(db, Some(event_id)).await?;
+        }
+
+        if let Some(tab_id) = req.island_tab_id {
+            require_island_tab(db, tab_id).await?;
+            active.island_tab_id = Set(Some(tab_id));
         }
 
         let txn = db.begin().await?;
@@ -552,6 +717,16 @@ impl SplitService {
         if let Some(event_id) = filters.event_id {
             query = query.filter(SplitColumn::EventId.eq(event_id));
         }
+        if let Some(island_id) = filters.island_id {
+            let tab_ids = TabEntity::find()
+                .filter(TabColumn::IslandId.eq(island_id))
+                .all(db)
+                .await?
+                .into_iter()
+                .map(|tab| tab.id)
+                .collect::<Vec<_>>();
+            query = query.filter(SplitColumn::IslandTabId.is_in(tab_ids));
+        }
 
         if let Some(search) = filters.search.as_deref().filter(|s| !s.trim().is_empty()) {
             let pattern = format!("%{}%", search.trim());
@@ -609,6 +784,295 @@ impl SplitService {
             page + 1,
             limit,
         ))
+    }
+
+    /// Lists every island in the catalog, tabs nested and ordered.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::Database`] if the query fails.
+    pub async fn list_islands(
+        &self,
+        db: &DatabaseConnection,
+    ) -> Result<Vec<SplitIslandView>, AppError> {
+        let islands = IslandEntity::find()
+            .order_by_asc(IslandColumn::City)
+            .order_by_asc(IslandColumn::Name)
+            .all(db)
+            .await?;
+        let mut views = Vec::with_capacity(islands.len());
+        for island in islands {
+            views.push(load_island_view(db, island).await?);
+        }
+        Ok(views)
+    }
+
+    /// Creates an island together with at least one named tab.
+    ///
+    /// # Errors
+    ///
+    /// `Validation` for empty name, unknown city, zero tabs, or duplicate names.
+    pub async fn create_island(
+        &self,
+        db: &DatabaseConnection,
+        req: CreateIslandRequest,
+    ) -> Result<SplitIslandView, AppError> {
+        let name = trim_required_name(&req.name, "name")?;
+        let city = parse_city(&req.city)?;
+        let mut tab_names = Vec::new();
+        for raw in &req.tabs {
+            let tab_name = trim_required_name(raw, "tab name")?;
+            if tab_names
+                .iter()
+                .any(|existing: &String| existing.eq_ignore_ascii_case(&tab_name))
+            {
+                return Err(AppError::Validation(format!(
+                    "duplicate tab name on island: {tab_name}"
+                )));
+            }
+            tab_names.push(tab_name);
+        }
+        if tab_names.is_empty() {
+            return Err(AppError::Validation(
+                "an island must be created with at least one tab".to_string(),
+            ));
+        }
+        if island_name_taken(db, city.as_str(), &name, None).await? {
+            return Err(AppError::Validation(format!(
+                "island {name} already exists in {}",
+                city.as_str()
+            )));
+        }
+
+        let txn = db.begin().await?;
+        let island = IslandActiveModel {
+            name: Set(name),
+            city: Set(city.to_string()),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await?;
+
+        for (index, tab_name) in tab_names.into_iter().enumerate() {
+            TabActiveModel {
+                island_id: Set(island.id),
+                name: Set(tab_name),
+                sort_order: Set(i32::try_from(index).unwrap_or(i32::MAX)),
+                ..Default::default()
+            }
+            .insert(&txn)
+            .await?;
+        }
+        txn.commit().await?;
+
+        load_island_view(db, island).await
+    }
+
+    /// Renames an island or moves it to another city.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` if the island is missing; `Validation` for empty name, unknown city, or clash.
+    pub async fn update_island(
+        &self,
+        db: &DatabaseConnection,
+        island_id: i64,
+        req: UpdateIslandRequest,
+    ) -> Result<SplitIslandView, AppError> {
+        let island = IslandEntity::find_by_id(island_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("island {island_id} not found")))?;
+
+        let mut active: IslandActiveModel = island.clone().into();
+        let next_name = if let Some(name) = req.name {
+            Some(trim_required_name(&name, "name")?)
+        } else {
+            None
+        };
+        let next_city = if let Some(city) = req.city {
+            Some(parse_city(&city)?)
+        } else {
+            None
+        };
+
+        let check_name = next_name.as_deref().unwrap_or(&island.name);
+        let check_city = next_city
+            .map(|city| city.to_string())
+            .unwrap_or_else(|| island.city.clone());
+        if island_name_taken(db, &check_city, check_name, Some(island.id)).await? {
+            return Err(AppError::Validation(format!(
+                "island {check_name} already exists in {check_city}"
+            )));
+        }
+
+        if let Some(name) = next_name {
+            active.name = Set(name);
+        }
+        if let Some(city) = next_city {
+            active.city = Set(city.to_string());
+        }
+        let updated = active.update(db).await?;
+        load_island_view(db, updated).await
+    }
+
+    /// Deletes an island and its tabs when none of the tabs are referenced by a split.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` if missing; `Validation` if a tab is still used by a split.
+    pub async fn delete_island(
+        &self,
+        db: &DatabaseConnection,
+        island_id: i64,
+    ) -> Result<(), AppError> {
+        let island = IslandEntity::find_by_id(island_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("island {island_id} not found")))?;
+        let tabs = TabEntity::find()
+            .filter(TabColumn::IslandId.eq(island.id))
+            .all(db)
+            .await?;
+        for tab in &tabs {
+            if tab_is_referenced(db, tab.id).await? {
+                return Err(AppError::Validation(
+                    "cannot delete an island while a split still uses one of its tabs".to_string(),
+                ));
+            }
+        }
+        IslandEntity::delete_by_id(island.id).exec(db).await?;
+        Ok(())
+    }
+
+    /// Adds a named tab to an existing island.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` if the island is missing; `Validation` for empty or duplicate names.
+    pub async fn add_island_tab(
+        &self,
+        db: &DatabaseConnection,
+        island_id: i64,
+        req: CreateIslandTabRequest,
+    ) -> Result<SplitIslandView, AppError> {
+        let island = IslandEntity::find_by_id(island_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("island {island_id} not found")))?;
+        let name = trim_required_name(&req.name, "tab name")?;
+        if tab_name_taken(db, island.id, &name, None).await? {
+            return Err(AppError::Validation(format!(
+                "tab {name} already exists on this island"
+            )));
+        }
+        let sort_order = if let Some(order) = req.sort_order {
+            order
+        } else {
+            let existing = TabEntity::find()
+                .filter(TabColumn::IslandId.eq(island.id))
+                .all(db)
+                .await?;
+            existing
+                .iter()
+                .map(|tab| tab.sort_order)
+                .max()
+                .unwrap_or(-1)
+                .saturating_add(1)
+        };
+        TabActiveModel {
+            island_id: Set(island.id),
+            name: Set(name),
+            sort_order: Set(sort_order),
+            ..Default::default()
+        }
+        .insert(db)
+        .await?;
+        load_island_view(db, island).await
+    }
+
+    /// Renames or reorders a tab.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` if the island or tab is missing; `Validation` for empty or duplicate names.
+    pub async fn update_island_tab(
+        &self,
+        db: &DatabaseConnection,
+        island_id: i64,
+        tab_id: i64,
+        req: UpdateIslandTabRequest,
+    ) -> Result<SplitIslandView, AppError> {
+        let island = IslandEntity::find_by_id(island_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("island {island_id} not found")))?;
+        let tab = TabEntity::find_by_id(tab_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("island tab {tab_id} not found")))?;
+        if tab.island_id != island.id {
+            return Err(AppError::NotFound(format!(
+                "island tab {tab_id} not found on island {island_id}"
+            )));
+        }
+        let mut active: TabActiveModel = tab.clone().into();
+        if let Some(name) = req.name {
+            let name = trim_required_name(&name, "tab name")?;
+            if tab_name_taken(db, island.id, &name, Some(tab.id)).await? {
+                return Err(AppError::Validation(format!(
+                    "tab {name} already exists on this island"
+                )));
+            }
+            active.name = Set(name);
+        }
+        if let Some(sort_order) = req.sort_order {
+            active.sort_order = Set(sort_order);
+        }
+        active.update(db).await?;
+        load_island_view(db, island).await
+    }
+
+    /// Deletes a tab that is not the island's last tab and is not used by a split.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` if missing; `Validation` if it is the last tab or still referenced.
+    pub async fn delete_island_tab(
+        &self,
+        db: &DatabaseConnection,
+        island_id: i64,
+        tab_id: i64,
+    ) -> Result<SplitIslandView, AppError> {
+        let island = IslandEntity::find_by_id(island_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("island {island_id} not found")))?;
+        let tab = TabEntity::find_by_id(tab_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("island tab {tab_id} not found")))?;
+        if tab.island_id != island.id {
+            return Err(AppError::NotFound(format!(
+                "island tab {tab_id} not found on island {island_id}"
+            )));
+        }
+        let tab_count = TabEntity::find()
+            .filter(TabColumn::IslandId.eq(island.id))
+            .count(db)
+            .await?;
+        if tab_count <= 1 {
+            return Err(AppError::Validation(
+                "cannot delete the last tab; delete the island instead".to_string(),
+            ));
+        }
+        if tab_is_referenced(db, tab.id).await? {
+            return Err(AppError::Validation(
+                "cannot delete a tab while a split still uses it".to_string(),
+            ));
+        }
+        TabEntity::delete_by_id(tab.id).exec(db).await?;
+        load_island_view(db, island).await
     }
 
     /// Adds a new participant to a pending split, or updates their weight if already present.
@@ -952,8 +1416,29 @@ mod tests {
             bags_value: bags.parse().unwrap(),
             note: None,
             event_id: None,
+            island_tab_id: 0,
             participants,
         }
+    }
+
+    fn located(mut req: CreateSplitRequest, island_tab_id: i64) -> CreateSplitRequest {
+        req.island_tab_id = island_tab_id;
+        req
+    }
+
+    async fn seed_tab(db: &DatabaseConnection) -> i64 {
+        let island = SplitService::new()
+            .create_island(
+                db,
+                CreateIslandRequest {
+                    name: "x".to_string(),
+                    city: "lymhurst".to_string(),
+                    tabs: vec!["Loot".to_string()],
+                },
+            )
+            .await
+            .expect("island");
+        island.tabs[0].id
     }
 
     #[tokio::test]
@@ -1004,20 +1489,24 @@ mod tests {
         let db = seed_db().await;
         let admin = insert_user(&db, "admin", "admin@example.com").await;
         let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let tab_id = seed_tab(&db).await;
 
         let service = SplitService::new();
         let split = service
             .create_split(
                 &db,
                 admin,
-                request(
-                    "50.00",
-                    "0.00",
-                    "0.00",
-                    vec![UpsertParticipantRequest {
-                        user_id: alice,
-                        weight: 1,
-                    }],
+                located(
+                    request(
+                        "50.00",
+                        "0.00",
+                        "0.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: 1,
+                        }],
+                    ),
+                    tab_id,
                 ),
             )
             .await
@@ -1034,20 +1523,24 @@ mod tests {
         let alice = insert_user(&db, "alice", "alice@example.com").await;
         let bob = insert_user(&db, "bob", "bob@example.com").await;
         let carol = insert_user(&db, "carol", "carol@example.com").await;
+        let tab_id = seed_tab(&db).await;
 
         let service = SplitService::new();
         let split = service
             .create_split(
                 &db,
                 admin,
-                request(
-                    "100.00",
-                    "0.00",
-                    "0.00",
-                    vec![alice, bob, carol]
-                        .into_iter()
-                        .map(|user_id| UpsertParticipantRequest { user_id, weight: 1 })
-                        .collect(),
+                located(
+                    request(
+                        "100.00",
+                        "0.00",
+                        "0.00",
+                        vec![alice, bob, carol]
+                            .into_iter()
+                            .map(|user_id| UpsertParticipantRequest { user_id, weight: 1 })
+                            .collect(),
+                    ),
+                    tab_id,
                 ),
             )
             .await
@@ -1072,20 +1565,24 @@ mod tests {
         let db = seed_db().await;
         let admin = insert_user(&db, "admin", "admin@example.com").await;
         let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let tab_id = seed_tab(&db).await;
 
         let service = SplitService::new();
         let split = service
             .create_split(
                 &db,
                 admin,
-                request(
-                    "50.00",
-                    "0.00",
-                    "0.00",
-                    vec![UpsertParticipantRequest {
-                        user_id: alice,
-                        weight: 1,
-                    }],
+                located(
+                    request(
+                        "50.00",
+                        "0.00",
+                        "0.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: 1,
+                        }],
+                    ),
+                    tab_id,
                 ),
             )
             .await
@@ -1104,20 +1601,24 @@ mod tests {
         let db = seed_db().await;
         let admin = insert_user(&db, "admin", "admin@example.com").await;
         let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let tab_id = seed_tab(&db).await;
 
         let service = SplitService::new();
         let split = service
             .create_split(
                 &db,
                 admin,
-                request(
-                    "50.00",
-                    "0.00",
-                    "0.00",
-                    vec![UpsertParticipantRequest {
-                        user_id: alice,
-                        weight: 1,
-                    }],
+                located(
+                    request(
+                        "50.00",
+                        "0.00",
+                        "0.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: 1,
+                        }],
+                    ),
+                    tab_id,
                 ),
             )
             .await
@@ -1138,20 +1639,24 @@ mod tests {
         let db = seed_db().await;
         let admin = insert_user(&db, "admin", "admin@example.com").await;
         let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let tab_id = seed_tab(&db).await;
 
         let service = SplitService::new();
         let split = service
             .create_split(
                 &db,
                 admin,
-                request(
-                    "50.00",
-                    "0.00",
-                    "0.00",
-                    vec![UpsertParticipantRequest {
-                        user_id: alice,
-                        weight: 1,
-                    }],
+                located(
+                    request(
+                        "50.00",
+                        "0.00",
+                        "0.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: 1,
+                        }],
+                    ),
+                    tab_id,
                 ),
             )
             .await
@@ -1212,5 +1717,457 @@ mod tests {
 
         assert_eq!(matched.len(), 1);
         assert_eq!(matched[0].user_id, bob_id);
+    }
+
+    #[tokio::test]
+    async fn create_island_with_tabs_returns_nested_view() {
+        let db = seed_db().await;
+        let service = SplitService::new();
+        let island = service
+            .create_island(
+                &db,
+                CreateIslandRequest {
+                    name: "x".to_string(),
+                    city: "lymhurst".to_string(),
+                    tabs: vec!["Loot".to_string(), "Silver".to_string()],
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(island.name, "x");
+        assert_eq!(island.city, SplitIslandCity::Lymhurst);
+        assert_eq!(island.tabs.len(), 2);
+        assert_eq!(island.tabs[0].name, "Loot");
+        assert_eq!(island.tabs[1].name, "Silver");
+
+        let listed = service.list_islands(&db).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].tabs.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn create_island_rejects_unknown_city() {
+        let db = seed_db().await;
+        let err = SplitService::new()
+            .create_island(
+                &db,
+                CreateIslandRequest {
+                    name: "x".to_string(),
+                    city: "narnia".to_string(),
+                    tabs: vec!["Loot".to_string()],
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn create_island_requires_at_least_one_tab() {
+        let db = seed_db().await;
+        let err = SplitService::new()
+            .create_island(
+                &db,
+                CreateIslandRequest {
+                    name: "x".to_string(),
+                    city: "lymhurst".to_string(),
+                    tabs: vec![],
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn create_island_rejects_duplicate_name_in_same_city() {
+        let db = seed_db().await;
+        let service = SplitService::new();
+        let req = CreateIslandRequest {
+            name: "x".to_string(),
+            city: "lymhurst".to_string(),
+            tabs: vec!["Loot".to_string()],
+        };
+        service.create_island(&db, req.clone()).await.unwrap();
+        let err = service.create_island(&db, req).await.unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn add_tab_rejects_duplicate_name_on_island() {
+        let db = seed_db().await;
+        let service = SplitService::new();
+        let island = service
+            .create_island(
+                &db,
+                CreateIslandRequest {
+                    name: "x".to_string(),
+                    city: "lymhurst".to_string(),
+                    tabs: vec!["Loot".to_string()],
+                },
+            )
+            .await
+            .unwrap();
+        let err = service
+            .add_island_tab(
+                &db,
+                island.id,
+                CreateIslandTabRequest {
+                    name: "loot".to_string(),
+                    sort_order: None,
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn delete_last_tab_is_rejected() {
+        let db = seed_db().await;
+        let service = SplitService::new();
+        let island = service
+            .create_island(
+                &db,
+                CreateIslandRequest {
+                    name: "x".to_string(),
+                    city: "lymhurst".to_string(),
+                    tabs: vec!["Loot".to_string()],
+                },
+            )
+            .await
+            .unwrap();
+        let err = service
+            .delete_island_tab(&db, island.id, island.tabs[0].id)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn create_split_rejects_unknown_tab() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let err = SplitService::new()
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request(
+                        "50.00",
+                        "0.00",
+                        "0.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: 1,
+                        }],
+                    ),
+                    999,
+                ),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn create_split_summary_includes_island_and_tab_labels() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let tab_id = seed_tab(&db).await;
+        let split = SplitService::new()
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request(
+                        "50.00",
+                        "0.00",
+                        "0.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: 1,
+                        }],
+                    ),
+                    tab_id,
+                ),
+            )
+            .await
+            .unwrap();
+        assert_eq!(split.summary.island_tab_id, Some(tab_id));
+        assert_eq!(split.summary.island_name.as_deref(), Some("x"));
+        assert_eq!(split.summary.island_city.as_deref(), Some("lymhurst"));
+        assert_eq!(split.summary.island_tab_name.as_deref(), Some("Loot"));
+    }
+
+    #[tokio::test]
+    async fn list_splits_filters_by_island_id() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let service = SplitService::new();
+        let first = service
+            .create_island(
+                &db,
+                CreateIslandRequest {
+                    name: "alpha".to_string(),
+                    city: "lymhurst".to_string(),
+                    tabs: vec!["Loot".to_string()],
+                },
+            )
+            .await
+            .unwrap();
+        let second = service
+            .create_island(
+                &db,
+                CreateIslandRequest {
+                    name: "beta".to_string(),
+                    city: "bridgewatch".to_string(),
+                    tabs: vec!["Loot".to_string()],
+                },
+            )
+            .await
+            .unwrap();
+        let participant = vec![UpsertParticipantRequest {
+            user_id: alice,
+            weight: 1,
+        }];
+        service
+            .create_split(
+                &db,
+                admin,
+                located(request("10.00", "0.00", "0.00", participant.clone()), first.tabs[0].id),
+            )
+            .await
+            .unwrap();
+        service
+            .create_split(
+                &db,
+                admin,
+                located(request("20.00", "0.00", "0.00", participant), second.tabs[0].id),
+            )
+            .await
+            .unwrap();
+
+        let listed = service
+            .list_splits(
+                &db,
+                &PaginationParams {
+                    page: None,
+                    limit: Some(10),
+                },
+                &SplitFilters {
+                    status: None,
+                    event_id: None,
+                    island_id: Some(first.id),
+                    search: None,
+                    date_from: None,
+                    date_to: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(listed.items.len(), 1);
+        assert_eq!(listed.items[0].island_id, Some(first.id));
+    }
+
+    #[tokio::test]
+    async fn legacy_split_without_location_still_lists() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        SplitActiveModel {
+            created_by: Set(admin),
+            status: Set(SplitStatus::Pending.to_string()),
+            estimated_market_value: Set("10".parse().unwrap()),
+            repair_value: Set(Decimal::ZERO),
+            bags_value: Set(Decimal::ZERO),
+            note: Set(Some("legacy".to_string())),
+            event_id: Set(None),
+            island_tab_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let listed = SplitService::new()
+            .list_splits(
+                &db,
+                &PaginationParams {
+                    page: None,
+                    limit: Some(10),
+                },
+                &SplitFilters {
+                    status: None,
+                    event_id: None,
+                    island_id: None,
+                    search: None,
+                    date_from: None,
+                    date_to: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(listed.items.len(), 1);
+        assert_eq!(listed.items[0].island_tab_id, None);
+    }
+
+    #[tokio::test]
+    async fn update_pending_split_relocates_tab() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let service = SplitService::new();
+        let island = service
+            .create_island(
+                &db,
+                CreateIslandRequest {
+                    name: "x".to_string(),
+                    city: "lymhurst".to_string(),
+                    tabs: vec!["Loot".to_string(), "Silver".to_string()],
+                },
+            )
+            .await
+            .unwrap();
+        let split = service
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request(
+                        "50.00",
+                        "0.00",
+                        "0.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: 1,
+                        }],
+                    ),
+                    island.tabs[0].id,
+                ),
+            )
+            .await
+            .unwrap();
+        let updated = service
+            .update_split(
+                &db,
+                split.summary.id,
+                UpdateSplitRequest {
+                    estimated_market_value: None,
+                    repair_value: None,
+                    bags_value: None,
+                    note: None,
+                    event_id: None,
+                    island_tab_id: Some(island.tabs[1].id),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(updated.summary.island_tab_id, Some(island.tabs[1].id));
+        assert_eq!(updated.summary.island_tab_name.as_deref(), Some("Silver"));
+    }
+
+    #[tokio::test]
+    async fn update_completed_split_rejects_relocation() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let service = SplitService::new();
+        let island = service
+            .create_island(
+                &db,
+                CreateIslandRequest {
+                    name: "x".to_string(),
+                    city: "lymhurst".to_string(),
+                    tabs: vec!["Loot".to_string(), "Silver".to_string()],
+                },
+            )
+            .await
+            .unwrap();
+        let split = service
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request(
+                        "50.00",
+                        "0.00",
+                        "0.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: 1,
+                        }],
+                    ),
+                    island.tabs[0].id,
+                ),
+            )
+            .await
+            .unwrap();
+        service
+            .complete_split(&db, split.summary.id, admin)
+            .await
+            .unwrap();
+        let err = service
+            .update_split(
+                &db,
+                split.summary.id,
+                UpdateSplitRequest {
+                    estimated_market_value: None,
+                    repair_value: None,
+                    bags_value: None,
+                    note: None,
+                    event_id: None,
+                    island_tab_id: Some(island.tabs[1].id),
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn delete_tab_used_by_split_is_rejected() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let service = SplitService::new();
+        let island = service
+            .create_island(
+                &db,
+                CreateIslandRequest {
+                    name: "x".to_string(),
+                    city: "lymhurst".to_string(),
+                    tabs: vec!["Loot".to_string(), "Silver".to_string()],
+                },
+            )
+            .await
+            .unwrap();
+        service
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request(
+                        "50.00",
+                        "0.00",
+                        "0.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: 1,
+                        }],
+                    ),
+                    island.tabs[0].id,
+                ),
+            )
+            .await
+            .unwrap();
+        let err = service
+            .delete_island_tab(&db, island.id, island.tabs[0].id)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)));
     }
 }

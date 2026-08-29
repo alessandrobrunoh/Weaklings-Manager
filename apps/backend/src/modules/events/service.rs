@@ -944,6 +944,18 @@ impl EventService {
             )));
         }
 
+        let linked_split_tab = if req.create_split {
+            let Some(island_tab_id) = req.island_tab_id else {
+                return Err(AppError::Validation(
+                    "island_tab_id is required when create_split is true".to_string(),
+                ));
+            };
+            crate::modules::splits::service::require_island_tab(db, island_tab_id).await?;
+            Some(island_tab_id)
+        } else {
+            None
+        };
+
         // Parse date
         let parsed_date = chrono::DateTime::parse_from_rfc3339(&req.event_date_utc)
             .map_err(|e| AppError::Validation(format!("Invalid event date: {e}")))?;
@@ -964,11 +976,19 @@ impl EventService {
         let event_id = event_model.id;
         let event_view = self.to_event_view(db, event_model).await?;
 
-        if req.create_split {
+        if let Some(island_tab_id) = linked_split_tab {
             // Best-effort: an event is still perfectly usable without its
             // split, so a failure here is logged rather than rolling back a
             // successfully created event.
-            if let Err(e) = create_linked_split(db, creator_id, event_id, &event_view.title).await {
+            if let Err(e) = create_linked_split(
+                db,
+                creator_id,
+                event_id,
+                &event_view.title,
+                island_tab_id,
+            )
+            .await
+            {
                 tracing::warn!(event_id, error = %e, "failed to create the correlated split");
             }
         }
@@ -1893,6 +1913,7 @@ mod tests {
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     create_split: false,
+                    island_tab_id: None,
                 },
             )
             .await
@@ -1900,6 +1921,87 @@ mod tests {
 
         assert_eq!(event.title, "ZvZ Castle Fight");
         assert_eq!(event.comp_id, comp_id);
+    }
+
+    #[tokio::test]
+    async fn create_event_with_split_requires_island_tab() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let cat = create_comp_category(&db, "ZvZ").await;
+        let comp_id = create_comp(&db, "Main Comp", cat, None, vec![]).await;
+        let err = EventService::new()
+            .create_event(
+                &db,
+                admin,
+                CreateEventRequest {
+                    title: "ZvZ Castle Fight".to_string(),
+                    description: None,
+                    call_to_arms: false,
+                    comp_id,
+                    event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    create_split: true,
+                    island_tab_id: None,
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn linked_split_stores_island_tab_id() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let cat = create_comp_category(&db, "ZvZ").await;
+        let comp_id = create_comp(&db, "Main Comp", cat, None, vec![]).await;
+        let island = crate::modules::splits::service::SplitService::new()
+            .create_island(
+                &db,
+                crate::modules::splits::models::CreateIslandRequest {
+                    name: "x".to_string(),
+                    city: "lymhurst".to_string(),
+                    tabs: vec!["Loot".to_string()],
+                },
+            )
+            .await
+            .unwrap();
+        let tab_id = island.tabs[0].id;
+        let event = EventService::new()
+            .create_event(
+                &db,
+                admin,
+                CreateEventRequest {
+                    title: "ZvZ Castle Fight".to_string(),
+                    description: None,
+                    call_to_arms: false,
+                    comp_id,
+                    event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    create_split: true,
+                    island_tab_id: Some(tab_id),
+                },
+            )
+            .await
+            .unwrap();
+        let splits = crate::modules::splits::service::SplitService::new()
+            .list_splits(
+                &db,
+                &crate::pagination::PaginationParams {
+                    page: None,
+                    limit: Some(10),
+                },
+                &crate::modules::splits::models::SplitFilters {
+                    status: None,
+                    event_id: Some(event.id),
+                    island_id: None,
+                    search: None,
+                    date_from: None,
+                    date_to: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(splits.items.len(), 1);
+        assert_eq!(splits.items[0].island_tab_id, Some(tab_id));
     }
 
     #[tokio::test]
@@ -1939,6 +2041,7 @@ mod tests {
                     comp_id: base_comp,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     create_split: false,
+                    island_tab_id: None,
                 },
             )
             .await
@@ -2025,6 +2128,7 @@ mod tests {
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     create_split: false,
+                    island_tab_id: None,
                 },
             )
             .await
@@ -2130,6 +2234,7 @@ mod tests {
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     create_split: false,
+                    island_tab_id: None,
                 },
             )
             .await
@@ -2176,6 +2281,7 @@ mod tests {
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     create_split: false,
+                    island_tab_id: None,
                 },
             )
             .await
@@ -2215,6 +2321,7 @@ async fn create_linked_split(
     creator_id: i64,
     event_id: i64,
     event_title: &str,
+    island_tab_id: i64,
 ) -> Result<(), AppError> {
     use crate::modules::splits::entities::split;
     use crate::modules::splits::status::SplitStatus;
@@ -2228,6 +2335,7 @@ async fn create_linked_split(
         bags_value: Set(Decimal::ZERO),
         note: Set(Some(format!("Auto-created for event: {event_title}"))),
         event_id: Set(Some(event_id)),
+        island_tab_id: Set(Some(island_tab_id)),
         ..Default::default()
     }
     .insert(db)

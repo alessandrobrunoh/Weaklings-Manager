@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -7,6 +7,8 @@ import type {
   CreateEventRequest,
   EventView,
   PaginatedData,
+  SplitIsland,
+  SplitIslandCity,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -107,6 +109,34 @@ import { PageHeader } from '../../shared/components/page-header/page-header';
           </span>
         </label>
 
+        @if (draftCreateSplit()) {
+          <div class="grid gap-3 sm:grid-cols-2">
+            <label>
+              <span class="label">{{ t('splits.island') }}</span>
+              <select class="select" [value]="draftIslandId()" (change)="onIslandChange($event)">
+                <option value="">{{ t('splits.pick_island') }}</option>
+                @for (island of islands(); track island.id) {
+                  <option [value]="island.id">{{ cityLabel(island.city) }} · {{ island.name }}</option>
+                }
+              </select>
+            </label>
+            <label>
+              <span class="label">{{ t('splits.tab') }}</span>
+              <select
+                class="select"
+                [value]="draftTabId()"
+                [disabled]="!draftIslandId()"
+                (change)="onTabChange($event)"
+              >
+                <option value="">{{ t('splits.pick_tab') }}</option>
+                @for (tab of draftTabs(); track tab.id) {
+                  <option [value]="tab.id">{{ tab.name }}</option>
+                }
+              </select>
+            </label>
+          </div>
+        }
+
         @if (compError()) {
           <p class="text-sm" style="color: var(--color-danger)">{{ compError() }}</p>
         }
@@ -139,12 +169,33 @@ export class EventCreatePage {
   protected readonly draftCallToArms = signal(false);
   /** Pre-create the loot split so it is already attached to the event. */
   protected readonly draftCreateSplit = signal(false);
+  protected readonly islands = signal<SplitIsland[]>([]);
+  protected readonly draftIslandId = signal('');
+  protected readonly draftTabId = signal('');
+  protected readonly draftTabs = computed(() => {
+    const id = Number(this.draftIslandId());
+    return this.islands().find((island) => island.id === id)?.tabs ?? [];
+  });
   protected readonly compError = signal<string | null>(null);
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   constructor() {
     void this.loadComps();
+    void this.loadIslands();
+  }
+
+  protected cityLabel(city: SplitIslandCity): string {
+    return this.t(`splits.city.${city}` as TranslationKey);
+  }
+
+  protected onIslandChange(event: Event): void {
+    this.draftIslandId.set((event.target as HTMLSelectElement).value);
+    this.draftTabId.set('');
+  }
+
+  protected onTabChange(event: Event): void {
+    this.draftTabId.set((event.target as HTMLSelectElement).value);
   }
 
   /** Two-way bind helper for the title input. */
@@ -197,6 +248,10 @@ export class EventCreatePage {
       this.compError.set(this.t('events.create.comp_required'));
       return;
     }
+    if (this.draftCreateSplit() && !this.draftTabId()) {
+      this.toasts.error(this.t('validation.required'));
+      return;
+    }
 
     // The datetime-local input has no native `required` that actually
     // fires — `submit.preventDefault()` above runs unconditionally, so the
@@ -216,6 +271,7 @@ export class EventCreatePage {
       event_date_utc: scheduledAt.toISOString(),
       call_to_arms: this.draftCallToArms(),
       create_split: this.draftCreateSplit(),
+      island_tab_id: this.draftCreateSplit() ? Number(this.draftTabId()) : undefined,
     };
     const description = this.draftDescription().trim();
     if (description) {
@@ -246,6 +302,15 @@ export class EventCreatePage {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  private async loadIslands(): Promise<void> {
+    try {
+      const islands = await firstValueFrom(this.api.get<SplitIsland[]>('api/splits/islands'));
+      this.islands.set(islands);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     }
   }
 }

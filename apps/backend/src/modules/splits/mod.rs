@@ -2,6 +2,7 @@
 //!
 //! Provides the routes, services, and schemas for creating and finalizing loot splits.
 
+pub mod city;
 pub mod entities;
 pub mod models;
 pub mod router;

@@ -48,6 +48,21 @@ pub struct AlbionBbPageMeta {
     pub total_pages: Option<i64>,
 }
 
+fn deserialize_non_empty_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::<String>::deserialize(deserializer)?;
+    Ok(opt.and_then(|s| {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    }))
+}
+
 /// A guild entry nested inside an AlbionBB battle.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AlbionBbGuild {
@@ -63,6 +78,33 @@ pub struct AlbionBbGuild {
     /// Guild name.
     #[serde(alias = "Name", alias = "name", default)]
     pub name: String,
+    /// Alliance name, if in an alliance.
+    #[serde(
+        alias = "Alliance",
+        alias = "alliance",
+        alias = "AllianceName",
+        alias = "allianceName",
+        alias = "AllianceTag",
+        alias = "allianceTag",
+        alias = "alliance_name",
+        alias = "alliance_tag",
+        alias = "Alliance_Name",
+        alias = "Alliance_Tag",
+        alias = "Tag",
+        alias = "tag",
+        default,
+        deserialize_with = "deserialize_non_empty_string"
+    )]
+    pub alliance_name: Option<String>,
+    /// Alliance id, if in an alliance.
+    #[serde(
+        alias = "AllianceId",
+        alias = "allianceId",
+        alias = "alliance_id",
+        default,
+        deserialize_with = "deserialize_non_empty_string"
+    )]
+    pub alliance_id: Option<String>,
     /// Number of players from this guild in the battle.
     #[serde(alias = "Players", alias = "players", default)]
     pub players: i64,
@@ -78,6 +120,17 @@ pub struct AlbionBbGuild {
     /// Whether this guild was the winner of the battle.
     #[serde(alias = "Winner", alias = "winner", alias = "won", default)]
     pub winner: bool,
+    /// Average item power of guild members.
+    #[serde(
+        alias = "Ip",
+        alias = "ip",
+        alias = "ItemPower",
+        alias = "itemPower",
+        alias = "AverageItemPower",
+        alias = "averageItemPower",
+        default
+    )]
+    pub average_item_power: f64,
 }
 
 /// A player entry nested inside an AlbionBB battle.
@@ -95,6 +148,33 @@ pub struct AlbionBbPlayer {
     /// Guild name the player belonged to during the battle.
     #[serde(alias = "GuildName", alias = "guildName", default)]
     pub guild_name: String,
+    /// Alliance name the player belonged to during the battle.
+    #[serde(
+        alias = "Alliance",
+        alias = "alliance",
+        alias = "AllianceName",
+        alias = "allianceName",
+        alias = "AllianceTag",
+        alias = "allianceTag",
+        alias = "alliance_name",
+        alias = "alliance_tag",
+        alias = "Alliance_Name",
+        alias = "Alliance_Tag",
+        alias = "Tag",
+        alias = "tag",
+        default,
+        deserialize_with = "deserialize_non_empty_string"
+    )]
+    pub alliance_name: Option<String>,
+    /// Alliance id the player belonged to during the battle.
+    #[serde(
+        alias = "AllianceId",
+        alias = "allianceId",
+        alias = "alliance_id",
+        default,
+        deserialize_with = "deserialize_non_empty_string"
+    )]
+    pub alliance_id: Option<String>,
     /// Kills attributable to this player.
     #[serde(alias = "Kills", alias = "kills", default)]
     pub kills: i64,
@@ -192,13 +272,58 @@ pub struct AlbionBbKillParticipant {
     #[serde(alias = "Name", alias = "name", default)]
     pub name: String,
     /// Guild id, if upstream includes it.
-    #[serde(alias = "GuildId", alias = "guildId", default)]
+    #[serde(
+        alias = "GuildId",
+        alias = "guildId",
+        alias = "guild_id",
+        default,
+        deserialize_with = "deserialize_non_empty_string"
+    )]
     pub guild_id: Option<String>,
     /// Guild name, if upstream includes it.
-    #[serde(alias = "GuildName", alias = "guildName", default)]
+    #[serde(
+        alias = "GuildName",
+        alias = "guildName",
+        alias = "guild_name",
+        default,
+        deserialize_with = "deserialize_non_empty_string"
+    )]
     pub guild_name: Option<String>,
+    /// Alliance name, if upstream includes it.
+    #[serde(
+        alias = "Alliance",
+        alias = "alliance",
+        alias = "AllianceName",
+        alias = "allianceName",
+        alias = "AllianceTag",
+        alias = "allianceTag",
+        alias = "alliance_name",
+        alias = "alliance_tag",
+        alias = "Alliance_Name",
+        alias = "Alliance_Tag",
+        alias = "Tag",
+        alias = "tag",
+        default,
+        deserialize_with = "deserialize_non_empty_string"
+    )]
+    pub alliance_name: Option<String>,
+    /// Alliance id, if upstream includes it.
+    #[serde(
+        alias = "AllianceId",
+        alias = "allianceId",
+        alias = "alliance_id",
+        default,
+        deserialize_with = "deserialize_non_empty_string"
+    )]
+    pub alliance_id: Option<String>,
     /// Average item power of this participant in the kill event.
-    #[serde(alias = "AverageItemPower", alias = "averageItemPower", default)]
+    #[serde(
+        alias = "AverageItemPower",
+        alias = "averageItemPower",
+        alias = "Ip",
+        alias = "ip",
+        default
+    )]
     pub average_item_power: f64,
 }
 

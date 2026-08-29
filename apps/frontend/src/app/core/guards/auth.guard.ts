@@ -2,7 +2,7 @@ import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
 
 import { AuthService } from '../services/auth.service';
-import type { Role } from '../models/api.models';
+
 
 /**
  * Route guard ensuring the user is authenticated.
@@ -51,25 +51,19 @@ export const redirectIfAuthenticatedGuard: CanActivateFn = async () => {
   return true;
 };
 
-const ELEVATED_ROLES: ReadonlyArray<Role> = ['Officer', 'Admin', 'SuperAdmin'];
-
 /**
- * Role-restricted guard. Use with `authGuard` (apply both — this only checks
- * the role, not whether the user is signed in).
+ * Permission-restricted guard. Use with `authGuard`. Any listed key is enough (OR).
  *
  * @example
- * `{ path: 'admin', canActivate: [authGuard, roleGuard('Admin', 'SuperAdmin')] }`
+ * `{ path: 'admin', canActivate: [authGuard, permissionGuard('roles.manage', 'permissions.reload')] }`
  */
-export const roleGuard =
-  (...roles: Array<Exclude<Role, 'User'>>): CanActivateFn =>
+export const permissionGuard =
+  (...keys: string[]): CanActivateFn =>
   () => {
     const auth = inject(AuthService);
     const router = inject(Router);
-    const allowedRoles = roles.filter((role): role is Exclude<Role, 'User'> =>
-      ELEVATED_ROLES.includes(role),
-    );
 
-    if (auth.hasRole(...allowedRoles)) {
+    if (keys.some((key) => auth.hasPermission(key))) {
       return true;
     }
 

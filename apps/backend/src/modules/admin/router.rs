@@ -3,12 +3,12 @@
 //! Endpoints for administrative operations: reading and editing the
 //! role → permission matrix, and reloading the in-memory cache that serves it.
 //!
-//! This is the real authorization control surface. Roles themselves are owned
-//! by Discord — every login overwrites `users.role` from the member's Discord
-//! roles — so what an administrator can meaningfully change is not who holds a
-//! role, but what a role is allowed to do.
+//! This is the real authorization control surface. Discord still owns who holds
+//! a Discord role; here an administrator creates gestionale roles, links them to
+//! Discord snowflakes, and decides what each linked role is allowed to do.
 
 use crate::errors::{AppError, ProblemDetails};
+use crate::config::Config;
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::responses::ApiResponse;
 use axum::{
@@ -19,8 +19,9 @@ use axum::{
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
 
 use super::models::{
-    GuildSettingsView, PermissionMatrix, RolePermissionsView, UpdateGuildSettingsRequest,
-    UpdateRolePermissionsRequest,
+    AutoRoleSettingsView, CreateRoleRequest, DiscordRoleView, GuildSettingsView, PermissionMatrix,
+    UpdateAutoRoleRequest, UpdateGuildSettingsRequest, UpdateRolePermissionsRequest,
+    UpdateRoleRequest,
 };
 use super::service::AdminService;
 use crate::modules::auth::entities::{role, role_permission};
@@ -30,11 +31,19 @@ pub fn router() -> Router {
     Router::new()
         .route("/permissions", get(get_permission_matrix))
         .route("/permissions/reload", post(reload_permissions))
+        .route("/roles", post(create_role))
+        .route(
+            "/roles/{role_id}",
+            axum::routing::patch(update_role).delete(delete_role),
+        )
         .route("/roles/{role_id}/permissions", put(update_role_permissions))
+        .route("/discord/roles", get(list_guild_discord_roles))
         .route(
             "/settings",
             get(get_guild_settings).put(update_guild_settings),
         )
+        .route("/autorole", get(get_autorole).put(update_autorole))
+        .route("/autorole/roles", get(list_discord_roles))
 }
 
 /// Reload the in-memory permission cache from the `role_permissions` table.
@@ -94,43 +103,8 @@ pub async fn get_permission_matrix(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<PermissionMatrix>>, AppError> {
     user.require(&perms, Permission::PermissionsReload).await?;
-
-    let roles = role::Entity::find().all(&db).await?;
-    let mappings = role_permission::Entity::find().all(&db).await?;
-
-    let mut views: Vec<RolePermissionsView> = roles
-        .into_iter()
-        .map(|r| {
-            let mut permissions: Vec<String> = mappings
-                .iter()
-                .filter(|m| m.role_id == r.id)
-                .map(|m| m.permission.clone())
-                .collect();
-            permissions.sort();
-            RolePermissionsView {
-                role_id: r.id,
-                role_name: r.name,
-                priority: r.priority,
-                permissions,
-            }
-        })
-        .collect();
-    views.sort_by(|a, b| {
-        b.priority
-            .cmp(&a.priority)
-            .then_with(|| a.role_name.cmp(&b.role_name))
-    });
-
-    let mut available_permissions: Vec<String> = Permission::all()
-        .iter()
-        .map(|p| p.as_str().to_string())
-        .collect();
-    available_permissions.sort();
-
-    Ok(Json(ApiResponse::new(PermissionMatrix {
-        roles: views,
-        available_permissions,
-    })))
+    let matrix = AdminService::permission_matrix(&db).await?;
+    Ok(Json(ApiResponse::new(matrix)))
 }
 
 /// Replaces one role's permission set and applies it immediately.
@@ -150,7 +124,7 @@ pub async fn get_permission_matrix(
         sit in the table granting nothing and look like it worked. Requires \
         `permissions.reload`.",
     security(("session_cookie" = ["permissions.reload"])),
-    params(("role_id" = String, Path, description = "Discord role id")),
+    params(("role_id" = String, Path, description = "Internal role id")),
     request_body = UpdateRolePermissionsRequest,
     responses(
         (status = 200, description = "Permissions updated", body = PermissionMatrix),
@@ -206,7 +180,125 @@ pub async fn update_role_permissions(
     // action to take effect is a change an administrator will forget to finish.
     perms.reload(&db).await?;
 
-    get_permission_matrix(user, Extension(perms), Extension(db)).await
+    let matrix = AdminService::permission_matrix(&db).await?;
+    Ok(Json(ApiResponse::new(matrix)))
+}
+
+/// Create a gestionale role, optionally linked to a Discord snowflake.
+#[utoipa::path(
+    post,
+    path = "/api/admin/roles",
+    tag = "admin",
+    summary = "Create a gestionale role",
+    description = "Creates a role the RBAC matrix can grant permissions to. Pass a Discord snowflake \
+        in `discord_role_id` to link it: members holding that Discord role then receive this role's \
+        permissions on login and on `GET /api/auth/me`. Requires `roles.manage`.",
+    security(("session_cookie" = ["roles.manage"])),
+    request_body = CreateRoleRequest,
+    responses(
+        (status = 200, description = "Role created", body = PermissionMatrix),
+        (status = 400, description = "Invalid name or Discord snowflake", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks roles.manage", body = ProblemDetails),
+        (status = 409, description = "Name or Discord link already taken", body = ProblemDetails)
+    )
+)]
+pub async fn create_role(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Json(body): Json<CreateRoleRequest>,
+) -> Result<Json<ApiResponse<PermissionMatrix>>, AppError> {
+    user.require(&perms, Permission::RolesManage).await?;
+    let matrix = AdminService::create_role(&db, user.user_id, &body).await?;
+    perms.reload(&db).await?;
+    Ok(Json(ApiResponse::new(matrix)))
+}
+
+/// Update a gestionale role's name, priority, Discord link, or default flag.
+#[utoipa::path(
+    patch,
+    path = "/api/admin/roles/{role_id}",
+    tag = "admin",
+    summary = "Update a gestionale role",
+    description = "Partial update. Send `discord_role_id` as an empty string to unlink. Requires \
+        `roles.manage`.",
+    security(("session_cookie" = ["roles.manage"])),
+    params(("role_id" = String, Path, description = "Internal role id")),
+    request_body = UpdateRoleRequest,
+    responses(
+        (status = 200, description = "Role updated", body = PermissionMatrix),
+        (status = 400, description = "Invalid name or Discord snowflake", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks roles.manage", body = ProblemDetails),
+        (status = 404, description = "Role not found", body = ProblemDetails),
+        (status = 409, description = "Name or Discord link already taken", body = ProblemDetails)
+    )
+)]
+pub async fn update_role(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(role_id): Path<String>,
+    Json(body): Json<UpdateRoleRequest>,
+) -> Result<Json<ApiResponse<PermissionMatrix>>, AppError> {
+    user.require(&perms, Permission::RolesManage).await?;
+    let matrix = AdminService::update_role(&db, user.user_id, &role_id, &body).await?;
+    perms.reload(&db).await?;
+    Ok(Json(ApiResponse::new(matrix)))
+}
+
+/// Delete a gestionale role.
+#[utoipa::path(
+    delete,
+    path = "/api/admin/roles/{role_id}",
+    tag = "admin",
+    summary = "Delete a gestionale role",
+    description = "Cascade-deletes its permission rows. The default fallback role cannot be deleted. \
+        Deleting the last role that grants `roles.manage` is rejected unless the caller is \
+        super-admin. Requires `roles.manage`.",
+    security(("session_cookie" = ["roles.manage"])),
+    params(("role_id" = String, Path, description = "Internal role id")),
+    responses(
+        (status = 200, description = "Role deleted", body = PermissionMatrix),
+        (status = 403, description = "Forbidden - lacks roles.manage", body = ProblemDetails),
+        (status = 404, description = "Role not found", body = ProblemDetails),
+        (status = 409, description = "Protected default or last roles.manage grant", body = ProblemDetails)
+    )
+)]
+pub async fn delete_role(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(role_id): Path<String>,
+) -> Result<Json<ApiResponse<PermissionMatrix>>, AppError> {
+    user.require(&perms, Permission::RolesManage).await?;
+    let matrix =
+        AdminService::delete_role(&db, user.user_id, &role_id, user.is_superadmin()).await?;
+    perms.reload(&db).await?;
+    Ok(Json(ApiResponse::new(matrix)))
+}
+
+/// Discord roles in the configured guild, for linking from the RBAC panel.
+#[utoipa::path(
+    get,
+    path = "/api/admin/discord/roles",
+    tag = "admin",
+    summary = "List Discord guild roles for RBAC linking",
+    description = "Returns non-managed guild roles (excludes @everyone and bot/integration roles), \
+        highest Discord position first. Requires `roles.manage`. Missing bot token yields 502.",
+    security(("session_cookie" = ["roles.manage"])),
+    responses(
+        (status = 200, description = "Discord roles retrieved", body = [DiscordRoleView]),
+        (status = 403, description = "Forbidden - lacks roles.manage", body = ProblemDetails),
+        (status = 502, description = "Discord API unavailable or bot token missing", body = ProblemDetails)
+    )
+)]
+pub async fn list_guild_discord_roles(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(cfg): Extension<Config>,
+) -> Result<Json<ApiResponse<Vec<DiscordRoleView>>>, AppError> {
+    user.require(&perms, Permission::RolesManage).await?;
+    Ok(Json(ApiResponse::new(AdminService::discord_roles(&cfg).await?)))
 }
 
 /// Read the guild's Discord integration settings.
@@ -231,7 +323,7 @@ pub async fn update_role_permissions(
         (status = 403, description = "Forbidden - lacks admin.settings.manage", body = ProblemDetails)
     )
 )]
-async fn get_guild_settings(
+pub async fn get_guild_settings(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
@@ -262,7 +354,7 @@ async fn get_guild_settings(
         (status = 403, description = "Forbidden - lacks admin.settings.manage", body = ProblemDetails)
     )
 )]
-async fn update_guild_settings(
+pub async fn update_guild_settings(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
@@ -272,4 +364,79 @@ async fn update_guild_settings(
         .await?;
     let settings = AdminService::update_guild_settings(&db, user.user_id, &req).await?;
     Ok(Json(ApiResponse::new(settings)))
+}
+
+/// Read the AutoRole configuration.
+#[utoipa::path(
+    get,
+    path = "/api/admin/autorole",
+    tag = "admin",
+    summary = "Read the Discord AutoRole configuration",
+    security(("session_cookie" = ["autorole.manage"])),
+    responses(
+        (status = 200, description = "AutoRole configuration retrieved", body = AutoRoleSettingsView),
+        (status = 403, description = "Forbidden - lacks autorole.manage", body = ProblemDetails)
+    )
+)]
+pub async fn get_autorole(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<AutoRoleSettingsView>>, AppError> {
+    user.require(&perms, Permission::AutoroleManage).await?;
+    Ok(Json(ApiResponse::new(
+        AdminService::get_autorole_settings(&db).await?,
+    )))
+}
+
+/// List assignable Discord roles for the configured guild.
+#[utoipa::path(
+    get,
+    path = "/api/admin/autorole/roles",
+    tag = "admin",
+    summary = "List Discord roles available for AutoRole",
+    security(("session_cookie" = ["autorole.manage"])),
+    responses(
+        (status = 200, description = "Discord roles retrieved", body = [DiscordRoleView]),
+        (status = 403, description = "Forbidden - lacks autorole.manage", body = ProblemDetails),
+        (status = 502, description = "Discord API unavailable", body = ProblemDetails)
+    )
+)]
+pub async fn list_discord_roles(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(cfg): Extension<Config>,
+) -> Result<Json<ApiResponse<Vec<DiscordRoleView>>>, AppError> {
+    user.require(&perms, Permission::AutoroleManage).await?;
+    Ok(Json(ApiResponse::new(AdminService::discord_roles(&cfg).await?)))
+}
+
+/// Update or disable AutoRole.
+#[utoipa::path(
+    put,
+    path = "/api/admin/autorole",
+    tag = "admin",
+    summary = "Configure the Discord AutoRole",
+    description = "Stores one Discord role for automatic assignment to human members joining the guild. Send an empty string to disable it.",
+    security(("session_cookie" = ["autorole.manage"])),
+    request_body = UpdateAutoRoleRequest,
+    responses(
+        (status = 200, description = "AutoRole updated", body = AutoRoleSettingsView),
+        (status = 400, description = "Role is invalid or cannot be assigned", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks autorole.manage", body = ProblemDetails),
+        (status = 502, description = "Discord API unavailable", body = ProblemDetails)
+    )
+)]
+pub async fn update_autorole(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Json(body): Json<UpdateAutoRoleRequest>,
+) -> Result<Json<ApiResponse<AutoRoleSettingsView>>, AppError> {
+    user.require(&perms, Permission::AutoroleManage).await?;
+    Ok(Json(ApiResponse::new(
+        AdminService::update_autorole(&db, user.user_id, &cfg, &body.discord_auto_role_id)
+            .await?,
+    )))
 }

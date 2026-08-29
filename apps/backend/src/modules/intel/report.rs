@@ -1741,6 +1741,7 @@ mod tests {
             net_value: None,
             note: None,
             event_id: None,
+            island_tab_id: None,
             created_at: ts("2026-08-01T00:00:00Z"),
             finalized_at: Some(ts("2026-08-19T00:00:00Z")),
         });
@@ -1755,6 +1756,7 @@ mod tests {
             net_value: None,
             note: None,
             event_id: None,
+            island_tab_id: None,
             created_at: ts("2026-08-19T00:00:00Z"),
             finalized_at: None,
         });

@@ -7,6 +7,7 @@ import { handleButton } from "./handlers/button.js";
 import { handleSelectMenu } from "./handlers/select.js";
 import { Poller, registerPoller } from "./services/poller.js";
 import { initSettingsService } from "./services/settings.js";
+import { assignAutoRole } from "./services/autorole.js";
 import { registerCommands } from "./services/registry.js";
 import { createResponseEmbed } from "./embeds/theme.js";
 
@@ -35,6 +36,7 @@ async function main(): Promise<void> {
   const client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMembers,
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.MessageContent,
     ],
@@ -115,6 +117,11 @@ async function main(): Promise<void> {
       .catch((err: unknown) => {
         console.error("[Bot] Message XP award failed:", err);
       });
+  });
+
+  // ── AutoRole ─────────────────────────────────────────────────────────────
+  client.on(Events.GuildMemberAdd, (member) => {
+    void assignAutoRole(member, settings);
   });
 
   // ── Ready handler ────────────────────────────────────────────────────────

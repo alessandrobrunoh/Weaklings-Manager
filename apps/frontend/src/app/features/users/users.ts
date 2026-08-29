@@ -261,11 +261,7 @@ export class Users {
   protected readonly draft = signal<AdjustDraft>(emptyAdjustDraft());
   protected readonly trackById = (user: MemberRow): unknown => user.id;
 
-  protected readonly canAdjust = computed(
-    () =>
-      this.auth.hasRole('Officer', 'Admin', 'SuperAdmin') ||
-      this.auth.hasPermission('progression.adjust'),
-  );
+  protected readonly canAdjust = computed(() => this.auth.hasPermission('progression.adjust'));
 
   protected readonly canViewWarns = computed(() => this.auth.hasPermission('warns.view'));
 

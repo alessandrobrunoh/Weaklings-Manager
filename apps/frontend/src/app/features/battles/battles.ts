@@ -31,7 +31,7 @@ import {
 } from '../../shared/components/view-toggle/view-toggle';
 
 const PAGE_SIZE = 10;
-const PREVIEW_GUILD_LIMIT = 3;
+const PREVIEW_GUILD_LIMIT = 4;
 const BATTLE_REFRESH_INTERVAL_SECONDS = 5 * 60;
 
 type BattleTab = 'guild' | 'me';
@@ -51,14 +51,8 @@ interface BattleScopeStats {
 /**
  * Battle list for recent guild and personal fights.
  *
- * Cards stay intentionally lightweight and navigate to a dedicated detail route
- * so large charts/tables can use normal page scrolling instead of a constrained
- * modal overlay.
- *
- * @example
- * ```html
- * <app-battles />
- * ```
+ * Cards provide high-level combat indicators with alliance tags and direct
+ * navigation to the full-page war room analytics view.
  */
 @Component({
   selector: 'app-battles',
@@ -79,18 +73,18 @@ interface BattleScopeStats {
         </span>
         <button
           type="button"
-          class="btn btn--outline"
+          class="btn btn--outline btn--sm"
           [disabled]="loading()"
           (click)="refreshNow()"
         >
           {{ t('battles.refresh_now') }}
         </button>
         @if (selectedBattleIds().length > 0) {
-          <span class="chip">{{ selectedBattleIds().length }} selected</span>
-          <button type="button" class="btn btn--primary" (click)="openSelectedGroup()">
+          <span class="chip font-mono">{{ selectedBattleIds().length }} selected</span>
+          <button type="button" class="btn btn--primary btn--sm" (click)="openSelectedGroup()">
             {{ t('battles.group_selected') }}
           </button>
-          <button type="button" class="btn btn--ghost" (click)="clearSelection()">
+          <button type="button" class="btn btn--ghost btn--sm" (click)="clearSelection()">
             {{ t('common.cancel') }}
           </button>
         }
@@ -102,36 +96,55 @@ interface BattleScopeStats {
     } @else if (battles().length === 0) {
       <app-empty-state [message]="t('common.empty')" icon="shield" />
     } @else {
+      <!-- Scope Aggregates -->
       <section class="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Battle totals">
         <article class="surface p-4">
           <p class="battle-list__label">{{ t('battles.visible_battles') }}</p>
-          <p class="battle-list__value">{{ scopeStats().battles }}</p>
+          <p class="battle-list__value mono">{{ scopeStats().battles }}</p>
         </article>
         <article class="surface p-4">
           <p class="battle-list__label">{{ t('battles.total_fame') }}</p>
-          <p class="battle-list__value">{{ formatCompact(scopeStats().fame) }}</p>
+          <p class="battle-list__value mono text-warning">{{ formatCompact(scopeStats().fame) }}</p>
         </article>
         <article class="surface p-4">
           <p class="battle-list__label">{{ t('battles.players') }}</p>
-          <p class="battle-list__value">{{ formatAmount(scopeStats().players) }}</p>
+          <p class="battle-list__value mono">{{ formatAmount(scopeStats().players) }}</p>
         </article>
         <article class="surface p-4">
           <p class="battle-list__label">{{ t('battles.kills') }}</p>
-          <p class="battle-list__value">{{ formatAmount(scopeStats().kills) }}</p>
+          <p class="battle-list__value mono text-success">{{ formatAmount(scopeStats().kills) }}</p>
         </article>
         <article class="surface p-4">
           <p class="battle-list__label">{{ t('battles.deaths') }}</p>
-          <p class="battle-list__value">{{ formatAmount(scopeStats().deaths) }}</p>
+          <p class="battle-list__value mono text-error">{{ formatAmount(scopeStats().deaths) }}</p>
         </article>
       </section>
 
+      <!-- Search Toolbar -->
+      <div class="mb-4 flex items-center justify-between gap-3">
+        <div class="w-full sm:w-80">
+          <input
+            type="text"
+            class="input input--sm"
+            placeholder="Filter by guild, alliance or battle ID..."
+            [value]="filterQuery()"
+            (input)="onFilterQueryChange($event)"
+          />
+        </div>
+        <span class="text-xs text-secondary mono">
+          {{ filteredBattles().length }} of {{ battles().length }} fights shown
+        </span>
+      </div>
+
+      <!-- Battles Grid -->
       <section
-        class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3"
+        class="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3"
         aria-label="Battle list"
       >
-        @for (battle of battles(); track battle.battle_id) {
+        @for (battle of filteredBattles(); track battle.battle_id) {
           <article
             class="card battle-list__card p-5"
+            [class.battle-list__card--selected]="isSelected(battle.battle_id)"
             role="button"
             tabindex="0"
             (click)="openBattle(battle.battle_id)"
@@ -141,51 +154,82 @@ interface BattleScopeStats {
               <div class="flex items-start gap-3">
                 <input
                   type="checkbox"
-                  class="mt-1"
+                  class="mt-1 checkbox"
                   [checked]="isSelected(battle.battle_id)"
                   (click)="$event.stopPropagation()"
                   (change)="toggleSelection(battle.battle_id)"
                   [attr.aria-label]="'Select battle ' + battle.battle_id"
                 />
                 <div>
-                  <h2 class="text-lg font-semibold" style="color: var(--color-text)">
-                    #{{ battle.battle_id }}
-                  </h2>
-                  <p class="text-xs" style="color: var(--color-text-secondary)">
+                  <div class="flex items-center gap-2">
+                    <h2 class="text-lg font-bold tracking-tight" style="color: var(--color-text)">
+                      #{{ battle.battle_id }}
+                    </h2>
+                    @if (battleOutcome(battle); as outcome) {
+                      <span
+                        class="chip text-xs py-0 font-semibold"
+                        [class.chip--success]="outcome.type === 'victory'"
+                        [class.chip--error]="outcome.type === 'defeat'"
+                        [class.chip--warning]="outcome.type === 'contested'"
+                      >
+                        {{ outcome.label }}
+                      </span>
+                    }
+                  </div>
+                  <p class="text-xs text-secondary mt-0.5">
                     {{ formatDate(battle.start_time) }} · {{ formatDuration(battle) }}
                   </p>
                 </div>
               </div>
+
               @if (winnerGuild(battle); as winner) {
-                <span class="chip chip--success">{{ winner.name }}</span>
+                <span class="chip chip--success text-xs py-0.5 font-medium shrink-0">
+                  {{ winner.name }}
+                </span>
               }
             </header>
 
+            <!-- Metrics Grid -->
             <dl class="mb-4 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
               <div class="battle-list__metric">
                 <dt>{{ t('battles.players') }}</dt>
-                <dd>{{ formatAmount(battle.total_players) }}</dd>
+                <dd class="mono">{{ formatAmount(battle.total_players) }}</dd>
               </div>
               <div class="battle-list__metric">
                 <dt>{{ t('battles.guilds') }}</dt>
-                <dd>{{ battle.guilds.length }}</dd>
+                <dd class="mono">{{ battle.guilds.length }}</dd>
               </div>
               <div class="battle-list__metric">
                 <dt>{{ t('battles.kills') }}</dt>
-                <dd>{{ formatAmount(battle.total_kills) }}</dd>
+                <dd class="mono">{{ formatAmount(battle.total_kills) }}</dd>
               </div>
               <div class="battle-list__metric">
-                <dt>{{ t('battles.fame') }}</dt>
-                <dd>{{ formatCompact(battle.total_fame) }}</dd>
+                <dt>{{ t('battles.total_fame') }}</dt>
+                <dd class="mono text-warning">{{ formatCompact(battle.total_fame) }}</dd>
               </div>
             </dl>
 
-            <div class="space-y-2">
+            <!-- Top Guild Rows -->
+            <div class="space-y-1.5">
               @for (guild of previewGuilds(battle.guilds); track guildKey(guild)) {
-                <div class="battle-list__guild-row">
-                  <span class="truncate font-medium">{{ guild.name || t('common.none') }}</span>
-                  <span>{{ formatCompact(guild.kill_fame) }}</span>
-                  <span>{{ guild.kills }}/{{ guild.deaths }}</span>
+                <div
+                  class="battle-list__guild-row"
+                  [class.battle-list__guild-row--our]="isOurGuild(guild)"
+                >
+                  <div class="truncate flex items-center gap-1.5">
+                    <span class="truncate font-medium" [class.text-primary]="isOurGuild(guild)">
+                      {{ guild.name || t('common.none') }}
+                    </span>
+                    @if (guild.alliance_name) {
+                      <span class="chip text-xs py-0 px-1 font-mono text-disabled">
+                        [{{ guild.alliance_name }}]
+                      </span>
+                    }
+                  </div>
+                  <span class="mono text-warning">{{ formatCompact(guild.kill_fame) }}</span>
+                  <span class="mono text-xs font-semibold">
+                    <span class="text-success">{{ guild.kills }}</span>/<span class="text-error">{{ guild.deaths }}</span>
+                  </span>
                 </div>
               }
             </div>
@@ -193,18 +237,19 @@ interface BattleScopeStats {
         }
       </section>
 
-      <footer class="mt-4 flex items-center justify-between">
-        <p class="text-xs" style="color: var(--color-text-secondary)">
+      <!-- Pagination Footer -->
+      <footer class="mt-5 flex items-center justify-between border-t pt-4" style="border-color: var(--color-border)">
+        <p class="text-xs text-secondary">
           {{ t('common.page') }} {{ page() }} {{ t('common.of') }} {{ totalPages() }} ·
           {{ formatAmount(totalItems()) }} {{ t('battles.total_results') }}
         </p>
         <div class="flex gap-2">
-          <button type="button" class="btn btn--outline" [disabled]="page() <= 1" (click)="prev()">
+          <button type="button" class="btn btn--outline btn--sm" [disabled]="page() <= 1" (click)="prev()">
             {{ t('common.prev') }}
           </button>
           <button
             type="button"
-            class="btn btn--outline"
+            class="btn btn--outline btn--sm"
             [disabled]="page() >= totalPages()"
             (click)="next()"
           >
@@ -218,17 +263,19 @@ interface BattleScopeStats {
     @layer components {
       .battle-list__label {
         color: var(--color-text-disabled);
-        font-size: 0.75rem;
-        letter-spacing: 0.04em;
+        font-size: 0.72rem;
+        letter-spacing: 0.05em;
         text-transform: uppercase;
+        font-weight: 600;
       }
       .battle-list__value {
         color: var(--color-text);
-        font-size: clamp(1.25rem, 2vw, 1.75rem);
+        font-size: clamp(1.25rem, 2vw, 1.65rem);
         font-weight: 700;
       }
       .battle-list__refresh-chip {
         font-variant-numeric: tabular-nums;
+        font-family: var(--font-mono);
       }
       .battle-list__card {
         cursor: pointer;
@@ -238,12 +285,16 @@ interface BattleScopeStats {
       }
       .battle-list__card:hover {
         transform: translateY(-2px);
+        border-color: var(--color-border-strong);
+      }
+      .battle-list__card--selected {
+        outline: 2px solid var(--color-primary);
       }
       .battle-list__metric {
         background: var(--color-surface-1);
         border: 1px solid var(--color-border);
         border-radius: var(--radius-md);
-        padding: 0.75rem 0.5rem;
+        padding: 0.65rem 0.5rem;
       }
       .battle-list__metric dt {
         color: var(--color-text-disabled);
@@ -253,7 +304,7 @@ interface BattleScopeStats {
       }
       .battle-list__metric dd {
         color: var(--color-text);
-        font-size: 1rem;
+        font-size: 0.95rem;
         font-weight: 700;
       }
       .battle-list__guild-row {
@@ -265,7 +316,11 @@ interface BattleScopeStats {
         font-size: 0.8rem;
         gap: 0.75rem;
         grid-template-columns: minmax(0, 1fr) auto auto;
-        padding: 0.55rem 0.75rem;
+        padding: 0.45rem 0.65rem;
+      }
+      .battle-list__guild-row--our {
+        background: color-mix(in srgb, var(--color-primary-container) 35%, var(--color-surface));
+        border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border));
       }
     }
   `,
@@ -281,6 +336,7 @@ export class Battles {
   protected readonly battles = signal<BattleSummary[]>([]);
   protected readonly loading = signal(false);
   protected readonly tab = signal<BattleTab>('guild');
+  protected readonly filterQuery = signal<string>('');
 
   protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
     { id: 'guild', label: this.t('battles.guild') },
@@ -296,18 +352,20 @@ export class Battles {
     this.formatCountdown(this.secondsUntilRefresh()),
   );
 
-  protected readonly totalVisibleFame = computed(() =>
-    this.battles().reduce((totalFame, battle) => totalFame + battle.total_fame, 0),
-  );
-  protected readonly totalVisiblePlayers = computed(() =>
-    this.battles().reduce((totalPlayers, battle) => totalPlayers + battle.total_players, 0),
-  );
-  protected readonly totalVisibleKills = computed(() =>
-    this.battles().reduce((totalKills, battle) => totalKills + battle.total_kills, 0),
-  );
-  protected readonly averageVisiblePlayers = computed(() =>
-    this.battles().length === 0 ? 0 : this.totalVisiblePlayers() / this.battles().length,
-  );
+  protected readonly filteredBattles = computed(() => {
+    const list = this.battles();
+    const query = this.filterQuery().trim().toLowerCase();
+    if (!query) return list;
+    return list.filter((b) => {
+      const idMatch = String(b.battle_id).includes(query);
+      const guildMatch = b.guilds.some(
+        (g) =>
+          g.name.toLowerCase().includes(query) ||
+          (g.alliance_name && g.alliance_name.toLowerCase().includes(query)),
+      );
+      return idMatch || guildMatch;
+    });
+  });
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
@@ -316,130 +374,118 @@ export class Battles {
     this.startRefreshTimer();
   }
 
-  /** Navigates to the full-page battle detail where heavy tables can scroll normally. */
+  protected onFilterQueryChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.filterQuery.set(input.value);
+  }
+
   protected openBattle(battleId: number): void {
     void this.router.navigate(['/battles', battleId]);
   }
 
-  /** Forces an immediate reload while keeping the automatic cadence predictable. */
   protected refreshNow(): void {
     this.resetRefreshTimer();
     void this.load();
   }
 
-  /** Opens an aggregated page for the currently selected battles. */
   protected openSelectedGroup(): void {
     const ids = this.selectedBattleIds();
-    if (ids.length === 0) {
-      return;
-    }
+    if (ids.length === 0) return;
     void this.router.navigate(['/battles/group'], { queryParams: { ids: ids.join(',') } });
   }
 
-  /** Adds or removes a battle id from the ad-hoc aggregation selection. */
   protected toggleSelection(battleId: number): void {
     this.selectedBattleIds.update((ids) =>
       ids.includes(battleId) ? ids.filter((id) => id !== battleId) : [...ids, battleId],
     );
   }
 
-  /** Checks whether a battle is part of the current group selection. */
   protected isSelected(battleId: number): boolean {
     return this.selectedBattleIds().includes(battleId);
   }
 
-  /** Clears the ad-hoc group selection. */
   protected clearSelection(): void {
     this.selectedBattleIds.set([]);
   }
 
-  /** Changes source list and resets pagination to avoid stale pages between tabs. */
   protected switchTab(tab: string): void {
-    if (!isBattleTab(tab) || this.tab() === tab) {
-      return;
-    }
+    if (!isBattleTab(tab) || this.tab() === tab) return;
     this.tab.set(tab);
     this.page.set(1);
     void this.load();
   }
 
-  /** Uses the browser locale so users see familiar date ordering. */
   protected formatDate(isoDate: string): string {
     return new Date(isoDate).toLocaleString();
   }
 
-  /** Formats exact integer metrics with locale separators. */
   protected formatAmount(value: number): string {
     return value.toLocaleString();
   }
 
-  /** Makes large fame values readable in card labels. */
   protected formatCompact(value: number): string {
     return Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(
       value,
     );
   }
 
-  /** Avoids noisy decimal precision from averaged page metrics. */
-  protected formatDecimal(value: number): string {
-    return Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value);
-  }
-
-  /** Calculates duration from server timestamps with a safe fallback. */
   protected formatDuration(battle: Pick<BattleSummary, 'start_time' | 'end_time'>): string {
-    const milliseconds =
-      new Date(battle.end_time).getTime() - new Date(battle.start_time).getTime();
-    if (!Number.isFinite(milliseconds) || milliseconds <= 0) {
-      return this.t('battles.duration_unknown');
-    }
-    return `${Math.max(1, Math.round(milliseconds / 60000))}m`;
+    const ms = new Date(battle.end_time).getTime() - new Date(battle.start_time).getTime();
+    if (!Number.isFinite(ms) || ms <= 0) return this.t('battles.duration_unknown');
+    return `${Math.max(1, Math.round(ms / 60000))}m`;
   }
 
-  /** Provides a stable track key when AlbionBB omits guild ids. */
   protected guildKey(guild: BattleGuildSummary): string {
     return guild.id || guild.name;
   }
 
-  /** Finds the winning or highest-fame guild for list badges. */
+  protected isOurGuild(guild: BattleGuildSummary): boolean {
+    return guild.name.toLowerCase() === 'weaklings';
+  }
+
   protected winnerGuild(battle: Pick<BattleSummary, 'guilds'>): BattleGuildSummary | null {
     return (
       battle.guilds.find((guild) => guild.winner) ?? this.sortedGuilds(battle.guilds)[0] ?? null
     );
   }
 
-  /** Sorts guilds by fame without mutating signal-owned arrays. */
-  protected sortedGuilds(guilds: readonly BattleGuildSummary[]): BattleGuildSummary[] {
-    return [...guilds].sort((leftGuild, rightGuild) => rightGuild.kill_fame - leftGuild.kill_fame);
+  protected battleOutcome(battle: BattleSummary): { label: string; type: 'victory' | 'defeat' | 'contested' } {
+    const ourG = battle.guilds.find((g) => g.name.toLowerCase() === 'weaklings');
+    if (!ourG) {
+      const top = this.winnerGuild(battle);
+      return { label: top?.name ?? 'BATTLE', type: 'contested' };
+    }
+    if (ourG.winner || (ourG.kills > ourG.deaths && ourG.kill_fame >= battle.total_fame * 0.35)) {
+      return { label: this.t('battles.victory'), type: 'victory' };
+    }
+    if (ourG.deaths > ourG.kills && ourG.kill_fame < battle.total_fame * 0.25) {
+      return { label: this.t('battles.defeat'), type: 'defeat' };
+    }
+    return { label: this.t('battles.contested'), type: 'contested' };
   }
 
-  /** Limits card previews to the most relevant guilds. */
+  protected sortedGuilds(guilds: readonly BattleGuildSummary[]): BattleGuildSummary[] {
+    return [...guilds].sort((left, right) => right.kill_fame - left.kill_fame);
+  }
+
   protected previewGuilds(guilds: readonly BattleGuildSummary[]): BattleGuildSummary[] {
     return this.sortedGuilds(guilds).slice(0, PREVIEW_GUILD_LIMIT);
   }
 
-  /** Moves to the next backend page only when pagination allows it. */
   protected async next(): Promise<void> {
-    if (this.page() >= this.totalPages()) {
-      return;
-    }
-    this.page.update((currentPage) => currentPage + 1);
+    if (this.page() >= this.totalPages()) return;
+    this.page.update((c) => c + 1);
     await this.load();
   }
 
-  /** Moves to the previous backend page while preserving page-one bounds. */
   protected async prev(): Promise<void> {
-    if (this.page() <= 1) {
-      return;
-    }
-    this.page.update((currentPage) => currentPage - 1);
+    if (this.page() <= 1) return;
+    this.page.update((c) => c - 1);
     await this.load();
   }
 
-  /** Keeps the UI aligned with the backend refresh cadence without leaking timers. */
   private startRefreshTimer(): void {
-    if (!isPlatformBrowser(this.platformId)) {
-      return;
-    }
+    if (!isPlatformBrowser(this.platformId)) return;
 
     const timerId = window.setInterval(() => {
       const nextSeconds = this.secondsUntilRefresh() - 1;
@@ -447,7 +493,6 @@ export class Battles {
         this.secondsUntilRefresh.set(nextSeconds);
         return;
       }
-
       this.resetRefreshTimer();
       void this.load();
     }, 1000);
@@ -455,12 +500,10 @@ export class Battles {
     this.destroyRef.onDestroy(() => window.clearInterval(timerId));
   }
 
-  /** Restarts the countdown after manual or automatic refreshes. */
   private resetRefreshTimer(): void {
     this.secondsUntilRefresh.set(BATTLE_REFRESH_INTERVAL_SECONDS);
   }
 
-  /** Presents the cron-aligned timer in compact mm:ss form. */
   private formatCountdown(totalSeconds: number): string {
     const safeSeconds = Math.max(0, totalSeconds);
     const minutes = Math.floor(safeSeconds / 60);
@@ -468,7 +511,6 @@ export class Battles {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   }
 
-  /** Fetches the active tab and stores pagination metadata for the footer. */
   private async load(): Promise<void> {
     this.loading.set(true);
     try {
@@ -498,18 +540,14 @@ export class Battles {
     }
   }
 
-  /** Creates an empty aggregate so cards never render stale numbers after tab changes. */
   private emptyScopeStats(): BattleScopeStats {
     return { battles: 0, players: 0, kills: 0, deaths: 0, fame: 0 };
   }
 
-  /** Aggregates only the configured guild row from every visible battle card. */
   private buildGuildScopeStats(battles: readonly BattleSummary[]): BattleScopeStats {
     return battles.reduce<BattleScopeStats>((stats, battle) => {
       const guild = this.guildStatsForBattle(battle);
-      if (!guild) {
-        return stats;
-      }
+      if (!guild) return stats;
       return {
         battles: stats.battles + 1,
         players: stats.players + guild.players,
@@ -520,15 +558,12 @@ export class Battles {
     }, this.emptyScopeStats());
   }
 
-  /** Hydrates visible personal battles and aggregates only the linked character row. */
   private async buildPersonalScopeStats(
     battles: readonly BattleSummary[],
   ): Promise<BattleScopeStats> {
     const link = await firstValueFrom(this.api.get<AlbionLinkStatus>('api/albion/link/me'));
     const linkedName = link.albion_player_name?.toLowerCase();
-    if (!link.linked || !linkedName) {
-      return this.emptyScopeStats();
-    }
+    if (!link.linked || !linkedName) return this.emptyScopeStats();
 
     const details = await Promise.all(
       battles.map((battle) =>
@@ -540,9 +575,7 @@ export class Battles {
       const player = detail.players.find(
         (candidate) => candidate.name.toLowerCase() === linkedName,
       );
-      if (!player) {
-        return stats;
-      }
+      if (!player) return stats;
       return {
         battles: stats.battles + 1,
         players: stats.players + 1,
@@ -553,7 +586,6 @@ export class Battles {
     }, this.emptyScopeStats());
   }
 
-  /** Finds Weaklings in a battle, falling back to the strongest guild only if upstream omits the name. */
   private guildStatsForBattle(battle: BattleSummary): BattleGuildSummary | null {
     return (
       battle.guilds.find((guild) => guild.name.toLowerCase() === 'weaklings') ??

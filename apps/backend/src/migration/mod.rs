@@ -43,6 +43,11 @@ mod m20260825_000002_seed_guild_settings_permission;
 mod m20260826_000001_create_progression_tables;
 mod m20260826_000002_seed_progression_permissions;
 mod m20260826_000003_create_vod_and_warn_tables;
+mod m20260829_000001_roles_discord_link;
+mod m20260829_000002_add_auto_role_setting;
+mod m20260829_000003_create_split_islands;
+mod m20260829_000004_seed_split_islands_permission;
+mod m20260829_000005_add_island_tab_id_to_splits;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -90,6 +95,11 @@ impl MigratorTrait for Migrator {
             Box::new(m20260826_000001_create_progression_tables::Migration),
             Box::new(m20260826_000002_seed_progression_permissions::Migration),
             Box::new(m20260826_000003_create_vod_and_warn_tables::Migration),
+            Box::new(m20260829_000001_roles_discord_link::Migration),
+            Box::new(m20260829_000002_add_auto_role_setting::Migration),
+            Box::new(m20260829_000003_create_split_islands::Migration),
+            Box::new(m20260829_000004_seed_split_islands_permission::Migration),
+            Box::new(m20260829_000005_add_island_tab_id_to_splits::Migration),
         ]
     }
 }

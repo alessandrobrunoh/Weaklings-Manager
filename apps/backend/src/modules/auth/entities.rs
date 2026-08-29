@@ -11,6 +11,14 @@ pub mod role {
         #[sea_orm(unique)]
         pub name: String,
         pub priority: i32,
+        /// Discord guild role snowflake this gestionale role is linked to.
+        ///
+        /// Login and `/me` match a member's Discord roles against this column, not against `id`.
+        /// `None` means the role is gestionale-only (the default fallback role is typically unlinked).
+        pub discord_role_id: Option<String>,
+        /// When true, members who hold no linked Discord role receive this role.
+        /// At most one row may be default (enforced by a partial unique index).
+        pub is_default: bool,
     }
 
     #[derive(Copy, Clone, Debug, DeriveRelation, EnumIter)]

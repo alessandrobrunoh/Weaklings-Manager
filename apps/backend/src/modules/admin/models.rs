@@ -6,14 +6,57 @@ use utoipa::ToSchema;
 /// One role and the permissions currently granted to it.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct RolePermissionsView {
-    /// Discord role id, the primary key of `roles`.
+    /// Internal primary key of `roles` (UUID for newly created rows).
     pub role_id: String,
     /// Human-readable role name.
     pub role_name: String,
     /// Ordering weight; higher wins when a member holds several roles.
     pub priority: i32,
+    /// Linked Discord guild role snowflake, if any.
+    pub discord_role_id: Option<String>,
+    /// When true, unmatched Discord members fall through to this role.
+    pub is_default: bool,
     /// Permission keys granted to this role.
     pub permissions: Vec<String>,
+}
+
+/// Request body to create a gestionale role, optionally linked to a Discord role.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct CreateRoleRequest {
+    /// Display name; must be unique.
+    pub name: String,
+    /// Ordering weight; higher wins for `highest_role`.
+    #[serde(default)]
+    pub priority: i32,
+    /// Discord snowflake to link. Omit or empty to leave unlinked.
+    pub discord_role_id: Option<String>,
+    /// When true, this becomes the unmatched-member fallback (unsets the previous default).
+    #[serde(default)]
+    pub is_default: bool,
+}
+
+/// Partial update for a gestionale role. Absent fields stay unchanged; empty `discord_role_id` unlinks.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct UpdateRoleRequest {
+    /// New display name.
+    pub name: Option<String>,
+    /// New priority.
+    pub priority: Option<i32>,
+    /// New Discord snowflake. Send `""` to unlink.
+    pub discord_role_id: Option<String>,
+    /// Set or clear default fallback status.
+    pub is_default: Option<bool>,
+}
+
+/// Grouping metadata for one assignable permission key.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PermissionCatalogEntry {
+    /// Stable key stored in `role_permissions`.
+    pub key: String,
+    /// First segment of the key, used to group the matrix (`bank`, `regear`, …).
+    pub resource: String,
+    /// Remainder of the key (`withdraw.accept`, `manage`, …).
+    pub action: String,
 }
 
 /// The whole authorization matrix, plus the full set of assignable keys.
@@ -24,6 +67,8 @@ pub struct PermissionMatrix {
     /// Every permission the backend can gate on, so the UI can render the
     /// full grid rather than only what happens to be granted today.
     pub available_permissions: Vec<String>,
+    /// Same keys as `available_permissions`, with resource/action split for grouping.
+    pub permission_catalog: Vec<PermissionCatalogEntry>,
 }
 
 /// Request body to replace one role's permission set.
@@ -55,6 +100,8 @@ pub struct GuildSettingsView {
     pub discord_transaction_spam_channel_id: Option<String>,
     /// Role pinged by event announcements, reminders, and start notices.
     pub discord_event_role_id: Option<String>,
+    /// Role assigned automatically to human members joining the Discord guild.
+    pub discord_auto_role_id: Option<String>,
 }
 
 impl GuildSettingsView {
@@ -68,8 +115,36 @@ impl GuildSettingsView {
             discord_audit_log_channel_id: model.discord_audit_log_channel_id,
             discord_transaction_spam_channel_id: model.discord_transaction_spam_channel_id,
             discord_event_role_id: model.discord_event_role_id,
+            discord_auto_role_id: model.discord_auto_role_id,
         }
     }
+}
+
+/// A Discord role available for AutoRole configuration.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct DiscordRoleView {
+    /// Discord role snowflake.
+    pub id: String,
+    /// Role name shown in the admin panel.
+    pub name: String,
+    /// Discord hierarchy position; higher roles have a greater position.
+    pub position: i32,
+    /// Whether Discord manages this role and prevents manual assignment.
+    pub managed: bool,
+}
+
+/// Current AutoRole configuration.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct AutoRoleSettingsView {
+    /// Configured Discord role snowflake, or `null` when disabled.
+    pub discord_auto_role_id: Option<String>,
+}
+
+/// Request body for the AutoRole configuration endpoint.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct UpdateAutoRoleRequest {
+    /// Discord role snowflake; an empty string disables AutoRole.
+    pub discord_auto_role_id: String,
 }
 
 /// Request body for `PUT /admin/settings`.

@@ -169,86 +169,79 @@ impl AuthService {
             return (vec!["SuperAdmin".to_string()], "SuperAdmin".to_string());
         }
 
+        let user_role_ids = self
+            .fetch_guild_member_role_ids(user_id, user_access_token, guild_id, bot_token)
+            .await
+            .unwrap_or_default();
+
+        let db_roles = match super::entities::role::Entity::find().all(db).await {
+            Ok(roles) => roles,
+            Err(_) => return fallback_unmatched_roles(&[]),
+        };
+
+        resolve_linked_roles(&user_role_ids, &db_roles)
+    }
+
+    /// Fetches the member's Discord role snowflakes from the guild.
+    ///
+    /// Returns `None` when Discord cannot be reached (caller should keep cached session roles).
+    /// Returns `Some(ids)` when the member payload was parsed, including an empty list.
+    pub async fn fetch_guild_member_role_ids(
+        &self,
+        user_id: &str,
+        user_access_token: &str,
+        guild_id: &str,
+        bot_token: Option<&str>,
+    ) -> Option<Vec<String>> {
         let client = reqwest::Client::new();
-        let mut user_role_ids: Vec<String> = Vec::new();
 
-        if let Some(bot) = bot_token {
-            if !bot.trim().is_empty() && bot != "your_discord_bot_token" {
-                // Fetch member details using bot token
-                let url =
-                    format!("https://discord.com/api/v10/guilds/{guild_id}/members/{user_id}");
-                if let Ok(res) = client
-                    .get(&url)
-                    .header("Authorization", format!("Bot {bot}"))
-                    .header("User-Agent", "WeaklingsBackend (0.0.1)")
-                    .send()
-                    .await
-                {
-                    #[derive(Deserialize)]
-                    struct GuildMemberResponse {
-                        roles: Vec<String>,
-                    }
-
-                    if res.status().is_success() {
-                        if let Ok(member) = res.json::<GuildMemberResponse>().await {
-                            user_role_ids = member.roles;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Fallback: Fetch member details using user's access token if bot token was not used/available
-        if user_role_ids.is_empty() {
-            let url = format!("https://discord.com/api/v10/users/@me/guilds/{guild_id}/member");
+        if let Some(bot) = usable_bot_token(bot_token) {
+            let url = format!("https://discord.com/api/v10/guilds/{guild_id}/members/{user_id}");
             if let Ok(res) = client
                 .get(&url)
-                .bearer_auth(user_access_token)
+                .header("Authorization", format!("Bot {bot}"))
                 .header("User-Agent", "WeaklingsBackend (0.0.1)")
                 .send()
                 .await
             {
                 #[derive(Deserialize)]
-                struct UserGuildMemberResponse {
+                struct GuildMemberResponse {
                     roles: Vec<String>,
                 }
 
                 if res.status().is_success() {
-                    if let Ok(member) = res.json::<UserGuildMemberResponse>().await {
-                        user_role_ids = member.roles;
+                    if let Ok(member) = res.json::<GuildMemberResponse>().await {
+                        return Some(member.roles);
                     }
                 }
             }
         }
 
-        // Query the database to find matching roles and determine the highest one
-        if !user_role_ids.is_empty() {
-            use super::entities::role;
-            use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+        if user_access_token.is_empty() {
+            return None;
+        }
 
-            if let Ok(matched_db_roles) = role::Entity::find()
-                .filter(role::Column::Id.is_in(user_role_ids))
-                .all(db)
-                .await
-            {
-                if !matched_db_roles.is_empty() {
-                    let mut matched = matched_db_roles;
-                    // Sort by priority descending (highest priority first)
-                    matched.sort_by(|a, b| b.priority.cmp(&a.priority));
+        let url = format!("https://discord.com/api/v10/users/@me/guilds/{guild_id}/member");
+        if let Ok(res) = client
+            .get(&url)
+            .bearer_auth(user_access_token)
+            .header("User-Agent", "WeaklingsBackend (0.0.1)")
+            .send()
+            .await
+        {
+            #[derive(Deserialize)]
+            struct UserGuildMemberResponse {
+                roles: Vec<String>,
+            }
 
-                    let role_names: Vec<String> = matched.iter().map(|r| r.name.clone()).collect();
-                    let highest_role = role_names
-                        .first()
-                        .cloned()
-                        .unwrap_or_else(|| "User".to_string());
-
-                    return (role_names, highest_role);
+            if res.status().is_success() {
+                if let Ok(member) = res.json::<UserGuildMemberResponse>().await {
+                    return Some(member.roles);
                 }
             }
         }
 
-        // Fallback default
-        (vec!["User".to_string()], "User".to_string())
+        None
     }
 
     /// Finds or creates the local `users` row backing this Discord profile, keyed by email.
@@ -299,5 +292,129 @@ impl AuthService {
 impl Default for AuthService {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Maps a member's Discord role snowflakes onto gestionale role names.
+///
+/// Matching is on `discord_role_id`, never on the internal `id`. Unmatched members receive the
+/// unique `is_default` role when one exists, otherwise the hardcoded name `"User"`.
+#[must_use]
+pub fn resolve_linked_roles(
+    member_discord_role_ids: &[String],
+    db_roles: &[super::entities::role::Model],
+) -> (Vec<String>, String) {
+    let held: std::collections::HashSet<&str> = member_discord_role_ids
+        .iter()
+        .map(String::as_str)
+        .collect();
+
+    let mut matched: Vec<&super::entities::role::Model> = db_roles
+        .iter()
+        .filter(|role| {
+            role.discord_role_id
+                .as_deref()
+                .is_some_and(|id| held.contains(id))
+        })
+        .collect();
+
+    if matched.is_empty() {
+        return fallback_unmatched_roles(db_roles);
+    }
+
+    matched.sort_by(|a, b| b.priority.cmp(&a.priority).then_with(|| a.name.cmp(&b.name)));
+    let names: Vec<String> = matched.iter().map(|role| role.name.clone()).collect();
+    let highest = names.first().cloned().unwrap_or_else(|| "User".to_string());
+    (names, highest)
+}
+
+fn fallback_unmatched_roles(db_roles: &[super::entities::role::Model]) -> (Vec<String>, String) {
+    if let Some(default) = db_roles.iter().find(|role| role.is_default) {
+        return (vec![default.name.clone()], default.name.clone());
+    }
+    (vec!["User".to_string()], "User".to_string())
+}
+
+fn usable_bot_token(bot_token: Option<&str>) -> Option<&str> {
+    bot_token.filter(|token| !token.trim().is_empty() && *token != "your_discord_bot_token")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::auth::entities::role;
+
+    fn role(
+        id: &str,
+        name: &str,
+        priority: i32,
+        discord_role_id: Option<&str>,
+        is_default: bool,
+    ) -> role::Model {
+        role::Model {
+            id: id.to_string(),
+            name: name.to_string(),
+            priority,
+            discord_role_id: discord_role_id.map(str::to_string),
+            is_default,
+        }
+    }
+
+    #[test]
+    fn matches_discord_role_id_not_internal_id() {
+        let roles = vec![
+            role("uuid-raid-lead", "Raid Lead", 80, Some("999888777666555444"), false),
+            role("222333444555666777", "User", 10, None, true),
+        ];
+        let (names, highest) =
+            resolve_linked_roles(&["999888777666555444".into()], &roles);
+        assert_eq!(names, vec!["Raid Lead".to_string()]);
+        assert_eq!(highest, "Raid Lead");
+    }
+
+    #[test]
+    fn ignores_internal_id_equal_to_a_discord_snowflake() {
+        // After the column split, matching must not fall back to `roles.id`. A leftover snowflake
+        // sitting in `id` with a cleared link must not grant that role.
+        let roles = vec![
+            role("999888777666555444", "Stale", 90, None, false),
+            role("user-uuid", "Member", 10, None, true),
+        ];
+        let (names, highest) =
+            resolve_linked_roles(&["999888777666555444".into()], &roles);
+        assert_eq!(names, vec!["Member".to_string()]);
+        assert_eq!(highest, "Member");
+    }
+
+    #[test]
+    fn unions_linked_roles_highest_priority_first() {
+        let roles = vec![
+            role("a", "Officer", 50, Some("111"), false),
+            role("b", "Raider", 30, Some("222"), false),
+            role("c", "User", 10, None, true),
+        ];
+        let (names, highest) =
+            resolve_linked_roles(&["222".into(), "111".into()], &roles);
+        assert_eq!(names, vec!["Officer".to_string(), "Raider".to_string()]);
+        assert_eq!(highest, "Officer");
+    }
+
+    #[test]
+    fn unmatched_member_gets_default_role() {
+        let roles = vec![
+            role("a", "Admin", 100, Some("111"), false),
+            role("b", "Recruit", 1, None, true),
+        ];
+        let (names, highest) = resolve_linked_roles(&["nope".into()], &roles);
+        assert_eq!(names, vec!["Recruit".to_string()]);
+        assert_eq!(highest, "Recruit");
+    }
+
+    #[test]
+    fn unmatched_without_default_falls_back_to_user_name() {
+        let roles = vec![role("a", "Admin", 100, Some("111"), false)];
+        let (names, highest) = resolve_linked_roles(&[], &roles);
+        assert_eq!(names, vec!["User".to_string()]);
+        assert_eq!(highest, "User");
     }
 }

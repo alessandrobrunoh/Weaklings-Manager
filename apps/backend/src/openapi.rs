@@ -25,6 +25,13 @@ use utoipa::OpenApi;
         crate::modules::splits::router::create_split,
         crate::modules::splits::router::list_splits,
         crate::modules::splits::router::get_split,
+        crate::modules::splits::router::list_islands,
+        crate::modules::splits::router::create_island,
+        crate::modules::splits::router::update_island,
+        crate::modules::splits::router::delete_island,
+        crate::modules::splits::router::add_island_tab,
+        crate::modules::splits::router::update_island_tab,
+        crate::modules::splits::router::delete_island_tab,
         crate::modules::splits::router::add_or_update_participant,
         crate::modules::splits::router::remove_participant,
         crate::modules::splits::router::complete_split,
@@ -120,8 +127,15 @@ use utoipa::OpenApi;
         crate::modules::intel::router::matchup_matrix,
         crate::modules::admin::router::get_permission_matrix,
         crate::modules::admin::router::update_role_permissions,
+        crate::modules::admin::router::create_role,
+        crate::modules::admin::router::update_role,
+        crate::modules::admin::router::delete_role,
+        crate::modules::admin::router::list_guild_discord_roles,
         crate::modules::admin::router::get_guild_settings,
         crate::modules::admin::router::update_guild_settings,
+        crate::modules::admin::router::get_autorole,
+        crate::modules::admin::router::list_discord_roles,
+        crate::modules::admin::router::update_autorole,
         crate::modules::splits::router::complete_splits_batch,
         crate::modules::intel::router::leaderboards,
         crate::modules::intel::router::guild_report,
@@ -177,7 +191,14 @@ use utoipa::OpenApi;
             crate::modules::splits::models::CreateSplitRequest,
             crate::modules::splits::models::UpsertParticipantRequest,
             crate::modules::splits::models::SplitFilters,
+            crate::modules::splits::models::SplitIslandView,
+            crate::modules::splits::models::SplitIslandTabView,
+            crate::modules::splits::models::CreateIslandRequest,
+            crate::modules::splits::models::UpdateIslandRequest,
+            crate::modules::splits::models::CreateIslandTabRequest,
+            crate::modules::splits::models::UpdateIslandTabRequest,
             crate::modules::splits::status::SplitStatus,
+            crate::modules::splits::city::SplitIslandCity,
             crate::pagination::PaginatedSplitSummary,
             crate::responses::ApiResponseSplitDetail,
             crate::modules::albion::client::AlbionSearchResult,
@@ -320,10 +341,16 @@ use utoipa::OpenApi;
             crate::modules::intel::matchups::MatchupReport,
             crate::modules::intel::status::IntelScoutCategory,
             crate::modules::admin::models::PermissionMatrix,
+            crate::modules::admin::models::PermissionCatalogEntry,
             crate::modules::admin::models::RolePermissionsView,
             crate::modules::admin::models::UpdateRolePermissionsRequest,
+            crate::modules::admin::models::CreateRoleRequest,
+            crate::modules::admin::models::UpdateRoleRequest,
             crate::modules::admin::models::GuildSettingsView,
             crate::modules::admin::models::UpdateGuildSettingsRequest,
+            crate::modules::admin::models::DiscordRoleView,
+            crate::modules::admin::models::AutoRoleSettingsView,
+            crate::modules::admin::models::UpdateAutoRoleRequest,
             crate::modules::splits::models::CompleteSplitsBatchRequest,
             crate::modules::splits::models::CompleteSplitsBatchResult,
             crate::modules::splits::models::BatchFailure,
@@ -449,8 +476,9 @@ and the request is rejected with `403` if the caller's roles don't grant it.
 The mapping **role → permission** lives in the `role_permissions` database table and is
 loaded into an in-memory cache at startup. To change who can do what:
 
-1. Edit `role_permissions` rows directly in the database (grant/revoke a permission for a role).
-2. Call `POST /api/admin/permissions/reload` to apply the change without restarting the backend.
+1. Create a gestionale role with `POST /api/admin/roles` and link it to a Discord snowflake.
+2. Grant or revoke keys on that role with `PUT /api/admin/roles/{id}/permissions` (applies immediately).
+3. `POST /api/admin/permissions/reload` still exists for out-of-band SQL edits.
 
 The configured `super_admin_discord_id` (env) bypasses every permission check.
 
@@ -461,8 +489,10 @@ Current permissions:
 | `bank.withdraw.accept`   | Admin, Officer    | `POST /bank/transactions/withdraw/accept`  |
 | `bank.view_others`       | Admin             | `GET /bank/balance?user_id=`, `GET /bank/transactions?user_id=` |
 | `splits.manage`          | Admin, Officer    | split edit/close endpoints                 |
+| `splits.islands.manage`  | Admin             | island/tab catalog CRUD                    |
 | `users.create`           | Admin             | `POST /users`                              |
 | `permissions.reload`     | Admin             | `POST /admin/permissions/reload`           |
+| `roles.manage`           | Admin             | `POST/PATCH/DELETE /admin/roles`           |
 | `comps.build_categories.manage` | Admin, Officer | build category CRUD endpoints |
 | `comps.comp_categories.manage` | Admin, Officer | comp category CRUD endpoints |
 | `comps.builds.manage`    | Admin, Officer    | build CRUD endpoints                       |

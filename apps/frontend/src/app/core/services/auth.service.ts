@@ -3,7 +3,7 @@ import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from './api.service';
 import { API_BASE_URL } from '../tokens/api-base.token';
-import type { DiscordUserProfile, PermissionKey } from '../models/api.models';
+import type { DiscordUserProfile } from '../models/api.models';
 
 /**
  * Session-aware authentication service.
@@ -97,7 +97,7 @@ export class AuthService {
   }
 
   /** True when the backend grants the requested capability to this session. */
-  hasPermission(permission: PermissionKey): boolean {
+  hasPermission(permission: string): boolean {
     const profile = this._profile();
     if (!profile) {
       return false;

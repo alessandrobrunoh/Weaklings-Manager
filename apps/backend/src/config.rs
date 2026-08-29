@@ -37,7 +37,7 @@ pub struct Config {
     pub discord_bot_token: Option<String>,
     /// Super Admin Discord User ID.
     pub super_admin_discord_id: String,
-    /// URL of the frontend for redirection (default: http://localhost:3001).
+    /// URL of the frontend for redirection (default: http://localhost:5173, Vite dev).
     #[serde(default = "default_frontend_url")]
     pub frontend_url: String,
     /// Albion Online API region to query (americas|europe|asia). Defaults to "europe".
@@ -69,7 +69,7 @@ fn default_backend_port() -> u16 {
 }
 
 fn default_frontend_url() -> String {
-    "http://localhost:3001".to_string()
+    "http://localhost:5173".to_string()
 }
 
 fn default_albion_api_region() -> String {
