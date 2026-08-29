@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 
-import { authGuard, permissionGuard, redirectIfAuthenticatedGuard } from './core/guards/auth.guard';
+import { authGuard, permissionGuard, permissionGuardTo, redirectIfAuthenticatedGuard } from './core/guards/auth.guard';
+import { ADMIN_ACCESS_PERMISSIONS } from './layout/nav';
 
 /**
  * Top-level routes.
@@ -103,8 +104,36 @@ export const routes: Routes = [
       },
       {
         path: 'admin',
-        canActivate: [permissionGuard('roles.manage', 'permissions.reload', 'admin.settings.manage')],
-        loadComponent: () => import('./features/admin/admin').then((m) => m.Admin),
+        canActivate: [permissionGuard(...ADMIN_ACCESS_PERMISSIONS)],
+        children: [
+          {
+            path: '',
+            pathMatch: 'full',
+            loadComponent: () => import('./features/admin/admin-hub').then((m) => m.AdminHub),
+          },
+          {
+            path: 'roles',
+            canActivate: [permissionGuardTo('/admin', 'roles.manage')],
+            loadComponent: () => import('./features/admin/admin-roles').then((m) => m.AdminRoles),
+          },
+          {
+            path: 'permissions',
+            canActivate: [permissionGuardTo('/admin', 'roles.manage', 'permissions.reload')],
+            loadComponent: () =>
+              import('./features/admin/admin-permissions').then((m) => m.AdminPermissions),
+          },
+          {
+            path: 'discord',
+            canActivate: [permissionGuardTo('/admin', 'admin.settings.manage', 'autorole.manage')],
+            loadComponent: () => import('./features/admin/admin-discord').then((m) => m.AdminDiscord),
+          },
+          {
+            path: 'progression',
+            canActivate: [permissionGuardTo('/admin', 'progression.settings.manage')],
+            loadComponent: () =>
+              import('./features/admin/admin-progression').then((m) => m.AdminProgression),
+          },
+        ],
       },
       {
         path: 'audit',

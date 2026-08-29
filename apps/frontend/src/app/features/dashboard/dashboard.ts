@@ -13,9 +13,10 @@ import type {
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { TranslateService } from '../../core/services/translate.service';
-import { PageHeader } from '../../shared/components/page-header/page-header';
 import type { TranslationKey } from '../../i18n/en';
+import { PageHeader } from '../../shared/components/page-header/page-header';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
+import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 
 interface QuickAction {
@@ -46,31 +47,28 @@ interface DashboardStat {
 @Component({
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, PageHeader, RouterLink, StatusChip],
+  imports: [Icon, PageHeader, RouterLink, StatCard, StatusChip],
   template: `
     <app-page-header [title]="welcomeText()" [subtitle]="t('app.tagline')" [actions]="false" />
 
     <!-- Quick actions -->
     <section class="mb-8">
-      <h2
-        class="mb-3 text-sm font-semibold uppercase tracking-wider"
-        style="color: var(--color-text-secondary)"
-      >
+      <h2 class="eyebrow mb-3">
         {{ t('dashboard.quick_actions') }}
       </h2>
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         @for (action of actions; track action.path) {
           <a
             [routerLink]="action.path"
-            class="card flex flex-col items-start gap-3 p-4 no-underline transition hover:-translate-y-0.5"
+            class="card flex flex-col items-start gap-2.5 p-4 no-underline transition hover:border-(--color-border-strong)"
             style="color: var(--color-text)"
           >
             <span
-              class="flex h-9 w-9 items-center justify-center rounded-full"
-              style="background-color: var(--color-primary-container); color: var(--color-primary)"
+              class="flex h-8 w-8 items-center justify-center rounded-full"
+              style="background-color: var(--color-surface-2); color: var(--color-text)"
               aria-hidden="true"
             >
-              <app-icon [name]="action.icon" size="1.1rem" />
+              <app-icon [name]="action.icon" size="1rem" />
             </span>
             <span class="text-xs font-medium">{{ t(action.labelKey) }}</span>
           </a>
@@ -80,63 +78,34 @@ interface DashboardStat {
 
     <!-- Guild snapshot -->
     <section class="mb-8">
-      <h2
-        class="mb-3 text-sm font-semibold uppercase tracking-wider"
-        style="color: var(--color-text-secondary)"
-      >
+      <h2 class="eyebrow mb-3">
         {{ t('dashboard.snapshot') }}
       </h2>
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         @for (stat of stats; track stat.labelKey) {
-          <div class="card flex flex-col gap-2 p-4">
-            <div class="flex items-center justify-between">
-              <span
-                class="flex h-8 w-8 items-center justify-center rounded-full"
-                [style.backgroundColor]="toneBg(stat.tone)"
-                [style.color]="toneFg(stat.tone)"
-                aria-hidden="true"
-              >
-                <app-icon [name]="stat.icon" size="1rem" />
-              </span>
-              @if (stat.sublabelKey) {
-                <span class="text-[10px] uppercase tracking-wider opacity-60">
-                  {{ t(stat.sublabelKey) }}
-                </span>
-              }
-            </div>
-            <p
-              class="text-xl font-semibold leading-tight"
-              style="color: var(--color-text)"
-              [class.animate-pulse]="stat.value() === '—'"
-            >
-              {{ stat.value() }}
-            </p>
-            <p class="text-[11px] font-medium uppercase tracking-wider opacity-70">
-              {{ t(stat.labelKey) }}
-            </p>
-            <p class="text-[11px]" style="color: var(--color-text-secondary)">
-              {{ stat.hint() }}
-            </p>
-          </div>
+          <app-stat-card
+            [label]="t(stat.labelKey)"
+            [value]="stat.value()"
+            [sub]="stat.hint()"
+            [icon]="stat.icon"
+            [tone]="stat.tone"
+          />
         }
       </div>
     </section>
 
     <!-- Two-column activity panels -->
-    <section class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+    <section class="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <!-- Live & upcoming events -->
-      <div class="card p-5">
+      <div class="card p-6">
         <div class="mb-4 flex items-center justify-between">
-          <h2
-            class="text-sm font-semibold uppercase tracking-wider"
-            style="color: var(--color-text-secondary)"
-          >
+          <h2 class="eyebrow">
             {{ t('dashboard.events.upcoming') }}
           </h2>
           <a
             routerLink="/events"
             class="text-xs font-medium no-underline hover:underline"
-            style="color: var(--color-primary)"
+            style="color: var(--color-text)"
           >
             {{ t('dashboard.view_all') }}
           </a>
@@ -180,18 +149,15 @@ interface DashboardStat {
       </div>
 
       <!-- Recent splits -->
-      <div class="card p-5">
+      <div class="card p-6">
         <div class="mb-4 flex items-center justify-between">
-          <h2
-            class="text-sm font-semibold uppercase tracking-wider"
-            style="color: var(--color-text-secondary)"
-          >
+          <h2 class="eyebrow">
             {{ t('dashboard.splits.recent') }}
           </h2>
           <a
             routerLink="/splits"
             class="text-xs font-medium no-underline hover:underline"
-            style="color: var(--color-primary)"
+            style="color: var(--color-text)"
           >
             {{ t('dashboard.view_all') }}
           </a>

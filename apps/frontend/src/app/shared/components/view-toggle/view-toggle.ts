@@ -54,9 +54,9 @@ export interface ViewToggleOption {
             class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-medium"
             [attr.aria-selected]="option.id === active()"
             [attr.tabindex]="option.id === active() ? 0 : -1"
-            [style.background-color]="option.id === active() ? 'var(--color-surface)' : 'transparent'"
+            [style.background-color]="option.id === active() ? 'var(--color-primary)' : 'transparent'"
             [style.color]="
-              option.id === active() ? 'var(--color-text)' : 'var(--color-text-secondary)'
+              option.id === active() ? 'var(--color-on-primary)' : 'var(--color-text-secondary)'
             "
             (click)="select(i)"
           >

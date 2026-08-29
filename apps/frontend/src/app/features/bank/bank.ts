@@ -19,6 +19,7 @@ import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
@@ -36,11 +37,7 @@ const TRANSACTIONS_LOAD_LIMIT = 1000;
 @Component({
   selector: 'app-bank',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, ErrorState, Loading, DataTable, DataTableCell, Icon, ViewToggle],
-  styles: [
-    `
-    `,
-  ],
+  imports: [PageHeader, EmptyState, ErrorState, Loading, DataTable, DataTableCell, Icon, StatCard, ViewToggle],
   template: `
     <app-page-header [title]="t('bank.title')" [subtitle]="t('bank.subtitle')">
       @if (viewMode() === 'personal') {
@@ -60,35 +57,19 @@ const TRANSACTIONS_LOAD_LIMIT = 1000;
     </app-page-header>
 
     <!-- Balance cards -->
-    <div class="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-      <div class="card p-5">
-        <p
-          class="text-xs font-medium uppercase tracking-wider"
-          style="color: var(--color-text-secondary)"
-        >
-          {{ t('bank.balance.pending') }}
-        </p>
-        <p class="mt-1 text-2xl font-semibold" style="color: var(--color-text)">
-          {{ formatAmount(balance()?.pending_total) }}
-        </p>
-        <p class="mt-1 text-xs" style="color: var(--color-text-secondary)">
-          {{ balance()?.pending_count ?? 0 }} {{ t('common.total') }}
-        </p>
-      </div>
-      <div class="card p-5">
-        <p
-          class="text-xs font-medium uppercase tracking-wider"
-          style="color: var(--color-text-secondary)"
-        >
-          {{ t('bank.balance.requested') }}
-        </p>
-        <p class="mt-1 text-2xl font-semibold" style="color: var(--color-text)">
-          {{ formatAmount(balance()?.requested_total) }}
-        </p>
-        <p class="mt-1 text-xs" style="color: var(--color-text-secondary)">
-          {{ balance()?.requested_count ?? 0 }} {{ t('common.total') }}
-        </p>
-      </div>
+    <div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <app-stat-card
+        [label]="t('bank.balance.pending')"
+        [value]="formatAmount(balance()?.pending_total)"
+        [sub]="(balance()?.pending_count ?? 0) + ' ' + t('common.total')"
+        icon="bank"
+      />
+      <app-stat-card
+        [label]="t('bank.balance.requested')"
+        [value]="formatAmount(balance()?.requested_total)"
+        [sub]="(balance()?.requested_count ?? 0) + ' ' + t('common.total')"
+        icon="bank"
+      />
     </div>
 
     <!-- Transactions -->

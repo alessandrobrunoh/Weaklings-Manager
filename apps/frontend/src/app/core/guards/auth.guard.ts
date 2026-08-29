@@ -53,12 +53,13 @@ export const redirectIfAuthenticatedGuard: CanActivateFn = async () => {
 
 /**
  * Permission-restricted guard. Use with `authGuard`. Any listed key is enough (OR).
+ * Missing permission sends the user to `redirectPath`.
  *
  * @example
  * `{ path: 'admin', canActivate: [authGuard, permissionGuard('roles.manage', 'permissions.reload')] }`
  */
-export const permissionGuard =
-  (...keys: string[]): CanActivateFn =>
+export const permissionGuardTo =
+  (redirectPath: string, ...keys: string[]): CanActivateFn =>
   () => {
     const auth = inject(AuthService);
     const router = inject(Router);
@@ -67,5 +68,9 @@ export const permissionGuard =
       return true;
     }
 
-    return router.createUrlTree(['/dashboard']);
+    return router.createUrlTree([redirectPath]);
   };
+
+/** Same as `permissionGuardTo('/dashboard', ...)`. */
+export const permissionGuard = (...keys: string[]): CanActivateFn =>
+  permissionGuardTo('/dashboard', ...keys);

@@ -83,11 +83,11 @@ function emptyEntryDraft(): EntryDraft {
       }
     </app-page-header>
 
-    <section class="card mb-6 p-5">
-      <p class="text-sm font-semibold" style="color: var(--color-text-secondary)">
+    <section class="card mb-6 p-6">
+      <p class="eyebrow">
         Weekly manual update
       </p>
-      <p class="mt-2 text-3xl font-bold" style="color: var(--color-text)">
+      <p class="mono mt-2 text-2xl font-normal" style="color: var(--color-text)">
         Last updated: {{ lastUpdatedLabel() }}
       </p>
       <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">

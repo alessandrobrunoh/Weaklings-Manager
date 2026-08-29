@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   ElementRef,
   inject,
   signal,
@@ -11,7 +12,8 @@ import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 
 import { AlbionLinkGate } from '../../shared/components/albion-link-gate/albion-link-gate';
-import { Sidebar, type NavSection } from '../sidebar/sidebar';
+import { ADMIN_NAV_SECTIONS, APP_NAV_SECTIONS, isAdminUrl } from '../nav';
+import { Sidebar } from '../sidebar/sidebar';
 import { Topbar } from '../topbar/topbar';
 
 /**
@@ -21,9 +23,8 @@ import { Topbar } from '../topbar/topbar';
  * feature route inside `<router-outlet>`. The sidebar collapses into a
  * drawer on narrow screens; on wide screens it is always visible.
  *
- * The static `NAV_SECTIONS` lives here so the shell is the single source of
- * truth for navigation. To add a module, append an entry here and add the
- * matching route in `app.routes.ts`.
+ * Navigation lives in `layout/nav.ts`. Under `/admin/*` the sidebar swaps to
+ * the admin console; everywhere else it shows the guild app.
  */
 @Component({
   selector: 'app-shell',
@@ -33,10 +34,10 @@ import { Topbar } from '../topbar/topbar';
     <div class="flex h-screen overflow-hidden" style="background-color: var(--color-bg)">
       <!-- Desktop sidebar -->
       <aside
-        class="hidden md:flex md:w-64 md:shrink-0 flex-col"
-        style="background-color: var(--color-surface); border-right: 1px solid var(--color-border)"
+        class="hidden md:flex flex-col shrink-0"
+        style="width: 260px; min-width: 260px; max-width: 260px; background-color: var(--color-surface); border-right: 1px solid var(--color-border)"
       >
-        <app-sidebar [sections]="NAV_SECTIONS" />
+        <app-sidebar [sections]="navSections()" [ariaLabelKey]="navAriaLabelKey()" />
       </aside>
 
       <!-- Mobile drawer -->
@@ -50,19 +51,23 @@ import { Topbar } from '../topbar/topbar';
             aria-label="Close menu"
           ></button>
           <div
-            class="relative w-72 max-w-[80%] flex flex-col"
-            style="background-color: var(--color-surface); box-shadow: var(--shadow-3)"
+            class="relative w-72 max-w-[80%] flex flex-col h-full"
+            style="background-color: var(--color-surface); box-shadow: var(--shadow-xl)"
           >
-            <app-sidebar [sections]="NAV_SECTIONS" (navigate)="closeDrawer()" />
+            <app-sidebar
+              [sections]="navSections()"
+              [ariaLabelKey]="navAriaLabelKey()"
+              (navigate)="closeDrawer()"
+            />
           </div>
         </div>
       }
 
       <!-- Main column -->
-      <div class="flex flex-1 flex-col overflow-hidden">
+      <div class="flex flex-1 flex-col min-w-0 overflow-hidden">
         <app-topbar (menuToggle)="toggleDrawer()" />
         <main #main class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 scrollbar-thin">
-          <div class="mx-auto w-full max-w-7xl">
+          <div class="mx-auto w-full max-w-[1200px]">
             <router-outlet />
           </div>
         </main>
@@ -77,6 +82,13 @@ export class Shell {
   private readonly main = viewChild<ElementRef<HTMLElement>>('main');
 
   protected readonly isDrawerOpen = signal(false);
+  protected readonly inAdmin = signal(isAdminUrl(this.router.url));
+  protected readonly navSections = computed(() =>
+    this.inAdmin() ? ADMIN_NAV_SECTIONS : APP_NAV_SECTIONS,
+  );
+  protected readonly navAriaLabelKey = computed(() =>
+    this.inAdmin() ? 'nav.aria.admin' : 'nav.aria.primary',
+  );
 
   constructor() {
     // The router's own scroll restoration targets `window.scrollTo`, which is
@@ -90,7 +102,8 @@ export class Shell {
         filter((event) => event instanceof NavigationEnd),
         takeUntilDestroyed(),
       )
-      .subscribe(() => {
+      .subscribe((event) => {
+        this.inAdmin.set(isAdminUrl(event.urlAfterRedirects));
         const element = this.main()?.nativeElement;
         if (element) {
           element.scrollTop = 0;
@@ -105,59 +118,4 @@ export class Shell {
   protected closeDrawer(): void {
     this.isDrawerOpen.set(false);
   }
-
-  /**
-   * Single source of truth for the navigation.
-   *
-   * Keeping it static avoids repeated allocation; the sidebar filters entries
-   * by role reactively based on the live auth profile.
-   */
-  protected readonly NAV_SECTIONS: NavSection[] = [
-    {
-      headingKey: 'nav.section.main',
-      items: [
-        { path: '/dashboard', icon: 'chart', labelKey: 'nav.dashboard' },
-        { path: '/leaderboards', icon: 'trophy', labelKey: 'nav.leaderboards' },
-      ],
-    },
-    {
-      headingKey: 'nav.section.guild',
-      items: [
-        { path: '/bank', icon: 'bank', labelKey: 'nav.bank' },
-        { path: '/splits', icon: 'swords', labelKey: 'nav.splits' },
-        { path: '/events', icon: 'calendar', labelKey: 'nav.events' },
-        { path: '/battles', icon: 'shield', labelKey: 'nav.battles' },
-        { path: '/intel', icon: 'scan', labelKey: 'nav.intel' },
-        { path: '/comps', icon: 'package', labelKey: 'nav.comps' },
-        { path: '/siphoned', icon: 'activity', labelKey: 'nav.siphoned' },
-        { path: '/regears', icon: 'shield', labelKey: 'nav.regears' },
-        { path: '/users', icon: 'users', labelKey: 'nav.users' },
-        {
-          path: '/warns',
-          icon: 'alert',
-          labelKey: 'nav.warns',
-          permissions: ['warns.view'],
-        },
-      ],
-    },
-    {
-      headingKey: 'nav.section.system',
-      items: [
-        {
-          path: '/admin',
-          icon: 'hammer',
-          labelKey: 'nav.admin',
-          permissions: ['roles.manage', 'permissions.reload', 'admin.settings.manage'],
-        },
-        {
-          path: '/audit',
-          icon: 'activity',
-          labelKey: 'nav.audit',
-          permissions: ['audit.view'],
-        },
-        { path: '/profile', icon: 'users', labelKey: 'nav.profile' },
-        { path: '/settings', icon: 'settings', labelKey: 'nav.settings' },
-      ],
-    },
-  ];
 }

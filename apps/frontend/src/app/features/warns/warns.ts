@@ -57,8 +57,8 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
       }
     </app-page-header>
 
-    <section class="card mb-6 p-5">
-      <h2 class="mb-3 text-sm font-semibold" style="color: var(--color-text)">
+    <section class="card mb-6 p-6">
+      <h2 class="eyebrow mb-3">
         {{ t('warns.escalations') }}
       </h2>
       @if (loading()) {

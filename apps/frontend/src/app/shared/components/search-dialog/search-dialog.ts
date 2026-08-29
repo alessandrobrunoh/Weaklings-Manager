@@ -35,8 +35,7 @@ export interface SearchDialogOption {
       <div
         #panel
         class="relative w-full max-w-2xl overflow-hidden rounded-2xl flex flex-col"
-        style="box-shadow: var(--shadow-3)"
-        style="background: var(--color-surface); max-height: 90vh;"
+        style="background: var(--color-surface); border: 1px solid var(--color-border); box-shadow: var(--shadow-xl); max-height: 90vh;"
         role="dialog"
         aria-modal="true"
         [attr.aria-labelledby]="titleId"

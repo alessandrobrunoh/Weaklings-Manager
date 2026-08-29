@@ -375,24 +375,32 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
     @layer components {
       .profile__hero h1 {
         color: var(--color-text);
-        font-size: clamp(1.75rem, 4vw, 3rem);
-        font-weight: 800;
+        font-family: var(--font-universalsansdisplay);
+        font-size: clamp(1.75rem, 4vw, 2.5rem);
+        font-weight: 400;
+        letter-spacing: -0.025em;
+        line-height: 1.1;
       }
       .profile__hero p {
         color: var(--color-text-secondary);
+        font-family: var(--font-universalsans);
         margin-top: 0.25rem;
       }
       .profile__eyebrow,
       .profile__label {
-        color: var(--color-text-disabled);
-        font-size: 0.75rem;
-        letter-spacing: 0.04em;
+        color: var(--color-text-secondary);
+        font-family: var(--font-universalsans);
+        font-size: 0.6875rem;
+        font-weight: 500;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
       }
       .profile__value {
         color: var(--color-text);
-        font-size: clamp(1.2rem, 2vw, 1.6rem);
-        font-weight: 800;
+        font-family: var(--font-geistmono);
+        font-size: clamp(1.2rem, 2vw, 1.5rem);
+        font-weight: 400;
+        letter-spacing: -0.01em;
       }
       .profile__sub {
         color: var(--color-text-secondary);
@@ -401,8 +409,11 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
       }
       .profile__panel-title {
         color: var(--color-text);
-        font-size: 1rem;
-        font-weight: 700;
+        font-family: var(--font-universalsans);
+        font-size: 0.875rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
         margin-bottom: 1rem;
       }
       .profile__bar-row {
@@ -415,7 +426,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
       .profile__bar {
         background: var(--color-surface-2);
         border-radius: var(--radius-full);
-        height: 0.7rem;
+        height: 0.5rem;
         overflow: hidden;
       }
       .profile__bar span {
@@ -437,7 +448,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
       }
       .profile__section-header h2 {
         color: var(--color-text);
-        font-weight: 700;
+        font-weight: 600;
       }
       .profile__option-list {
         border: 0;
@@ -449,16 +460,21 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
       .profile__option {
         align-items: center;
         border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
+        border-radius: var(--radius-inputs);
         color: var(--color-text);
         cursor: pointer;
         display: flex;
         gap: 0.75rem;
         padding: 0.75rem;
+        transition: border-color 150ms ease, background-color 150ms ease;
+      }
+      .profile__option:hover {
+        background: var(--color-surface-hover);
+        border-color: var(--color-border-strong);
       }
       .profile__option--active {
-        background: var(--color-primary-container);
-        border-color: var(--color-primary);
+        background: var(--color-surface-2);
+        border-color: var(--color-text);
       }
     }
   `,

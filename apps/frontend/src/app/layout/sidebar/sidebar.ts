@@ -4,23 +4,11 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import { Icon, type IconName } from '../../shared/components/icon/icon';
+import { Icon } from '../../shared/components/icon/icon';
 import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-logo';
+import { filterNavSections, type NavSection } from '../nav';
 
-/** Single entry in the sidebar. */
-export interface NavItem {
-  readonly path: string;
-  readonly icon: IconName;
-  readonly labelKey: TranslationKey;
-  /** Restrict visibility by permission keys (OR); undefined = everyone authenticated. */
-  readonly permissions?: readonly string[];
-}
-
-/** Group of nav entries with a small heading label. */
-export interface NavSection {
-  readonly headingKey: TranslationKey;
-  readonly items: NavItem[];
-}
+export type { NavItem, NavSection } from '../nav';
 
 /**
  * Left-hand navigation rail.
@@ -33,12 +21,23 @@ export interface NavSection {
   selector: 'app-sidebar',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Icon, RouterLink, RouterLinkActive, WeaklingsLogo],
+  styles: `
+    :host {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+  `,
   template: `
-    <nav class="flex h-full flex-col" [attr.aria-label]="'Primary'">
+    <nav class="flex h-full w-full flex-col py-3" [attr.aria-label]="t(ariaLabelKey())">
       <!-- Brand -->
-      <a routerLink="/dashboard" class="mb-4 px-3 py-3 no-underline">
-        <app-weaklings-logo />
-      </a>
+      <div class="px-4 pb-3">
+        <a routerLink="/dashboard" class="no-underline block">
+          <app-weaklings-logo />
+        </a>
+      </div>
 
       <!-- Sections -->
       <div class="flex-1 overflow-y-auto px-3 scrollbar-thin">
@@ -46,8 +45,7 @@ export interface NavSection {
           <div class="mb-4">
             <p
               [id]="section.headingKey"
-              class="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider"
-              style="color: var(--color-text-secondary)"
+              class="eyebrow px-3 pb-1.5 pt-3"
             >
               {{ t(section.headingKey) }}
             </p>
@@ -57,12 +55,13 @@ export interface NavSection {
                   <a
                     [routerLink]="item.path"
                     routerLinkActive="nav-link--active"
+                    [routerLinkActiveOptions]="{ exact: item.exact === true }"
                     [ariaCurrentWhenActive]="'page'"
                     class="nav-link"
                     (click)="navigate.emit()"
                   >
-                    <app-icon [name]="item.icon" size="1.125rem" />
-                    <span>{{ t(item.labelKey) }}</span>
+                    <app-icon [name]="item.icon" size="1.125rem" class="shrink-0" />
+                    <span class="truncate">{{ t(item.labelKey) }}</span>
                   </a>
                 </li>
               }
@@ -81,20 +80,11 @@ export class Sidebar {
   readonly navigate = output<void>();
 
   readonly sections = input.required<NavSection[]>();
+  readonly ariaLabelKey = input<TranslationKey>('nav.aria.primary');
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
-  protected readonly visibleSections = computed<NavSection[]>(() => {
-    return this.sections()
-      .map((section) => ({
-        ...section,
-        items: section.items.filter((item) => {
-          if (!item.permissions?.length) {
-            return true;
-          }
-          return item.permissions.some((permission) => this.auth.hasPermission(permission));
-        }),
-      }))
-      .filter((section) => section.items.length > 0);
-  });
+  protected readonly visibleSections = computed<NavSection[]>(() =>
+    filterNavSections(this.sections(), (permission) => this.auth.hasPermission(permission)),
+  );
 }

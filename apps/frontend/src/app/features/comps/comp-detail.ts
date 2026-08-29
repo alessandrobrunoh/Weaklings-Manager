@@ -559,8 +559,8 @@ export class CompDetailPage {
   }
 
   protected winRateColor(rate: number): string {
-    if (rate >= 60) return 'var(--color-success, #16a34a)';
-    if (rate < 40) return 'var(--color-danger, #dc2626)';
+    if (rate >= 60) return 'var(--color-success)';
+    if (rate < 40) return 'var(--color-danger)';
     return 'var(--color-text)';
   }
 

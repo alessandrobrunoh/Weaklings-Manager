@@ -25,6 +25,7 @@ import type { TranslationKey } from '../../i18n/en';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { StatCard } from '../../shared/components/stat-card/stat-card';
 import {
   ViewToggle,
   type ViewToggleOption,
@@ -57,7 +58,7 @@ interface BattleScopeStats {
 @Component({
   selector: 'app-battles',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, Loading, ViewToggle],
+  imports: [PageHeader, EmptyState, Loading, StatCard, ViewToggle],
   template: `
     <app-page-header
       [title]="t('battles.title')"
@@ -97,27 +98,35 @@ interface BattleScopeStats {
       <app-empty-state [message]="t('common.empty')" icon="shield" />
     } @else {
       <!-- Scope Aggregates -->
-      <section class="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Battle totals">
-        <article class="surface p-4">
-          <p class="battle-list__label">{{ t('battles.visible_battles') }}</p>
-          <p class="battle-list__value mono">{{ scopeStats().battles }}</p>
-        </article>
-        <article class="surface p-4">
-          <p class="battle-list__label">{{ t('battles.total_fame') }}</p>
-          <p class="battle-list__value mono text-warning">{{ formatCompact(scopeStats().fame) }}</p>
-        </article>
-        <article class="surface p-4">
-          <p class="battle-list__label">{{ t('battles.players') }}</p>
-          <p class="battle-list__value mono">{{ formatAmount(scopeStats().players) }}</p>
-        </article>
-        <article class="surface p-4">
-          <p class="battle-list__label">{{ t('battles.kills') }}</p>
-          <p class="battle-list__value mono text-success">{{ formatAmount(scopeStats().kills) }}</p>
-        </article>
-        <article class="surface p-4">
-          <p class="battle-list__label">{{ t('battles.deaths') }}</p>
-          <p class="battle-list__value mono text-error">{{ formatAmount(scopeStats().deaths) }}</p>
-        </article>
+      <section class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5" aria-label="Battle totals">
+        <app-stat-card
+          [label]="t('battles.visible_battles')"
+          [value]="scopeStats().battles.toString()"
+          icon="shield"
+        />
+        <app-stat-card
+          [label]="t('battles.total_fame')"
+          [value]="formatCompact(scopeStats().fame)"
+          icon="sparkles"
+          tone="warning"
+        />
+        <app-stat-card
+          [label]="t('battles.players')"
+          [value]="formatAmount(scopeStats().players)"
+          icon="users"
+        />
+        <app-stat-card
+          [label]="t('battles.kills')"
+          [value]="formatAmount(scopeStats().kills)"
+          icon="swords"
+          tone="success"
+        />
+        <app-stat-card
+          [label]="t('battles.deaths')"
+          [value]="formatAmount(scopeStats().deaths)"
+          icon="alert"
+          tone="danger"
+        />
       </section>
 
       <!-- Search Toolbar -->

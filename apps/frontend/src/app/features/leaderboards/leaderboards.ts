@@ -194,8 +194,7 @@ const PODIUM_SIZE = 3;
         padding: 1.75rem;
         background: var(--color-surface);
         border: 1px solid var(--color-border);
-        border-radius: var(--radius-lg);
-        box-shadow: var(--shadow-1);
+        border-radius: var(--radius-cards);
       }
 
       .panel__header {
@@ -286,7 +285,7 @@ const PODIUM_SIZE = 3;
         padding: 1.9rem 0.9rem 1.1rem;
         margin-bottom: 0.75rem;
         min-height: 8.75rem;
-        border-radius: var(--radius-md);
+        border-radius: var(--radius-cards);
         background: var(--color-surface-1);
         border: 1px solid var(--color-border);
         text-align: center;
@@ -294,8 +293,8 @@ const PODIUM_SIZE = 3;
       }
 
       .podium__card--first {
-        background: var(--color-warning-container);
-        border-color: color-mix(in srgb, var(--color-warning) 40%, transparent);
+        background: var(--color-surface-2);
+        border-color: var(--color-border-strong);
       }
 
       .podium__card--muted {

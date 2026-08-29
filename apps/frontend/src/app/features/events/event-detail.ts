@@ -1090,24 +1090,29 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
         }
       }
       .event-detail__label {
-        color: var(--color-text-disabled);
-        font-size: 0.75rem;
-        letter-spacing: 0.04em;
+        color: var(--color-text-secondary);
+        font-family: var(--font-universalsans);
+        font-size: 0.6875rem;
+        font-weight: 500;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
       }
       .event-detail__value {
         color: var(--color-text);
+        font-family: var(--font-geistmono);
         font-size: clamp(1.25rem, 2vw, 1.75rem);
-        font-weight: 700;
+        font-weight: 400;
+        letter-spacing: -0.01em;
       }
       .event-detail__value-sm {
         color: var(--color-text);
+        font-family: var(--font-geistmono);
         font-size: 1.125rem;
-        font-weight: 700;
+        font-weight: 400;
       }
       .event-detail__sub {
         color: var(--color-text-secondary);
-        font-size: 0.8rem;
+        font-size: 0.75rem;
         margin-top: 0.25rem;
       }
       .event-detail__section-header {
@@ -1117,17 +1122,20 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
         flex-wrap: wrap;
         gap: 1rem;
         justify-content: space-between;
-        padding: 1rem;
+        padding: 1.25rem 1.5rem;
       }
       .event-detail__section-header h2 {
         color: var(--color-text);
-        font-size: 1rem;
-        font-weight: 700;
+        font-family: var(--font-universalsans);
+        font-size: 0.875rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
       }
       .event-detail__empty {
         color: var(--color-text-secondary);
         font-size: 0.875rem;
-        padding: 1rem;
+        padding: 1.5rem;
       }
       .event-detail__role-group {
         background: var(--color-surface-1);
