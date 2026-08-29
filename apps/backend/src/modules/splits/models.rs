@@ -7,6 +7,7 @@ use sea_orm::prelude::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use super::city::SplitIslandCity;
 use super::status::SplitStatus;
 
 /// A participant's weight-based share within a split.
@@ -57,6 +58,16 @@ pub struct SplitSummary {
     pub event_id: Option<i64>,
     /// Event title for display without an extra frontend lookup.
     pub event_title: Option<String>,
+    /// Island that owns the tab where this split's loot sits, if a location was set.
+    pub island_id: Option<i64>,
+    /// Island display name.
+    pub island_name: Option<String>,
+    /// Albion city of the island.
+    pub island_city: Option<String>,
+    /// Tab where this split's loot sits.
+    pub island_tab_id: Option<i64>,
+    /// Tab display name.
+    pub island_tab_name: Option<String>,
     /// The timestamp when the split was created.
     pub created_at: String,
     /// The timestamp when the split was completed (money paid out), if it has been. Despite the
@@ -112,6 +123,9 @@ pub struct CreateSplitRequest {
     /// event's sign-ups (each with the default event weight).
     #[schema(example = 42)]
     pub event_id: Option<i64>,
+    /// Required island tab where the loot was deposited.
+    #[schema(example = 10)]
+    pub island_tab_id: i64,
     /// The participants to distribute the loot to, with their relative weights. Must be
     /// non-empty and contain no duplicate user ids.
     pub participants: Vec<UpsertParticipantRequest>,
@@ -144,6 +158,9 @@ pub struct UpdateSplitRequest {
     /// event sign-ups not yet in the split are added with a default weight, and participants
     /// in both keep their current weight.
     pub event_id: Option<Option<i64>>,
+    /// Move a pending split to another catalog tab. Cannot be cleared.
+    #[schema(example = 10)]
+    pub island_tab_id: Option<i64>,
 }
 
 /// Request body to add or update a participant's weight in a pending split.
@@ -190,6 +207,8 @@ pub struct SplitFilters {
     pub status: Option<SplitStatus>,
     /// Filter splits linked to a specific event.
     pub event_id: Option<i64>,
+    /// Filter splits whose tab belongs to this island.
+    pub island_id: Option<i64>,
     /// Filter by note or creator username.
     pub search: Option<String>,
     /// Filter by created_at date (inclusive).
@@ -229,4 +248,73 @@ pub struct BatchFailure {
     pub split_id: i64,
     /// Human-readable reason.
     pub reason: String,
+}
+
+/// One named tab on a guild island.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct SplitIslandTabView {
+    /// Tab id, used as `island_tab_id` on a split.
+    #[schema(example = 10)]
+    pub id: i64,
+    /// Free-text tab name (e.g. "Loot").
+    pub name: String,
+    /// Display order within the island, lower first.
+    pub sort_order: i32,
+}
+
+/// An island in the catalog, with its tabs.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct SplitIslandView {
+    /// Island id.
+    #[schema(example = 1)]
+    pub id: i64,
+    /// Island name (e.g. "x").
+    pub name: String,
+    /// Albion city that hosts the island.
+    pub city: SplitIslandCity,
+    /// Named tabs available on this island.
+    pub tabs: Vec<SplitIslandTabView>,
+}
+
+/// Request body to add an island and its initial tabs.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[schema(example = json!({
+    "name": "x",
+    "city": "lymhurst",
+    "tabs": ["Loot", "Silver"]
+}))]
+pub struct CreateIslandRequest {
+    /// Island name.
+    pub name: String,
+    /// Albion city key (snake_case).
+    pub city: String,
+    /// At least one tab name.
+    pub tabs: Vec<String>,
+}
+
+/// Request body to rename an island or move it to another city.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct UpdateIslandRequest {
+    /// New name. Omit to keep the current value.
+    pub name: Option<String>,
+    /// New city key. Omit to keep the current value.
+    pub city: Option<String>,
+}
+
+/// Request body to add a tab to an existing island.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct CreateIslandTabRequest {
+    /// Tab name.
+    pub name: String,
+    /// Optional display order. Defaults to the next index.
+    pub sort_order: Option<i32>,
+}
+
+/// Request body to rename or reorder a tab.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct UpdateIslandTabRequest {
+    /// New name. Omit to keep the current value.
+    pub name: Option<String>,
+    /// New display order. Omit to keep the current value.
+    pub sort_order: Option<i32>,
 }

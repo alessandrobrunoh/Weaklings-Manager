@@ -3,12 +3,16 @@ import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
+  CreateRoleRequest,
+  AutoRoleSettingsView,
+  DiscordRoleView,
   GuildSettingsView,
   PermissionMatrix,
   ProgressionSeasonView,
   ProgressionSettingsView,
   RolePermissionsView,
   UpdateGuildSettingsRequest,
+  UpdateAutoRoleRequest,
   UpdateProgressionSettingsRequest,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
@@ -36,6 +40,7 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
   discord_audit_log_channel_id: '',
   discord_transaction_spam_channel_id: '',
   discord_event_role_id: '',
+  discord_auto_role_id: '',
 };
 
 interface ProgressionDraft {
@@ -66,6 +71,19 @@ interface NewSeasonDraft {
   activate: boolean;
 }
 
+interface RoleDraft {
+  name: string;
+  priority: number;
+  discord_role_id: string;
+  is_default: boolean;
+}
+
+interface NewRoleDraft {
+  name: string;
+  priority: number;
+  discord_role_id: string;
+}
+
 const EMPTY_PROGRESSION_DRAFT: ProgressionDraft = {
   xp_base: 100,
   xp_exponent: 1.5,
@@ -84,11 +102,9 @@ const EMPTY_PROGRESSION_DRAFT: ProgressionDraft = {
 /**
  * Administration console.
  *
- * The authorization matrix is the substance of this page. Roles themselves are
- * owned by Discord — every login overwrites `users.role` from the member's
- * Discord roles — so the meaningful thing an administrator controls is not who
- * holds a role, but what a role is permitted to do. That mapping is data, by
- * design, and until now it could only be changed with direct SQL.
+ * The authorization matrix is the substance of this page. Discord still owns
+ * who holds a Discord role; here an administrator creates gestionale roles,
+ * links them to Discord snowflakes, and decides what each linked role may do.
  *
  * The rest of the guild's settings live next to the features they configure;
  * rather than duplicate them here, this page points to where they are.
@@ -103,6 +119,146 @@ const EMPTY_PROGRESSION_DRAFT: ProgressionDraft = {
     @if (loading()) {
       <app-loading />
     } @else if (matrix(); as data) {
+      @if (canManageRoles()) {
+        <section class="card mb-6 p-5">
+          <h2 class="eyebrow mb-1">{{ t('admin.roles.title') }}</h2>
+          <p class="mb-4 max-w-2xl text-xs" style="color: var(--color-text-secondary)">
+            {{ t('admin.roles.hint') }}
+          </p>
+
+          <ul class="mb-5 flex flex-col gap-2" role="list">
+            @for (role of data.roles; track role.role_id) {
+              <li
+                class="flex flex-col gap-2 rounded-2xl px-3 py-3 sm:flex-row sm:items-end"
+                style="background: var(--color-cream, #f9f8f6)"
+              >
+                <label class="flex-1">
+                  <span class="block text-xs" style="color: var(--color-text-secondary)">
+                    {{ t('common.name') }}
+                  </span>
+                  <input
+                    class="input mt-1 w-full"
+                    [value]="roleDrafts()[role.role_id]?.name ?? role.role_name"
+                    (input)="updateRoleDraft(role, 'name', $event)"
+                  />
+                </label>
+                <label class="w-28">
+                  <span class="block text-xs" style="color: var(--color-text-secondary)">
+                    {{ t('admin.permissions.priority') }}
+                  </span>
+                  <input
+                    class="input mt-1 w-full"
+                    type="number"
+                    [value]="roleDrafts()[role.role_id]?.priority ?? role.priority"
+                    (input)="updateRoleDraft(role, 'priority', $event)"
+                  />
+                </label>
+                <label class="flex-[2]">
+                  <span class="block text-xs" style="color: var(--color-text-secondary)">
+                    {{ t('admin.roles.discordId') }}
+                  </span>
+                  @if (discordRoles().length) {
+                    <select
+                      class="input mt-1 w-full"
+                      [value]="roleDrafts()[role.role_id]?.discord_role_id ?? role.discord_role_id ?? ''"
+                      (change)="updateRoleDraft(role, 'discord_role_id', $event)"
+                    >
+                      <option value="">{{ t('admin.roles.unlinked') }}</option>
+                      @for (drole of discordRoleOptions(role.discord_role_id); track drole.id) {
+                        <option [value]="drole.id">{{ drole.name }}</option>
+                      }
+                    </select>
+                  } @else {
+                    <input
+                      class="input mt-1 w-full mono"
+                      [value]="roleDrafts()[role.role_id]?.discord_role_id ?? role.discord_role_id ?? ''"
+                      [attr.placeholder]="t('admin.roles.discordIdPlaceholder')"
+                      (input)="updateRoleDraft(role, 'discord_role_id', $event)"
+                    />
+                  }
+                </label>
+                <label class="flex items-center gap-2 pb-2">
+                  <input
+                    class="checkbox"
+                    type="checkbox"
+                    [checked]="roleDrafts()[role.role_id]?.is_default ?? role.is_default"
+                    (change)="updateRoleDraftDefault(role, $event)"
+                  />
+                  <span class="text-xs">{{ t('admin.roles.default') }}</span>
+                </label>
+                <div class="flex gap-2 pb-1">
+                  <button
+                    type="button"
+                    class="btn btn--outline btn--sm"
+                    [disabled]="roleSavingId() === role.role_id"
+                    (click)="saveRole(role)"
+                  >
+                    {{ t('common.save') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn--outline btn--sm"
+                    [disabled]="role.is_default || roleSavingId() === role.role_id"
+                    (click)="removeRole(role)"
+                  >
+                    {{ t('common.delete') }}
+                  </button>
+                </div>
+              </li>
+            }
+          </ul>
+
+          <form class="grid gap-3 sm:grid-cols-4" (submit)="createRole($event)">
+            <label class="sm:col-span-1">
+              <span class="block text-xs" style="color: var(--color-text-secondary)">
+                {{ t('admin.roles.newName') }}
+              </span>
+              <input class="input mt-1 w-full" [value]="newRole().name" (input)="updateNewRole('name', $event)" required />
+            </label>
+            <label>
+              <span class="block text-xs" style="color: var(--color-text-secondary)">
+                {{ t('admin.permissions.priority') }}
+              </span>
+              <input
+                class="input mt-1 w-full"
+                type="number"
+                [value]="newRole().priority"
+                (input)="updateNewRole('priority', $event)"
+              />
+            </label>
+            <label class="sm:col-span-2">
+              <span class="block text-xs" style="color: var(--color-text-secondary)">
+                {{ t('admin.roles.discordId') }}
+              </span>
+              @if (discordRoles().length) {
+                <select
+                  class="input mt-1 w-full"
+                  [value]="newRole().discord_role_id"
+                  (change)="updateNewRole('discord_role_id', $event)"
+                >
+                  <option value="">{{ t('admin.roles.unlinked') }}</option>
+                  @for (drole of discordRoleOptions(null); track drole.id) {
+                    <option [value]="drole.id">{{ drole.name }}</option>
+                  }
+                </select>
+              } @else {
+                <input
+                  class="input mt-1 w-full mono"
+                  [value]="newRole().discord_role_id"
+                  [attr.placeholder]="t('admin.roles.discordIdPlaceholder')"
+                  (input)="updateNewRole('discord_role_id', $event)"
+                />
+              }
+            </label>
+            <div>
+              <button type="submit" class="btn btn--primary" [disabled]="roleCreating()">
+                {{ t('admin.roles.create') }}
+              </button>
+            </div>
+          </form>
+        </section>
+      }
+
       <section class="card mb-6 overflow-x-auto">
         <header class="flex flex-wrap items-center justify-between gap-3 p-4 pb-2">
           <div>
@@ -126,32 +282,56 @@ const EMPTY_PROGRESSION_DRAFT: ProgressionDraft = {
                   {{ role.role_name }}
                   <span class="mono block text-[10px]" style="color: var(--color-text-disabled)">
                     {{ t('admin.permissions.priority') }} {{ role.priority }}
+                    @if (role.discord_role_id) {
+                      <br />{{ role.discord_role_id }}
+                    }
+                    @if (role.is_default) {
+                      · {{ t('admin.roles.default') }}
+                    }
                   </span>
                 </th>
               }
             </tr>
           </thead>
           <tbody>
-            @for (permission of data.available_permissions; track permission) {
+            @for (group of permissionGroups(); track group.resource) {
               <tr>
-                <td class="mono text-xs">{{ permission }}</td>
+                <th class="text-left text-xs uppercase tracking-wider" [attr.colspan]="data.roles.length + 1">
+                  {{ group.resource }}
+                </th>
+              </tr>
+              @for (permission of group.keys; track permission) {
+                <tr>
+                  <td class="mono text-xs">{{ permission }}</td>
+                  @for (role of data.roles; track role.role_id) {
+                    <td class="text-center p-0">
+                      <label class="flex items-center justify-center p-3">
+                        <input
+                          class="checkbox"
+                          type="checkbox"
+                          [checked]="hasPermission(role, permission)"
+                          [disabled]="isSaving(role, permission)"
+                          (change)="toggle(role, permission, $event)"
+                          [attr.aria-label]="permission + ' for ' + role.role_name"
+                        />
+                      </label>
+                    </td>
+                  }
+                </tr>
+              }
+              <tr>
+                <td class="text-xs" style="color: var(--color-text-secondary)">
+                  {{ t('admin.permissions.toggleGroup') }}
+                </td>
                 @for (role of data.roles; track role.role_id) {
-                  <td class="text-center p-0">
-                    <!-- The checkbox itself stays the usual 16px, but the
-                         label wraps the full cell so the actual tap target
-                         is the whole square — a bare 16px control in a dense
-                         per-role grid is well under any reasonable touch
-                         target size. -->
-                    <label class="flex items-center justify-center p-3">
-                      <input
-                        class="checkbox"
-                        type="checkbox"
-                        [checked]="hasPermission(role, permission)"
-                        [disabled]="isSaving(role, permission)"
-                        (change)="toggle(role, permission, $event)"
-                        [attr.aria-label]="permission + ' for ' + role.role_name"
-                      />
-                    </label>
+                  <td class="text-center p-2">
+                    <button
+                      type="button"
+                      class="btn btn--outline btn--sm"
+                      (click)="toggleGroup(role, group.keys, !groupFullyGranted(role, group.keys))"
+                    >
+                      {{ groupFullyGranted(role, group.keys) ? t('admin.permissions.clearGroup') : t('admin.permissions.grantGroup') }}
+                    </button>
                   </td>
                 }
               </tr>
@@ -281,6 +461,44 @@ const EMPTY_PROGRESSION_DRAFT: ProgressionDraft = {
                   {{ t('admin.discord.save') }}
                 </button>
               </div>
+            </form>
+          }
+        </section>
+      }
+
+      @if (canManageAutoRole()) {
+        <section class="card mb-6 p-5">
+          <h2 class="eyebrow mb-1">{{ t('admin.autorole.title') }}</h2>
+          <p class="mb-4 max-w-2xl text-xs" style="color: var(--color-text-secondary)">
+            {{ t('admin.autorole.hint') }}
+          </p>
+
+          @if (autoRoleLoading()) {
+            <app-loading />
+          } @else {
+            <form class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" (submit)="saveAutoRole($event)">
+              <label>
+                <span class="label">{{ t('admin.autorole.role') }}</span>
+                <select
+                  class="select mt-1 w-full"
+                  [value]="autoRoleDraft()"
+                  (change)="updateAutoRoleDraft($event)"
+                  [attr.aria-label]="t('admin.autorole.role')"
+                >
+                  <option value="">{{ t('admin.autorole.disabled') }}</option>
+                  @for (role of discordRoles(); track role.id) {
+                    <option [value]="role.id">
+                      {{ role.name }} ({{ role.id }})
+                    </option>
+                  }
+                </select>
+                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                  {{ t('admin.autorole.roleHint') }}
+                </span>
+              </label>
+              <button type="submit" class="btn btn--primary" [disabled]="autoRoleSaving()">
+                {{ t('admin.autorole.save') }}
+              </button>
             </form>
           }
         </section>
@@ -496,6 +714,41 @@ export class Admin {
     ...EMPTY_GUILD_SETTINGS_DRAFT,
   });
 
+  protected readonly canManageAutoRole = computed(() =>
+    this.auth.hasPermission('autorole.manage'),
+  );
+  protected readonly autoRoleLoading = signal(true);
+  protected readonly autoRoleSaving = signal(false);
+  protected readonly discordRoles = signal<DiscordRoleView[]>([]);
+  protected readonly autoRoleDraft = signal('');
+
+  protected readonly canManageRoles = computed(() => this.auth.hasPermission('roles.manage'));
+
+  protected readonly permissionGroups = computed(() => {
+    const matrix = this.matrix();
+    if (!matrix) {
+      return [];
+    }
+    const catalog =
+      matrix.permission_catalog?.length > 0
+        ? matrix.permission_catalog
+        : matrix.available_permissions.map((key) => {
+            const dot = key.indexOf('.');
+            return {
+              key,
+              resource: dot === -1 ? key : key.slice(0, dot),
+              action: dot === -1 ? '' : key.slice(dot + 1),
+            };
+          });
+    const groups = new Map<string, string[]>();
+    for (const entry of catalog) {
+      const keys = groups.get(entry.resource) ?? [];
+      keys.push(entry.key);
+      groups.set(entry.resource, keys);
+    }
+    return [...groups.entries()].map(([resource, keys]) => ({ resource, keys }));
+  });
+
   protected readonly canManageProgression = computed(() =>
     this.auth.hasPermission('progression.settings.manage'),
   );
@@ -511,6 +764,14 @@ export class Admin {
     ends_at: '',
     activate: true,
   });
+  protected readonly roleDrafts = signal<Record<string, RoleDraft>>({});
+  protected readonly roleSavingId = signal<string | null>(null);
+  protected readonly roleCreating = signal(false);
+  protected readonly newRole = signal<NewRoleDraft>({
+    name: '',
+    priority: 0,
+    discord_role_id: '',
+  });
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
@@ -519,10 +780,58 @@ export class Admin {
     { path: '/comps', labelKey: 'admin.link.comps', hintKey: 'admin.link.compsHint' },
     { path: '/users', labelKey: 'admin.link.users', hintKey: 'admin.link.usersHint' },
     { path: '/audit', labelKey: 'admin.link.audit', hintKey: 'admin.link.auditHint' },
+    { path: '/splits', labelKey: 'admin.link.splits', hintKey: 'admin.link.splitsHint' },
   ];
 
   protected hasPermission(role: RolePermissionsView, permission: string): boolean {
     return role.permissions.includes(permission);
+  }
+
+  protected groupFullyGranted(role: RolePermissionsView, keys: readonly string[]): boolean {
+    return keys.every((key) => role.permissions.includes(key));
+  }
+
+  protected discordRoleOptions(currentId: string | null): DiscordRoleView[] {
+    const linked = new Set(
+      (this.matrix()?.roles ?? [])
+        .map((role) => role.discord_role_id)
+        .filter((id): id is string => Boolean(id)),
+    );
+    return this.discordRoles().filter((role) => role.id === currentId || !linked.has(role.id));
+  }
+
+  protected async toggleGroup(
+    role: RolePermissionsView,
+    keys: readonly string[],
+    grant: boolean,
+  ): Promise<void> {
+    const next = grant
+      ? [...new Set([...role.permissions, ...keys])]
+      : role.permissions.filter((permission) => !keys.includes(permission));
+    try {
+      const updated = await firstValueFrom(
+        this.api.put<PermissionMatrix>(
+          `api/admin/roles/${encodeURIComponent(role.role_id)}/permissions`,
+          { permissions: next },
+        ),
+      );
+      this.matrix.set(updated);
+      this.syncRoleDrafts(updated);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      await this.load();
+    }
+  }
+
+  private async loadDiscordRolesForRbac(): Promise<void> {
+    try {
+      const roles = await firstValueFrom(
+        this.api.get<DiscordRoleView[]>('api/admin/discord/roles'),
+      );
+      this.discordRoles.set(roles);
+    } catch {
+      // Snowflake text field remains usable when Discord listing is unavailable.
+    }
   }
 
   private cellKey(role: RolePermissionsView, permission: string): string {
@@ -595,6 +904,14 @@ export class Admin {
     } else {
       this.guildSettingsLoading.set(false);
     }
+    if (this.canManageAutoRole()) {
+      void this.loadAutoRole();
+    } else {
+      this.autoRoleLoading.set(false);
+    }
+    if (this.canManageRoles()) {
+      void this.loadDiscordRolesForRbac();
+    }
     if (this.canManageProgression()) {
       void this.loadProgression();
     } else {
@@ -605,11 +922,138 @@ export class Admin {
   protected async load(): Promise<void> {
     this.loading.set(true);
     try {
-      this.matrix.set(await firstValueFrom(this.api.get<PermissionMatrix>('api/admin/permissions')));
+      const matrix = await firstValueFrom(this.api.get<PermissionMatrix>('api/admin/permissions'));
+      this.matrix.set(matrix);
+      this.syncRoleDrafts(matrix);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  private syncRoleDrafts(matrix: PermissionMatrix): void {
+    const drafts: Record<string, RoleDraft> = {};
+    for (const role of matrix.roles) {
+      drafts[role.role_id] = {
+        name: role.role_name,
+        priority: role.priority,
+        discord_role_id: role.discord_role_id ?? '',
+        is_default: role.is_default,
+      };
+    }
+    this.roleDrafts.set(drafts);
+  }
+
+  protected updateRoleDraft(
+    role: RolePermissionsView,
+    field: 'name' | 'priority' | 'discord_role_id',
+    event: Event,
+  ): void {
+    const raw = (event.target as HTMLInputElement).value;
+    this.roleDrafts.update((drafts) => {
+      const current = drafts[role.role_id] ?? {
+        name: role.role_name,
+        priority: role.priority,
+        discord_role_id: role.discord_role_id ?? '',
+        is_default: role.is_default,
+      };
+      return {
+        ...drafts,
+        [role.role_id]: {
+          ...current,
+          [field]: field === 'priority' ? Number(raw) : raw,
+        },
+      };
+    });
+  }
+
+  protected updateRoleDraftDefault(role: RolePermissionsView, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.roleDrafts.update((drafts) => {
+      const current = drafts[role.role_id] ?? {
+        name: role.role_name,
+        priority: role.priority,
+        discord_role_id: role.discord_role_id ?? '',
+        is_default: role.is_default,
+      };
+      return { ...drafts, [role.role_id]: { ...current, is_default: checked } };
+    });
+  }
+
+  protected updateNewRole(field: 'name' | 'priority' | 'discord_role_id', event: Event): void {
+    const raw = (event.target as HTMLInputElement).value;
+    this.newRole.update((draft) => ({
+      ...draft,
+      [field]: field === 'priority' ? Number(raw) : raw,
+    }));
+  }
+
+  protected async saveRole(role: RolePermissionsView): Promise<void> {
+    const draft = this.roleDrafts()[role.role_id];
+    if (!draft) {
+      return;
+    }
+    this.roleSavingId.set(role.role_id);
+    try {
+      const updated = await firstValueFrom(
+        this.api.patch<PermissionMatrix>(`api/admin/roles/${encodeURIComponent(role.role_id)}`, {
+          name: draft.name,
+          priority: draft.priority,
+          discord_role_id: draft.discord_role_id,
+          is_default: draft.is_default,
+        }),
+      );
+      this.matrix.set(updated);
+      this.syncRoleDrafts(updated);
+      this.toasts.success(this.t('admin.roles.saved'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.roleSavingId.set(null);
+    }
+  }
+
+  protected async removeRole(role: RolePermissionsView): Promise<void> {
+    if (typeof window !== 'undefined' && !window.confirm(this.t('admin.roles.deleteConfirm'))) {
+      return;
+    }
+    this.roleSavingId.set(role.role_id);
+    try {
+      const updated = await firstValueFrom(
+        this.api.delete<PermissionMatrix>(`api/admin/roles/${encodeURIComponent(role.role_id)}`),
+      );
+      if (updated) {
+        this.matrix.set(updated);
+        this.syncRoleDrafts(updated);
+      }
+      this.toasts.success(this.t('admin.roles.deleted'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.roleSavingId.set(null);
+    }
+  }
+
+  protected async createRole(submit: SubmitEvent): Promise<void> {
+    submit.preventDefault();
+    const draft = this.newRole();
+    const body: CreateRoleRequest = {
+      name: draft.name.trim(),
+      priority: draft.priority,
+      discord_role_id: draft.discord_role_id.trim() || null,
+    };
+    this.roleCreating.set(true);
+    try {
+      const updated = await firstValueFrom(this.api.post<PermissionMatrix>('api/admin/roles', body));
+      this.matrix.set(updated);
+      this.syncRoleDrafts(updated);
+      this.newRole.set({ name: '', priority: 0, discord_role_id: '' });
+      this.toasts.success(this.t('admin.roles.created'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.roleCreating.set(false);
     }
   }
 
@@ -654,6 +1098,46 @@ export class Admin {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.guildSettingsSaving.set(false);
+    }
+  }
+
+  private async loadAutoRole(): Promise<void> {
+    this.autoRoleLoading.set(true);
+    try {
+      const [roles, settings] = await Promise.all([
+        firstValueFrom(this.api.get<DiscordRoleView[]>('api/admin/autorole/roles')),
+        firstValueFrom(this.api.get<AutoRoleSettingsView>('api/admin/autorole')),
+      ]);
+      this.discordRoles.set(roles);
+      this.autoRoleDraft.set(settings.discord_auto_role_id ?? '');
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.autoRoleLoading.set(false);
+    }
+  }
+
+  protected updateAutoRoleDraft(event: Event): void {
+    this.autoRoleDraft.set((event.target as HTMLSelectElement).value);
+  }
+
+  protected async saveAutoRole(submit: SubmitEvent): Promise<void> {
+    submit.preventDefault();
+    this.autoRoleSaving.set(true);
+    try {
+      const body: UpdateAutoRoleRequest = {
+        discord_auto_role_id: this.autoRoleDraft(),
+      };
+      const updated = await firstValueFrom(
+        this.api.put<AutoRoleSettingsView>('api/admin/autorole', body),
+      );
+      this.autoRoleDraft.set(updated.discord_auto_role_id ?? '');
+      this.toasts.success(this.t('admin.autorole.saved'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      await this.loadAutoRole();
+    } finally {
+      this.autoRoleSaving.set(false);
     }
   }
 
@@ -839,5 +1323,6 @@ function toDraft(settings: GuildSettingsView): Record<keyof GuildSettingsView, s
     discord_audit_log_channel_id: settings.discord_audit_log_channel_id ?? '',
     discord_transaction_spam_channel_id: settings.discord_transaction_spam_channel_id ?? '',
     discord_event_role_id: settings.discord_event_role_id ?? '',
+    discord_auto_role_id: settings.discord_auto_role_id ?? '',
   };
 }

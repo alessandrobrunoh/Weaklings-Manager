@@ -26,6 +26,8 @@ pub struct Model {
     pub discord_transaction_spam_channel_id: Option<String>,
     /// Role pinged by event announcements, reminders, and start notices.
     pub discord_event_role_id: Option<String>,
+    /// Role assigned automatically to human members joining the Discord guild.
+    pub discord_auto_role_id: Option<String>,
     /// Last admin edit.
     pub updated_at: DateTimeWithTimeZone,
     /// Last admin editor.

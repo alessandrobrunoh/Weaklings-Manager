@@ -107,7 +107,7 @@ impl BattlesService {
                 .albionbb
                 .get_battle(self.server.as_deref(), raw.id)
                 .await?;
-            items.push(BattleSummary::from(&detail.summary));
+            items.push(BattleSummary::from_detail(&detail));
         }
         let limit = raw_battles.len().max(1) as u64;
         let total_pages = meta.total_pages.map_or(page, |v| v.max(page as i64) as u64);

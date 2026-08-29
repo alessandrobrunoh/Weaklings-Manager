@@ -9,5 +9,7 @@ import { backendTarget } from '../env';
  * browser, so this server forwards the request.
  */
 export default defineEventHandler((event) =>
-  proxyRequest(event, `${backendTarget()}${event.node.req.url ?? '/scalar'}`),
+  proxyRequest(event, `${backendTarget()}${event.node.req.url ?? '/scalar'}`, {
+    fetchOptions: { redirect: 'manual' },
+  }),
 );

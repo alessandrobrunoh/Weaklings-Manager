@@ -288,6 +288,9 @@ pub struct CreateEventRequest {
     /// creating it up front costs nothing if the fight never happens.
     #[serde(default)]
     pub create_split: bool,
+    /// Island tab for the correlated split. Required when `create_split` is true.
+    #[schema(example = 10)]
+    pub island_tab_id: Option<i64>,
 }
 
 /// Request body to update an existing event.

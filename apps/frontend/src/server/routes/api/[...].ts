@@ -13,7 +13,14 @@ import { backendTarget } from '../../env';
  * `proxyRequest` forwards method, headers, body and response as-is, which is
  * what authentication needs — the session is an http-only cookie set by the
  * backend, so it has to survive the hop in both directions untouched.
+ *
+ * Redirects must not be followed. Login is a 307 to Discord; the callback is a
+ * 307 back to `/dashboard`. If the proxy consumes those, the browser stays on
+ * `/api/auth/discord/login` with Discord's HTML, then Discord's `/assets/*.js`
+ * requests hit this server and get `index.html` (`Unexpected token '<'`).
  */
 export default defineEventHandler((event) =>
-  proxyRequest(event, `${backendTarget()}${event.node.req.url ?? '/'}`),
+  proxyRequest(event, `${backendTarget()}${event.node.req.url ?? '/'}`, {
+    fetchOptions: { redirect: 'manual' },
+  }),
 );

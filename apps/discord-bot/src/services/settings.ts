@@ -59,6 +59,10 @@ export class SettingsService {
   async eventRoleId(): Promise<string | null> {
     return (await this.get()).discord_event_role_id;
   }
+
+  async autoRoleId(): Promise<string | null> {
+    return (await this.get()).discord_auto_role_id;
+  }
 }
 
 let instance: SettingsService | null = null;

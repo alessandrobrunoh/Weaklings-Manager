@@ -33,14 +33,17 @@ export interface ProblemDetails {
 
 /* ------------------------------ Auth -------------------------------- */
 
-export type Role = 'User' | 'Officer' | 'Admin' | 'SuperAdmin';
+export type Role = string;
 
 export type PermissionKey =
   | 'bank.withdraw.accept'
   | 'bank.view_others'
   | 'splits.manage'
+  | 'splits.islands.manage'
   | 'users.create'
   | 'permissions.reload'
+  | 'roles.manage'
+  | 'autorole.manage'
   | 'comps.build_categories.manage'
   | 'comps.comp_categories.manage'
   | 'comps.builds.manage'
@@ -48,6 +51,10 @@ export type PermissionKey =
   | 'events.manage'
   | 'siphoned.ingest'
   | 'siphoned.view'
+  | 'audit.view'
+  | 'intel.view'
+  | 'intel.manage'
+  | 'intel.report.view'
   | 'regear.view'
   | 'regear.request'
   | 'regear.adjudicate'
@@ -69,7 +76,7 @@ export interface DiscordUserProfile {
   roles: Role[];
   highest_role: Role;
   is_superadmin: boolean;
-  permissions: PermissionKey[];
+  permissions: string[];
 }
 
 /* ----------------------------- Users -------------------------------- */
@@ -172,6 +179,11 @@ export interface SplitSummary {
   note: string | null;
   event_id: number | null;
   event_title: string | null;
+  island_id: number | null;
+  island_name: string | null;
+  island_city: string | null;
+  island_tab_id: number | null;
+  island_tab_name: string | null;
   participant_count: number;
   created_at: string;
   finalized_at: string | null;
@@ -184,6 +196,7 @@ export interface SplitDetail extends SplitSummary {
 export interface SplitFilters {
   status?: SplitStatus;
   event_id?: number;
+  island_id?: number;
   search?: string;
   date_from?: string;
   date_to?: string;
@@ -195,6 +208,7 @@ export interface CreateSplitRequest {
   repair_value: number;
   bags_value: number;
   event_id?: number;
+  island_tab_id: number;
   participants: Array<{ user_id: number; weight: number }>;
 }
 
@@ -204,6 +218,7 @@ export interface UpdateSplitRequest {
   repair_value?: number;
   bags_value?: number;
   event_id?: number | null;
+  island_tab_id?: number;
 }
 
 export interface UpsertParticipantRequest {
@@ -219,6 +234,28 @@ export interface MatchedParticipant {
   user_id: number;
   username: string;
   matched_name: string;
+}
+
+export type SplitIslandCity =
+  | 'lymhurst'
+  | 'bridgewatch'
+  | 'martlock'
+  | 'fort_sterling'
+  | 'thetford'
+  | 'caerleon'
+  | 'brecilien';
+
+export interface SplitIslandTab {
+  id: number;
+  name: string;
+  sort_order: number;
+}
+
+export interface SplitIsland {
+  id: number;
+  name: string;
+  city: SplitIslandCity;
+  tabs: SplitIslandTab[];
 }
 
 /* ----------------------------- Events ------------------------------- */
@@ -345,6 +382,7 @@ export interface CreateEventRequest {
   event_date_utc: string;
   /** Also create an empty loot split already linked to this event. */
   create_split?: boolean;
+  island_tab_id?: number;
 }
 
 export interface UpdateEventRequest {
@@ -369,11 +407,14 @@ export interface ParticipateEventRequest {
 export interface BattleGuildSummary {
   id: string;
   name: string;
+  alliance_name?: string | null;
+  alliance_id?: string | null;
   players: number;
   kills: number;
   deaths: number;
   kill_fame: number;
   winner: boolean;
+  average_item_power?: number;
 }
 
 export interface BattleSummary {
@@ -391,6 +432,8 @@ export interface BattlePlayer {
   name: string;
   guild_id: string;
   guild_name: string;
+  alliance_name?: string | null;
+  alliance_id?: string | null;
   kills: number;
   deaths: number;
   kill_fame: number;
@@ -403,6 +446,8 @@ export interface BattleKillParticipant {
   name: string;
   guild_id: string | null;
   guild_name: string | null;
+  alliance_name?: string | null;
+  alliance_id?: string | null;
 }
 
 export interface BattleKillEvent {
@@ -1176,13 +1221,43 @@ export interface RolePermissionsView {
   role_id: string;
   role_name: string;
   priority: number;
+  discord_role_id: string | null;
+  is_default: boolean;
   permissions: string[];
 }
 
+export interface CreateRoleRequest {
+  name: string;
+  priority?: number;
+  discord_role_id?: string | null;
+  is_default?: boolean;
+}
+
+export interface UpdateRoleRequest {
+  name?: string;
+  priority?: number;
+  discord_role_id?: string | null;
+  is_default?: boolean;
+}
+
 /** The authorization matrix, plus every key that could be granted. */
+export interface PermissionCatalogEntry {
+  key: string;
+  resource: string;
+  action: string;
+}
+
 export interface PermissionMatrix {
   roles: RolePermissionsView[];
   available_permissions: string[];
+  permission_catalog: PermissionCatalogEntry[];
+}
+
+export interface DiscordRoleView {
+  id: string;
+  name: string;
+  position: number;
+  managed: boolean;
 }
 
 /**
@@ -1197,6 +1272,7 @@ export interface GuildSettingsView {
   discord_audit_log_channel_id: string | null;
   discord_transaction_spam_channel_id: string | null;
   discord_event_role_id: string | null;
+  discord_auto_role_id: string | null;
 }
 
 /**
@@ -1204,6 +1280,16 @@ export interface GuildSettingsView {
  * an empty string clears it.
  */
 export type UpdateGuildSettingsRequest = Partial<GuildSettingsView>;
+
+/** Current AutoRole configuration. */
+export interface AutoRoleSettingsView {
+  discord_auto_role_id: string | null;
+}
+
+/** Replacement request for AutoRole; an empty string disables it. */
+export interface UpdateAutoRoleRequest {
+  discord_auto_role_id: string;
+}
 
 /** One row of the admin curve preview. */
 export interface LevelThresholdView {

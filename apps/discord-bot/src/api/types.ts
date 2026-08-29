@@ -67,6 +67,7 @@ export type PermissionKey =
   | 'bank.withdraw.accept'
   | 'bank.view_others'
   | 'splits.manage'
+  | 'splits.islands.manage'
   | 'users.create'
   | 'permissions.reload'
   | 'comps.build_categories.manage'
@@ -271,6 +272,7 @@ export interface GuildSettingsView {
   discord_audit_log_channel_id: string | null;
   discord_transaction_spam_channel_id: string | null;
   discord_event_role_id: string | null;
+  discord_auto_role_id: string | null;
 }
 
 /* -------------------------- Progression ----------------------------- */
@@ -373,4 +375,3 @@ export interface WarnEscalationView {
   acknowledged_at?: string | null;
   acknowledged_by?: number | null;
 }
-

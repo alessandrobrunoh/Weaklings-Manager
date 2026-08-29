@@ -14,9 +14,10 @@ use crate::pagination::{PaginatedSplitSummary, PaginationParams};
 use crate::responses::{ApiResponse, ApiResponseMatchedParticipantList, ApiResponseSplitDetail};
 
 use super::models::{
-    CompleteSplitsBatchRequest, CompleteSplitsBatchResult, CreateSplitRequest,
-    MatchParticipantsRequest, MatchedParticipant, SplitDetail, SplitFilters, UpdateSplitRequest,
-    UpsertParticipantRequest,
+    CompleteSplitsBatchRequest, CompleteSplitsBatchResult, CreateIslandRequest,
+    CreateIslandTabRequest, CreateSplitRequest, MatchParticipantsRequest, MatchedParticipant,
+    SplitDetail, SplitFilters, SplitIslandView, UpdateIslandRequest, UpdateIslandTabRequest,
+    UpdateSplitRequest, UpsertParticipantRequest,
 };
 use super::service::SplitService;
 
@@ -48,6 +49,16 @@ impl ListSplitsQuery {
 /// Creates the router for the splits module.
 pub fn router() -> Router {
     Router::new()
+        .route("/islands", get(list_islands).post(create_island))
+        .route(
+            "/islands/{id}",
+            axum::routing::patch(update_island).delete(delete_island),
+        )
+        .route("/islands/{id}/tabs", post(add_island_tab))
+        .route(
+            "/islands/{id}/tabs/{tab_id}",
+            axum::routing::patch(update_island_tab).delete(delete_island_tab),
+        )
         .route("/", get(list_splits).post(create_split))
         .route(
             "/{id}",
@@ -508,4 +519,195 @@ pub async fn complete_splits_batch(
         .complete_splits_batch(&db, &body.split_ids, user.user_id)
         .await?;
     Ok(Json(ApiResponse::new(result)))
+}
+
+/// Lists the island catalog, including nested tabs.
+#[utoipa::path(
+    get,
+    path = "/api/splits/islands",
+    tag = "splits",
+    summary = "List guild islands and their tabs",
+    security(("session_cookie" = [])),
+    responses(
+        (status = 200, description = "Island catalog", body = Vec<SplitIslandView>),
+        (status = 401, description = "Unauthorized", body = ProblemDetails)
+    )
+)]
+async fn list_islands(
+    _user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<Vec<SplitIslandView>>>, AppError> {
+    let islands = SplitService::new().list_islands(&db).await?;
+    Ok(Json(ApiResponse::new(islands)))
+}
+
+/// Creates an island with its initial tabs. Admin only.
+#[utoipa::path(
+    post,
+    path = "/api/splits/islands",
+    tag = "splits",
+    summary = "Create a guild island and its tabs",
+    security(("session_cookie" = ["splits.islands.manage"])),
+    request_body = CreateIslandRequest,
+    responses(
+        (status = 200, description = "Island created", body = SplitIslandView),
+        (status = 400, description = "Validation error", body = ProblemDetails),
+        (status = 403, description = "Forbidden", body = ProblemDetails)
+    )
+)]
+async fn create_island(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Json(req): Json<CreateIslandRequest>,
+) -> Result<Json<ApiResponse<SplitIslandView>>, AppError> {
+    user.require(&perms, Permission::SplitsIslandsManage).await?;
+    let island = SplitService::new().create_island(&db, req).await?;
+    Ok(Json(ApiResponse::new(island)))
+}
+
+/// Renames an island or moves it to another city. Admin only.
+#[utoipa::path(
+    patch,
+    path = "/api/splits/islands/{id}",
+    tag = "splits",
+    summary = "Update a guild island",
+    security(("session_cookie" = ["splits.islands.manage"])),
+    params(("id" = i64, Path, description = "Island id")),
+    request_body = UpdateIslandRequest,
+    responses(
+        (status = 200, description = "Island updated", body = SplitIslandView),
+        (status = 403, description = "Forbidden", body = ProblemDetails),
+        (status = 404, description = "Not found", body = ProblemDetails)
+    )
+)]
+async fn update_island(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+    Json(req): Json<UpdateIslandRequest>,
+) -> Result<Json<ApiResponse<SplitIslandView>>, AppError> {
+    user.require(&perms, Permission::SplitsIslandsManage).await?;
+    let island = SplitService::new().update_island(&db, id, req).await?;
+    Ok(Json(ApiResponse::new(island)))
+}
+
+/// Deletes an island that no split still references. Admin only.
+#[utoipa::path(
+    delete,
+    path = "/api/splits/islands/{id}",
+    tag = "splits",
+    summary = "Delete a guild island",
+    security(("session_cookie" = ["splits.islands.manage"])),
+    params(("id" = i64, Path, description = "Island id")),
+    responses(
+        (status = 204, description = "Island deleted"),
+        (status = 400, description = "Still referenced by a split", body = ProblemDetails),
+        (status = 403, description = "Forbidden", body = ProblemDetails),
+        (status = 404, description = "Not found", body = ProblemDetails)
+    )
+)]
+async fn delete_island(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<axum::response::Response, AppError> {
+    user.require(&perms, Permission::SplitsIslandsManage).await?;
+    SplitService::new().delete_island(&db, id).await?;
+    Ok(axum::response::Response::builder()
+        .status(axum::http::StatusCode::NO_CONTENT)
+        .body(axum::body::Body::empty())
+        .unwrap())
+}
+
+/// Adds a tab to an island. Admin only.
+#[utoipa::path(
+    post,
+    path = "/api/splits/islands/{id}/tabs",
+    tag = "splits",
+    summary = "Add a tab to a guild island",
+    security(("session_cookie" = ["splits.islands.manage"])),
+    params(("id" = i64, Path, description = "Island id")),
+    request_body = CreateIslandTabRequest,
+    responses(
+        (status = 200, description = "Tab added", body = SplitIslandView),
+        (status = 403, description = "Forbidden", body = ProblemDetails),
+        (status = 404, description = "Not found", body = ProblemDetails)
+    )
+)]
+async fn add_island_tab(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+    Json(req): Json<CreateIslandTabRequest>,
+) -> Result<Json<ApiResponse<SplitIslandView>>, AppError> {
+    user.require(&perms, Permission::SplitsIslandsManage).await?;
+    let island = SplitService::new().add_island_tab(&db, id, req).await?;
+    Ok(Json(ApiResponse::new(island)))
+}
+
+/// Renames or reorders a tab. Admin only.
+#[utoipa::path(
+    patch,
+    path = "/api/splits/islands/{id}/tabs/{tab_id}",
+    tag = "splits",
+    summary = "Update an island tab",
+    security(("session_cookie" = ["splits.islands.manage"])),
+    params(
+        ("id" = i64, Path, description = "Island id"),
+        ("tab_id" = i64, Path, description = "Tab id")
+    ),
+    request_body = UpdateIslandTabRequest,
+    responses(
+        (status = 200, description = "Tab updated", body = SplitIslandView),
+        (status = 403, description = "Forbidden", body = ProblemDetails),
+        (status = 404, description = "Not found", body = ProblemDetails)
+    )
+)]
+async fn update_island_tab(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path((id, tab_id)): Path<(i64, i64)>,
+    Json(req): Json<UpdateIslandTabRequest>,
+) -> Result<Json<ApiResponse<SplitIslandView>>, AppError> {
+    user.require(&perms, Permission::SplitsIslandsManage).await?;
+    let island = SplitService::new()
+        .update_island_tab(&db, id, tab_id, req)
+        .await?;
+    Ok(Json(ApiResponse::new(island)))
+}
+
+/// Deletes a tab that is not the last one and is unused. Admin only.
+#[utoipa::path(
+    delete,
+    path = "/api/splits/islands/{id}/tabs/{tab_id}",
+    tag = "splits",
+    summary = "Delete an island tab",
+    security(("session_cookie" = ["splits.islands.manage"])),
+    params(
+        ("id" = i64, Path, description = "Island id"),
+        ("tab_id" = i64, Path, description = "Tab id")
+    ),
+    responses(
+        (status = 200, description = "Tab deleted", body = SplitIslandView),
+        (status = 400, description = "Last tab or still referenced", body = ProblemDetails),
+        (status = 403, description = "Forbidden", body = ProblemDetails),
+        (status = 404, description = "Not found", body = ProblemDetails)
+    )
+)]
+async fn delete_island_tab(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path((id, tab_id)): Path<(i64, i64)>,
+) -> Result<Json<ApiResponse<SplitIslandView>>, AppError> {
+    user.require(&perms, Permission::SplitsIslandsManage).await?;
+    let island = SplitService::new()
+        .delete_island_tab(&db, id, tab_id)
+        .await?;
+    Ok(Json(ApiResponse::new(island)))
 }

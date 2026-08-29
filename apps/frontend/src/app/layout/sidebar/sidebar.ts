@@ -12,8 +12,8 @@ export interface NavItem {
   readonly path: string;
   readonly icon: IconName;
   readonly labelKey: TranslationKey;
-  /** Restrict visibility by role; undefined = everyone authenticated. */
-  readonly roles?: Array<'Officer' | 'Admin' | 'SuperAdmin'>;
+  /** Restrict visibility by permission keys (OR); undefined = everyone authenticated. */
+  readonly permissions?: readonly string[];
 }
 
 /** Group of nav entries with a small heading label. */
@@ -85,16 +85,14 @@ export class Sidebar {
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   protected readonly visibleSections = computed<NavSection[]>(() => {
-    const profile = this.auth.profile();
-    const role = profile?.highest_role ?? null;
     return this.sections()
       .map((section) => ({
         ...section,
         items: section.items.filter((item) => {
-          if (!item.roles) {
+          if (!item.permissions?.length) {
             return true;
           }
-          return role !== null && (item.roles as readonly string[]).includes(role);
+          return item.permissions.some((permission) => this.auth.hasPermission(permission));
         }),
       }))
       .filter((section) => section.items.length > 0);

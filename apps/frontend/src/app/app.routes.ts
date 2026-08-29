@@ -1,6 +1,6 @@
 import { Routes } from '@angular/router';
 
-import { authGuard, redirectIfAuthenticatedGuard, roleGuard } from './core/guards/auth.guard';
+import { authGuard, permissionGuard, redirectIfAuthenticatedGuard } from './core/guards/auth.guard';
 
 /**
  * Top-level routes.
@@ -39,7 +39,7 @@ export const routes: Routes = [
       },
       {
         path: 'events/new',
-        canActivate: [roleGuard('Officer', 'Admin', 'SuperAdmin')],
+        canActivate: [permissionGuard('events.manage')],
         loadComponent: () =>
           import('./features/events/event-create').then((m) => m.EventCreatePage),
       },
@@ -98,17 +98,17 @@ export const routes: Routes = [
       },
       {
         path: 'warns',
-        canActivate: [roleGuard('Officer', 'Admin', 'SuperAdmin')],
+        canActivate: [permissionGuard('warns.view')],
         loadComponent: () => import('./features/warns/warns').then((m) => m.Warns),
       },
       {
         path: 'admin',
-        canActivate: [roleGuard('Officer', 'Admin', 'SuperAdmin')],
+        canActivate: [permissionGuard('roles.manage', 'permissions.reload', 'admin.settings.manage')],
         loadComponent: () => import('./features/admin/admin').then((m) => m.Admin),
       },
       {
         path: 'audit',
-        canActivate: [roleGuard('Officer', 'Admin', 'SuperAdmin')],
+        canActivate: [permissionGuard('audit.view')],
         loadComponent: () => import('./features/audit/audit').then((m) => m.Audit),
       },
       {
