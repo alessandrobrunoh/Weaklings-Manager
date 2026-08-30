@@ -61,7 +61,13 @@ pub fn router() -> Router {
     security(("session_cookie" = [])),
     params(
         ("page" = Option<u64>, Query, description = "Page number (1-indexed, default: 1)"),
-        ("limit" = Option<u64>, Query, description = "Items per page (1-50, default: 10)")
+        ("limit" = Option<u64>, Query, description = "Items per page (1-50, default: 10)"),
+        ("search" = Option<String>, Query, description = "Case-insensitive title match"),
+        ("status" = Option<String>, Query, description = "Session status: scheduled, live, stopped, auto_stopped"),
+        ("sort" = Option<String>, Query, description = "Sort column: event_date_utc, title, created_at, status"),
+        ("order" = Option<String>, Query, description = "Sort direction: asc (default) or desc"),
+        ("date_from" = Option<String>, Query, description = "Inclusive start of event_date_utc (RFC3339)"),
+        ("date_to" = Option<String>, Query, description = "Inclusive end of event_date_utc (RFC3339)")
     ),
     responses(
         (status = 200, description = "Events list retrieved successfully", body = ApiResponseEventList),

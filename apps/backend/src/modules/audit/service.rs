@@ -1,12 +1,114 @@
 use super::entities::{self, ActiveModel};
 use crate::config::Config;
+use crate::errors::AppError;
 use crate::modules::admin::service::AdminService;
+use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 use reqwest::Client;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, Set,
+};
 
 pub struct AuditService;
 
+/// Filters for `GET /api/audit`.
+#[derive(Debug, Clone, Default)]
+pub struct AuditListFilters {
+    pub action: Option<String>,
+    pub entity_type: Option<String>,
+    pub entity_id: Option<i64>,
+    pub user_id: Option<i64>,
+    pub search: Option<String>,
+    pub sort: Option<String>,
+    pub order: Option<String>,
+}
+
 impl AuditService {
+    /// Lists audit rows with pagination, exact filters, optional action search, and sort.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::Validation` for an unknown `sort` column or `AppError::Database` if the
+    /// query fails.
+    pub async fn list(
+        db: &DatabaseConnection,
+        pagination: &PaginationParams,
+        filters: &AuditListFilters,
+    ) -> Result<PaginatedData<entities::Model>, AppError> {
+        let mut query = entities::Entity::find();
+
+        if let Some(action) = filters
+            .action
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            query = query.filter(entities::Column::Action.eq(action));
+        }
+        if let Some(entity_type) = filters
+            .entity_type
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            query = query.filter(entities::Column::EntityType.eq(entity_type));
+        }
+        if let Some(entity_id) = filters.entity_id {
+            query = query.filter(entities::Column::EntityId.eq(entity_id));
+        }
+        if let Some(user_id) = filters.user_id {
+            query = query.filter(entities::Column::UserId.eq(user_id));
+        }
+        if let Some(search) = filters
+            .search
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            let pattern = format!("%{}%", search.to_lowercase());
+            query = query.filter(
+                sea_orm::sea_query::Expr::expr(sea_orm::sea_query::Func::lower(
+                    sea_orm::sea_query::Expr::col(entities::Column::Action),
+                ))
+                .like(pattern),
+            );
+        }
+
+        let sort_column = resolve_sort_key(
+            filters.sort.as_deref(),
+            &[
+                ("created_at", entities::Column::CreatedAt),
+                ("action", entities::Column::Action),
+                ("entity_type", entities::Column::EntityType),
+                ("user_id", entities::Column::UserId),
+            ],
+            entities::Column::CreatedAt,
+        )?;
+        let order = SortOrder::from_query(filters.order.as_deref());
+        query = match order {
+            SortOrder::Asc => query
+                .order_by_asc(sort_column)
+                .order_by_asc(entities::Column::Id),
+            SortOrder::Desc => query
+                .order_by_desc(sort_column)
+                .order_by_desc(entities::Column::Id),
+        };
+
+        let limit = pagination.limit();
+        let page = pagination.offset_page();
+        let paginator = query.paginate(db, limit);
+        let total_items = paginator.num_items().await?;
+        let total_pages = paginator.num_pages().await?;
+        let items = paginator.fetch_page(page).await?;
+        Ok(PaginatedData::new(
+            items,
+            total_items,
+            total_pages,
+            page + 1,
+            limit,
+        ))
+    }
+
     pub async fn log(
         db: &DatabaseConnection,
         action: &str,
@@ -215,5 +317,109 @@ impl AuditService {
         }
 
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::migration::MigratorTrait;
+    use sea_orm::Database;
+
+    async fn seed_db() -> DatabaseConnection {
+        let db = Database::connect("sqlite::memory:").await.expect("connect");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrate");
+        db
+    }
+
+    async fn insert_log(db: &DatabaseConnection, action: &str, entity_type: Option<&str>) {
+        ActiveModel {
+            action: Set(action.to_string()),
+            entity_type: Set(entity_type.map(str::to_string)),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert audit log");
+    }
+
+    #[tokio::test]
+    async fn list_sorts_by_created_at_and_filters_action() {
+        let db = seed_db().await;
+        insert_log(&db, "WARN_ISSUE", Some("USER_WARN")).await;
+        insert_log(&db, "WARN_REVOKE", Some("USER_WARN")).await;
+        insert_log(&db, "EVENT_CREATED", Some("EVENT")).await;
+
+        let filtered = AuditService::list(
+            &db,
+            &PaginationParams {
+                page: Some(1),
+                limit: Some(20),
+            },
+            &AuditListFilters {
+                action: Some("WARN_ISSUE".into()),
+                ..AuditListFilters::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(filtered.total_items, 1);
+        assert_eq!(filtered.items[0].action, "WARN_ISSUE");
+
+        let newest_first = AuditService::list(
+            &db,
+            &PaginationParams {
+                page: Some(1),
+                limit: Some(20),
+            },
+            &AuditListFilters {
+                sort: Some("created_at".into()),
+                order: Some("desc".into()),
+                ..AuditListFilters::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(newest_first.items[0].action, "EVENT_CREATED");
+
+        let oldest_first = AuditService::list(
+            &db,
+            &PaginationParams {
+                page: Some(1),
+                limit: Some(20),
+            },
+            &AuditListFilters {
+                sort: Some("created_at".into()),
+                order: Some("asc".into()),
+                ..AuditListFilters::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(oldest_first.items[0].action, "WARN_ISSUE");
+    }
+
+    #[tokio::test]
+    async fn list_rejects_unknown_sort_column() {
+        let db = seed_db().await;
+        let error = AuditService::list(
+            &db,
+            &PaginationParams {
+                page: Some(1),
+                limit: Some(20),
+            },
+            &AuditListFilters {
+                sort: Some("fame".into()),
+                ..AuditListFilters::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        match error {
+            AppError::Validation(message) => assert!(message.contains("fame")),
+            other => panic!("expected validation, got {other:?}"),
+        }
     }
 }

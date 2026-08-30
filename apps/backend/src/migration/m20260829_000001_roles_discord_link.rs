@@ -43,8 +43,10 @@ impl MigrationTrait for Migration {
             .await?;
 
         let db = manager.get_connection();
-        db.execute_unprepared("UPDATE roles SET discord_role_id = id WHERE discord_role_id IS NULL")
-            .await?;
+        db.execute_unprepared(
+            "UPDATE roles SET discord_role_id = id WHERE discord_role_id IS NULL",
+        )
+        .await?;
         db.execute_unprepared("UPDATE roles SET is_default = true WHERE name = 'User'")
             .await?;
 

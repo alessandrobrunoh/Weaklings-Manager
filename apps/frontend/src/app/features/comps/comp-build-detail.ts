@@ -11,7 +11,6 @@ import type {
   BuildRole,
   BuildSlot,
   OpenAlbionItem,
-  PaginatedData,
   UpdateBuildRequest,
 } from '../../core/models/api.models';
 import { searchAlbionEquipmentCatalog } from '../../shared/data/albion-equipment-catalog';
@@ -20,11 +19,13 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 
 /**
  * Sorted slot order used for rendering the equipment grid consistently
@@ -97,30 +98,41 @@ const ITEM_TIERS = [
 @Component({
   selector: 'app-comp-build-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, PageHeader, EmptyState, ErrorState, Loading, EquipmentGrid],
+  imports: [
+    RouterLink,
+    PageHeader,
+    PageStack,
+    EmptyState,
+    ErrorState,
+    Loading,
+    EquipmentGrid,
+    Dialog,
+  ],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
     } @else if (build(); as current) {
       <app-page-header
         [title]="current.name"
-        [subtitle]="roleLabel(current.role) + ' · ' + (current.category_name || 'No category')"
+        [subtitle]="
+          roleLabel(current.role) + ' · ' + (current.category_name || t('comps.noCategory'))
+        "
       >
         <div class="flex flex-wrap gap-2">
           <a class="btn btn--ghost" routerLink="/comps">← {{ t('comps.title') }}</a>
-          @if (canManage()) {
+          @if (canManage() && mode() === 'view') {
             <button
               type="button"
               class="btn btn--outline"
-              (click)="toggleEdit()"
+              (click)="enterEdit()"
               [disabled]="saving()"
             >
-              {{ editing() ? t('common.close') : t('common.edit') }}
+              {{ t('common.edit') }}
             </button>
             <button
               type="button"
               class="btn btn--danger"
-              (click)="deleteBuild()"
+              (click)="askDeleteBuild()"
               [disabled]="saving()"
             >
               {{ t('common.delete') }}
@@ -129,92 +141,120 @@ const ITEM_TIERS = [
         </div>
       </app-page-header>
 
-      @if (editing() && canManage()) {
-        <form class="card mb-6 grid gap-4 p-5" (submit)="saveEdit($event)">
-          <div class="grid gap-4 md:grid-cols-2">
+      <app-page-stack>
+        @if (mode() === 'edit' && canManage()) {
+          <form class="card grid gap-4 p-5" (submit)="saveEdit($event)">
+            <div class="grid gap-4 md:grid-cols-2">
+              <label>
+                <span class="label">{{ t('common.name') }}</span>
+                <input
+                  class="input"
+                  type="text"
+                  [value]="editName()"
+                  (input)="onEditNameChange($event)"
+                />
+              </label>
+              <label>
+                <span class="label">{{ t('common.category') }}</span>
+                <select
+                  class="select"
+                  [value]="editCategoryId()"
+                  (change)="onEditCategoryChange($event)"
+                >
+                  <option value="">{{ t('comps.noCategory') }}</option>
+                  @for (category of buildCategories(); track category.id) {
+                    <option [value]="category.id">{{ category.name }}</option>
+                  }
+                </select>
+              </label>
+            </div>
             <label>
-              <span class="label">{{ t('common.name') }}</span>
-              <input
-                class="input"
-                type="text"
-                [value]="editName()"
-                (input)="onEditNameChange($event)"
-              />
-            </label>
-            <label>
-              <span class="label">Category</span>
-              <select
-                class="select"
-                [value]="editCategoryId()"
-                (change)="onEditCategoryChange($event)"
-              >
-                <option value="">No category</option>
-                @for (category of buildCategories(); track category.id) {
-                  <option [value]="category.id">{{ category.name }}</option>
+              <span class="label">{{ t('common.role') }}</span>
+              <select class="select" [value]="editRole()" (change)="onEditRoleChange($event)">
+                <option value="">{{ t('common.role') }}</option>
+                @for (role of roles; track role) {
+                  <option [value]="role">{{ roleLabel(role) }}</option>
                 }
               </select>
             </label>
-          </div>
-          <label>
-            <span class="label">Role</span>
-            <select class="select" [value]="editRole()" (change)="onEditRoleChange($event)">
-              <option value="">Select role</option>
-              @for (role of roles; track role) {
-                <option [value]="role">{{ roleLabel(role) }}</option>
-              }
-            </select>
-          </label>
-          <label>
-            <span class="label">{{ t('common.description') }}</span>
-            <textarea
-              class="textarea"
-              rows="3"
-              [value]="editDescription()"
-              (input)="onEditDescriptionChange($event)"
-            ></textarea>
-          </label>
-          <div class="flex justify-end gap-2">
-            <button type="button" class="btn btn--ghost" (click)="toggleEdit()">
+            <label>
+              <span class="label">{{ t('common.description') }}</span>
+              <textarea
+                class="textarea"
+                rows="3"
+                [value]="editDescription()"
+                (input)="onEditDescriptionChange($event)"
+              ></textarea>
+            </label>
+            <div class="flex justify-end gap-2">
+              <button type="button" class="btn btn--ghost" (click)="cancelEdit()">
+                {{ t('common.cancel') }}
+              </button>
+              <button type="submit" class="btn btn--primary" [disabled]="saving()">
+                {{ t('common.save') }}
+              </button>
+            </div>
+          </form>
+        }
+
+        <section class="card grid gap-4 p-5" [attr.aria-label]="t('comps.equipment')">
+          <header class="flex items-center justify-between gap-3">
+            <h2 class="text-lg font-semibold" style="color: var(--color-text)">
+              {{ t('comps.equipment') }} ({{ itemsBySlot().length }}/{{ SLOT_ORDER.length }})
+            </h2>
+            <span class="chip">{{ current.item_count }} {{ t('comps.items') }}</span>
+          </header>
+
+          <app-equipment-grid
+            [items]="itemsBySlot()"
+            [canManage]="canManage() && mode() === 'edit'"
+            [editingSlot]="editingSlot()"
+            [draftTier]="draftTier()"
+            [draftSearch]="draftSearch()"
+            [draftItemId]="draftItemId()"
+            [searchResults]="searchResults()"
+            [searchLoading]="searchLoading()"
+            [tiers]="ITEM_TIERS"
+            (slotToggle)="onSlotToggle($event)"
+            (tierChange)="onDraftTierChangeValue($event)"
+            (searchChange)="onDraftSearchChangeValue($event)"
+            (itemSelect)="onDraftItemChangeValue($event)"
+            (saveSlot)="saveSlot($event)"
+            (cancelEdit)="cancelSlotEdit()"
+            (removeItem)="askRemoveItem($event)"
+          />
+        </section>
+      </app-page-stack>
+
+      @if (pendingDelete(); as pending) {
+        <app-dialog [title]="t('common.confirm')" size="sm" (closed)="closeDelete()">
+          <p>{{ pending.kind === 'slot' ? t('comps.deleteItem') : t('comps.delete.confirm') }}</p>
+          <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
+            {{ pending.kind === 'slot' ? slotLabel(pending.slot) : current.name }}
+          </p>
+          <div dialogFooter>
+            <button type="button" class="btn btn--ghost" (click)="closeDelete()">
               {{ t('common.cancel') }}
             </button>
-            <button type="submit" class="btn btn--primary" [disabled]="saving()">
-              {{ t('common.save') }}
+            <button
+              type="button"
+              class="btn btn--danger"
+              [disabled]="saving()"
+              (click)="confirmPendingDelete()"
+            >
+              {{ t('common.delete') }}
             </button>
           </div>
-        </form>
+        </app-dialog>
       }
-
-      <section class="card grid gap-4 p-5" aria-label="Equipment slots">
-        <header class="flex items-center justify-between gap-3">
-          <h2 class="text-lg font-semibold" style="color: var(--color-text)">
-            Equipment ({{ itemsBySlot().length }}/{{ SLOT_ORDER.length }})
-          </h2>
-          <span class="chip">{{ current.item_count }} item(s)</span>
-        </header>
-
-        <app-equipment-grid
-          [items]="itemsBySlot()"
-          [canManage]="canManage()"
-          [editingSlot]="editingSlot()"
-          [draftTier]="draftTier()"
-          [draftSearch]="draftSearch()"
-          [draftItemId]="draftItemId()"
-          [searchResults]="searchResults()"
-          [searchLoading]="searchLoading()"
-          [tiers]="ITEM_TIERS"
-          (slotToggle)="onSlotToggle($event)"
-          (tierChange)="onDraftTierChangeValue($event)"
-          (searchChange)="onDraftSearchChangeValue($event)"
-          (itemSelect)="onDraftItemChangeValue($event)"
-          (saveSlot)="saveSlot($event)"
-          (cancelEdit)="cancelSlotEdit()"
-          (removeItem)="removeItem($event)"
-        />
-      </section>
     } @else if (loadFailed()) {
-      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load(buildId)" />
+      <app-error-state
+        [message]="t('common.error')"
+        [retryLabel]="t('common.retry')"
+        (retry)="load(buildId)"
+      />
     } @else if (!loading()) {
-      <app-empty-state message="Build not found" icon="package" />
+      <app-empty-state [message]="t('comps.buildNotFound')" icon="package" />
     }
   `,
 })
@@ -243,7 +283,10 @@ export class CompBuildDetailPage {
   protected readonly build = signal<BuildDetail | null>(null);
   protected readonly buildCategories = signal<BuildCategoryView[]>([]);
 
-  protected readonly editing = signal(false);
+  protected readonly mode = signal<'view' | 'edit'>('view');
+  protected readonly pendingDelete = signal<
+    { kind: 'build' } | { kind: 'slot'; slot: BuildSlot } | null
+  >(null);
   protected readonly editName = signal('');
   protected readonly editDescription = signal('');
   protected readonly editCategoryId = signal('');
@@ -302,15 +345,22 @@ export class CompBuildDetailPage {
     return this.itemsBySlot().find((item) => item.slot === slot) ?? null;
   }
 
-  protected toggleEdit(): void {
-    if (!this.editing() && this.build()) {
-      const current = this.build()!;
-      this.editName.set(current.name);
-      this.editCategoryId.set(current.category_id ? String(current.category_id) : '');
-      this.editRole.set(current.role);
-      this.editDescription.set('');
+  protected enterEdit(): void {
+    const current = this.build();
+    if (!current) {
+      return;
     }
-    this.editing.update((value) => !value);
+    this.editName.set(current.name);
+    this.editCategoryId.set(current.category_id ? String(current.category_id) : '');
+    this.editRole.set(current.role);
+    this.editDescription.set(current.description ?? '');
+    this.mode.set('edit');
+  }
+
+  protected cancelEdit(): void {
+    this.mode.set('view');
+    this.cancelSlotEdit();
+    void this.load(this.buildId);
   }
 
   protected onEditNameChange(event: Event): void {
@@ -402,9 +452,13 @@ export class CompBuildDetailPage {
     }
   }
 
+  protected askRemoveItem(slot: BuildSlot): void {
+    this.pendingDelete.set({ kind: 'slot', slot });
+  }
+
   protected async removeItem(slot: BuildSlot): Promise<void> {
     const build = this.build();
-    if (!build || !confirm(`Remove ${slotLabel(slot)} from this build?`)) {
+    if (!build) {
       return;
     }
     this.saving.set(true);
@@ -413,7 +467,8 @@ export class CompBuildDetailPage {
         this.api.delete<BuildDetail>(`api/comps/builds/${build.id}/items/${slot}`),
       );
       this.build.set(updated ?? null);
-      this.toasts.success('Item removed');
+      this.pendingDelete.set(null);
+      this.toasts.success(this.t('common.delete'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -453,18 +508,17 @@ export class CompBuildDetailPage {
       request.role = this.editRole() as BuildRole;
 
     if (Object.keys(request).length === 0) {
-      this.editing.set(false);
+      this.mode.set('view');
       return;
     }
 
     this.saving.set(true);
     try {
-      const updated = await firstValueFrom(
-        this.api.patch<BuildDetail>(`api/comps/builds/${build.id}`, request),
-      );
-      this.build.set(updated);
-      this.editing.set(false);
-      this.toasts.success('Build updated');
+      await firstValueFrom(this.api.patch<BuildDetail>(`api/comps/builds/${build.id}`, request));
+      this.mode.set('view');
+      this.cancelSlotEdit();
+      await this.load(this.buildId);
+      this.toasts.success(this.t('common.save'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -472,15 +526,36 @@ export class CompBuildDetailPage {
     }
   }
 
+  protected askDeleteBuild(): void {
+    this.pendingDelete.set({ kind: 'build' });
+  }
+
+  protected closeDelete(): void {
+    this.pendingDelete.set(null);
+  }
+
+  protected async confirmPendingDelete(): Promise<void> {
+    const pending = this.pendingDelete();
+    if (!pending) {
+      return;
+    }
+    if (pending.kind === 'slot') {
+      await this.removeItem(pending.slot);
+      return;
+    }
+    await this.deleteBuild();
+  }
+
   protected async deleteBuild(): Promise<void> {
     const build = this.build();
-    if (!build || !confirm(`Delete build "${build.name}"? This cannot be undone.`)) {
+    if (!build) {
       return;
     }
     this.saving.set(true);
     try {
       await firstValueFrom(this.api.delete(`api/comps/builds/${build.id}`));
-      this.toasts.success('Build deleted');
+      this.pendingDelete.set(null);
+      this.toasts.success(this.t('common.delete'));
       await this.router.navigate(['/comps']);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -533,8 +608,4 @@ function sortBySlotOrder(left: BuildItemSlot, right: BuildItemSlot): number {
   const leftIndex = SLOT_ORDER.indexOf(left.slot);
   const rightIndex = SLOT_ORDER.indexOf(right.slot);
   return leftIndex - rightIndex;
-}
-
-function slotLabel(slot: BuildSlot): string {
-  return SLOT_LABELS[slot] ?? slot;
 }

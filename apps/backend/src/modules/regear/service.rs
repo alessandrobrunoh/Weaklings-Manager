@@ -18,7 +18,7 @@ use crate::modules::bank::entities::ActiveModel as BankActiveModel;
 use crate::modules::bank::status::TransactionStatus;
 use crate::modules::comps::entities::build;
 use crate::modules::events::entities::event;
-use crate::pagination::{PaginatedData, PaginationParams};
+use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
 use super::entities::{
     RegearDeathActiveModel, RegearDeathColumn, RegearDeathEntity, RegearDeathModel,
@@ -74,6 +74,11 @@ impl RegearService {
         }
         if let Some(status) = filters.status {
             condition = condition.add(RegearDeathColumn::Status.eq(status.to_string()));
+        } else if filters.history.unwrap_or(false) {
+            condition = condition.add(RegearDeathColumn::Status.is_in([
+                RegearStatus::Approved.to_string(),
+                RegearStatus::Rejected.to_string(),
+            ]));
         }
         if let Some(user_id) = filters.user_id {
             condition = condition.add(RegearDeathColumn::UserId.eq(user_id));
@@ -81,17 +86,38 @@ impl RegearService {
         if let Some(tx_id) = filters.bank_transaction_id {
             condition = condition.add(RegearDeathColumn::BankTransactionId.eq(tx_id));
         }
+        if let Some(search) = filters
+            .search
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            condition = condition.add(RegearDeathColumn::PlayerName.contains(search));
+        }
         if !global {
             condition = condition.add(RegearDeathColumn::UserId.eq(viewer_user_id));
         }
 
+        let sort_column = resolve_sort_key(
+            filters.sort.as_deref(),
+            &[
+                ("killed_at", RegearDeathColumn::KilledAt),
+                ("status", RegearDeathColumn::Status),
+                ("player_name", RegearDeathColumn::PlayerName),
+            ],
+            RegearDeathColumn::KilledAt,
+        )?;
+        let order = SortOrder::from_query(filters.order.as_deref());
+
         let limit = pagination.limit();
         let page = pagination.offset_page();
 
-        let paginator = RegearDeathEntity::find()
-            .filter(condition)
-            .order_by_desc(RegearDeathColumn::KilledAt)
-            .paginate(db, limit);
+        let query = RegearDeathEntity::find().filter(condition);
+        let query = match order {
+            SortOrder::Asc => query.order_by_asc(sort_column),
+            SortOrder::Desc => query.order_by_desc(sort_column),
+        };
+        let paginator = query.paginate(db, limit);
         let total_items = paginator.num_items().await?;
         let total_pages = paginator.num_pages().await?;
         let models = paginator.fetch_page(page).await?;
@@ -638,7 +664,10 @@ async fn to_views_with_joins(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::migration::MigratorTrait;
     use crate::modules::comps::status::BuildSlot;
+    use sea_orm::entity::prelude::DateTimeWithTimeZone;
+    use sea_orm::{ActiveModelTrait, Database, DatabaseConnection};
 
     #[test]
     fn sum_included_ignores_excluded_rows() {
@@ -674,5 +703,172 @@ mod tests {
             included: true,
         }];
         assert_eq!(sum_included(&rows), Decimal::from(15_000));
+    }
+
+    async fn seed_db() -> DatabaseConnection {
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("connect in-memory sqlite");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("run migrations");
+        db
+    }
+
+    async fn insert_death(
+        db: &DatabaseConnection,
+        player_name: &str,
+        status: RegearStatus,
+        killed_at: DateTimeWithTimeZone,
+        kill_event_id: &str,
+    ) -> RegearDeathModel {
+        let now = Utc::now().into();
+        RegearDeathActiveModel {
+            event_id: Set(1),
+            event_battle_id: Set(1),
+            albionbb_battle_id: Set("battle-1".into()),
+            albion_kill_event_id: Set(kill_event_id.into()),
+            killed_at: Set(killed_at),
+            player_name: Set(player_name.into()),
+            guild_id: Set("guild-1".into()),
+            loadout_json: Set("{}".into()),
+            auto_estimate_total: Set(Decimal::from(100)),
+            auto_estimate_breakdown_json: Set("[]".into()),
+            status: Set(status.to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert regear death")
+    }
+
+    fn page() -> PaginationParams {
+        PaginationParams {
+            page: Some(1),
+            limit: Some(10),
+        }
+    }
+
+    #[tokio::test]
+    async fn list_deaths_searches_player_name() {
+        let db = seed_db().await;
+        let t1 = (Utc::now() - ChronoDuration::hours(2)).into();
+        let t2 = (Utc::now() - ChronoDuration::hours(1)).into();
+        insert_death(&db, "Ann", RegearStatus::Available, t1, "k-ann").await;
+        insert_death(&db, "Zed", RegearStatus::Available, t2, "k-zed").await;
+
+        let page = RegearService::new()
+            .list_deaths(
+                &db,
+                1,
+                true,
+                &page(),
+                &DeathFilters {
+                    search: Some("nn".into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("list deaths");
+        assert_eq!(page.total_items, 1);
+        assert_eq!(page.items[0].player_name, "Ann");
+    }
+
+    #[tokio::test]
+    async fn list_deaths_sorts_by_player_name() {
+        let db = seed_db().await;
+        let t1 = (Utc::now() - ChronoDuration::hours(2)).into();
+        let t2 = (Utc::now() - ChronoDuration::hours(1)).into();
+        let t3 = Utc::now().into();
+        insert_death(&db, "Ann", RegearStatus::Available, t1, "k-ann").await;
+        insert_death(&db, "Bob", RegearStatus::Pending, t2, "k-bob").await;
+        insert_death(&db, "Zed", RegearStatus::Approved, t3, "k-zed").await;
+
+        let default_page = RegearService::new()
+            .list_deaths(&db, 1, true, &page(), &DeathFilters::default())
+            .await
+            .expect("list deaths default sort");
+        let default_names: Vec<_> = default_page
+            .items
+            .iter()
+            .map(|death| death.player_name.as_str())
+            .collect();
+        assert_eq!(default_names, vec!["Zed", "Bob", "Ann"]);
+
+        let sorted = RegearService::new()
+            .list_deaths(
+                &db,
+                1,
+                true,
+                &page(),
+                &DeathFilters {
+                    sort: Some("player_name".into()),
+                    order: Some("asc".into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("list deaths by player_name");
+        let names: Vec<_> = sorted
+            .items
+            .iter()
+            .map(|death| death.player_name.as_str())
+            .collect();
+        assert_eq!(names, vec!["Ann", "Bob", "Zed"]);
+    }
+
+    #[tokio::test]
+    async fn list_deaths_history_is_terminal_only() {
+        let db = seed_db().await;
+        let now = Utc::now().into();
+        insert_death(&db, "Ann", RegearStatus::Approved, now, "k-ann").await;
+        insert_death(&db, "Bob", RegearStatus::Rejected, now, "k-bob").await;
+        insert_death(&db, "Zed", RegearStatus::Pending, now, "k-zed").await;
+
+        let page = RegearService::new()
+            .list_deaths(
+                &db,
+                1,
+                true,
+                &page(),
+                &DeathFilters {
+                    history: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("list history");
+        assert_eq!(page.total_items, 2);
+        let mut names: Vec<_> = page
+            .items
+            .iter()
+            .map(|death| death.player_name.as_str())
+            .collect();
+        names.sort_unstable();
+        assert_eq!(names, vec!["Ann", "Bob"]);
+    }
+
+    #[tokio::test]
+    async fn list_deaths_rejects_unknown_sort_column() {
+        let db = seed_db().await;
+        let error = RegearService::new()
+            .list_deaths(
+                &db,
+                1,
+                true,
+                &page(),
+                &DeathFilters {
+                    sort: Some("fame".into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err();
+        match error {
+            AppError::Validation(message) => assert!(message.contains("fame")),
+            other => panic!("expected validation, got {other:?}"),
+        }
     }
 }

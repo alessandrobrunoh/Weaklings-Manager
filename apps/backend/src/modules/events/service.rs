@@ -33,7 +33,7 @@ use crate::modules::comps::entities::{build, comp, comp_build};
 use crate::modules::splits::entities::{split, split_participant};
 use crate::modules::splits::service::SplitService;
 use crate::modules::splits::status::SplitStatus;
-use crate::pagination::{PaginatedData, PaginationParams};
+use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
 /// Hard cap on how long an event session can stay live before the background
 /// worker auto-stops it. Tuned to 3 hours per product requirement.
@@ -618,9 +618,41 @@ impl EventService {
             }
         }
 
-        let paginator = query
-            .order_by_asc(event::Column::EventDateUtc)
-            .paginate(db, limit);
+        if let Some(status) = filters
+            .status
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            query = query.filter(event::Column::Status.eq(status));
+        }
+
+        let sort_column = resolve_sort_key(
+            filters.sort.as_deref(),
+            &[
+                ("event_date_utc", event::Column::EventDateUtc),
+                ("title", event::Column::Title),
+                ("created_at", event::Column::CreatedAt),
+                ("status", event::Column::Status),
+            ],
+            event::Column::EventDateUtc,
+        )?;
+        let order = match filters
+            .order
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("desc") => SortOrder::Desc,
+            _ => SortOrder::Asc,
+        };
+        let query = match order {
+            SortOrder::Asc => query.order_by_asc(sort_column),
+            SortOrder::Desc => query.order_by_desc(sort_column),
+        };
+
+        let paginator = query.paginate(db, limit);
 
         let total_items = paginator.num_items().await.map_err(AppError::Database)?;
         let total_pages = paginator.num_pages().await.map_err(AppError::Database)?;
@@ -980,14 +1012,9 @@ impl EventService {
             // Best-effort: an event is still perfectly usable without its
             // split, so a failure here is logged rather than rolling back a
             // successfully created event.
-            if let Err(e) = create_linked_split(
-                db,
-                creator_id,
-                event_id,
-                &event_view.title,
-                island_tab_id,
-            )
-            .await
+            if let Err(e) =
+                create_linked_split(db, creator_id, event_id, &event_view.title, island_tab_id)
+                    .await
             {
                 tracing::warn!(event_id, error = %e, "failed to create the correlated split");
             }
@@ -2307,6 +2334,112 @@ mod tests {
             completes,
             vec![format!("event_complete:{}:{player}", event.id)]
         );
+    }
+
+    #[tokio::test]
+    async fn list_events_filters_by_status_and_sorts_by_title() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let cat = create_comp_category(&db, "ZvZ").await;
+        let comp_id = create_comp(&db, "Main Comp", cat, None, vec![]).await;
+        let service = EventService::new();
+
+        let zebra = service
+            .create_event(
+                &db,
+                admin,
+                CreateEventRequest {
+                    title: "Zebra".to_string(),
+                    description: None,
+                    call_to_arms: false,
+                    comp_id,
+                    event_date_utc: "2026-07-21T20:00:00Z".to_string(),
+                    create_split: false,
+                    island_tab_id: None,
+                },
+            )
+            .await
+            .unwrap();
+        let alpha = service
+            .create_event(
+                &db,
+                admin,
+                CreateEventRequest {
+                    title: "Alpha".to_string(),
+                    description: None,
+                    call_to_arms: false,
+                    comp_id,
+                    event_date_utc: "2026-07-22T20:00:00Z".to_string(),
+                    create_split: false,
+                    island_tab_id: None,
+                },
+            )
+            .await
+            .unwrap();
+        service.start_event(&db, zebra.id).await.unwrap();
+
+        let live = service
+            .list_events(
+                &db,
+                PaginationParams {
+                    page: None,
+                    limit: None,
+                },
+                super::super::models::EventFilters {
+                    status: Some("live".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(live.items.len(), 1);
+        assert_eq!(live.items[0].id, zebra.id);
+
+        let sorted = service
+            .list_events(
+                &db,
+                PaginationParams {
+                    page: None,
+                    limit: None,
+                },
+                super::super::models::EventFilters {
+                    sort: Some("title".to_string()),
+                    order: Some("asc".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let titles: Vec<_> = sorted
+            .items
+            .iter()
+            .map(|event| event.title.as_str())
+            .collect();
+        assert_eq!(titles, vec!["Alpha", "Zebra"]);
+        assert_eq!(sorted.items[0].id, alpha.id);
+    }
+
+    #[tokio::test]
+    async fn list_events_rejects_unknown_sort_column() {
+        let db = seed_db().await;
+        let error = EventService::new()
+            .list_events(
+                &db,
+                PaginationParams {
+                    page: None,
+                    limit: None,
+                },
+                super::super::models::EventFilters {
+                    sort: Some("fame".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err();
+        match error {
+            AppError::Validation(message) => assert!(message.contains("fame")),
+            other => panic!("expected validation, got {other:?}"),
+        }
     }
 }
 

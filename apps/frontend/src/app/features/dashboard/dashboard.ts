@@ -15,6 +15,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
@@ -47,154 +48,156 @@ interface DashboardStat {
 @Component({
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, PageHeader, RouterLink, StatCard, StatusChip],
+  imports: [Icon, PageHeader, PageStack, RouterLink, StatCard, StatusChip],
   template: `
     <app-page-header [title]="welcomeText()" [subtitle]="t('app.tagline')" [actions]="false" />
 
-    <!-- Quick actions -->
-    <section class="mb-8">
-      <h2 class="eyebrow mb-3">
-        {{ t('dashboard.quick_actions') }}
-      </h2>
-      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        @for (action of actions; track action.path) {
-          <a
-            [routerLink]="action.path"
-            class="card flex flex-col items-start gap-2.5 p-4 no-underline transition hover:border-(--color-border-strong)"
-            style="color: var(--color-text)"
-          >
-            <span
-              class="flex h-8 w-8 items-center justify-center rounded-full"
-              style="background-color: var(--color-surface-2); color: var(--color-text)"
-              aria-hidden="true"
+    <app-page-stack>
+      <!-- Quick actions -->
+      <section>
+        <h2 class="eyebrow mb-3">
+          {{ t('dashboard.quick_actions') }}
+        </h2>
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          @for (action of actions; track action.path) {
+            <a
+              [routerLink]="action.path"
+              class="card flex flex-col items-start gap-2.5 p-4 no-underline transition hover:border-(--color-border-strong)"
+              style="color: var(--color-text)"
             >
-              <app-icon [name]="action.icon" size="1rem" />
-            </span>
-            <span class="text-xs font-medium">{{ t(action.labelKey) }}</span>
-          </a>
-        }
-      </div>
-    </section>
+              <span
+                class="flex h-8 w-8 items-center justify-center rounded-full"
+                style="background-color: var(--color-surface-2); color: var(--color-text)"
+                aria-hidden="true"
+              >
+                <app-icon [name]="action.icon" size="1rem" />
+              </span>
+              <span class="text-xs font-medium">{{ t(action.labelKey) }}</span>
+            </a>
+          }
+        </div>
+      </section>
 
-    <!-- Guild snapshot -->
-    <section class="mb-8">
-      <h2 class="eyebrow mb-3">
-        {{ t('dashboard.snapshot') }}
-      </h2>
-      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        @for (stat of stats; track stat.labelKey) {
-          <app-stat-card
-            [label]="t(stat.labelKey)"
-            [value]="stat.value()"
-            [sub]="stat.hint()"
-            [icon]="stat.icon"
-            [tone]="stat.tone"
-          />
-        }
-      </div>
-    </section>
+      <!-- Guild snapshot -->
+      <section>
+        <h2 class="eyebrow mb-3">
+          {{ t('dashboard.snapshot') }}
+        </h2>
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          @for (stat of stats; track stat.labelKey) {
+            <app-stat-card
+              [label]="t(stat.labelKey)"
+              [value]="stat.value()"
+              [sub]="stat.hint()"
+              [icon]="stat.icon"
+              [tone]="stat.tone"
+            />
+          }
+        </div>
+      </section>
 
-    <!-- Two-column activity panels -->
-    <section class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      <!-- Live & upcoming events -->
-      <div class="card p-6">
-        <div class="mb-4 flex items-center justify-between">
-          <h2 class="eyebrow">
-            {{ t('dashboard.events.upcoming') }}
-          </h2>
-          <a
-            routerLink="/events"
-            class="text-xs font-medium no-underline hover:underline"
-            style="color: var(--color-text)"
-          >
-            {{ t('dashboard.view_all') }}
-          </a>
+      <!-- Two-column activity panels -->
+      <section class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <!-- Live & upcoming events -->
+        <div class="card p-6">
+          <div class="mb-4 flex items-center justify-between">
+            <h2 class="eyebrow">
+              {{ t('dashboard.events.upcoming') }}
+            </h2>
+            <a
+              routerLink="/events"
+              class="text-xs font-medium no-underline hover:underline"
+              style="color: var(--color-text)"
+            >
+              {{ t('dashboard.view_all') }}
+            </a>
+          </div>
+
+          @if (visibleEvents().length === 0) {
+            <p class="py-6 text-center text-sm" style="color: var(--color-text-secondary)">
+              {{ t('dashboard.events.empty') }}
+            </p>
+          } @else {
+            <ul class="flex flex-col gap-2">
+              @for (event of visibleEvents(); track event.id) {
+                <li>
+                  <a
+                    [routerLink]="['/events', event.id]"
+                    class="flex items-center gap-3 rounded-lg p-2 no-underline transition hover:bg-(--color-surface-hover)"
+                    style="color: var(--color-text)"
+                  >
+                    <span
+                      class="h-2 w-2 shrink-0 rounded-full"
+                      [style.backgroundColor]="eventDotColor(event.status)"
+                      aria-hidden="true"
+                    ></span>
+                    <div class="min-w-0 flex-1">
+                      <p class="truncate text-sm font-medium">
+                        @if (event.call_to_arms) {
+                          <span class="cta-star" title="{{ t('events.call_to_arms') }}">★</span>
+                        }
+                        {{ event.title }}
+                      </p>
+                      <p class="truncate text-xs" style="color: var(--color-text-secondary)">
+                        {{ event.comp_name }} · {{ formatEventDate(event.event_date_utc) }}
+                      </p>
+                    </div>
+                    <app-status-chip [value]="event.status" />
+                  </a>
+                </li>
+              }
+            </ul>
+          }
         </div>
 
-        @if (visibleEvents().length === 0) {
-          <p class="py-6 text-center text-sm" style="color: var(--color-text-secondary)">
-            {{ t('dashboard.events.empty') }}
-          </p>
-        } @else {
-          <ul class="flex flex-col gap-2">
-            @for (event of visibleEvents(); track event.id) {
-              <li>
-                <a
-                  [routerLink]="['/events', event.id]"
-                  class="flex items-center gap-3 rounded-lg p-2 no-underline transition hover:bg-(--color-surface-hover)"
-                  style="color: var(--color-text)"
-                >
-                  <span
-                    class="h-2 w-2 shrink-0 rounded-full"
-                    [style.backgroundColor]="eventDotColor(event.status)"
-                    aria-hidden="true"
-                  ></span>
-                  <div class="min-w-0 flex-1">
-                    <p class="truncate text-sm font-medium">
-                      @if (event.call_to_arms) {
-                        <span class="cta-star" title="{{ t('events.call_to_arms') }}">★</span>
-                      }
-                      {{ event.title }}
-                    </p>
-                    <p class="truncate text-xs" style="color: var(--color-text-secondary)">
-                      {{ event.comp_name }} · {{ formatEventDate(event.event_date_utc) }}
-                    </p>
-                  </div>
-                  <app-status-chip [value]="event.status" />
-                </a>
-              </li>
-            }
-          </ul>
-        }
-      </div>
+        <!-- Recent splits -->
+        <div class="card p-6">
+          <div class="mb-4 flex items-center justify-between">
+            <h2 class="eyebrow">
+              {{ t('dashboard.splits.recent') }}
+            </h2>
+            <a
+              routerLink="/splits"
+              class="text-xs font-medium no-underline hover:underline"
+              style="color: var(--color-text)"
+            >
+              {{ t('dashboard.view_all') }}
+            </a>
+          </div>
 
-      <!-- Recent splits -->
-      <div class="card p-6">
-        <div class="mb-4 flex items-center justify-between">
-          <h2 class="eyebrow">
-            {{ t('dashboard.splits.recent') }}
-          </h2>
-          <a
-            routerLink="/splits"
-            class="text-xs font-medium no-underline hover:underline"
-            style="color: var(--color-text)"
-          >
-            {{ t('dashboard.view_all') }}
-          </a>
+          @if (visibleSplits().length === 0) {
+            <p class="py-6 text-center text-sm" style="color: var(--color-text-secondary)">
+              {{ t('dashboard.splits.empty') }}
+            </p>
+          } @else {
+            <ul class="flex flex-col gap-2">
+              @for (split of visibleSplits(); track split.id) {
+                <li>
+                  <a
+                    [routerLink]="['/splits', split.id]"
+                    class="flex items-center gap-3 rounded-lg p-2 no-underline transition hover:bg-(--color-surface-hover)"
+                    style="color: var(--color-text)"
+                  >
+                    <div class="min-w-0 flex-1">
+                      <p class="truncate text-sm font-medium">
+                        {{ split.event_title ?? split.created_by_username }}
+                      </p>
+                      <p class="truncate text-xs" style="color: var(--color-text-secondary)">
+                        {{ split.participant_count }} · {{ formatRelative(split.created_at) }}
+                      </p>
+                    </div>
+                    <span class="text-sm font-semibold tabular-nums">
+                      {{ formatValue(split.estimated_market_value) }}
+                    </span>
+                    <app-status-chip [value]="split.status" />
+                  </a>
+                </li>
+              }
+            </ul>
+          }
         </div>
-
-        @if (visibleSplits().length === 0) {
-          <p class="py-6 text-center text-sm" style="color: var(--color-text-secondary)">
-            {{ t('dashboard.splits.empty') }}
-          </p>
-        } @else {
-          <ul class="flex flex-col gap-2">
-            @for (split of visibleSplits(); track split.id) {
-              <li>
-                <a
-                  [routerLink]="['/splits', split.id]"
-                  class="flex items-center gap-3 rounded-lg p-2 no-underline transition hover:bg-(--color-surface-hover)"
-                  style="color: var(--color-text)"
-                >
-                  <div class="min-w-0 flex-1">
-                    <p class="truncate text-sm font-medium">
-                      {{ split.event_title ?? split.created_by_username }}
-                    </p>
-                    <p class="truncate text-xs" style="color: var(--color-text-secondary)">
-                      {{ split.participant_count }} · {{ formatRelative(split.created_at) }}
-                    </p>
-                  </div>
-                  <span class="text-sm font-semibold tabular-nums">
-                    {{ formatValue(split.estimated_market_value) }}
-                  </span>
-                  <app-status-chip [value]="split.status" />
-                </a>
-              </li>
-            }
-          </ul>
-        }
-      </div>
-    </section>
+      </section>
+    </app-page-stack>
   `,
 })
 export class Dashboard {
@@ -413,7 +416,6 @@ export class Dashboard {
     if (status === 'scheduled') return 'var(--color-primary)';
     return 'var(--color-text-disabled)';
   }
-
 }
 
 const TONE_BG: Record<StatTone, string> = {

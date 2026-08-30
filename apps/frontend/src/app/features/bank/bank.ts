@@ -14,30 +14,46 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import { EmptyState } from '../../shared/components/empty-state/empty-state';
-import { ErrorState } from '../../shared/components/error-state/error-state';
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTablePageChange,
+} from '../../shared/components/data-table/data-table';
+import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { Dialog } from '../../shared/components/dialog/dialog';
 import { Icon } from '../../shared/components/icon/icon';
-import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
-import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
-import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import type { IconName } from '../../shared/components/icon/icon';
 
-const TRANSACTIONS_LOAD_LIMIT = 1000;
+type ConfirmAll = 'accept' | 'reject';
+
+function emptyPageChange(): DataTablePageChange {
+  return { page: 1, pageSize: 10, search: '', sort: null, columnFilters: {} };
+}
 
 /**
  * Guild Bank ledger page.
  *
- * Surfaces the caller's pending/requested totals (live-computed by the backend
- * from the `transactions` table) plus a paginated, filterable transaction list.
- * Members can request withdrawals; officers/admins can accept (pay out) them.
+ * Surfaces the caller's pending/requested totals plus a server-paginated,
+ * filterable transaction list. Members can request withdrawals; officers can
+ * accept or reject them.
  */
 @Component({
   selector: 'app-bank',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, ErrorState, Loading, DataTable, DataTableCell, Icon, StatCard, ViewToggle],
+  imports: [
+    PageHeader,
+    PageStack,
+    DataTable,
+    DataTableCell,
+    Dialog,
+    Icon,
+    StatCard,
+    ViewToggle,
+  ],
   template: `
     <app-page-header [title]="t('bank.title')" [subtitle]="t('bank.subtitle')">
       @if (viewMode() === 'personal') {
@@ -46,76 +62,77 @@ const TRANSACTIONS_LOAD_LIMIT = 1000;
         </button>
       } @else if (canAccept()) {
         <div class="flex gap-2">
-          <button type="button" class="btn btn--outline" (click)="rejectWithdrawals()">
+          <button type="button" class="btn btn--outline" (click)="confirmAll.set('reject')">
             {{ t('bank.withdraw.reject') }}
           </button>
-          <button type="button" class="btn btn--primary" (click)="acceptWithdrawals()">
+          <button type="button" class="btn btn--primary" (click)="confirmAll.set('accept')">
             {{ t('bank.withdraw.accept') }}
           </button>
         </div>
       }
     </app-page-header>
 
-    <!-- Balance cards -->
-    <div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-      <app-stat-card
-        [label]="t('bank.balance.pending')"
-        [value]="formatAmount(balance()?.pending_total)"
-        [sub]="(balance()?.pending_count ?? 0) + ' ' + t('common.total')"
-        icon="bank"
-      />
-      <app-stat-card
-        [label]="t('bank.balance.requested')"
-        [value]="formatAmount(balance()?.requested_total)"
-        [sub]="(balance()?.requested_count ?? 0) + ' ' + t('common.total')"
-        icon="bank"
-      />
-    </div>
-
-    <!-- Transactions -->
-    <section class="card p-5">
-      <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <h2 class="text-base font-semibold" style="color: var(--color-text)">
-            {{ t('bank.transactions.title') }}
-          </h2>
-          @if (canAccept()) {
-            <app-view-toggle [options]="viewOptions()" [active]="viewMode()" (activeChange)="setViewMode($event)" />
-          }
-        </div>
-        <label class="flex items-center gap-2">
-          <span class="label" style="margin-bottom: 0">{{ t('common.status') }}</span>
-          <select
-            class="select"
-            style="width: auto"
-            [value]="statusFilter()"
-            (change)="onStatusChange($event)"
-          >
-            <option value="">{{ t('common.all') }}</option>
-            <option value="pending">{{ t('bank.balance.pending') }}</option>
-            <option value="requested">{{ t('bank.balance.requested') }}</option>
-            <option value="rejected">{{ t('bank.status.rejected') }}</option>
-            <option value="withdrawn">{{ t('bank.balance.payouts') }}</option>
-          </select>
-        </label>
+    <app-page-stack>
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <app-stat-card
+          [label]="t('bank.balance.pending')"
+          [value]="formatAmount(balance()?.pending_total)"
+          [sub]="(balance()?.pending_count ?? 0) + ' ' + t('common.total')"
+          icon="bank"
+        />
+        <app-stat-card
+          [label]="t('bank.balance.requested')"
+          [value]="formatAmount(balance()?.requested_total)"
+          [sub]="(balance()?.requested_count ?? 0) + ' ' + t('common.total')"
+          icon="bank"
+        />
       </div>
 
-      @if (loading()) {
-        <app-loading [label]="t('common.loading')" />
-      } @else if (transactionsLoadFailed()) {
-        <app-error-state
-          [message]="t('common.error')"
-          [retryLabel]="t('common.retry')"
-          (retry)="loadTransactions()"
-        />
-      } @else if (filteredTransactions().length === 0) {
-        <app-empty-state [message]="t('bank.transactions.empty')" icon="bank" />
-      } @else {
+      <section>
+        <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <h2 class="text-base font-semibold" style="color: var(--color-text)">
+              {{ t('bank.transactions.title') }}
+            </h2>
+            @if (canAccept()) {
+              <app-view-toggle
+                [options]="viewOptions()"
+                [active]="viewMode()"
+                (activeChange)="setViewMode($event)"
+              />
+            }
+          </div>
+          <label class="flex items-center gap-2">
+            <span class="label" style="margin-bottom: 0">{{ t('common.status') }}</span>
+            <select
+              class="select"
+              style="width: auto"
+              [value]="statusFilter()"
+              (change)="onStatusChange($event)"
+            >
+              <option value="">{{ t('common.all') }}</option>
+              <option value="pending">{{ t('bank.balance.pending') }}</option>
+              <option value="requested">{{ t('bank.balance.requested') }}</option>
+              <option value="rejected">{{ t('bank.status.rejected') }}</option>
+              <option value="withdrawn">{{ t('bank.balance.payouts') }}</option>
+            </select>
+          </label>
+        </div>
+
+        @for (key of [tableKey()]; track key) {
         <app-data-table
           [columns]="transactionColumns()"
-          [rows]="filteredTransactions()"
+          [rows]="transactions()"
+          [loading]="loading()"
+          [error]="transactionsLoadFailed()"
+          (retry)="loadTransactions()"
           [trackBy]="trackTransaction"
+          [serverMode]="true"
+          [totalItems]="transactionTotal()"
           [pageSize]="10"
+          emptyIcon="bank"
+          [emptyLabel]="'bank.transactions.empty'"
+          (pageChange)="onTableChange($event)"
         >
           <ng-template dataTableCell="status" let-row>
             <span class="chip" [class]="statusChipClass(row.status)">
@@ -179,31 +196,65 @@ const TRANSACTIONS_LOAD_LIMIT = 1000;
             }
           </ng-template>
         </app-data-table>
-      }
-    </section>
+        }
+      </section>
+    </app-page-stack>
+
+    @if (confirmAll(); as action) {
+      <app-dialog [title]="t('common.confirm')" (closed)="confirmAll.set(null)">
+        <p>
+          {{
+            action === 'accept'
+              ? translate.t('bank.withdraw.confirmAcceptAll', { amount: confirmAmount() })
+              : translate.t('bank.withdraw.confirmRejectAll', { amount: confirmAmount() })
+          }}
+        </p>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="confirmAll.set(null)">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn"
+            [class.btn--primary]="action === 'accept'"
+            [class.btn--danger]="action === 'reject'"
+            (click)="runConfirmAll(action)"
+          >
+            {{ action === 'accept' ? t('bank.withdraw.accept') : t('bank.withdraw.reject') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
   `,
 })
 export class Bank {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private readonly toasts = inject(ToastService);
-  private readonly translate = inject(TranslateService);
+  protected readonly translate = inject(TranslateService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
   protected readonly balance = signal<BalanceSummary | null>(null);
   protected readonly transactions = signal<TransactionView[]>([]);
+  protected readonly transactionTotal = signal(0);
   protected readonly loading = signal(false);
   protected readonly transactionsLoadFailed = signal(false);
-  protected readonly statusFilter = signal<TransactionStatus | ''>('');
   protected readonly viewMode = signal<'personal' | 'guild'>('personal');
+  protected readonly statusFilter = signal<TransactionStatus | ''>('');
+  protected readonly confirmAll = signal<ConfirmAll | null>(null);
+  protected readonly tableKey = computed(() => `${this.viewMode()}:${this.statusFilter()}`);
   protected readonly viewOptions = computed<ViewToggleOption[]>(() => [
     { id: 'personal', label: this.t('bank.view.personal') },
     { id: 'guild', label: this.t('bank.view.guild') },
   ]);
   protected readonly trackTransaction = (tx: TransactionView): unknown => tx.id;
+  protected readonly confirmAmount = computed(() =>
+    this.formatAmount(this.balance()?.requested_total),
+  );
 
-  /** Dynamic columns based on view mode - guild view includes player name and actions */
+  private readonly tableQuery = signal<DataTablePageChange>(emptyPageChange());
+
   protected readonly transactionColumns = computed<DataTableColumn<TransactionView>[]>(() => {
     const baseColumns: DataTableColumn<TransactionView>[] = [
       {
@@ -211,23 +262,19 @@ export class Bank {
         label: 'common.status',
         sortable: true,
         accessor: (tx) => tx.status,
-        comparator: (a, b) => a.status.localeCompare(b.status),
       },
       {
         key: 'amount',
         label: 'common.amount',
         sortable: true,
         accessor: (tx) => tx.amount,
-        comparator: (a, b) => a.amount - b.amount,
         align: 'right',
       },
       {
         key: 'created_at',
         label: 'common.date',
         sortable: true,
-        searchable: true,
         accessor: (tx) => tx.created_at,
-        comparator: (a, b) => a.created_at.localeCompare(b.created_at),
       },
     ];
 
@@ -239,7 +286,6 @@ export class Bank {
           sortable: true,
           searchable: true,
           accessor: (tx) => tx.to_username,
-          comparator: (a, b) => a.to_username.localeCompare(b.to_username),
         },
         ...baseColumns,
         {
@@ -255,21 +301,9 @@ export class Bank {
     return baseColumns;
   });
 
-  /** Client-side filtered transactions based on status filter */
-  protected readonly filteredTransactions = computed(() => {
-    const filter = this.statusFilter();
-    const allTransactions = this.transactions();
-    if (!filter) {
-      return allTransactions;
-    }
-    return allTransactions.filter((tx) => tx.status === filter);
-  });
-
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   constructor() {
-    // Officers/Admins land directly on the guild-wide request queue so the
-    // accept/reject actions are immediately reachable.
     if (this.canAccept()) {
       this.viewMode.set('guild');
       this.statusFilter.set('requested');
@@ -280,7 +314,7 @@ export class Bank {
   private async checkQueryParams(): Promise<void> {
     const action = this.route.snapshot.queryParamMap.get('action');
     const idParam = this.route.snapshot.queryParamMap.get('id');
-    
+
     if (action && idParam && this.canAccept()) {
       const id = parseInt(idParam, 10);
       if (!isNaN(id)) {
@@ -289,12 +323,11 @@ export class Bank {
         } else if (action === 'reject') {
           await this.rejectSingle(id);
         }
-        
-        // Remove query params after processing
+
         void this.router.navigate([], {
           queryParams: { action: null, id: null },
           queryParamsHandling: 'merge',
-          replaceUrl: true
+          replaceUrl: true,
         });
       }
     }
@@ -304,18 +337,24 @@ export class Bank {
     return this.auth.hasPermission('bank.withdraw.accept');
   }
 
-  protected onStatusChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value as TransactionStatus | '';
-    this.statusFilter.set(value);
-  }
-
   protected setViewMode(next: string): void {
     if (next !== 'personal' && next !== 'guild') return;
     if (this.viewMode() === next) return;
     this.viewMode.set(next);
-    if (next === 'guild') {
-      this.statusFilter.set('requested');
-    }
+    this.statusFilter.set(next === 'guild' ? 'requested' : '');
+    this.tableQuery.set(emptyPageChange());
+    void this.loadTransactions();
+  }
+
+  protected onStatusChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value as TransactionStatus | '';
+    this.statusFilter.set(value);
+    this.tableQuery.set(emptyPageChange());
+    void this.loadTransactions();
+  }
+
+  protected onTableChange(event: DataTablePageChange): void {
+    this.tableQuery.set(event);
     void this.loadTransactions();
   }
 
@@ -323,29 +362,12 @@ export class Bank {
     await this.mutate('api/bank/transactions/withdraw', 'bank.withdraw.request', { all: true });
   }
 
-  /**
-   * Pays out every currently-requested withdrawal, guild-wide, in one action.
-   *
-   * There is no per-row selection step before this — `all: true` is the whole
-   * request — so the confirm is the only thing standing between one click and
-   * moving every pending payout at once. It states the actual amount rather
-   * than a bare "Confirm", since that is the number that makes the stakes
-   * legible.
-   */
-  protected async acceptWithdrawals(): Promise<void> {
-    const amount = this.formatAmount(this.balance()?.requested_total);
-    if (!window.confirm(this.t('bank.withdraw.confirmAcceptAll').replace('{amount}', amount))) {
-      return;
-    }
-    await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept', {
-      all: true,
-    });
-  }
-
-  /** Rejects every currently-requested withdrawal, guild-wide. See `acceptWithdrawals`. */
-  protected async rejectWithdrawals(): Promise<void> {
-    const amount = this.formatAmount(this.balance()?.requested_total);
-    if (!window.confirm(this.t('bank.withdraw.confirmRejectAll').replace('{amount}', amount))) {
+  protected async runConfirmAll(action: ConfirmAll): Promise<void> {
+    this.confirmAll.set(null);
+    if (action === 'accept') {
+      await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept', {
+        all: true,
+      });
       return;
     }
     await this.mutate('api/bank/transactions/withdraw/reject', 'bank.withdraw.reject', {
@@ -379,19 +401,33 @@ export class Bank {
   }
 
   protected async loadTransactions(): Promise<void> {
-    this.loading.set(true);
+    this.loading.set(this.transactions().length === 0);
     this.transactionsLoadFailed.set(false);
     try {
+      const query = this.tableQuery();
       const params: Record<string, string | number | boolean> = {
-        limit: TRANSACTIONS_LOAD_LIMIT,
+        page: query.page,
+        limit: query.pageSize,
       };
       if (this.viewMode() === 'guild') {
         params['global'] = true;
       }
+      if (query.search.trim()) {
+        params['search'] = query.search.trim();
+      }
+      if (query.sort) {
+        params['sort'] = query.sort.columnKey;
+        params['order'] = query.sort.direction;
+      }
+      const status = this.statusFilter();
+      if (status) {
+        params['status'] = status;
+      }
       const data = await firstValueFrom(
-        this.api.get<{ items: TransactionView[] }>('api/bank/transactions', params),
+        this.api.get<PaginatedData<TransactionView>>('api/bank/transactions', params),
       );
       this.transactions.set(data.items);
+      this.transactionTotal.set(data.total_items);
     } catch (error) {
       this.transactionsLoadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -414,7 +450,6 @@ export class Bank {
     }
   }
 
-  /** Formats a silver amount with locale-aware grouping and no decimals. */
   protected formatAmount(value: number | null | undefined): string {
     if (value === null || value === undefined) {
       return '0';
@@ -422,7 +457,6 @@ export class Bank {
     return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
   }
 
-  /** Formats an ISO timestamp as a localized date string. */
   protected formatDate(iso: string | null | undefined): string {
     if (!iso) {
       return '—';
@@ -430,7 +464,6 @@ export class Bank {
     return new Date(iso).toLocaleDateString();
   }
 
-  /** Maps a transaction status to its semantic chip class. */
   protected statusChipClass(status: TransactionStatus): string {
     switch (status) {
       case 'pending':
@@ -446,7 +479,6 @@ export class Bank {
     }
   }
 
-  /** Maps a transaction status to a representative icon. */
   protected statusIcon(status: TransactionStatus): IconName {
     switch (status) {
       case 'pending':
@@ -462,7 +494,6 @@ export class Bank {
     }
   }
 
-  /** Returns the localized status label shown inside the chip. */
   protected statusLabel(status: TransactionStatus): string {
     const keyMap: Record<TransactionStatus, TranslationKey> = {
       pending: 'bank.status.pending',

@@ -7,8 +7,8 @@
 //! a Discord role; here an administrator creates gestionale roles, links them to
 //! Discord snowflakes, and decides what each linked role is allowed to do.
 
-use crate::errors::{AppError, ProblemDetails};
 use crate::config::Config;
+use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::responses::ApiResponse;
 use axum::{
@@ -298,7 +298,9 @@ pub async fn list_guild_discord_roles(
     Extension(cfg): Extension<Config>,
 ) -> Result<Json<ApiResponse<Vec<DiscordRoleView>>>, AppError> {
     user.require(&perms, Permission::RolesManage).await?;
-    Ok(Json(ApiResponse::new(AdminService::discord_roles(&cfg).await?)))
+    Ok(Json(ApiResponse::new(
+        AdminService::discord_roles(&cfg).await?,
+    )))
 }
 
 /// Read the guild's Discord integration settings.
@@ -408,7 +410,9 @@ pub async fn list_discord_roles(
     Extension(cfg): Extension<Config>,
 ) -> Result<Json<ApiResponse<Vec<DiscordRoleView>>>, AppError> {
     user.require(&perms, Permission::AutoroleManage).await?;
-    Ok(Json(ApiResponse::new(AdminService::discord_roles(&cfg).await?)))
+    Ok(Json(ApiResponse::new(
+        AdminService::discord_roles(&cfg).await?,
+    )))
 }
 
 /// Update or disable AutoRole.
@@ -436,7 +440,6 @@ pub async fn update_autorole(
 ) -> Result<Json<ApiResponse<AutoRoleSettingsView>>, AppError> {
     user.require(&perms, Permission::AutoroleManage).await?;
     Ok(Json(ApiResponse::new(
-        AdminService::update_autorole(&db, user.user_id, &cfg, &body.discord_auto_role_id)
-            .await?,
+        AdminService::update_autorole(&db, user.user_id, &cfg, &body.discord_auto_role_id).await?,
     )))
 }

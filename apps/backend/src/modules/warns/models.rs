@@ -28,8 +28,12 @@ pub struct WarnView {
     pub id: i64,
     /// Target member.
     pub user_id: i64,
+    /// Target member display name, when resolved.
+    pub username: Option<String>,
     /// Issuer.
     pub issued_by_user_id: i64,
+    /// Issuer display name, when resolved.
+    pub issued_by_username: Option<String>,
     /// Reason text.
     pub reason: String,
     /// Severity tag.
@@ -54,6 +58,8 @@ pub struct WarnEscalationView {
     pub id: i64,
     /// Target member.
     pub user_id: i64,
+    /// Target member display name, when resolved.
+    pub username: Option<String>,
     /// Threshold at open time.
     pub threshold_at_time: i32,
     /// Active-warn count at open time.
@@ -77,4 +83,10 @@ pub struct WarnFilters {
     pub severity: Option<WarnSeverity>,
     /// `true` = only revoked, `false` = only active, omitted = all (including revoked).
     pub revoked: Option<bool>,
+    /// Case-insensitive substring match on reason.
+    pub search: Option<String>,
+    /// Sort column. Allowed: `created_at` (default), `severity`, `reason`.
+    pub sort: Option<String>,
+    /// Sort direction: `asc` or `desc`. Defaults to `desc`.
+    pub order: Option<String>,
 }

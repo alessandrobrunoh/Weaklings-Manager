@@ -201,7 +201,7 @@ pub struct MatchedParticipant {
 }
 
 /// Filters that can be applied when listing splits.
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
 pub struct SplitFilters {
     /// Filter splits by their status.
     pub status: Option<SplitStatus>,

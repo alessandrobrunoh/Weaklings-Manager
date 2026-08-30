@@ -9,14 +9,14 @@ use std::collections::HashSet;
 use chrono::{DateTime, FixedOffset, Utc};
 use sea_orm::prelude::Decimal;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend,
-    DatabaseConnection, EntityTrait, FromQueryResult, IntoActiveModel, Order, PaginatorTrait,
-    QueryFilter, QueryOrder, Statement, TransactionTrait, sea_query::Expr,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend,
+    DatabaseConnection, EntityTrait, FromQueryResult, IntoActiveModel, PaginatorTrait, QueryFilter,
+    QueryOrder, Statement, TransactionTrait, sea_query::Expr,
 };
 use uuid::Uuid;
 
 use crate::errors::AppError;
-use crate::pagination::{PaginatedData, PaginationParams};
+use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
 use super::entities::{
     ActiveModel, Column, Entity as SiphonedEntryEntity, Model as SiphonedEntryModel,
@@ -220,11 +220,12 @@ impl SiphonedService {
         })
     }
 
-    /// Lists paginated ledger entries with optional filters, newest first.
+    /// Lists paginated ledger entries with optional filters, newest first by default.
     ///
     /// # Errors
     ///
-    /// Returns `AppError::Database` if the query fails.
+    /// Returns `AppError::Validation` for an unknown `sort` column or `AppError::Database` if the
+    /// query fails.
     pub async fn list_entries(
         &self,
         db: &DatabaseConnection,
@@ -234,10 +235,28 @@ impl SiphonedService {
         let limit = pagination.limit();
         let page = pagination.offset_page();
 
-        let paginator = entries_query(filters)
-            .order_by(Column::OccurredAt, Order::Desc)
-            .order_by(Column::Id, Order::Desc)
-            .paginate(db, limit);
+        let sort_column = resolve_sort_key(
+            filters.sort.as_deref(),
+            &[
+                ("occurred_at", Column::OccurredAt),
+                ("player_name", Column::PlayerName),
+                ("amount", Column::Amount),
+                ("reason", Column::Reason),
+                ("ingested_at", Column::IngestedAt),
+            ],
+            Column::OccurredAt,
+        )?;
+        let order = SortOrder::from_query(filters.order.as_deref());
+        let query = match order {
+            SortOrder::Asc => entries_query(filters)
+                .order_by_asc(sort_column)
+                .order_by_asc(Column::Id),
+            SortOrder::Desc => entries_query(filters)
+                .order_by_desc(sort_column)
+                .order_by_desc(Column::Id),
+        };
+
+        let paginator = query.paginate(db, limit);
 
         let total_items = paginator.num_items().await?;
         let total_pages = paginator.num_pages().await?;
@@ -268,6 +287,7 @@ impl SiphonedService {
         db: &DatabaseConnection,
         min_debt: Option<Decimal>,
         sort: BalanceSort,
+        search: Option<&str>,
     ) -> Result<Vec<PlayerBalance>, AppError> {
         let order_clause = match sort {
             BalanceSort::NetAsc => "net ASC, display_name ASC",
@@ -278,6 +298,16 @@ impl SiphonedService {
         let having_clause = min_debt
             .map(|threshold| format!("HAVING SUM(amount) < {threshold}"))
             .unwrap_or_default();
+
+        let search_pattern = search
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| format!("%{}%", value.to_lowercase()));
+        let search_clause = if search_pattern.is_some() {
+            r#"WHERE LOWER(player_name) LIKE $1"#
+        } else {
+            ""
+        };
 
         let (total_deposited, total_withdrawn, net) = balance_aggregates(db);
         let sql = format!(
@@ -302,13 +332,18 @@ impl SiphonedService {
                 MIN("occurred_at") AS first_seen,
                 MAX("occurred_at") AS last_seen
             FROM unique_entries
+            {search_clause}
             GROUP BY player_key
             {having_clause}
             ORDER BY {order_clause}
             "#
         );
 
-        let statement = build_statement(db, &sql, &[]);
+        let params: Vec<sea_orm::Value> = match search_pattern.as_deref() {
+            Some(pattern) => vec![text_value(pattern)],
+            None => Vec::new(),
+        };
+        let statement = build_statement(db, &sql, &params);
         let rows = PlayerBalanceRow::find_by_statement(statement)
             .all(db)
             .await?;
@@ -598,6 +633,19 @@ fn entries_query(filters: &EntryFilters) -> sea_orm::Select<SiphonedEntryEntity>
     if let Some(name) = &filters.player_name {
         let pattern = name.to_lowercase();
         q = q.filter(Expr::cust("LOWER(\"player_name\")").like(format!("%{pattern}%")));
+    }
+    if let Some(search) = filters
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let pattern = format!("%{}%", search.to_lowercase());
+        q = q.filter(
+            Condition::any()
+                .add(Expr::cust("LOWER(\"player_name\")").like(pattern.clone()))
+                .add(Expr::cust("LOWER(\"reason\")").like(pattern)),
+        );
     }
     if let Some(reason) = &filters.reason {
         q = q.filter(Column::Reason.eq(reason));
@@ -934,7 +982,7 @@ mod tests {
         insert_entry(&db, ts(3), "GALVDON", "Withdrawal", "-10", None).await;
 
         let balances = service
-            .list_balances(&db, None, BalanceSort::NetAsc)
+            .list_balances(&db, None, BalanceSort::NetAsc, None)
             .await
             .expect("list_balances");
 
@@ -965,7 +1013,7 @@ mod tests {
         insert_entry(&db, ts(2), "Debtor", "Withdrawal", "-50", None).await;
 
         let debtors = service
-            .list_balances(&db, Some(Decimal::ZERO), BalanceSort::NetAsc)
+            .list_balances(&db, Some(Decimal::ZERO), BalanceSort::NetAsc, None)
             .await
             .expect("list_balances");
 
@@ -1037,6 +1085,97 @@ mod tests {
         let service = SiphonedService::new();
         let res = service.delete_batch(&db, "nope").await;
         assert!(matches!(res, Err(AppError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn list_entries_search_matches_player_or_reason_and_sorts() {
+        let db = seed_db().await;
+        let service = SiphonedService::new();
+        insert_entry(&db, ts(1), "Galvdon", "Withdrawal", "-10", None).await;
+        insert_entry(&db, ts(2), "Volantibus", "Deposit", "20", None).await;
+        insert_entry(&db, ts(3), "MrMaranza06", "Withdrawal", "-5", None).await;
+
+        let by_name = service
+            .list_entries(
+                &db,
+                &default_pagination(),
+                &EntryFilters {
+                    search: Some("galv".into()),
+                    ..EntryFilters::default()
+                },
+            )
+            .await
+            .expect("search player");
+        assert_eq!(by_name.items.len(), 1);
+        assert_eq!(by_name.items[0].player_name, "Galvdon");
+
+        let by_reason = service
+            .list_entries(
+                &db,
+                &default_pagination(),
+                &EntryFilters {
+                    search: Some("deposit".into()),
+                    ..EntryFilters::default()
+                },
+            )
+            .await
+            .expect("search reason");
+        assert_eq!(by_reason.items.len(), 1);
+        assert_eq!(by_reason.items[0].player_name, "Volantibus");
+
+        let sorted = service
+            .list_entries(
+                &db,
+                &default_pagination(),
+                &EntryFilters {
+                    sort: Some("player_name".into()),
+                    order: Some("asc".into()),
+                    ..EntryFilters::default()
+                },
+            )
+            .await
+            .expect("sort");
+        let names: Vec<_> = sorted
+            .items
+            .iter()
+            .map(|entry| entry.player_name.as_str())
+            .collect();
+        assert_eq!(names, vec!["Galvdon", "MrMaranza06", "Volantibus"]);
+    }
+
+    #[tokio::test]
+    async fn list_entries_rejects_unknown_sort_column() {
+        let db = seed_db().await;
+        let error = SiphonedService::new()
+            .list_entries(
+                &db,
+                &default_pagination(),
+                &EntryFilters {
+                    sort: Some("fame".into()),
+                    ..EntryFilters::default()
+                },
+            )
+            .await
+            .unwrap_err();
+        match error {
+            AppError::Validation(message) => assert!(message.contains("fame")),
+            other => panic!("expected validation, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn list_balances_search_filters_player_name() {
+        let db = seed_db().await;
+        let service = SiphonedService::new();
+        insert_entry(&db, ts(1), "Galvdon", "Deposit", "10", None).await;
+        insert_entry(&db, ts(2), "Volantibus", "Withdrawal", "-10", None).await;
+
+        let matches = service
+            .list_balances(&db, None, BalanceSort::NameAsc, Some("galv"))
+            .await
+            .expect("search");
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].player_name, "Galvdon");
     }
 
     #[tokio::test]

@@ -32,6 +32,10 @@ pub struct ListSplitsQuery {
     pub page: Option<u64>,
     /// The maximum number of items per page. Defaults to 10.
     pub limit: Option<u64>,
+    /// Sort column. Allowed: `created_at` (default), `status`, `note`.
+    pub sort: Option<String>,
+    /// Sort direction: `asc` or `desc` (default).
+    pub order: Option<String>,
     /// The filter query parameters.
     #[serde(flatten)]
     pub filters: SplitFilters,
@@ -126,7 +130,8 @@ async fn create_split(
         `GET /bank/transactions`); everyone sees every split. Each item is a `SplitSummary` (no \
         participant list — call `GET /splits/{id}` for that). Filter with `?status=pending`, \
         `?status=completed`, `?status=not_completed`, or `?status=lost`; omit to get every status. \
-        Standard `page`/`limit` pagination, default `limit=10`.",
+        Standard `page`/`limit` pagination, default `limit=10`. Sort with `?sort=created_at|status|note` \
+        and `?order=asc|desc` (default `created_at desc`). Unknown `sort` values return 400.",
     security(("session_cookie" = [])),
     params(ListSplitsQuery),
     responses(
@@ -142,7 +147,13 @@ async fn list_splits(
     let service = SplitService::new();
     let pagination = query.pagination();
     let paginated = service
-        .list_splits(&db, &pagination, &query.filters)
+        .list_splits_sorted(
+            &db,
+            &pagination,
+            &query.filters,
+            query.sort.as_deref(),
+            query.order.as_deref(),
+        )
         .await?;
     Ok(Json(ApiResponse::new(PaginatedSplitSummary::from(
         paginated,
@@ -561,7 +572,8 @@ async fn create_island(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<CreateIslandRequest>,
 ) -> Result<Json<ApiResponse<SplitIslandView>>, AppError> {
-    user.require(&perms, Permission::SplitsIslandsManage).await?;
+    user.require(&perms, Permission::SplitsIslandsManage)
+        .await?;
     let island = SplitService::new().create_island(&db, req).await?;
     Ok(Json(ApiResponse::new(island)))
 }
@@ -588,7 +600,8 @@ async fn update_island(
     Path(id): Path<i64>,
     Json(req): Json<UpdateIslandRequest>,
 ) -> Result<Json<ApiResponse<SplitIslandView>>, AppError> {
-    user.require(&perms, Permission::SplitsIslandsManage).await?;
+    user.require(&perms, Permission::SplitsIslandsManage)
+        .await?;
     let island = SplitService::new().update_island(&db, id, req).await?;
     Ok(Json(ApiResponse::new(island)))
 }
@@ -614,7 +627,8 @@ async fn delete_island(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<axum::response::Response, AppError> {
-    user.require(&perms, Permission::SplitsIslandsManage).await?;
+    user.require(&perms, Permission::SplitsIslandsManage)
+        .await?;
     SplitService::new().delete_island(&db, id).await?;
     Ok(axum::response::Response::builder()
         .status(axum::http::StatusCode::NO_CONTENT)
@@ -644,7 +658,8 @@ async fn add_island_tab(
     Path(id): Path<i64>,
     Json(req): Json<CreateIslandTabRequest>,
 ) -> Result<Json<ApiResponse<SplitIslandView>>, AppError> {
-    user.require(&perms, Permission::SplitsIslandsManage).await?;
+    user.require(&perms, Permission::SplitsIslandsManage)
+        .await?;
     let island = SplitService::new().add_island_tab(&db, id, req).await?;
     Ok(Json(ApiResponse::new(island)))
 }
@@ -674,7 +689,8 @@ async fn update_island_tab(
     Path((id, tab_id)): Path<(i64, i64)>,
     Json(req): Json<UpdateIslandTabRequest>,
 ) -> Result<Json<ApiResponse<SplitIslandView>>, AppError> {
-    user.require(&perms, Permission::SplitsIslandsManage).await?;
+    user.require(&perms, Permission::SplitsIslandsManage)
+        .await?;
     let island = SplitService::new()
         .update_island_tab(&db, id, tab_id, req)
         .await?;
@@ -705,7 +721,8 @@ async fn delete_island_tab(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path((id, tab_id)): Path<(i64, i64)>,
 ) -> Result<Json<ApiResponse<SplitIslandView>>, AppError> {
-    user.require(&perms, Permission::SplitsIslandsManage).await?;
+    user.require(&perms, Permission::SplitsIslandsManage)
+        .await?;
     let island = SplitService::new()
         .delete_island_tab(&db, id, tab_id)
         .await?;

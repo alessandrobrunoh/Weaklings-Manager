@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import {
@@ -24,11 +24,9 @@ import type {
   CreateCompCategoryRequest,
   CreateCompRequest,
   OpenAlbionItem,
-  UpdateBuildCategoryRequest,
-  UpdateBuildRequest,
-  UpdateCompCategoryRequest,
-  UpdateCompRequest,
   PaginatedData,
+  UpdateBuildCategoryRequest,
+  UpdateCompCategoryRequest,
 } from '../../core/models/api.models';
 import {
   albionEquipmentIconUrl,
@@ -39,539 +37,482 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTablePageChange,
+} from '../../shared/components/data-table/data-table';
+import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { Dialog } from '../../shared/components/dialog/dialog';
 import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
-import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 
 const PAGE_SIZE = 10;
+const OPTIONS_LIMIT = 500;
 
+type TabId = 'comps' | 'builds' | 'categories';
 type CategoryKind = 'build' | 'comp';
 type ManagedCategory = BuildCategoryView | CompCategoryView;
+
+type PendingDelete =
+  | { kind: 'comp' | 'build'; id: number; name: string }
+  | { kind: 'category'; id: number; name: string; categoryKind: CategoryKind };
 
 /**
  * Compositions and builds workspace.
  *
- * Keeps the two strongly-related authoring flows in a single page because comps
- * depend on existing builds and guild officers need to iterate between them
- * quickly while preparing an event roster.
+ * Three tabs share one route: server-paginated comps and builds, plus a small
+ * client-side categories table. Create and delete always go through `app-dialog`.
  */
 @Component({
   selector: 'app-comps',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, PageHeader, EmptyState, Loading, EquipmentGrid, ViewToggle],
+  imports: [
+    RouterLink,
+    PageHeader,
+    PageStack,
+    ViewToggle,
+    DataTable,
+    DataTableCell,
+    Dialog,
+    EquipmentGrid,
+  ],
   template: `
     <app-page-header [title]="t('comps.title')" [subtitle]="t('comps.subtitle')">
-      <div class="flex flex-wrap gap-2">
-        @if (canManageAnyCategory()) {
-          <button type="button" class="btn btn--outline" (click)="toggleCategoryManager()">
-            {{ showCategoryManager() ? t('common.close') : t('comps.categories') }}
-          </button>
-        }
-        @if (canCreateCurrent()) {
-          <button type="button" class="btn btn--primary" (click)="toggleCreateForm()">
-            {{ showCreateForm() ? t('common.close') : createButtonLabel() }}
-          </button>
-        }
-      </div>
+      @if (canCreateCurrent()) {
+        <button type="button" class="btn btn--primary" (click)="openCreate()">
+          {{ createButtonLabel() }}
+        </button>
+      }
+      <app-view-toggle
+        pageTabs
+        [options]="tabOptions()"
+        [active]="tab()"
+        (activeChange)="switchTab($event)"
+      />
     </app-page-header>
 
-    @if (showCategoryManager()) {
-      <section class="card mb-6 grid gap-5 p-5" aria-label="Manage composition categories">
-        <header>
-          <h2 class="text-lg font-semibold" style="color: var(--color-text)">
-            {{ t('comps.categories') }}
-          </h2>
-          <p class="text-sm" style="color: var(--color-text-secondary)">
-            Create, rename, or delete build and composition categories.
-          </p>
-        </header>
-
+    <app-page-stack>
+      @if (tab() === 'comps') {
+        <app-data-table
+          [columns]="compColumns()"
+          [rows]="comps()"
+          [loading]="loading()"
+          [error]="loadFailed()"
+          [serverMode]="true"
+          [totalItems]="compsTotal()"
+          [pageSize]="PAGE_SIZE"
+          [trackBy]="trackComp"
+          [rowClickable]="true"
+          emptyIcon="package"
+          (retry)="loadComps()"
+          (pageChange)="onCompsPageChange($event)"
+          (rowClick)="openComp($event)"
+        >
+          <ng-template dataTableCell="name" let-row>
+            <span style="font-weight: 500">{{ row.name }}</span>
+          </ng-template>
+          <ng-template dataTableCell="category" let-row>
+            <span class="chip">{{ row.category_name || t('comps.noCategory') }}</span>
+          </ng-template>
+          <ng-template dataTableCell="slots" let-row>
+            {{ row.build_count }} / {{ row.total_quantity }}
+          </ng-template>
+          <ng-template dataTableCell="winrate" let-row>
+            @if (compPerformance(row.id); as performance) {
+              {{ formatPercent(performance.stats.win_rate) }}
+            }
+          </ng-template>
+          <ng-template dataTableCell="actions" let-row>
+            <div class="flex flex-wrap justify-end gap-2" (click)="$event.stopPropagation()">
+              <a class="btn btn--tonal btn--sm" [routerLink]="['/comps', row.id]">{{
+                t('common.open')
+              }}</a>
+              @if (canManageComps()) {
+                <button
+                  type="button"
+                  class="btn btn--danger btn--sm"
+                  [disabled]="saving()"
+                  (click)="askDeleteComp(row)"
+                >
+                  {{ t('common.delete') }}
+                </button>
+              }
+            </div>
+          </ng-template>
+        </app-data-table>
+      } @else if (tab() === 'builds') {
+        <app-data-table
+          [columns]="buildColumns()"
+          [rows]="builds()"
+          [loading]="loading()"
+          [error]="loadFailed()"
+          [serverMode]="true"
+          [totalItems]="buildsTotal()"
+          [pageSize]="PAGE_SIZE"
+          [trackBy]="trackBuild"
+          [rowClickable]="true"
+          emptyIcon="package"
+          (retry)="loadBuilds()"
+          (pageChange)="onBuildsPageChange($event)"
+          (rowClick)="openBuild($event)"
+        >
+          <ng-template dataTableCell="name" let-row>
+            <span style="font-weight: 500">{{ row.name }}</span>
+          </ng-template>
+          <ng-template dataTableCell="role" let-row>
+            <span class="chip">{{ roleLabel(row.role) }}</span>
+          </ng-template>
+          <ng-template dataTableCell="category" let-row>
+            <span class="chip">{{ row.category_name || t('comps.noCategory') }}</span>
+          </ng-template>
+          <ng-template dataTableCell="items" let-row>
+            {{ row.item_count }}
+          </ng-template>
+          <ng-template dataTableCell="actions" let-row>
+            <div class="flex flex-wrap justify-end gap-2" (click)="$event.stopPropagation()">
+              <a class="btn btn--tonal btn--sm" [routerLink]="['/comps', 'builds', row.id]">{{
+                t('common.open')
+              }}</a>
+              @if (canManageBuilds()) {
+                <button
+                  type="button"
+                  class="btn btn--danger btn--sm"
+                  [disabled]="saving()"
+                  (click)="askDeleteBuild(row)"
+                >
+                  {{ t('common.delete') }}
+                </button>
+              }
+            </div>
+          </ng-template>
+        </app-data-table>
+      } @else {
         <app-view-toggle
           [options]="categoryKindOptions()"
           [active]="categoryKind()"
           (activeChange)="switchCategoryKind($event)"
         />
-
-        <form
-          class="surface grid gap-3 p-4 md:grid-cols-[1fr_1fr_auto]"
-          (submit)="onCategoryCreateSubmit($event)"
+        <app-data-table
+          [columns]="categoryColumns()"
+          [rows]="managedCategories()"
+          [loading]="categoriesLoading()"
+          [error]="loadFailed()"
+          [trackBy]="trackCategory"
+          [pageSize]="PAGE_SIZE"
+          emptyIcon="package"
+          (retry)="loadCategories()"
         >
-          <input
-            class="input"
-            type="text"
-            placeholder="Category name"
-            [attr.aria-label]="t('common.name')"
-            [value]="categoryDraftName()"
-            (input)="onCategoryDraftNameChange($event)"
-          />
-          <input
-            class="input"
-            type="text"
-            placeholder="Description"
-            [attr.aria-label]="t('common.description')"
-            [value]="categoryDraftDescription()"
-            (input)="onCategoryDraftDescriptionChange($event)"
-          />
-          <button type="submit" class="btn btn--primary" [disabled]="savingCategory()">
-            {{ t('common.create') }}
-          </button>
-        </form>
-
-        <div class="grid gap-3 lg:grid-cols-2">
-          @for (category of managedCategories(); track category.id) {
-            <article class="surface grid gap-3 p-4">
-              @if (editingCategoryId() === category.id) {
-                <input
-                  class="input"
-                  type="text"
-                  [value]="categoryEditName()"
-                  (input)="onCategoryEditNameChange($event)"
-                />
-                <input
-                  class="input"
-                  type="text"
-                  [value]="categoryEditDescription()"
-                  (input)="onCategoryEditDescriptionChange($event)"
-                />
-                <div class="flex justify-end gap-2">
-                  <button type="button" class="btn btn--ghost" (click)="cancelCategoryEdit()">
-                    {{ t('common.cancel') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn--primary"
-                    [disabled]="savingCategory()"
-                    (click)="saveCategoryEdit()"
-                  >
-                    {{ t('common.save') }}
-                  </button>
-                </div>
-              } @else {
-                <header class="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 class="font-semibold" style="color: var(--color-text)">
-                      {{ category.name }}
-                    </h3>
-                    @if (category.description) {
-                      <p class="text-sm" style="color: var(--color-text-secondary)">
-                        {{ category.description }}
-                      </p>
-                    }
-                  </div>
-                  <span class="chip">{{ category.slug || category.id }}</span>
-                </header>
-                <footer class="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    class="btn btn--outline"
-                    (click)="startCategoryEdit(category)"
-                  >
-                    {{ t('common.edit') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn--danger"
-                    [disabled]="savingCategory()"
-                    (click)="deleteCategory(category.id)"
-                  >
-                    {{ t('common.delete') }}
-                  </button>
-                </footer>
-              }
-            </article>
-          }
-        </div>
-      </section>
-    }
-
-    @if (showCreateForm()) {
-      <form class="card mb-6 grid gap-4 p-5" (submit)="onCreateSubmit($event)">
-        <header>
-          <h2 class="text-lg font-semibold" style="color: var(--color-text)">
-            {{ createButtonLabel() }}
-          </h2>
-          <p class="mt-1 text-sm" style="color: var(--color-text-secondary)">
-            {{
-              tab() === 'comps'
-                ? 'Select the required builds and quantities.'
-                : 'Define role and optional equipment slots.'
-            }}
-          </p>
-        </header>
-
-        <div class="grid gap-4 md:grid-cols-2">
-          <label>
-            <span class="label">{{ t('common.name') }}</span>
-            <input class="input" type="text" [value]="draftName()" (input)="onNameChange($event)" />
-          </label>
-          <label>
-            <span class="label">Category</span>
-            <select
-              class="select"
-              [value]="draftCategoryId()"
-              (change)="onCategoryIdChange($event)"
-            >
-              <option value="">Select category</option>
-              @for (category of currentCategories(); track category.id) {
-                <option [value]="category.id">{{ category.name }}</option>
-              }
-            </select>
-          </label>
-        </div>
-
-        <label>
-          <span class="label">Description</span>
-          <textarea
-            class="textarea"
-            rows="3"
-            [value]="draftDescription()"
-            (input)="onDescriptionChange($event)"
-          ></textarea>
-        </label>
-
-        @if (tab() === 'builds') {
-          <label>
-            <span class="label">Role</span>
-            <select class="select" [value]="draftRole()" (change)="onRoleChange($event)">
-              @for (role of roles; track role) {
-                <option [value]="role">{{ roleLabel(role) }}</option>
-              }
-            </select>
-          </label>
-
-          <section class="surface grid gap-4 p-4" aria-label="Build items">
-            <header class="flex items-center justify-between gap-3">
-              <div>
-                <h3 class="text-sm font-semibold" style="color: var(--color-text)">Equipment</h3>
-                <p class="text-xs" style="color: var(--color-text-secondary)">
-                  Click any slot to search OpenAlbion and pick an item.
-                </p>
+          <ng-template dataTableCell="name" let-row>
+            <span style="font-weight: 500">{{ row.name }}</span>
+          </ng-template>
+          <ng-template dataTableCell="description" let-row>
+            <span style="color: var(--color-text-secondary)">{{ row.description || '' }}</span>
+          </ng-template>
+          <ng-template dataTableCell="actions" let-row>
+            @if (canManageCurrentCategory()) {
+              <div class="flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  class="btn btn--outline btn--sm"
+                  (click)="openCategoryEdit(row)"
+                >
+                  {{ t('common.edit') }}
+                </button>
+                <button
+                  type="button"
+                  class="btn btn--danger btn--sm"
+                  [disabled]="saving()"
+                  (click)="askDeleteCategory(row)"
+                >
+                  {{ t('common.delete') }}
+                </button>
               </div>
-              <span class="chip">{{ draftItems().length }}/{{ slots.length }}</span>
-            </header>
+            }
+          </ng-template>
+        </app-data-table>
+      }
+    </app-page-stack>
 
-            <app-equipment-grid
-              [items]="draftItems()"
-              [canManage]="true"
-              [editingSlot]="draftItemSlot()"
-              [draftTier]="draftItemTier()"
-              [draftSearch]="draftItemSearch()"
-              [draftItemId]="draftSelectedItemId()"
-              [searchResults]="itemSearchResults()"
-              [searchLoading]="itemSearchLoading()"
-              [tiers]="itemTiers"
-              (slotToggle)="onSlotToggle($event)"
-              (tierChange)="onPopoverTierChange($event)"
-              (searchChange)="onPopoverSearchChange($event)"
-              (itemSelect)="onPopoverItemSelect($event)"
-              (saveSlot)="onPopoverSave()"
-              (cancelEdit)="onPopoverCancel()"
-              (removeItem)="removeDraftItem($event)"
-            />
-          </section>
-        } @else {
-          <label>
-            <span class="label">Parent composition</span>
-            <select
-              class="select"
-              [value]="draftParentCompId()"
-              (change)="onParentCompChange($event)"
-            >
-              <option value="">No parent</option>
-              @for (comp of comps(); track comp.id) {
-                <option [value]="comp.id">{{ comp.name }}</option>
-              }
-            </select>
-          </label>
-
-          <section class="surface grid gap-3 p-4" aria-label="Composition builds">
-            <header>
-              <h3 class="text-sm font-semibold" style="color: var(--color-text)">Builds</h3>
-              <p class="text-xs" style="color: var(--color-text-secondary)">
-                Add at least one build with the target roster quantity.
-              </p>
-            </header>
-
-            <div class="grid gap-3 sm:grid-cols-[1fr_7rem_auto]">
-              <select
-                class="select"
-                [value]="selectedBuildId()"
-                (change)="onSelectedBuildChange($event)"
-              >
-                <option value="">Select build</option>
-                @for (build of buildOptions(); track build.id) {
-                  <option [value]="build.id">
-                    {{ build.name }} — {{ roleLabel(build.role) }} —
-                    {{ build.category_name || 'No category' }}
-                  </option>
-                }
-              </select>
+    @if (createOpen()) {
+      <app-dialog
+        [title]="createButtonLabel()"
+        [size]="tab() === 'builds' ? 'lg' : 'md'"
+        (closed)="closeCreate()"
+      >
+        <form id="comps-create-form" class="grid gap-4" (submit)="onCreateSubmit($event)">
+          <div class="grid gap-4 md:grid-cols-2">
+            <label>
+              <span class="label">{{ t('common.name') }}</span>
               <input
                 class="input"
-                type="number"
-                min="1"
-                [value]="selectedBuildQuantity()"
-                (input)="onSelectedBuildQuantityChange($event)"
+                type="text"
+                [value]="draftName()"
+                (input)="onNameChange($event)"
               />
-              <button type="button" class="btn btn--tonal" (click)="addBuildToDraft()">Add</button>
-            </div>
-
-            @if (draftBuildEntries().length > 0) {
-              <div class="grid gap-2">
-                @for (entry of draftBuildEntries(); track entry.build_id) {
-                  <div
-                    class="flex items-center justify-between gap-3 rounded-lg px-3 py-2"
-                    style="background-color: var(--color-surface-1)"
-                  >
-                    <span>{{ buildName(entry.build_id) }}</span>
-                    <span class="chip">x{{ entry.quantity }}</span>
-                    <button
-                      type="button"
-                      class="btn btn--ghost"
-                      (click)="removeBuildFromDraft(entry.build_id)"
-                    >
-                      {{ t('common.delete') }}
-                    </button>
-                  </div>
+            </label>
+            <label>
+              <span class="label">{{ t('common.category') }}</span>
+              <select
+                class="select"
+                [value]="draftCategoryId()"
+                (change)="onCategoryIdChange($event)"
+              >
+                <option value="">{{ t('comps.selectCategory') }}</option>
+                @for (category of currentCategories(); track category.id) {
+                  <option [value]="category.id">{{ category.name }}</option>
                 }
-              </div>
-            }
-          </section>
-        }
+              </select>
+            </label>
+          </div>
 
-        <div class="flex justify-end gap-2">
-          <button type="button" class="btn btn--ghost" (click)="toggleCreateForm()">
+          <label>
+            <span class="label">{{ t('common.description') }}</span>
+            <textarea
+              class="textarea"
+              rows="3"
+              [value]="draftDescription()"
+              (input)="onDescriptionChange($event)"
+            ></textarea>
+          </label>
+
+          @if (tab() === 'builds') {
+            <label>
+              <span class="label">{{ t('common.role') }}</span>
+              <select class="select" [value]="draftRole()" (change)="onRoleChange($event)">
+                @for (role of roles; track role) {
+                  <option [value]="role">{{ roleLabel(role) }}</option>
+                }
+              </select>
+            </label>
+
+            <section class="surface grid gap-4 p-4" [attr.aria-label]="t('comps.equipment')">
+              <header class="flex items-center justify-between gap-3">
+                <div>
+                  <h3 class="text-sm font-semibold" style="color: var(--color-text)">
+                    {{ t('comps.equipment') }}
+                  </h3>
+                </div>
+                <span class="chip">{{ draftItems().length }}/{{ slots.length }}</span>
+              </header>
+              <app-equipment-grid
+                [items]="draftItems()"
+                [canManage]="true"
+                [editingSlot]="draftItemSlot()"
+                [draftTier]="draftItemTier()"
+                [draftSearch]="draftItemSearch()"
+                [draftItemId]="draftSelectedItemId()"
+                [searchResults]="itemSearchResults()"
+                [searchLoading]="itemSearchLoading()"
+                [tiers]="itemTiers"
+                (slotToggle)="onSlotToggle($event)"
+                (tierChange)="onPopoverTierChange($event)"
+                (searchChange)="onPopoverSearchChange($event)"
+                (itemSelect)="onPopoverItemSelect($event)"
+                (saveSlot)="onPopoverSave()"
+                (cancelEdit)="onPopoverCancel()"
+                (removeItem)="removeDraftItem($event)"
+              />
+            </section>
+          } @else {
+            <label>
+              <span class="label">{{ t('comps.parent') }}</span>
+              <select
+                class="select"
+                [value]="draftParentCompId()"
+                (change)="onParentCompChange($event)"
+              >
+                <option value="">{{ t('comps.noParent') }}</option>
+                @for (comp of parentOptions(); track comp.id) {
+                  <option [value]="comp.id">{{ comp.name }}</option>
+                }
+              </select>
+            </label>
+
+            <section class="surface grid gap-3 p-4" [attr.aria-label]="t('comps.builds')">
+              <header>
+                <h3 class="text-sm font-semibold" style="color: var(--color-text)">
+                  {{ t('comps.builds') }}
+                </h3>
+              </header>
+              <div class="grid gap-3 sm:grid-cols-[1fr_7rem_auto]">
+                <select
+                  class="select"
+                  [value]="selectedBuildId()"
+                  (change)="onSelectedBuildChange($event)"
+                >
+                  <option value="">{{ t('comps.selectBuild') }}</option>
+                  @for (build of buildOptions(); track build.id) {
+                    <option [value]="build.id">
+                      {{ build.name }} — {{ roleLabel(build.role) }} —
+                      {{ build.category_name || t('comps.noCategory') }}
+                    </option>
+                  }
+                </select>
+                <input
+                  class="input"
+                  type="number"
+                  min="1"
+                  [value]="selectedBuildQuantity()"
+                  (input)="onSelectedBuildQuantityChange($event)"
+                />
+                <button type="button" class="btn btn--tonal" (click)="addBuildToDraft()">
+                  {{ t('common.add') }}
+                </button>
+              </div>
+              @if (draftBuildEntries().length > 0) {
+                <div class="grid gap-2">
+                  @for (entry of draftBuildEntries(); track entry.build_id) {
+                    <div
+                      class="flex items-center justify-between gap-3 rounded-lg px-3 py-2"
+                      style="background-color: var(--color-surface-1)"
+                    >
+                      <span>{{ buildName(entry.build_id) }}</span>
+                      <span class="chip">x{{ entry.quantity }}</span>
+                      <button
+                        type="button"
+                        class="btn btn--ghost"
+                        (click)="removeBuildFromDraft(entry.build_id)"
+                      >
+                        {{ t('common.delete') }}
+                      </button>
+                    </div>
+                  }
+                </div>
+              }
+            </section>
+          }
+        </form>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="closeCreate()">
             {{ t('common.cancel') }}
           </button>
-          <button type="submit" class="btn btn--primary" [disabled]="saving()">
+          <button
+            type="submit"
+            class="btn btn--primary"
+            [attr.form]="'comps-create-form'"
+            [disabled]="saving()"
+          >
             {{ createButtonLabel() }}
           </button>
         </div>
-      </form>
+      </app-dialog>
     }
 
-    <div class="mb-4">
-      <app-view-toggle [options]="tabOptions()" [active]="tab()" (activeChange)="switchTab($event)" />
-    </div>
+    @if (categoryDialogOpen()) {
+      <app-dialog
+        [title]="
+          categoryDialogMode() === 'edit' ? t('comps.editCategory') : t('comps.createCategory')
+        "
+        size="sm"
+        (closed)="closeCategoryDialog()"
+      >
+        <form id="comps-category-form" class="grid gap-4" (submit)="onCategorySubmit($event)">
+          <label>
+            <span class="label">{{ t('common.name') }}</span>
+            <input
+              class="input"
+              type="text"
+              [value]="categoryDraftName()"
+              (input)="onCategoryDraftNameChange($event)"
+            />
+          </label>
+          <label>
+            <span class="label">{{ t('common.description') }}</span>
+            <input
+              class="input"
+              type="text"
+              [value]="categoryDraftDescription()"
+              (input)="onCategoryDraftDescriptionChange($event)"
+            />
+          </label>
+        </form>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="closeCategoryDialog()">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="submit"
+            class="btn btn--primary"
+            [attr.form]="'comps-category-form'"
+            [disabled]="saving()"
+          >
+            {{ categoryDialogMode() === 'edit' ? t('common.save') : t('common.create') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
 
-    <div class="mb-4 max-w-sm">
-      <label class="sr-only" for="comps-search">{{ t('common.search') }}</label>
-      <input
-        id="comps-search"
-        class="input"
-        type="search"
-        [placeholder]="t('common.search')"
-        [value]="searchQuery()"
-        (input)="onSearchQueryChange($event)"
-      />
-    </div>
-
-    @if (loading()) {
-      <app-loading [label]="t('common.loading')" />
-    } @else if (items().length === 0) {
-      <app-empty-state [message]="t('common.empty')" icon="package" />
-    } @else {
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        @for (item of items(); track item.id) {
-          <article class="card p-5">
-            @if (editingItemId() === item.id) {
-              <div class="grid gap-3">
-                <input
-                  class="input"
-                  type="text"
-                  [value]="editItemName()"
-                  (input)="onEditItemNameChange($event)"
-                  placeholder="Name"
-                />
-                <select
-                  class="select"
-                  [value]="editItemCategoryId()"
-                  (change)="onEditItemCategoryIdChange($event)"
-                >
-                  <option value="">No category</option>
-                  @for (category of currentCategories(); track category.id) {
-                    <option [value]="category.id">{{ category.name }}</option>
-                  }
-                </select>
-                @if (tab() === 'builds') {
-                  <select
-                    class="select"
-                    [value]="editItemRole()"
-                    (change)="onEditItemRoleChange($event)"
-                  >
-                    @for (role of roles; track role) {
-                      <option [value]="role">{{ roleLabel(role) }}</option>
-                    }
-                  </select>
-                } @else {
-                  <select
-                    class="select"
-                    [value]="editItemParentId()"
-                    (change)="onEditItemParentIdChange($event)"
-                  >
-                    <option value="">No parent</option>
-                    @for (comp of comps(); track comp.id) {
-                      @if (comp.id !== item.id) {
-                        <option [value]="comp.id">{{ comp.name }}</option>
-                      }
-                    }
-                  </select>
-                }
-                <div class="flex justify-end gap-2 mt-2">
-                  <button type="button" class="btn btn--ghost" (click)="cancelEditItem()">
-                    {{ t('common.cancel') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn--primary"
-                    [disabled]="saving()"
-                    (click)="saveEditItem(item.id)"
-                  >
-                    {{ t('common.save') }}
-                  </button>
-                </div>
-              </div>
-            } @else {
-              <header class="mb-3 flex items-start justify-between gap-2">
-                <h3 class="text-base font-semibold" style="color: var(--color-text)">
-                  @if (tab() === 'comps') {
-                    <a class="hover:underline" [routerLink]="['/comps', item.id]">{{
-                      item.name
-                    }}</a>
-                  } @else {
-                    <a class="hover:underline" [routerLink]="['/comps', 'builds', item.id]">{{
-                      item.name
-                    }}</a>
-                  }
-                </h3>
-                <span class="chip">{{ item.category_name || 'No category' }}</span>
-              </header>
-              @if (tab() === 'builds') {
-                <p class="text-xs" style="color: var(--color-text-secondary)">
-                  {{ roleLabel(asBuild(item).role) }} · {{ asBuild(item).item_count }} item(s)
-                </p>
-              } @else {
-                <p class="text-xs" style="color: var(--color-text-secondary)">
-                  {{ asComp(item).build_count }} build(s) · {{ asComp(item).total_quantity }} slots
-                </p>
-
-                @if (compPerformance(asComp(item).id); as performance) {
-                  <section
-                    class="mt-4 grid grid-cols-2 gap-2 rounded-lg border p-3 text-xs"
-                    style="border-color: var(--color-border)"
-                  >
-                    <span>Events: {{ performance.events_with_battles }}</span>
-                    <span>W/L: {{ performance.stats.wins }}-{{ performance.stats.losses }}</span>
-                    <span>Win: {{ formatPercent(performance.stats.win_rate) }}</span>
-                    <span>K/D: {{ formatRatio(performance.stats.kill_death_ratio) }}</span>
-                    <span class="col-span-2"
-                      >Fame: {{ formatNumber(performance.stats.total_kill_fame) }}</span
-                    >
-                  </section>
-                }
-              }
-
-              @if (canCreateCurrent()) {
-                <footer
-                  class="mt-4 flex flex-wrap justify-end gap-2 border-t pt-3"
-                  style="border-color: var(--color-border)"
-                >
-                  @if (tab() === 'comps') {
-                    <a class="btn btn--tonal" [routerLink]="['/comps', item.id]">{{
-                      t('common.open')
-                    }}</a>
-                  } @else {
-                    <a class="btn btn--tonal" [routerLink]="['/comps', 'builds', item.id]">{{
-                      t('common.open')
-                    }}</a>
-                  }
-                  <button type="button" class="btn btn--outline" (click)="startEditItem(item)">
-                    {{ t('common.edit') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn--danger"
-                    [disabled]="saving()"
-                    (click)="deleteItem(item)"
-                  >
-                    {{ t('common.delete') }}
-                  </button>
-                </footer>
-              }
-            }
-          </article>
-        }
-      </div>
-
-      <div class="mt-4 flex items-center justify-between">
-        <p class="text-xs" style="color: var(--color-text-secondary)">
-          {{ t('common.page') }} {{ page() }} {{ t('common.of') }} {{ totalPages() }}
-        </p>
-        <div class="flex gap-2">
-          <button type="button" class="btn btn--outline" [disabled]="page() <= 1" (click)="prev()">
-            {{ t('common.prev') }}
+    @if (pendingDelete(); as pending) {
+      <app-dialog [title]="t('common.confirm')" size="sm" (closed)="closeConfirm()">
+        <p>{{ t('comps.delete.confirm') }}</p>
+        <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">{{ pending.name }}</p>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="closeConfirm()">
+            {{ t('common.cancel') }}
           </button>
           <button
             type="button"
-            class="btn btn--outline"
-            [disabled]="page() >= totalPages()"
-            (click)="next()"
+            class="btn btn--danger"
+            [disabled]="saving()"
+            (click)="confirmDelete()"
           >
-            {{ t('common.next') }}
+            {{ t('common.delete') }}
           </button>
         </div>
-      </div>
+      </app-dialog>
     }
   `,
 })
 export class Comps {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
 
-  protected readonly tab = signal<'comps' | 'builds'>('comps');
+  protected readonly PAGE_SIZE = PAGE_SIZE;
+  protected readonly tab = signal<TabId>('comps');
   protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
     { id: 'comps', label: this.t('comps.comps') },
     { id: 'builds', label: this.t('comps.builds') },
+    { id: 'categories', label: this.t('comps.categories') },
   ]);
   protected readonly loading = signal(false);
-  protected readonly page = signal(1);
-  protected readonly totalPages = signal(1);
-  protected readonly searchQuery = signal('');
-  private listSearchTimer: ReturnType<typeof setTimeout> | null = null;
+  protected readonly categoriesLoading = signal(false);
+  protected readonly loadFailed = signal(false);
+  protected readonly saving = signal(false);
+
   protected readonly comps = signal<CompSummary[]>([]);
+  protected readonly compsTotal = signal(0);
   protected readonly builds = signal<BuildSummary[]>([]);
+  protected readonly buildsTotal = signal(0);
   protected readonly buildCategories = signal<BuildCategoryView[]>([]);
   protected readonly compCategories = signal<CompCategoryView[]>([]);
   protected readonly buildOptions = signal<BuildSummary[]>([]);
+  protected readonly parentOptions = signal<CompSummary[]>([]);
   protected readonly compPerformanceById = signal<Record<number, CompPerformanceView>>({});
-  protected readonly saving = signal(false);
-  protected readonly savingCategory = signal(false);
-  protected readonly showCreateForm = signal(false);
-  protected readonly showCategoryManager = signal(false);
+
+  protected readonly createOpen = signal(false);
+  protected readonly categoryDialogOpen = signal(false);
+  protected readonly categoryDialogMode = signal<'create' | 'edit'>('create');
   protected readonly categoryKind = signal<CategoryKind>('build');
   protected readonly categoryKindOptions = computed<ViewToggleOption[]>(() => [
-    { id: 'build', label: this.t('comps.builds') },
-    { id: 'comp', label: this.t('comps.comps') },
+    { id: 'build', label: this.t('comps.buildCategories') },
+    { id: 'comp', label: this.t('comps.compCategories') },
   ]);
   protected readonly categoryDraftName = signal('');
   protected readonly categoryDraftDescription = signal('');
   protected readonly editingCategoryId = signal<number | null>(null);
-  protected readonly categoryEditName = signal('');
-  protected readonly categoryEditDescription = signal('');
+  protected readonly pendingDelete = signal<PendingDelete | null>(null);
+
   protected readonly draftName = signal('');
   protected readonly draftDescription = signal('');
   protected readonly draftCategoryId = signal('');
   protected readonly draftRole = signal<BuildRole>('dps');
   protected readonly draftParentCompId = signal('');
-  protected readonly editingItemId = signal<number | null>(null);
-  protected readonly editItemName = signal('');
-  protected readonly editItemCategoryId = signal('');
-  protected readonly editItemRole = signal<BuildRole>('dps');
-  protected readonly editItemParentId = signal('');
   protected readonly selectedBuildId = signal('');
   protected readonly selectedBuildQuantity = signal(1);
   protected readonly draftBuildEntries = signal<Array<{ build_id: number; quantity: number }>>([]);
@@ -586,6 +527,7 @@ export class Comps {
   protected readonly itemSearchResults = signal<OpenAlbionItem[]>([]);
   protected readonly itemSearchLoading = signal(false);
   protected readonly draftItems = signal<BuildItemSlot[]>([]);
+
   protected readonly roles: readonly BuildRole[] = [
     'healer',
     'support',
@@ -607,190 +549,205 @@ export class Comps {
   ];
   protected readonly itemTiers: readonly string[] = ['T4', 'T5', 'T6', 'T7', 'T8'];
 
-  /**
-   * Idle handle for the debounced search request triggered from the
-   * equipment popover. Reset on every keystroke so we never fire two
-   * overlapping OpenAlbion requests.
-   */
+  protected readonly trackComp = (row: CompSummary): unknown => row.id;
+  protected readonly trackBuild = (row: BuildSummary): unknown => row.id;
+  protected readonly trackCategory = (row: ManagedCategory): unknown => row.id;
+
+  private compsPage: DataTablePageChange | null = null;
+  private buildsPage: DataTablePageChange | null = null;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  protected readonly canManageComps = computed(() => this.auth.hasPermission('comps.comps.manage'));
+  protected readonly canManageBuilds = computed(() =>
+    this.auth.hasPermission('comps.builds.manage'),
+  );
+  protected readonly canManageCurrentCategory = computed(() =>
+    this.categoryKind() === 'build'
+      ? this.auth.hasPermission('comps.build_categories.manage')
+      : this.auth.hasPermission('comps.comp_categories.manage'),
+  );
+
+  protected readonly currentCategories = computed(() =>
+    this.tab() === 'builds' ? this.buildCategories() : this.compCategories(),
+  );
+  protected readonly managedCategories = computed(() =>
+    this.categoryKind() === 'build' ? this.buildCategories() : this.compCategories(),
+  );
+
+  protected readonly compColumns = computed<readonly DataTableColumn<CompSummary>[]>(() => [
+    {
+      key: 'name',
+      label: 'common.name',
+      sortable: true,
+      searchable: true,
+      accessor: (row) => row.name,
+    },
+    {
+      key: 'category',
+      label: 'common.category',
+      sortable: true,
+      accessor: (row) => row.category_name ?? '',
+      filterOptions: this.compCategories().map((category) => ({
+        value: String(category.id),
+        label: category.name,
+      })),
+    },
+    {
+      key: 'slots',
+      label: 'comps.slots',
+      accessor: (row) => `${row.build_count} / ${row.total_quantity}`,
+    },
+    {
+      key: 'winrate',
+      label: 'comps.winrate',
+      align: 'right',
+    },
+    { key: 'actions', label: 'common.actions', align: 'right' },
+  ]);
+
+  protected readonly buildColumns = computed<readonly DataTableColumn<BuildSummary>[]>(() => [
+    {
+      key: 'name',
+      label: 'common.name',
+      sortable: true,
+      searchable: true,
+      accessor: (row) => row.name,
+    },
+    {
+      key: 'role',
+      label: 'common.role',
+      sortable: true,
+      accessor: (row) => row.role,
+      filterOptions: this.roles.map((role) => ({ value: role, label: this.roleLabel(role) })),
+    },
+    {
+      key: 'category',
+      label: 'common.category',
+      accessor: (row) => row.category_name ?? '',
+      filterOptions: this.buildCategories().map((category) => ({
+        value: String(category.id),
+        label: category.name,
+      })),
+    },
+    {
+      key: 'items',
+      label: 'comps.items',
+      accessor: (row) => row.item_count,
+      align: 'right',
+    },
+    { key: 'actions', label: 'common.actions', align: 'right' },
+  ]);
+
+  protected readonly categoryColumns = computed<readonly DataTableColumn<ManagedCategory>[]>(() => [
+    {
+      key: 'name',
+      label: 'common.name',
+      sortable: true,
+      searchable: true,
+      accessor: (row) => row.name,
+      comparator: (a, b) => a.name.localeCompare(b.name),
+    },
+    {
+      key: 'description',
+      label: 'common.description',
+      searchable: true,
+      accessor: (row) => row.description ?? '',
+    },
+    { key: 'actions', label: 'common.actions', align: 'right' },
+  ]);
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   constructor() {
-    void this.load();
-    void this.loadFormOptions();
+    void this.init();
   }
 
-  protected items(): ReadonlyArray<CompSummary | BuildSummary> {
-    return this.tab() === 'comps' ? this.comps() : this.builds();
+  private async init(): Promise<void> {
+    await this.loadCategories();
+    await this.loadComps();
   }
 
-  protected currentCategories(): ReadonlyArray<BuildCategoryView | CompCategoryView> {
-    return this.tab() === 'comps' ? this.compCategories() : this.buildCategories();
-  }
-
-  protected managedCategories(): ReadonlyArray<ManagedCategory> {
-    return this.categoryKind() === 'build' ? this.buildCategories() : this.compCategories();
-  }
-
-  protected canManageAnyCategory(): boolean {
-    return (
-      this.auth.hasPermission('comps.build_categories.manage') ||
-      this.auth.hasPermission('comps.comp_categories.manage')
-    );
-  }
-
-  protected toggleCategoryManager(): void {
-    this.showCategoryManager.update((isVisible) => !isVisible);
-    this.cancelCategoryEdit();
-  }
-
-  protected switchCategoryKind(next: string): void {
-    if (next !== 'build' && next !== 'comp') {
-      return;
+  protected canCreateCurrent(): boolean {
+    if (this.tab() === 'comps') {
+      return this.canManageComps();
     }
-    if (this.categoryKind() === next) {
-      return;
+    if (this.tab() === 'builds') {
+      return this.canManageBuilds();
     }
-    this.categoryKind.set(next);
-    this.resetCategoryDraft();
-    this.cancelCategoryEdit();
+    return this.canManageCurrentCategory();
   }
 
-  protected onCategoryDraftNameChange(event: Event): void {
-    this.categoryDraftName.set((event.target as HTMLInputElement).value);
-  }
-
-  protected onCategoryDraftDescriptionChange(event: Event): void {
-    this.categoryDraftDescription.set((event.target as HTMLInputElement).value);
-  }
-
-  protected onCategoryEditNameChange(event: Event): void {
-    this.categoryEditName.set((event.target as HTMLInputElement).value);
-  }
-
-  protected onCategoryEditDescriptionChange(event: Event): void {
-    this.categoryEditDescription.set((event.target as HTMLInputElement).value);
-  }
-
-  protected onCategoryCreateSubmit(event: SubmitEvent): void {
-    event.preventDefault();
-    void this.createCategory();
-  }
-
-  protected startCategoryEdit(category: ManagedCategory): void {
-    this.editingCategoryId.set(category.id);
-    this.categoryEditName.set(category.name);
-    this.categoryEditDescription.set(category.description ?? '');
-  }
-
-  protected cancelCategoryEdit(): void {
-    this.editingCategoryId.set(null);
-    this.categoryEditName.set('');
-    this.categoryEditDescription.set('');
-  }
-
-  protected async saveCategoryEdit(): Promise<void> {
-    const categoryId = this.editingCategoryId();
-    const name = this.categoryEditName().trim();
-    if (!categoryId || !name) {
-      this.toasts.error(this.t('validation.required'));
-      return;
+  protected createButtonLabel(): string {
+    if (this.tab() === 'builds') {
+      return this.t('comps.createBuild');
     }
-
-    const description = this.categoryEditDescription().trim();
-    this.savingCategory.set(true);
-    try {
-      if (this.categoryKind() === 'build') {
-        const request: UpdateBuildCategoryRequest = { name };
-        if (description) {
-          request.description = description;
-        }
-        await firstValueFrom(
-          this.api.patch<BuildCategoryView[]>('api/comps/build-categories/' + categoryId, request),
-        );
-      } else {
-        const request: UpdateCompCategoryRequest = { name };
-        if (description) {
-          request.description = description;
-        }
-        await firstValueFrom(
-          this.api.patch<CompCategoryView[]>('api/comps/comp-categories/' + categoryId, request),
-        );
-      }
-      this.cancelCategoryEdit();
-      await this.loadFormOptions();
-      await this.load();
-      this.toasts.success(this.t('common.save'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.savingCategory.set(false);
+    if (this.tab() === 'categories') {
+      return this.t('comps.createCategory');
     }
-  }
-
-  /** A category is shared by every build/comp that references it — at least
-   *  as consequential as deleting one of those, which does confirm. */
-  protected async deleteCategory(categoryId: number): Promise<void> {
-    if (!confirm(this.t('common.confirm'))) return;
-    this.savingCategory.set(true);
-    try {
-      const path =
-        this.categoryKind() === 'build'
-          ? 'api/comps/build-categories/' + categoryId
-          : 'api/comps/comp-categories/' + categoryId;
-      await firstValueFrom(this.api.delete<void>(path));
-      await this.loadFormOptions();
-      await this.load();
-      this.toasts.success(this.t('common.delete'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.savingCategory.set(false);
-    }
+    return this.t('comps.createComp');
   }
 
   protected switchTab(next: string): void {
-    if (next !== 'comps' && next !== 'builds') {
+    if (next !== 'comps' && next !== 'builds' && next !== 'categories') {
       return;
     }
     if (this.tab() === next) {
       return;
     }
     this.tab.set(next);
-    this.page.set(1);
-    this.showCreateForm.set(false);
-    this.cancelEditItem();
-    void this.load();
-  }
-
-  /** Debounced list search — filters server-side via the same `q` param the
-   *  backend already supports, so it searches the whole dataset rather than
-   *  just whatever page happens to be loaded. */
-  protected onSearchQueryChange(event: Event): void {
-    this.searchQuery.set((event.target as HTMLInputElement).value);
-    if (this.listSearchTimer) {
-      clearTimeout(this.listSearchTimer);
+    this.closeCreate();
+    this.closeCategoryDialog();
+    this.closeConfirm();
+    this.loadFailed.set(false);
+    if (next === 'comps') {
+      this.compsPage = null;
+      void this.loadComps();
+    } else if (next === 'builds') {
+      this.buildsPage = null;
+      void this.loadBuilds();
+    } else {
+      void this.loadCategories();
     }
-    this.listSearchTimer = setTimeout(() => {
-      this.page.set(1);
-      void this.load();
-    }, 250);
   }
 
-  protected canCreateCurrent(): boolean {
-    if (this.tab() === 'comps') {
-      return this.auth.hasPermission('comps.comps.manage');
+  protected switchCategoryKind(next: string): void {
+    if (next !== 'build' && next !== 'comp') {
+      return;
     }
-    return this.auth.hasPermission('comps.builds.manage');
+    this.categoryKind.set(next);
+    this.closeCategoryDialog();
   }
 
-  protected createButtonLabel(): string {
-    return `${this.t('common.create')} ${this.tab() === 'comps' ? this.t('comps.comps') : this.t('comps.builds')}`;
+  protected openCreate(): void {
+    if (this.tab() === 'categories') {
+      this.openCategoryCreate();
+      return;
+    }
+    this.createOpen.set(true);
+    void this.loadCreateOptions();
   }
 
-  protected toggleCreateForm(): void {
-    this.showCreateForm.update((isVisible) => !isVisible);
+  protected closeCreate(): void {
+    this.createOpen.set(false);
+    this.resetCreateForm();
+  }
+
+  protected openComp(row: CompSummary): void {
+    void this.router.navigate(['/comps', row.id]);
+  }
+
+  protected openBuild(row: BuildSummary): void {
+    void this.router.navigate(['/comps', 'builds', row.id]);
+  }
+
+  protected onCompsPageChange(event: DataTablePageChange): void {
+    this.compsPage = event;
+    void this.loadComps();
+  }
+
+  protected onBuildsPageChange(event: DataTablePageChange): void {
+    this.buildsPage = event;
+    void this.loadBuilds();
   }
 
   protected onNameChange(event: Event): void {
@@ -813,22 +770,6 @@ export class Comps {
     this.draftParentCompId.set((event.target as HTMLSelectElement).value);
   }
 
-  protected onEditItemNameChange(event: Event): void {
-    this.editItemName.set((event.target as HTMLInputElement).value);
-  }
-
-  protected onEditItemCategoryIdChange(event: Event): void {
-    this.editItemCategoryId.set((event.target as HTMLSelectElement).value);
-  }
-
-  protected onEditItemRoleChange(event: Event): void {
-    this.editItemRole.set((event.target as HTMLSelectElement).value as BuildRole);
-  }
-
-  protected onEditItemParentIdChange(event: Event): void {
-    this.editItemParentId.set((event.target as HTMLSelectElement).value);
-  }
-
   protected onSelectedBuildChange(event: Event): void {
     this.selectedBuildId.set((event.target as HTMLSelectElement).value);
   }
@@ -837,12 +778,14 @@ export class Comps {
     this.selectedBuildQuantity.set(Math.max(1, Number((event.target as HTMLInputElement).value)));
   }
 
-  /**
-   * Toggle the equipment popover for a slot.
-   *
-   * Clicking the same slot a second time closes it, matching the user's
-   * expectation from the inline clear button on the right side of the card.
-   */
+  protected onCategoryDraftNameChange(event: Event): void {
+    this.categoryDraftName.set((event.target as HTMLInputElement).value);
+  }
+
+  protected onCategoryDraftDescriptionChange(event: Event): void {
+    this.categoryDraftDescription.set((event.target as HTMLInputElement).value);
+  }
+
   protected onSlotToggle(slot: BuildSlot): void {
     if (this.draftItemSlot() === slot) {
       this.onPopoverCancel();
@@ -859,10 +802,6 @@ export class Comps {
     void this.searchItems();
   }
 
-  /**
-   * Debounced search input — keeps request volume low when the user types
-   * a long query and matches the build-detail page UX.
-   */
   protected onPopoverSearchChange(query: string): void {
     this.draftItemSearch.set(query);
     this.clearSelectedItem();
@@ -896,12 +835,6 @@ export class Comps {
   protected onPopoverCancel(): void {
     this.draftItemSlot.set(null);
     this.resetDraftItemFields();
-  }
-
-  private resetDraftItemFields(): void {
-    this.draftItemSearch.set('');
-    this.itemSearchResults.set([]);
-    this.clearSelectedItem();
   }
 
   protected addBuildToDraft(): void {
@@ -938,12 +871,10 @@ export class Comps {
       this.toasts.error(this.t('validation.required'));
       return;
     }
-
     const slot = this.draftItemSlot();
     if (!slot) {
       return;
     }
-
     const item: BuildItemSlot = {
       slot,
       openalbion_item_type: itemType,
@@ -958,7 +889,6 @@ export class Comps {
     if (tier) {
       item.openalbion_item_tier = tier;
     }
-
     this.draftItems.update((items) => [
       ...items.filter((existing) => existing.slot !== item.slot),
       item,
@@ -977,22 +907,6 @@ export class Comps {
     return role.replace(/_/g, ' ');
   }
 
-  protected slotLabel(slot: BuildSlot): string {
-    const labels: Record<BuildSlot, string> = {
-      weapon: 'Weapon',
-      off_hand: 'Off-hand',
-      head: 'Helmet',
-      armor: 'Jacket',
-      shoes: 'Shoes',
-      cape: 'Cape',
-      bag: 'Bag',
-      potion: 'Potion',
-      food: 'Food',
-      mount: 'Mount',
-    };
-    return labels[slot];
-  }
-
   protected itemIconUrl(item: OpenAlbionItem): string {
     if (item.icon) {
       return item.icon;
@@ -1007,29 +921,96 @@ export class Comps {
     return this.compPerformanceById()[compId] ?? null;
   }
 
-  protected formatNumber(value: number): string {
-    return new Intl.NumberFormat().format(value);
-  }
-
   protected formatPercent(value: number): string {
     return `${value.toFixed(1)}%`;
-  }
-
-  protected formatRatio(value: number): string {
-    return value.toFixed(2);
-  }
-
-  protected asBuild(item: CompSummary | BuildSummary): BuildSummary {
-    return item as BuildSummary;
-  }
-
-  protected asComp(item: CompSummary | BuildSummary): CompSummary {
-    return item as CompSummary;
   }
 
   protected onCreateSubmit(event: SubmitEvent): void {
     event.preventDefault();
     void this.createItem();
+  }
+
+  protected openCategoryCreate(): void {
+    this.categoryDialogMode.set('create');
+    this.editingCategoryId.set(null);
+    this.categoryDraftName.set('');
+    this.categoryDraftDescription.set('');
+    this.categoryDialogOpen.set(true);
+  }
+
+  protected openCategoryEdit(category: ManagedCategory): void {
+    this.categoryDialogMode.set('edit');
+    this.editingCategoryId.set(category.id);
+    this.categoryDraftName.set(category.name);
+    this.categoryDraftDescription.set(category.description ?? '');
+    this.categoryDialogOpen.set(true);
+  }
+
+  protected closeCategoryDialog(): void {
+    this.categoryDialogOpen.set(false);
+    this.editingCategoryId.set(null);
+    this.categoryDraftName.set('');
+    this.categoryDraftDescription.set('');
+  }
+
+  protected onCategorySubmit(event: SubmitEvent): void {
+    event.preventDefault();
+    if (this.categoryDialogMode() === 'edit') {
+      void this.saveCategoryEdit();
+      return;
+    }
+    void this.createCategory();
+  }
+
+  protected askDeleteComp(item: CompSummary): void {
+    this.pendingDelete.set({ kind: 'comp', id: item.id, name: item.name });
+  }
+
+  protected askDeleteBuild(item: BuildSummary): void {
+    this.pendingDelete.set({ kind: 'build', id: item.id, name: item.name });
+  }
+
+  protected askDeleteCategory(category: ManagedCategory): void {
+    this.pendingDelete.set({
+      kind: 'category',
+      id: category.id,
+      name: category.name,
+      categoryKind: this.categoryKind(),
+    });
+  }
+
+  protected closeConfirm(): void {
+    this.pendingDelete.set(null);
+  }
+
+  protected async confirmDelete(): Promise<void> {
+    const pending = this.pendingDelete();
+    if (!pending) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      if (pending.kind === 'category') {
+        const path =
+          pending.categoryKind === 'build'
+            ? `api/comps/build-categories/${pending.id}`
+            : `api/comps/comp-categories/${pending.id}`;
+        await firstValueFrom(this.api.delete<void>(path));
+        await this.loadCategories();
+      } else if (pending.kind === 'build') {
+        await firstValueFrom(this.api.delete(`api/comps/builds/${pending.id}`));
+        await this.loadBuilds();
+      } else {
+        await firstValueFrom(this.api.delete(`api/comps/${pending.id}`));
+        await this.loadComps();
+      }
+      this.pendingDelete.set(null);
+      this.toasts.success(this.t('common.delete'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
   }
 
   private async createCategory(): Promise<void> {
@@ -1038,9 +1019,8 @@ export class Comps {
       this.toasts.error(this.t('validation.required'));
       return;
     }
-
     const description = this.categoryDraftDescription().trim();
-    this.savingCategory.set(true);
+    this.saving.set(true);
     try {
       if (this.categoryKind() === 'build') {
         const request: CreateBuildCategoryRequest = { name };
@@ -1059,28 +1039,57 @@ export class Comps {
           this.api.post<CompCategoryView[]>('api/comps/comp-categories', request),
         );
       }
-      this.resetCategoryDraft();
-      await this.loadFormOptions();
+      this.closeCategoryDialog();
+      await this.loadCategories();
       this.toasts.success(this.t('common.create'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
-      this.savingCategory.set(false);
+      this.saving.set(false);
     }
   }
 
-  private resetCategoryDraft(): void {
-    this.categoryDraftName.set('');
-    this.categoryDraftDescription.set('');
+  private async saveCategoryEdit(): Promise<void> {
+    const categoryId = this.editingCategoryId();
+    const name = this.categoryDraftName().trim();
+    if (!categoryId || !name) {
+      this.toasts.error(this.t('validation.required'));
+      return;
+    }
+    const description = this.categoryDraftDescription().trim();
+    this.saving.set(true);
+    try {
+      if (this.categoryKind() === 'build') {
+        const request: UpdateBuildCategoryRequest = { name };
+        if (description) {
+          request.description = description;
+        }
+        await firstValueFrom(
+          this.api.patch<BuildCategoryView[]>(`api/comps/build-categories/${categoryId}`, request),
+        );
+      } else {
+        const request: UpdateCompCategoryRequest = { name };
+        if (description) {
+          request.description = description;
+        }
+        await firstValueFrom(
+          this.api.patch<CompCategoryView[]>(`api/comps/comp-categories/${categoryId}`, request),
+        );
+      }
+      this.closeCategoryDialog();
+      await this.loadCategories();
+      this.toasts.success(this.t('common.save'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
   }
 
   private async createItem(): Promise<void> {
     const name = this.draftName().trim();
     const categoryId = Number(this.draftCategoryId());
-
     if (this.tab() === 'builds') {
-      // Builds get the full check, including the weapon requirement and a
-      // duplicate-name test the database has no unique index to enforce.
       const errors = validateBuildDraft(
         {
           name: this.draftName(),
@@ -1115,102 +1124,18 @@ export class Comps {
     this.saving.set(true);
     try {
       await this.postCurrentItem(name, categoryId);
-      this.resetCreateForm();
-      await this.load();
-      await this.loadFormOptions();
+      this.closeCreate();
+      if (this.tab() === 'builds') {
+        await this.loadBuilds();
+      } else {
+        await this.loadComps();
+      }
       this.toasts.success(this.t('common.create'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.saving.set(false);
     }
-  }
-
-  protected startEditItem(item: CompSummary | BuildSummary): void {
-    this.editingItemId.set(item.id);
-    this.editItemName.set(item.name);
-    this.editItemCategoryId.set(String(item.category_id || ''));
-    if (this.tab() === 'builds') {
-      this.editItemRole.set(this.asBuild(item).role);
-    } else {
-      this.editItemParentId.set(String(this.asComp(item).parent_id || ''));
-    }
-  }
-
-  protected cancelEditItem(): void {
-    this.editingItemId.set(null);
-  }
-
-  protected async saveEditItem(id: number): Promise<void> {
-    const name = this.editItemName().trim();
-    if (!name) {
-      this.toasts.error(this.t('validation.required'));
-      return;
-    }
-    const categoryIdStr = this.editItemCategoryId();
-    const categoryId = categoryIdStr ? Number(categoryIdStr) : undefined;
-
-    this.saving.set(true);
-    try {
-      if (this.tab() === 'builds') {
-        const role = this.editItemRole();
-        const request: Partial<UpdateBuildRequest> = { name, role };
-        if (categoryId !== undefined) request.category_id = categoryId;
-        await firstValueFrom(this.api.patch(`api/comps/builds/${id}`, request));
-      } else {
-        const request: Partial<UpdateCompRequest> = { name };
-        if (categoryId !== undefined) request.category_id = categoryId;
-        const parentIdStr = this.editItemParentId();
-        const parentId = parentIdStr ? Number(parentIdStr) : undefined;
-        if (parentId !== undefined) request.parent_id = parentId;
-        await firstValueFrom(this.api.patch(`api/comps/${id}`, request));
-      }
-      this.cancelEditItem();
-      await this.loadFormOptions();
-      await this.load();
-      this.toasts.success(this.t('common.save'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async deleteItem(item: CompSummary | BuildSummary): Promise<void> {
-    if (!window.confirm(this.t('comps.delete.confirm'))) {
-      return;
-    }
-    this.saving.set(true);
-    try {
-      if (this.tab() === 'builds') {
-        await firstValueFrom(this.api.delete(`api/comps/builds/${item.id}`));
-      } else {
-        await firstValueFrom(this.api.delete(`api/comps/${item.id}`));
-      }
-      await this.loadFormOptions();
-      await this.load();
-      this.toasts.success(this.t('common.delete'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async next(): Promise<void> {
-    if (this.page() >= this.totalPages()) {
-      return;
-    }
-    this.page.update((p) => p + 1);
-    await this.load();
-  }
-
-  protected async prev(): Promise<void> {
-    if (this.page() <= 1) {
-      return;
-    }
-    this.page.update((p) => p - 1);
-    await this.load();
   }
 
   private async postCurrentItem(name: string, categoryId: number): Promise<void> {
@@ -1231,7 +1156,6 @@ export class Comps {
       await firstValueFrom(this.api.post<CompDetail>('api/comps', request));
       return;
     }
-
     const request: CreateBuildRequest = {
       name,
       category_id: categoryId,
@@ -1257,7 +1181,12 @@ export class Comps {
     this.draftBuildEntries.set([]);
     this.draftItems.set([]);
     this.onPopoverCancel();
-    this.showCreateForm.set(false);
+  }
+
+  private resetDraftItemFields(): void {
+    this.draftItemSearch.set('');
+    this.itemSearchResults.set([]);
+    this.clearSelectedItem();
   }
 
   private clearSelectedItem(): void {
@@ -1282,7 +1211,6 @@ export class Comps {
       this.itemSearchResults.set([]);
       return;
     }
-
     this.itemSearchLoading.set(true);
     this.itemSearchResults.set(
       searchAlbionEquipmentCatalog(this.draftItemSearch(), slot, this.draftItemTier()),
@@ -1290,52 +1218,108 @@ export class Comps {
     this.itemSearchLoading.set(false);
   }
 
-  private async loadFormOptions(): Promise<void> {
+  private listParams(event: DataTablePageChange | null): Record<string, string | number> {
+    const params: Record<string, string | number> = {
+      page: event?.page ?? 1,
+      limit: event?.pageSize ?? PAGE_SIZE,
+    };
+    const search = event?.search.trim();
+    if (search) {
+      params['q'] = search;
+    }
+    if (event?.sort) {
+      params['sort'] = event.sort.columnKey;
+      params['order'] = event.sort.direction;
+    }
+    const categoryId = event?.columnFilters['category'];
+    if (categoryId) {
+      params['category_id'] = Number(categoryId);
+    }
+    const role = event?.columnFilters['role'];
+    if (role) {
+      params['role'] = role;
+    }
+    return params;
+  }
+
+  private async loadCreateOptions(): Promise<void> {
     try {
-      const [buildCategories, compCategories, builds, comps] = await Promise.all([
-        firstValueFrom(this.api.get<BuildCategoryView[]>('api/comps/build-categories')),
-        firstValueFrom(this.api.get<CompCategoryView[]>('api/comps/comp-categories')),
+      const [builds, comps] = await Promise.all([
         firstValueFrom(
-          this.api.get<PaginatedData<BuildSummary>>('api/comps/builds', { page: 1, limit: 100 }),
+          this.api.get<PaginatedData<BuildSummary>>('api/comps/builds', {
+            page: 1,
+            limit: OPTIONS_LIMIT,
+            sort: 'name',
+            order: 'asc',
+          }),
         ),
         firstValueFrom(
-          this.api.get<PaginatedData<CompSummary>>('api/comps', { page: 1, limit: 100 }),
+          this.api.get<PaginatedData<CompSummary>>('api/comps', {
+            page: 1,
+            limit: OPTIONS_LIMIT,
+            sort: 'name',
+            order: 'asc',
+          }),
         ),
       ]);
-      this.buildCategories.set(buildCategories);
-      this.compCategories.set(compCategories);
       this.buildOptions.set(builds.items);
-      this.comps.set(comps.items);
+      this.parentOptions.set(comps.items);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     }
   }
 
-  private async load(): Promise<void> {
-    this.loading.set(true);
+  protected async loadCategories(): Promise<void> {
+    this.categoriesLoading.set(true);
+    this.loadFailed.set(false);
     try {
-      const params: Record<string, string | number> = { page: this.page(), limit: PAGE_SIZE };
-      const query = this.searchQuery().trim();
-      if (query) {
-        params['q'] = query;
-      }
-      if (this.tab() === 'comps') {
-        const data = await firstValueFrom(
-          this.api.get<PaginatedData<CompSummary>>('api/comps', params),
-        );
-        this.comps.set(data.items);
-        await this.loadCompPerformance(data.items);
-        this.totalPages.set(data.total_pages);
-        return;
-      }
+      const [buildCategories, compCategories] = await Promise.all([
+        firstValueFrom(this.api.get<BuildCategoryView[]>('api/comps/build-categories')),
+        firstValueFrom(this.api.get<CompCategoryView[]>('api/comps/comp-categories')),
+      ]);
+      this.buildCategories.set(buildCategories);
+      this.compCategories.set(compCategories);
+    } catch (error) {
+      this.loadFailed.set(true);
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.categoriesLoading.set(false);
+    }
+  }
 
+  protected async loadComps(): Promise<void> {
+    this.loading.set(true);
+    this.loadFailed.set(false);
+    try {
       const data = await firstValueFrom(
-        this.api.get<PaginatedData<BuildSummary>>('api/comps/builds', params),
+        this.api.get<PaginatedData<CompSummary>>('api/comps', this.listParams(this.compsPage)),
+      );
+      this.comps.set(data.items);
+      this.compsTotal.set(data.total_items);
+      await this.loadCompPerformance(data.items);
+    } catch (error) {
+      this.loadFailed.set(true);
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  protected async loadBuilds(): Promise<void> {
+    this.loading.set(true);
+    this.loadFailed.set(false);
+    try {
+      const data = await firstValueFrom(
+        this.api.get<PaginatedData<BuildSummary>>(
+          'api/comps/builds',
+          this.listParams(this.buildsPage),
+        ),
       );
       this.compPerformanceById.set({});
       this.builds.set(data.items);
-      this.totalPages.set(data.total_pages);
+      this.buildsTotal.set(data.total_items);
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);
@@ -1347,15 +1331,24 @@ export class Comps {
       this.compPerformanceById.set({});
       return;
     }
-
     const performanceEntries = await Promise.all(
       comps.map(async (comp) => {
-        const performance = await firstValueFrom(
-          this.api.get<CompPerformanceView>(`api/comps/${comp.id}/performance`),
-        );
-        return [comp.id, performance] as const;
+        try {
+          const performance = await firstValueFrom(
+            this.api.get<CompPerformanceView>(`api/comps/${comp.id}/performance`),
+          );
+          return [comp.id, performance] as const;
+        } catch {
+          return null;
+        }
       }),
     );
-    this.compPerformanceById.set(Object.fromEntries(performanceEntries));
+    this.compPerformanceById.set(
+      Object.fromEntries(
+        performanceEntries.filter(
+          (entry): entry is readonly [number, CompPerformanceView] => entry !== null,
+        ),
+      ),
+    );
   }
 }

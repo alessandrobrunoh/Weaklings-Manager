@@ -1,10 +1,10 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import { IntelService } from '../../core/services/intel.service';
+import type { ScoutListParams } from '../../core/services/intel.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
@@ -14,12 +14,18 @@ import type {
   ScoutedCompSummary,
   TrendBucket,
 } from '../../core/models/api.models';
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTablePageChange,
+} from '../../shared/components/data-table/data-table';
+import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
-import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { Meter } from '../../shared/components/meter/meter';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import {
@@ -27,10 +33,8 @@ import {
   type ViewToggleOption,
 } from '../../shared/components/view-toggle/view-toggle';
 
-/** How many scouts to pull in one page of the library. */
-const SCOUT_PAGE_LIMIT = 60;
-/** Weapons shown on a card before the rest are summarised. */
-const CARD_WEAPON_LIMIT = 4;
+/** Default page size for the scout library table. */
+const SCOUT_PAGE_LIMIT = 25;
 
 /**
  * Enemy intel: the scouted-composition library and the matchup matrix.
@@ -50,21 +54,27 @@ const CARD_WEAPON_LIMIT = 4;
   imports: [
     DatePipe,
     DecimalPipe,
+    DataTable,
+    DataTableCell,
     EmptyState,
     ErrorState,
-    FormsModule,
-    Icon,
     Loading,
     Meter,
     PageHeader,
+    PageStack,
     RouterLink,
     StatCard,
     StatusChip,
     ViewToggle,
   ],
   template: `
-    <app-page-header [title]="t('intel.title')" [subtitle]="t('intel.subtitle')">
-      <app-view-toggle [options]="tabs()" [active]="tab()" (activeChange)="tab.set($event)" />
+    <app-page-header [title]="t('intel.title')" [subtitle]="t('intel.subtitle')" [actions]="false">
+      <app-view-toggle
+        pageTabs
+        [options]="tabs()"
+        [active]="tab()"
+        (activeChange)="onTabChange($event)"
+      />
     </app-page-header>
 
     @if (loading()) {
@@ -72,10 +82,11 @@ const CARD_WEAPON_LIMIT = 4;
     } @else if (loadFailed()) {
       <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     } @else {
+      <app-page-stack>
       <!-- Headline numbers, always visible so the tabs never hide the shape
            of the library. -->
-      <div class="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <app-stat-card [label]="t('intel.stat.scouts')" [value]="scouts().length.toString()" />
+      <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <app-stat-card [label]="t('intel.stat.scouts')" [value]="headlineTotal().toString()" />
         <app-stat-card
           [label]="t('intel.stat.topThreat')"
           [value]="topThreat()?.opponent_guild_name ?? '—'"
@@ -537,95 +548,56 @@ const CARD_WEAPON_LIMIT = 4;
         }
 
         @case ('enemies') {
-          <div class="mb-4 flex flex-wrap items-center gap-2">
-            <input
-              class="input max-w-xs"
-              type="search"
-              [placeholder]="t('intel.search')"
-              [attr.aria-label]="t('intel.search')"
-              [ngModel]="query()"
-              (ngModelChange)="query.set($event)"
-            />
-            <select
-              class="select max-w-[10rem]"
-              [attr.aria-label]="t('common.category')"
-              [ngModel]="category()"
-              (ngModelChange)="category.set($event)"
-            >
-              <option value="">{{ t('common.all') }}</option>
-              <option value="gank">{{ t('intel.category.gank') }}</option>
-              <option value="small_scale">{{ t('intel.category.smallScale') }}</option>
-              <option value="zvz">{{ t('intel.category.zvz') }}</option>
-            </select>
-          </div>
-
-          @if (visibleScouts().length === 0) {
-            <app-empty-state
-              icon="search"
-              [message]="t('intel.empty')"
-              [hint]="t('intel.emptyHint')"
-            />
-          } @else {
-            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              @for (scout of visibleScouts(); track scout.id) {
-                <a
-                  class="card block p-4 no-underline"
-                  [routerLink]="['/intel', scout.id]"
-                  [style.color]="'var(--color-text)'"
+          <app-data-table
+            [columns]="libraryColumns()"
+            [rows]="scouts()"
+            [loading]="libraryLoading()"
+            [error]="libraryFailed()"
+            (retry)="reloadLibrary()"
+            [trackBy]="trackScout"
+            [pageSize]="SCOUT_PAGE_LIMIT"
+            [serverMode]="true"
+            [totalItems]="libraryTotal()"
+            emptyIcon="search"
+            [emptyLabel]="libraryEmptyLabel"
+            [rowClickable]="true"
+            (rowClick)="openScout($event)"
+            (pageChange)="onLibraryPageChange($event)"
+          >
+            <ng-template dataTableCell="opponent" let-row>
+              <span class="font-medium">{{ row.opponent_guild_name }}</span>
+            </ng-template>
+            <ng-template dataTableCell="name" let-row>
+              <span class="text-sm" style="color: var(--color-text-secondary)">{{ row.name }}</span>
+            </ng-template>
+            <ng-template dataTableCell="category" let-row>
+              <app-status-chip [value]="row.category" />
+            </ng-template>
+            <ng-template dataTableCell="avg_ip" let-row>
+              <span class="mono">{{ row.avg_ip | number: '1.0-0' }}</span>
+            </ng-template>
+            <ng-template dataTableCell="threat" let-row>
+              <span class="mono" style="color: var(--color-error)">{{ row.threat_score }}</span>
+            </ng-template>
+            <ng-template dataTableCell="battles" let-row>
+              <span class="mono">{{ row.source_battle_count }}</span>
+            </ng-template>
+            <ng-template dataTableCell="saved_at" let-row>
+              <span class="text-sm">{{ row.saved_at | date: 'short' }}</span>
+            </ng-template>
+            <ng-template dataTableCell="coverage" let-row>
+              @if (!row.full_weapon_coverage) {
+                <span
+                  class="text-[11px]"
+                  style="color: var(--color-warning)"
+                  [title]="t('intel.partialCoverageHint')"
                 >
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="min-w-0">
-                      <p class="truncate font-medium">{{ scout.opponent_guild_name }}</p>
-                      <p class="eyebrow mt-0.5">{{ scout.name }}</p>
-                    </div>
-                    <app-status-chip [value]="scout.category" />
-                  </div>
-
-                  <div class="mt-3 grid grid-cols-3 gap-2 text-center">
-                    <div>
-                      <p class="eyebrow">{{ t('intel.players') }}</p>
-                      <p class="mono text-sm">{{ scout.player_count }}</p>
-                    </div>
-                    <div>
-                      <p class="eyebrow">{{ t('intel.avgIp') }}</p>
-                      <p class="mono text-sm">{{ scout.avg_ip | number: '1.0-0' }}</p>
-                    </div>
-                    <div>
-                      <p class="eyebrow">{{ t('intel.threat') }}</p>
-                      <p class="mono text-sm" style="color: var(--color-error)">
-                        {{ scout.threat_score }}
-                      </p>
-                    </div>
-                  </div>
-
-                  @if (topWeapons(scout).length) {
-                    <div class="mt-3 flex flex-wrap gap-1.5">
-                      @for (weapon of topWeapons(scout); track weapon.name) {
-                        <span
-                          class="rounded-full px-2 py-0.5 text-[11px]"
-                          style="background-color: var(--color-surface-2); color: var(--color-text-secondary)"
-                        >
-                          {{ prettyWeapon(weapon.name) }} ×{{ weapon.count }}
-                        </span>
-                      }
-                    </div>
-                  }
-
-                  @if (!scout.full_weapon_coverage) {
-                    <p
-                      class="mt-3 flex items-center gap-1.5 text-[11px]"
-                      style="color: var(--color-warning)"
-                      [title]="t('intel.partialCoverageHint')"
-                    >
-                      <app-icon name="info" size="0.85rem" />
-                      {{ t('intel.partialCoverage') }}
-                      {{ scout.weapon_sample_size }}/{{ scout.player_count }}
-                    </p>
-                  }
-                </a>
+                  {{ t('intel.partialCoverage') }}
+                  {{ row.weapon_sample_size }}/{{ row.player_count }}
+                </span>
               }
-            </div>
-          }
+            </ng-template>
+          </app-data-table>
         }
 
         @case ('matchups') {
@@ -701,22 +673,38 @@ const CARD_WEAPON_LIMIT = 4;
           }
         }
       }
+      </app-page-stack>
     }
   `,
 })
 export class Intel {
   private readonly intel = inject(IntelService);
+  private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
 
+  protected readonly SCOUT_PAGE_LIMIT = SCOUT_PAGE_LIMIT;
+  protected readonly libraryEmptyLabel: TranslationKey = 'intel.empty';
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
   protected readonly scouts = signal<ScoutedCompSummary[]>([]);
   protected readonly matchups = signal<MatchupReport | null>(null);
   protected readonly report = signal<GuildReport | null>(null);
   protected readonly tab = signal('overview');
-  protected readonly query = signal('');
-  protected readonly category = signal('');
+  protected readonly headlineTotal = signal(0);
+  protected readonly headlineTopThreat = signal<ScoutedCompSummary | null>(null);
+  protected readonly libraryTotal = signal(0);
+  protected readonly libraryLoading = signal(false);
+  protected readonly libraryFailed = signal(false);
+  private readonly scoutNames = signal<Readonly<Record<number, string>>>({});
+
+  private libraryParams: DataTablePageChange = {
+    page: 1,
+    pageSize: SCOUT_PAGE_LIMIT,
+    search: '',
+    sort: null,
+    columnFilters: {},
+  };
 
   /**
    * The reference design had a per-map tab. AlbionBB carries no map or zone
@@ -738,32 +726,77 @@ export class Intel {
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
-  /** Client-side narrowing; the library is small enough not to re-query. */
-  protected readonly visibleScouts = computed(() => {
-    const q = this.query().trim().toLowerCase();
-    const cat = this.category();
-    return this.scouts().filter((scout) => {
-      if (cat && scout.category !== cat) {
-        return false;
-      }
-      if (!q) {
-        return true;
-      }
-      return (
-        scout.name.toLowerCase().includes(q) ||
-        scout.opponent_guild_name.toLowerCase().includes(q) ||
-        Object.keys(scout.weapons).some((weapon) => weapon.toLowerCase().includes(q))
-      );
-    });
-  });
+  protected readonly libraryColumns = computed<readonly DataTableColumn<ScoutedCompSummary>[]>(
+    () => [
+      {
+        key: 'opponent',
+        label: 'intel.enemy',
+        searchable: true,
+        accessor: (row) => row.opponent_guild_name,
+      },
+      {
+        key: 'name',
+        label: 'common.name',
+        searchable: true,
+        accessor: (row) => row.name,
+      },
+      {
+        key: 'category',
+        label: 'common.category',
+        accessor: (row) => row.category,
+        filterOptions: [
+          { value: 'gank', label: this.t('intel.category.gank') },
+          { value: 'small_scale', label: this.t('intel.category.smallScale') },
+          { value: 'zvz', label: this.t('intel.category.zvz') },
+        ],
+      },
+      {
+        key: 'players',
+        label: 'intel.players',
+        accessor: (row) => row.player_count,
+        align: 'right',
+      },
+      {
+        key: 'avg_ip',
+        label: 'intel.avgIp',
+        accessor: (row) => row.avg_ip,
+        align: 'right',
+      },
+      {
+        key: 'threat',
+        label: 'intel.threat',
+        sortable: true,
+        accessor: (row) => row.threat_score,
+        align: 'right',
+      },
+      {
+        key: 'battles',
+        label: 'intel.fights',
+        sortable: true,
+        accessor: (row) => row.source_battle_count,
+        align: 'right',
+      },
+      {
+        key: 'saved_at',
+        label: 'intel.detail.lastSeen',
+        sortable: true,
+        accessor: (row) => row.saved_at,
+      },
+      {
+        key: 'coverage',
+        label: '',
+      },
+    ],
+  );
+
+  protected readonly trackScout = (scout: ScoutedCompSummary): unknown => scout.id;
 
   /**
-   * `at(0)` rather than `[0]`: indexed access is typed as always-present here,
-   * which would let the template dereference a scout that does not exist when
-   * the library is empty.
+   * Headline top threat is taken from an unfiltered `sort=threat` page so
+   * paging/searching the library table cannot hide the actual highest threat.
    */
   protected readonly topThreat = computed<ScoutedCompSummary | null>(
-    () => [...this.scouts()].sort((a, b) => b.threat_score - a.threat_score).at(0) ?? null,
+    () => this.headlineTopThreat(),
   );
 
   protected readonly matchupRows = computed(() => this.matchups()?.rows ?? []);
@@ -804,14 +837,6 @@ export class Intel {
       return 'default';
     }
     return cov.battles_with_comp === cov.total_battles ? 'success' : 'warning';
-  }
-
-  /** The heaviest weapons on a card, sorted by how many carried them. */
-  protected topWeapons(scout: ScoutedCompSummary): Array<{ name: string; count: number }> {
-    return Object.entries(scout.weapons)
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, CARD_WEAPON_LIMIT);
   }
 
   /** Turns `2H_HOLYSTAFF_MORGANA` into `Holystaff Morgana`. */
@@ -904,11 +929,48 @@ export class Intel {
   }
 
   protected scoutName(id: number): string {
-    return this.scouts().find((scout) => scout.id === id)?.opponent_guild_name ?? `#${id}`;
+    return this.scoutNames()[id] ?? `#${id}`;
+  }
+
+  private rememberScoutNames(items: readonly ScoutedCompSummary[]): void {
+    this.scoutNames.update((map) => {
+      const next: Record<number, string> = { ...map };
+      for (const scout of items) {
+        next[scout.id] = scout.opponent_guild_name;
+      }
+      return next;
+    });
   }
 
   constructor() {
     void this.load();
+  }
+
+  protected onTabChange(tab: string): void {
+    this.tab.set(tab);
+    if (tab === 'enemies') {
+      this.libraryParams = {
+        page: 1,
+        pageSize: SCOUT_PAGE_LIMIT,
+        search: '',
+        sort: null,
+        columnFilters: {},
+      };
+      void this.reloadLibrary();
+    }
+  }
+
+  protected openScout(scout: ScoutedCompSummary): void {
+    void this.router.navigate(['/intel', scout.id]);
+  }
+
+  protected onLibraryPageChange(event: DataTablePageChange): void {
+    this.libraryParams = event;
+    void this.loadLibrary();
+  }
+
+  protected reloadLibrary(): void {
+    void this.loadLibrary();
   }
 
   protected async load(): Promise<void> {
@@ -916,10 +978,9 @@ export class Intel {
     this.loadFailed.set(false);
     try {
       const [library, matchups, report] = await Promise.all([
-        // The headline stat cards (always visible, independent of the
-        // active tab) are derived from the library, so a failure here is
-        // treated as fatal for the whole page — same as before.
-        firstValueFrom(this.intel.listScouts({ limit: SCOUT_PAGE_LIMIT, sort: 'threat' })),
+        // Headline cards need a threat-sorted first page (and the total),
+        // independent of later library paging/search.
+        firstValueFrom(this.intel.listScouts({ limit: SCOUT_PAGE_LIMIT, sort: 'threat', page: 1 })),
         // Only the Matchups tab needs this. A failure/timeout here must not
         // blank Operations/Comps/Roster/Timing/Meta/Economy, which only
         // depend on `report` below — same reasoning as its own `.catch()`.
@@ -930,6 +991,10 @@ export class Intel {
         firstValueFrom(this.intel.report()).catch(() => null),
       ]);
       this.scouts.set(library.items);
+      this.rememberScoutNames(library.items);
+      this.libraryTotal.set(library.total_items);
+      this.headlineTotal.set(library.total_items);
+      this.headlineTopThreat.set(library.items.at(0) ?? null);
       this.matchups.set(matchups);
       this.report.set(report);
     } catch (error) {
@@ -938,5 +1003,36 @@ export class Intel {
     } finally {
       this.loading.set(false);
     }
+  }
+
+  private async loadLibrary(): Promise<void> {
+    this.libraryLoading.set(true);
+    this.libraryFailed.set(false);
+    try {
+      const library = await firstValueFrom(this.intel.listScouts(this.toScoutParams()));
+      this.scouts.set(library.items);
+      this.rememberScoutNames(library.items);
+      this.libraryTotal.set(library.total_items);
+    } catch (error) {
+      this.libraryFailed.set(true);
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.libraryLoading.set(false);
+    }
+  }
+
+  private toScoutParams(): ScoutListParams {
+    const event = this.libraryParams;
+    const sortKey = event.sort?.columnKey;
+    const sort: ScoutListParams['sort'] =
+      sortKey === 'saved_at' ? 'saved_at' : sortKey === 'battles' ? 'battles' : 'threat';
+    const category = event.columnFilters['category'] || undefined;
+    return {
+      q: event.search.trim() || undefined,
+      category,
+      sort,
+      page: event.page,
+      limit: event.pageSize,
+    };
   }
 }

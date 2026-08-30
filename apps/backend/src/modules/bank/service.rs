@@ -8,13 +8,16 @@
 use std::str::FromStr;
 
 use sea_orm::prelude::Decimal;
+use sea_orm::sea_query::{Expr, Func};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    PaginatorTrait, QueryFilter, TransactionTrait,
+    JoinType, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
+    TransactionTrait,
 };
 
 use crate::errors::AppError;
-use crate::pagination::{PaginatedData, PaginationParams};
+use crate::modules::users::entities::{Column as UserColumn, Entity as UserEntity};
+use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
 use super::entities::{ActiveModel, Column, Entity as TransactionEntity, Model};
 use super::models::{
@@ -161,7 +164,8 @@ impl BankService {
     ///
     /// # Errors
     ///
-    /// Returns `AppError::Database` if the query fails.
+    /// Returns `AppError::Validation` for an unknown `sort` column or `AppError::Database` if the
+    /// query fails.
     pub async fn list_transactions(
         &self,
         db: &DatabaseConnection,
@@ -178,6 +182,57 @@ impl BankService {
         if let Some(status) = filters.status {
             query = query.filter(Column::Status.eq(status.to_string()));
         }
+
+        let search = filters
+            .search
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let sort_key = resolve_sort_key(
+            filters.sort.as_deref(),
+            &[
+                ("created_at", "created_at"),
+                ("amount", "amount"),
+                ("status", "status"),
+                ("to_username", "to_username"),
+            ],
+            "created_at",
+        )?;
+        let needs_user_join = search.is_some() || sort_key == "to_username";
+        if needs_user_join {
+            query = query.join(JoinType::InnerJoin, super::entities::Relation::ToUser.def());
+        }
+        if let Some(term) = search {
+            let pattern = format!("%{}%", term.to_lowercase());
+            query = query.filter(
+                Expr::expr(Func::lower(Expr::col((UserEntity, UserColumn::Username))))
+                    .like(pattern),
+            );
+        }
+
+        let order = SortOrder::from_query(filters.order.as_deref());
+        query = match sort_key {
+            "amount" => match order {
+                SortOrder::Asc => query.order_by_asc(Column::Amount),
+                SortOrder::Desc => query.order_by_desc(Column::Amount),
+            },
+            "status" => match order {
+                SortOrder::Asc => query.order_by_asc(Column::Status),
+                SortOrder::Desc => query.order_by_desc(Column::Status),
+            },
+            "to_username" => match order {
+                SortOrder::Asc => query.order_by_asc(UserColumn::Username),
+                SortOrder::Desc => query.order_by_desc(UserColumn::Username),
+            },
+            _ => match order {
+                SortOrder::Asc => query.order_by_asc(Column::CreatedAt),
+                SortOrder::Desc => query.order_by_desc(Column::CreatedAt),
+            },
+        };
+        query = match order {
+            SortOrder::Asc => query.order_by_asc(Column::Id),
+            SortOrder::Desc => query.order_by_desc(Column::Id),
+        };
 
         let limit = pagination.limit();
         let page = pagination.offset_page();
@@ -723,5 +778,83 @@ mod tests {
         assert_eq!(accepted.len(), 1);
         assert_eq!(accepted[0].status, TransactionStatus::Withdrawn);
         assert_eq!(accepted[0].from_user_id, Some(officer));
+    }
+
+    #[tokio::test]
+    async fn list_transactions_searches_username_and_sorts_by_amount() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let bob = insert_user(&db, "bob", "bob@example.com").await;
+        insert_transaction(&db, alice, "30.00", TransactionStatus::Pending).await;
+        insert_transaction(&db, bob, "10.00", TransactionStatus::Pending).await;
+        insert_transaction(&db, bob, "20.00", TransactionStatus::Requested).await;
+
+        let service = BankService::new();
+        let pagination = PaginationParams {
+            page: Some(1),
+            limit: Some(10),
+        };
+
+        let searched = service
+            .list_transactions(
+                &db,
+                None,
+                &pagination,
+                &TransactionFilters {
+                    search: Some("bob".into()),
+                    ..TransactionFilters::default()
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(searched.total_items, 2);
+        assert!(searched.items.iter().all(|tx| tx.to_username == "bob"));
+
+        let sorted = service
+            .list_transactions(
+                &db,
+                None,
+                &pagination,
+                &TransactionFilters {
+                    sort: Some("amount".into()),
+                    order: Some("asc".into()),
+                    ..TransactionFilters::default()
+                },
+            )
+            .await
+            .unwrap();
+        let amounts: Vec<_> = sorted.items.iter().map(|tx| tx.amount).collect();
+        assert_eq!(
+            amounts,
+            vec![
+                "10".parse().unwrap(),
+                "20".parse().unwrap(),
+                "30".parse().unwrap()
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn list_transactions_rejects_unknown_sort_column() {
+        let db = seed_db().await;
+        let error = BankService::new()
+            .list_transactions(
+                &db,
+                None,
+                &PaginationParams {
+                    page: Some(1),
+                    limit: Some(10),
+                },
+                &TransactionFilters {
+                    sort: Some("fame".into()),
+                    ..TransactionFilters::default()
+                },
+            )
+            .await
+            .unwrap_err();
+        match error {
+            AppError::Validation(message) => assert!(message.contains("fame")),
+            other => panic!("expected validation, got {other:?}"),
+        }
     }
 }

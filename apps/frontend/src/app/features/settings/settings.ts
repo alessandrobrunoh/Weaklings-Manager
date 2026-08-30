@@ -23,6 +23,7 @@ import type { TranslationKey } from '../../i18n/en';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 
 interface ProfileMetric {
@@ -74,301 +75,316 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
 @Component({
   selector: 'app-profile',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, DecimalPipe, PageHeader, Loading, ErrorState, DataTable],
+  imports: [DatePipe, DecimalPipe, PageHeader, PageStack, Loading, ErrorState, DataTable],
   template: `
     <app-page-header title="Profile" subtitle="Your account, economy and fight performance." />
 
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
     } @else {
-      <section class="profile__hero card p-6">
-        <div>
-          <p class="profile__eyebrow">Account</p>
-          <h1>{{ displayName() }}</h1>
-          <p>{{ profile()?.email || 'No email' }} · {{ profile()?.highest_role || 'User' }}</p>
-          @if (albionLink()?.linked) {
-            <span class="chip chip--success">Albion: {{ albionLink()?.albion_player_name }}</span>
-          } @else {
-            <span class="chip chip--warning">Albion character not linked</span>
-          }
-        </div>
-      </section>
+      <app-page-stack>
+        <section class="profile__hero card p-6">
+          <div>
+            <p class="profile__eyebrow">Account</p>
+            <h1>{{ displayName() }}</h1>
+            <p>{{ profile()?.email || 'No email' }} · {{ profile()?.highest_role || 'User' }}</p>
+            @if (albionLink()?.linked) {
+              <span class="chip chip--success">Albion: {{ albionLink()?.albion_player_name }}</span>
+            } @else {
+              <span class="chip chip--warning">Albion character not linked</span>
+            }
+          </div>
+        </section>
 
-      @if (progression(); as xp) {
-        <article class="mt-5 surface p-5">
-          <h2 class="profile__panel-title">{{ t('profile.xp.title') }}</h2>
-          <p class="profile__sub" style="margin-top: 0">
-            {{ t('profile.xp.season') }}:
-            {{ xp.season?.name || t('profile.xp.noSeason') }}
-          </p>
-          <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div>
-              <p class="profile__label">{{ t('profile.xp.level') }}</p>
-              <p class="profile__value">{{ xp.level }}</p>
-            </div>
-            <div>
-              <p class="profile__label">{{ t('profile.xp.xp') }}</p>
-              <p class="profile__value">{{ formatAmount(xp.xp) }}</p>
-            </div>
-            <div>
-              <p class="profile__label">{{ t('profile.xp.rank') }}</p>
-              <p class="profile__value">
-                {{ xp.rank != null ? '#' + xp.rank : t('profile.xp.unranked') }}
-              </p>
-            </div>
-            <div>
-              <p class="profile__label">{{ t('profile.xp.lifetime') }}</p>
-              <p class="profile__value">{{ formatAmount(xp.lifetime_xp) }}</p>
-            </div>
-          </div>
-          <div class="profile__bar-row">
-            <span>{{ t('profile.xp.toNext') }}</span>
-            <div class="profile__bar">
-              <span [style.width.%]="progressionBarPercent(xp)"></span>
-            </div>
-            <strong>{{ formatAmount(xp.xp) }} / {{ formatAmount(xp.xp + xp.xp_to_next) }}</strong>
-          </div>
-          @if (showMultiplier(xp.multiplier)) {
-            <p class="mt-3 text-sm" style="color: var(--color-warning)">
-              {{ t('profile.xp.multiplier') }}: ×{{ formatMultiplier(xp.multiplier) }}
+        @if (progression(); as xp) {
+          <article class="surface p-5">
+            <h2 class="profile__panel-title">{{ t('profile.xp.title') }}</h2>
+            <p class="profile__sub" style="margin-top: 0">
+              {{ t('profile.xp.season') }}:
+              {{ xp.season?.name || t('profile.xp.noSeason') }}
             </p>
-          }
-        </article>
-      }
-
-      @if (loadFailed()) {
-        <app-error-state
-          [message]="t('common.error')"
-          [retryLabel]="t('common.retry')"
-          (retry)="load()"
-        />
-      } @else {
-      <section class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        @for (metric of profileMetrics(); track metric.label) {
-          <article class="surface p-4">
-            <p class="profile__label">{{ metric.label }}</p>
-            <p class="profile__value">{{ metric.value }}</p>
-            @if (metric.sub) {
-              <p class="profile__sub">{{ metric.sub }}</p>
+            <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <p class="profile__label">{{ t('profile.xp.level') }}</p>
+                <p class="profile__value">{{ xp.level }}</p>
+              </div>
+              <div>
+                <p class="profile__label">{{ t('profile.xp.xp') }}</p>
+                <p class="profile__value">{{ formatAmount(xp.xp) }}</p>
+              </div>
+              <div>
+                <p class="profile__label">{{ t('profile.xp.rank') }}</p>
+                <p class="profile__value">
+                  {{ xp.rank != null ? '#' + xp.rank : t('profile.xp.unranked') }}
+                </p>
+              </div>
+              <div>
+                <p class="profile__label">{{ t('profile.xp.lifetime') }}</p>
+                <p class="profile__value">{{ formatAmount(xp.lifetime_xp) }}</p>
+              </div>
+            </div>
+            <div class="profile__bar-row">
+              <span>{{ t('profile.xp.toNext') }}</span>
+              <div class="profile__bar">
+                <span [style.width.%]="progressionBarPercent(xp)"></span>
+              </div>
+              <strong>{{ formatAmount(xp.xp) }} / {{ formatAmount(xp.xp + xp.xp_to_next) }}</strong>
+            </div>
+            @if (showMultiplier(xp.multiplier)) {
+              <p class="mt-3 text-sm" style="color: var(--color-warning)">
+                {{ t('profile.xp.multiplier') }}: ×{{ formatMultiplier(xp.multiplier) }}
+              </p>
             }
           </article>
         }
-      </section>
 
-      <section class="mt-5 grid gap-4 xl:grid-cols-3">
-        <article class="surface p-5">
-          <h2 class="profile__panel-title">Bank status</h2>
-          @for (row of bankChart(); track row.label) {
-            <div class="profile__bar-row">
-              <span>{{ row.label }}</span>
-              <div class="profile__bar">
-                <span [style.width.%]="chartPercent(row.value, bankChart())"></span>
-              </div>
-              <strong>{{ formatAmount(row.value) }}</strong>
-            </div>
-          }
-        </article>
-        <article class="surface p-5">
-          <h2 class="profile__panel-title">Siphoned energy</h2>
-          @for (row of siphonedChart(); track row.label) {
-            <div class="profile__bar-row">
-              <span>{{ row.label }}</span>
-              <div class="profile__bar profile__bar--energy">
-                <span [style.width.%]="chartPercent(row.value, siphonedChart())"></span>
-              </div>
-              <strong>{{ formatAmount(row.value) }}</strong>
-            </div>
-          }
-        </article>
-        <article class="surface p-5">
-          <h2 class="profile__panel-title">My fights</h2>
-          @for (row of battleChart(); track row.label) {
-            <div class="profile__bar-row">
-              <span>{{ row.label }}</span>
-              <div class="profile__bar profile__bar--fight">
-                <span [style.width.%]="chartPercent(row.value, battleChart())"></span>
-              </div>
-              <strong>{{ formatCompact(row.value) }}</strong>
-            </div>
-          }
-        </article>
-      </section>
+        @if (loadFailed()) {
+          <app-error-state
+            [message]="t('common.error')"
+            [retryLabel]="t('common.retry')"
+            (retry)="load()"
+          />
+        } @else {
+          <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            @for (metric of profileMetrics(); track metric.label) {
+              <article class="surface p-4">
+                <p class="profile__label">{{ metric.label }}</p>
+                <p class="profile__value">{{ metric.value }}</p>
+                @if (metric.sub) {
+                  <p class="profile__sub">{{ metric.sub }}</p>
+                }
+              </article>
+            }
+          </section>
 
-      <!-- Attendance, regear and splits: the three areas the profile used to
-           say nothing about, even though the data existed. -->
-      <section class="mt-5 grid gap-4 xl:grid-cols-3">
-        <article class="surface p-5">
-          <h2 class="profile__panel-title">Attendance</h2>
-          @if (userMetrics(); as m) {
-            <div class="profile__bar-row">
-              <span>Signed up</span>
-              <div class="profile__bar">
-                <span [style.width.%]="clampPercent(m.attendance_rate)"></span>
-              </div>
-              <strong>{{ m.events_attended }} / {{ m.events_total }}</strong>
-            </div>
-            <p class="mt-3 text-sm" style="color: var(--color-text-secondary)">
-              {{ m.attendance_rate | number: '1.0-0' }}% of guild events.
-              @if (m.attendance_streak > 0) {
-                Current streak: <strong>{{ m.attendance_streak }}</strong>.
+          <section class="grid gap-4 xl:grid-cols-3">
+            <article class="surface p-5">
+              <h2 class="profile__panel-title">Bank status</h2>
+              @for (row of bankChart(); track row.label) {
+                <div class="profile__bar-row">
+                  <span>{{ row.label }}</span>
+                  <div class="profile__bar">
+                    <span [style.width.%]="chartPercent(row.value, bankChart())"></span>
+                  </div>
+                  <strong>{{ formatAmount(row.value) }}</strong>
+                </div>
               }
-            </p>
-            @if (m.next_event_title) {
-              <p class="mt-2 text-sm" style="color: var(--color-primary)">
-                Next: {{ m.next_event_title }}
-                <span style="color: var(--color-text-secondary)">
-                  · {{ m.next_event_at | date: 'MMM d, HH:mm' }}
-                </span>
-              </p>
-            } @else {
-              <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
-                Not signed up for anything upcoming.
-              </p>
-            }
-          }
-        </article>
+            </article>
+            <article class="surface p-5">
+              <h2 class="profile__panel-title">Siphoned energy</h2>
+              @for (row of siphonedChart(); track row.label) {
+                <div class="profile__bar-row">
+                  <span>{{ row.label }}</span>
+                  <div class="profile__bar profile__bar--energy">
+                    <span [style.width.%]="chartPercent(row.value, siphonedChart())"></span>
+                  </div>
+                  <strong>{{ formatAmount(row.value) }}</strong>
+                </div>
+              }
+            </article>
+            <article class="surface p-5">
+              <h2 class="profile__panel-title">My fights</h2>
+              @for (row of battleChart(); track row.label) {
+                <div class="profile__bar-row">
+                  <span>{{ row.label }}</span>
+                  <div class="profile__bar profile__bar--fight">
+                    <span [style.width.%]="chartPercent(row.value, battleChart())"></span>
+                  </div>
+                  <strong>{{ formatCompact(row.value) }}</strong>
+                </div>
+              }
+            </article>
+          </section>
 
-        <article class="surface p-5">
-          <h2 class="profile__panel-title">Regear</h2>
-          @if (userMetrics(); as m) {
-            <div class="profile__bar-row">
-              <span>Monthly cap</span>
-              <div class="profile__bar profile__bar--fight">
-                <span [style.width.%]="regearCapPercent()"></span>
-              </div>
-              <strong>{{ budget()?.per_month_used ?? 0 }} / {{ budget()?.per_month_max ?? 0 }}</strong>
-            </div>
-            <dl class="mt-3 grid grid-cols-2 gap-y-1.5 text-sm">
-              <dt style="color: var(--color-text-secondary)">Claimed</dt>
-              <dd class="text-right">{{ m.regears_claimed }}</dd>
-              <dt style="color: var(--color-text-secondary)">Awaiting decision</dt>
-              <dd class="text-right" [style.color]="m.regears_pending > 0 ? 'var(--color-warning)' : null">
-                {{ m.regears_pending }}
-              </dd>
-              <dt style="color: var(--color-text-secondary)">Approved</dt>
-              <dd class="text-right" style="color: var(--color-success)">{{ m.regears_approved }}</dd>
-              <dt style="color: var(--color-text-secondary)">Reimbursed</dt>
-              <dd class="text-right">{{ formatAmount(m.regear_silver) }}</dd>
-            </dl>
-          }
-        </article>
+          <!-- Attendance, regear and splits: the three areas the profile used to
+           say nothing about, even though the data existed. -->
+          <section class="grid gap-4 xl:grid-cols-3">
+            <article class="surface p-5">
+              <h2 class="profile__panel-title">Attendance</h2>
+              @if (userMetrics(); as m) {
+                <div class="profile__bar-row">
+                  <span>Signed up</span>
+                  <div class="profile__bar">
+                    <span [style.width.%]="clampPercent(m.attendance_rate)"></span>
+                  </div>
+                  <strong>{{ m.events_attended }} / {{ m.events_total }}</strong>
+                </div>
+                <p class="mt-3 text-sm" style="color: var(--color-text-secondary)">
+                  {{ m.attendance_rate | number: '1.0-0' }}% of guild events.
+                  @if (m.attendance_streak > 0) {
+                    Current streak: <strong>{{ m.attendance_streak }}</strong
+                    >.
+                  }
+                </p>
+                @if (m.next_event_title) {
+                  <p class="mt-2 text-sm" style="color: var(--color-primary)">
+                    Next: {{ m.next_event_title }}
+                    <span style="color: var(--color-text-secondary)">
+                      · {{ m.next_event_at | date: 'MMM d, HH:mm' }}
+                    </span>
+                  </p>
+                } @else {
+                  <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
+                    Not signed up for anything upcoming.
+                  </p>
+                }
+              }
+            </article>
 
-        <article class="surface p-5">
-          <h2 class="profile__panel-title">Loot splits</h2>
-          @if (userMetrics(); as m) {
-            <dl class="grid grid-cols-2 gap-y-1.5 text-sm">
-              <dt style="color: var(--color-text-secondary)">Splits joined</dt>
-              <dd class="text-right">{{ m.splits_joined }}</dd>
-              <dt style="color: var(--color-text-secondary)">Total earned</dt>
-              <dd class="text-right" style="color: var(--color-success)">
-                {{ formatAmount(m.split_earnings) }}
-              </dd>
-              <dt style="color: var(--color-text-secondary)">Average per split</dt>
-              <dd class="text-right">{{ formatAmount(averageSplitShare()) }}</dd>
-            </dl>
-            <div class="profile__bar-row mt-4">
-              <span>Kills / deaths</span>
-              <div class="profile__bar profile__bar--fight">
-                <span [style.width.%]="killShare()"></span>
-              </div>
-              <strong>{{ m.kills }} / {{ m.deaths }}</strong>
-            </div>
-            <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
-              {{ m.battles_fought }} battles · {{ formatCompact(m.kill_fame) }} kill fame
-            </p>
-          }
-        </article>
-      </section>
+            <article class="surface p-5">
+              <h2 class="profile__panel-title">Regear</h2>
+              @if (userMetrics(); as m) {
+                <div class="profile__bar-row">
+                  <span>Monthly cap</span>
+                  <div class="profile__bar profile__bar--fight">
+                    <span [style.width.%]="regearCapPercent()"></span>
+                  </div>
+                  <strong
+                    >{{ budget()?.per_month_used ?? 0 }} /
+                    {{ budget()?.per_month_max ?? 0 }}</strong
+                  >
+                </div>
+                <dl class="mt-3 grid grid-cols-2 gap-y-1.5 text-sm">
+                  <dt style="color: var(--color-text-secondary)">Claimed</dt>
+                  <dd class="text-right">{{ m.regears_claimed }}</dd>
+                  <dt style="color: var(--color-text-secondary)">Awaiting decision</dt>
+                  <dd
+                    class="text-right"
+                    [style.color]="m.regears_pending > 0 ? 'var(--color-warning)' : null"
+                  >
+                    {{ m.regears_pending }}
+                  </dd>
+                  <dt style="color: var(--color-text-secondary)">Approved</dt>
+                  <dd class="text-right" style="color: var(--color-success)">
+                    {{ m.regears_approved }}
+                  </dd>
+                  <dt style="color: var(--color-text-secondary)">Reimbursed</dt>
+                  <dd class="text-right">{{ formatAmount(m.regear_silver) }}</dd>
+                </dl>
+              }
+            </article>
 
-      <section class="mt-5 grid gap-4 xl:grid-cols-2">
-        <article class="surface overflow-hidden">
-          <header class="profile__section-header"><h2>Recent bank ledger</h2></header>
-          <app-data-table
-            [columns]="transactionColumns"
-            [rows]="transactions()"
-            [trackBy]="trackTransaction"
-            [pageSize]="8"
-          >
-            <ng-template dataTableCell="amount" let-row>{{ formatAmount(row.amount) }}</ng-template>
-            <ng-template dataTableCell="created_at" let-row>{{
-              formatDate(row.created_at)
-            }}</ng-template>
-          </app-data-table>
-        </article>
-        <article class="surface overflow-hidden">
-          <header class="profile__section-header"><h2>Recent siphoned ledger</h2></header>
-          <app-data-table
-            [columns]="siphonedColumns"
-            [rows]="siphonedEntries()"
-            [trackBy]="trackSiphonedEntry"
-            [pageSize]="8"
-          >
-            <ng-template dataTableCell="amount" let-row>{{ formatAmount(row.amount) }}</ng-template>
-            <ng-template dataTableCell="occurred_at" let-row>{{
-              formatDate(row.occurred_at)
-            }}</ng-template>
-          </app-data-table>
-        </article>
-      </section>
+            <article class="surface p-5">
+              <h2 class="profile__panel-title">Loot splits</h2>
+              @if (userMetrics(); as m) {
+                <dl class="grid grid-cols-2 gap-y-1.5 text-sm">
+                  <dt style="color: var(--color-text-secondary)">Splits joined</dt>
+                  <dd class="text-right">{{ m.splits_joined }}</dd>
+                  <dt style="color: var(--color-text-secondary)">Total earned</dt>
+                  <dd class="text-right" style="color: var(--color-success)">
+                    {{ formatAmount(m.split_earnings) }}
+                  </dd>
+                  <dt style="color: var(--color-text-secondary)">Average per split</dt>
+                  <dd class="text-right">{{ formatAmount(averageSplitShare()) }}</dd>
+                </dl>
+                <div class="profile__bar-row mt-4">
+                  <span>Kills / deaths</span>
+                  <div class="profile__bar profile__bar--fight">
+                    <span [style.width.%]="killShare()"></span>
+                  </div>
+                  <strong>{{ m.kills }} / {{ m.deaths }}</strong>
+                </div>
+                <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
+                  {{ m.battles_fought }} battles · {{ formatCompact(m.kill_fame) }} kill fame
+                </p>
+              }
+            </article>
+          </section>
 
-      <article class="mt-5 surface overflow-hidden">
-        <header class="profile__section-header"><h2>My recent fights</h2></header>
-        <app-data-table
-          [columns]="battleColumns"
-          [rows]="battles()"
-          [trackBy]="trackBattle"
-          [pageSize]="8"
-        >
-          <ng-template dataTableCell="start_time" let-row>{{
-            formatDate(row.start_time)
-          }}</ng-template>
-          <ng-template dataTableCell="total_fame" let-row>{{
-            formatCompact(row.total_fame)
-          }}</ng-template>
-        </app-data-table>
-      </article>
-      }
-
-      <section class="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <section class="card p-6">
-          <h2 class="profile__panel-title">Appearance</h2>
-          <fieldset class="profile__option-list">
-            @for (option of themeOptions; track option.value) {
-              <label
-                class="profile__option"
-                [class.profile__option--active]="theme.preference() === option.value"
+          <section class="grid gap-4 xl:grid-cols-2">
+            <article class="surface overflow-hidden">
+              <header class="profile__section-header"><h2>Recent bank ledger</h2></header>
+              <app-data-table
+                [columns]="transactionColumns"
+                [rows]="transactions()"
+                [trackBy]="trackTransaction"
+                [pageSize]="8"
               >
-                <input
-                  type="radio"
-                  name="theme"
-                  [checked]="theme.preference() === option.value"
-                  (change)="onThemeChange(option.value)"
-                />
-                <span>{{ t(option.labelKey) }}</span>
-              </label>
-            }
-          </fieldset>
-        </section>
-        <section class="card p-6">
-          <h2 class="profile__panel-title">Language</h2>
-          <fieldset class="profile__option-list">
-            @for (lang of translate.supportedLanguages; track lang) {
-              <label
-                class="profile__option"
-                [class.profile__option--active]="translate.language() === lang"
+                <ng-template dataTableCell="amount" let-row>{{
+                  formatAmount(row.amount)
+                }}</ng-template>
+                <ng-template dataTableCell="created_at" let-row>{{
+                  formatDate(row.created_at)
+                }}</ng-template>
+              </app-data-table>
+            </article>
+            <article class="surface overflow-hidden">
+              <header class="profile__section-header"><h2>Recent siphoned ledger</h2></header>
+              <app-data-table
+                [columns]="siphonedColumns"
+                [rows]="siphonedEntries()"
+                [trackBy]="trackSiphonedEntry"
+                [pageSize]="8"
               >
-                <input
-                  type="radio"
-                  name="language"
-                  [checked]="translate.language() === lang"
-                  (change)="onLanguageChange(lang)"
-                />
-                <span>{{ translate.languageLabels[lang] }}</span>
-              </label>
-            }
-          </fieldset>
+                <ng-template dataTableCell="amount" let-row>{{
+                  formatAmount(row.amount)
+                }}</ng-template>
+                <ng-template dataTableCell="occurred_at" let-row>{{
+                  formatDate(row.occurred_at)
+                }}</ng-template>
+              </app-data-table>
+            </article>
+          </section>
+
+          <article class="surface overflow-hidden">
+            <header class="profile__section-header"><h2>My recent fights</h2></header>
+            <app-data-table
+              [columns]="battleColumns"
+              [rows]="battles()"
+              [trackBy]="trackBattle"
+              [pageSize]="8"
+            >
+              <ng-template dataTableCell="start_time" let-row>{{
+                formatDate(row.start_time)
+              }}</ng-template>
+              <ng-template dataTableCell="total_fame" let-row>{{
+                formatCompact(row.total_fame)
+              }}</ng-template>
+            </app-data-table>
+          </article>
+        }
+
+        <section class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <section class="card p-6">
+            <h2 class="profile__panel-title">Appearance</h2>
+            <fieldset class="profile__option-list">
+              @for (option of themeOptions; track option.value) {
+                <label
+                  class="profile__option"
+                  [class.profile__option--active]="theme.preference() === option.value"
+                >
+                  <input
+                    type="radio"
+                    name="theme"
+                    [checked]="theme.preference() === option.value"
+                    (change)="onThemeChange(option.value)"
+                  />
+                  <span>{{ t(option.labelKey) }}</span>
+                </label>
+              }
+            </fieldset>
+          </section>
+          <section class="card p-6">
+            <h2 class="profile__panel-title">Language</h2>
+            <fieldset class="profile__option-list">
+              @for (lang of translate.supportedLanguages; track lang) {
+                <label
+                  class="profile__option"
+                  [class.profile__option--active]="translate.language() === lang"
+                >
+                  <input
+                    type="radio"
+                    name="language"
+                    [checked]="translate.language() === lang"
+                    (change)="onLanguageChange(lang)"
+                  />
+                  <span>{{ translate.languageLabels[lang] }}</span>
+                </label>
+              }
+            </fieldset>
+          </section>
         </section>
-      </section>
+      </app-page-stack>
     }
   `,
   styles: `
@@ -466,7 +482,9 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
         display: flex;
         gap: 0.75rem;
         padding: 0.75rem;
-        transition: border-color 150ms ease, background-color 150ms ease;
+        transition:
+          border-color 150ms ease,
+          background-color 150ms ease;
       }
       .profile__option:hover {
         background: var(--color-surface-hover);
@@ -787,25 +805,25 @@ export class Settings {
     try {
       const [balance, transactions, albionLink, battles, metrics, budget, progression] =
         await Promise.all([
-        firstValueFrom(this.api.get<BalanceSummary>('api/bank/balance')),
-        firstValueFrom(
-          this.api.get<PaginatedData<TransactionView>>('api/bank/transactions', {
-            page: 1,
-            limit: 50,
-          }),
-        ),
-        firstValueFrom(this.api.get<AlbionLinkStatus>('api/albion/link/me')),
-        firstValueFrom(
-          this.api.get<PaginatedData<BattleSummary>>('api/battles/me', { page: 1, limit: 50 }),
-        ).catch(() => emptyPaginatedBattles()),
-        firstValueFrom(this.api.get<UserMetrics>('api/users/me/metrics')).catch(() => null),
-        // Members without `regear.view` simply see no cap bar, rather than
-        // the whole profile failing on a permission they do not need.
-        firstValueFrom(this.api.get<RegearBudgetSummary>('api/regear/me/summary')).catch(
-          () => null,
-        ),
-        firstValueFrom(this.api.get<ProgressionMeView>('api/progression/me')).catch(() => null),
-      ]);
+          firstValueFrom(this.api.get<BalanceSummary>('api/bank/balance')),
+          firstValueFrom(
+            this.api.get<PaginatedData<TransactionView>>('api/bank/transactions', {
+              page: 1,
+              limit: 50,
+            }),
+          ),
+          firstValueFrom(this.api.get<AlbionLinkStatus>('api/albion/link/me')),
+          firstValueFrom(
+            this.api.get<PaginatedData<BattleSummary>>('api/battles/me', { page: 1, limit: 50 }),
+          ).catch(() => emptyPaginatedBattles()),
+          firstValueFrom(this.api.get<UserMetrics>('api/users/me/metrics')).catch(() => null),
+          // Members without `regear.view` simply see no cap bar, rather than
+          // the whole profile failing on a permission they do not need.
+          firstValueFrom(this.api.get<RegearBudgetSummary>('api/regear/me/summary')).catch(
+            () => null,
+          ),
+          firstValueFrom(this.api.get<ProgressionMeView>('api/progression/me')).catch(() => null),
+        ]);
       this.balance.set(balance);
       this.transactions.set(transactions.items);
       this.albionLink.set(albionLink);

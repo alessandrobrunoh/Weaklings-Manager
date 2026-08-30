@@ -22,9 +22,12 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
+import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
+import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 import {
   ViewToggle,
   type ViewToggleOption,
@@ -119,101 +122,92 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
 @Component({
   selector: 'app-battle-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DataTable, EquipmentGrid, ErrorState, Loading, RouterLink, ViewToggle],
+  imports: [
+    DataTable,
+    DataTableCell,
+    EquipmentGrid,
+    ErrorState,
+    Loading,
+    PageHeader,
+    PageStack,
+    RouterLink,
+    ViewToggle,
+  ],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
     } @else if (battle(); as detail) {
-      <!-- ================= HERO HEADER & WAR ROOM VERDICT ================= -->
-      <header class="card p-5">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <button type="button" class="btn btn--ghost btn--sm" (click)="backToBattles()">
-            ← {{ t('nav.battles') }}
-          </button>
-          <div class="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              class="btn btn--outline btn--sm"
-              (click)="copyBattleLink()"
-              [title]="t('battles.copy_link')"
-            >
-              {{ t('battles.copy_link') }}
-            </button>
-            <a
-              class="btn btn--ghost btn--sm no-underline"
-              [href]="'https://albionbattles.com/battles/' + detail.battle_id"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {{ t('battles.view_on_albionbb') }} ↗
-            </a>
-          </div>
-        </div>
+      <button type="button" class="btn btn--ghost btn--sm mb-4" (click)="backToBattles()">
+        ← {{ t('nav.battles') }}
+      </button>
 
-        <div class="mt-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div class="mb-2 flex flex-wrap items-center gap-2">
-              <h1 class="text-3xl font-bold tracking-tight" style="color: var(--color-text)">
-                #{{ detail.battle_id }}
-              </h1>
+      <app-page-header [title]="'#' + detail.battle_id" [subtitle]="battleSubtitle(detail)">
+        <button
+          type="button"
+          class="btn btn--outline btn--sm"
+          (click)="copyBattleLink()"
+          [title]="t('battles.copy_link')"
+        >
+          {{ t('battles.copy_link') }}
+        </button>
+        <a
+          class="btn btn--ghost btn--sm no-underline"
+          [href]="'https://albionbattles.com/battles/' + detail.battle_id"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {{ t('battles.view_on_albionbb') }} ↗
+        </a>
+        <app-view-toggle
+          pageTabs
+          [options]="tabOptions()"
+          [active]="tab()"
+          (activeChange)="switchTab($event)"
+        />
+      </app-page-header>
 
-              <!-- Outcome Verdict Badge -->
-              <span
-                class="chip font-semibold"
-                [class.chip--success]="battleVerdict().type === 'victory'"
-                [class.chip--error]="battleVerdict().type === 'defeat'"
-                [class.chip--warning]="battleVerdict().type === 'contested'"
-              >
-                {{ battleVerdict().label }}
-              </span>
+      <app-page-stack>
+      <div class="flex flex-wrap items-center gap-2">
+        <span
+          class="chip font-semibold"
+          [class.chip--success]="battleVerdict().type === 'victory'"
+          [class.chip--error]="battleVerdict().type === 'defeat'"
+          [class.chip--warning]="battleVerdict().type === 'contested'"
+        >
+          {{ battleVerdict().label }}
+        </span>
 
-              @if (ourGuildAllianceName(); as allyName) {
-                <span class="chip chip--info font-mono font-medium">
-                  [{{ allyName }}] {{ ourGuild()?.name || t('battles.allies') }}
-                </span>
-              } @else if (ourGuild()?.name; as gName) {
-                <span class="chip chip--info font-mono font-medium">
-                  {{ gName }}
-                </span>
-              }
+        @if (ourGuildAllianceName(); as allyName) {
+          <span class="chip chip--info font-mono font-medium">
+            [{{ allyName }}] {{ ourGuild()?.name || t('battles.allies') }}
+          </span>
+        } @else if (ourGuild()?.name; as gName) {
+          <span class="chip chip--info font-mono font-medium">
+            {{ gName }}
+          </span>
+        }
 
-              @if (detail.linked_event; as event) {
-                <a
-                  class="chip chip--info no-underline"
-                  [routerLink]="['/events', event.id]"
-                  [title]="t('battles.linkedEventHint')"
-                >
-                  {{ event.title }}
-                  @if (event.call_to_arms) {
-                    · {{ t('events.call_to_arms') }}
-                  }
-                </a>
-              } @else {
-                <span class="chip" [title]="t('battles.unlinkedHint')">
-                  {{ t('battles.unlinked') }}
-                </span>
-              }
-            </div>
-
-            <p class="text-sm" style="color: var(--color-text-secondary)">
-              {{ formatDate(detail.start_time) }} · {{ formatDuration(detail) }} ·
-              <span class="mono">{{ detail.total_players }} {{ t('battles.players') }}</span> ·
-              <span class="mono">{{ detail.guilds.length }} {{ t('battles.guilds') }}</span> ·
-              <span class="mono">{{ alliances().length }} {{ t('battles.alliance') }}s</span>
-            </p>
-          </div>
-
-          <app-view-toggle
-            [options]="tabOptions()"
-            [active]="tab()"
-            (activeChange)="switchTab($event)"
-          />
-        </div>
-      </header>
+        @if (detail.linked_event; as event) {
+          <a
+            class="chip chip--info no-underline"
+            [routerLink]="['/events', event.id]"
+            [title]="t('battles.linkedEventHint')"
+          >
+            {{ event.title }}
+            @if (event.call_to_arms) {
+              · {{ t('events.call_to_arms') }}
+            }
+          </a>
+        } @else {
+          <span class="chip" [title]="t('battles.unlinkedHint')">
+            {{ t('battles.unlinked') }}
+          </span>
+        }
+      </div>
 
       <!-- ================= 6 CORE KPI METRIC CARDS ================= -->
       <section
-        class="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6"
+        class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6"
         aria-label="Core Battle KPIs"
       >
         <article class="surface p-4">
@@ -1090,6 +1084,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
           }
         </section>
       }
+      </app-page-stack>
     } @else {
       <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     }
@@ -2069,6 +2064,15 @@ export class BattleDetailPage {
   }
 
   // Formatters
+  protected battleSubtitle(detail: BattleDetail): string {
+    return [
+      this.formatDate(detail.start_time),
+      this.formatDuration(detail),
+      `${detail.total_players} ${this.t('battles.players')}`,
+      `${detail.guilds.length} ${this.t('battles.guilds')}`,
+    ].join(' · ');
+  }
+
   protected formatDate(isoDate: string): string {
     return new Date(isoDate).toLocaleString();
   }

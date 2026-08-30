@@ -113,11 +113,14 @@ impl AdminService {
         let role_id = parse_discord_role_id(Some(raw_role_id))?;
         if let Some(role_id) = &role_id {
             let roles = fetch_discord_roles(cfg).await?;
-            let role = roles.iter().find(|role| role.id == *role_id).ok_or_else(|| {
-                AppError::Validation(
-                    "Discord role was not found in the configured guild".to_string(),
-                )
-            })?;
+            let role = roles
+                .iter()
+                .find(|role| role.id == *role_id)
+                .ok_or_else(|| {
+                    AppError::Validation(
+                        "Discord role was not found in the configured guild".to_string(),
+                    )
+                })?;
             if role.id == cfg.discord_guild_id || role.managed {
                 return Err(AppError::Validation(
                     "the selected Discord role cannot be assigned by the bot".to_string(),
@@ -212,11 +215,7 @@ impl AdminService {
                 action: info.action.to_string(),
             })
             .collect();
-        catalog.sort_by(|a, b| {
-            a.resource
-                .cmp(&b.resource)
-                .then_with(|| a.key.cmp(&b.key))
-        });
+        catalog.sort_by(|a, b| a.resource.cmp(&b.resource).then_with(|| a.key.cmp(&b.key)));
         let available_permissions: Vec<String> = catalog.iter().map(|e| e.key.clone()).collect();
 
         Ok(PermissionMatrix {
@@ -498,7 +497,9 @@ async fn ensure_name_available(
         .one(db)
         .await?;
     if existing.is_some_and(|row| except_id.is_none_or(|id| row.id != id)) {
-        return Err(AppError::Conflict(format!("role name {name} is already taken")));
+        return Err(AppError::Conflict(format!(
+            "role name {name} is already taken"
+        )));
     }
     Ok(())
 }

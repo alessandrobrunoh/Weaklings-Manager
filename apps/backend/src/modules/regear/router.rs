@@ -108,8 +108,10 @@ pub fn router() -> Router {
     summary = "List regear deaths visible to the caller",
     description = "Without `global=true`, returns only the caller's own deaths. With `global=true` \
         (requires `regear.adjudicate`), returns all deaths guild-wide. Standard `page`/`limit` \
-        pagination; results are newest-death first. Filters: `event_id`, `status`, `user_id`, \
-        `bank_transaction_id`.",
+        pagination; default sort is `killed_at` descending. Filters: `event_id`, `status`, `user_id`, \
+        `bank_transaction_id`, `search` (player name substring). `history=true` restricts to \
+        approved/rejected when `status` is omitted. Sort whitelist: `killed_at`, `status`, \
+        `player_name`; unknown `sort` values return 400.",
     security(("session_cookie" = ["regear.view"])),
     params(ListDeathsQuery),
     responses(

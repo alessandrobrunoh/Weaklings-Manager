@@ -11,10 +11,12 @@ import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 
 interface RoleDraft {
   name: string;
@@ -35,125 +37,148 @@ interface NewRoleDraft {
 @Component({
   selector: 'app-admin-roles',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EmptyState, ErrorState, Loading, PageHeader],
+  imports: [Dialog, EmptyState, ErrorState, Loading, PageHeader, PageStack],
   template: `
-    <app-page-header [title]="t('admin.roles.title')" [subtitle]="t('admin.roles.hint')" />
+    <app-page-header [title]="t('admin.roles.title')" [subtitle]="t('admin.roles.hint')">
+      @if (matrix()) {
+        <button type="button" class="btn btn--primary" (click)="openCreate()">
+          {{ t('admin.roles.create') }}
+        </button>
+      }
+    </app-page-header>
 
-    @if (loading()) {
-      <app-loading />
-    } @else if (matrix(); as data) {
-      <section class="card p-5">
-        @if (data.roles.length === 0) {
-          <app-empty-state [message]="t('common.empty')" />
-        } @else {
-          <ul class="mb-5 flex flex-col gap-2" role="list">
-            @for (role of data.roles; track role.role_id) {
-              <li
-                class="flex flex-col gap-2 rounded-2xl px-3 py-3 sm:flex-row sm:items-end"
-                style="background: var(--color-surface-2); border: 1px solid var(--color-border)"
-              >
-                <label class="flex-1">
-                  <span class="block text-xs" style="color: var(--color-text-secondary)">
-                    {{ t('common.name') }}
-                  </span>
-                  <input
-                    class="input mt-1 w-full"
-                    [value]="roleDrafts()[role.role_id]?.name ?? role.role_name"
-                    (input)="updateRoleDraft(role, 'name', $event)"
-                  />
-                </label>
-                <label class="w-28">
-                  <span class="block text-xs" style="color: var(--color-text-secondary)">
-                    {{ t('admin.permissions.priority') }}
-                  </span>
-                  <input
-                    class="input mt-1 w-full"
-                    type="number"
-                    [value]="roleDrafts()[role.role_id]?.priority ?? role.priority"
-                    (input)="updateRoleDraft(role, 'priority', $event)"
-                  />
-                </label>
-                <label class="flex-[2]">
-                  <span class="block text-xs" style="color: var(--color-text-secondary)">
-                    {{ t('admin.roles.discordId') }}
-                  </span>
-                  @if (discordRoles().length) {
-                    <select
-                      class="input mt-1 w-full"
-                      [value]="roleDrafts()[role.role_id]?.discord_role_id ?? role.discord_role_id ?? ''"
-                      (change)="updateRoleDraft(role, 'discord_role_id', $event)"
-                    >
-                      <option value="">{{ t('admin.roles.unlinked') }}</option>
-                      @for (drole of discordRoleOptions(role.discord_role_id); track drole.id) {
-                        <option [value]="drole.id">{{ drole.name }}</option>
-                      }
-                    </select>
-                  } @else {
+    <app-page-stack>
+      @if (loading()) {
+        <app-loading />
+      } @else if (matrix(); as data) {
+        <section class="card p-5">
+          @if (data.roles.length === 0) {
+            <app-empty-state [message]="t('common.empty')" />
+          } @else {
+            <ul class="flex flex-col gap-2" role="list">
+              @for (role of data.roles; track role.role_id) {
+                <li
+                  class="flex flex-col gap-2 rounded-2xl px-3 py-3 sm:flex-row sm:items-end"
+                  style="background: var(--color-surface-2); border: 1px solid var(--color-border)"
+                >
+                  <label class="flex-1">
+                    <span class="block text-xs" style="color: var(--color-text-secondary)">
+                      {{ t('common.name') }}
+                    </span>
                     <input
-                      class="input mt-1 w-full mono"
-                      [value]="roleDrafts()[role.role_id]?.discord_role_id ?? role.discord_role_id ?? ''"
-                      [attr.placeholder]="t('admin.roles.discordIdPlaceholder')"
-                      (input)="updateRoleDraft(role, 'discord_role_id', $event)"
+                      class="input mt-1 w-full"
+                      [value]="roleDrafts()[role.role_id]?.name ?? role.role_name"
+                      (input)="updateRoleDraft(role, 'name', $event)"
                     />
-                  }
-                </label>
-                <label class="flex items-center gap-2 pb-2">
-                  <input
-                    class="checkbox"
-                    type="checkbox"
-                    [checked]="roleDrafts()[role.role_id]?.is_default ?? role.is_default"
-                    (change)="updateRoleDraftDefault(role, $event)"
-                  />
-                  <span class="text-xs">{{ t('admin.roles.default') }}</span>
-                </label>
-                <div class="flex gap-2 pb-1">
-                  <button
-                    type="button"
-                    class="btn btn--outline btn--sm"
-                    [disabled]="roleSavingId() === role.role_id"
-                    (click)="saveRole(role)"
-                  >
-                    {{ t('common.save') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn--outline btn--sm"
-                    [disabled]="role.is_default || roleSavingId() === role.role_id"
-                    (click)="removeRole(role)"
-                  >
-                    {{ t('common.delete') }}
-                  </button>
-                </div>
-              </li>
-            }
-          </ul>
-        }
+                  </label>
+                  <label class="w-28">
+                    <span class="block text-xs" style="color: var(--color-text-secondary)">
+                      {{ t('admin.permissions.priority') }}
+                    </span>
+                    <input
+                      class="input mt-1 w-full"
+                      type="number"
+                      [value]="roleDrafts()[role.role_id]?.priority ?? role.priority"
+                      (input)="updateRoleDraft(role, 'priority', $event)"
+                    />
+                  </label>
+                  <label class="flex-[2]">
+                    <span class="block text-xs" style="color: var(--color-text-secondary)">
+                      {{ t('admin.roles.discordId') }}
+                    </span>
+                    @if (discordRoles().length) {
+                      <select
+                        class="input mt-1 w-full"
+                        [value]="
+                          roleDrafts()[role.role_id]?.discord_role_id ?? role.discord_role_id ?? ''
+                        "
+                        (change)="updateRoleDraft(role, 'discord_role_id', $event)"
+                      >
+                        <option value="">{{ t('admin.roles.unlinked') }}</option>
+                        @for (drole of discordRoleOptions(role.discord_role_id); track drole.id) {
+                          <option [value]="drole.id">{{ drole.name }}</option>
+                        }
+                      </select>
+                    } @else {
+                      <input
+                        class="input mt-1 w-full mono"
+                        [value]="
+                          roleDrafts()[role.role_id]?.discord_role_id ?? role.discord_role_id ?? ''
+                        "
+                        [attr.placeholder]="t('admin.roles.discordIdPlaceholder')"
+                        (input)="updateRoleDraft(role, 'discord_role_id', $event)"
+                      />
+                    }
+                  </label>
+                  <label class="flex items-center gap-2 pb-2">
+                    <input
+                      class="checkbox"
+                      type="checkbox"
+                      [checked]="roleDrafts()[role.role_id]?.is_default ?? role.is_default"
+                      (change)="updateRoleDraftDefault(role, $event)"
+                    />
+                    <span class="text-xs">{{ t('admin.roles.default') }}</span>
+                  </label>
+                  <div class="flex gap-2 pb-1">
+                    <button
+                      type="button"
+                      class="btn btn--outline btn--sm"
+                      [disabled]="roleSavingId() === role.role_id"
+                      (click)="saveRole(role)"
+                    >
+                      {{ t('common.save') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn--outline btn--sm"
+                      [disabled]="role.is_default || roleSavingId() === role.role_id"
+                      (click)="removeRole(role)"
+                    >
+                      {{ t('common.delete') }}
+                    </button>
+                  </div>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+      } @else {
+        <app-error-state
+          [message]="t('admin.loadError')"
+          [retryLabel]="t('common.retry')"
+          (retry)="load()"
+        />
+      }
+    </app-page-stack>
 
-        <form class="grid gap-3 sm:grid-cols-4" (submit)="createRole($event)">
-          <label class="sm:col-span-1">
-            <span class="block text-xs" style="color: var(--color-text-secondary)">
-              {{ t('admin.roles.newName') }}
-            </span>
-            <input class="input mt-1 w-full" [value]="newRole().name" (input)="updateNewRole('name', $event)" required />
+    @if (createOpen()) {
+      <app-dialog [title]="t('admin.roles.create')" (closed)="closeCreate()">
+        <form id="create-role-form" class="grid gap-4" (submit)="createRole($event)">
+          <label>
+            <span class="label">{{ t('admin.roles.newName') }}</span>
+            <input
+              class="input"
+              type="text"
+              required
+              autofocus
+              [value]="newRole().name"
+              (input)="updateNewRole('name', $event)"
+            />
           </label>
           <label>
-            <span class="block text-xs" style="color: var(--color-text-secondary)">
-              {{ t('admin.permissions.priority') }}
-            </span>
+            <span class="label">{{ t('admin.permissions.priority') }}</span>
             <input
-              class="input mt-1 w-full"
+              class="input"
               type="number"
               [value]="newRole().priority"
               (input)="updateNewRole('priority', $event)"
             />
           </label>
-          <label class="sm:col-span-2">
-            <span class="block text-xs" style="color: var(--color-text-secondary)">
-              {{ t('admin.roles.discordId') }}
-            </span>
+          <label>
+            <span class="label">{{ t('admin.roles.discordId') }}</span>
             @if (discordRoles().length) {
               <select
-                class="input mt-1 w-full"
+                class="select"
                 [value]="newRole().discord_role_id"
                 (change)="updateNewRole('discord_role_id', $event)"
               >
@@ -164,26 +189,28 @@ interface NewRoleDraft {
               </select>
             } @else {
               <input
-                class="input mt-1 w-full mono"
+                class="input mono"
                 [value]="newRole().discord_role_id"
                 [attr.placeholder]="t('admin.roles.discordIdPlaceholder')"
                 (input)="updateNewRole('discord_role_id', $event)"
               />
             }
           </label>
-          <div>
-            <button type="submit" class="btn btn--primary" [disabled]="roleCreating()">
-              {{ t('admin.roles.create') }}
-            </button>
-          </div>
         </form>
-      </section>
-    } @else {
-      <app-error-state
-        [message]="t('admin.loadError')"
-        [retryLabel]="t('common.retry')"
-        (retry)="load()"
-      />
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="closeCreate()">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="submit"
+            class="btn btn--primary"
+            form="create-role-form"
+            [disabled]="roleCreating()"
+          >
+            {{ t('admin.roles.create') }}
+          </button>
+        </div>
+      </app-dialog>
     }
   `,
 })
@@ -198,6 +225,7 @@ export class AdminRoles {
   protected readonly roleDrafts = signal<Record<string, RoleDraft>>({});
   protected readonly roleSavingId = signal<string | null>(null);
   protected readonly roleCreating = signal(false);
+  protected readonly createOpen = signal(false);
   protected readonly newRole = signal<NewRoleDraft>({
     name: '',
     priority: 0,
@@ -301,6 +329,15 @@ export class AdminRoles {
     }));
   }
 
+  protected openCreate(): void {
+    this.newRole.set({ name: '', priority: 0, discord_role_id: '' });
+    this.createOpen.set(true);
+  }
+
+  protected closeCreate(): void {
+    this.createOpen.set(false);
+  }
+
   protected async saveRole(role: RolePermissionsView): Promise<void> {
     const draft = this.roleDrafts()[role.role_id];
     if (!draft) {
@@ -357,10 +394,13 @@ export class AdminRoles {
     };
     this.roleCreating.set(true);
     try {
-      const updated = await firstValueFrom(this.api.post<PermissionMatrix>('api/admin/roles', body));
+      const updated = await firstValueFrom(
+        this.api.post<PermissionMatrix>('api/admin/roles', body),
+      );
       this.matrix.set(updated);
       this.syncRoleDrafts(updated);
       this.newRole.set({ name: '', priority: 0, discord_role_id: '' });
+      this.closeCreate();
       this.toasts.success(this.t('admin.roles.created'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

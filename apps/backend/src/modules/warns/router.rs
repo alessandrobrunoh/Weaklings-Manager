@@ -27,6 +27,12 @@ pub struct ListWarnsQuery {
     pub severity: Option<super::status::WarnSeverity>,
     /// `true` = only revoked, `false` = only active.
     pub revoked: Option<bool>,
+    /// Case-insensitive substring match on reason.
+    pub search: Option<String>,
+    /// Sort column: `created_at`, `severity`, `reason`.
+    pub sort: Option<String>,
+    /// Sort direction: `asc` or `desc`.
+    pub order: Option<String>,
 }
 
 impl ListWarnsQuery {
@@ -42,6 +48,9 @@ impl ListWarnsQuery {
             user_id: self.user_id,
             severity: self.severity,
             revoked: self.revoked,
+            search: self.search.clone(),
+            sort: self.sort.clone(),
+            order: self.order.clone(),
         }
     }
 }
@@ -55,6 +64,10 @@ pub struct ListEscalationsQuery {
     pub limit: Option<u64>,
     /// When true, only unacked and unclosed rows.
     pub open_only: Option<bool>,
+    /// Sort column: `opened_at`, `warn_count_at_time`, `threshold_at_time`.
+    pub sort: Option<String>,
+    /// Sort direction: `asc` or `desc`.
+    pub order: Option<String>,
 }
 
 /// Creates the router for the warn module.
@@ -192,6 +205,8 @@ async fn list_escalations(
                 limit: query.limit,
             },
             query.open_only.unwrap_or(false),
+            query.sort.as_deref(),
+            query.order.as_deref(),
         )
         .await?;
     Ok(Json(ApiResponse::new(page)))

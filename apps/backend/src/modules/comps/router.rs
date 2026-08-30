@@ -379,7 +379,7 @@ async fn delete_comp_category(
     path = "/api/comps/builds",
     tag = "comps",
     summary = "List builds",
-    description = "Returns a paginated list of builds with optional filtering by role, category, and name. Any authenticated user can call this.",
+    description = "Returns a paginated list of builds with optional filtering by role, category, and name, plus sort (`name`, `role`, `created_at`) and order (`asc`|`desc`). Any authenticated user can call this.",
     security(("session_cookie" = [])),
     params(ListBuildsQuery),
     responses(
@@ -608,7 +608,7 @@ async fn remove_build_item(
     path = "/api/comps",
     tag = "comps",
     summary = "List comps",
-    description = "Returns a paginated list of comps with optional filtering by category and name. Any authenticated user can call this.",
+    description = "Returns a paginated list of comps with optional filtering by category and name, plus sort (`name`, `created_at`, `category`) and order (`asc`|`desc`). Any authenticated user can call this.",
     security(("session_cookie" = [])),
     params(ListCompsQuery),
     responses(

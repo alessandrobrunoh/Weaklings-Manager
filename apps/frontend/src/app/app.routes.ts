@@ -35,15 +35,15 @@ export const routes: Routes = [
         loadComponent: () => import('./features/splits/splits').then((m) => m.Splits),
       },
       {
+        path: 'splits/:splitId',
+        loadComponent: () =>
+          import('./features/splits/split-detail').then((m) => m.SplitDetailPage),
+      },
+      {
         path: 'events',
         loadComponent: () => import('./features/events/events').then((m) => m.Events),
       },
-      {
-        path: 'events/new',
-        canActivate: [permissionGuard('events.manage')],
-        loadComponent: () =>
-          import('./features/events/event-create').then((m) => m.EventCreatePage),
-      },
+      { path: 'events/new', redirectTo: '/events' },
       {
         path: 'events/:eventId',
         loadComponent: () =>
@@ -94,8 +94,17 @@ export const routes: Routes = [
         loadComponent: () => import('./features/regears/regears').then((m) => m.Regears),
       },
       {
+        path: 'regears/:deathId',
+        loadComponent: () =>
+          import('./features/regears/regear-detail').then((m) => m.RegearDetailPage),
+      },
+      {
         path: 'users',
         loadComponent: () => import('./features/users/users').then((m) => m.Users),
+      },
+      {
+        path: 'users/:userId',
+        loadComponent: () => import('./features/users/user-detail').then((m) => m.UserDetailPage),
       },
       {
         path: 'warns',
@@ -132,6 +141,18 @@ export const routes: Routes = [
             canActivate: [permissionGuardTo('/admin', 'progression.settings.manage')],
             loadComponent: () =>
               import('./features/admin/admin-progression').then((m) => m.AdminProgression),
+          },
+          {
+            path: 'regears',
+            canActivate: [permissionGuardTo('/admin', 'regear.settings.manage')],
+            loadComponent: () =>
+              import('./features/admin/admin-regears').then((m) => m.AdminRegears),
+          },
+          {
+            path: 'islands',
+            canActivate: [permissionGuardTo('/admin', 'splits.islands.manage')],
+            loadComponent: () =>
+              import('./features/admin/admin-islands').then((m) => m.AdminIslands),
           },
         ],
       },

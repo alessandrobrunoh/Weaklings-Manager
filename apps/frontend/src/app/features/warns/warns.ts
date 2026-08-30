@@ -15,12 +15,17 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTablePageChange,
+} from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
-import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { Dialog } from '../../shared/components/dialog/dialog';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 
-const LOAD_LIMIT = 1000;
+type WarnsTab = 'register' | 'escalations';
 
 interface IssueDraft {
   userId: string;
@@ -34,12 +39,16 @@ function emptyIssueDraft(): IssueDraft {
   return { userId: '', reason: '', severity: 'warn', multiplier: '', expiresAt: '' };
 }
 
-function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
-  return Array.isArray(data) ? data : (data.items ?? []);
+function emptyPageChange(pageSize = 20): DataTablePageChange {
+  return { page: 1, pageSize, search: '', sort: null, columnFilters: {} };
+}
+
+function isWarnsTab(value: string): value is WarnsTab {
+  return value === 'register' || value === 'escalations';
 }
 
 /**
- * Guild warn register and open-escalation queue.
+ * Guild warn register and escalation queue.
  *
  * Officers issue and revoke warns, and acknowledge threshold escalations after
  * a manual Albion/Discord kick. The page is role-gated at the route.
@@ -47,159 +56,209 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
 @Component({
   selector: 'app-warns',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, DataTable, DataTableCell, EmptyState, PageHeader],
+  imports: [DatePipe, DataTable, DataTableCell, Dialog, PageHeader, ViewToggle],
   template: `
     <app-page-header [title]="t('warns.title')" [subtitle]="t('warns.subtitle')">
-      @if (canIssue()) {
-        <button type="button" class="btn btn--primary" (click)="toggleIssueForm()">
-          {{ showIssueForm() ? t('common.close') : t('warns.issue') }}
+      @if (canIssue() && tab() === 'register') {
+        <button type="button" class="btn btn--primary" (click)="openIssueForm()">
+          {{ t('warns.issue') }}
         </button>
       }
+      <app-view-toggle
+        pageTabs
+        [options]="tabOptions()"
+        [active]="tab()"
+        (activeChange)="switchTab($event)"
+      />
     </app-page-header>
 
-    <section class="card mb-6 p-6">
-      <h2 class="eyebrow mb-3">
-        {{ t('warns.escalations') }}
-      </h2>
-      @if (loading()) {
-        <p class="text-sm" style="color: var(--color-text-secondary)">{{ t('common.loading') }}</p>
-      } @else if (escalations().length === 0) {
-        <app-empty-state icon="alert" [message]="t('warns.escalations.empty')" />
-      } @else {
-        <ul class="grid gap-3">
-          @for (row of escalations(); track row.id) {
-            <li class="surface flex flex-wrap items-center justify-between gap-3 p-4">
-              <div>
-                <p class="font-semibold" style="color: var(--color-text)">
-                  {{ displayName(row.user_id, row.username) }}
-                </p>
-                <p class="text-sm" style="color: var(--color-text-secondary)">
-                  {{ t('warns.count') }}: {{ row.warn_count_at_time }}
-                  · {{ t('admin.progression.warnThreshold') }}: {{ row.threshold_at_time }}
-                  · {{ row.opened_at | date: 'short' }}
-                </p>
-              </div>
-              @if (!row.acknowledged_at) {
-                <button
-                  type="button"
-                  class="btn btn--primary"
-                  [disabled]="ackingId() === row.id"
-                  (click)="ack(row.id)"
-                >
-                  {{ t('warns.ack') }}
-                </button>
-              } @else {
-                <span class="chip chip--success">{{ t('warns.acked') }}</span>
-              }
-            </li>
+    @if (tab() === 'register') {
+      <app-data-table
+        [columns]="columns()"
+        [rows]="warns()"
+        [loading]="loading()"
+        [error]="loadFailed()"
+        (retry)="load()"
+        [trackBy]="trackById"
+        [serverMode]="true"
+        [totalItems]="warnTotal()"
+        [pageSize]="20"
+        emptyIcon="alert"
+        (pageChange)="onWarnsChange($event)"
+      >
+        <ng-template dataTableCell="user" let-row>
+          <span style="font-weight: 500">{{ displayName(row.user_id, row.username) }}</span>
+        </ng-template>
+        <ng-template dataTableCell="severity" let-row>
+          <span class="chip" [class]="severityChip(row.severity)">{{
+            severityLabel(row.severity)
+          }}</span>
+        </ng-template>
+        <ng-template dataTableCell="status" let-row>
+          @if (row.revoked_at) {
+            <span class="chip">{{ t('warns.revoked') }}</span>
+          } @else {
+            <span class="chip chip--warning">{{ t('warns.active') }}</span>
           }
-        </ul>
-      }
-    </section>
+        </ng-template>
+        <ng-template dataTableCell="created_at" let-row>
+          <span style="color: var(--color-text-secondary); font-size: 0.85rem">{{
+            row.created_at | date: 'short'
+          }}</span>
+        </ng-template>
+        <ng-template dataTableCell="actions" let-row>
+          @if (canIssue() && !row.revoked_at) {
+            <button
+              type="button"
+              class="btn btn--outline btn--sm"
+              [disabled]="revokingId() === row.id"
+              (click)="askRevoke(row.id)"
+            >
+              {{ t('warns.revoke') }}
+            </button>
+          } @else {
+            <span style="color: var(--color-text-secondary)">{{ t('bank.actions.none') }}</span>
+          }
+        </ng-template>
+      </app-data-table>
+    } @else {
+      <app-data-table
+        [columns]="escalationColumns"
+        [rows]="escalations()"
+        [loading]="loading()"
+        [error]="loadFailed()"
+        (retry)="load()"
+        [trackBy]="trackEscalation"
+        [serverMode]="true"
+        [totalItems]="escalationTotal()"
+        [pageSize]="20"
+        emptyIcon="alert"
+        [emptyLabel]="'warns.escalations.empty'"
+        (pageChange)="onEscalationsChange($event)"
+      >
+        <ng-template dataTableCell="user" let-row>
+          <span style="font-weight: 500">{{ displayName(row.user_id, row.username) }}</span>
+        </ng-template>
+        <ng-template dataTableCell="opened_at" let-row>
+          <span style="color: var(--color-text-secondary); font-size: 0.85rem">{{
+            row.opened_at | date: 'short'
+          }}</span>
+        </ng-template>
+        <ng-template dataTableCell="status" let-row>
+          @if (row.acknowledged_at) {
+            <span class="chip chip--success">{{ t('warns.acked') }}</span>
+          } @else if (row.closed_reason) {
+            <span class="chip">{{ row.closed_reason }}</span>
+          } @else {
+            <span class="chip chip--warning">{{ t('common.open') }}</span>
+          }
+        </ng-template>
+        <ng-template dataTableCell="actions" let-row>
+          @if (!row.acknowledged_at && !row.closed_reason) {
+            <button
+              type="button"
+              class="btn btn--primary btn--sm"
+              [disabled]="ackingId() === row.id"
+              (click)="ack(row.id)"
+            >
+              {{ t('warns.ack') }}
+            </button>
+          } @else {
+            <span style="color: var(--color-text-secondary)">{{ t('bank.actions.none') }}</span>
+          }
+        </ng-template>
+      </app-data-table>
+    }
 
     @if (showIssueForm()) {
-      <form class="card mb-6 grid gap-4 p-5 sm:grid-cols-2" (submit)="onIssueSubmit($event)">
-        <label>
-          <span class="label">{{ t('warns.user') }}</span>
-          <select class="select" [value]="issueDraft().userId" (change)="updateIssue('userId', $event)" required>
-            <option value="">{{ t('common.none') }}</option>
-            @for (user of members(); track user.id) {
-              <option [value]="user.id">{{ user.username }}</option>
-            }
-          </select>
-        </label>
-        <label>
-          <span class="label">{{ t('warns.severity') }}</span>
-          <select class="select" [value]="issueDraft().severity" (change)="updateIssue('severity', $event)">
-            <option value="note">{{ t('warns.severity.note') }}</option>
-            <option value="warn">{{ t('warns.severity.warn') }}</option>
-            <option value="strike">{{ t('warns.severity.strike') }}</option>
-          </select>
-        </label>
-        <label class="sm:col-span-2">
-          <span class="label">{{ t('warns.reason') }}</span>
-          <input
-            class="input"
-            required
-            [value]="issueDraft().reason"
-            (input)="updateIssue('reason', $event)"
-          />
-        </label>
-        <label>
-          <span class="label">{{ t('warns.multiplier') }} ({{ t('common.optional') }})</span>
-          <input
-            class="input"
-            type="number"
-            min="0"
-            max="5"
-            step="0.1"
-            [value]="issueDraft().multiplier"
-            (input)="updateIssue('multiplier', $event)"
-          />
-        </label>
-        <label>
-          <span class="label">{{ t('warns.expires') }}</span>
-          <input
-            class="input"
-            type="datetime-local"
-            [value]="issueDraft().expiresAt"
-            (input)="updateIssue('expiresAt', $event)"
-          />
-        </label>
-        <div class="flex justify-end gap-2 sm:col-span-2">
-          <button type="button" class="btn btn--ghost" (click)="toggleIssueForm()">
+      <app-dialog [title]="t('warns.issue')" (closed)="closeIssueForm()">
+        <form id="warn-issue-form" class="grid gap-4 sm:grid-cols-2" (submit)="onIssueSubmit($event)">
+          <label>
+            <span class="label">{{ t('warns.user') }}</span>
+            <select
+              class="select"
+              [value]="issueDraft().userId"
+              (change)="updateIssue('userId', $event)"
+              required
+            >
+              <option value="">{{ t('common.none') }}</option>
+              @for (user of members(); track user.id) {
+                <option [value]="user.id">{{ user.username }}</option>
+              }
+            </select>
+          </label>
+          <label>
+            <span class="label">{{ t('warns.severity') }}</span>
+            <select
+              class="select"
+              [value]="issueDraft().severity"
+              (change)="updateIssue('severity', $event)"
+            >
+              <option value="note">{{ t('warns.severity.note') }}</option>
+              <option value="warn">{{ t('warns.severity.warn') }}</option>
+              <option value="strike">{{ t('warns.severity.strike') }}</option>
+            </select>
+          </label>
+          <label class="sm:col-span-2">
+            <span class="label">{{ t('warns.reason') }}</span>
+            <input
+              class="input"
+              required
+              [value]="issueDraft().reason"
+              (input)="updateIssue('reason', $event)"
+            />
+          </label>
+          <label>
+            <span class="label">{{ t('warns.multiplier') }} ({{ t('common.optional') }})</span>
+            <input
+              class="input"
+              type="number"
+              min="0"
+              max="5"
+              step="0.1"
+              [value]="issueDraft().multiplier"
+              (input)="updateIssue('multiplier', $event)"
+            />
+          </label>
+          <label>
+            <span class="label">{{ t('warns.expires') }}</span>
+            <input
+              class="input"
+              type="datetime-local"
+              [value]="issueDraft().expiresAt"
+              (input)="updateIssue('expiresAt', $event)"
+            />
+          </label>
+        </form>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="closeIssueForm()">
             {{ t('common.cancel') }}
           </button>
-          <button type="submit" class="btn btn--primary" [disabled]="saving()">
+          <button
+            type="submit"
+            class="btn btn--primary"
+            form="warn-issue-form"
+            [disabled]="saving()"
+          >
             {{ t('warns.issue') }}
           </button>
         </div>
-      </form>
+      </app-dialog>
     }
 
-    <app-data-table
-      [columns]="columns()"
-      [rows]="warns()"
-      [loading]="loading()"
-      [error]="loadFailed()"
-      (retry)="load()"
-      [trackBy]="trackById"
-      [pageSize]="20"
-      emptyIcon="alert"
-    >
-      <ng-template dataTableCell="user" let-row>
-        <span style="font-weight: 500">{{ displayName(row.user_id, row.username) }}</span>
-      </ng-template>
-      <ng-template dataTableCell="severity" let-row>
-        <span class="chip" [class]="severityChip(row.severity)">{{ severityLabel(row.severity) }}</span>
-      </ng-template>
-      <ng-template dataTableCell="status" let-row>
-        @if (row.revoked_at) {
-          <span class="chip">{{ t('warns.revoked') }}</span>
-        } @else {
-          <span class="chip chip--warning">{{ t('warns.active') }}</span>
-        }
-      </ng-template>
-      <ng-template dataTableCell="created_at" let-row>
-        <span style="color: var(--color-text-secondary); font-size: 0.85rem">{{
-          row.created_at | date: 'short'
-        }}</span>
-      </ng-template>
-      <ng-template dataTableCell="actions" let-row>
-        @if (canIssue() && !row.revoked_at) {
-          <button
-            type="button"
-            class="btn btn--outline btn--sm"
-            [disabled]="revokingId() === row.id"
-            (click)="revoke(row.id)"
-          >
+    @if (revokeId() !== null) {
+      <app-dialog [title]="t('common.confirm')" (closed)="revokeId.set(null)">
+        <p>{{ t('warns.confirmRevoke') }}</p>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="revokeId.set(null)">
+            {{ t('common.cancel') }}
+          </button>
+          <button type="button" class="btn btn--danger" (click)="revoke()">
             {{ t('warns.revoke') }}
           </button>
-        } @else {
-          <span style="color: var(--color-text-secondary)">{{ t('bank.actions.none') }}</span>
-        }
-      </ng-template>
-    </app-data-table>
+        </div>
+      </app-dialog>
+    }
   `,
 })
 export class Warns {
@@ -208,8 +267,15 @@ export class Warns {
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
 
+  protected readonly tab = signal<WarnsTab>('register');
+  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
+    { id: 'register', label: this.t('warns.register') },
+    { id: 'escalations', label: this.t('warns.escalations') },
+  ]);
   protected readonly warns = signal<WarnView[]>([]);
+  protected readonly warnTotal = signal(0);
   protected readonly escalations = signal<WarnEscalationView[]>([]);
+  protected readonly escalationTotal = signal(0);
   protected readonly members = signal<UserProfile[]>([]);
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
@@ -218,17 +284,14 @@ export class Warns {
   protected readonly issueDraft = signal<IssueDraft>(emptyIssueDraft());
   protected readonly ackingId = signal<number | null>(null);
   protected readonly revokingId = signal<number | null>(null);
+  protected readonly revokeId = signal<number | null>(null);
   protected readonly trackById = (row: WarnView): unknown => row.id;
+  protected readonly trackEscalation = (row: WarnEscalationView): unknown => row.id;
 
   protected readonly canIssue = computed(() => this.auth.hasPermission('warns.issue'));
 
-  private readonly memberName = computed(() => {
-    const map = new Map<number, string>();
-    for (const user of this.members()) {
-      map.set(user.id, user.username);
-    }
-    return map;
-  });
+  private readonly warnQuery = signal<DataTablePageChange>(emptyPageChange());
+  private readonly escalationQuery = signal<DataTablePageChange>(emptyPageChange());
 
   protected readonly columns = computed<readonly DataTableColumn<WarnView>[]>(() => [
     {
@@ -236,23 +299,17 @@ export class Warns {
       label: 'warns.issued',
       sortable: true,
       accessor: (row) => row.created_at,
-      comparator: (a, b) => b.created_at.localeCompare(a.created_at),
     },
     {
       key: 'user',
       label: 'warns.user',
-      sortable: true,
-      searchable: true,
       accessor: (row) => this.displayName(row.user_id, row.username),
-      comparator: (a, b) =>
-        this.displayName(a.user_id, a.username).localeCompare(this.displayName(b.user_id, b.username)),
     },
     {
       key: 'severity',
       label: 'warns.severity',
       sortable: true,
       accessor: (row) => row.severity,
-      comparator: (a, b) => a.severity.localeCompare(b.severity),
       filterOptions: [
         { value: 'note', label: this.t('warns.severity.note') },
         { value: 'warn', label: this.t('warns.severity.warn') },
@@ -268,9 +325,7 @@ export class Warns {
     {
       key: 'status',
       label: 'warns.status',
-      sortable: true,
       accessor: (row) => (row.revoked_at ? 'revoked' : 'active'),
-      comparator: (a, b) => Number(Boolean(a.revoked_at)) - Number(Boolean(b.revoked_at)),
       filterOptions: [
         { value: 'active', label: this.t('warns.active') },
         { value: 'revoked', label: this.t('warns.revoked') },
@@ -282,6 +337,42 @@ export class Warns {
     },
   ]);
 
+  protected readonly escalationColumns: readonly DataTableColumn<WarnEscalationView>[] = [
+    {
+      key: 'opened_at',
+      label: 'warns.opened',
+      sortable: true,
+      accessor: (row) => row.opened_at,
+    },
+    {
+      key: 'user',
+      label: 'warns.user',
+      accessor: (row) => this.displayName(row.user_id, row.username),
+    },
+    {
+      key: 'warn_count_at_time',
+      label: 'warns.count',
+      sortable: true,
+      accessor: (row) => row.warn_count_at_time,
+    },
+    {
+      key: 'threshold_at_time',
+      label: 'warns.threshold',
+      sortable: true,
+      accessor: (row) => row.threshold_at_time,
+    },
+    {
+      key: 'status',
+      label: 'warns.status',
+      accessor: (row) =>
+        row.acknowledged_at ? 'acked' : row.closed_reason ? 'closed' : 'open',
+    },
+    {
+      key: 'actions',
+      label: 'common.actions',
+    },
+  ];
+
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   constructor() {
@@ -289,7 +380,7 @@ export class Warns {
   }
 
   protected displayName(userId: number, username?: string | null): string {
-    return username || this.memberName().get(userId) || `#${userId}`;
+    return username || `#${userId}`;
   }
 
   protected severityLabel(severity: WarnSeverity): string {
@@ -312,8 +403,32 @@ export class Warns {
     return 'chip';
   }
 
-  protected toggleIssueForm(): void {
-    this.showIssueForm.update((open) => !open);
+  protected switchTab(tab: string): void {
+    if (!isWarnsTab(tab) || this.tab() === tab) {
+      return;
+    }
+    this.tab.set(tab);
+    void this.load();
+  }
+
+  protected onWarnsChange(event: DataTablePageChange): void {
+    this.warnQuery.set(event);
+    void this.load();
+  }
+
+  protected onEscalationsChange(event: DataTablePageChange): void {
+    this.escalationQuery.set(event);
+    void this.load();
+  }
+
+  protected async openIssueForm(): Promise<void> {
+    this.showIssueForm.set(true);
+    await this.loadMembers();
+  }
+
+  protected closeIssueForm(): void {
+    this.showIssueForm.set(false);
+    this.issueDraft.set(emptyIssueDraft());
   }
 
   protected updateIssue(field: keyof IssueDraft, event: Event): void {
@@ -325,31 +440,74 @@ export class Warns {
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
-      const [warns, escalations, members] = await Promise.all([
-        firstValueFrom(
-          this.api.get<PaginatedData<WarnView> | WarnView[]>('api/warns', {
-            page: 1,
-            limit: LOAD_LIMIT,
-          }),
-        ),
-        firstValueFrom(
-          this.api.get<PaginatedData<WarnEscalationView> | WarnEscalationView[]>(
-            'api/warns/escalations',
-            { open_only: true },
-          ),
-        ),
-        firstValueFrom(
-          this.api.get<{ items: UserProfile[] }>('api/users', { page: 1, limit: LOAD_LIMIT }),
-        ).catch(() => ({ items: [] as UserProfile[] })),
-      ]);
-      this.warns.set(asPaginated(warns));
-      this.escalations.set(asPaginated(escalations));
-      this.members.set(members.items ?? []);
+      if (this.tab() === 'register') {
+        await this.loadWarns();
+        return;
+      }
+      await this.loadEscalations();
     } catch (error) {
       this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  private async loadWarns(): Promise<void> {
+    const query = this.warnQuery();
+    const params: Record<string, string | number | boolean> = {
+      page: query.page,
+      limit: query.pageSize,
+    };
+    if (query.search.trim()) {
+      params['search'] = query.search.trim();
+    }
+    if (query.sort) {
+      params['sort'] = query.sort.columnKey;
+      params['order'] = query.sort.direction;
+    }
+    const severity = query.columnFilters['severity'];
+    if (severity) {
+      params['severity'] = severity;
+    }
+    const status = query.columnFilters['status'];
+    if (status === 'revoked') {
+      params['revoked'] = true;
+    } else if (status === 'active') {
+      params['revoked'] = false;
+    }
+    const data = await firstValueFrom(
+      this.api.get<PaginatedData<WarnView>>('api/warns', params),
+    );
+    this.warns.set(data.items);
+    this.warnTotal.set(data.total_items);
+  }
+
+  private async loadEscalations(): Promise<void> {
+    const query = this.escalationQuery();
+    const params: Record<string, string | number | boolean> = {
+      page: query.page,
+      limit: query.pageSize,
+    };
+    if (query.sort) {
+      params['sort'] = query.sort.columnKey;
+      params['order'] = query.sort.direction;
+    }
+    const data = await firstValueFrom(
+      this.api.get<PaginatedData<WarnEscalationView>>('api/warns/escalations', params),
+    );
+    this.escalations.set(data.items);
+    this.escalationTotal.set(data.total_items);
+  }
+
+  private async loadMembers(): Promise<void> {
+    try {
+      const members = await firstValueFrom(
+        this.api.get<PaginatedData<UserProfile>>('api/users', { page: 1, limit: 100 }),
+      );
+      this.members.set(members.items ?? []);
+    } catch {
+      this.members.set([]);
     }
   }
 
@@ -379,8 +537,7 @@ export class Warns {
     this.saving.set(true);
     try {
       await firstValueFrom(this.api.post<WarnView>('api/warns', body));
-      this.issueDraft.set(emptyIssueDraft());
-      this.showIssueForm.set(false);
+      this.closeIssueForm();
       this.toasts.success(this.t('warns.issueSuccess'));
       await this.load();
     } catch (error) {
@@ -390,8 +547,14 @@ export class Warns {
     }
   }
 
-  protected async revoke(id: number): Promise<void> {
-    if (this.revokingId() !== null) {
+  protected askRevoke(id: number): void {
+    this.revokeId.set(id);
+  }
+
+  protected async revoke(): Promise<void> {
+    const id = this.revokeId();
+    this.revokeId.set(null);
+    if (id === null || this.revokingId() !== null) {
       return;
     }
     this.revokingId.set(id);
@@ -412,7 +575,9 @@ export class Warns {
     }
     this.ackingId.set(id);
     try {
-      await firstValueFrom(this.api.post<WarnEscalationView>(`api/warns/escalations/${id}/ack`, null));
+      await firstValueFrom(
+        this.api.post<WarnEscalationView>(`api/warns/escalations/${id}/ack`, null),
+      );
       this.toasts.success(this.t('warns.acked'));
       await this.load();
     } catch (error) {

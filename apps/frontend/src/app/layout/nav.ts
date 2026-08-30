@@ -35,6 +35,8 @@ export const ADMIN_ACCESS_PERMISSIONS = [
   'admin.settings.manage',
   'autorole.manage',
   'progression.settings.manage',
+  'regear.settings.manage',
+  'splits.islands.manage',
 ] as const;
 
 /**
@@ -142,6 +144,20 @@ export const ADMIN_PANELS: readonly AdminPanel[] = [
     labelKey: 'nav.admin.progression',
     hintKey: 'admin.hub.progressionHint',
     permissions: ['progression.settings.manage'],
+  },
+  {
+    path: '/admin/regears',
+    icon: 'shield',
+    labelKey: 'nav.admin.regears',
+    hintKey: 'admin.hub.regearsHint',
+    permissions: ['regear.settings.manage'],
+  },
+  {
+    path: '/admin/islands',
+    icon: 'swords',
+    labelKey: 'nav.admin.islands',
+    hintKey: 'admin.hub.islandsHint',
+    permissions: ['splits.islands.manage'],
   },
 ];
 

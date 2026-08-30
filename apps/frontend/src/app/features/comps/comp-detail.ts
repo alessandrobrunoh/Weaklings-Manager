@@ -5,7 +5,6 @@ import { firstValueFrom } from 'rxjs';
 import { validateBuildName } from '../../shared/validation/build-validation';
 
 import type {
-  BuildCategoryView,
   BuildRole,
   BuildSummary,
   CompCategoryView,
@@ -22,10 +21,12 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 
 const ROLES: BuildRole[] = ['healer', 'support', 'dps', 'tank', 'battle_mount', 'brawler'];
 
@@ -53,12 +54,15 @@ const ROLE_LABELS: Record<BuildRole, string> = {
 @Component({
   selector: 'app-comp-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, PageHeader, EmptyState, ErrorState, Loading],
+  imports: [RouterLink, PageHeader, PageStack, EmptyState, ErrorState, Loading, Dialog],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
     } @else if (comp(); as current) {
-      <app-page-header [title]="current.name" [subtitle]="current.category_name || 'No category'">
+      <app-page-header
+        [title]="current.name"
+        [subtitle]="current.category_name || t('comps.noCategory')"
+      >
         <div class="flex flex-wrap gap-2">
           <a class="btn btn--ghost" routerLink="/comps">← {{ t('comps.title') }}</a>
           @if (parentComp(); as parent) {
@@ -66,223 +70,333 @@ const ROLE_LABELS: Record<BuildRole, string> = {
               ↑ {{ parent.name }}
             </a>
           }
-          @if (canManage()) {
-            <button type="button" class="btn btn--outline" (click)="toggleEdit()" [disabled]="saving()">
-              {{ editing() ? t('common.close') : t('common.edit') }}
+          @if (canManage() && mode() === 'view') {
+            <button
+              type="button"
+              class="btn btn--outline"
+              (click)="enterEdit()"
+              [disabled]="saving()"
+            >
+              {{ t('common.edit') }}
             </button>
-            <button type="button" class="btn btn--tonal" (click)="cloneComp()" [disabled]="saving()">
+            <button
+              type="button"
+              class="btn btn--tonal"
+              (click)="cloneComp()"
+              [disabled]="saving()"
+            >
               {{ t('common.clone') }}
             </button>
-            <button type="button" class="btn btn--danger" (click)="deleteComp()" [disabled]="saving()">
+            <button
+              type="button"
+              class="btn btn--danger"
+              (click)="askDeleteComp()"
+              [disabled]="saving()"
+            >
               {{ t('common.delete') }}
             </button>
           }
         </div>
       </app-page-header>
 
-      @if (editing() && canManage()) {
-        <form class="card mb-6 grid gap-4 p-5" (submit)="saveEdit($event)">
-          <div class="grid gap-4 md:grid-cols-2">
+      <app-page-stack>
+        @if (mode() === 'edit' && canManage()) {
+          <form class="card grid gap-4 p-5" (submit)="saveEdit($event)">
+            <div class="grid gap-4 md:grid-cols-2">
+              <label>
+                <span class="label">{{ t('common.name') }}</span>
+                <input
+                  class="input"
+                  type="text"
+                  [value]="editName()"
+                  (input)="onEditNameChange($event)"
+                />
+              </label>
+              <label>
+                <span class="label">{{ t('common.category') }}</span>
+                <select
+                  class="select"
+                  [value]="editCategoryId()"
+                  (change)="onEditCategoryChange($event)"
+                >
+                  <option value="">{{ t('comps.noCategory') }}</option>
+                  @for (category of compCategories(); track category.id) {
+                    <option [value]="category.id">{{ category.name }}</option>
+                  }
+                </select>
+              </label>
+            </div>
             <label>
-              <span class="label">{{ t('common.name') }}</span>
-              <input class="input" type="text" [value]="editName()" (input)="onEditNameChange($event)" />
+              <span class="label">{{ t('common.description') }}</span>
+              <textarea
+                class="textarea"
+                rows="3"
+                [value]="editDescription()"
+                (input)="onEditDescriptionChange($event)"
+              ></textarea>
             </label>
             <label>
-              <span class="label">Category</span>
-              <select class="select" [value]="editCategoryId()" (change)="onEditCategoryChange($event)">
-                <option value="">No category</option>
-                @for (category of compCategories(); track category.id) {
-                  <option [value]="category.id">{{ category.name }}</option>
+              <span class="label">{{ t('comps.parent') }}</span>
+              <select class="select" [value]="editParentId()" (change)="onEditParentChange($event)">
+                <option value="">{{ t('comps.noParent') }}</option>
+                @for (sibling of availableParents(); track sibling.id) {
+                  <option [value]="sibling.id">{{ sibling.name }}</option>
                 }
               </select>
             </label>
-          </div>
-          <label>
-            <span class="label">Description</span>
-            <textarea class="textarea" rows="3" [value]="editDescription()" (input)="onEditDescriptionChange($event)"></textarea>
-          </label>
-          <label>
-            <span class="label">Parent composition</span>
-            <select class="select" [value]="editParentId()" (change)="onEditParentChange($event)">
-              <option value="">No parent</option>
-              @for (sibling of availableParents(); track sibling.id) {
-                <option [value]="sibling.id">{{ sibling.name }}</option>
-              }
-            </select>
-          </label>
-          <div class="flex justify-end gap-2">
-            <button type="button" class="btn btn--ghost" (click)="toggleEdit()">{{ t('common.cancel') }}</button>
-            <button type="submit" class="btn btn--primary" [disabled]="saving()">{{ t('common.save') }}</button>
-          </div>
-        </form>
-      }
-
-      <section class="card mb-6 grid gap-4 p-5" aria-label="Composition builds">
-        <header class="flex items-center justify-between gap-3">
-          <h2 class="text-lg font-semibold" style="color: var(--color-text)">
-            Builds ({{ current.builds.length }}) · {{ current.total_quantity }} slots
-          </h2>
-          @if (canManage()) {
-            <button type="button" class="btn btn--outline" (click)="toggleAddBuild()">
-              {{ addingBuild() ? t('common.close') : 'Add build' }}
-            </button>
-          }
-        </header>
-
-        @if (addingBuild() && canManage()) {
-          <form class="surface grid gap-3 p-4" (submit)="addBuild($event)">
-            <div class="grid gap-3 sm:grid-cols-[1fr_8rem_auto]">
-              <select class="select" [value]="newBuildId()" (change)="onNewBuildChange($event)">
-                <option value="">Select build</option>
-                @for (build of buildOptions(); track build.id) {
-                  <option [value]="build.id">
-                    {{ build.name }} — {{ roleLabel(build.role) }} — {{ build.category_name || 'No category' }}
-                  </option>
-                }
-              </select>
-              <input class="input" type="number" min="1" [value]="newBuildQuantity()" (input)="onNewBuildQtyChange($event)" />
-              <button type="submit" class="btn btn--primary" [disabled]="saving()">{{ t('common.add') }}</button>
+            <div class="flex justify-end gap-2">
+              <button type="button" class="btn btn--ghost" (click)="cancelEdit()">
+                {{ t('common.cancel') }}
+              </button>
+              <button type="submit" class="btn btn--primary" [disabled]="saving()">
+                {{ t('common.save') }}
+              </button>
             </div>
           </form>
         }
 
-        @if (current.builds.length === 0) {
-          <p class="text-sm" style="color: var(--color-text-secondary)">No builds yet.</p>
-        } @else {
-          <ul class="grid gap-2">
-            @for (entry of current.builds; track entry.build_id) {
-              <li
-                class="flex flex-wrap items-center justify-between gap-3 rounded-lg px-3 py-2"
-                style="background-color: var(--color-surface-1)"
-              >
-                <div class="flex items-center gap-3">
-                  <a class="font-medium hover:underline" [routerLink]="['/comps', 'builds', entry.build_id]">
-                    {{ entry.build.name }}
-                  </a>
-                  <span class="chip">{{ roleLabel(entry.build.role) }}</span>
-                  <span class="text-xs" style="color: var(--color-text-secondary)">
-                    {{ entry.build.category_name || 'No category' }}
-                  </span>
-                </div>
-                <div class="flex items-center gap-2">
-                  @if (editingBuildId() === entry.build_id) {
-                    <input
-                      class="input"
-                      type="number"
-                      min="1"
-                      style="width: 6rem"
-                      [value]="editingBuildQty()"
-                      (input)="onEditingBuildQtyChange($event)"
-                    />
-                    <button type="button" class="btn btn--primary btn--sm" (click)="saveBuildQty(entry.build_id)" [disabled]="saving()">
-                      {{ t('common.save') }}
-                    </button>
-                    <button type="button" class="btn btn--ghost btn--sm" (click)="cancelEditBuild()">{{ t('common.cancel') }}</button>
-                  } @else {
-                    <span class="chip">x{{ entry.quantity }}</span>
-                    @if (canManage()) {
-                      <button type="button" class="btn btn--outline btn--sm" (click)="startEditBuild(entry.build_id, entry.quantity)">
-                        {{ t('common.edit') }}
-                      </button>
-                      <button type="button" class="btn btn--danger btn--sm" (click)="removeBuild(entry.build_id)" [disabled]="saving()">
-                        {{ t('common.delete') }}
-                      </button>
-                    }
-                  }
-                </div>
-              </li>
+        <section class="card grid gap-4 p-5" [attr.aria-label]="t('comps.builds')">
+          <header class="flex items-center justify-between gap-3">
+            <h2 class="text-lg font-semibold" style="color: var(--color-text)">
+              {{ t('comps.builds') }} ({{ current.builds.length }}) · {{ current.total_quantity }}
+            </h2>
+            @if (canManage() && mode() === 'edit') {
+              <button type="button" class="btn btn--outline" (click)="toggleAddBuild()">
+                {{ addingBuild() ? t('common.close') : t('comps.addBuild') }}
+              </button>
             }
-          </ul>
-        }
-      </section>
-
-      @if (performance(); as perf) {
-        <section class="card mb-6 grid gap-4 p-5" aria-label="Composition analytics">
-          <header>
-            <h2 class="text-lg font-semibold" style="color: var(--color-text)">Performance</h2>
-            <p class="text-sm" style="color: var(--color-text-secondary)">
-              Aggregated from {{ perf.events_with_battles }} event(s) with linked battles.
-            </p>
           </header>
-          @if (perf.stats.total_battles === 0) {
-            <p class="text-sm" style="color: var(--color-text-secondary)">No battles linked to events using this comp yet.</p>
-          } @else {
-            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
-              <div class="surface p-3">
-                <p class="text-xs uppercase" style="color: var(--color-text-secondary)">Battles</p>
-                <p class="text-xl font-bold" style="color: var(--color-text)">{{ perf.stats.total_battles }}</p>
-              </div>
-              <div class="surface p-3">
-                <p class="text-xs uppercase" style="color: var(--color-text-secondary)">W/L</p>
-                <p class="text-xl font-bold" style="color: var(--color-text)">
-                  {{ perf.stats.wins }}-{{ perf.stats.losses }}
-                </p>
-              </div>
-              <div class="surface p-3">
-                <p class="text-xs uppercase" style="color: var(--color-text-secondary)">Win rate</p>
-                <p class="text-xl font-bold" [style.color]="winRateColor(perf.stats.win_rate)">
-                  {{ formatPercent(perf.stats.win_rate) }}
-                </p>
-              </div>
-              <div class="surface p-3">
-                <p class="text-xs uppercase" style="color: var(--color-text-secondary)">K/D</p>
-                <p class="text-xl font-bold" style="color: var(--color-text)">
-                  {{ formatRatio(perf.stats.kill_death_ratio) }}
-                </p>
-                <p class="text-xs" style="color: var(--color-text-secondary)">
-                  {{ perf.stats.total_kills }}/{{ perf.stats.total_deaths }}
-                </p>
-              </div>
-              <div class="surface p-3">
-                <p class="text-xs uppercase" style="color: var(--color-text-secondary)">Kill fame</p>
-                <p class="text-xl font-bold" style="color: var(--color-text)">
-                  {{ formatNumber(perf.stats.total_kill_fame) }}
-                </p>
-              </div>
-            </div>
 
-            @if (perf.stats.top_opponents.length > 0) {
-              <!-- Shared .table class (thead/hover/borders come from the
+          @if (addingBuild() && canManage() && mode() === 'edit') {
+            <form class="surface grid gap-3 p-4" (submit)="addBuild($event)">
+              <div class="grid gap-3 sm:grid-cols-[1fr_8rem_auto]">
+                <select class="select" [value]="newBuildId()" (change)="onNewBuildChange($event)">
+                  <option value="">{{ t('comps.selectBuild') }}</option>
+                  @for (build of buildOptions(); track build.id) {
+                    <option [value]="build.id">
+                      {{ build.name }} — {{ roleLabel(build.role) }} —
+                      {{ build.category_name || t('comps.noCategory') }}
+                    </option>
+                  }
+                </select>
+                <input
+                  class="input"
+                  type="number"
+                  min="1"
+                  [value]="newBuildQuantity()"
+                  (input)="onNewBuildQtyChange($event)"
+                />
+                <button type="submit" class="btn btn--primary" [disabled]="saving()">
+                  {{ t('common.add') }}
+                </button>
+              </div>
+            </form>
+          }
+
+          @if (current.builds.length === 0) {
+            <p class="text-sm" style="color: var(--color-text-secondary)">
+              {{ t('comps.noBuilds') }}
+            </p>
+          } @else {
+            <ul class="grid gap-2">
+              @for (entry of current.builds; track entry.build_id) {
+                <li
+                  class="flex flex-wrap items-center justify-between gap-3 rounded-lg px-3 py-2"
+                  style="background-color: var(--color-surface-1)"
+                >
+                  <div class="flex items-center gap-3">
+                    <a
+                      class="font-medium hover:underline"
+                      [routerLink]="['/comps', 'builds', entry.build_id]"
+                    >
+                      {{ entry.build.name }}
+                    </a>
+                    <span class="chip">{{ roleLabel(entry.build.role) }}</span>
+                    <span class="text-xs" style="color: var(--color-text-secondary)">
+                      {{ entry.build.category_name || t('comps.noCategory') }}
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    @if (mode() === 'edit' && editingBuildId() === entry.build_id) {
+                      <input
+                        class="input"
+                        type="number"
+                        min="1"
+                        style="width: 6rem"
+                        [value]="editingBuildQty()"
+                        (input)="onEditingBuildQtyChange($event)"
+                      />
+                      <button
+                        type="button"
+                        class="btn btn--primary btn--sm"
+                        (click)="saveBuildQty(entry.build_id)"
+                        [disabled]="saving()"
+                      >
+                        {{ t('common.save') }}
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn--ghost btn--sm"
+                        (click)="cancelEditBuild()"
+                      >
+                        {{ t('common.cancel') }}
+                      </button>
+                    } @else {
+                      <span class="chip">x{{ entry.quantity }}</span>
+                      @if (canManage() && mode() === 'edit') {
+                        <button
+                          type="button"
+                          class="btn btn--outline btn--sm"
+                          (click)="startEditBuild(entry.build_id, entry.quantity)"
+                        >
+                          {{ t('common.edit') }}
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn--danger btn--sm"
+                          (click)="removeBuild(entry.build_id)"
+                          [disabled]="saving()"
+                        >
+                          {{ t('common.delete') }}
+                        </button>
+                      }
+                    }
+                  </div>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+
+        @if (performance(); as perf) {
+          <section class="card grid gap-4 p-5" [attr.aria-label]="t('comps.performance')">
+            <header>
+              <h2 class="text-lg font-semibold" style="color: var(--color-text)">
+                {{ t('comps.performance') }}
+              </h2>
+              <p class="text-sm" style="color: var(--color-text-secondary)">
+                Aggregated from {{ perf.events_with_battles }} event(s) with linked battles.
+              </p>
+            </header>
+            @if (perf.stats.total_battles === 0) {
+              <p class="text-sm" style="color: var(--color-text-secondary)">
+                No battles linked to events using this comp yet.
+              </p>
+            } @else {
+              <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+                <div class="surface p-3">
+                  <p class="text-xs uppercase" style="color: var(--color-text-secondary)">
+                    Battles
+                  </p>
+                  <p class="text-xl font-bold" style="color: var(--color-text)">
+                    {{ perf.stats.total_battles }}
+                  </p>
+                </div>
+                <div class="surface p-3">
+                  <p class="text-xs uppercase" style="color: var(--color-text-secondary)">W/L</p>
+                  <p class="text-xl font-bold" style="color: var(--color-text)">
+                    {{ perf.stats.wins }}-{{ perf.stats.losses }}
+                  </p>
+                </div>
+                <div class="surface p-3">
+                  <p class="text-xs uppercase" style="color: var(--color-text-secondary)">
+                    Win rate
+                  </p>
+                  <p class="text-xl font-bold" [style.color]="winRateColor(perf.stats.win_rate)">
+                    {{ formatPercent(perf.stats.win_rate) }}
+                  </p>
+                </div>
+                <div class="surface p-3">
+                  <p class="text-xs uppercase" style="color: var(--color-text-secondary)">K/D</p>
+                  <p class="text-xl font-bold" style="color: var(--color-text)">
+                    {{ formatRatio(perf.stats.kill_death_ratio) }}
+                  </p>
+                  <p class="text-xs" style="color: var(--color-text-secondary)">
+                    {{ perf.stats.total_kills }}/{{ perf.stats.total_deaths }}
+                  </p>
+                </div>
+                <div class="surface p-3">
+                  <p class="text-xs uppercase" style="color: var(--color-text-secondary)">
+                    Kill fame
+                  </p>
+                  <p class="text-xl font-bold" style="color: var(--color-text)">
+                    {{ formatNumber(perf.stats.total_kill_fame) }}
+                  </p>
+                </div>
+              </div>
+
+              @if (perf.stats.top_opponents.length > 0) {
+                <!-- Shared .table class (thead/hover/borders come from the
                    design system) inside a horizontal-scroll wrapper, matching
                    every other table in the app — this one used to clip its
                    rightmost columns with overflow-hidden instead of
                    scrolling them into view on narrow screens. -->
-              <div class="mt-2 overflow-x-auto">
-                <table class="table">
-                  <thead>
-                    <tr>
-                      <th class="text-left">Opponent</th>
-                      <th class="text-right">Battles</th>
-                      <th class="text-right">W-L</th>
-                      <th class="text-right">Win %</th>
-                      <th class="text-right">Our fame</th>
-                      <th class="text-right">Their fame</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (opponent of perf.stats.top_opponents; track opponentKey(opponent)) {
+                <div class="mt-2 overflow-x-auto">
+                  <table class="table">
+                    <thead>
                       <tr>
-                        <td>{{ opponent.guild_name }}</td>
-                        <td class="text-right">{{ opponent.battles }}</td>
-                        <td class="text-right">{{ opponent.wins }}-{{ opponent.losses }}</td>
-                        <td class="text-right" [style.color]="winRateColor(opponentBattlesWinRate(opponent))">
-                          {{ formatPercent(opponentBattlesWinRate(opponent)) }}
-                        </td>
-                        <td class="text-right">{{ formatNumber(opponent.guild_kill_fame) }}</td>
-                        <td class="text-right">{{ formatNumber(opponent.opponent_kill_fame) }}</td>
+                        <th class="text-left">Opponent</th>
+                        <th class="text-right">Battles</th>
+                        <th class="text-right">W-L</th>
+                        <th class="text-right">Win %</th>
+                        <th class="text-right">Our fame</th>
+                        <th class="text-right">Their fame</th>
                       </tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      @for (opponent of perf.stats.top_opponents; track opponentKey(opponent)) {
+                        <tr>
+                          <td>{{ opponent.guild_name }}</td>
+                          <td class="text-right">{{ opponent.battles }}</td>
+                          <td class="text-right">{{ opponent.wins }}-{{ opponent.losses }}</td>
+                          <td
+                            class="text-right"
+                            [style.color]="winRateColor(opponentBattlesWinRate(opponent))"
+                          >
+                            {{ formatPercent(opponentBattlesWinRate(opponent)) }}
+                          </td>
+                          <td class="text-right">{{ formatNumber(opponent.guild_kill_fame) }}</td>
+                          <td class="text-right">
+                            {{ formatNumber(opponent.opponent_kill_fame) }}
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
             }
-          }
-        </section>
+          </section>
+        }
+      </app-page-stack>
+
+      @if (pendingDelete()) {
+        <app-dialog [title]="t('common.confirm')" size="sm" (closed)="closeDelete()">
+          <p>{{ t('comps.delete.confirm') }}</p>
+          <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">{{ current.name }}</p>
+          <div dialogFooter>
+            <button type="button" class="btn btn--ghost" (click)="closeDelete()">
+              {{ t('common.cancel') }}
+            </button>
+            <button
+              type="button"
+              class="btn btn--danger"
+              [disabled]="saving()"
+              (click)="deleteComp()"
+            >
+              {{ t('common.delete') }}
+            </button>
+          </div>
+        </app-dialog>
       }
     } @else if (loadFailed()) {
-      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load(compId)" />
+      <app-error-state
+        [message]="t('common.error')"
+        [retryLabel]="t('common.retry')"
+        (retry)="load(compId)"
+      />
     } @else if (!loading()) {
-      <app-empty-state message="Composition not found" icon="package" />
+      <app-empty-state [message]="t('comps.notFound')" icon="package" />
     }
   `,
 })
@@ -303,9 +417,9 @@ export class CompDetailPage {
   protected readonly compCategories = signal<CompCategoryView[]>([]);
   protected readonly buildOptions = signal<BuildSummary[]>([]);
   protected readonly compSummaries = signal<CompSummary[]>([]);
-  protected readonly buildCategories = signal<BuildCategoryView[]>([]);
 
-  protected readonly editing = signal(false);
+  protected readonly mode = signal<'view' | 'edit'>('view');
+  protected readonly pendingDelete = signal(false);
   protected readonly editName = signal('');
   protected readonly editDescription = signal('');
   protected readonly editCategoryId = signal('');
@@ -335,15 +449,24 @@ export class CompDetailPage {
     return ROLE_LABELS[role] ?? role;
   }
 
-  protected toggleEdit(): void {
-    if (!this.editing() && this.comp()) {
-      const current = this.comp()!;
-      this.editName.set(current.name);
-      this.editDescription.set(current.description ?? '');
-      this.editCategoryId.set(current.category_id ? String(current.category_id) : '');
-      this.editParentId.set(current.parent_id ? String(current.parent_id) : '');
+  protected enterEdit(): void {
+    const current = this.comp();
+    if (!current) {
+      return;
     }
-    this.editing.update((value) => !value);
+    this.editName.set(current.name);
+    this.editDescription.set(current.description ?? '');
+    this.editCategoryId.set(current.category_id ? String(current.category_id) : '');
+    this.editParentId.set(current.parent_id ? String(current.parent_id) : '');
+    this.mode.set('edit');
+    void this.loadEditOptions();
+  }
+
+  protected cancelEdit(): void {
+    this.mode.set('view');
+    this.addingBuild.set(false);
+    this.cancelEditBuild();
+    void this.load(this.compId);
   }
 
   protected toggleAddBuild(): void {
@@ -424,16 +547,18 @@ export class CompDetailPage {
     }
 
     if (Object.keys(request).length === 0) {
-      this.editing.set(false);
+      this.mode.set('view');
       return;
     }
 
     this.saving.set(true);
     try {
-      const updated = await firstValueFrom(this.api.patch<CompDetail>(`api/comps/${comp.id}`, request));
-      this.comp.set(updated);
-      this.editing.set(false);
-      this.toasts.success('Composition updated');
+      await firstValueFrom(this.api.patch<CompDetail>(`api/comps/${comp.id}`, request));
+      this.mode.set('view');
+      this.addingBuild.set(false);
+      this.cancelEditBuild();
+      await this.load(this.compId);
+      this.toasts.success(this.t('common.save'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -451,7 +576,10 @@ export class CompDetailPage {
       const request: CreateCompRequest = {
         name: `${comp.name} (clone)`,
         category_id: comp.category_id,
-        builds: comp.builds.map((entry) => ({ build_id: entry.build_id, quantity: entry.quantity })),
+        builds: comp.builds.map((entry) => ({
+          build_id: entry.build_id,
+          quantity: entry.quantity,
+        })),
         parent_id: comp.id,
       };
       const created = await firstValueFrom(this.api.post<CompDetail>('api/comps', request));
@@ -464,15 +592,24 @@ export class CompDetailPage {
     }
   }
 
+  protected askDeleteComp(): void {
+    this.pendingDelete.set(true);
+  }
+
+  protected closeDelete(): void {
+    this.pendingDelete.set(false);
+  }
+
   protected async deleteComp(): Promise<void> {
     const comp = this.comp();
-    if (!comp || !confirm(`Delete composition "${comp.name}"? This cannot be undone.`)) {
+    if (!comp) {
       return;
     }
     this.saving.set(true);
     try {
       await firstValueFrom(this.api.delete(`api/comps/${comp.id}`));
-      this.toasts.success('Composition deleted');
+      this.pendingDelete.set(false);
+      this.toasts.success(this.t('common.delete'));
       await this.router.navigate(['/comps']);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -576,6 +713,31 @@ export class CompDetailPage {
     return value.toFixed(2);
   }
 
+  private async loadEditOptions(): Promise<void> {
+    const [categories, builds, summaries] = await Promise.all([
+      firstValueFrom(this.api.get<CompCategoryView[]>('api/comps/comp-categories')).catch(() => []),
+      firstValueFrom(
+        this.api.get<PaginatedData<BuildSummary>>('api/comps/builds', {
+          page: 1,
+          limit: 500,
+          sort: 'name',
+          order: 'asc',
+        }),
+      ).catch(() => ({ items: [] as BuildSummary[] })),
+      firstValueFrom(
+        this.api.get<PaginatedData<CompSummary>>('api/comps', {
+          page: 1,
+          limit: 500,
+          sort: 'name',
+          order: 'asc',
+        }),
+      ).catch(() => ({ items: [] as CompSummary[] })),
+    ]);
+    this.compCategories.set(categories);
+    this.buildOptions.set(builds.items);
+    this.compSummaries.set(summaries.items);
+  }
+
   protected async load(compId: number): Promise<void> {
     if (!Number.isFinite(compId) || compId <= 0) {
       this.loading.set(false);
@@ -584,25 +746,21 @@ export class CompDetailPage {
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
-      const [comp, performance, categories, builds, summaries] = await Promise.all([
+      const [comp, performance] = await Promise.all([
         firstValueFrom(this.api.get<CompDetail>(`api/comps/${compId}`)),
-        firstValueFrom(this.api.get<CompPerformanceView>(`api/comps/${compId}/performance`)).catch(() => null),
-        firstValueFrom(this.api.get<CompCategoryView[]>('api/comps/comp-categories')).catch(() => []),
-        firstValueFrom(
-          this.api.get<PaginatedData<BuildSummary>>('api/comps/builds', { page: 1, limit: 100 }),
-        ).catch(() => ({ items: [] as BuildSummary[], total_pages: 0 })),
-        firstValueFrom(
-          this.api.get<PaginatedData<CompSummary>>('api/comps', { page: 1, limit: 100 }),
-        ).catch(() => ({ items: [] as CompSummary[], total_pages: 0 })),
+        firstValueFrom(this.api.get<CompPerformanceView>(`api/comps/${compId}/performance`)).catch(
+          () => null,
+        ),
       ]);
       this.comp.set(comp);
       this.performance.set(performance);
-      this.compCategories.set(categories);
-      this.buildOptions.set(builds.items);
-      this.compSummaries.set(summaries.items);
       if (comp.parent_id) {
-        const parent = summaries.items.find((sibling) => sibling.id === comp.parent_id) ?? null;
+        const parent = await firstValueFrom(
+          this.api.get<CompSummary>(`api/comps/${comp.parent_id}`),
+        ).catch(() => null);
         this.parentComp.set(parent);
+      } else {
+        this.parentComp.set(null);
       }
     } catch (error) {
       this.loadFailed.set(true);

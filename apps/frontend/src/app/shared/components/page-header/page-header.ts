@@ -9,28 +9,34 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
  * @example
  * <app-page-header [title]="'Bank'" [subtitle]="'Your ledger'">
  *   <button class="btn btn--primary">New</button>
+ *   <app-view-toggle pageTabs ... />
  * </app-page-header>
  */
 @Component({
   selector: 'app-page-header',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <header class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <h1 class="display text-2xl" style="color: var(--color-text)">
-          {{ title() }}
-        </h1>
-        @if (subtitle()) {
-          <p class="mt-1 text-sm" style="color: var(--color-text-secondary)">
-            {{ subtitle() }}
-          </p>
+    <header class="page-header mb-6">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 class="display text-2xl" style="color: var(--color-text)">
+            {{ title() }}
+          </h1>
+          @if (subtitle()) {
+            <p class="mt-1 text-sm" style="color: var(--color-text-secondary)">
+              {{ subtitle() }}
+            </p>
+          }
+        </div>
+        @if (actions()) {
+          <div class="flex flex-wrap items-center gap-2">
+            <ng-content />
+          </div>
         }
       </div>
-      @if (actions()) {
-        <div class="flex flex-wrap items-center gap-2">
-          <ng-content />
-        </div>
-      }
+      <div class="page-header__tabs">
+        <ng-content select="[pageTabs]" />
+      </div>
     </header>
   `,
 })

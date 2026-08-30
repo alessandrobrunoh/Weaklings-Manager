@@ -232,20 +232,20 @@ export class DataTable<T> {
       return;
     }
     this.sort.set(this.nextDirection(column.key, this.sort()));
-    this.resetPageIfClient();
+    this.page.set(1);
     this.emitChange();
   }
 
   protected onSearchInput(event: Event): void {
     this.search.set((event.target as HTMLInputElement).value);
-    this.resetPageIfClient();
+    this.page.set(1);
     this.emitChange();
   }
 
   protected onColumnFilter(columnKey: string, event: Event): void {
     const value = (event.target as HTMLSelectElement).value;
     this.columnFilters.update((filters) => ({ ...filters, [columnKey]: value }));
-    this.resetPageIfClient();
+    this.page.set(1);
     this.emitChange();
   }
 
@@ -315,13 +315,6 @@ export class DataTable<T> {
       return '';
     }
     return String(value);
-  }
-
-  /** Resets to the first page after a structural change in client mode. */
-  private resetPageIfClient(): void {
-    if (!this.serverMode()) {
-      this.page.set(1);
-    }
   }
 
   private applyFilters(rows: readonly T[]): T[] {

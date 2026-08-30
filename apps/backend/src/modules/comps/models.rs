@@ -375,6 +375,12 @@ pub struct BuildFilters {
     pub category_id: Option<i64>,
     /// Filter by build name (case-insensitive partial match).
     pub q: Option<String>,
+    /// Alias of `q` (case-insensitive partial match).
+    pub search: Option<String>,
+    /// Sort column. Allowed: `name`, `role`, `created_at` (default).
+    pub sort: Option<String>,
+    /// Sort direction: `asc` or `desc`. Defaults to `desc`.
+    pub order: Option<String>,
 }
 
 /// Filters for listing comps.
@@ -390,4 +396,8 @@ pub struct CompFilters {
     pub date_from: Option<String>,
     /// Filter by created date (inclusive).
     pub date_to: Option<String>,
+    /// Sort column. Allowed: `name`, `created_at` (default), `category`.
+    pub sort: Option<String>,
+    /// Sort direction: `asc` or `desc`. Defaults to `desc`.
+    pub order: Option<String>,
 }

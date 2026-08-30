@@ -164,7 +164,9 @@ async fn get_guild_summary(
         `from_label` is a display-ready string: `\"Guild Bank\"` while `status` is `pending` or \
         `requested`, or the paying officer's user id once `status` is `withdrawn`. Filter with \
         `?status=pending`, `?status=requested`, `?status=rejected`, or `?status=withdrawn` (see \
-        `TransactionStatus`); omit it to get every status. Standard `page`/`limit` pagination. Pass `?user_id=<id>` to view \
+        `TransactionStatus`); omit it to get every status. Search recipients with `search` \
+        (case-insensitive username substring). Sort with `sort=created_at|amount|status|to_username` \
+        and `order=asc|desc` (default `created_at` desc). Standard `page`/`limit` pagination. Pass `?user_id=<id>` to view \
         another member's transactions — administrator-only, same rule as `GET /bank/balance`.",
     security(("session_cookie" = [])),
     params(ListTransactionsQuery),

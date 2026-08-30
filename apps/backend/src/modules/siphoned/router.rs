@@ -120,9 +120,11 @@ async fn ingest(
     tag = "siphoned",
     summary = "List/search the siphoned energy ledger",
     description = "Every row is one in-game event (deposit or withdrawal). Filters: `player_name` \
-        (case-insensitive substring), `reason` (exact match, e.g. `Withdrawal`), `since`/`until` \
+        (case-insensitive substring), `search` (case-insensitive substring on player name or reason), \
+        `reason` (exact match, e.g. `Withdrawal`), `since`/`until` \
         (inclusive ISO8601 range on `occurred_at`), `batch_id` (restrict to one import batch). \
-        Standard `page`/`limit` pagination; results are newest-first. Requires the \
+        Sort with `sort=occurred_at|player_name|amount|reason|ingested_at` and `order=asc|desc` \
+        (default `occurred_at` desc). Standard `page`/`limit` pagination. Requires the \
         `siphoned.view` permission.",
     security(("session_cookie" = ["siphoned.view"])),
     params(ListEntriesQuery),
@@ -264,7 +266,8 @@ pub async fn delete_entry(
         row reports `total_deposited`, `total_withdrawn` (sign-flipped to a positive number), \
         `net` (negative means the player is in debt to the guild), entry count, and first/last \
         seen timestamps. Pass `min_debt=0` to see only debtors. Sort with `sort=net_asc` (default, \
-        biggest debtors first), `sort=net_desc`, or `sort=name_asc`. Requires the `siphoned.view` \
+        biggest debtors first), `sort=net_desc`, or `sort=name_asc`. Filter with `search` \
+        (case-insensitive substring on player name). Requires the `siphoned.view` \
         permission.",
     security(("session_cookie" = ["siphoned.view"])),
     params(BalanceQuery),
@@ -283,7 +286,9 @@ async fn list_balances(
     user.require(&perms, Permission::SiphonedView).await?;
     let service = SiphonedService::new();
     let sort = query.sort.unwrap_or_default();
-    let balances = service.list_balances(&db, query.min_debt, sort).await?;
+    let balances = service
+        .list_balances(&db, query.min_debt, sort, query.search.as_deref())
+        .await?;
     Ok(Json(ApiResponse::new(balances)))
 }
 

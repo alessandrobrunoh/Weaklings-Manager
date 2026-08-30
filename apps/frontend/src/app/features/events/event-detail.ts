@@ -38,16 +38,30 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
+import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
-import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
+import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 import {
   SearchDialog,
   SearchDialogOption,
 } from '../../shared/components/search-dialog/search-dialog';
-import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import {
+  ViewToggle,
+  type ViewToggleOption,
+} from '../../shared/components/view-toggle/view-toggle';
+
+type EventDetailTab = 'overview' | 'roster' | 'battles' | 'splits';
+
+function isEventDetailTab(value: string): value is EventDetailTab {
+  return value === 'overview' || value === 'roster' || value === 'battles' || value === 'splits';
+}
 
 /**
  * Full-page analytics view for a single guild event.
@@ -68,85 +82,61 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
 @Component({
   selector: 'app-event-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EmptyState, ErrorState, Loading, SearchDialog, Icon, DataTable, StatusChip],
+  imports: [
+    DataTable,
+    DataTableCell,
+    Dialog,
+    EmptyState,
+    ErrorState,
+    Icon,
+    Loading,
+    PageHeader,
+    PageStack,
+    SearchDialog,
+    StatusChip,
+    ViewToggle,
+  ],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
     } @else if (event(); as detail) {
-      <header class="event-detail__hero card p-5">
+      <app-page-header [title]="detail.title" [subtitle]="headerSubtitle(detail)">
         <button type="button" class="btn btn--ghost" (click)="backToEvents()">
           ← {{ t('events.detail.back') }}
         </button>
+        <app-status-chip [value]="detail.status" />
+        @if (detail.call_to_arms) {
+          <span class="chip" [title]="t('events.call_to_arms')">★ {{ t('events.call_to_arms') }}</span>
+        }
+        @if (canManage() && detail.status === 'scheduled') {
+          <button type="button" class="btn btn--primary" (click)="start(detail.id)">
+            {{ t('events.start') }}
+          </button>
+        }
+        @if (canManage() && detail.status === 'live') {
+          <button type="button" class="btn btn--danger" (click)="stop(detail.id)">
+            {{ t('events.stop') }}
+          </button>
+        }
+        @if (canEdit()) {
+          <button type="button" class="btn btn--ghost" (click)="toggleEditForm()">
+            {{ showEditForm() ? t('common.close') : t('common.edit') }}
+          </button>
+          <button type="button" class="btn btn--danger" (click)="requestDelete()">
+            {{ t('common.delete') }}
+          </button>
+        }
+        <app-view-toggle
+          pageTabs
+          [options]="tabOptions()"
+          [active]="tab()"
+          (activeChange)="onTabChange($event)"
+        />
+      </app-page-header>
 
-        <div class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div class="mb-2 flex flex-wrap items-center gap-2">
-              <h1 class="text-3xl font-bold" style="color: var(--color-text)">
-                @if (detail.call_to_arms) {
-                  <span class="cta-star" title="{{ t('events.call_to_arms') }}">★</span>
-                }
-                {{ detail.title }}
-              </h1>
-              <app-status-chip [value]="detail.status" />
-            </div>
-            <p class="text-sm" style="color: var(--color-text-secondary)">
-              {{ formatDate(detail.event_date_utc) }} · {{ t('events.detail.comp') }}:
-              {{ detail.active_comp_name || detail.comp_name }} ·
-              {{ t('events.detail.comp_capacity') }}: {{ detail.active_comp_capacity }}
-            </p>
-            @if (detail.description) {
-              <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
-                {{ detail.description }}
-              </p>
-            }
-          </div>
-
-          <div class="flex flex-wrap gap-2">
-            @if (detail.status === 'scheduled') {
-              @if (currentParticipant(); as participation) {
-                <span class="chip chip--success">
-                  {{ t('events.detail.registered_as') }}:
-                  {{ participation.primary_build_name }}
-                  @if (participation.secondary_build_name) {
-                    / {{ participation.secondary_build_name }}
-                  }
-                </span>
-                <button type="button" class="btn btn--tonal" (click)="toggleJoinForm()">
-                  {{ showJoinForm() ? t('common.close') : t('events.detail.change_build') }}
-                </button>
-                <button type="button" class="btn btn--outline" (click)="leave(detail.id)">
-                  {{ t('events.leave') }}
-                </button>
-              } @else {
-                <button type="button" class="btn btn--tonal" (click)="toggleJoinForm()">
-                  {{ showJoinForm() ? t('common.close') : t('events.participate') }}
-                </button>
-              }
-            }
-            @if (canManage() && detail.status === 'scheduled') {
-              <button type="button" class="btn btn--primary" (click)="start(detail.id)">
-                {{ t('events.start') }}
-              </button>
-            }
-            @if (canManage() && detail.status === 'live') {
-              <button type="button" class="btn btn--danger" (click)="stop(detail.id)">
-                {{ t('events.stop') }}
-              </button>
-            }
-            @if (canEdit()) {
-              <button type="button" class="btn btn--ghost" (click)="toggleEditForm()">
-                {{ showEditForm() ? t('common.close') : t('common.edit') }}
-              </button>
-              <button type="button" class="btn btn--danger" (click)="deleteEvent()">
-                {{ t('common.delete') }}
-              </button>
-            }
-          </div>
-        </div>
-      </header>
-
-      @if (showEditForm()) {
-        <form class="mt-4 grid gap-3" (submit)="onUpdateSubmit($event)">
+      <app-page-stack>
+        @if (showEditForm()) {
+        <form class="card grid gap-3 p-5" (submit)="onUpdateSubmit($event)">
           <label>
             <span class="label">{{ t('common.name') }}</span>
             <input
@@ -222,8 +212,41 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
         </form>
       }
 
+        @switch (tab()) {
+          @case ('overview') {
+            <section class="card p-5" aria-label="Event overview">
+              @if (detail.description) {
+                <p class="text-sm" style="color: var(--color-text-secondary)">
+                  {{ detail.description }}
+                </p>
+              }
+              @if (detail.status === 'scheduled') {
+                <div class="mt-3 flex flex-wrap gap-2">
+                  @if (currentParticipant(); as participation) {
+                    <span class="chip chip--success">
+                      {{ t('events.detail.registered_as') }}:
+                      {{ participation.primary_build_name }}
+                      @if (participation.secondary_build_name) {
+                        / {{ participation.secondary_build_name }}
+                      }
+                    </span>
+                    <button type="button" class="btn btn--tonal" (click)="toggleJoinForm()">
+                      {{ showJoinForm() ? t('common.close') : t('events.detail.change_build') }}
+                    </button>
+                    <button type="button" class="btn btn--outline" (click)="leave(detail.id)">
+                      {{ t('events.leave') }}
+                    </button>
+                  } @else {
+                    <button type="button" class="btn btn--tonal" (click)="toggleJoinForm()">
+                      {{ showJoinForm() ? t('common.close') : t('events.participate') }}
+                    </button>
+                  }
+                </div>
+              }
+            </section>
+
       @if (showJoinForm()) {
-        <form class="mt-4 grid gap-3" (submit)="onJoinSubmit($event)">
+        <form class="card grid gap-3 p-5" (submit)="onJoinSubmit($event)">
           @if (compLoading()) {
             <app-loading [label]="t('common.loading')" />
           } @else if (availableBuilds().length === 0) {
@@ -479,8 +502,10 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
           <p class="event-detail__empty">{{ t('events.detail.no_opponents') }}</p>
         }
       </article>
+          }
 
-      <article class="mt-5 surface overflow-hidden">
+          @case ('battles') {
+      <article class="surface overflow-hidden">
         <header class="event-detail__section-header">
           <h2>{{ t('events.detail.battles') }}</h2>
           <div class="flex flex-wrap gap-2">
@@ -590,8 +615,10 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
           <p class="event-detail__empty">{{ t('events.detail.no_battles') }}</p>
         }
       </article>
+          }
 
-      <article class="mt-5 surface overflow-hidden">
+          @case ('splits') {
+      <article class="surface overflow-hidden">
         <header class="event-detail__section-header">
           <h2>{{ t('events.detail.splits') }}</h2>
           <div class="flex flex-wrap items-center gap-2">
@@ -665,8 +692,8 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
             </article>
           </section>
         }
-        @if (splits().length > 0) {
-          <app-data-table [columns]="splitsColumns" [rows]="splits()" [trackBy]="trackSplit">
+        @if (detail.splits.length > 0) {
+          <app-data-table [columns]="splitsColumns" [rows]="detail.splits" [trackBy]="trackSplit">
             <ng-template dataTableCell="note" let-row>
               <span class="font-medium">{{ row.note || t('events.detail.split_number') + row.id }}</span>
             </ng-template>
@@ -698,8 +725,10 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
           <p class="event-detail__empty">{{ t('events.detail.no_splits') }}</p>
         }
       </article>
+          }
 
-      <article class="mt-5 surface overflow-hidden">
+          @case ('roster') {
+      <article class="surface overflow-hidden">
         <header class="event-detail__section-header">
           <h2>{{ t('events.detail.participants') }}</h2>
           <span class="text-xs" style="color: var(--color-text-secondary)">
@@ -943,6 +972,9 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
           }
         </article>
       }
+          }
+        }
+      </app-page-stack>
     } @else if (loadFailed()) {
       <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     } @else {
@@ -1072,6 +1104,20 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
           </form>
         </div>
       </div>
+    }
+
+    @if (pendingDelete()) {
+      <app-dialog [title]="t('events.detail.delete')" size="sm" (closed)="cancelDelete()">
+        <p>{{ t('events.detail.confirm_delete') }}</p>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="cancelDelete()">
+            {{ t('common.cancel') }}
+          </button>
+          <button type="button" class="btn btn--danger" (click)="confirmDelete()">
+            {{ t('common.delete') }}
+          </button>
+        </div>
+      </app-dialog>
     }
   `,
   styles: `
@@ -1481,7 +1527,15 @@ export class EventDetailPage {
   protected readonly loadFailed = signal(false);
   protected readonly canEdit = signal(false);
   protected readonly showEditForm = signal(false);
+  protected readonly tab = signal<EventDetailTab>('overview');
+  protected readonly pendingDelete = signal(false);
   protected readonly saving = signal(false);
+  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
+    { id: 'overview', label: this.t('events.tab.overview') },
+    { id: 'roster', label: this.t('events.tab.roster') },
+    { id: 'battles', label: this.t('events.tab.battles') },
+    { id: 'splits', label: this.t('events.tab.splits') },
+  ]);
   protected readonly showBattleLinkForm = signal(false);
 
   protected readonly showCompSearch = signal(false);
@@ -1512,9 +1566,11 @@ export class EventDetailPage {
   protected readonly battleLinksSaving = signal(false);
   protected readonly draftBattleLinks = signal<{ id: string; title: string }[]>([]);
   protected readonly comps = signal<CompSummary[]>([]);
-  protected readonly splits = signal<SplitSummary[]>([]);
   protected readonly totalSplitValue = computed(() =>
-    this.splits().reduce((sum, s) => sum + Number(s.net_value ?? s.estimated_market_value), 0),
+    (this.event()?.splits ?? []).reduce(
+      (sum, s) => sum + Number(s.net_value ?? s.estimated_market_value),
+      0,
+    ),
   );
 
   protected readonly showSplitSearch = signal(false);
@@ -1525,9 +1581,8 @@ export class EventDetailPage {
   protected readonly draftCompId = signal('');
   protected readonly draftCallToArms = signal(false);
   protected readonly draftScheduledAt = signal('');
-  /** Floor for the reschedule date picker — mirrors event-create.ts's
-   *  minScheduledAt(), same local-time-via-UTC-offset trick toggleEditForm()
-   *  already uses below to populate the field itself. */
+  /** Floor for the reschedule date picker — same local-time-via-UTC-offset
+   *  trick toggleEditForm() already uses below to populate the field itself. */
   protected readonly minScheduledAt = (() => {
     const now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
@@ -2034,6 +2089,10 @@ export class EventDetailPage {
       const id = params.get('eventId');
       if (id) {
         this.eventId = Number(id);
+        this.showEditForm.set(false);
+        this.showJoinForm.set(false);
+        this.tab.set('overview');
+        this.pendingDelete.set(false);
         void this.load();
       }
     });
@@ -2187,6 +2246,26 @@ export class EventDetailPage {
     void this.router.navigate(['/events']);
   }
 
+  protected headerSubtitle(detail: EventDetailView): string {
+    return `${this.formatDate(detail.event_date_utc)} · ${this.t('events.detail.comp')}: ${
+      detail.active_comp_name || detail.comp_name
+    } · ${this.t('events.detail.comp_capacity')}: ${detail.active_comp_capacity}`;
+  }
+
+  protected onTabChange(value: string): void {
+    if (isEventDetailTab(value)) {
+      this.tab.set(value);
+    }
+  }
+
+  protected requestDelete(): void {
+    this.pendingDelete.set(true);
+  }
+
+  protected cancelDelete(): void {
+    this.pendingDelete.set(false);
+  }
+
   protected toggleEditForm(): void {
     const detail = this.event();
     if (detail) {
@@ -2301,15 +2380,12 @@ export class EventDetailPage {
     }
   }
 
-  protected async deleteEvent(): Promise<void> {
+  protected async confirmDelete(): Promise<void> {
     const detail = this.event();
     if (!detail) {
       return;
     }
-    if (!window.confirm(this.t('events.detail.confirm_delete'))) {
-      return;
-    }
-
+    this.pendingDelete.set(false);
     try {
       await firstValueFrom(this.api.delete(`api/events/${detail.id}`));
       this.toasts.success(this.t('common.delete'));

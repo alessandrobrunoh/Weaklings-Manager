@@ -112,10 +112,16 @@ pub struct GuildBankSummary {
 }
 
 /// Filters that can be applied when listing transactions.
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema, Default)]
 pub struct TransactionFilters {
     /// Filter by transaction status.
     pub status: Option<TransactionStatus>,
+    /// Case-insensitive substring match on the recipient username.
+    pub search: Option<String>,
+    /// Sort column. Allowed: `created_at` (default), `amount`, `status`, `to_username`.
+    pub sort: Option<String>,
+    /// Sort direction: `asc` or `desc`. Defaults to `desc`.
+    pub order: Option<String>,
 }
 
 /// Request body to request withdrawal of one, several, or all of the caller's requestable

@@ -3,8 +3,10 @@
 //! Provides structures and logic to fetch and manage user data from the database.
 
 use crate::errors::AppError;
-use crate::pagination::{PaginatedData, PaginationParams};
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter};
+use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use utoipa::ToSchema;
@@ -96,7 +98,7 @@ impl UserProfile {
 }
 
 /// Filters that can be applied when listing users.
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema, Default)]
 pub struct UserFilters {
     /// Filter users whose username contains the given string (case-insensitive).
     #[schema(example = "rust")]
@@ -107,6 +109,10 @@ pub struct UserFilters {
     /// Filter users by their exact resolved role name.
     #[schema(example = "Officer")]
     pub role: Option<String>,
+    /// Sort column. Allowed: `username`, `role`. Omitted uses insertion/`id` order.
+    pub sort: Option<String>,
+    /// Sort direction: `asc` or `desc`. Defaults to `desc` when `sort` is set.
+    pub order: Option<String>,
 }
 
 /// Service for executing business logic operations related to users.
@@ -359,6 +365,30 @@ impl UserService {
             query = query.filter(UserColumn::Role.eq(role.clone()));
         }
 
+        let sort_column = resolve_sort_key(
+            filters.sort.as_deref(),
+            &[
+                ("username", UserColumn::Username),
+                ("role", UserColumn::Role),
+            ],
+            UserColumn::Id,
+        )?;
+        let sort_requested = filters
+            .sort
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_some();
+        let order = if sort_requested {
+            SortOrder::from_query(filters.order.as_deref())
+        } else {
+            SortOrder::Asc
+        };
+        query = match order {
+            SortOrder::Asc => query.order_by_asc(sort_column),
+            SortOrder::Desc => query.order_by_desc(sort_column),
+        };
+
         let limit = pagination.limit();
         let page = pagination.offset_page();
 
@@ -446,11 +476,7 @@ mod tests {
                     page: Some(1),
                     limit: Some(2),
                 },
-                &UserFilters {
-                    username: None,
-                    email: None,
-                    role: None,
-                },
+                &UserFilters::default(),
             )
             .await
             .expect("Failed to list users");
@@ -469,11 +495,7 @@ mod tests {
                     page: Some(2),
                     limit: Some(2),
                 },
-                &UserFilters {
-                    username: None,
-                    email: None,
-                    role: None,
-                },
+                &UserFilters::default(),
             )
             .await
             .expect("Failed to list users page 2");
@@ -489,9 +511,8 @@ mod tests {
                     limit: Some(10),
                 },
                 &UserFilters {
-                    username: None,
-                    email: None,
                     role: Some("User".to_string()),
+                    ..Default::default()
                 },
             )
             .await
@@ -511,8 +532,7 @@ mod tests {
                 },
                 &UserFilters {
                     username: Some("li".to_string()),
-                    email: None,
-                    role: None,
+                    ..Default::default()
                 },
             )
             .await
@@ -521,5 +541,64 @@ mod tests {
         assert_eq!(name_filter.items.len(), 2);
         assert_eq!(name_filter.items[0].username, "alice");
         assert_eq!(name_filter.items[1].username, "charlie");
+
+        let sorted = service
+            .list_users(
+                &db,
+                &PaginationParams {
+                    page: Some(1),
+                    limit: Some(10),
+                },
+                &UserFilters {
+                    sort: Some("username".to_string()),
+                    order: Some("desc".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("Failed to sort users by username");
+        let names: Vec<_> = sorted
+            .items
+            .iter()
+            .map(|user| user.username.as_str())
+            .collect();
+        assert_eq!(names, vec!["charlie", "bob", "alice"]);
+
+        let by_role = service
+            .list_users(
+                &db,
+                &PaginationParams {
+                    page: Some(1),
+                    limit: Some(10),
+                },
+                &UserFilters {
+                    sort: Some("role".to_string()),
+                    order: Some("asc".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("Failed to sort users by role");
+        assert_eq!(by_role.items[0].role, "Admin");
+        assert_eq!(by_role.items[0].username, "alice");
+
+        let error = service
+            .list_users(
+                &db,
+                &PaginationParams {
+                    page: Some(1),
+                    limit: Some(10),
+                },
+                &UserFilters {
+                    sort: Some("email".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err();
+        match error {
+            AppError::Validation(message) => assert!(message.contains("email")),
+            other => panic!("expected validation, got {other:?}"),
+        }
     }
 }
