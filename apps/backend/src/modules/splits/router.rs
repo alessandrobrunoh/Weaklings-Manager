@@ -16,8 +16,8 @@ use crate::responses::{ApiResponse, ApiResponseMatchedParticipantList, ApiRespon
 use super::models::{
     CompleteSplitsBatchRequest, CompleteSplitsBatchResult, CreateIslandRequest,
     CreateIslandTabRequest, CreateSplitRequest, MatchParticipantsRequest, MatchedParticipant,
-    SplitDetail, SplitFilters, SplitIslandView, UpdateIslandRequest, UpdateIslandTabRequest,
-    UpdateSplitRequest, UpsertParticipantRequest,
+    SplitDetail, SplitFilters, SplitIslandView, SplitKpiSummary, UpdateIslandRequest,
+    UpdateIslandTabRequest, UpdateSplitRequest, UpsertParticipantRequest,
 };
 use super::service::SplitService;
 
@@ -58,6 +58,7 @@ pub fn router() -> Router {
             "/islands/{id}",
             axum::routing::patch(update_island).delete(delete_island),
         )
+        .route("/summary", get(split_kpi_summary))
         .route("/islands/{id}/tabs", post(add_island_tab))
         .route(
             "/islands/{id}/tabs/{tab_id}",
@@ -78,6 +79,28 @@ pub fn router() -> Router {
         .route("/{id}/not-completed", post(not_completed_split))
         .route("/{id}/lost", post(lost_split))
         .route("/match-participants", post(match_participants))
+}
+
+/// Guild-wide split KPI totals (not scoped to the current list page).
+#[utoipa::path(
+    get,
+    path = "/api/splits/summary",
+    tag = "splits",
+    summary = "Guild-wide loot-split KPI totals",
+    description = "Aggregates every split so list-page cards stay correct when the table is \
+        filtered or paginated. Open to any authenticated member.",
+    security(("session_cookie" = [])),
+    responses(
+        (status = 200, description = "KPI totals", body = crate::responses::ApiResponseSplitKpiSummary),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
+    )
+)]
+pub async fn split_kpi_summary(
+    _user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<SplitKpiSummary>>, AppError> {
+    let summary = SplitService::new().kpi_summary(&db).await?;
+    Ok(Json(ApiResponse::new(summary)))
 }
 
 /// Request a new split together with its participants.

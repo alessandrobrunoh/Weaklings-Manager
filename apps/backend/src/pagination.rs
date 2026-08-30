@@ -33,6 +33,27 @@ impl PaginationParams {
     }
 }
 
+/// Slices an already-filtered in-memory list into a [`PaginatedData`] envelope.
+#[must_use]
+pub fn paginate_vec<T>(items: Vec<T>, pagination: &PaginationParams) -> PaginatedData<T> {
+    let limit = pagination.limit().max(1);
+    let total_items = items.len() as u64;
+    let total_pages = total_items.div_ceil(limit).max(1);
+    let start = (pagination.offset_page() * limit) as usize;
+    let page_items = if start >= items.len() {
+        Vec::new()
+    } else {
+        items.into_iter().skip(start).take(limit as usize).collect()
+    };
+    PaginatedData::new(
+        page_items,
+        total_items,
+        total_pages,
+        pagination.offset_page() + 1,
+        limit,
+    )
+}
+
 /// Sort direction for list endpoints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
@@ -447,6 +468,39 @@ pub struct PaginatedEntryView {
     /// The number of items per page.
     #[schema(example = 50)]
     pub limit: u64,
+}
+
+/// Concrete paginated player-balance response schema for OpenAPI.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PaginatedPlayerBalance {
+    /// Balance rows on the current page.
+    pub items: Vec<crate::modules::siphoned::models::PlayerBalance>,
+    /// Total number of items across all pages.
+    #[schema(example = 42)]
+    pub total_items: u64,
+    /// Total number of pages.
+    #[schema(example = 5)]
+    pub total_pages: u64,
+    /// The current page number (1-indexed).
+    #[schema(example = 1)]
+    pub current_page: u64,
+    /// The number of items per page.
+    #[schema(example = 10)]
+    pub limit: u64,
+}
+
+impl From<PaginatedData<crate::modules::siphoned::models::PlayerBalance>>
+    for PaginatedPlayerBalance
+{
+    fn from(data: PaginatedData<crate::modules::siphoned::models::PlayerBalance>) -> Self {
+        Self {
+            items: data.items,
+            total_items: data.total_items,
+            total_pages: data.total_pages,
+            current_page: data.current_page,
+            limit: data.limit,
+        }
+    }
 }
 
 impl From<PaginatedData<crate::modules::siphoned::models::EntryView>> for PaginatedEntryView {

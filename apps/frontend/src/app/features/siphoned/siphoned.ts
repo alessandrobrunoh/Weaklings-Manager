@@ -99,8 +99,11 @@ function emptyPageChange(): DataTablePageChange {
           [error]="loadFailed()"
           (retry)="load()"
           [trackBy]="trackBalance"
+          [serverMode]="true"
+          [totalItems]="balanceTotal()"
           [pageSize]="10"
           emptyIcon="activity"
+          (pageChange)="onBalancesChange($event)"
         >
           <ng-template dataTableCell="net" let-row>
             <span
@@ -317,6 +320,7 @@ export class Siphoned {
   protected readonly showEntryForm = signal(false);
   protected readonly rawExport = signal('');
   protected readonly balances = signal<SiphonedPlayerBalance[]>([]);
+  protected readonly balanceTotal = signal(0);
   protected readonly entries = signal<SiphonedEntryView[]>([]);
   protected readonly entryTotal = signal(0);
   protected readonly batches = signal<SiphonedBatchSummary[]>([]);
@@ -329,6 +333,7 @@ export class Siphoned {
   protected readonly trackBatch = (batch: SiphonedBatchSummary): unknown => batch.batch_id;
 
   private readonly entryQuery = signal<DataTablePageChange>(emptyPageChange());
+  private readonly balanceQuery = signal<DataTablePageChange>(emptyPageChange());
 
   protected readonly canIngest = computed(() => this.auth.hasPermission('siphoned.ingest'));
 
@@ -499,6 +504,12 @@ export class Siphoned {
     }
     this.tab.set(tab);
     this.entryQuery.set(emptyPageChange());
+    this.balanceQuery.set(emptyPageChange());
+    void this.load();
+  }
+
+  protected onBalancesChange(event: DataTablePageChange): void {
+    this.balanceQuery.set(event);
     void this.load();
   }
 
@@ -875,10 +886,26 @@ export class Siphoned {
     this.loadFailed.set(false);
     try {
       if (this.tab() === 'balances') {
-        const balances = await firstValueFrom(
-          this.api.get<SiphonedPlayerBalance[]>('api/siphoned/balances'),
+        const query = this.balanceQuery();
+        const params: Record<string, string | number> = {
+          page: query.page,
+          limit: query.pageSize,
+        };
+        if (query.search.trim()) {
+          params['search'] = query.search.trim();
+        }
+        if (query.sort) {
+          const sortMap: Record<string, string> = {
+            player_name: 'name_asc',
+            net: query.sort.direction === 'desc' ? 'net_desc' : 'net_asc',
+          };
+          params['sort'] = sortMap[query.sort.columnKey] ?? 'net_asc';
+        }
+        const data = await firstValueFrom(
+          this.api.get<PaginatedData<SiphonedPlayerBalance>>('api/siphoned/balances', params),
         );
-        this.balances.set(balances);
+        this.balances.set(data.items);
+        this.balanceTotal.set(data.total_items);
         return;
       }
 

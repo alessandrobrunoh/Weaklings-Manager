@@ -132,7 +132,7 @@ interface NewRoleDraft {
                       type="button"
                       class="btn btn--outline btn--sm"
                       [disabled]="role.is_default || roleSavingId() === role.role_id"
-                      (click)="removeRole(role)"
+                      (click)="askDelete(role)"
                     >
                       {{ t('common.delete') }}
                     </button>
@@ -212,6 +212,21 @@ interface NewRoleDraft {
         </div>
       </app-dialog>
     }
+
+    @if (deleteTarget(); as role) {
+      <app-dialog [title]="t('common.delete')" size="sm" (closed)="deleteTarget.set(null)">
+        <p>{{ t('admin.roles.deleteConfirm') }}</p>
+        <p class="mt-2 font-medium">{{ role.role_name }}</p>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="deleteTarget.set(null)">
+            {{ t('common.cancel') }}
+          </button>
+          <button type="button" class="btn btn--danger" (click)="confirmDelete()">
+            {{ t('common.delete') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
   `,
 })
 export class AdminRoles {
@@ -226,6 +241,7 @@ export class AdminRoles {
   protected readonly roleSavingId = signal<string | null>(null);
   protected readonly roleCreating = signal(false);
   protected readonly createOpen = signal(false);
+  protected readonly deleteTarget = signal<RolePermissionsView | null>(null);
   protected readonly newRole = signal<NewRoleDraft>({
     name: '',
     priority: 0,
@@ -363,8 +379,14 @@ export class AdminRoles {
     }
   }
 
-  protected async removeRole(role: RolePermissionsView): Promise<void> {
-    if (typeof window !== 'undefined' && !window.confirm(this.t('admin.roles.deleteConfirm'))) {
+  protected askDelete(role: RolePermissionsView): void {
+    this.deleteTarget.set(role);
+  }
+
+  protected async confirmDelete(): Promise<void> {
+    const role = this.deleteTarget();
+    this.deleteTarget.set(null);
+    if (!role) {
       return;
     }
     this.roleSavingId.set(role.role_id);

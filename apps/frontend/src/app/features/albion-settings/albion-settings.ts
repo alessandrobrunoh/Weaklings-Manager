@@ -13,6 +13,7 @@ import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
@@ -41,6 +42,7 @@ const MIN_QUERY_LENGTH = 2;
   imports: [
     DatePipe,
     DecimalPipe,
+    Dialog,
     EmptyState,
     ErrorState,
     FormsModule,
@@ -82,7 +84,7 @@ const MIN_QUERY_LENGTH = 2;
                 type="button"
                 class="btn btn--outline"
                 [disabled]="unlinking()"
-                (click)="unlink()"
+                (click)="askUnlink()"
               >
                 {{ t('albionSettings.link.unlink') }}
               </button>
@@ -217,6 +219,29 @@ const MIN_QUERY_LENGTH = 2;
         }
       </section>
     </app-page-stack>
+
+    @if (unlinkConfirm()) {
+      <app-dialog
+        [title]="t('albionSettings.link.unlink')"
+        size="sm"
+        (closed)="unlinkConfirm.set(false)"
+      >
+        <p>{{ t('albionSettings.link.unlinkConfirm') }}</p>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="unlinkConfirm.set(false)">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn--danger"
+            [disabled]="unlinking()"
+            (click)="confirmUnlink()"
+          >
+            {{ t('albionSettings.link.unlink') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
   `,
 })
 export class AlbionSettings {
@@ -228,6 +253,7 @@ export class AlbionSettings {
   protected readonly linkLoadFailed = signal(false);
   protected readonly link = signal<AlbionLinkStatus | null>(null);
   protected readonly unlinking = signal(false);
+  protected readonly unlinkConfirm = signal(false);
 
   protected readonly query = signal('');
   protected readonly searching = signal(false);
@@ -265,12 +291,16 @@ export class AlbionSettings {
 
   /** Unlinking drops the identity every regear/split/battle lookup in the
    *  app resolves through — a misclick has real consequences elsewhere. */
-  protected async unlink(): Promise<void> {
-    if (!confirm(this.t('common.confirm'))) return;
+  protected askUnlink(): void {
+    this.unlinkConfirm.set(true);
+  }
+
+  protected async confirmUnlink(): Promise<void> {
     this.unlinking.set(true);
     try {
       await firstValueFrom(this.api.delete<null>('api/albion/link'));
       this.link.set({ linked: false });
+      this.unlinkConfirm.set(false);
       this.toasts.success(this.t('albionSettings.link.unlinked'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

@@ -16,6 +16,7 @@ use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::battles::entities::{Column as SnapshotColumn, Entity as SnapshotEntity};
 use crate::modules::battles::service::BattlesService;
 use crate::modules::events::service::BattleLinkingContext;
+use crate::pagination::{PaginationParams, SortOrder};
 
 /// Tick interval for the sync worker. Battles that fall off page 1 between
 /// ticks are already covered by whichever tick first saw them.
@@ -48,7 +49,19 @@ async fn run_cycle(
     albiondata: &AlbionDataService,
     guild_ctx: &BattleLinkingContext,
 ) -> Result<(), crate::errors::AppError> {
-    let page = battles.list_guild_battles(None, 1).await?;
+    let page = battles
+        .list_guild_battles(
+            None,
+            &PaginationParams {
+                page: Some(1),
+                limit: Some(50),
+            },
+            None,
+            Some("start_time"),
+            SortOrder::Desc,
+            None,
+        )
+        .await?;
 
     for summary in page.items {
         let already_saved = SnapshotEntity::find()

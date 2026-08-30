@@ -44,7 +44,7 @@ use super::entities::split_participant::{
 use super::models::{
     BatchFailure, CompleteSplitsBatchResult, CreateIslandRequest, CreateIslandTabRequest,
     CreateSplitRequest, MatchedParticipant, SplitDetail, SplitFilters, SplitIslandTabView,
-    SplitIslandView, SplitParticipantView, SplitSummary, UpdateIslandRequest,
+    SplitIslandView, SplitKpiSummary, SplitParticipantView, SplitSummary, UpdateIslandRequest,
     UpdateIslandTabRequest, UpdateSplitRequest, UpsertParticipantRequest,
 };
 use super::status::SplitStatus;
@@ -700,6 +700,43 @@ impl SplitService {
 
         txn.commit().await?;
         Ok(())
+    }
+
+    /// Guild-wide KPI totals for the splits list page.
+    ///
+    /// Aggregates every split, not the current list page, so the cards stay
+    /// honest when the table is filtered or paginated.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::Database` if a query fails.
+    pub async fn kpi_summary(&self, db: &DatabaseConnection) -> Result<SplitKpiSummary, AppError> {
+        let splits = SplitEntity::find().all(db).await?;
+        let mut pending_count = 0_u64;
+        let mut completed_count = 0_u64;
+        let mut total_net_distributed = Decimal::ZERO;
+        let mut total_estimated_volume = Decimal::ZERO;
+        for split in &splits {
+            total_estimated_volume += split.estimated_market_value;
+            match parse_status(split)? {
+                SplitStatus::Pending => pending_count += 1,
+                SplitStatus::Completed => {
+                    completed_count += 1;
+                    total_net_distributed += split.net_value.unwrap_or(
+                        split.estimated_market_value - split.repair_value + split.bags_value,
+                    );
+                }
+                SplitStatus::NotCompleted | SplitStatus::Lost => {}
+            }
+        }
+        let total_participants = ParticipantEntity::find().count(db).await?;
+        Ok(SplitKpiSummary {
+            pending_count,
+            completed_count,
+            total_net_distributed,
+            total_estimated_volume,
+            total_participants,
+        })
     }
 
     /// Fetches a split's full detail by id.
@@ -2032,6 +2069,67 @@ mod tests {
             .unwrap();
         assert_eq!(listed.items.len(), 1);
         assert_eq!(listed.items[0].island_id, Some(first.id));
+    }
+
+    #[tokio::test]
+    async fn kpi_summary_counts_all_splits_not_the_current_page() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let service = SplitService::new();
+        let island = service
+            .create_island(
+                &db,
+                CreateIslandRequest {
+                    name: "kpi".to_string(),
+                    city: "lymhurst".to_string(),
+                    tabs: vec!["Loot".to_string()],
+                },
+            )
+            .await
+            .unwrap();
+        let participant = vec![UpsertParticipantRequest {
+            user_id: alice,
+            weight: 1,
+        }];
+        service
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request("10.00", "0.00", "0.00", participant.clone()),
+                    island.tabs[0].id,
+                ),
+            )
+            .await
+            .unwrap();
+        let completed = service
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request("20.00", "1.00", "2.00", participant),
+                    island.tabs[0].id,
+                ),
+            )
+            .await
+            .unwrap();
+        SplitActiveModel {
+            id: Set(completed.summary.id),
+            status: Set(SplitStatus::Completed.to_string()),
+            net_value: Set(Some("21.00".parse().unwrap())),
+            ..Default::default()
+        }
+        .update(&db)
+        .await
+        .unwrap();
+
+        let kpi = service.kpi_summary(&db).await.unwrap();
+        assert_eq!(kpi.pending_count, 1);
+        assert_eq!(kpi.completed_count, 1);
+        assert_eq!(kpi.total_participants, 2);
+        assert_eq!(kpi.total_net_distributed, "21.00".parse().unwrap());
+        assert_eq!(kpi.total_estimated_volume, "30.00".parse().unwrap());
     }
 
     #[tokio::test]

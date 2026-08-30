@@ -84,7 +84,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
             type="button"
             class="btn btn--danger btn--sm"
             [disabled]="deletingId() === row.id"
-            (click)="deleteIsland(row.id)"
+            (click)="askDelete(row)"
           >
             {{ t('common.delete') }}
           </button>
@@ -144,6 +144,21 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
         </div>
       </app-dialog>
     }
+
+    @if (deleteTarget(); as island) {
+      <app-dialog [title]="t('common.delete')" size="sm" (closed)="deleteTarget.set(null)">
+        <p>{{ t('common.confirm') }}</p>
+        <p class="mt-2 font-medium">{{ cityLabel(island.city) }} · {{ island.name }}</p>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="deleteTarget.set(null)">
+            {{ t('common.cancel') }}
+          </button>
+          <button type="button" class="btn btn--danger" (click)="confirmDelete()">
+            {{ t('common.delete') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
   `,
 })
 export class AdminIslands {
@@ -159,6 +174,7 @@ export class AdminIslands {
   protected readonly addingTabId = signal<number | null>(null);
   protected readonly deletingId = signal<number | null>(null);
   protected readonly createOpen = signal(false);
+  protected readonly deleteTarget = signal<SplitIsland | null>(null);
   protected readonly newIslandCity = signal<SplitIslandCity>('lymhurst');
   protected readonly newIslandName = signal('');
   protected readonly newIslandTabs = signal('');
@@ -281,10 +297,17 @@ export class AdminIslands {
     }
   }
 
-  protected async deleteIsland(islandId: number): Promise<void> {
-    if (typeof window !== 'undefined' && !window.confirm(this.t('common.confirm'))) {
+  protected askDelete(island: SplitIsland): void {
+    this.deleteTarget.set(island);
+  }
+
+  protected async confirmDelete(): Promise<void> {
+    const island = this.deleteTarget();
+    this.deleteTarget.set(null);
+    if (!island) {
       return;
     }
+    const islandId = island.id;
     this.deletingId.set(islandId);
     try {
       await firstValueFrom(this.api.delete(`api/splits/islands/${islandId}`));

@@ -799,6 +799,8 @@ export const it: TranslationDict = {
   'albionSettings.link.linkedAs': 'Collegato a',
   'albionSettings.link.since': 'Dal',
   'albionSettings.link.unlink': 'Scollega',
+  'albionSettings.link.unlinkConfirm':
+    'Scollegare questo personaggio? Regear, split e lookup di battaglia usano questa identità.',
   'albionSettings.link.unlinked': 'Personaggio scollegato.',
   'albionSettings.link.notLinked': 'Nessun personaggio collegato.',
   'albionSettings.link.notLinkedHint':

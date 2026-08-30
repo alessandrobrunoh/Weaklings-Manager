@@ -95,6 +95,16 @@ pub struct ApiResponseTransactionViewList {
     pub data: Vec<crate::modules::bank::models::TransactionView>,
 }
 
+/// `OpenAPI` schema wrapper for split KPI totals.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseSplitKpiSummary {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Guild-wide split totals.
+    pub data: crate::modules::splits::models::SplitKpiSummary,
+}
+
 /// `OpenAPI` schema wrapper for `SplitDetail` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseSplitDetail {
@@ -385,14 +395,14 @@ pub struct ApiResponsePaginatedEntryView {
     pub data: crate::pagination::PaginatedEntryView,
 }
 
-/// `OpenAPI` schema wrapper for `PlayerBalance` list response (siphoned module).
+/// `OpenAPI` schema wrapper for paginated player balances.
 #[derive(Debug, Serialize, ToSchema)]
-pub struct ApiResponsePlayerBalanceList {
+pub struct ApiResponsePaginatedPlayerBalance {
     /// Indicates the outcome of the request, always "success".
     #[schema(example = "success")]
     pub status: String,
-    /// The per-player balance list payload.
-    pub data: Vec<crate::modules::siphoned::models::PlayerBalance>,
+    /// The paginated per-player balance payload.
+    pub data: crate::pagination::PaginatedPlayerBalance,
 }
 
 /// `OpenAPI` schema wrapper for `PlayerBalanceDetail` response (siphoned module).

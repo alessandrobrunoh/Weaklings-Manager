@@ -59,6 +59,12 @@ import {
 
 type EventDetailTab = 'overview' | 'roster' | 'battles' | 'splits';
 
+type PendingConfirm =
+  | { kind: 'delete' }
+  | { kind: 'stop'; eventId: number }
+  | { kind: 'unlink-split'; splitId: number }
+  | { kind: 'remove-participant'; userId: number; username: string; slotKey: string };
+
 function isEventDetailTab(value: string): value is EventDetailTab {
   return value === 'overview' || value === 'roster' || value === 'battles' || value === 'splits';
 }
@@ -1106,15 +1112,15 @@ function isEventDetailTab(value: string): value is EventDetailTab {
       </div>
     }
 
-    @if (pendingDelete()) {
-      <app-dialog [title]="t('events.detail.delete')" size="sm" (closed)="cancelDelete()">
-        <p>{{ t('events.detail.confirm_delete') }}</p>
+    @if (pendingConfirm(); as confirm) {
+      <app-dialog [title]="confirmTitle(confirm)" size="sm" (closed)="cancelConfirm()">
+        <p>{{ confirmMessage(confirm) }}</p>
         <div dialogFooter>
-          <button type="button" class="btn btn--ghost" (click)="cancelDelete()">
+          <button type="button" class="btn btn--ghost" (click)="cancelConfirm()">
             {{ t('common.cancel') }}
           </button>
-          <button type="button" class="btn btn--danger" (click)="confirmDelete()">
-            {{ t('common.delete') }}
+          <button type="button" class="btn btn--danger" (click)="runConfirm()">
+            {{ confirmActionLabel(confirm) }}
           </button>
         </div>
       </app-dialog>
@@ -1528,7 +1534,7 @@ export class EventDetailPage {
   protected readonly canEdit = signal(false);
   protected readonly showEditForm = signal(false);
   protected readonly tab = signal<EventDetailTab>('overview');
-  protected readonly pendingDelete = signal(false);
+  protected readonly pendingConfirm = signal<PendingConfirm | null>(null);
   protected readonly saving = signal(false);
   protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
     { id: 'overview', label: this.t('events.tab.overview') },
@@ -2092,7 +2098,7 @@ export class EventDetailPage {
         this.showEditForm.set(false);
         this.showJoinForm.set(false);
         this.tab.set('overview');
-        this.pendingDelete.set(false);
+        this.pendingConfirm.set(null);
         void this.load();
       }
     });
@@ -2231,8 +2237,11 @@ export class EventDetailPage {
     }
   }
 
-  protected async unlinkSplit(splitId: number): Promise<void> {
-    if (!confirm(this.t('common.confirm'))) return;
+  protected unlinkSplit(splitId: number): void {
+    this.pendingConfirm.set({ kind: 'unlink-split', splitId });
+  }
+
+  private async performUnlinkSplit(splitId: number): Promise<void> {
     try {
       await firstValueFrom(this.api.put(`api/splits/${splitId}`, { event_id: null }));
       this.toasts.success(this.t('events.detail.battles_saved'));
@@ -2259,11 +2268,63 @@ export class EventDetailPage {
   }
 
   protected requestDelete(): void {
-    this.pendingDelete.set(true);
+    this.pendingConfirm.set({ kind: 'delete' });
   }
 
-  protected cancelDelete(): void {
-    this.pendingDelete.set(false);
+  protected cancelConfirm(): void {
+    this.pendingConfirm.set(null);
+  }
+
+  protected confirmTitle(confirm: PendingConfirm): string {
+    switch (confirm.kind) {
+      case 'delete':
+        return this.t('events.detail.delete');
+      case 'stop':
+        return this.t('events.stop');
+      case 'unlink-split':
+        return this.t('events.detail.unlink_split');
+      case 'remove-participant':
+        return this.t('events.detail.remove_participant');
+    }
+  }
+
+  protected confirmMessage(confirm: PendingConfirm): string {
+    switch (confirm.kind) {
+      case 'delete':
+        return this.t('events.detail.confirm_delete');
+      case 'remove-participant':
+        return `${this.t('events.detail.remove_participant')} — ${confirm.username}?`;
+      default:
+        return this.t('common.confirm');
+    }
+  }
+
+  protected confirmActionLabel(confirm: PendingConfirm): string {
+    return confirm.kind === 'delete' || confirm.kind === 'remove-participant'
+      ? this.t('common.delete')
+      : this.t('common.confirm');
+  }
+
+  protected async runConfirm(): Promise<void> {
+    const confirm = this.pendingConfirm();
+    this.pendingConfirm.set(null);
+    if (!confirm) {
+      return;
+    }
+    switch (confirm.kind) {
+      case 'delete':
+        await this.confirmDelete();
+        break;
+      case 'stop':
+        await this.mutate(`api/events/${confirm.eventId}/stop`, 'POST', {});
+        break;
+      case 'unlink-split':
+        await this.performUnlinkSplit(confirm.splitId);
+        break;
+      case 'remove-participant':
+        await this.performClearSlot(confirm.slotKey, confirm.userId);
+        break;
+    }
   }
 
   protected toggleEditForm(): void {
@@ -2385,7 +2446,6 @@ export class EventDetailPage {
     if (!detail) {
       return;
     }
-    this.pendingDelete.set(false);
     try {
       await firstValueFrom(this.api.delete(`api/events/${detail.id}`));
       this.toasts.success(this.t('common.delete'));
@@ -2727,14 +2787,25 @@ export class EventDetailPage {
     }
 
     const participant = detail.participants.find((p) => p.user_id === userId);
-    if (
-      participant &&
-      !window.confirm(`${this.t('events.detail.remove_participant')} — ${participant.username}?`)
-    ) {
+    if (participant) {
+      this.pendingConfirm.set({
+        kind: 'remove-participant',
+        userId,
+        username: participant.username,
+        slotKey: slot.key,
+      });
       return;
     }
 
-    this.slotRemovingKey.set(slot.key);
+    await this.performClearSlot(slot.key, userId);
+  }
+
+  private async performClearSlot(slotKey: string, userId: number): Promise<void> {
+    const detail = this.event();
+    if (!detail) {
+      return;
+    }
+    this.slotRemovingKey.set(slotKey);
     try {
       const updated = await firstValueFrom(
         this.api.delete<EventDetailView>(`api/events/${detail.id}/participants/${userId}`),
@@ -2746,7 +2817,7 @@ export class EventDetailPage {
       }
       this.slotAssignments.update((map) => {
         const next = new Map(map);
-        next.set(slot.key, null);
+        next.set(slotKey, null);
         return next;
       });
       this.toasts.success(this.t('events.detail.participant_removed'));
@@ -2877,9 +2948,8 @@ export class EventDetailPage {
 
   /** Stopping closes participation and triggers regear extraction from every
    *  linked battle — a real, mostly-irreversible consequence, unlike `leave`. */
-  protected async stop(id: number): Promise<void> {
-    if (!confirm(this.t('common.confirm'))) return;
-    await this.mutate(`api/events/${id}/stop`, 'POST', {});
+  protected stop(id: number): void {
+    this.pendingConfirm.set({ kind: 'stop', eventId: id });
   }
 
   protected openBattle(albionbbBattleId: string): void {

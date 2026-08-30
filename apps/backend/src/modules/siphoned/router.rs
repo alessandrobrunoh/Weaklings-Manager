@@ -11,11 +11,13 @@ use axum::{
 
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
-use crate::pagination::{PaginatedEntryView, PaginationParams};
+use crate::pagination::{
+    PaginatedEntryView, PaginatedPlayerBalance, PaginationParams, paginate_vec,
+};
 use crate::responses::{
     ApiResponse, ApiResponseBatchSummaryList, ApiResponseDeletedCount, ApiResponseEntryView,
-    ApiResponseIngestResponse, ApiResponsePaginatedEntryView, ApiResponsePlayerBalanceDetail,
-    ApiResponsePlayerBalanceList,
+    ApiResponseIngestResponse, ApiResponsePaginatedEntryView, ApiResponsePaginatedPlayerBalance,
+    ApiResponsePlayerBalanceDetail,
 };
 
 use super::models::{
@@ -267,12 +269,12 @@ pub async fn delete_entry(
         `net` (negative means the player is in debt to the guild), entry count, and first/last \
         seen timestamps. Pass `min_debt=0` to see only debtors. Sort with `sort=net_asc` (default, \
         biggest debtors first), `sort=net_desc`, or `sort=name_asc`. Filter with `search` \
-        (case-insensitive substring on player name). Requires the `siphoned.view` \
-        permission.",
+        (case-insensitive substring on player name). Paginate with `page`/`limit` (default 10). \
+        Requires the `siphoned.view` permission.",
     security(("session_cookie" = ["siphoned.view"])),
     params(BalanceQuery),
     responses(
-        (status = 200, description = "Balances computed successfully", body = ApiResponsePlayerBalanceList),
+        (status = 200, description = "Balances computed successfully", body = ApiResponsePaginatedPlayerBalance),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks siphoned.view permission", body = ProblemDetails)
     )
@@ -282,14 +284,20 @@ async fn list_balances(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Query(query): Query<BalanceQuery>,
-) -> Result<Json<ApiResponse<Vec<super::models::PlayerBalance>>>, AppError> {
+) -> Result<Json<ApiResponse<PaginatedPlayerBalance>>, AppError> {
     user.require(&perms, Permission::SiphonedView).await?;
     let service = SiphonedService::new();
     let sort = query.sort.unwrap_or_default();
     let balances = service
         .list_balances(&db, query.min_debt, sort, query.search.as_deref())
         .await?;
-    Ok(Json(ApiResponse::new(balances)))
+    let pagination = PaginationParams {
+        page: query.page,
+        limit: query.limit,
+    };
+    Ok(Json(ApiResponse::new(PaginatedPlayerBalance::from(
+        paginate_vec(balances, &pagination),
+    ))))
 }
 
 /// Get one player's balance plus their most recent entries.

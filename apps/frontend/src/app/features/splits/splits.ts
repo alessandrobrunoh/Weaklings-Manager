@@ -13,6 +13,7 @@ import type {
   SplitDetail,
   SplitIsland,
   SplitIslandCity,
+  SplitKpiSummary,
   SplitStatus,
   SplitSummary,
 } from '../../core/models/api.models';
@@ -89,27 +90,27 @@ interface SplitParticipantDraft {
       <section class="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Split KPI Summary">
         <app-stat-card
           [label]="t('splits.total_distributed')"
-          [value]="formatCompact(totalNetDistributed())"
-          [sub]="t('splits.kpi.completed_across', { count: completedSplitsCount() })"
+          [value]="formatCompact(kpi()?.total_net_distributed ?? 0)"
+          [sub]="t('splits.kpi.completed_across', { count: kpi()?.completed_count ?? 0 })"
           icon="bank"
           tone="success"
         />
         <app-stat-card
           [label]="t('splits.pending_splits')"
-          [value]="String(pendingSplits().length)"
+          [value]="String(kpi()?.pending_count ?? 0)"
           [sub]="t('splits.kpi.pending_sub')"
           icon="alert"
           tone="warning"
         />
         <app-stat-card
           [label]="t('splits.total_silver_volume')"
-          [value]="formatCompact(totalEstimatedVolume())"
+          [value]="formatCompact(kpi()?.total_estimated_volume ?? 0)"
           [sub]="t('splits.kpi.volume_sub')"
           icon="chart"
         />
         <app-stat-card
           [label]="t('splits.participants')"
-          [value]="String(totalParticipantsCount())"
+          [value]="String(kpi()?.total_participants ?? 0)"
           [sub]="t('splits.kpi.recipients_sub')"
           icon="users"
           tone="primary"
@@ -587,6 +588,7 @@ export class Splits {
   private readonly translate = inject(TranslateService);
 
   protected readonly splits = signal<SplitSummary[]>([]);
+  protected readonly kpi = signal<SplitKpiSummary | null>(null);
   protected readonly totalItems = signal(0);
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
@@ -633,20 +635,6 @@ export class Splits {
 
   protected readonly pendingSplits = computed(() =>
     this.splits().filter((split) => split.status === 'pending'),
-  );
-  protected readonly completedSplitsCount = computed(
-    () => this.splits().filter((split) => split.status === 'completed').length,
-  );
-  protected readonly totalNetDistributed = computed(() =>
-    this.splits()
-      .filter((split) => split.status === 'completed')
-      .reduce((sum, split) => sum + this.netOf(split), 0),
-  );
-  protected readonly totalEstimatedVolume = computed(() =>
-    this.splits().reduce((sum, split) => sum + Number(split.estimated_market_value), 0),
-  );
-  protected readonly totalParticipantsCount = computed(() =>
-    this.splits().reduce((sum, split) => sum + split.participant_count, 0),
   );
   protected readonly selectedCount = computed(() => this.selectedIds().size);
   protected readonly allPendingSelected = computed(() => {
@@ -713,6 +701,7 @@ export class Splits {
 
   constructor() {
     void this.loadIslands();
+    void this.loadKpi();
     void this.load();
     void this.onEventSearchFilter({ search: '', dateFrom: '', dateTo: '' });
   }
@@ -781,7 +770,7 @@ export class Splits {
       await firstValueFrom(this.api.delete(`api/splits/${target.id}`));
       this.deleteTarget.set(null);
       this.toasts.success(this.t('common.delete'));
-      await this.load();
+      await Promise.all([this.load(), this.loadKpi()]);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -1050,7 +1039,7 @@ export class Splits {
       for (const failure of result.failed) {
         this.toasts.error(`Split #${failure.split_id}: ${failure.reason}`);
       }
-      await this.load();
+      await Promise.all([this.load(), this.loadKpi()]);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -1076,6 +1065,15 @@ export class Splits {
 
   protected formatDate(iso: string): string {
     return new Date(iso).toLocaleString();
+  }
+
+  private async loadKpi(): Promise<void> {
+    try {
+      const summary = await firstValueFrom(this.api.get<SplitKpiSummary>('api/splits/summary'));
+      this.kpi.set(summary);
+    } catch {
+      this.kpi.set(null);
+    }
   }
 
   protected async load(): Promise<void> {
@@ -1137,7 +1135,7 @@ export class Splits {
       };
       await firstValueFrom(this.api.post<SplitDetail>('api/splits', request));
       this.resetCreateForm();
-      await this.load();
+      await Promise.all([this.load(), this.loadKpi()]);
       this.toasts.success(this.t('common.create'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

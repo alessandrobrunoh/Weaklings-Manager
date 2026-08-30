@@ -26,7 +26,6 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
-  type SortState,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { PageHeader } from '../../shared/components/page-header/page-header';
@@ -58,8 +57,8 @@ interface BattleScopeStats {
 /**
  * Battle list for recent guild and personal fights.
  *
- * Guild pages come from AlbionBB (`page` only — no upstream sort/search).
- * Search, column filters and sort therefore run on the current API page.
+ * Guild pages are hydrated from several AlbionBB pages, then filtered/sorted
+ * by our API so table search and sort cover more than the visible page.
  */
 @Component({
   selector: 'app-battles',
@@ -140,7 +139,6 @@ interface BattleScopeStats {
           [pageSize]="PAGE_SIZE"
           [serverMode]="true"
           [totalItems]="totalItems()"
-          [hidePageSize]="true"
           emptyIcon="shield"
           [rowClickable]="true"
           (rowClick)="openBattle($event.battle_id)"
@@ -227,13 +225,13 @@ export class Battles {
     this.formatCountdown(this.secondsUntilRefresh()),
   );
 
-  /**
-   * AlbionBB cannot sort or search the guild list. These only filter/sort the
-   * current API page; paging still goes to the server.
-   */
-  private readonly clientSearch = signal('');
-  private readonly clientSort = signal<SortState | null>(null);
-  private readonly clientFilters = signal<Readonly<Record<string, string>>>({});
+  private readonly tableQuery = signal<DataTablePageChange>({
+    page: 1,
+    pageSize: PAGE_SIZE,
+    search: '',
+    sort: null,
+    columnFilters: {},
+  });
 
   protected readonly columns = computed<readonly DataTableColumn<BattleSummary>[]>(() => [
     { key: 'select', label: '' },
@@ -300,29 +298,7 @@ export class Battles {
     },
   ]);
 
-  protected readonly tableRows = computed(() => {
-    let rows = this.battles();
-    const query = this.clientSearch().trim().toLowerCase();
-    const outcomeFilter = this.clientFilters()['outcome'];
-    const sort = this.clientSort();
-
-    if (query) {
-      rows = rows.filter((battle) => this.matchesSearch(battle, query));
-    }
-    if (outcomeFilter) {
-      rows = rows.filter((battle) => this.battleOutcome(battle).type === outcomeFilter);
-    }
-    if (sort) {
-      const column = this.columns().find((current) => current.key === sort.columnKey);
-      if (column?.comparator) {
-        rows = [...rows].sort(column.comparator);
-        if (sort.direction === 'desc') {
-          rows.reverse();
-        }
-      }
-    }
-    return rows;
-  });
+  protected readonly tableRows = computed(() => this.battles());
 
   protected readonly trackBattle = (battle: BattleSummary): unknown => battle.battle_id;
 
@@ -334,12 +310,7 @@ export class Battles {
   }
 
   protected onTableChange(event: DataTablePageChange): void {
-    this.clientSearch.set(event.search);
-    this.clientSort.set(event.sort);
-    this.clientFilters.set(event.columnFilters);
-    if (event.page === this.page()) {
-      return;
-    }
+    this.tableQuery.set(event);
     this.page.set(event.page);
     void this.load();
   }
@@ -377,9 +348,13 @@ export class Battles {
     if (!isBattleTab(tab) || this.tab() === tab) return;
     this.tab.set(tab);
     this.page.set(1);
-    this.clientSearch.set('');
-    this.clientSort.set(null);
-    this.clientFilters.set({});
+    this.tableQuery.set({
+      page: 1,
+      pageSize: PAGE_SIZE,
+      search: '',
+      sort: null,
+      columnFilters: {},
+    });
     void this.load();
   }
 
@@ -422,17 +397,6 @@ export class Battles {
     return { label: this.t('battles.contested'), type: 'contested' };
   }
 
-  private matchesSearch(battle: BattleSummary, query: string): boolean {
-    if (String(battle.battle_id).includes(query)) {
-      return true;
-    }
-    return battle.guilds.some(
-      (guild) =>
-        guild.name.toLowerCase().includes(query) ||
-        (guild.alliance_name?.toLowerCase().includes(query) ?? false),
-    );
-  }
-
   private winnerGuild(battle: Pick<BattleSummary, 'guilds'>): BattleGuildSummary | null {
     return (
       battle.guilds.find((guild) => guild.winner) ??
@@ -473,11 +437,24 @@ export class Battles {
     try {
       const isGuildTab = this.tab() === 'guild';
       const path = isGuildTab ? 'api/battles' : 'api/battles/me';
-      const params: Record<string, string | number> = { page: this.page() };
+      const query = this.tableQuery();
+      const params: Record<string, string | number> = {
+        page: query.page,
+        limit: query.pageSize,
+      };
       if (isGuildTab) {
         params['min_players'] = 10;
-      } else {
-        params['limit'] = PAGE_SIZE;
+      }
+      if (query.search.trim()) {
+        params['search'] = query.search.trim();
+      }
+      if (query.sort) {
+        params['sort'] = query.sort.columnKey;
+        params['order'] = query.sort.direction;
+      }
+      const outcome = query.columnFilters['outcome'];
+      if (outcome) {
+        params['outcome'] = outcome;
       }
       const response = await firstValueFrom(
         this.api.get<PaginatedData<BattleSummary>>(path, params),

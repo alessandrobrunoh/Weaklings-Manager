@@ -716,6 +716,8 @@ export const en = {
   'albionSettings.link.linkedAs': 'Linked to',
   'albionSettings.link.since': 'Since',
   'albionSettings.link.unlink': 'Unlink',
+  'albionSettings.link.unlinkConfirm':
+    'Unlink this character? Regear, split, and battle lookups all resolve through it.',
   'albionSettings.link.unlinked': 'Character unlinked.',
   'albionSettings.link.notLinked': 'No character linked.',
   'albionSettings.link.notLinkedHint':

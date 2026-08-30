@@ -123,6 +123,10 @@ pub struct BalanceQuery {
     pub sort: Option<BalanceSort>,
     /// Case-insensitive substring match on player name.
     pub search: Option<String>,
+    /// 1-indexed page. Defaults to 1.
+    pub page: Option<u64>,
+    /// Page size. Defaults to 10.
+    pub limit: Option<u64>,
 }
 
 /// Editable fields for a single siphoned ledger row.

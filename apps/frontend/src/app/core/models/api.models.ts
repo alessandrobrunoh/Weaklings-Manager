@@ -161,6 +161,14 @@ export type RejectWithdrawalRequest = WithdrawRequest;
 
 export type SplitStatus = 'pending' | 'completed' | 'not_completed' | 'lost';
 
+export interface SplitKpiSummary {
+  pending_count: number;
+  completed_count: number;
+  total_net_distributed: number;
+  total_estimated_volume: number;
+  total_participants: number;
+}
+
 export interface SplitParticipant {
   user_id: number;
   username: string;
