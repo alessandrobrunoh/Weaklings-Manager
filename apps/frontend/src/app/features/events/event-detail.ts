@@ -2,13 +2,14 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  DestroyRef,
   effect,
   ElementRef,
   inject,
   signal,
   viewChild,
 } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -57,38 +58,32 @@ import {
   type ViewToggleOption,
 } from '../../shared/components/view-toggle/view-toggle';
 
-type EventDetailTab = 'overview' | 'roster' | 'battles' | 'splits';
+type EventDetailTab = 'roster' | 'overview' | 'battles' | 'splits';
 
 type PendingConfirm =
   | { kind: 'delete' }
   | { kind: 'stop'; eventId: number }
   | { kind: 'unlink-split'; splitId: number }
-  | { kind: 'remove-participant'; userId: number; username: string; slotKey: string };
+  | { kind: 'clear-all' }
+  | { kind: 'remove-participant'; userId: number; username: string; slotKey?: string };
 
 function isEventDetailTab(value: string): value is EventDetailTab {
-  return value === 'overview' || value === 'roster' || value === 'battles' || value === 'splits';
+  return value === 'roster' || value === 'overview' || value === 'battles' || value === 'splits';
 }
 
-/**
- * Full-page analytics view for a single guild event.
- *
- * Replaces the legacy inline "Stats" expansion on the events list: instead of
- * cramming performance, opponents, battles, splits and participants inside a
- * small card, the whole route is dedicated to a single event so every metric
- * gets its own section and remains usable on small screens.
- *
- * @example
- * ```ts
- * routes.push({
- *   path: 'events/:eventId',
- *   loadComponent: () => import('./event-detail').then(m => m.EventDetailPage),
- * });
- * ```
- */
+export interface CompPartyGroup {
+  readonly partyNumber: number;
+  readonly partyName: string;
+  readonly slots: readonly CompSlotRow[];
+  readonly filledCount: number;
+  readonly totalCount: number;
+}
+
 @Component({
   selector: 'app-event-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    RouterLink,
     DataTable,
     DataTableCell,
     Dialog,
@@ -106,878 +101,1241 @@ function isEventDetailTab(value: string): value is EventDetailTab {
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
     } @else if (event(); as detail) {
-      <app-page-header [title]="detail.title" [subtitle]="headerSubtitle(detail)">
-        <button type="button" class="btn btn--ghost" (click)="backToEvents()">
-          ← {{ t('events.detail.back') }}
-        </button>
-        <app-status-chip [value]="detail.status" />
-        @if (detail.call_to_arms) {
-          <span class="chip" [title]="t('events.call_to_arms')">★ {{ t('events.call_to_arms') }}</span>
-        }
-        @if (canManage() && detail.status === 'scheduled') {
-          <button type="button" class="btn btn--primary" (click)="start(detail.id)">
-            {{ t('events.start') }}
-          </button>
-        }
-        @if (canManage() && detail.status === 'live') {
-          <button type="button" class="btn btn--danger" (click)="stop(detail.id)">
-            {{ t('events.stop') }}
-          </button>
-        }
-        @if (canEdit()) {
-          <button type="button" class="btn btn--ghost" (click)="toggleEditForm()">
-            {{ showEditForm() ? t('common.close') : t('common.edit') }}
-          </button>
-          <button type="button" class="btn btn--danger" (click)="requestDelete()">
-            {{ t('common.delete') }}
-          </button>
-        }
-        <app-view-toggle
-          pageTabs
-          [options]="tabOptions()"
-          [active]="tab()"
-          (activeChange)="onTabChange($event)"
-        />
-      </app-page-header>
+      <!-- Hero Command Banner -->
+      <section class="card mb-4 overflow-hidden border border-[var(--color-border)] p-0 rounded-xl">
+        <div class="bg-[var(--color-surface-1)] p-5 border-b border-[var(--color-border)]">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-2">
+              <button type="button" class="btn btn--ghost btn--sm" (click)="backToEvents()">
+                &larr; {{ t('events.detail.back') }}
+              </button>
+              <app-status-chip [value]="detail.status" />
+              @if (detail.call_to_arms) {
+                <span class="chip chip--warning font-medium" [title]="t('events.call_to_arms')">
+                  CTA
+                </span>
+              }
+              <span class="chip chip--info font-mono text-xs">
+                {{ countdownText() }}
+              </span>
+            </div>
+
+            <!-- Management actions -->
+            <div class="flex flex-wrap items-center gap-2">
+              @if (canManage() && detail.status === 'scheduled') {
+                <button type="button" class="btn btn--primary btn--sm" (click)="start(detail.id)">
+                  {{ t('events.start') }}
+                </button>
+              }
+              @if (canManage() && detail.status === 'live') {
+                <button type="button" class="btn btn--danger btn--sm" (click)="stop(detail.id)">
+                  {{ t('events.stop') }}
+                </button>
+              }
+              @if (canEdit()) {
+                <button type="button" class="btn btn--outline btn--sm" (click)="toggleEditForm()">
+                  {{ showEditForm() ? t('common.close') : t('common.edit') }}
+                </button>
+                <button type="button" class="btn btn--danger btn--sm" (click)="requestDelete()">
+                  {{ t('common.delete') }}
+                </button>
+              }
+            </div>
+          </div>
+
+          <div class="mt-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h1 class="text-2xl font-medium tracking-tight text-[var(--color-text)]">
+                {{ detail.title }}
+              </h1>
+              <p class="mt-1 text-xs text-[var(--color-text-secondary)]">
+                {{ formatDate(detail.event_date_utc) }} &middot; 
+                <span class="text-[var(--color-text)]">{{ detail.active_comp_name || detail.comp_name || t('events.detail.no_comp_linked') }}</span>
+                ({{ filledSlotsCount() }}/{{ compSlots().length }} {{ t('events.detail.comp_capacity').toLowerCase() }})
+              </p>
+            </div>
+
+            <!-- Join / Leave Participation Status Widget -->
+            <div class="flex flex-wrap items-center gap-2 rounded-md bg-[var(--color-surface)] p-2.5 border border-[var(--color-border)]">
+              @if (currentParticipant(); as participation) {
+                <div class="flex items-center gap-2">
+                  <div class="h-2 w-2 rounded-full bg-[var(--color-success)]"></div>
+                  <div class="text-xs">
+                    <span class="text-[var(--color-text-secondary)]">{{ t('events.detail.registered_as') }}:</span>
+                    <span class="ml-1 font-medium text-[var(--color-text)]">{{ participation.primary_build_name || 'Build #' + participation.primary_build_id }}</span>
+                    @if (participation.secondary_build_name) {
+                      <span class="text-[var(--color-text-secondary)]"> / {{ participation.secondary_build_name }}</span>
+                    }
+                  </div>
+                </div>
+                <div class="flex items-center gap-1 ml-auto">
+                  <button type="button" class="btn btn--ghost btn--sm" (click)="toggleJoinForm()">
+                    {{ showJoinForm() ? t('common.close') : t('events.detail.change_build') }}
+                  </button>
+                  <button type="button" class="btn btn--outline btn--sm text-[var(--color-danger)]" (click)="leave(detail.id)">
+                    {{ t('events.leave') }}
+                  </button>
+                </div>
+              } @else {
+                <span class="text-xs text-[var(--color-text-secondary)]">
+                  {{ t('events.detail.no_participants') }}
+                </span>
+                <button type="button" class="btn btn--primary btn--sm" (click)="toggleJoinForm()">
+                  {{ showJoinForm() ? t('common.close') : t('events.participate') }}
+                </button>
+              }
+            </div>
+          </div>
+
+          @if (detail.description) {
+            <p class="mt-3 text-xs text-[var(--color-text-secondary)] max-w-4xl">
+              {{ detail.description }}
+            </p>
+          }
+        </div>
+
+        <!-- Navigation Tab Strip -->
+        <div class="bg-[var(--color-surface)] px-4 py-2 flex items-center justify-between border-b border-[var(--color-border)]">
+          <app-view-toggle
+            pageTabs
+            [options]="tabOptions()"
+            [active]="tab()"
+            (activeChange)="onTabChange($event)"
+          />
+        </div>
+      </section>
 
       <app-page-stack>
+        <!-- Edit Event Form Modal/Dropdown -->
         @if (showEditForm()) {
-        <form class="card grid gap-3 p-5" (submit)="onUpdateSubmit($event)">
-          <label>
-            <span class="label">{{ t('common.name') }}</span>
-            <input
-              class="input"
-              type="text"
-              [value]="draftTitle()"
-              (input)="onTitleChange($event)"
-            />
-          </label>
-          <label>
-            <span class="label">{{ t('common.description') }}</span>
-            <textarea
-              class="textarea"
-              rows="3"
-              [value]="draftDescription()"
-              (input)="onDescriptionChange($event)"
-            ></textarea>
-          </label>
-          <div class="grid gap-3 sm:grid-cols-2">
-            <div>
-              <span class="label">{{ t('events.detail.comp') }}</span>
-              <div class="flex items-center gap-2">
-                <div class="flex-1 input flex items-center bg-[var(--color-surface-1)]">
-                  <span class="truncate">{{ draftCompTitle() || t('events.detail.no_comp_linked') }}</span>
-                </div>
-                <button
-                  type="button"
-                  class="btn btn--outline whitespace-nowrap"
-                  (click)="showCompSearch.set(true)"
-                >
-                  {{ t('events.detail.link_comp') }}
-                </button>
-                @if (draftCompId()) {
-                  <button
-                    type="button"
-                    class="btn btn--danger whitespace-nowrap"
-                    (click)="unlinkComp()"
-                    [attr.aria-label]="t('events.detail.unlink_comp')"
-                  >
-                    <app-icon name="close" size="1rem" />
-                  </button>
-                }
-              </div>
-            </div>
+          <form class="card grid gap-3 p-5 border border-[var(--color-border)] mb-4 rounded-xl" (submit)="onUpdateSubmit($event)">
+            <h2 class="text-sm font-medium text-[var(--color-text)]">{{ t('common.edit') }}</h2>
             <label>
-              <span class="label">{{ t('common.date') }}</span>
+              <span class="label">{{ t('common.name') }}</span>
               <input
                 class="input"
-                type="datetime-local"
-                [attr.min]="minScheduledAt"
-                [value]="draftScheduledAt()"
-                (input)="onScheduledAtChange($event)"
+                type="text"
+                [value]="draftTitle()"
+                (input)="onTitleChange($event)"
               />
             </label>
-          </div>
-          <div class="flex justify-end gap-2">
-            <button type="button" class="btn btn--ghost" (click)="toggleEditForm()">
-              {{ t('common.cancel') }}
-            </button>
-            <button type="submit" class="btn btn--primary" [disabled]="saving()">
-              {{ t('common.save') }}
-            </button>
-          </div>
-          <label class="flex items-center gap-2">
-            <input
-              class="checkbox"
-              type="checkbox"
-              [checked]="draftCallToArms()"
-              (change)="onCallToArmsChange($event)"
-            />
-            <span>{{ t('events.call_to_arms') }}</span>
-          </label>
-        </form>
-      }
-
-        @switch (tab()) {
-          @case ('overview') {
-            <section class="card p-5" aria-label="Event overview">
-              @if (detail.description) {
-                <p class="text-sm" style="color: var(--color-text-secondary)">
-                  {{ detail.description }}
-                </p>
-              }
-              @if (detail.status === 'scheduled') {
-                <div class="mt-3 flex flex-wrap gap-2">
-                  @if (currentParticipant(); as participation) {
-                    <span class="chip chip--success">
-                      {{ t('events.detail.registered_as') }}:
-                      {{ participation.primary_build_name }}
-                      @if (participation.secondary_build_name) {
-                        / {{ participation.secondary_build_name }}
-                      }
-                    </span>
-                    <button type="button" class="btn btn--tonal" (click)="toggleJoinForm()">
-                      {{ showJoinForm() ? t('common.close') : t('events.detail.change_build') }}
-                    </button>
-                    <button type="button" class="btn btn--outline" (click)="leave(detail.id)">
-                      {{ t('events.leave') }}
-                    </button>
-                  } @else {
-                    <button type="button" class="btn btn--tonal" (click)="toggleJoinForm()">
-                      {{ showJoinForm() ? t('common.close') : t('events.participate') }}
+            <label>
+              <span class="label">{{ t('common.description') }}</span>
+              <textarea
+                class="textarea"
+                rows="3"
+                [value]="draftDescription()"
+                (input)="onDescriptionChange($event)"
+              ></textarea>
+            </label>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div>
+                <span class="label">{{ t('events.detail.comp') }}</span>
+                <div class="flex items-center gap-2">
+                  <div class="flex-1 input flex items-center bg-[var(--color-surface-1)]">
+                    <span class="truncate text-xs">{{ draftCompTitle() || t('events.detail.no_comp_linked') }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn--outline whitespace-nowrap btn--sm"
+                    (click)="showCompSearch.set(true)"
+                  >
+                    {{ t('events.detail.link_comp') }}
+                  </button>
+                  @if (draftCompId()) {
+                    <button
+                      type="button"
+                      class="btn btn--danger whitespace-nowrap btn--sm"
+                      (click)="unlinkComp()"
+                      [attr.aria-label]="t('events.detail.unlink_comp')"
+                    >
+                      <app-icon name="close" size="1rem" />
                     </button>
                   }
+                </div>
+              </div>
+              <label>
+                <span class="label">{{ t('common.date') }}</span>
+                <input
+                  class="input"
+                  type="datetime-local"
+                  [attr.min]="minScheduledAt"
+                  [value]="draftScheduledAt()"
+                  (input)="onScheduledAtChange($event)"
+                />
+              </label>
+            </div>
+            <div class="flex items-center justify-between mt-2">
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  class="checkbox"
+                  type="checkbox"
+                  [checked]="draftCallToArms()"
+                  (change)="onCallToArmsChange($event)"
+                />
+                <span class="text-xs font-medium">{{ t('events.call_to_arms') }}</span>
+              </label>
+              <div class="flex gap-2">
+                <button type="button" class="btn btn--ghost btn--sm" (click)="toggleEditForm()">
+                  {{ t('common.cancel') }}
+                </button>
+                <button type="submit" class="btn btn--primary btn--sm" [disabled]="saving()">
+                  {{ t('common.save') }}
+                </button>
+              </div>
+            </div>
+          </form>
+        }
+
+        <!-- Join Form Modal -->
+        @if (showJoinForm()) {
+          <form class="card grid gap-3 p-5 border border-[var(--color-border)] mb-4 rounded-xl" (submit)="onJoinSubmit($event)">
+            <h2 class="text-sm font-medium text-[var(--color-text)]">
+              {{ currentParticipant() ? t('events.detail.change_build') : t('events.participate') }}
+            </h2>
+            @if (compLoading()) {
+              <app-loading [label]="t('common.loading')" />
+            } @else if (availableBuilds().length === 0) {
+              <p class="text-xs" style="color: var(--color-text-secondary)">
+                {{ t('events.detail.no_builds') }}
+              </p>
+            } @else {
+              <label>
+                <span class="label">{{ t('events.detail.primary_build') }} *</span>
+                <select
+                  class="select"
+                  [value]="draftPrimaryBuildId()"
+                  (change)="onPrimaryBuildChange($event)"
+                >
+                  <option value="">—</option>
+                  @for (entry of availableBuilds(); track entry.build_id) {
+                    <option [value]="entry.build_id">
+                      {{ entry.build.name }} &middot; {{ roleLabelName(entry.build.role) }}
+                      @if (entry.build.category_name) {
+                        ({{ entry.build.category_name }})
+                      }
+                    </option>
+                  }
+                </select>
+              </label>
+              <label>
+                <span class="label">{{ t('events.detail.secondary_build') }}</span>
+                <select
+                  class="select"
+                  [value]="draftSecondaryBuildId()"
+                  (change)="onSecondaryBuildChange($event)"
+                >
+                  <option value="">—</option>
+                  @for (entry of availableBuilds(); track entry.build_id) {
+                    <option [value]="entry.build_id">
+                      {{ entry.build.name }} &middot; {{ roleLabelName(entry.build.role) }}
+                    </option>
+                  }
+                </select>
+              </label>
+              @if (joinError()) {
+                <p class="text-xs" style="color: var(--color-danger)">{{ joinError() }}</p>
+              }
+              <div class="flex justify-end gap-2 mt-2">
+                <button type="button" class="btn btn--ghost btn--sm" (click)="toggleJoinForm()">
+                  {{ t('common.cancel') }}
+                </button>
+                <button type="submit" class="btn btn--primary btn--sm" [disabled]="joinSubmitting()">
+                  {{ t('events.participate') }}
+                </button>
+              </div>
+            }
+          </form>
+        }
+
+        @switch (tab()) {
+          <!-- ================= TAB 1: ROSTER & COMPOSITION BUILDER ================= -->
+          @case ('roster') {
+            <!-- Roster Control Bar -->
+            <section class="card p-4 mb-4 rounded-xl border border-[var(--color-border)]">
+              <div class="flex flex-wrap items-center justify-between gap-4">
+                <!-- Capacity & Role Fills -->
+                <div class="flex flex-wrap items-center gap-3">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
+                      {{ t('events.detail.comp_filling') }}:
+                    </span>
+                    <span class="font-mono text-xs px-2 py-0.5 rounded bg-[var(--color-surface-2)] text-[var(--color-text)]">
+                      {{ filledSlotsCount() }} / {{ compSlots().length }} ({{ fillPercent(filledSlotsCount(), compSlots().length) }}%)
+                    </span>
+                  </div>
+
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    @for (group of participantsByRole(); track group.role) {
+                      <span class="chip text-xs" [class]="roleChip(group.role)">
+                        {{ roleGlyph(group.role) }} {{ t(roleLabel(group.role)) }}: 
+                        <span class="font-medium">{{ group.participants.length }}/{{ group.target }}</span>
+                      </span>
+                    }
+                  </div>
+                </div>
+
+                <!-- View Switcher & Actions -->
+                <div class="flex flex-wrap items-center gap-2">
+                  <div class="flex rounded-md bg-[var(--color-surface-2)] p-0.5 border border-[var(--color-border)]">
+                    <button
+                      type="button"
+                      class="px-2.5 py-1 text-xs font-medium rounded transition-colors"
+                      [class.bg-[var(--color-surface)]]="rosterView() === 'parties'"
+                      [class.text-[var(--color-text)]]="rosterView() === 'parties'"
+                      [class.text-[var(--color-text-secondary)]]="rosterView() !== 'parties'"
+                      (click)="rosterView.set('parties')"
+                    >
+                      {{ t('events.detail.view_parties') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="px-2.5 py-1 text-xs font-medium rounded transition-colors"
+                      [class.bg-[var(--color-surface)]]="rosterView() === 'roles'"
+                      [class.text-[var(--color-text)]]="rosterView() === 'roles'"
+                      [class.text-[var(--color-text-secondary)]]="rosterView() !== 'roles'"
+                      (click)="rosterView.set('roles')"
+                    >
+                      {{ t('events.detail.view_roles') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="px-2.5 py-1 text-xs font-medium rounded transition-colors"
+                      [class.bg-[var(--color-surface)]]="rosterView() === 'table'"
+                      [class.text-[var(--color-text)]]="rosterView() === 'table'"
+                      [class.text-[var(--color-text-secondary)]]="rosterView() !== 'table'"
+                      (click)="rosterView.set('table')"
+                    >
+                      {{ t('events.detail.view_table') }}
+                    </button>
+                  </div>
+
+                  @if (canManageParticipants()) {
+                    <button
+                      type="button"
+                      class="btn btn--tonal btn--sm"
+                      (click)="autoFillRoster()"
+                      [disabled]="autoFilling() || unassignedParticipants().length === 0"
+                      title="Auto-fill empty slots with matching primary signups"
+                    >
+                      {{ t('events.detail.auto_fill') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn--outline btn--sm"
+                      (click)="openMemberSearch()"
+                    >
+                      + {{ t('events.detail.add_participant') }}
+                    </button>
+                  }
+
+                  <button
+                    type="button"
+                    class="btn btn--ghost btn--sm"
+                    (click)="copyRosterForDiscord()"
+                    title="Copy formatted roster for Discord"
+                  >
+                    {{ t('events.detail.copy_discord') }}
+                  </button>
+
+                  @if (canManageParticipants() && filledSlotsCount() > 0) {
+                    <button
+                      type="button"
+                      class="btn btn--ghost btn--sm text-[var(--color-danger)]"
+                      (click)="requestClearAll()"
+                      title="Clear all assigned seats"
+                    >
+                      {{ t('events.detail.clear_all') }}
+                    </button>
+                  }
+                </div>
+              </div>
+
+              <!-- Swap Mode Active Notification Banner -->
+              @if (swapSourceSlot(); as source) {
+                <div class="mt-3 flex items-center justify-between gap-3 rounded-md bg-[var(--color-surface-2)] p-2.5 border border-[var(--color-primary)] text-xs">
+                  <div class="flex items-center gap-2">
+                    <span class="font-mono text-sm text-[var(--color-primary)]">&harr;</span>
+                    <span>
+                      <strong class="font-medium text-[var(--color-text-secondary)]">{{ t('events.detail.swap_selected') }}:</strong>
+                      <span class="ml-1 font-medium text-[var(--color-text)]">
+                        {{ slotParticipant(source)?.username || t('events.detail.seat_empty') }}
+                      </span>
+                      ({{ source.build.name }})
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn--ghost btn--sm"
+                    (click)="cancelSwapMode()"
+                  >
+                    {{ t('events.detail.cancel_swap') }}
+                  </button>
                 </div>
               }
             </section>
 
-      @if (showJoinForm()) {
-        <form class="card grid gap-3 p-5" (submit)="onJoinSubmit($event)">
-          @if (compLoading()) {
-            <app-loading [label]="t('common.loading')" />
-          } @else if (availableBuilds().length === 0) {
-            <p class="text-sm" style="color: var(--color-text-secondary)">
-              {{ t('events.detail.no_builds') }}
-            </p>
-          } @else {
-            <label>
-              <span class="label">{{ t('events.detail.primary_build') }} *</span>
-              <select
-                class="select"
-                [value]="draftPrimaryBuildId()"
-                (change)="onPrimaryBuildChange($event)"
-              >
-                <option value="">—</option>
-                @for (entry of availableBuilds(); track entry.build_id) {
-                  <option [value]="entry.build_id">
-                    {{ entry.build.name }} · {{ entry.build.role }}
-                    @if (entry.build.category_name) {
-                      ({{ entry.build.category_name }})
-                    }
-                  </option>
-                }
-              </select>
-            </label>
-            <label>
-              <span class="label">{{ t('events.detail.secondary_build') }}</span>
-              <select
-                class="select"
-                [value]="draftSecondaryBuildId()"
-                (change)="onSecondaryBuildChange($event)"
-              >
-                <option value="">—</option>
-                @for (entry of availableBuilds(); track entry.build_id) {
-                  <option [value]="entry.build_id">
-                    {{ entry.build.name }} · {{ entry.build.role }}
-                  </option>
-                }
-              </select>
-            </label>
-            @if (joinError()) {
-              <p class="text-sm" style="color: var(--color-danger)">{{ joinError() }}</p>
-            }
-            <div class="flex justify-end gap-2">
-              <button type="button" class="btn btn--ghost" (click)="toggleJoinForm()">
-                {{ t('common.cancel') }}
-              </button>
-              <button type="submit" class="btn btn--primary" [disabled]="joinSubmitting()">
-                {{ t('events.participate') }}
-              </button>
-            </div>
-          }
-        </form>
-      }
-
-      <section class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Performance">
-        <article class="surface p-4">
-          <p class="event-detail__label">{{ t('events.detail.win_rate') }}</p>
-          <p class="event-detail__value">{{ formatPercent(detail.stats.win_rate) }}</p>
-          <p class="event-detail__sub mb-2">
-            {{ detail.stats.wins }} {{ t('events.detail.wins') }} · {{ detail.stats.losses }}
-            {{ t('events.detail.losses') }}
-          </p>
-          @if (detail.stats.total_battles > 0) {
-            <div class="event-detail__fill-bar" style="background: var(--color-danger)">
-              <span
-                [style.width.%]="(detail.stats.wins / detail.stats.total_battles) * 100"
-                style="background: var(--color-success)"
-              ></span>
-            </div>
-          }
-        </article>
-        <article class="surface p-4">
-          <p class="event-detail__label">{{ t('events.detail.kd') }}</p>
-          <p class="event-detail__value">{{ formatRatio(detail.stats.kill_death_ratio) }}</p>
-          <p class="event-detail__sub mb-2">
-            {{ detail.stats.total_kills }} {{ t('events.detail.kills') }} ·
-            {{ detail.stats.total_deaths }} {{ t('events.detail.deaths') }}
-          </p>
-          @if (detail.stats.total_kills + detail.stats.total_deaths > 0) {
-            <div class="event-detail__fill-bar" style="background: var(--color-danger)">
-              <span
-                [style.width.%]="
-                  (detail.stats.total_kills /
-                    (detail.stats.total_kills + detail.stats.total_deaths)) *
-                  100
-                "
-                style="background: var(--color-success)"
-              ></span>
-            </div>
-          }
-        </article>
-        <article class="surface p-4">
-          <p class="event-detail__label">{{ t('events.detail.kill_fame') }}</p>
-          <p class="event-detail__value">{{ formatCompact(detail.stats.total_kill_fame) }}</p>
-        </article>
-        <article class="surface p-4">
-          <p class="event-detail__label">{{ t('events.detail.battles_count') }}</p>
-          <p class="event-detail__value">{{ detail.stats.total_battles }}</p>
-          <p class="event-detail__sub">
-            {{ t('events.detail.avg_players') }}:
-            {{ formatRatio(detail.stats.average_guild_players) }}
-          </p>
-        </article>
-        <article class="surface p-4 sm:col-span-2 xl:col-span-4">
-          <p class="event-detail__label">{{ t('events.detail.our_guild_loss') }}</p>
-          <p class="event-detail__value">
-            {{ formatCompact(eventLossEstimate().total_estimated_loss) }}
-          </p>
-          <p class="event-detail__sub">
-            {{ eventLossEstimate().priced_items }} / {{ eventLossEstimate().total_items }}
-            {{ t('events.detail.our_guild_loss_hint') }}
-          </p>
-        </article>
-      </section>
-
-      <section class="mt-5 grid gap-4 xl:grid-cols-3" aria-label="Event charts">
-        <article class="surface p-4">
-          <header class="event-detail__chart-header">
-            <h2>{{ t('events.detail.battles') }}</h2>
-            <span>{{ detail.stats.total_battles }}</span>
-          </header>
-          <div class="event-detail__donut" [style.--event-detail-chart-angle.deg]="winRateAngle()">
-            <span>{{ formatPercent(detail.stats.win_rate) }}</span>
-          </div>
-          <div class="event-detail__legend">
-            @for (row of outcomeChartRows(); track row.label) {
-              <span><i [style.background]="row.color"></i>{{ row.label }}: {{ row.value }}</span>
-            }
-          </div>
-        </article>
-
-        <article class="surface p-4">
-          <header class="event-detail__chart-header">
-            <h2>{{ t('events.detail.opponents') }}</h2>
-            <span>{{ detail.stats.top_opponents.length }}</span>
-          </header>
-          @if (opponentChartRows().length > 0) {
-            <div class="event-detail__bar-list">
-              @for (row of opponentChartRows(); track row.label) {
-                <div class="event-detail__bar-row">
-                  <div class="event-detail__bar-label">
-                    <span>{{ row.label }}</span>
-                    <strong>{{ formatCompact(row.value) }}</strong>
-                  </div>
-                  <div class="event-detail__fill-bar">
-                    <span [style.width.%]="chartPercent(row.value, opponentChartRows())"></span>
-                  </div>
-                </div>
-              }
-            </div>
-          } @else {
-            <p class="event-detail__empty event-detail__empty--compact">
-              {{ t('events.detail.no_opponents') }}
-            </p>
-          }
-        </article>
-
-        <article class="surface p-4">
-          <header class="event-detail__chart-header">
-            <h2>{{ t('events.detail.participants') }}</h2>
-            <span
-              >{{ participantsTotal() }} /
-              {{ participantsTarget() || detail.active_comp_capacity }}</span
-            >
-          </header>
-          <div class="event-detail__bar-list">
-            @for (row of roleChartRows(); track row.label) {
-              <div class="event-detail__bar-row">
-                <div class="event-detail__bar-label">
-                  <span>{{ row.label }}</span>
-                  <strong>{{ row.value }} / {{ row.target || 0 }}</strong>
-                </div>
-                <div class="event-detail__fill-bar">
-                  <span
-                    [style.width.%]="row.target ? fillPercent(row.value, row.target) : 0"
-                  ></span>
-                </div>
-              </div>
-            }
-          </div>
-        </article>
-
-        <article class="surface p-4 xl:col-span-3">
-          <header class="event-detail__chart-header">
-            <h2>{{ t('events.detail.our_guild_losses_by_player') }}</h2>
-            <span>{{ formatCompact(eventLossEstimate().total_estimated_loss) }}</span>
-          </header>
-          @if (lossPlayerChartRows().length > 0) {
-            <div class="event-detail__bar-list">
-              @for (row of lossPlayerChartRows(); track row.label) {
-                <div class="event-detail__bar-row">
-                  <div class="event-detail__bar-label">
-                    <span>{{ row.label }}</span>
-                    <strong>{{ formatCompact(row.value) }}</strong>
-                  </div>
-                  <div class="event-detail__fill-bar">
-                    <span [style.width.%]="chartPercent(row.value, lossPlayerChartRows())"></span>
-                  </div>
-                </div>
-              }
-            </div>
-          } @else {
-            <p class="event-detail__empty event-detail__empty--compact">
-              No priced equipment losses for our guild members yet. Open linked battles or refresh
-              battle data.
-            </p>
-          }
-        </article>
-
-        <article class="surface p-4 xl:col-span-3">
-          <header class="event-detail__chart-header">
-            <h2>{{ t('events.detail.splits') }}</h2>
-            <span>{{ detail.split_stats.total_splits }}</span>
-          </header>
-          <div class="event-detail__status-grid">
-            @for (row of splitStatusChartRows(); track row.label) {
-              <div class="event-detail__status-card">
-                <span>{{ row.label }}</span>
-                <strong>{{ row.value }}</strong>
-                <div class="event-detail__fill-bar">
-                  <span [style.width.%]="chartPercent(row.value, splitStatusChartRows())"></span>
-                </div>
-              </div>
-            }
-          </div>
-        </article>
-      </section>
-
-      <article class="mt-5 surface overflow-hidden">
-        <header class="event-detail__section-header">
-          <h2>{{ t('events.detail.opponents') }}</h2>
-        </header>
-        @if (detail.stats.top_opponents.length > 0) {
-          <app-data-table
-            [columns]="opponentsColumns"
-            [rows]="detail.stats.top_opponents"
-            [trackBy]="trackOpponent"
-          >
-            <ng-template dataTableCell="guild_name" let-row>
-              <span class="font-medium">{{ row.guild_name || t('common.none') }}</span>
-            </ng-template>
-            <ng-template dataTableCell="guild_kill_fame" let-row>
-              {{ formatCompact(row.guild_kill_fame) }}
-            </ng-template>
-            <ng-template dataTableCell="opponent_kill_fame" let-row>
-              <span style="color: var(--color-text-secondary)">{{
-                formatCompact(row.opponent_kill_fame)
-              }}</span>
-            </ng-template>
-          </app-data-table>
-        } @else {
-          <p class="event-detail__empty">{{ t('events.detail.no_opponents') }}</p>
-        }
-      </article>
-          }
-
-          @case ('battles') {
-      <article class="surface overflow-hidden">
-        <header class="event-detail__section-header">
-          <h2>{{ t('events.detail.battles') }}</h2>
-          <div class="flex flex-wrap gap-2">
-            @if (canEdit()) {
-              <button type="button" class="btn btn--tonal" (click)="toggleBattleLinkForm()">
-                {{ showBattleLinkForm() ? t('common.close') : t('events.detail.manage_battles') }}
-              </button>
-            }
-            @if (detail.battles.length > 0) {
-              <button type="button" class="btn btn--outline" (click)="openBattleGroup(detail)">
-                {{ t('battles.group_selected') }}
-              </button>
-            }
-          </div>
-        </header>
-        @if (showBattleLinkForm()) {
-          <form class="grid gap-3 p-4" (submit)="onBattleLinksSubmit($event)">
-            <div>
-              <div class="flex justify-between items-center mb-2">
-                <span class="label">{{ t('events.detail.battle_ids') }}</span>
-                <button
-                  type="button"
-                  class="btn btn--outline text-xs"
-                  (click)="showBattleSearch.set(true)"
-                >
-                  {{ t('events.detail.add_battle') }}
-                </button>
-              </div>
-
-              <div class="flex flex-col gap-2">
-                @for (link of draftBattleLinks(); track link.id) {
-                  <div class="flex items-center gap-2">
-                    <div class="flex-1 input flex items-center bg-[var(--color-surface-1)]">
-                      <span class="truncate">{{ link.title }}</span>
-                    </div>
-                    <button
-                      type="button"
-                      class="btn btn--danger btn--icon whitespace-nowrap"
-                      (click)="removeDraftBattle(link.id)"
-                      [attr.aria-label]="t('events.detail.remove_battle')"
-                    >
-                      <app-icon name="close" size="1rem" />
-                    </button>
-                  </div>
-                }
-                @if (draftBattleLinks().length === 0) {
-                  <p class="text-sm" style="color: var(--color-text-secondary)">
-                    {{ t('events.detail.no_battles_linked') }}
-                  </p>
-                }
-              </div>
-            </div>
-
-            <p class="text-xs" style="color: var(--color-text-secondary)">
-              {{ t('events.detail.battle_ids_help') }}
-            </p>
-            <div class="flex justify-end gap-2">
-              <button type="button" class="btn btn--ghost" (click)="toggleBattleLinkForm()">
-                {{ t('common.cancel') }}
-              </button>
-              <button type="submit" class="btn btn--primary" [disabled]="battleLinksSaving()">
-                {{ t('common.save') }}
-              </button>
-            </div>
-          </form>
-        }
-        @if (detail.battles.length > 0) {
-          <app-data-table
-            [columns]="battlesColumns"
-            [rows]="detail.battles"
-            [trackBy]="trackBattle"
-          >
-            <ng-template dataTableCell="albionbb_battle_id" let-row>
-              <span class="font-medium">{{ row.albionbb_battle_id }}</span>
-            </ng-template>
-            <ng-template dataTableCell="battle_started_at" let-row>
-              <span style="color: var(--color-text-secondary)">{{
-                formatDate(row.battle_started_at)
-              }}</span>
-            </ng-template>
-            <ng-template dataTableCell="is_win" let-row>
-              <span
-                class="chip"
-                [class.chip--success]="row.is_win"
-                [class.chip--error]="!row.is_win"
-              >
-                {{ row.is_win ? t('events.detail.wins') : t('events.detail.losses') }}
-              </span>
-            </ng-template>
-            <ng-template dataTableCell="guild_kill_fame" let-row>
-              {{ formatCompact(row.guild_kill_fame) }}
-            </ng-template>
-            <ng-template dataTableCell="opponent_guild_name" let-row>
-              {{ row.opponent_guild_name ?? t('common.none') }}
-            </ng-template>
-            <ng-template dataTableCell="actions" let-row>
-              <button
-                type="button"
-                class="btn btn--ghost"
-                (click)="openBattle(row.albionbb_battle_id)"
-              >
-                {{ t('events.detail.open_battle') }}
-              </button>
-            </ng-template>
-          </app-data-table>
-        } @else {
-          <p class="event-detail__empty">{{ t('events.detail.no_battles') }}</p>
-        }
-      </article>
-          }
-
-          @case ('splits') {
-      <article class="surface overflow-hidden">
-        <header class="event-detail__section-header">
-          <h2>{{ t('events.detail.splits') }}</h2>
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="text-xs" style="color: var(--color-text-secondary)">
-              {{ formatNumber(totalSplitValue()) }}
-            </span>
-            @if (canEdit()) {
-              <button
-                type="button"
-                class="btn btn--tonal text-xs"
-                (click)="showSplitSearch.set(true)"
-              >
-                {{ t('events.detail.link_split') }}
-              </button>
-            }
-          </div>
-        </header>
-        @if (detail.split_stats.total_splits > 0) {
-          <section class="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Split summary">
-            <article class="surface p-3">
-              <p class="event-detail__label">{{ t('events.detail.split_total') }}</p>
-              <p class="event-detail__value-sm">{{ detail.split_stats.total_splits }}</p>
-            </article>
-            <article class="surface p-3">
-              <p class="event-detail__label">{{ t('events.detail.split_completed') }}</p>
-              <p class="event-detail__value-sm">{{ detail.split_stats.completed_splits }}</p>
-            </article>
-            <article class="surface p-3">
-              <p class="event-detail__label">{{ t('events.detail.split_pending') }}</p>
-              <p class="event-detail__value-sm">{{ detail.split_stats.pending_splits }}</p>
-            </article>
-            <article class="surface p-3">
-              <p class="event-detail__label">{{ t('events.detail.split_lost') }}</p>
-              <p class="event-detail__value-sm" style="color: var(--color-danger)">
-                {{ detail.split_stats.lost_splits }}
-              </p>
-            </article>
-            <article class="surface p-3">
-              <p class="event-detail__label">{{ t('events.detail.split_not_completed') }}</p>
-              <p class="event-detail__value-sm">{{ detail.split_stats.not_completed_splits }}</p>
-            </article>
-            <article class="surface p-3">
-              <p class="event-detail__label">{{ t('events.detail.split_estimated') }}</p>
-              <p class="event-detail__value-sm">
-                {{ formatNumber(detail.split_stats.estimated_market_value) }}
-              </p>
-            </article>
-            <article class="surface p-3">
-              <p class="event-detail__label">{{ t('events.detail.split_repair') }}</p>
-              <p class="event-detail__value-sm" style="color: var(--color-danger)">
-                {{ formatNumber(detail.split_stats.repair_value) }}
-              </p>
-            </article>
-            <article class="surface p-3">
-              <p class="event-detail__label">{{ t('events.detail.split_bags') }}</p>
-              <p class="event-detail__value-sm" style="color: var(--color-danger)">
-                {{ formatNumber(detail.split_stats.bags_value) }}
-              </p>
-            </article>
-            <article class="surface p-3 sm:col-span-2 xl:col-span-2">
-              <p class="event-detail__label">{{ t('events.detail.split_net') }}</p>
-              <p class="event-detail__value-sm" style="color: var(--color-success)">
-                {{ formatNumber(detail.split_stats.completed_net_value) }}
-              </p>
-            </article>
-            <article class="surface p-3 sm:col-span-2 xl:col-span-2">
-              <p class="event-detail__label">{{ t('events.detail.split_participant_entries') }}</p>
-              <p class="event-detail__value-sm">
-                {{ detail.split_stats.participant_entries }}
-              </p>
-            </article>
-          </section>
-        }
-        @if (detail.splits.length > 0) {
-          <app-data-table [columns]="splitsColumns" [rows]="detail.splits" [trackBy]="trackSplit">
-            <ng-template dataTableCell="note" let-row>
-              <span class="font-medium">{{ row.note || t('events.detail.split_number') + row.id }}</span>
-            </ng-template>
-            <ng-template dataTableCell="status" let-row>
-              <app-status-chip [value]="row.status" />
-            </ng-template>
-            <ng-template dataTableCell="estimated_market_value" let-row>
-              {{ formatNumber(row.estimated_market_value) }}
-            </ng-template>
-            <ng-template dataTableCell="net_value" let-row>
-              <span [class.font-semibold]="row.net_value != null">{{
-                formatNumber(row.net_value ?? row.estimated_market_value)
-              }}</span>
-            </ng-template>
-            @if (canEdit()) {
-              <ng-template dataTableCell="actions" let-row>
-                <button
-                  type="button"
-                  class="btn btn--danger btn--icon"
-                  (click)="unlinkSplit(row.id)"
-                  [attr.aria-label]="t('events.detail.unlink_split')"
-                >
-                  <app-icon name="close" size="1rem" />
-                </button>
-              </ng-template>
-            }
-          </app-data-table>
-        } @else {
-          <p class="event-detail__empty">{{ t('events.detail.no_splits') }}</p>
-        }
-      </article>
-          }
-
-          @case ('roster') {
-      <article class="surface overflow-hidden">
-        <header class="event-detail__section-header">
-          <h2>{{ t('events.detail.participants') }}</h2>
-          <span class="text-xs" style="color: var(--color-text-secondary)">
-            {{ participantsTotal() }}
-            @if (participantsTarget() > 0) {
-              / {{ participantsTarget() }}
-            } @else {
-              / {{ detail.active_comp_capacity }}
-            }
-          </span>
-        </header>
-        @if (participantsTarget() > 0) {
-          <div class="event-detail__global-fill">
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-sm font-medium" style="color: var(--color-text)">
-                {{ t('events.detail.comp_filling') }}
-              </span>
-              <span
-                class="text-sm font-bold"
-                [style.color]="
-                  fillPercent(participantsTotal(), participantsTarget()) >= 100
-                    ? 'var(--color-success)'
-                    : fillPercent(participantsTotal(), participantsTarget()) >= 50
-                      ? 'var(--color-warning)'
-                      : 'var(--color-danger)'
-                "
-              >
-                {{ fillPercent(participantsTotal(), participantsTarget()) }}%
-              </span>
-            </div>
-            <div class="event-detail__fill-bar event-detail__fill-bar--lg">
-              <span
-                [style.width.%]="fillPercent(participantsTotal(), participantsTarget())"
-                [class.event-detail__fill-bar__full]="
-                  fillPercent(participantsTotal(), participantsTarget()) >= 100
-                "
-                [class.event-detail__fill-bar__half]="
-                  fillPercent(participantsTotal(), participantsTarget()) >= 50 &&
-                  fillPercent(participantsTotal(), participantsTarget()) < 100
-                "
-              ></span>
-            </div>
-            <p class="text-xs" style="color: var(--color-text-secondary)">
-              {{ participantsTotal() }}
-              {{ t('events.detail.filled_of') }}
-              {{ participantsTarget() }}
-              @if (participantsTarget() - participantsTotal() > 0) {
-                · {{ participantsTarget() - participantsTotal() }}
-                {{ t('events.detail.slots_left') }}
-              } @else {
-                · {{ t('events.detail.comp_full') }}
-              }
-            </p>
-          </div>
-        }
-        @if (compLoading()) {
-          <p class="event-detail__empty">{{ t('common.loading') }}</p>
-        } @else if (detail.participants.length === 0) {
-          <p class="event-detail__empty">{{ t('events.detail.no_participants') }}</p>
-        } @else if (participantsByRole().length > 0) {
-          <div class="grid gap-4 p-4">
-            @for (group of participantsByRole(); track group.role) {
-              <section class="event-detail__role-group">
-                <header class="flex items-center justify-between gap-2">
-                  <div class="flex items-center gap-2">
-                    <span class="chip" [class]="roleChip(group.role)">
-                      {{ t(roleLabel(group.role)) }}
-                    </span>
-                    <span class="text-sm" style="color: var(--color-text-secondary)">
-                      {{ group.participants.length }}
-                      @if (group.target > 0) {
-                        / {{ group.target }}
-                      }
-                    </span>
-                  </div>
-                  @if (group.target > 0) {
-                    <span
-                      class="text-xs"
-                      [style.color]="
-                        fillPercent(group.participants.length, group.target) >= 100
-                          ? 'var(--color-success)'
-                          : 'var(--color-warning)'
-                      "
-                    >
-                      {{ fillPercent(group.participants.length, group.target) }}%
-                    </span>
-                  }
-                </header>
-                @if (group.target > 0) {
-                  <div class="event-detail__fill-bar">
-                    <span
-                      [style.width.%]="fillPercent(group.participants.length, group.target)"
-                      [class.event-detail__fill-bar__full]="
-                        fillPercent(group.participants.length, group.target) >= 100
-                      "
-                    ></span>
-                  </div>
-                }
-                <div class="flex flex-wrap gap-2">
-                  @for (participant of group.participants; track participant.user_id) {
-                    <span
-                      class="chip"
-                      [class.chip--info]="participant.user_id === currentParticipant()?.user_id"
-                    >
-                      {{ participant.username }}
-                      <small style="color: var(--color-text-secondary)">
-                        · {{ participant.primary_build_name || t('common.none') }}
-                      </small>
-                    </span>
-                  }
-                  @if (group.participants.length === 0) {
-                    <span class="text-xs" style="color: var(--color-text-disabled)">
-                      {{ t('events.detail.role_empty') }}
-                    </span>
-                  }
-                </div>
-              </section>
-            }
-          </div>
-        } @else {
-          <app-data-table
-            [columns]="participantsColumns"
-            [rows]="detail.participants"
-            [trackBy]="trackParticipant"
-          >
-            <ng-template dataTableCell="username" let-row>
-              <span class="font-medium">{{ row.username }}</span>
-            </ng-template>
-            <ng-template dataTableCell="primary_build_name" let-row>
-              {{ row.primary_build_name || t('common.none') }}
-            </ng-template>
-            <ng-template dataTableCell="secondary_build_name" let-row>
-              <span style="color: var(--color-text-secondary)">{{
-                row.secondary_build_name ?? t('common.none')
-              }}</span>
-            </ng-template>
-          </app-data-table>
-        }
-      </article>
-
-      @if (detail.status === 'scheduled' && canManageParticipants()) {
-        <article class="event-detail__board mt-5 surface">
-          @if (compLoading()) {
-            <p class="event-detail__board-empty">{{ t('common.loading') }}</p>
-          } @else if (availableBuilds().length === 0) {
-            <p class="event-detail__board-empty">{{ t('events.detail.no_builds') }}</p>
-          } @else {
-            <div class="event-detail__board-header">
-              <span class="event-detail__board-comp">
-                {{ t('events.detail.comp') }}: {{ detail.active_comp_name }}
-              </span>
-              <span class="event-detail__board-count">
-                {{ filledSlotsCount() }} / {{ compSlots().length }}
-              </span>
-            </div>
-
-            <div class="event-detail__board-body">
-              @for (group of compSlotsByRole(); track group.role) {
-                <section class="event-detail__board-group">
-                  <h3 class="event-detail__board-role">{{ t(roleLabel(group.role)) }}</h3>
-
-                  @for (slot of group.slots; track slot.key) {
-                    <div
-                      class="event-detail__board-slot"
-                      (mouseenter)="onSlotHover(slot)"
-                      (mouseleave)="onSlotLeave()"
-                    >
-                      <button
-                        type="button"
-                        class="event-detail__board-slot-icon"
-                        [class]="roleChip(slot.role)"
-                        [attr.aria-label]="t('events.detail.view_loadout') + ': ' + slot.build.name"
-                        [attr.aria-expanded]="slotTooltipVisible(slot)"
-                        (click)="toggleSlotTooltip(slot)"
-                      >
-                        @if (weaponRenderIconUrl(slot); as icon) {
-                          <img
-                            class="event-detail__board-slot-render"
-                            [src]="icon"
-                            [alt]="slot.build.name"
-                            loading="lazy"
-                          />
-                        } @else {
-                          <span class="event-detail__board-slot-glyph">{{
-                            roleGlyph(slot.role)
-                          }}</span>
-                        }
-                      </button>
-                      <span class="event-detail__board-slot-name">{{ slot.build.name }}</span>
-                      <select
-                        class="select event-detail__board-slot-select"
-                        [value]="slotAssignmentValue(slot)"
-                        (change)="onSlotAssign(slot, $event)"
-                        [disabled]="slotSavingKey() === slot.key"
-                      >
-                        <option value="">{{ t('events.detail.select_player') }}</option>
-                        @for (
-                          participant of slotParticipantOptions(slot);
-                          track participant.user_id
-                        ) {
-                          <option [value]="participant.user_id">
-                            {{ participant.username }}
-                          </option>
-                        }
-                        <option value="__add__">+ {{ t('events.detail.add_participant') }}</option>
-                      </select>
-
-                      @if (slotTooltipVisible(slot)) {
-                        <div class="event-detail__tooltip" role="tooltip">
-                          <div class="event-detail__tooltip-items">
-                            @for (item of slotTooltipItems(slot.buildId); track item.slot) {
-                              <div class="event-detail__tooltip-item">
-                                @if (item.openalbion_item_icon) {
-                                  <img
-                                    [src]="renderItemIconUrl(item)"
-                                    [alt]="item.openalbion_item_name"
-                                    loading="lazy"
-                                  />
-                                } @else {
-                                  <span class="event-detail__tooltip-item-placeholder">
-                                    {{ slotGlyph(item.slot) }}
-                                  </span>
-                                }
-                                <span class="event-detail__tooltip-item-name">
-                                  {{ item.openalbion_item_name }}
-                                </span>
-                              </div>
-                            } @empty {
-                              <span class="event-detail__tooltip-empty">
-                                {{ t('events.detail.no_build_items') }}
+            <!-- Main Layout: Grid Comp Board + Side Bench Tray -->
+            <div class="grid gap-5 lg:grid-cols-[1fr_20rem] xl:grid-cols-[1fr_22rem]">
+              <!-- COMPOSITION BOARD -->
+              <div class="space-y-4">
+                @if (compLoading()) {
+                  <app-loading [label]="t('common.loading')" />
+                } @else if (compSlots().length === 0) {
+                  <app-empty-state [message]="t('events.detail.no_builds')" icon="package" />
+                } @else {
+                  <!-- VIEW 1: 5-MAN PARTIES VIEW -->
+                  @if (rosterView() === 'parties') {
+                    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-2">
+                      @for (party of compParties(); track party.partyNumber) {
+                        <div class="card p-0 overflow-hidden border border-[var(--color-border)] rounded-xl">
+                          <!-- Party Header -->
+                          <div class="bg-[var(--color-surface-1)] px-4 py-2.5 border-b border-[var(--color-border)] flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                              <span class="font-medium text-xs text-[var(--color-text)] uppercase tracking-wider">
+                                {{ party.partyName }}
                               </span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                              <div class="h-1.5 w-16 bg-[var(--color-surface-2)] rounded-full overflow-hidden">
+                                <div
+                                  class="h-full bg-[var(--color-success)] rounded-full transition-all"
+                                  [style.width.%]="(party.filledCount / party.totalCount) * 100"
+                                ></div>
+                              </div>
+                              <span class="font-mono text-xs text-[var(--color-text-secondary)]">
+                                {{ party.filledCount }}/{{ party.totalCount }}
+                              </span>
+                            </div>
+                          </div>
+
+                          <!-- Party Slot Seats -->
+                          <div class="p-3 space-y-2">
+                            @for (slot of party.slots; track slot.key) {
+                              <div
+                                class="slot-card relative flex items-center justify-between gap-3 p-2.5 rounded-md border transition-all"
+                                [class.border-[var(--color-border)]]="swapSourceSlot()?.key !== slot.key && dragOverSlotKey() !== slot.key"
+                                [class.border-[var(--color-primary)]]="swapSourceSlot()?.key === slot.key"
+                                [class.bg-[var(--color-surface-1)]]="swapSourceSlot()?.key === slot.key"
+                                [class.border-dashed]="dragOverSlotKey() === slot.key"
+                                [class.bg-[var(--color-surface)]]="swapSourceSlot()?.key !== slot.key"
+                                (dragover)="onSlotDragOver($event, slot)"
+                                (dragleave)="onSlotDragLeave(slot)"
+                                (drop)="onSlotDrop($event, slot)"
+                              >
+                                <!-- Left: Weapon Render & Build info -->
+                                <div class="flex items-center gap-3 min-w-0">
+                                  <div
+                                    class="relative flex-shrink-0 h-10 w-10 rounded p-0.5 flex items-center justify-center border border-[var(--color-border)] cursor-pointer group bg-[var(--color-surface-1)]"
+                                    (click)="toggleSlotTooltip(slot)"
+                                    (mouseenter)="onSlotHover(slot)"
+                                    (mouseleave)="onSlotLeave()"
+                                    title="Click or hover to inspect loadout"
+                                  >
+                                    @if (weaponRenderIconUrl(slot); as icon) {
+                                      <img
+                                        [src]="icon"
+                                        [alt]="slot.build.name"
+                                        class="h-full w-full object-contain"
+                                        loading="lazy"
+                                      />
+                                    } @else {
+                                      <span class="text-xs font-mono font-medium text-[var(--color-text-secondary)]">{{ roleGlyph(slot.role) }}</span>
+                                    }
+                                  </div>
+
+                                  <div class="min-w-0">
+                                    <div class="flex items-center gap-1.5">
+                                      <span class="font-medium text-xs text-[var(--color-text)] truncate max-w-[10rem]">
+                                        {{ slot.build.name }}
+                                      </span>
+                                      <span class="text-[0.625rem] uppercase font-mono px-1 py-0.2 rounded" [class]="roleChip(slot.role)">
+                                        {{ roleGlyph(slot.role) }}
+                                      </span>
+                                    </div>
+
+                                    <!-- Assigned Participant or Empty -->
+                                    <div class="mt-0.5">
+                                      @if (slotParticipant(slot); as occupant) {
+                                        <div class="flex items-center gap-1.5">
+                                          <span
+                                            class="text-xs font-medium text-[var(--color-text)] truncate"
+                                            [class.text-[var(--color-primary)]]="occupant.user_id === currentParticipant()?.user_id"
+                                          >
+                                            {{ occupant.username }}
+                                          </span>
+                                          @if (occupant.primary_build_id === slot.buildId) {
+                                            <span class="text-[0.625rem] text-[var(--color-success)]" title="Primary build match">
+                                              [{{ t('events.detail.primary_choice') }}]
+                                            </span>
+                                          } @else if (occupant.secondary_build_id === slot.buildId) {
+                                            <span class="text-[0.625rem] text-[var(--color-info)]" title="Secondary build match">
+                                              [{{ t('events.detail.secondary_choice') }}]
+                                            </span>
+                                          } @else {
+                                            <span class="text-[0.625rem] text-[var(--color-warning)]" title="Off-role assignment">
+                                              [{{ t('events.detail.off_role') }}]
+                                            </span>
+                                          }
+                                        </div>
+                                      } @else {
+                                        <span class="text-xs italic text-[var(--color-text-disabled)]">
+                                          + {{ t('events.detail.seat_empty') }}
+                                        </span>
+                                      }
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <!-- Right: Quick Actions -->
+                                <div class="flex items-center gap-1 flex-shrink-0">
+                                  @if (slotSavingKey() === slot.key) {
+                                    <app-loading [label]="''" />
+                                  } @else {
+                                    @if (canManageParticipants()) {
+                                      @if (swapSourceSlot(); as source) {
+                                        @if (source.key !== slot.key) {
+                                          <button
+                                            type="button"
+                                            class="btn btn--primary btn--sm text-xs py-0.5 px-2"
+                                            (click)="handleSlotClick(slot)"
+                                          >
+                                            {{ slotParticipant(slot) ? 'Swap' : 'Place' }}
+                                          </button>
+                                        }
+                                      } @else {
+                                        @if (slotParticipant(slot)) {
+                                          <button
+                                            type="button"
+                                            class="btn btn--ghost btn--sm p-1 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]"
+                                            (click)="startSwapFromSlot(slot)"
+                                            title="Swap with another seat"
+                                          >
+                                            &harr;
+                                          </button>
+                                          <button
+                                            type="button"
+                                            class="btn btn--ghost btn--sm p-1 text-xs text-[var(--color-danger)]"
+                                            (click)="clearSlot(slot)"
+                                            title="Unassign to Bench"
+                                          >
+                                            &times;
+                                          </button>
+                                        } @else {
+                                          <button
+                                            type="button"
+                                            class="btn btn--outline btn--sm text-xs py-0.5 px-2"
+                                            (click)="openQuickAssign(slot)"
+                                          >
+                                            + {{ t('events.detail.quick_assign') }}
+                                          </button>
+                                        }
+                                      }
+                                    }
+                                  }
+                                </div>
+
+                                <!-- Loadout Paperdoll Tooltip -->
+                                @if (slotTooltipVisible(slot)) {
+                                  <div class="event-detail__tooltip border border-[var(--color-border)] rounded-md" role="tooltip">
+                                    <div class="flex items-center justify-between pb-2 mb-2 border-b border-[var(--color-border)]">
+                                      <span class="text-xs font-medium text-[var(--color-text)]">{{ slot.build.name }}</span>
+                                      <span class="text-[0.625rem] uppercase font-mono" [class]="roleChip(slot.role)">{{ roleLabelName(slot.role) }}</span>
+                                    </div>
+                                    <div class="event-detail__tooltip-items">
+                                      @for (item of slotTooltipItems(slot.buildId); track item.slot) {
+                                        <div class="event-detail__tooltip-item">
+                                          @if (item.openalbion_item_icon) {
+                                            <img
+                                              [src]="renderItemIconUrl(item)"
+                                              [alt]="item.openalbion_item_name"
+                                              loading="lazy"
+                                            />
+                                          } @else {
+                                            <span class="event-detail__tooltip-item-placeholder font-mono text-xs">
+                                              {{ slotGlyph(item.slot) }}
+                                            </span>
+                                          }
+                                          <span class="event-detail__tooltip-item-name">
+                                            {{ item.openalbion_item_name }}
+                                          </span>
+                                        </div>
+                                      } @empty {
+                                        <span class="event-detail__tooltip-empty">
+                                          {{ t('events.detail.no_build_items') }}
+                                        </span>
+                                      }
+                                    </div>
+                                  </div>
+                                }
+                              </div>
                             }
                           </div>
                         </div>
                       }
                     </div>
                   }
-                </section>
+
+                  <!-- VIEW 2: ROLE MATRIX VIEW -->
+                  @if (rosterView() === 'roles') {
+                    <div class="space-y-4">
+                      @for (group of compSlotsByRole(); track group.role) {
+                        <div class="card p-0 overflow-hidden border border-[var(--color-border)] rounded-xl">
+                          <div class="bg-[var(--color-surface-1)] px-4 py-2.5 border-b border-[var(--color-border)] flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                              <span class="chip font-medium text-xs font-mono" [class]="roleChip(group.role)">
+                                {{ roleGlyph(group.role) }} {{ t(roleLabel(group.role)) }}
+                              </span>
+                              <span class="text-xs text-[var(--color-text-secondary)]">
+                                {{ groupRoleFilledCount(group) }} / {{ group.slots.length }} filled
+                              </span>
+                            </div>
+                          </div>
+
+                          <div class="p-3 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+                            @for (slot of group.slots; track slot.key) {
+                              <div
+                                class="flex items-center justify-between gap-2 p-2.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]"
+                                [class.border-[var(--color-primary)]]="swapSourceSlot()?.key === slot.key"
+                              >
+                                <div class="flex items-center gap-2.5 min-w-0">
+                                  @if (weaponRenderIconUrl(slot); as icon) {
+                                    <img [src]="icon" [alt]="slot.build.name" class="h-8 w-8 object-contain flex-shrink-0" />
+                                  }
+                                  <div class="min-w-0">
+                                    <p class="text-xs font-medium text-[var(--color-text)] truncate">{{ slot.build.name }}</p>
+                                    @if (slotParticipant(slot); as occupant) {
+                                      <p class="text-xs text-[var(--color-text)] truncate">{{ occupant.username }}</p>
+                                    } @else {
+                                      <p class="text-[0.625rem] text-[var(--color-text-disabled)] italic">+ {{ t('events.detail.seat_empty') }}</p>
+                                    }
+                                  </div>
+                                </div>
+
+                                @if (canManageParticipants()) {
+                                  <button
+                                    type="button"
+                                    class="btn btn--ghost btn--sm p-1 text-xs"
+                                    (click)="startSwapFromSlot(slot)"
+                                  >
+                                    &harr;
+                                  </button>
+                                }
+                              </div>
+                            }
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  }
+
+                  <!-- VIEW 3: TABLE VIEW -->
+                  @if (rosterView() === 'table') {
+                    <div class="card p-0 overflow-hidden border border-[var(--color-border)] rounded-xl">
+                      <app-data-table
+                        [columns]="participantsColumns"
+                        [rows]="detail.participants"
+                        [trackBy]="trackParticipant"
+                      >
+                        <ng-template dataTableCell="username" let-row>
+                          <span class="font-medium">{{ row.username }}</span>
+                        </ng-template>
+                        <ng-template dataTableCell="primary_build_name" let-row>
+                          {{ row.primary_build_name || t('common.none') }}
+                        </ng-template>
+                        <ng-template dataTableCell="secondary_build_name" let-row>
+                          <span style="color: var(--color-text-secondary)">{{
+                            row.secondary_build_name ?? t('common.none')
+                          }}</span>
+                        </ng-template>
+                      </app-data-table>
+                    </div>
+                  }
+                }
+              </div>
+
+              <!-- BENCH & UNASSIGNED SIGNUPS TRAY -->
+              <aside class="card p-0 overflow-hidden border border-[var(--color-border)] rounded-xl h-fit">
+                <div class="bg-[var(--color-surface-1)] px-4 py-3 border-b border-[var(--color-border)]">
+                  <div class="flex items-center justify-between">
+                    <h2 class="font-medium text-xs uppercase tracking-wider text-[var(--color-text)]">
+                      {{ t('events.detail.unassigned_signups') }}
+                    </h2>
+                    <span class="chip chip--info font-mono text-xs">
+                      {{ unassignedParticipants().length }} / {{ detail.participants.length }}
+                    </span>
+                  </div>
+                  <p class="mt-1 text-[0.6875rem] text-[var(--color-text-secondary)]">
+                    {{ t('events.detail.unassigned_hint') }}
+                  </p>
+
+                  <!-- Filter Chips -->
+                  <div class="mt-2.5 flex flex-wrap gap-1">
+                    <button
+                      type="button"
+                      class="px-2 py-0.5 text-[0.625rem] rounded transition-colors font-medium"
+                      [class.bg-[var(--color-primary)]]="benchFilter() === 'all'"
+                      [class.text-white]="benchFilter() === 'all'"
+                      [class.bg-[var(--color-surface-2)]]="benchFilter() !== 'all'"
+                      [class.text-[var(--color-text-secondary)]]="benchFilter() !== 'all'"
+                      (click)="benchFilter.set('all')"
+                    >
+                      {{ t('events.detail.filter_all') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="px-2 py-0.5 text-[0.625rem] rounded transition-colors font-medium"
+                      [class.bg-[var(--color-primary)]]="benchFilter() === 'unassigned'"
+                      [class.text-white]="benchFilter() === 'unassigned'"
+                      [class.bg-[var(--color-surface-2)]]="benchFilter() !== 'unassigned'"
+                      [class.text-[var(--color-text-secondary)]]="benchFilter() !== 'unassigned'"
+                      (click)="benchFilter.set('unassigned')"
+                    >
+                      {{ t('events.detail.filter_unassigned') }}
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Signups List -->
+                <div class="p-3 space-y-2 max-h-[36rem] overflow-y-auto">
+                  @for (member of filteredBenchParticipants(); track member.user_id) {
+                    <div
+                      class="p-2.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)] transition-all cursor-grab active:cursor-grabbing"
+                      draggable="true"
+                      (dragstart)="onBenchMemberDragStart($event, member)"
+                    >
+                      <div class="flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-2 min-w-0">
+                          <div class="h-5 w-5 rounded bg-[var(--color-surface-2)] flex items-center justify-center text-[0.625rem] font-mono font-medium flex-shrink-0 text-[var(--color-text)]">
+                            {{ member.username.slice(0, 1).toUpperCase() }}
+                          </div>
+                          <span class="text-xs font-medium text-[var(--color-text)] truncate">
+                            {{ member.username }}
+                          </span>
+                        </div>
+
+                        <!-- Seat badge -->
+                        @if (isParticipantAssigned(member.user_id); as seatSlot) {
+                          <span class="text-[0.625rem] px-1.5 py-0.5 rounded bg-[var(--color-surface-2)] text-[var(--color-success)] font-mono">
+                            Seat #{{ seatSlot.slotIndex + 1 }}
+                          </span>
+                        } @else {
+                          <span class="text-[0.625rem] px-1.5 py-0.5 rounded bg-[var(--color-surface-2)] text-[var(--color-warning)] font-mono">
+                            Bench
+                          </span>
+                        }
+                      </div>
+
+                      <div class="mt-2 space-y-1 text-[0.6875rem]">
+                        <div class="flex items-center justify-between text-[var(--color-text-secondary)]">
+                          <span>1st:</span>
+                          <span class="text-[var(--color-text)] truncate max-w-[12rem]">{{ member.primary_build_name || 'Build #' + member.primary_build_id }}</span>
+                        </div>
+                        @if (member.secondary_build_name) {
+                          <div class="flex items-center justify-between text-[var(--color-text-secondary)]">
+                            <span>2nd:</span>
+                            <span class="text-[var(--color-text-secondary)] truncate max-w-[12rem]">{{ member.secondary_build_name }}</span>
+                          </div>
+                        }
+                      </div>
+
+                      @if (canManageParticipants() && swapSourceSlot(); as source) {
+                        <button
+                          type="button"
+                          class="mt-2 w-full btn btn--primary btn--sm text-xs py-1"
+                          (click)="assignMemberToSlot(source, member.user_id)"
+                        >
+                          Assign to {{ source.build.name }}
+                        </button>
+                      }
+                    </div>
+                  } @empty {
+                    <p class="text-xs text-center py-6 text-[var(--color-text-secondary)]">
+                      {{ t('events.detail.bench_empty') }}
+                    </p>
+                  }
+                </div>
+              </aside>
+            </div>
+          }
+
+          <!-- ================= TAB 2: OVERVIEW & INTEL ================= -->
+          @case ('overview') {
+            <!-- Performance & Financial KPI Cards -->
+            <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 mb-5" aria-label="Event Overview KPIs">
+              <!-- Card 1: Win Rate -->
+              <article class="surface p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <p class="event-detail__label">{{ t('events.detail.win_rate') }}</p>
+                <p class="event-detail__value mt-1">{{ formatPercent(detail.stats.win_rate) }}</p>
+                <p class="event-detail__sub mb-2">
+                  {{ detail.stats.wins }} {{ t('events.detail.wins') }} &middot; {{ detail.stats.losses }} {{ t('events.detail.losses') }}
+                </p>
+                @if (detail.stats.total_battles > 0) {
+                  <div class="event-detail__fill-bar" style="background: var(--color-danger)">
+                    <span
+                      [style.width.%]="(detail.stats.wins / detail.stats.total_battles) * 100"
+                      style="background: var(--color-success)"
+                    ></span>
+                  </div>
+                }
+              </article>
+
+              <!-- Card 2: K/D Ratio & Kill Fame -->
+              <article class="surface p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <p class="event-detail__label">{{ t('events.detail.kd') }} &middot; {{ t('events.detail.kill_fame') }}</p>
+                <p class="event-detail__value mt-1">{{ formatRatio(detail.stats.kill_death_ratio) }}</p>
+                <p class="event-detail__sub mb-2">
+                  {{ detail.stats.total_kills }} {{ t('events.detail.kills') }} &middot; {{ detail.stats.total_deaths }} {{ t('events.detail.deaths') }}
+                </p>
+                <p class="text-xs font-mono text-[var(--color-text-secondary)]">
+                  Fame: <strong class="text-[var(--color-text)]">{{ formatCompact(detail.stats.total_kill_fame) }}</strong>
+                </p>
+              </article>
+
+              <!-- Card 3: Estimated Combat Losses / Regear Expenses -->
+              <article class="surface p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <p class="event-detail__label">{{ t('events.detail.our_guild_loss') }}</p>
+                <p class="event-detail__value mt-1 text-[var(--color-danger)] font-mono">
+                  {{ formatAmount(eventLossEstimate().total_estimated_loss) }}
+                </p>
+                <p class="event-detail__sub">
+                  {{ eventLossEstimate().priced_items }}/{{ eventLossEstimate().total_items }} {{ t('events.detail.our_guild_loss_hint') }}
+                </p>
+              </article>
+
+              <!-- Card 4: Net Financial Outcome (Loot vs Expenses) -->
+              <article
+                class="surface p-4 rounded-xl border bg-[var(--color-surface)]"
+                [class.border-[var(--color-success)]]="eventBalance().isProfitable"
+                [class.border-[var(--color-danger)]]="!eventBalance().isProfitable"
+              >
+                <p class="event-detail__label">Net Event Balance</p>
+                <p
+                  class="event-detail__value mt-1 font-mono"
+                  [class.text-[var(--color-success)]]="eventBalance().isProfitable"
+                  [class.text-[var(--color-danger)]]="!eventBalance().isProfitable"
+                >
+                  {{ eventBalance().netBalance >= 0 ? '+' : '' }}{{ formatAmount(eventBalance().netBalance) }}
+                </p>
+                <p class="event-detail__sub">
+                  Loot: {{ formatCompact(eventBalance().totalLoot) }} &minus; Losses: {{ formatCompact(eventBalance().totalLoss) }}
+                </p>
+              </article>
+            </section>
+
+            <!-- 2-Column Analytical Breakdown -->
+            <div class="grid gap-5 lg:grid-cols-2">
+              <!-- Left Column: Guild Member Equipment Losses -->
+              <section class="card p-0 overflow-hidden border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)]">
+                <header class="event-detail__section-header">
+                  <div class="flex items-center gap-2">
+                    <h2>{{ t('events.detail.our_guild_losses_by_player') }}</h2>
+                    <span class="chip chip--tonal font-mono text-xs">{{ eventLossEstimate().players.length }}</span>
+                  </div>
+                </header>
+                @if (eventLossEstimate().players.length > 0) {
+                  <div class="p-3 space-y-1.5 max-h-96 overflow-y-auto">
+                    @for (player of eventLossEstimate().players; track player.player_name) {
+                      <div class="flex items-center justify-between gap-3 p-2.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                        <div class="flex items-center gap-2.5 min-w-0">
+                          <div class="h-7 w-7 rounded bg-[var(--color-surface-2)] flex items-center justify-center text-xs font-mono text-[var(--color-text)] flex-shrink-0">
+                            {{ player.player_name.slice(0, 1).toUpperCase() }}
+                          </div>
+                          <div class="min-w-0">
+                            <p class="text-xs font-medium text-[var(--color-text)] truncate">
+                              {{ player.player_name }}
+                            </p>
+                            <p class="text-[0.6875rem] text-[var(--color-text-secondary)]">
+                              {{ player.deaths }} {{ player.deaths === 1 ? 'death' : 'deaths' }} &middot;
+                              {{ player.priced_items }}/{{ player.total_items }} items
+                            </p>
+                          </div>
+                        </div>
+
+                        <div class="text-right flex-shrink-0">
+                          <span class="font-mono text-xs font-medium text-[var(--color-danger)]">
+                            -{{ formatAmount(player.estimated_loss) }}
+                          </span>
+                          <span class="block text-[0.625rem] font-mono text-[var(--color-text-secondary)]">
+                            silver
+                          </span>
+                        </div>
+                      </div>
+                    }
+                  </div>
+                } @else {
+                  <p class="event-detail__empty">{{ t('events.detail.no_opponents') }}</p>
+                }
+              </section>
+
+              <!-- Right Column: Top Opponents -->
+              <section class="card p-0 overflow-hidden border border-[var(--color-border)] rounded-xl bg-[var(--color-surface)]">
+                <header class="event-detail__section-header">
+                  <div class="flex items-center gap-2">
+                    <h2>{{ t('events.detail.opponents') }}</h2>
+                    <span class="chip chip--tonal font-mono text-xs">{{ detail.stats.top_opponents.length }}</span>
+                  </div>
+                </header>
+                @if (detail.stats.top_opponents.length > 0) {
+                  <div class="p-3 space-y-1.5 max-h-96 overflow-y-auto">
+                    @for (opponent of detail.stats.top_opponents; track opponent.guild_id || opponent.guild_name) {
+                      <div class="flex items-center justify-between gap-3 p-2.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                        <div class="min-w-0 flex-1">
+                          <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs font-medium text-[var(--color-text)] truncate">
+                              {{ opponent.guild_name || t('common.none') }}
+                            </span>
+                            <span class="text-[0.6875rem] font-mono text-[var(--color-text-secondary)]">
+                              {{ formatCompact(opponent.guild_kill_fame) }} vs {{ formatCompact(opponent.opponent_kill_fame) }}
+                            </span>
+                          </div>
+                          @if (opponent.guild_kill_fame + opponent.opponent_kill_fame > 0) {
+                            <div class="event-detail__fill-bar" style="background: var(--color-danger)">
+                              <span
+                                [style.width.%]="(opponent.guild_kill_fame / (opponent.guild_kill_fame + opponent.opponent_kill_fame)) * 100"
+                                style="background: var(--color-success)"
+                              ></span>
+                            </div>
+                          }
+                        </div>
+                      </div>
+                    }
+                  </div>
+                } @else {
+                  <p class="event-detail__empty">{{ t('events.detail.no_opponents') }}</p>
+                }
+              </section>
+            </div>
+          }
+
+          <!-- ================= TAB 3: BATTLES & COMBAT LOGS ================= -->
+          @case ('battles') {
+            <div class="space-y-4">
+              <!-- Battles Management Bar -->
+              <section class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div class="flex items-center gap-3">
+                    <h2 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text)]">
+                      {{ t('events.detail.battles') }} ({{ detail.battles.length }})
+                    </h2>
+                    <span class="font-mono text-xs text-[var(--color-text-secondary)]">
+                      {{ detail.stats.wins }}W / {{ detail.stats.losses }}L
+                    </span>
+                    <span class="font-mono text-xs text-[var(--color-danger)]">
+                      Combat Loss: -{{ formatAmount(eventLossEstimate().total_estimated_loss) }}
+                    </span>
+                  </div>
+
+                  <div class="flex flex-wrap items-center gap-2">
+                    @if (detail.battles.length > 0) {
+                      <button type="button" class="btn btn--outline btn--sm text-xs" (click)="openBattleGroup(detail)">
+                        {{ t('battles.group_selected') }}
+                      </button>
+                    }
+                    @if (canEdit()) {
+                      <button type="button" class="btn btn--tonal btn--sm text-xs" (click)="toggleBattleLinkForm()">
+                        {{ showBattleLinkForm() ? t('common.close') : t('events.detail.manage_battles') }}
+                      </button>
+                    }
+                  </div>
+                </div>
+
+                @if (showBattleLinkForm()) {
+                  <form class="grid gap-3 p-3 mt-3 bg-[var(--color-surface-1)] rounded-lg border border-[var(--color-border)]" (submit)="onBattleLinksSubmit($event)">
+                    <div>
+                      <div class="flex justify-between items-center mb-2">
+                        <span class="label font-medium text-xs">{{ t('events.detail.battle_ids') }}</span>
+                        <button
+                          type="button"
+                          class="btn btn--outline btn--sm text-xs"
+                          (click)="showBattleSearch.set(true)"
+                        >
+                          + {{ t('events.detail.add_battle') }}
+                        </button>
+                      </div>
+
+                      <div class="flex flex-col gap-2">
+                        @for (link of draftBattleLinks(); track link.id) {
+                          <div class="flex items-center gap-2">
+                            <div class="flex-1 input flex items-center bg-[var(--color-surface)] text-xs truncate">
+                              <span class="truncate">{{ link.title }}</span>
+                            </div>
+                            <button
+                              type="button"
+                              class="btn btn--danger btn--sm"
+                              (click)="removeDraftBattle(link.id)"
+                              [attr.aria-label]="t('events.detail.remove_battle')"
+                            >
+                              <app-icon name="close" size="0.875rem" />
+                            </button>
+                          </div>
+                        }
+                        @if (draftBattleLinks().length === 0) {
+                          <p class="text-xs text-[var(--color-text-secondary)]">
+                            {{ t('events.detail.no_battles_linked') }}
+                          </p>
+                        }
+                      </div>
+                    </div>
+
+                    <div class="flex justify-end gap-2">
+                      <button type="button" class="btn btn--ghost btn--sm" (click)="toggleBattleLinkForm()">
+                        {{ t('common.cancel') }}
+                      </button>
+                      <button type="submit" class="btn btn--primary btn--sm" [disabled]="battleLinksSaving()">
+                        {{ t('common.save') }}
+                      </button>
+                    </div>
+                  </form>
+                }
+              </section>
+
+              <!-- Detailed Battle Cards List -->
+              @if (detail.battles.length > 0) {
+                <div class="space-y-3">
+                  @for (battle of detail.battles; track battle.id) {
+                    <article class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-surface-3)] transition-colors">
+                      <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-[var(--color-border)]">
+                        <div class="flex items-center gap-2.5 flex-wrap">
+                          <span
+                            class="chip font-mono text-xs font-medium"
+                            [class.chip--success]="battle.is_win"
+                            [class.chip--error]="!battle.is_win"
+                          >
+                            {{ battle.is_win ? 'VICTORY' : 'DEFEAT' }}
+                          </span>
+                          <a
+                            class="font-mono text-xs text-[var(--color-primary)] font-medium hover:underline"
+                            [routerLink]="['/battles', battle.albionbb_battle_id]"
+                          >
+                            Battle #{{ battle.albionbb_battle_id }}
+                          </a>
+                          <span class="text-xs text-[var(--color-text-secondary)]">
+                            &middot; {{ formatDate(battle.battle_started_at) }}
+                          </span>
+                          @if (battle.opponent_guild_name) {
+                            <span class="text-xs font-medium text-[var(--color-text)]">
+                              vs {{ battle.opponent_guild_name }}
+                            </span>
+                          }
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                          <a
+                            class="btn btn--ghost btn--sm text-xs"
+                            [href]="'https://albionbattles.com/battles/' + battle.albionbb_battle_id"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            AlbionBB &rarr;
+                          </a>
+                          <button
+                            type="button"
+                            class="btn btn--primary btn--sm text-xs"
+                            (click)="openBattle(battle.albionbb_battle_id)"
+                          >
+                            {{ t('events.detail.open_battle') }}
+                          </button>
+                        </div>
+                      </div>
+
+                      <!-- 4-Column Combat Metrics -->
+                      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3">
+                        <div class="surface p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                          <span class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+                            Forces
+                          </span>
+                          <p class="font-mono text-sm font-medium text-[var(--color-text)] mt-0.5">
+                            {{ battle.guild_players_count }} <span class="text-[0.6875rem] text-[var(--color-text-secondary)]">vs</span> {{ battle.opponent_players_count ?? '—' }}
+                          </p>
+                          <p class="text-[0.625rem] text-[var(--color-text-secondary)]">
+                            {{ battle.battle_total_players ?? (battle.guild_players_count + (battle.opponent_players_count ?? 0)) }} total in fight
+                          </p>
+                        </div>
+
+                        <div class="surface p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                          <span class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+                            Kills &middot; Deaths
+                          </span>
+                          <p class="font-mono text-sm font-medium text-[var(--color-text)] mt-0.5">
+                            <span class="text-[var(--color-success)]">{{ battle.guild_kills }}</span> / <span class="text-[var(--color-danger)]">{{ battle.guild_deaths }}</span>
+                          </p>
+                          <p class="text-[0.625rem] font-mono text-[var(--color-text-secondary)]">
+                            K/D: {{ (battle.guild_kills / (battle.guild_deaths > 0 ? battle.guild_deaths : 1)).toFixed(2) }}
+                          </p>
+                        </div>
+
+                        <div class="surface p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                          <span class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+                            Kill Fame
+                          </span>
+                          <p class="font-mono text-sm font-medium text-[var(--color-success)] mt-0.5">
+                            +{{ formatCompact(battle.guild_kill_fame) }}
+                          </p>
+                          <p class="text-[0.625rem] font-mono text-[var(--color-text-secondary)]">
+                            Enemy: {{ formatCompact(battle.opponent_kill_fame ?? 0) }}
+                          </p>
+                        </div>
+
+                        <div class="surface p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                          <span class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+                            Deaths & Losses
+                          </span>
+                          <p class="font-mono text-sm font-medium text-[var(--color-danger)] mt-0.5">
+                            {{ battle.guild_deaths }} deaths
+                          </p>
+                          <p class="text-[0.625rem] text-[var(--color-text-secondary)]">
+                            Recorded in regear logs
+                          </p>
+                        </div>
+                      </div>
+                    </article>
+                  }
+                </div>
+              } @else {
+                <div class="card p-8 text-center rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+                  <app-empty-state [message]="t('events.detail.no_battles')" icon="swords" />
+                </div>
               }
             </div>
           }
-        </article>
-      }
+
+          <!-- ================= TAB 4: LOOT & SPLITS ================= -->
+          @case ('splits') {
+            <div class="space-y-4">
+              <!-- Summary Strip -->
+              <section class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                  <h2 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text)]">
+                    {{ t('events.detail.splits') }} ({{ detail.splits.length }})
+                  </h2>
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-mono text-[var(--color-text-secondary)]">
+                      Total Net: <strong class="text-[var(--color-success)]">{{ formatAmount(detail.split_stats.completed_net_value) }}</strong>
+                    </span>
+                    @if (canEdit()) {
+                      <button
+                        type="button"
+                        class="btn btn--primary btn--sm text-xs"
+                        (click)="showSplitSearch.set(true)"
+                      >
+                        + {{ t('events.detail.link_split') }}
+                      </button>
+                    }
+                  </div>
+                </div>
+
+                @if (detail.split_stats.total_splits > 0) {
+                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-[var(--color-border)]">
+                    <div class="surface p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                      <p class="event-detail__label">{{ t('events.detail.split_total') }}</p>
+                      <p class="event-detail__value-sm mt-1">{{ detail.split_stats.total_splits }}</p>
+                    </div>
+                    <div class="surface p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                      <p class="event-detail__label">{{ t('events.detail.split_completed') }}</p>
+                      <p class="event-detail__value-sm mt-1 text-[var(--color-success)]">{{ detail.split_stats.completed_splits }}</p>
+                    </div>
+                    <div class="surface p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                      <p class="event-detail__label">{{ t('events.detail.split_pending') }}</p>
+                      <p class="event-detail__value-sm mt-1 text-[var(--color-warning)]">{{ detail.split_stats.pending_splits }}</p>
+                    </div>
+                    <div class="surface p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                      <p class="event-detail__label">{{ t('events.detail.split_net') }}</p>
+                      <p class="event-detail__value-sm mt-1 text-[var(--color-success)] font-medium font-mono">
+                        {{ formatAmount(detail.split_stats.completed_net_value) }}
+                      </p>
+                    </div>
+                  </div>
+                }
+              </section>
+
+              <!-- Splits List -->
+              @if (detail.splits.length > 0) {
+                <div class="space-y-3">
+                  @for (split of detail.splits; track split.id) {
+                    <article class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-surface-3)] transition-colors">
+                      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[var(--color-border)]">
+                        <div class="flex items-center gap-2.5 flex-wrap">
+                          <app-status-chip [value]="split.status" />
+                          <a
+                            class="text-sm font-medium text-[var(--color-text)] hover:underline"
+                            [routerLink]="['/splits', split.id]"
+                          >
+                            {{ split.note || t('events.detail.split_number') + split.id }}
+                          </a>
+                          @if (split.island_name) {
+                            <span class="chip chip--tonal text-xs font-mono">
+                              {{ cityLabel(split.island_city) }} &middot; {{ split.island_name }} &middot; {{ split.island_tab_name }}
+                            </span>
+                          }
+                          <span class="text-xs text-[var(--color-text-secondary)]">
+                            &middot; {{ formatDate(split.created_at) }}
+                          </span>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                          <a
+                            class="btn btn--outline btn--sm text-xs"
+                            [routerLink]="['/splits', split.id]"
+                          >
+                            {{ t('common.open') }} &rarr;
+                          </a>
+                          @if (canEdit()) {
+                            <button
+                              type="button"
+                              class="btn btn--danger btn--sm"
+                              (click)="unlinkSplit(split.id)"
+                              [attr.aria-label]="t('events.detail.unlink_split')"
+                            >
+                              <app-icon name="close" size="0.875rem" />
+                            </button>
+                          }
+                        </div>
+                      </div>
+
+                      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3">
+                        <div class="surface p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                          <span class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+                            {{ t('splits.estimated') }}
+                          </span>
+                          <p class="font-mono text-xs text-[var(--color-text)] mt-0.5">
+                            {{ formatAmount(split.estimated_market_value) }}
+                          </p>
+                        </div>
+                        <div class="surface p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                          <span class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+                            {{ t('splits.repair_cost') }}
+                          </span>
+                          <p class="font-mono text-xs text-[var(--color-danger)] mt-0.5">
+                            -{{ formatAmount(split.repair_value) }}
+                          </p>
+                        </div>
+                        <div class="surface p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                          <span class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+                            {{ t('splits.bags_value') }}
+                          </span>
+                          <p class="font-mono text-xs text-[var(--color-text)] mt-0.5">
+                            +{{ formatAmount(split.bags_value) }}
+                          </p>
+                        </div>
+                        <div class="surface p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                          <span class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+                            {{ t('splits.net_value') }}
+                          </span>
+                          <p class="font-mono text-xs font-medium text-[var(--color-success)] mt-0.5">
+                            {{ formatAmount(netOfSplit(split)) }} ({{ split.participant_count }} p)
+                          </p>
+                        </div>
+                      </div>
+                    </article>
+                  }
+                </div>
+              } @else {
+                <div class="card p-8 text-center rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+                  <app-empty-state [message]="t('events.detail.no_splits')" icon="package" />
+                </div>
+              }
+            </div>
           }
         }
       </app-page-stack>
@@ -987,6 +1345,104 @@ function isEventDetailTab(value: string): value is EventDetailTab {
       <app-empty-state [message]="t('common.empty')" icon="calendar" />
     }
 
+    <!-- Quick Assign Modal for a Slot -->
+    @if (quickAssignSlot(); as targetSlot) {
+      <div class="modal-backdrop" (click)="closeQuickAssign()" (keydown.escape)="closeQuickAssign()">
+        <div class="modal-card" (click)="$event.stopPropagation()">
+          <header class="event-detail__section-header">
+            <div>
+              <h2 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text)]">
+                {{ t('events.detail.quick_assign') }} &middot; {{ targetSlot.build.name }}
+              </h2>
+              <p class="text-xs text-[var(--color-text-secondary)] font-mono mt-0.5">
+                {{ roleGlyph(targetSlot.role) }} &middot; {{ roleLabelName(targetSlot.role) }}
+              </p>
+            </div>
+            <button type="button" class="btn btn--ghost btn--icon" (click)="closeQuickAssign()">
+              <app-icon name="close" size="1rem" />
+            </button>
+          </header>
+
+          <div class="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
+            <!-- Best matching signups (Primary) -->
+            <div>
+              <span class="text-[0.6875rem] font-medium uppercase text-[var(--color-text-secondary)] tracking-wider">
+                {{ t('events.detail.primary_choice') }} ({{ primaryMatchParticipants(targetSlot.buildId).length }})
+              </span>
+              <div class="mt-1.5 space-y-1">
+                @for (member of primaryMatchParticipants(targetSlot.buildId); track member.user_id) {
+                  <button
+                    type="button"
+                    class="w-full flex items-center justify-between p-2 rounded-md border border-[var(--color-border)] hover:border-[var(--color-success)] bg-[var(--color-surface-1)] transition-colors text-left"
+                    (click)="assignMemberToSlot(targetSlot, member.user_id)"
+                  >
+                    <span class="text-xs font-medium text-[var(--color-text)]">{{ member.username }}</span>
+                    <span class="text-[0.625rem] text-[var(--color-success)] font-mono">Primary</span>
+                  </button>
+                } @empty {
+                  <p class="text-xs text-[var(--color-text-secondary)] italic py-1">No primary signups for this build.</p>
+                }
+              </div>
+            </div>
+
+            <!-- Secondary matching signups -->
+            <div class="pt-2 border-t border-[var(--color-border)]">
+              <span class="text-[0.6875rem] font-medium uppercase text-[var(--color-text-secondary)] tracking-wider">
+                {{ t('events.detail.secondary_choice') }} ({{ secondaryMatchParticipants(targetSlot.buildId).length }})
+              </span>
+              <div class="mt-1.5 space-y-1">
+                @for (member of secondaryMatchParticipants(targetSlot.buildId); track member.user_id) {
+                  <button
+                    type="button"
+                    class="w-full flex items-center justify-between p-2 rounded-md border border-[var(--color-border)] hover:border-[var(--color-info)] bg-[var(--color-surface-1)] transition-colors text-left"
+                    (click)="assignMemberToSlot(targetSlot, member.user_id)"
+                  >
+                    <span class="text-xs font-medium text-[var(--color-text)]">{{ member.username }}</span>
+                    <span class="text-[0.625rem] text-[var(--color-info)] font-mono">Secondary</span>
+                  </button>
+                }
+              </div>
+            </div>
+
+            <!-- All Other Registered Members -->
+            <div class="pt-2 border-t border-[var(--color-border)]">
+              <span class="text-[0.6875rem] font-medium uppercase text-[var(--color-text-secondary)] tracking-wider">
+                {{ t('events.detail.unassigned_signups') }}
+              </span>
+              <div class="mt-1.5 space-y-1">
+                @for (member of unassignedParticipants(); track member.user_id) {
+                  @if (member.primary_build_id !== targetSlot.buildId && member.secondary_build_id !== targetSlot.buildId) {
+                    <button
+                      type="button"
+                      class="w-full flex items-center justify-between p-2 rounded-md border border-[var(--color-border)] hover:border-[var(--color-primary)] bg-[var(--color-surface)] transition-colors text-left"
+                      (click)="assignMemberToSlot(targetSlot, member.user_id)"
+                    >
+                      <span class="text-xs text-[var(--color-text)]">{{ member.username }}</span>
+                      <span class="text-[0.625rem] text-[var(--color-text-secondary)] font-mono">Off-role</span>
+                    </button>
+                  }
+                }
+              </div>
+            </div>
+
+            <div class="pt-3 border-t border-[var(--color-border)] flex justify-between gap-2">
+              <button
+                type="button"
+                class="btn btn--outline btn--sm text-xs"
+                (click)="openMemberSearchFromSlot(targetSlot)"
+              >
+                + {{ t('events.detail.search_member') }}
+              </button>
+              <button type="button" class="btn btn--ghost btn--sm" (click)="closeQuickAssign()">
+                {{ t('common.cancel') }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- Search dialogs -->
     @if (showCompSearch()) {
       <app-search-dialog
         [title]="t('events.detail.link_comp')"
@@ -1035,6 +1491,7 @@ function isEventDetailTab(value: string): value is EventDetailTab {
       />
     }
 
+    <!-- Assign builds dialog for manually added member -->
     @if (draftMember(); as member) {
       <div class="modal-backdrop" (click)="closeMemberForm()" (keydown.escape)="closeMemberForm()">
         <div
@@ -1042,12 +1499,11 @@ function isEventDetailTab(value: string): value is EventDetailTab {
           class="modal-card"
           role="dialog"
           aria-modal="true"
-          aria-labelledby="assign-builds-title"
           tabindex="-1"
           (click)="$event.stopPropagation()"
         >
           <header class="event-detail__section-header">
-            <h2 id="assign-builds-title">{{ t('events.detail.assign_builds') }} · {{ member.title }}</h2>
+            <h2>{{ t('events.detail.assign_builds') }} &middot; {{ member.title }}</h2>
             <button
               type="button"
               class="btn btn--ghost btn--icon"
@@ -1061,7 +1517,7 @@ function isEventDetailTab(value: string): value is EventDetailTab {
             @if (compLoading()) {
               <app-loading [label]="t('common.loading')" />
             } @else if (availableBuilds().length === 0) {
-              <p class="text-sm" style="color: var(--color-text-secondary)">
+              <p class="text-xs" style="color: var(--color-text-secondary)">
                 {{ t('events.detail.no_builds') }}
               </p>
             } @else {
@@ -1075,7 +1531,7 @@ function isEventDetailTab(value: string): value is EventDetailTab {
                   <option value="">—</option>
                   @for (entry of availableBuilds(); track entry.build_id) {
                     <option [value]="entry.build_id">
-                      {{ entry.build.name }} · {{ entry.build.role }}
+                      {{ entry.build.name }} &middot; {{ roleLabelName(entry.build.role) }}
                     </option>
                   }
                 </select>
@@ -1097,13 +1553,13 @@ function isEventDetailTab(value: string): value is EventDetailTab {
               </label>
             }
             @if (memberError()) {
-              <p class="text-sm" style="color: var(--color-danger)">{{ memberError() }}</p>
+              <p class="text-xs" style="color: var(--color-danger)">{{ memberError() }}</p>
             }
             <div class="flex justify-end gap-2">
-              <button type="button" class="btn btn--ghost" (click)="closeMemberForm()">
+              <button type="button" class="btn btn--ghost btn--sm" (click)="closeMemberForm()">
                 {{ t('common.cancel') }}
               </button>
-              <button type="submit" class="btn btn--primary" [disabled]="memberSaving()">
+              <button type="submit" class="btn btn--primary btn--sm" [disabled]="memberSaving()">
                 {{ t('common.save') }}
               </button>
             </div>
@@ -1112,14 +1568,15 @@ function isEventDetailTab(value: string): value is EventDetailTab {
       </div>
     }
 
+    <!-- Confirmation Dialog -->
     @if (pendingConfirm(); as confirm) {
       <app-dialog [title]="confirmTitle(confirm)" size="sm" (closed)="cancelConfirm()">
         <p>{{ confirmMessage(confirm) }}</p>
         <div dialogFooter>
-          <button type="button" class="btn btn--ghost" (click)="cancelConfirm()">
+          <button type="button" class="btn btn--ghost btn--sm" (click)="cancelConfirm()">
             {{ t('common.cancel') }}
           </button>
-          <button type="button" class="btn btn--danger" (click)="runConfirm()">
+          <button type="button" class="btn btn--danger btn--sm" (click)="runConfirm()">
             {{ confirmActionLabel(confirm) }}
           </button>
         </div>
@@ -1128,19 +1585,6 @@ function isEventDetailTab(value: string): value is EventDetailTab {
   `,
   styles: `
     @layer components {
-      /* Sticky only from sm up. On a phone this hero stacks the title,
-         description and a wrapped row of join/leave/edit buttons — easily
-         over half the viewport tall. Pinning that at all times left barely
-         any room to see the event content it's supposed to introduce. */
-      .event-detail__hero {
-        z-index: 10;
-      }
-      @media (min-width: 640px) {
-        .event-detail__hero {
-          position: sticky;
-          top: 0;
-        }
-      }
       .event-detail__label {
         color: var(--color-text-secondary);
         font-family: var(--font-universalsans);
@@ -1151,16 +1595,16 @@ function isEventDetailTab(value: string): value is EventDetailTab {
       }
       .event-detail__value {
         color: var(--color-text);
-        font-family: var(--font-geistmono);
-        font-size: clamp(1.25rem, 2vw, 1.75rem);
-        font-weight: 400;
+        font-family: var(--font-berkeley-mono, monospace);
+        font-size: clamp(1.25rem, 2vw, 1.5rem);
+        font-weight: 500;
         letter-spacing: -0.01em;
       }
       .event-detail__value-sm {
         color: var(--color-text);
-        font-family: var(--font-geistmono);
-        font-size: 1.125rem;
-        font-weight: 400;
+        font-family: var(--font-berkeley-mono, monospace);
+        font-size: 1rem;
+        font-weight: 500;
       }
       .event-detail__sub {
         color: var(--color-text-secondary);
@@ -1174,37 +1618,26 @@ function isEventDetailTab(value: string): value is EventDetailTab {
         flex-wrap: wrap;
         gap: 1rem;
         justify-content: space-between;
-        padding: 1.25rem 1.5rem;
+        padding: 0.875rem 1.25rem;
       }
       .event-detail__section-header h2 {
         color: var(--color-text);
         font-family: var(--font-universalsans);
-        font-size: 0.875rem;
+        font-size: 0.75rem;
         font-weight: 500;
         text-transform: uppercase;
         letter-spacing: 0.06em;
       }
       .event-detail__empty {
         color: var(--color-text-secondary);
-        font-size: 0.875rem;
+        font-size: 0.8125rem;
         padding: 1.5rem;
-      }
-      .event-detail__role-group {
-        background: var(--color-surface-1);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-        display: grid;
-        gap: 0.75rem;
-        padding: 1rem;
       }
       .event-detail__fill-bar {
         background: var(--color-surface-2);
         border-radius: var(--radius-full);
-        height: 0.5rem;
+        height: 0.375rem;
         overflow: hidden;
-      }
-      .event-detail__fill-bar--lg {
-        height: 1rem;
       }
       .event-detail__fill-bar span {
         background: var(--color-warning);
@@ -1214,228 +1647,6 @@ function isEventDetailTab(value: string): value is EventDetailTab {
         min-width: 0.25rem;
         transition: width 0.2s ease;
       }
-      .event-detail__fill-bar__full {
-        background: var(--color-success);
-      }
-      .event-detail__fill-bar__half {
-        background: var(--color-warning);
-      }
-      .event-detail__global-fill {
-        border-bottom: 1px solid var(--color-border);
-        display: grid;
-        gap: 0.5rem;
-        padding: 1.25rem 1rem;
-      }
-      .event-detail__chart-header {
-        align-items: center;
-        display: flex;
-        justify-content: space-between;
-        gap: 1rem;
-        margin-bottom: 1rem;
-      }
-      .event-detail__chart-header h2,
-      .event-detail__chart-header span {
-        color: var(--color-text);
-        font-weight: 700;
-      }
-      .event-detail__donut {
-        --event-detail-chart-angle: 0deg;
-        aspect-ratio: 1;
-        background: conic-gradient(
-          var(--color-success) 0deg var(--event-detail-chart-angle),
-          var(--color-danger) var(--event-detail-chart-angle) 360deg
-        );
-        border-radius: 50%;
-        display: grid;
-        margin: 0 auto 1rem;
-        max-width: 12rem;
-        place-items: center;
-        position: relative;
-      }
-      .event-detail__donut::after {
-        background: var(--color-surface-1);
-        border-radius: inherit;
-        content: '';
-        inset: 22%;
-        position: absolute;
-      }
-      .event-detail__donut span {
-        color: var(--color-text);
-        font-weight: 800;
-        position: relative;
-        z-index: 1;
-      }
-      .event-detail__legend {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.75rem;
-      }
-      .event-detail__legend span {
-        align-items: center;
-        color: var(--color-text-secondary);
-        display: inline-flex;
-        font-size: 0.8rem;
-        gap: 0.35rem;
-      }
-      .event-detail__legend i {
-        border-radius: var(--radius-full);
-        display: inline-block;
-        height: 0.625rem;
-        width: 0.625rem;
-      }
-      .event-detail__bar-list {
-        display: grid;
-        gap: 0.85rem;
-      }
-      .event-detail__bar-row {
-        display: grid;
-        gap: 0.35rem;
-      }
-      .event-detail__bar-label {
-        align-items: center;
-        color: var(--color-text-secondary);
-        display: flex;
-        font-size: 0.8rem;
-        justify-content: space-between;
-        gap: 1rem;
-      }
-      .event-detail__bar-label strong {
-        color: var(--color-text);
-      }
-      .event-detail__status-grid {
-        display: grid;
-        gap: 0.75rem;
-        grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
-      }
-      .event-detail__status-card {
-        background: var(--color-surface-1);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-        display: grid;
-        gap: 0.5rem;
-        padding: 0.875rem;
-      }
-      .event-detail__status-card span {
-        color: var(--color-text-secondary);
-        font-size: 0.8rem;
-      }
-      .event-detail__status-card strong {
-        color: var(--color-text);
-        font-size: 1.25rem;
-      }
-      .event-detail__empty--compact {
-        padding: 0;
-      }
-
-      .event-detail__board {
-        border: 1px solid var(--color-border);
-        border-radius: 0.5rem;
-        overflow: hidden;
-      }
-      .event-detail__board-empty {
-        padding: 1.5rem;
-        text-align: center;
-        color: var(--color-text-secondary);
-      }
-      .event-detail__board-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.5rem;
-        padding: 0.75rem 1rem;
-        background: var(--color-surface-1);
-        border-bottom: 1px solid var(--color-border);
-        font-size: 0.875rem;
-        color: var(--color-text);
-      }
-      .event-detail__board-comp {
-        font-weight: 600;
-      }
-      .event-detail__board-count {
-        color: var(--color-text-secondary);
-      }
-      .event-detail__board-body {
-        padding: 1rem;
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-      }
-      .event-detail__board-group {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-      }
-      .event-detail__board-role {
-        font-size: 0.75rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--color-text-secondary);
-        margin: 0 0 0.25rem 0.25rem;
-      }
-      .event-detail__board-slot {
-        position: relative;
-        display: grid;
-        grid-template-columns: 2.25rem minmax(7rem, 1fr) minmax(0, 1.4fr);
-        align-items: center;
-        gap: 0.75rem;
-        padding: 0.35rem 0.6rem;
-        border-radius: 0.4rem;
-        transition: background-color 120ms ease;
-      }
-      .event-detail__board-slot:hover {
-        background: var(--color-surface-1);
-      }
-      .event-detail__board-slot-icon {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 2.25rem;
-        height: 2.25rem;
-        border: none;
-        border-radius: 0.4rem;
-        background: var(--color-surface-1);
-        overflow: hidden;
-        padding: 0;
-        cursor: pointer;
-      }
-      .event-detail__board-slot-icon:focus-visible {
-        outline: 2px solid var(--color-primary);
-        outline-offset: 2px;
-      }
-      .event-detail__board-slot-render {
-        width: 100%;
-        height: 100%;
-        object-fit: contain;
-      }
-      .event-detail__board-slot-glyph {
-        font-size: 1rem;
-        color: var(--color-text-secondary);
-      }
-      .event-detail__board-slot-name {
-        font-weight: 600;
-        color: var(--color-text);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .event-detail__board-slot-select {
-        width: 100%;
-      }
-      @media (max-width: 36rem) {
-        .event-detail__board-slot {
-          grid-template-columns: 2.25rem 1fr;
-        }
-        .event-detail__board-slot-select {
-          grid-column: 1 / -1;
-        }
-      }
-
-      /* left: 2.5rem + min-width: 18rem alone can exceed a phone's viewport
-         width outright — now that a tap can pin this open (not just hover),
-         it needs to not run off-screen there too. max-width is clamped to
-         the viewport everywhere; below 30rem it also re-centers under the
-         slot row instead of hanging off a fixed left offset, since that
-         offset was sized for a wide desktop grid. */
       .event-detail__tooltip {
         position: absolute;
         top: calc(100% + 0.4rem);
@@ -1445,9 +1656,8 @@ function isEventDetailTab(value: string): value is EventDetailTab {
         max-width: min(26rem, calc(100vw - 2rem));
         background: var(--color-surface);
         border: 1px solid var(--color-border);
-        border-radius: 0.6rem;
+        border-radius: 6px;
         padding: 0.6rem;
-        box-shadow: 0 0.6rem 1.5rem rgba(0, 0, 0, 0.35);
       }
       @media (max-width: 30rem) {
         .event-detail__tooltip {
@@ -1459,8 +1669,8 @@ function isEventDetailTab(value: string): value is EventDetailTab {
       }
       .event-detail__tooltip-items {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(5rem, 1fr));
-        gap: 0.5rem;
+        grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
+        gap: 0.4rem;
       }
       .event-detail__tooltip-item {
         display: flex;
@@ -1470,36 +1680,37 @@ function isEventDetailTab(value: string): value is EventDetailTab {
         text-align: center;
       }
       .event-detail__tooltip-item img {
-        width: 3rem;
-        height: 3rem;
+        width: 2.5rem;
+        height: 2.5rem;
         object-fit: contain;
         background: var(--color-surface-1);
-        border-radius: 0.3rem;
+        border-radius: 4px;
       }
       .event-detail__tooltip-item-placeholder {
-        width: 3rem;
-        height: 3rem;
+        width: 2.5rem;
+        height: 2.5rem;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-size: 1.4rem;
+        font-size: 0.75rem;
         background: var(--color-surface-1);
-        border-radius: 0.3rem;
+        border-radius: 4px;
+        color: var(--color-text-secondary);
       }
       .event-detail__tooltip-item-name {
-        font-size: 0.7rem;
+        font-size: 0.625rem;
         color: var(--color-text);
         word-break: break-word;
       }
       .event-detail__tooltip-empty {
         color: var(--color-text-secondary);
-        font-size: 0.8rem;
+        font-size: 0.75rem;
       }
-
       .modal-backdrop {
         position: fixed;
         inset: 0;
-        background: rgba(0, 0, 0, 0.5);
+        background: rgba(8, 9, 10, 0.75);
+        backdrop-filter: blur(2px);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1509,7 +1720,7 @@ function isEventDetailTab(value: string): value is EventDetailTab {
       .modal-card {
         background: var(--color-surface);
         border: 1px solid var(--color-border);
-        border-radius: 0.75rem;
+        border-radius: 12px;
         max-width: 32rem;
         width: 100%;
         max-height: 90vh;
@@ -1525,6 +1736,7 @@ export class EventDetailPage {
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
+  private readonly destroyRef = inject(DestroyRef);
   private eventId = 0;
 
   protected readonly event = signal<EventDetailView | null>(null);
@@ -1533,34 +1745,48 @@ export class EventDetailPage {
   protected readonly loadFailed = signal(false);
   protected readonly canEdit = signal(false);
   protected readonly showEditForm = signal(false);
-  protected readonly tab = signal<EventDetailTab>('overview');
+  protected readonly tab = signal<EventDetailTab>('roster');
   protected readonly pendingConfirm = signal<PendingConfirm | null>(null);
   protected readonly saving = signal(false);
-  protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
-    { id: 'overview', label: this.t('events.tab.overview') },
-    { id: 'roster', label: this.t('events.tab.roster') },
-    { id: 'battles', label: this.t('events.tab.battles') },
-    { id: 'splits', label: this.t('events.tab.splits') },
-  ]);
-  protected readonly showBattleLinkForm = signal(false);
 
+  // Live timer tick for countdown
+  protected readonly currentTime = signal<number>(Date.now());
+
+  // Roster Builder Interactive Signals
+  protected readonly rosterView = signal<'parties' | 'roles' | 'table'>('parties');
+  protected readonly benchFilter = signal<'all' | 'unassigned'>('all');
+  protected readonly swapSourceSlot = signal<CompSlotRow | null>(null);
+  protected readonly quickAssignSlot = signal<CompSlotRow | null>(null);
+  protected readonly autoFilling = signal(false);
+  protected readonly dragOverSlotKey = signal<string | null>(null);
+  protected readonly draggedMember = signal<EventParticipant | null>(null);
+
+  protected readonly tabOptions = computed<ViewToggleOption[]>(() => {
+    const detail = this.event();
+    const rosterCount = detail?.participants.length ?? 0;
+    const battlesCount = detail?.battles.length ?? 0;
+    const splitsCount = detail?.splits.length ?? 0;
+    return [
+      { id: 'roster', label: `${this.t('events.tab.roster')} (${rosterCount})` },
+      { id: 'overview', label: this.t('events.tab.overview') },
+      { id: 'battles', label: `${this.t('events.tab.battles')} (${battlesCount})` },
+      { id: 'splits', label: `${this.t('events.tab.splits')} (${splitsCount})` },
+    ];
+  });
+
+  protected readonly showBattleLinkForm = signal(false);
   protected readonly showCompSearch = signal(false);
   protected readonly compSearchOptions = signal<SearchDialogOption[]>([]);
   protected readonly compSearchLoading = signal(false);
   protected readonly draftCompTitle = signal('');
 
   protected readonly showBattleSearch = signal(false);
-  /** Raw list of guild battles fetched from the backend (unfiltered). */
   protected readonly battleSearchRaw = signal<SearchDialogOption[]>([]);
-  /** Current text typed into the battle search dialog. */
   protected readonly battleSearchTerm = signal('');
-  /** Visible options after applying the client-side text filter. */
   protected readonly battleSearchOptions = computed<SearchDialogOption[]>(() => {
     const term = this.battleSearchTerm().trim().toLowerCase();
     const items = this.battleSearchRaw();
-    if (!term) {
-      return items;
-    }
+    if (!term) return items;
     return items.filter(
       (option) =>
         option.title.toLowerCase().includes(term) ||
@@ -1579,6 +1805,20 @@ export class EventDetailPage {
     ),
   );
 
+  protected readonly eventBalance = computed(() => {
+    const detail = this.event();
+    if (!detail) return { netBalance: 0, totalLoot: 0, totalLoss: 0, isProfitable: true };
+    const totalLoot = Number(detail.split_stats?.completed_net_value ?? 0);
+    const totalLoss = Number(this.eventLossEstimate()?.total_estimated_loss ?? 0);
+    const netBalance = totalLoot - totalLoss;
+    return {
+      netBalance,
+      totalLoot,
+      totalLoss,
+      isProfitable: netBalance >= 0,
+    };
+  });
+
   protected readonly showSplitSearch = signal(false);
   protected readonly splitSearchOptions = signal<SearchDialogOption[]>([]);
   protected readonly splitSearchLoading = signal(false);
@@ -1587,8 +1827,6 @@ export class EventDetailPage {
   protected readonly draftCompId = signal('');
   protected readonly draftCallToArms = signal(false);
   protected readonly draftScheduledAt = signal('');
-  /** Floor for the reschedule date picker — same local-time-via-UTC-offset
-   *  trick toggleEditForm() already uses below to populate the field itself. */
   protected readonly minScheduledAt = (() => {
     const now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
@@ -1603,24 +1841,17 @@ export class EventDetailPage {
   protected readonly draftPrimaryBuildId = signal('');
   protected readonly draftSecondaryBuildId = signal('');
 
-  /** True for the event creator OR any user holding `events.manage`. */
   protected readonly canManageParticipants = computed(() => {
     const detail = this.event();
     const userId = this.auth.profile()?.user_id ?? null;
-    if (userId === null) {
-      return false;
-    }
+    if (userId === null) return false;
     return this.canManage() || detail?.created_by === userId;
   });
 
-  /** Member picker state for the manual-add dialog. */
   protected readonly showMemberSearch = signal(false);
   protected readonly memberSearchOptions = signal<SearchDialogOption[]>([]);
   protected readonly memberSearchLoading = signal(false);
   protected readonly draftMember = signal<SearchDialogOption | null>(null);
-  /** Same reasoning as regears.ts's dialog focus handling: this is a plain
-   *  overlay `<div>`, not a native <dialog>, so nothing moves focus into it
-   *  on open or gives it back on close without doing it by hand. */
   private readonly assignBuildsPanel = viewChild<ElementRef<HTMLElement>>('assignBuildsPanel');
   private previouslyFocusedMemberTrigger: HTMLElement | null = null;
   protected readonly draftMemberPrimaryBuildId = signal('');
@@ -1628,25 +1859,13 @@ export class EventDetailPage {
   protected readonly memberSaving = signal(false);
   protected readonly memberError = signal<string | null>(null);
 
-  /**
-   * Draft board model: every comp build slot becomes a row in the grid.
-   * `slotKey` is `${build_id}#${slotIndex}` and is stable across renders.
-   */
   protected readonly slotAssignments = signal<Map<string, number | null>>(new Map());
   protected readonly slotSavingKey = signal<string | null>(null);
   protected readonly slotRemovingKey = signal<string | null>(null);
-  /**
-   * Build detail cache for hover tooltips and row icons. Preloaded in bulk
-   * when the management board opens so the weapon render is visible immediately.
-   */
   protected readonly buildDetails = signal<Map<number, BuildDetail>>(new Map());
-  protected readonly buildDetailsLoading = signal<Set<number>>(new Set());
   protected readonly hoveredSlotKey = signal<string | null>(null);
   protected readonly pinnedSlotKey = signal<string | null>(null);
-  /**
-   * Maps each `build_id` to its weapon `BuildItemSlot` so row icons can render
-   * the Albion item render without a separate lookup per row.
-   */
+
   protected readonly buildWeaponByBuildId = computed<Map<number, BuildItemSlot>>(() => {
     const map = new Map<number, BuildItemSlot>();
     for (const [buildId, detail] of this.buildDetails()) {
@@ -1657,16 +1876,16 @@ export class EventDetailPage {
     }
     return map;
   });
-  /** Build id preselected when the user opens the manual-add dialog from a slot. */
+
   private readonly pendingAddSlotBuildId = signal<number | null>(null);
+
   protected readonly currentParticipant = computed<EventParticipant | null>(() => {
     const detail = this.event();
     const userId = this.auth.profile()?.user_id ?? null;
-    if (!detail || userId === null) {
-      return null;
-    }
+    if (!detail || userId === null) return null;
     return detail.participants.find((participant) => participant.user_id === userId) ?? null;
   });
+
   protected readonly buildIndex = computed<Map<number, CompBuildEntry>>(() => {
     const map = new Map<number, CompBuildEntry>();
     for (const entry of this.availableBuilds()) {
@@ -1674,11 +1893,10 @@ export class EventDetailPage {
     }
     return map;
   });
+
   protected readonly participantsByRole = computed<RoleGrouping[]>(() => {
     const detail = this.event();
-    if (!detail) {
-      return [];
-    }
+    if (!detail) return [];
     const index = this.buildIndex();
     const groups = new Map<BuildRole, RoleGrouping>();
 
@@ -1706,16 +1924,7 @@ export class EventDetailPage {
       (group): group is RoleGrouping => !!group,
     );
   });
-  protected readonly participantsTotal = computed(() => this.event()?.participants.length ?? 0);
-  protected readonly participantsTarget = computed(() =>
-    this.participantsByRole().reduce((sum, group) => sum + group.target, 0),
-  );
 
-  /**
-   * Flat list of draft-board slots derived from the active comp.
-   * Each `CompBuildEntry` with `quantity` N expands into N slot rows so the
-   * UI can render a seat for every filled position, not just per build.
-   */
   protected readonly compSlots = computed<CompSlotRow[]>(() => {
     const slots: CompSlotRow[] = [];
     for (const entry of this.availableBuilds()) {
@@ -1732,7 +1941,38 @@ export class EventDetailPage {
     }
     return slots;
   });
-  /** Same list regrouped by role, preserving ROLE_ORDER for stable rendering. */
+
+  /**
+   * Group composition slots into 5-man Parties (Party 1, Party 2, Party 3, etc.)
+   */
+  protected readonly compParties = computed<CompPartyGroup[]>(() => {
+    const slots = this.compSlots();
+    if (slots.length === 0) return [];
+    
+    const parties: CompPartyGroup[] = [];
+    const partySize = 5;
+    const numParties = Math.ceil(slots.length / partySize);
+
+    for (let p = 0; p < numParties; p++) {
+      const partySlots = slots.slice(p * partySize, (p + 1) * partySize);
+      let filled = 0;
+      for (const slot of partySlots) {
+        if (this.slotAssignment(slot) !== null) {
+          filled++;
+        }
+      }
+      parties.push({
+        partyNumber: p + 1,
+        partyName: this.t('events.detail.party_num').replace('{number}', String(p + 1)),
+        slots: partySlots,
+        filledCount: filled,
+        totalCount: partySlots.length,
+      });
+    }
+
+    return parties;
+  });
+
   protected readonly compSlotsByRole = computed<CompSlotGroup[]>(() => {
     const groups = new Map<BuildRole, CompSlotRow[]>();
     for (const slot of this.compSlots()) {
@@ -1748,20 +1988,13 @@ export class EventDetailPage {
       slots: groups.get(role) ?? [],
     }));
   });
-  /**
-   * Mirror of `compSlots` rebuilt whenever the backend snapshot changes so the
-   * initial assignment state is recomputed. Local edits go into
-   * `slotAssignments` which overrides these defaults until saved.
-   */
+
   protected readonly initialSlotAssignments = computed<Map<string, number | null>>(() => {
     const slots = this.compSlots();
     const detail = this.event();
     const assignments = new Map<string, number | null>();
-    if (slots.length === 0 || !detail) {
-      return assignments;
-    }
-    // Group participants by their primary build id so we can pop them off as
-    // we walk the slots, leaving surplus participants unassigned.
+    if (slots.length === 0 || !detail) return assignments;
+
     const byBuild = new Map<number, EventParticipant[]>();
     for (const participant of detail.participants) {
       const bucket = byBuild.get(participant.primary_build_id);
@@ -1778,24 +2011,7 @@ export class EventDetailPage {
     }
     return assignments;
   });
-  /** Participants not assigned to any slot (orphans after a comp swap). */
-  protected readonly unassignedParticipants = computed<EventParticipant[]>(() => {
-    const detail = this.event();
-    if (!detail) {
-      return [];
-    }
-    const assigned = new Set<number>();
-    for (const value of this.resolvedAssignments().values()) {
-      if (value !== null) {
-        assigned.add(value);
-      }
-    }
-    return detail.participants.filter((participant) => !assigned.has(participant.user_id));
-  });
-  /**
-   * Local overrides layered on top of `initialSlotAssignments` so we can show
-   * drafts before they hit the backend.
-   */
+
   protected readonly resolvedAssignments = computed<Map<string, number | null>>(() => {
     const merged = new Map<string, number | null>(this.initialSlotAssignments());
     for (const [key, value] of this.slotAssignments()) {
@@ -1803,71 +2019,58 @@ export class EventDetailPage {
     }
     return merged;
   });
-  /** Number of slots currently filled in the resolved state. */
+
   protected readonly filledSlotsCount = computed(() => {
     let count = 0;
     for (const value of this.resolvedAssignments().values()) {
-      if (value !== null) {
-        count++;
-      }
+      if (value !== null) count++;
     }
     return count;
   });
-  protected readonly outcomeChartRows = computed<ChartMetric[]>(() => {
-    const stats = this.event()?.stats;
-    if (!stats) {
-      return [];
-    }
-    return [
-      { label: this.t('events.detail.wins'), value: stats.wins, color: 'var(--color-success)' },
-      { label: this.t('events.detail.losses'), value: stats.losses, color: 'var(--color-danger)' },
-    ];
-  });
-  protected readonly opponentChartRows = computed<ChartMetric[]>(() =>
-    (this.event()?.stats.top_opponents ?? []).map((opponent) => ({
-      label: opponent.guild_name || this.t('common.none'),
-      value: Math.max(opponent.opponent_kill_fame, opponent.battles),
-      color: 'var(--color-warning)',
-    })),
-  );
-  protected readonly roleChartRows = computed<ChartMetric[]>(() =>
-    this.participantsByRole().map((group) => ({
-      label: this.t(this.roleLabel(group.role)),
-      value: group.participants.length,
-      target: group.target,
-      color: 'var(--color-info)',
-    })),
-  );
-  protected readonly lossPlayerChartRows = computed<ChartMetric[]>(() =>
-    this.eventLossEstimate()
-      .players.slice(0, 10)
-      .map((player) => ({
-        label: player.player_name,
-        value: player.estimated_loss,
-        color: 'var(--color-danger)',
-      })),
-  );
-  protected readonly splitStatusChartRows = computed<ChartMetric[]>(() => {
-    const stats = this.event()?.split_stats;
-    if (!stats) {
-      return [];
-    }
-    return [
-      { label: 'Pending', value: stats.pending_splits, color: 'var(--color-warning)' },
-      { label: 'Completed', value: stats.completed_splits, color: 'var(--color-success)' },
-      {
-        label: 'Not completed',
-        value: stats.not_completed_splits,
-        color: 'var(--color-text-secondary)',
-      },
-      { label: 'Lost', value: stats.lost_splits, color: 'var(--color-danger)' },
-    ];
-  });
-  protected readonly winRateAngle = computed(
-    () => ((this.event()?.stats.win_rate ?? 0) / 100) * 360,
-  );
 
-  // Opponents table columns and trackBy
+  protected readonly unassignedParticipants = computed<EventParticipant[]>(() => {
+    const detail = this.event();
+    if (!detail) return [];
+    const assigned = new Set<number>();
+    for (const value of this.resolvedAssignments().values()) {
+      if (value !== null) assigned.add(value);
+    }
+    return detail.participants.filter((participant) => !assigned.has(participant.user_id));
+  });
+
+  protected readonly filteredBenchParticipants = computed<EventParticipant[]>(() => {
+    const detail = this.event();
+    if (!detail) return [];
+    const filter = this.benchFilter();
+    if (filter === 'unassigned') {
+      return this.unassignedParticipants();
+    }
+    return detail.participants;
+  });
+
+  protected readonly countdownText = computed(() => {
+    const detail = this.event();
+    if (!detail) return '';
+    this.currentTime(); // subscribe to tick
+    if (detail.status === 'live') {
+      return this.t('events.detail.countdown_live');
+    }
+    if (detail.status === 'stopped' || detail.status === 'auto_stopped') {
+      return this.t('events.detail.countdown_ended');
+    }
+    const diffMs = new Date(detail.event_date_utc).getTime() - Date.now();
+    if (diffMs <= 0) {
+      return 'Starting now';
+    }
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    const secs = Math.floor((diffMs % (1000 * 60)) / 1000);
+    const timeStr = days > 0 ? `${days}d ${hours}h ${mins}m` : `${hours}h ${mins}m ${secs}s`;
+    return this.t('events.detail.countdown_starts_in').replace('{time}', timeStr);
+  });
+
+  // Opponents table columns
   protected readonly opponentsColumns: readonly DataTableColumn<OpponentPerformanceView>[] = [
     {
       key: 'guild_name',
@@ -1922,7 +2125,7 @@ export class EventDetailPage {
   protected readonly trackOpponent = (opponent: OpponentPerformanceView): unknown =>
     `${opponent.guild_id || opponent.guild_name}`;
 
-  // Splits table columns and trackBy
+  // Splits table columns
   protected readonly splitsColumns: readonly DataTableColumn<SplitSummary>[] = [
     {
       key: 'note',
@@ -1972,7 +2175,7 @@ export class EventDetailPage {
 
   protected readonly trackSplit = (split: SplitSummary): unknown => split.id;
 
-  // Battles table columns and trackBy
+  // Battles table columns
   protected readonly battlesColumns: readonly DataTableColumn<EventBattleSummary>[] = [
     {
       key: 'albionbb_battle_id',
@@ -2048,7 +2251,7 @@ export class EventDetailPage {
 
   protected readonly trackBattle = (battle: EventBattleSummary): unknown => battle.id;
 
-  // Participants table columns and trackBy
+  // Participants table columns
   protected readonly participantsColumns: readonly DataTableColumn<EventParticipant>[] = [
     {
       key: 'username',
@@ -2084,8 +2287,7 @@ export class EventDetailPage {
     },
   ];
 
-  protected readonly trackParticipant = (participant: EventParticipant): unknown =>
-    participant.user_id;
+  protected readonly trackParticipant = (participant: EventParticipant): unknown => participant.user_id;
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
@@ -2097,11 +2299,20 @@ export class EventDetailPage {
         this.eventId = Number(id);
         this.showEditForm.set(false);
         this.showJoinForm.set(false);
-        this.tab.set('overview');
+        this.tab.set('roster');
         this.pendingConfirm.set(null);
         void this.load();
       }
     });
+
+    const timer = setInterval(() => {
+      this.currentTime.set(Date.now());
+    }, 1000);
+
+    this.destroyRef.onDestroy(() => {
+      clearInterval(timer);
+    });
+
     this.onCompSearchFilter({ search: '', dateFrom: '', dateTo: '' });
     this.onBattleSearchFilter({ search: '', dateFrom: '', dateTo: '' });
 
@@ -2114,6 +2325,475 @@ export class EventDetailPage {
         this.previouslyFocusedMemberTrigger = null;
       }
     });
+  }
+
+  protected slotAssignment(slot: CompSlotRow): number | null {
+    return this.resolvedAssignments().get(slot.key) ?? null;
+  }
+
+  protected slotParticipant(slot: CompSlotRow): EventParticipant | null {
+    const userId = this.slotAssignment(slot);
+    if (userId === null) return null;
+    return this.event()?.participants.find((p) => p.user_id === userId) ?? null;
+  }
+
+  protected isParticipantAssigned(userId: number): CompSlotRow | null {
+    for (const [key, assignedUserId] of this.resolvedAssignments()) {
+      if (assignedUserId === userId) {
+        return this.compSlots().find((s) => s.key === key) ?? null;
+      }
+    }
+    return null;
+  }
+
+  protected groupRoleFilledCount(group: CompSlotGroup): number {
+    let count = 0;
+    for (const slot of group.slots) {
+      if (this.slotAssignment(slot) !== null) count++;
+    }
+    return count;
+  }
+
+  protected primaryMatchParticipants(buildId: number): EventParticipant[] {
+    return (this.event()?.participants ?? []).filter((p) => p.primary_build_id === buildId);
+  }
+
+  protected secondaryMatchParticipants(buildId: number): EventParticipant[] {
+    return (this.event()?.participants ?? []).filter((p) => p.secondary_build_id === buildId);
+  }
+
+  protected openQuickAssign(slot: CompSlotRow): void {
+    this.quickAssignSlot.set(slot);
+  }
+
+  protected closeQuickAssign(): void {
+    this.quickAssignSlot.set(null);
+  }
+
+  protected openMemberSearchFromSlot(slot: CompSlotRow): void {
+    this.pendingAddSlotBuildId.set(slot.buildId);
+    this.closeQuickAssign();
+    this.openMemberSearch();
+  }
+
+  protected startSwapFromSlot(slot: CompSlotRow): void {
+    this.swapSourceSlot.set(slot);
+  }
+
+  protected cancelSwapMode(): void {
+    this.swapSourceSlot.set(null);
+  }
+
+  /**
+   * Click-to-Swap or Click-to-Move handler.
+   */
+  protected async handleSlotClick(targetSlot: CompSlotRow): Promise<void> {
+    const sourceSlot = this.swapSourceSlot();
+    if (!sourceSlot || sourceSlot.key === targetSlot.key) {
+      this.swapSourceSlot.set(null);
+      return;
+    }
+
+    const sourceUserId = this.slotAssignment(sourceSlot);
+    const targetUserId = this.slotAssignment(targetSlot);
+    const detail = this.event();
+    if (!detail || sourceUserId === null) {
+      this.swapSourceSlot.set(null);
+      return;
+    }
+
+    this.swapSourceSlot.set(null);
+    this.slotSavingKey.set(targetSlot.key);
+
+    try {
+      if (targetUserId === null) {
+        // Move source player to empty target slot
+        await firstValueFrom(
+          this.api.put<EventDetailView>(`api/events/${detail.id}/participants/${sourceUserId}`, {
+            primary_build_id: targetSlot.buildId,
+          }),
+        );
+        this.toasts.success(this.t('events.detail.participant_updated'));
+      } else {
+        // Swap both players
+        await Promise.all([
+          firstValueFrom(
+            this.api.put<EventDetailView>(`api/events/${detail.id}/participants/${sourceUserId}`, {
+              primary_build_id: targetSlot.buildId,
+            }),
+          ),
+          firstValueFrom(
+            this.api.put<EventDetailView>(`api/events/${detail.id}/participants/${targetUserId}`, {
+              primary_build_id: sourceSlot.buildId,
+            }),
+          ),
+        ]);
+        this.toasts.success(this.t('events.detail.participant_updated'));
+      }
+      await this.load();
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.slotSavingKey.set(null);
+    }
+  }
+
+  /**
+   * Assigns a specific member to a slot.
+   */
+  protected async assignMemberToSlot(slot: CompSlotRow, userId: number): Promise<void> {
+    const detail = this.event();
+    if (!detail) return;
+    this.closeQuickAssign();
+    this.swapSourceSlot.set(null);
+    this.slotSavingKey.set(slot.key);
+
+    try {
+      const updated = await firstValueFrom(
+        this.api.put<EventDetailView>(`api/events/${detail.id}/participants/${userId}`, {
+          primary_build_id: slot.buildId,
+        }),
+      );
+      this.event.set(updated);
+      this.toasts.success(this.t('events.detail.participant_updated'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.slotSavingKey.set(null);
+    }
+  }
+
+  /**
+   * Drag and drop handlers for comp slots and bench
+   */
+  protected onBenchMemberDragStart(event: DragEvent, member: EventParticipant): void {
+    this.draggedMember.set(member);
+    event.dataTransfer?.setData('text/plain', String(member.user_id));
+  }
+
+  protected onSlotDragOver(event: DragEvent, slot: CompSlotRow): void {
+    event.preventDefault();
+    this.dragOverSlotKey.set(slot.key);
+  }
+
+  protected onSlotDragLeave(slot: CompSlotRow): void {
+    if (this.dragOverSlotKey() === slot.key) {
+      this.dragOverSlotKey.set(null);
+    }
+  }
+
+  protected async onSlotDrop(event: DragEvent, slot: CompSlotRow): Promise<void> {
+    event.preventDefault();
+    this.dragOverSlotKey.set(null);
+    const member = this.draggedMember();
+    this.draggedMember.set(null);
+    if (!member) return;
+
+    await this.assignMemberToSlot(slot, member.user_id);
+  }
+
+  /**
+   * Auto-assigns registered participants to vacant comp slots matching their Primary / Secondary builds.
+   */
+  protected async autoFillRoster(): Promise<void> {
+    const detail = this.event();
+    if (!detail) return;
+
+    const unassigned = [...this.unassignedParticipants()];
+    if (unassigned.length === 0) return;
+
+    this.autoFilling.set(true);
+    const requests: Promise<unknown>[] = [];
+
+    // First pass: match primary builds
+    for (const slot of this.compSlots()) {
+      if (this.slotAssignment(slot) !== null) continue;
+      const matchIndex = unassigned.findIndex((u) => u.primary_build_id === slot.buildId);
+      if (matchIndex !== -1) {
+        const matched = unassigned.splice(matchIndex, 1)[0];
+        requests.push(
+          firstValueFrom(
+            this.api.put<EventDetailView>(`api/events/${detail.id}/participants/${matched.user_id}`, {
+              primary_build_id: slot.buildId,
+            }),
+          ),
+        );
+      }
+    }
+
+    // Second pass: match secondary builds
+    for (const slot of this.compSlots()) {
+      if (this.slotAssignment(slot) !== null) continue;
+      const matchIndex = unassigned.findIndex((u) => u.secondary_build_id === slot.buildId);
+      if (matchIndex !== -1) {
+        const matched = unassigned.splice(matchIndex, 1)[0];
+        requests.push(
+          firstValueFrom(
+            this.api.put<EventDetailView>(`api/events/${detail.id}/participants/${matched.user_id}`, {
+              primary_build_id: slot.buildId,
+            }),
+          ),
+        );
+      }
+    }
+
+    try {
+      await Promise.allSettled(requests);
+      await this.load();
+      this.toasts.success(this.t('events.detail.auto_fill_success'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.autoFilling.set(false);
+    }
+  }
+
+  /**
+   * Generates clean markdown formatted text of the parties & player assignments for Discord.
+   */
+  protected copyRosterForDiscord(): void {
+    const detail = this.event();
+    if (!detail) return;
+
+    const compName = detail.active_comp_name || detail.comp_name || 'Composition';
+    const eventDate = new Date(detail.event_date_utc).toUTCString();
+    const cta = detail.call_to_arms ? ' [CALL TO ARMS]' : '';
+
+    let md = `**${detail.title.toUpperCase()}${cta}**\n`;
+    md += `Date: **${eventDate}** | Comp: **${compName}** (${this.filledSlotsCount()}/${this.compSlots().length})\n\n`;
+
+    const parties = this.compParties();
+    parties.forEach((party) => {
+      md += `**PARTY ${party.partyNumber} (${party.filledCount}/${party.totalCount})**\n`;
+      party.slots.forEach((slot, idx) => {
+        const occupant = this.slotParticipant(slot);
+        const slotNum = (party.partyNumber - 1) * 5 + idx + 1;
+        const roleName = this.roleLabelName(slot.role);
+        if (occupant) {
+          md += `${slotNum}. [${roleName}] **${occupant.username}** — ${slot.build.name}\n`;
+        } else {
+          md += `${slotNum}. [${roleName}] *EMPTY* — ${slot.build.name}\n`;
+        }
+      });
+      md += `\n`;
+    });
+
+    const unassigned = this.unassignedParticipants();
+    if (unassigned.length > 0) {
+      md += `**BENCH / QUEUE (${unassigned.length}):**\n`;
+      unassigned.forEach((u) => {
+        md += `• **${u.username}** (${u.primary_build_name || 'None'}${u.secondary_build_name ? ` / ${u.secondary_build_name}` : ''})\n`;
+      });
+    }
+
+    void navigator.clipboard.writeText(md).then(() => {
+      this.toasts.success(this.t('events.detail.discord_copied'));
+    });
+  }
+
+  protected requestClearAll(): void {
+    this.pendingConfirm.set({ kind: 'clear-all' });
+  }
+
+  protected async clearSlot(slot: CompSlotRow): Promise<void> {
+    const userId = this.slotAssignment(slot);
+    if (userId === null) return;
+    const participant = this.slotParticipant(slot);
+    if (participant) {
+      this.pendingConfirm.set({
+        kind: 'remove-participant',
+        userId,
+        username: participant.username,
+        slotKey: slot.key,
+      });
+    }
+  }
+
+  private async performClearSlot(slotKey?: string, userId?: number): Promise<void> {
+    const detail = this.event();
+    if (!detail || !userId) return;
+    if (slotKey) this.slotRemovingKey.set(slotKey);
+    try {
+      const updated = await firstValueFrom(
+        this.api.delete<EventDetailView>(`api/events/${detail.id}/participants/${userId}`),
+      );
+      if (updated) {
+        this.event.set(updated);
+      } else {
+        await this.load();
+      }
+      this.toasts.success(this.t('events.detail.participant_removed'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      if (slotKey) this.slotRemovingKey.set(null);
+    }
+  }
+
+  protected async performClearAll(): Promise<void> {
+    const detail = this.event();
+    if (!detail) return;
+    const requests = detail.participants.map((p) =>
+      firstValueFrom(this.api.delete<EventDetailView>(`api/events/${detail.id}/participants/${p.user_id}`)),
+    );
+    try {
+      await Promise.allSettled(requests);
+      await this.load();
+      this.toasts.success(this.t('events.detail.all_cleared'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    }
+  }
+
+  protected onSlotHover(slot: CompSlotRow): void {
+    this.hoveredSlotKey.set(slot.key);
+  }
+
+  protected onSlotLeave(): void {
+    this.hoveredSlotKey.set(null);
+  }
+
+  protected toggleSlotTooltip(slot: CompSlotRow): void {
+    this.pinnedSlotKey.update((current) => (current === slot.key ? null : slot.key));
+  }
+
+  protected slotTooltipItems(buildId: number): BuildItemSlot[] {
+    const detail = this.buildDetails().get(buildId);
+    if (!detail) return [];
+    return [...detail.items].sort(sortBySlotOrder);
+  }
+
+  protected slotTooltipVisible(slot: CompSlotRow): boolean {
+    const isActive = this.hoveredSlotKey() === slot.key || this.pinnedSlotKey() === slot.key;
+    return isActive && this.buildDetails().has(slot.buildId);
+  }
+
+  protected weaponRenderIconUrl(slot: CompSlotRow): string {
+    const weapon = this.buildWeaponByBuildId().get(slot.buildId);
+    return weapon ? this.renderItemIconUrl(weapon) : '';
+  }
+
+  protected renderItemIconUrl(item: BuildItemSlot): string {
+    const icon = item.openalbion_item_icon?.trim();
+    if (!icon) return '';
+    const identifier = icon
+      .split('/')
+      .pop()
+      ?.split('?')
+      .shift()
+      ?.split('@')
+      .shift()
+      ?.replace(/\.png$/i, '')
+      .trim();
+    if (!identifier) return icon;
+    return `https://render.albiononline.com/v1/item/${encodeURIComponent(identifier)}.png?quality=1&size=96`;
+  }
+
+  protected openMemberSearch(): void {
+    this.showMemberSearch.set(true);
+    if (this.memberSearchOptions().length === 0) {
+      void this.onMemberSearchFilter({ search: '', dateFrom: '', dateTo: '' });
+    }
+  }
+
+  protected closeMemberSearch(): void {
+    this.showMemberSearch.set(false);
+  }
+
+  protected async onMemberSearchFilter(filter: {
+    search: string;
+    dateFrom: string;
+    dateTo: string;
+  }): Promise<void> {
+    this.memberSearchLoading.set(true);
+    try {
+      const params: Record<string, string> = { limit: '50' };
+      if (filter.search) params['username'] = filter.search;
+      const data = await firstValueFrom(
+        this.api.get<PaginatedData<UserProfile>>('api/users', params),
+      );
+      const existing = new Set((this.event()?.participants ?? []).map((p) => p.user_id));
+      this.memberSearchOptions.set(
+        data.items
+          .filter((user) => !existing.has(user.id))
+          .map((user) => ({
+            id: user.id,
+            title: user.username,
+            subtitle: user.email || undefined,
+            chip: user.role,
+          })),
+      );
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.memberSearchLoading.set(false);
+    }
+  }
+
+  protected onMemberSelected(option: SearchDialogOption): void {
+    this.draftMember.set(option);
+    const preselectedBuildId = this.pendingAddSlotBuildId();
+    this.draftMemberPrimaryBuildId.set(
+      preselectedBuildId !== null ? String(preselectedBuildId) : '',
+    );
+    this.draftMemberSecondaryBuildId.set('');
+    this.memberError.set(null);
+    this.showMemberSearch.set(false);
+    this.pendingAddSlotBuildId.set(null);
+    if (this.availableBuilds().length === 0) {
+      void this.loadActiveComp();
+    }
+  }
+
+  protected closeMemberForm(): void {
+    this.draftMember.set(null);
+    this.draftMemberPrimaryBuildId.set('');
+    this.draftMemberSecondaryBuildId.set('');
+    this.memberError.set(null);
+  }
+
+  protected onDraftMemberPrimaryChange(event: Event): void {
+    this.draftMemberPrimaryBuildId.set((event.target as HTMLSelectElement).value);
+    this.memberError.set(null);
+  }
+
+  protected onDraftMemberSecondaryChange(event: Event): void {
+    this.draftMemberSecondaryBuildId.set((event.target as HTMLSelectElement).value);
+  }
+
+  protected async onAddMemberSubmit(submit: SubmitEvent): Promise<void> {
+    submit.preventDefault();
+    const detail = this.event();
+    const member = this.draftMember();
+    if (!detail || !member) return;
+    const primaryBuildId = Number(this.draftMemberPrimaryBuildId());
+    if (primaryBuildId <= 0) {
+      this.memberError.set(this.t('events.detail.no_builds_assigned'));
+      return;
+    }
+
+    const body: ParticipateEventRequest = { primary_build_id: primaryBuildId };
+    const secondaryRaw = this.draftMemberSecondaryBuildId();
+    if (secondaryRaw) {
+      const secondaryBuildId = Number(secondaryRaw);
+      if (secondaryBuildId > 0 && secondaryBuildId !== primaryBuildId) {
+        body.secondary_build_id = secondaryBuildId;
+      }
+    }
+
+    this.memberSaving.set(true);
+    try {
+      const updated = await firstValueFrom(
+        this.api.put<EventDetailView>(`api/events/${detail.id}/participants/${member.id}`, body),
+      );
+      this.event.set(updated);
+      this.closeMemberForm();
+      this.toasts.success(this.t('events.detail.participant_added'));
+    } catch (error) {
+      this.memberError.set(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.memberSaving.set(false);
+    }
   }
 
   protected async onCompSearchFilter(filter: {
@@ -2149,9 +2829,6 @@ export class EventDetailPage {
   }
 
   protected onBattleSearchFilter(filter: { search: string; dateFrom: string; dateTo: string }) {
-    // `/api/battles` is guild-scoped and does not accept a search parameter,
-    // so the text filter is applied client-side over the already-loaded
-    // battles. The backend is only hit on dialog open.
     this.battleSearchTerm.set(filter.search);
     if (this.battleSearchRaw().length === 0) {
       void this.loadGuildBattles();
@@ -2161,9 +2838,6 @@ export class EventDetailPage {
   private async loadGuildBattles(): Promise<void> {
     this.battleSearchLoading.set(true);
     try {
-      // Use the guild-scoped endpoint: the backend only returns battles
-      // involving the configured Weaklings guild, so members cannot
-      // accidentally link foreign battles to an event.
       const data = await firstValueFrom(this.api.get<PaginatedData<BattleSummary>>('api/battles'));
       this.battleSearchRaw.set(
         data.items.map((battle) => ({
@@ -2255,12 +2929,6 @@ export class EventDetailPage {
     void this.router.navigate(['/events']);
   }
 
-  protected headerSubtitle(detail: EventDetailView): string {
-    return `${this.formatDate(detail.event_date_utc)} · ${this.t('events.detail.comp')}: ${
-      detail.active_comp_name || detail.comp_name
-    } · ${this.t('events.detail.comp_capacity')}: ${detail.active_comp_capacity}`;
-  }
-
   protected onTabChange(value: string): void {
     if (isEventDetailTab(value)) {
       this.tab.set(value);
@@ -2283,6 +2951,8 @@ export class EventDetailPage {
         return this.t('events.stop');
       case 'unlink-split':
         return this.t('events.detail.unlink_split');
+      case 'clear-all':
+        return this.t('events.detail.clear_all');
       case 'remove-participant':
         return this.t('events.detail.remove_participant');
     }
@@ -2292,6 +2962,8 @@ export class EventDetailPage {
     switch (confirm.kind) {
       case 'delete':
         return this.t('events.detail.confirm_delete');
+      case 'clear-all':
+        return this.t('events.detail.clear_all_confirm');
       case 'remove-participant':
         return `${this.t('events.detail.remove_participant')} — ${confirm.username}?`;
       default:
@@ -2300,7 +2972,7 @@ export class EventDetailPage {
   }
 
   protected confirmActionLabel(confirm: PendingConfirm): string {
-    return confirm.kind === 'delete' || confirm.kind === 'remove-participant'
+    return confirm.kind === 'delete' || confirm.kind === 'remove-participant' || confirm.kind === 'clear-all'
       ? this.t('common.delete')
       : this.t('common.confirm');
   }
@@ -2308,9 +2980,7 @@ export class EventDetailPage {
   protected async runConfirm(): Promise<void> {
     const confirm = this.pendingConfirm();
     this.pendingConfirm.set(null);
-    if (!confirm) {
-      return;
-    }
+    if (!confirm) return;
     switch (confirm.kind) {
       case 'delete':
         await this.confirmDelete();
@@ -2320,6 +2990,9 @@ export class EventDetailPage {
         break;
       case 'unlink-split':
         await this.performUnlinkSplit(confirm.splitId);
+        break;
+      case 'clear-all':
+        await this.performClearAll();
         break;
       case 'remove-participant':
         await this.performClearSlot(confirm.slotKey, confirm.userId);
@@ -2358,7 +3031,6 @@ export class EventDetailPage {
     this.draftCompId.set((event.target as HTMLSelectElement).value);
   }
 
-  /** Two-way bind helper for the call-to-arms checkbox in the edit form. */
   protected onCallToArmsChange(event: Event): void {
     this.draftCallToArms.set((event.target as HTMLInputElement).checked);
   }
@@ -2366,9 +3038,7 @@ export class EventDetailPage {
   protected async onUpdateSubmit(submit: SubmitEvent): Promise<void> {
     submit.preventDefault();
     const detail = this.event();
-    if (!detail) {
-      return;
-    }
+    if (!detail) return;
 
     const title = this.draftTitle().trim();
     if (!title) {
@@ -2408,9 +3078,7 @@ export class EventDetailPage {
       return;
     }
     const detail = this.event();
-    if (!detail) {
-      return;
-    }
+    if (!detail) return;
     this.draftBattleLinks.set(
       detail.battles.map((b) => ({
         id: b.albionbb_battle_id,
@@ -2423,9 +3091,7 @@ export class EventDetailPage {
   protected async onBattleLinksSubmit(submit: SubmitEvent): Promise<void> {
     submit.preventDefault();
     const detail = this.event();
-    if (!detail) {
-      return;
-    }
+    if (!detail) return;
     this.battleLinksSaving.set(true);
     try {
       const ids = this.draftBattleLinks().map((b) => b.id);
@@ -2443,9 +3109,7 @@ export class EventDetailPage {
 
   protected async confirmDelete(): Promise<void> {
     const detail = this.event();
-    if (!detail) {
-      return;
-    }
+    if (!detail) return;
     try {
       await firstValueFrom(this.api.delete(`api/events/${detail.id}`));
       this.toasts.success(this.t('common.delete'));
@@ -2488,9 +3152,7 @@ export class EventDetailPage {
   protected async onJoinSubmit(submit: SubmitEvent): Promise<void> {
     submit.preventDefault();
     const detail = this.event();
-    if (!detail) {
-      return;
-    }
+    if (!detail) return;
 
     const primaryBuildId = Number(this.draftPrimaryBuildId());
     if (primaryBuildId <= 0) {
@@ -2539,415 +3201,10 @@ export class EventDetailPage {
     }
   }
 
-  /**
-   * Returns the user id currently assigned to a slot, honouring local draft
-   * overrides. Returns `null` when the slot is empty.
-   */
-  protected slotAssignment(slot: CompSlotRow): number | null {
-    return this.resolvedAssignments().get(slot.key) ?? null;
-  }
-
-  /**
-   * Stringified assignment for `<select [value]>` bindings. Angular templates
-   * cannot reference the global `String` constructor, so we expose this helper
-   * to coerce numbers into option values.
-   */
-  protected slotAssignmentValue(slot: CompSlotRow): string {
-    const value = this.slotAssignment(slot);
-    return value === null ? '' : String(value);
-  }
-
-  /**
-   * True when the slot's local draft differs from the persisted snapshot.
-   * Drives the per-row Save button enabled state.
-   */
-  protected isSlotDirty(slot: CompSlotRow): boolean {
-    const initial = this.initialSlotAssignments().get(slot.key) ?? null;
-    const current = this.slotAssignment(slot);
-    return initial !== current;
-  }
-
-  /**
-   * Fires when an officer picks or clears a player on a slot. Auto-saves
-   * immediately — no Submit button. When the slot had a previous occupant
-   * who is being replaced, the old user's participation is deleted first.
-   */
-  protected async onSlotAssign(slot: CompSlotRow, event: Event): Promise<void> {
-    const value = (event.target as HTMLSelectElement).value;
-    if (value === '__add__') {
-      this.pendingAddSlotBuildId.set(slot.buildId);
-      this.openMemberSearch();
-      (event.target as HTMLSelectElement).value = this.slotAssignmentValue(slot);
-      return;
-    }
-
-    const userId = value ? Number(value) : null;
-    const detail = this.event();
-    if (!detail) {
-      return;
-    }
-
-    // Optimistically update local state.
-    const next = new Map(this.slotAssignments());
-    if (userId !== null) {
-      for (const [key, assigned] of next) {
-        if (assigned === userId && key !== slot.key) {
-          next.set(key, null);
-        }
-      }
-    }
-    next.set(slot.key, userId);
-    this.slotAssignments.set(next);
-
-    this.slotSavingKey.set(slot.key);
-    try {
-      if (userId === null) {
-        // Slot cleared: delete the previous occupant if one was persisted.
-        const previous = this.initialSlotAssignments().get(slot.key) ?? null;
-        if (previous !== null) {
-          const updated = await firstValueFrom(
-            this.api.delete<EventDetailView>(`api/events/${detail.id}/participants/${previous}`),
-          );
-          if (updated) {
-            this.event.set(updated);
-          }
-        }
-      } else {
-        const updated = await firstValueFrom(
-          this.api.put<EventDetailView>(`api/events/${detail.id}/participants/${userId}`, {
-            primary_build_id: slot.buildId,
-          }),
-        );
-        this.event.set(updated);
-      }
-      this.slotAssignments.update((map) => {
-        const cleaned = new Map(map);
-        cleaned.delete(slot.key);
-        return cleaned;
-      });
-    } catch (error) {
-      // Revert local state on failure.
-      this.slotAssignments.update((map) => {
-        const reverted = new Map(map);
-        reverted.delete(slot.key);
-        return reverted;
-      });
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.slotSavingKey.set(null);
-    }
-  }
-
-  /** Shows the tooltip on hover. Build details are preloaded. */
-  protected onSlotHover(slot: CompSlotRow): void {
-    this.hoveredSlotKey.set(slot.key);
-  }
-
-  protected onSlotLeave(): void {
-    this.hoveredSlotKey.set(null);
-  }
-
-  /**
-   * Tap/click-to-pin fallback for the loadout tooltip. `mouseenter` never
-   * fires on touch, so without this the equipment preview was entirely
-   * unreachable on phones and tablets — this also gives keyboard users a
-   * real activation instead of relying on hover.
-   */
-  protected toggleSlotTooltip(slot: CompSlotRow): void {
-    this.pinnedSlotKey.update((current) => (current === slot.key ? null : slot.key));
-  }
-
-  protected slotTooltipItems(buildId: number): BuildItemSlot[] {
-    const detail = this.buildDetails().get(buildId);
-    if (!detail) {
-      return [];
-    }
-    return [...detail.items].sort(sortBySlotOrder);
-  }
-
-  protected slotTooltipVisible(slot: CompSlotRow): boolean {
-    const isActive = this.hoveredSlotKey() === slot.key || this.pinnedSlotKey() === slot.key;
-    return isActive && this.buildDetails().has(slot.buildId);
-  }
-
-  /**
-   * Converts any stored icon reference into Sandbox Interactive's public PNG
-   * render endpoint. Older build rows may still hold CDN/OpenAlbion URLs; this
-   * extracts the Albion item identifier (for example `T8_2H_HAMMER_UNDEAD`)
-   * and rebuilds the canonical render URL used by Albion itself.
-   */
-  protected weaponRenderIconUrl(slot: CompSlotRow): string {
-    const weapon = this.buildWeaponByBuildId().get(slot.buildId);
-    return weapon ? this.renderItemIconUrl(weapon) : '';
-  }
-
-  protected renderItemIconUrl(item: BuildItemSlot): string {
-    const icon = item.openalbion_item_icon?.trim();
-    if (!icon) {
-      return '';
-    }
-    const identifier = icon
-      .split('/')
-      .pop()
-      ?.split('?')
-      .shift()
-      ?.split('@')
-      .shift()
-      ?.replace(/\.png$/i, '')
-      .trim();
-    if (!identifier) {
-      return icon;
-    }
-    return `https://render.albiononline.com/v1/item/${encodeURIComponent(identifier)}.png?quality=1&size=96`;
-  }
-
-  /**
-   * Resolves a slot's local assignment to the corresponding participant row
-   * so the template can render the username next to the dropdown.
-   */
-  protected slotParticipant(slot: CompSlotRow): EventParticipant | null {
-    const userId = this.slotAssignment(slot);
-    if (userId === null) {
-      return null;
-    }
-    return this.event()?.participants.find((participant) => participant.user_id === userId) ?? null;
-  }
-
-  /**
-   * Users available to assign to a slot. Includes the slot's current occupant
-   * plus any user not yet pinned to another slot, so the dropdown stays valid
-   * after each pick.
-   */
-  protected slotParticipantOptions(slot: CompSlotRow): EventParticipant[] {
-    const detail = this.event();
-    if (!detail) {
-      return [];
-    }
-    const assignedElsewhere = new Set<number>();
-    for (const [key, value] of this.resolvedAssignments()) {
-      if (key !== slot.key && value !== null) {
-        assignedElsewhere.add(value);
-      }
-    }
-    return detail.participants.filter((participant) => !assignedElsewhere.has(participant.user_id));
-  }
-
-  /** Persists the local draft for a single slot via the officer endpoint. */
-  protected async saveSlot(slot: CompSlotRow): Promise<void> {
-    const detail = this.event();
-    if (!detail) {
-      return;
-    }
-    const userId = this.slotAssignment(slot);
-    if (userId === null) {
-      this.toasts.error(this.t('events.detail.no_builds_assigned'));
-      return;
-    }
-
-    this.slotSavingKey.set(slot.key);
-    try {
-      const updated = await firstValueFrom(
-        this.api.put<EventDetailView>(`api/events/${detail.id}/participants/${userId}`, {
-          primary_build_id: slot.buildId,
-        }),
-      );
-      this.event.set(updated);
-      this.slotAssignments.update((map) => {
-        const next = new Map(map);
-        next.delete(slot.key);
-        return next;
-      });
-      this.toasts.success(this.t('events.detail.participant_updated'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.slotSavingKey.set(null);
-    }
-  }
-
-  /**
-   * Empties a slot on the draft board. If the user is persisted on the
-   * backend, we DELETE their participation; otherwise we just clear the
-   * local override.
-   */
-  protected async clearSlot(slot: CompSlotRow): Promise<void> {
-    const detail = this.event();
-    if (!detail) {
-      return;
-    }
-    const userId = this.slotAssignment(slot);
-    if (userId === null) {
-      // Nothing to clear: just drop any local override.
-      this.slotAssignments.update((map) => {
-        const next = new Map(map);
-        next.set(slot.key, null);
-        return next;
-      });
-      return;
-    }
-
-    const participant = detail.participants.find((p) => p.user_id === userId);
-    if (participant) {
-      this.pendingConfirm.set({
-        kind: 'remove-participant',
-        userId,
-        username: participant.username,
-        slotKey: slot.key,
-      });
-      return;
-    }
-
-    await this.performClearSlot(slot.key, userId);
-  }
-
-  private async performClearSlot(slotKey: string, userId: number): Promise<void> {
-    const detail = this.event();
-    if (!detail) {
-      return;
-    }
-    this.slotRemovingKey.set(slotKey);
-    try {
-      const updated = await firstValueFrom(
-        this.api.delete<EventDetailView>(`api/events/${detail.id}/participants/${userId}`),
-      );
-      if (updated) {
-        this.event.set(updated);
-      } else {
-        await this.load();
-      }
-      this.slotAssignments.update((map) => {
-        const next = new Map(map);
-        next.set(slotKey, null);
-        return next;
-      });
-      this.toasts.success(this.t('events.detail.participant_removed'));
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.slotRemovingKey.set(null);
-    }
-  }
-
-  /** Opens the member search dialog used to manually add someone. */
-  protected openMemberSearch(): void {
-    this.showMemberSearch.set(true);
-    if (this.memberSearchOptions().length === 0) {
-      void this.onMemberSearchFilter({ search: '', dateFrom: '', dateTo: '' });
-    }
-  }
-
-  protected closeMemberSearch(): void {
-    this.showMemberSearch.set(false);
-  }
-
-  protected async onMemberSearchFilter(filter: {
-    search: string;
-    dateFrom: string;
-    dateTo: string;
-  }): Promise<void> {
-    this.memberSearchLoading.set(true);
-    try {
-      const params: Record<string, string> = { limit: '50' };
-      if (filter.search) {
-        params['username'] = filter.search;
-      }
-      const data = await firstValueFrom(
-        this.api.get<PaginatedData<UserProfile>>('api/users', params),
-      );
-      const existing = new Set((this.event()?.participants ?? []).map((p) => p.user_id));
-      this.memberSearchOptions.set(
-        data.items
-          .filter((user) => !existing.has(user.id))
-          .map((user) => ({
-            id: user.id,
-            title: user.username,
-            subtitle: user.email || undefined,
-            chip: user.role,
-          })),
-      );
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.memberSearchLoading.set(false);
-    }
-  }
-
-  /** User picked from the search dialog: open the build assignment form. */
-  protected onMemberSelected(option: SearchDialogOption): void {
-    this.draftMember.set(option);
-    // Pre-fill the primary build when the dialog was triggered from a slot.
-    const preselectedBuildId = this.pendingAddSlotBuildId();
-    this.draftMemberPrimaryBuildId.set(
-      preselectedBuildId !== null ? String(preselectedBuildId) : '',
-    );
-    this.draftMemberSecondaryBuildId.set('');
-    this.memberError.set(null);
-    this.showMemberSearch.set(false);
-    this.pendingAddSlotBuildId.set(null);
-    if (this.availableBuilds().length === 0) {
-      void this.loadActiveComp();
-    }
-  }
-
-  protected closeMemberForm(): void {
-    this.draftMember.set(null);
-    this.draftMemberPrimaryBuildId.set('');
-    this.draftMemberSecondaryBuildId.set('');
-    this.memberError.set(null);
-  }
-
-  protected onDraftMemberPrimaryChange(event: Event): void {
-    this.draftMemberPrimaryBuildId.set((event.target as HTMLSelectElement).value);
-    this.memberError.set(null);
-  }
-
-  protected onDraftMemberSecondaryChange(event: Event): void {
-    this.draftMemberSecondaryBuildId.set((event.target as HTMLSelectElement).value);
-  }
-
-  protected async onAddMemberSubmit(submit: SubmitEvent): Promise<void> {
-    submit.preventDefault();
-    const detail = this.event();
-    const member = this.draftMember();
-    if (!detail || !member) {
-      return;
-    }
-    const primaryBuildId = Number(this.draftMemberPrimaryBuildId());
-    if (primaryBuildId <= 0) {
-      this.memberError.set(this.t('events.detail.no_builds_assigned'));
-      return;
-    }
-
-    const body: ParticipateEventRequest = { primary_build_id: primaryBuildId };
-    const secondaryRaw = this.draftMemberSecondaryBuildId();
-    if (secondaryRaw) {
-      const secondaryBuildId = Number(secondaryRaw);
-      if (secondaryBuildId > 0 && secondaryBuildId !== primaryBuildId) {
-        body.secondary_build_id = secondaryBuildId;
-      }
-    }
-
-    this.memberSaving.set(true);
-    try {
-      const updated = await firstValueFrom(
-        this.api.put<EventDetailView>(`api/events/${detail.id}/participants/${member.id}`, body),
-      );
-      this.event.set(updated);
-      this.closeMemberForm();
-      this.toasts.success(this.t('events.detail.participant_added'));
-    } catch (error) {
-      this.memberError.set(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.memberSaving.set(false);
-    }
-  }
-
   protected async start(id: number): Promise<void> {
     await this.mutate(`api/events/${id}/start`, 'POST', {});
   }
 
-  /** Stopping closes participation and triggers regear extraction from every
-   *  linked battle — a real, mostly-irreversible consequence, unlike `leave`. */
   protected stop(id: number): void {
     this.pendingConfirm.set({ kind: 'stop', eventId: id });
   }
@@ -2958,9 +3215,7 @@ export class EventDetailPage {
 
   protected openBattleGroup(detail: EventDetailView): void {
     const ids = detail.battles.map((battle) => battle.albionbb_battle_id);
-    if (ids.length === 0) {
-      return;
-    }
+    if (ids.length === 0) return;
     void this.router.navigate(['/battles/group'], { queryParams: { ids: ids.join(',') } });
   }
 
@@ -2970,6 +3225,25 @@ export class EventDetailPage {
 
   protected formatNumber(value: number | string): string {
     return new Intl.NumberFormat().format(Number(value ?? 0));
+  }
+
+  protected formatAmount(value: number | string | null | undefined): string {
+    if (value === null || value === undefined) return '—';
+    return Number(value).toLocaleString();
+  }
+
+  protected netOfSplit(split: SplitSummary): number {
+    if (split.net_value !== null && split.net_value !== undefined) {
+      return Number(split.net_value);
+    }
+    return (
+      Number(split.estimated_market_value) - Number(split.repair_value) + Number(split.bags_value)
+    );
+  }
+
+  protected cityLabel(city: string | null | undefined): string {
+    if (!city) return '';
+    return this.t(`splits.city.${city}` as TranslationKey);
   }
 
   protected formatCompact(value: number): string {
@@ -2991,22 +3265,19 @@ export class EventDetailPage {
     return ROLE_LABELS[role];
   }
 
+  protected roleLabelName(role: BuildRole): string {
+    const key = ROLE_LABELS[role];
+    return this.t(key);
+  }
+
   protected roleChip(role: BuildRole): string {
     return ROLE_CHIP[role];
   }
 
-  /**
-   * Compact glyph shown in the slot row's leading badge. Kept short so it fits
-   * in a 1.5rem square without overflowing on narrow screens.
-   */
   protected roleGlyph(role: BuildRole): string {
     return ROLE_GLYPH[role] ?? '•';
   }
 
-  /**
-   * Fallback icon for equipment slots that lack a remote image, mirroring the
-   * Albion paperdoll layout the user is already familiar with.
-   */
   protected slotGlyph(slot: BuildSlot): string {
     return SLOT_GLYPH[slot] ?? '•';
   }
@@ -3016,28 +3287,12 @@ export class EventDetailPage {
   }
 
   protected fillPercent(current: number, target: number): number {
-    if (target <= 0) {
-      return 0;
-    }
+    if (target <= 0) return 0;
     return Math.min(100, Math.round((current / target) * 100));
   }
 
-  protected chartPercent(value: number, rows: readonly ChartMetric[]): number {
-    const maxValue = rows.reduce((max, row) => Math.max(max, row.value), 0);
-    if (maxValue <= 0) {
-      return 0;
-    }
-    return Math.max(4, Math.round((value / maxValue) * 100));
-  }
-
-  protected opponentKey(opponent: OpponentPerformanceView): string {
-    return opponent.guild_id ?? opponent.guild_name;
-  }
-
   protected async load(): Promise<void> {
-    if (!this.eventId) {
-      return;
-    }
+    if (!this.eventId) return;
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
@@ -3055,35 +3310,16 @@ export class EventDetailPage {
     }
   }
 
-  /** Loads the comps dropdown for the edit form (officers/admins only). */
-  private async loadComps(): Promise<void> {
-    try {
-      const result = await firstValueFrom(
-        this.api.get<PaginatedData<CompSummary>>('api/comps', { page: 1, limit: 100 }),
-      );
-      this.comps.set(result.items);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    }
-  }
-
-  /** Loads the active comp builds so members can pick their primary/secondary. */
   private async loadActiveComp(): Promise<void> {
     const detail = this.event();
-    if (!detail) {
-      return;
-    }
+    if (!detail) return;
     const compId = detail.active_comp_id || detail.comp_id;
-    if (!compId) {
-      return;
-    }
+    if (!compId) return;
 
     this.compLoading.set(true);
     try {
       const comp = await firstValueFrom(this.api.get<CompDetail>(`api/comps/${compId}`));
       this.availableBuilds.set(comp.builds ?? []);
-      // Preload every build's details so the row weapon render and tooltip
-      // items are available without per-row hover requests.
       void this.preloadBuildDetails(comp.builds ?? []);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -3092,17 +3328,11 @@ export class EventDetailPage {
     }
   }
 
-  /**
-   * Fetches `BuildDetail` for every build in the comp in parallel and merges
-   * the results into `buildDetails`. Already-cached builds are skipped so
-   * repeated calls (e.g. after a comp swap) only fetch the new entries.
-   */
   private async preloadBuildDetails(entries: readonly CompBuildEntry[]): Promise<void> {
     const cache = this.buildDetails();
     const missing = entries.filter((entry) => !cache.has(entry.build_id));
-    if (missing.length === 0) {
-      return;
-    }
+    if (missing.length === 0) return;
+
     const results = await Promise.allSettled(
       missing.map((entry) =>
         firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${entry.build_id}`)),
@@ -3118,9 +3348,7 @@ export class EventDetailPage {
   }
 
   private async loadLinkedBattleLosses(detail: EventDetailView): Promise<void> {
-    if (detail.battles.length === 0) {
-      return;
-    }
+    if (detail.battles.length === 0) return;
     try {
       const battleDetails = await Promise.all(
         detail.battles.map((battle) =>
@@ -3132,9 +3360,7 @@ export class EventDetailPage {
       const estimates = battleDetails
         .filter((battle): battle is BattleDetail => battle !== null)
         .map((battle) => battle.estimated_losses);
-      if (estimates.length === 0) {
-        return;
-      }
+      if (estimates.length === 0) return;
       this.eventLossEstimate.set(mergeLossEstimates(estimates));
     } catch (error) {
       console.error(error);
@@ -3155,10 +3381,6 @@ export class EventDetailPage {
   }
 }
 
-/**
- * Converts an ISO UTC timestamp into the `YYYY-MM-DDTHH:mm` value expected by
- * `<input type="datetime-local">`, expressed in the user's local timezone.
- */
 function emptyLossEstimate(): BattleLossEstimate {
   return {
     total_estimated_loss: 0,
@@ -3217,21 +3439,6 @@ function mergeLossEstimates(estimates: readonly BattleLossEstimate[]): BattleLos
   return merged;
 }
 
-function toLocalInputValue(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
-    return '';
-  }
-  const pad = (value: number): string => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-/**
- * Stable display order for build roles inside the participants panel.
- *
- * Tanks and healers come first because they are the hardest slots to fill;
- * brawler/battle_mount are niche roles and sit at the end.
- */
 const ROLE_ORDER: readonly BuildRole[] = [
   'tank',
   'healer',
@@ -3241,7 +3448,6 @@ const ROLE_ORDER: readonly BuildRole[] = [
   'brawler',
 ];
 
-/** Localized label key for each role. */
 const ROLE_LABELS: Readonly<Record<BuildRole, TranslationKey>> = {
   tank: 'events.detail.role_tank',
   healer: 'events.detail.role_healer',
@@ -3251,7 +3457,6 @@ const ROLE_LABELS: Readonly<Record<BuildRole, TranslationKey>> = {
   brawler: 'events.detail.role_brawler',
 };
 
-/** Chip color modifier per role for at-a-glance scanning of the comp. */
 const ROLE_CHIP: Readonly<Record<BuildRole, string>> = {
   tank: 'chip chip--info',
   healer: 'chip chip--success',
@@ -3261,30 +3466,26 @@ const ROLE_CHIP: Readonly<Record<BuildRole, string>> = {
   brawler: 'chip',
 };
 
-/**
- * Unicode role icons rendered as plain text so the slot row stays light and
- * doesn't depend on a font-icon set when used inside a tooltip.
- */
 const ROLE_GLYPH: Readonly<Record<BuildRole, string>> = {
-  tank: '♜',
-  healer: '✚',
-  support: '✦',
-  dps: '⚒',
-  battle_mount: '♞',
-  brawler: '◈',
+  tank: 'T',
+  healer: 'H',
+  support: 'S',
+  dps: 'DPS',
+  battle_mount: 'BM',
+  brawler: 'BR',
 };
 
 const SLOT_GLYPH: Readonly<Record<BuildSlot, string>> = {
-  weapon: '⚔',
-  off_hand: '◉',
-  head: '⛑',
-  armor: '▣',
-  shoes: '👞',
-  cape: '🜂',
-  bag: '🎒',
-  potion: '⚗',
-  food: '🍲',
-  mount: '♞',
+  weapon: 'W',
+  off_hand: 'O',
+  head: 'H',
+  armor: 'A',
+  shoes: 'S',
+  cape: 'C',
+  bag: 'B',
+  potion: 'P',
+  food: 'F',
+  mount: 'M',
 };
 
 const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
@@ -3300,24 +3501,12 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
   mount: 'Mount',
 };
 
-/** Aggregates participants and target capacity for a single role bucket. */
 interface RoleGrouping {
   readonly role: BuildRole;
   target: number;
   participants: EventParticipant[];
 }
 
-interface ChartMetric {
-  readonly label: string;
-  readonly value: number;
-  readonly color: string;
-  readonly target?: number;
-}
-
-/**
- * One seat on the draft board: a build instance plus the role it belongs to.
- * `key` is `${build_id}#${slotIndex}` so Angular can `trackBy` it.
- */
 interface CompSlotRow {
   readonly key: string;
   readonly buildId: number;

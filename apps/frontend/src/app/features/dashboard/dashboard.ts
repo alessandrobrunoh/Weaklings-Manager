@@ -430,21 +430,34 @@ export class Dashboard {
     return 2;
   }
 
-  private formatCount(value: number | null): string {
-    return value === null ? '—' : value.toLocaleString();
+  private getLocale(): string {
+    const lang = this.translate.language();
+    if (lang === 'it') return 'it-IT';
+    if (lang === 'es') return 'es-ES';
+    return 'en-US';
   }
 
-  protected formatNumber(value: number | null): string {
-    return value === null ? '—' : value.toLocaleString();
+  private formatCount(value: number | null | undefined): string {
+    if (value === null || value === undefined) return '—';
+    return value.toLocaleString(this.getLocale());
   }
 
-  private formatCountHint(count: number | null, _key: TranslationKey): string {
-    if (count === null) return '';
-    return `${count} tx`;
+  protected formatNumber(value: number | string | null | undefined): string {
+    if (value === null || value === undefined || value === '') return '—';
+    const num = typeof value === 'number' ? value : Number(value);
+    if (Number.isNaN(num)) return '—';
+    return num.toLocaleString(this.getLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  protected formatValue(value: number): string {
-    return value.toLocaleString();
+  private formatCountHint(count: number | null | undefined, _key: TranslationKey): string {
+    if (count === null || count === undefined) return '';
+    return `${count.toLocaleString(this.getLocale())} tx`;
+  }
+
+  protected formatValue(value: number | string): string {
+    const num = typeof value === 'number' ? value : Number(value);
+    if (Number.isNaN(num)) return '—';
+    return num.toLocaleString(this.getLocale());
   }
 
   protected formatEventDate(iso: string): string {

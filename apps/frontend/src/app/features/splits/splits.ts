@@ -98,13 +98,12 @@ interface SplitParticipantDraft {
       }
       <button
         type="button"
-        class="btn btn--primary btn--sm flex items-center gap-2"
+        class="btn btn--primary btn--sm flex items-center gap-1.5"
         (click)="openCreateDialog()"
         [appTooltip]="'Crea nuova divisione di bottino'"
         tooltipPosition="bottom"
       >
-        <app-icon name="sparkles" size="1.1rem" />
-        {{ t('splits.new') }}
+        + {{ t('splits.new') }}
       </button>
     </app-page-header>
 
@@ -257,211 +256,245 @@ interface SplitParticipantDraft {
       </app-data-table>
     </app-page-stack>
 
+    <!-- NEW SPLIT MODAL -->
     @if (showCreateForm()) {
       <app-dialog [title]="t('splits.new')" size="lg" (closed)="closeCreateDialog()">
-        <form id="create-split-form" class="grid gap-5" (submit)="onCreateSubmit($event)">
-          <p class="text-xs" style="color: var(--color-text-secondary)">
+        <form id="create-split-form" class="space-y-4" (submit)="onCreateSubmit($event)">
+          <p class="text-xs text-[var(--color-text-secondary)] -mt-2">
             {{ t('splits.create_hint') }}
           </p>
-          <div class="grid gap-5 lg:grid-cols-2">
-            <section class="space-y-4">
-              <label class="block">
-                <span class="label font-medium"
-                  >{{ t('common.name') }} / {{ t('splits.note') }} *</span
-                >
-                <input
-                  class="input"
-                  type="text"
-                  [value]="draftTitle()"
-                  (input)="onTitleChange($event)"
-                  required
-                />
-              </label>
 
-              <div>
-                <span class="label font-medium">{{ t('splits.event_linked') }}</span>
-                <div class="flex items-center gap-2">
-                  <div
-                    class="input flex flex-1 items-center"
-                    style="background: var(--color-surface-1)"
-                  >
-                    <span class="truncate">{{ draftEventTitle() || t('splits.no_event') }}</span>
-                  </div>
-                  <button
-                    type="button"
-                    class="btn btn--outline whitespace-nowrap"
-                    (click)="showEventSearch.set(true)"
-                  >
-                    {{ t('splits.link_event') }}
-                  </button>
-                  @if (draftEventId()) {
-                    <button
-                      type="button"
-                      class="btn btn--danger whitespace-nowrap"
-                      [attr.aria-label]="t('splits.unlink_event')"
-                      (click)="unlinkDraftEvent()"
-                    >
-                      <app-icon name="close" size="1rem" />
-                    </button>
-                  }
-                </div>
-              </div>
+          <div class="grid gap-4 lg:grid-cols-2">
+            <!-- LEFT COLUMN: CONFIGURATION & FINANCIALS -->
+            <div class="space-y-4">
+              <!-- Card 1: Note & Location -->
+              <section class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] space-y-3">
+                <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+                  {{ t('splits.location') }} &middot; {{ t('splits.note') }}
+                </h3>
 
-              <div class="grid gap-3 sm:grid-cols-2">
                 <label class="block">
-                  <span class="label font-medium">{{ t('splits.island') }} *</span>
-                  <select
-                    class="select"
-                    [value]="draftIslandId()"
-                    (change)="onDraftIslandChange($event)"
-                  >
-                    <option value="">{{ t('splits.pick_island') }}</option>
-                    @for (island of islands(); track island.id) {
-                      <option [value]="island.id">
-                        {{ cityLabel(island.city) }} · {{ island.name }}
-                      </option>
-                    }
-                  </select>
-                </label>
-                <label class="block">
-                  <span class="label font-medium">{{ t('splits.tab') }} *</span>
-                  <select
-                    class="select"
-                    [value]="draftTabId()"
-                    [disabled]="!draftIslandId()"
-                    (change)="onDraftTabChange($event)"
-                  >
-                    <option value="">{{ t('splits.pick_tab') }}</option>
-                    @for (tab of draftIslandTabs(); track tab.id) {
-                      <option [value]="tab.id">{{ tab.name }}</option>
-                    }
-                  </select>
-                </label>
-              </div>
-              @if (islands().length === 0) {
-                <p class="text-xs" style="color: var(--color-warning)">
-                  {{ t('splits.catalog.empty') }}
-                </p>
-              }
-
-              <div class="grid gap-3 sm:grid-cols-3">
-                <label class="block">
-                  <span class="label font-medium">{{ t('splits.estimated') }}</span>
-                  <input
-                    class="input mono"
-                    type="number"
-                    min="0"
-                    [value]="draftEstimated()"
-                    (input)="onEstimatedChange($event)"
-                  />
-                </label>
-                <label class="block">
-                  <span class="label font-medium">{{ t('splits.repair_cost') }}</span>
-                  <input
-                    class="input mono"
-                    type="number"
-                    min="0"
-                    [value]="draftRepair()"
-                    (input)="onRepairChange($event)"
-                  />
-                </label>
-                <label class="block">
-                  <span class="label font-medium">{{ t('splits.bags_value') }}</span>
-                  <input
-                    class="input mono"
-                    type="number"
-                    min="0"
-                    [value]="draftBags()"
-                    (input)="onBagsChange($event)"
-                  />
-                </label>
-              </div>
-
-              <div
-                class="surface flex items-center justify-between rounded-lg border p-3"
-                style="border-color: var(--color-border)"
-              >
-                <div>
-                  <p
-                    class="text-xs font-semibold uppercase"
-                    style="color: var(--color-text-disabled)"
-                  >
-                    {{ t('splits.net_value') }} ({{ t('splits.net_preview') }})
-                  </p>
-                  <p class="text-xs" style="color: var(--color-text-secondary)">
-                    {{ t('splits.net_formula') }}
-                  </p>
-                </div>
-                <p class="mono text-xl font-bold text-success">
-                  {{ formatAmount(draftNetPreview()) }}
-                </p>
-              </div>
-
-              <div
-                class="surface space-y-2 rounded-lg border p-3"
-                style="border-color: var(--color-border)"
-              >
-                <label class="block">
-                  <span class="label font-medium">{{ t('splits.match_ocr') }}</span>
+                  <span class="label font-medium">{{ t('common.name') }} / {{ t('splits.note') }} *</span>
                   <input
                     class="input text-xs"
-                    type="file"
-                    accept="image/*"
-                    (change)="onScreenshotChange($event)"
+                    type="text"
+                    [placeholder]="'e.g. Castle Fight & Outpost Loot'"
+                    [value]="draftTitle()"
+                    (input)="onTitleChange($event)"
+                    required
                   />
                 </label>
-                <label class="block">
-                  <span class="label font-medium">{{ t('splits.ocr_names') }}</span>
-                  <textarea
-                    class="textarea font-mono text-xs"
-                    rows="3"
-                    [value]="rawNames()"
-                    (input)="onRawNamesChange($event)"
-                  ></textarea>
-                </label>
-                <div class="flex flex-wrap gap-2 pt-1">
+
+                <div>
+                  <span class="label font-medium">{{ t('splits.event_linked') }}</span>
+                  <div class="flex items-center gap-2">
+                    <div
+                      class="input flex flex-1 items-center bg-[var(--color-surface-1)] text-xs truncate"
+                    >
+                      <span class="truncate">{{ draftEventTitle() || t('splits.no_event') }}</span>
+                    </div>
+                    <button
+                      type="button"
+                      class="btn btn--outline btn--sm whitespace-nowrap text-xs"
+                      (click)="showEventSearch.set(true)"
+                    >
+                      {{ t('splits.link_event') }}
+                    </button>
+                    @if (draftEventId()) {
+                      <button
+                        type="button"
+                        class="btn btn--danger btn--sm whitespace-nowrap"
+                        [attr.aria-label]="t('splits.unlink_event')"
+                        (click)="unlinkDraftEvent()"
+                      >
+                        <app-icon name="close" size="0.875rem" />
+                      </button>
+                    }
+                  </div>
+                </div>
+
+                <div class="grid gap-2 sm:grid-cols-2">
+                  <label class="block">
+                    <span class="label font-medium">{{ t('splits.island') }} *</span>
+                    <select
+                      class="select text-xs"
+                      [value]="draftIslandId()"
+                      (change)="onDraftIslandChange($event)"
+                    >
+                      <option value="">{{ t('splits.pick_island') }}</option>
+                      @for (island of islands(); track island.id) {
+                        <option [value]="island.id">
+                          {{ cityLabel(island.city) }} &middot; {{ island.name }}
+                        </option>
+                      }
+                    </select>
+                  </label>
+                  <label class="block">
+                    <span class="label font-medium">{{ t('splits.tab') }} *</span>
+                    <select
+                      class="select text-xs"
+                      [value]="draftTabId()"
+                      [disabled]="!draftIslandId()"
+                      (change)="onDraftTabChange($event)"
+                    >
+                      <option value="">{{ t('splits.pick_tab') }}</option>
+                      @for (tab of draftIslandTabs(); track tab.id) {
+                        <option [value]="tab.id">{{ tab.name }}</option>
+                      }
+                    </select>
+                  </label>
+                </div>
+                @if (islands().length === 0) {
+                  <p class="text-xs text-[var(--color-warning)]">
+                    {{ t('splits.catalog.empty') }}
+                  </p>
+                }
+              </section>
+
+              <!-- Card 2: Silver & Live Net Calculation -->
+              <section class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] space-y-3">
+                <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+                  {{ t('splits.net_value') }}
+                </h3>
+
+                <div class="grid gap-2 sm:grid-cols-3">
+                  <label class="block">
+                    <span class="label font-medium text-[0.6875rem]">{{ t('splits.estimated') }}</span>
+                    <input
+                      class="input font-mono text-xs"
+                      type="number"
+                      min="0"
+                      [value]="draftEstimated()"
+                      (input)="onEstimatedChange($event)"
+                    />
+                  </label>
+                  <label class="block">
+                    <span class="label font-medium text-[0.6875rem]">{{ t('splits.repair_cost') }} (-)</span>
+                    <input
+                      class="input font-mono text-xs"
+                      type="number"
+                      min="0"
+                      [value]="draftRepair()"
+                      (input)="onRepairChange($event)"
+                    />
+                  </label>
+                  <label class="block">
+                    <span class="label font-medium text-[0.6875rem]">{{ t('splits.bags_value') }} (+)</span>
+                    <input
+                      class="input font-mono text-xs"
+                      type="number"
+                      min="0"
+                      [value]="draftBags()"
+                      (input)="onBagsChange($event)"
+                    />
+                  </label>
+                </div>
+
+                <!-- Live Net Silver Banner -->
+                <div class="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] flex items-center justify-between">
+                  <div>
+                    <span class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+                      {{ t('splits.net_value') }} ({{ t('splits.net_preview') }})
+                    </span>
+                    <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5">
+                      {{ t('splits.net_formula') }}
+                    </p>
+                    @if (participants().length > 0) {
+                      <p class="text-[0.6875rem] font-mono text-[var(--color-text-secondary)] mt-1">
+                        ~{{ formatAmount(perParticipantShare()) }} / player
+                      </p>
+                    }
+                  </div>
+                  <div class="text-right">
+                    <span class="font-mono text-xl font-medium text-[var(--color-success)]">
+                      {{ formatAmount(draftNetPreview()) }}
+                    </span>
+                    <span class="block text-[0.6875rem] font-mono text-[var(--color-text-secondary)]">
+                      silver
+                    </span>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <!-- RIGHT COLUMN: ROSTER & OCR PARSING -->
+            <div class="space-y-4">
+              <!-- Card 3: Smart OCR / Raw Names Import -->
+              <section class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] space-y-3">
+                <div class="flex items-center justify-between">
+                  <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+                    {{ t('splits.match_ocr') }}
+                  </h3>
                   <button
                     type="button"
-                    class="btn btn--tonal btn--sm"
-                    [disabled]="matching() || !rawNames().trim()"
-                    (click)="matchParticipants()"
-                  >
-                    {{ matching() ? t('common.loading') : t('splits.match_ocr') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn--ghost btn--sm"
+                    class="btn btn--ghost btn--sm text-xs py-0.5"
                     (click)="clearParticipants()"
                   >
                     {{ t('splits.clear_roster') }}
                   </button>
                 </div>
-              </div>
-            </section>
 
-            <section class="surface flex flex-col justify-between rounded-lg p-4">
-              <div>
-                <div class="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <h3 class="text-base font-semibold" style="color: var(--color-text)">
+                <div
+                  class="border border-dashed border-[var(--color-border)] rounded-md p-3 text-center bg-[var(--color-surface-1)] hover:border-[var(--color-primary)] transition-colors cursor-pointer"
+                  (click)="fileInput.click()"
+                >
+                  <input
+                    #fileInput
+                    class="hidden"
+                    type="file"
+                    accept="image/*"
+                    (change)="onScreenshotChange($event)"
+                  />
+                  <p class="text-xs font-medium text-[var(--color-text)]">
+                    {{ t('splits.match_ocr') }}
+                  </p>
+                  <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5">
+                    PNG, JPG screenshot from party / chest log
+                  </p>
+                </div>
+
+                <label class="block">
+                  <span class="label font-medium text-[0.6875rem]">{{ t('splits.ocr_names') }}</span>
+                  <textarea
+                    class="textarea font-mono text-xs"
+                    rows="2"
+                    [placeholder]="'PlayerOne, PlayerTwo\nPlayerThree'"
+                    [value]="rawNames()"
+                    (input)="onRawNamesChange($event)"
+                  ></textarea>
+                </label>
+
+                <button
+                  type="button"
+                  class="w-full btn btn--tonal btn--sm text-xs py-1"
+                  [disabled]="matching() || !rawNames().trim()"
+                  (click)="matchParticipants()"
+                >
+                  {{ matching() ? t('common.loading') : t('splits.match_ocr') }}
+                </button>
+              </section>
+
+              <!-- Card 4: Active Roster & Weights -->
+              <section class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] space-y-3">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-2">
+                    <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text)]">
                       {{ t('splits.participants') }} ({{ participants().length }})
                     </h3>
-                    <p class="text-xs" style="color: var(--color-text-secondary)">
-                      {{ t('splits.roster_hint') }}
-                    </p>
-                  </div>
-                  <div class="flex items-center gap-2">
                     <span
-                      class="chip mono font-bold"
+                      class="chip font-mono text-xs font-medium"
                       [class.chip--success]="totalWeight() === 100"
                       [class.chip--warning]="totalWeight() !== 100"
                     >
                       {{ totalWeight() }}%
                     </span>
+                  </div>
+
+                  <div class="flex items-center gap-1.5">
                     @if (participants().length > 0) {
                       <button
                         type="button"
-                        class="btn btn--outline btn--sm"
+                        class="btn btn--outline btn--sm text-xs py-0.5 px-2"
                         (click)="distributeDraftWeightsEvenly()"
                       >
                         {{ t('splits.distribute_evenly') }}
@@ -469,7 +502,7 @@ interface SplitParticipantDraft {
                     }
                     <button
                       type="button"
-                      class="btn btn--primary btn--sm"
+                      class="btn btn--primary btn--sm text-xs py-0.5 px-2"
                       (click)="showParticipantSearch.set(true)"
                     >
                       + {{ t('splits.add_participant') }}
@@ -478,72 +511,76 @@ interface SplitParticipantDraft {
                 </div>
 
                 @if (participants().length === 0) {
-                  <div class="py-8">
+                  <div class="py-6">
                     <app-empty-state [message]="t('splits.roster_empty')" icon="users" />
                   </div>
                 } @else {
-                  <div class="grid max-h-96 gap-2 overflow-y-auto pr-1">
+                  <div class="space-y-1.5 max-h-60 overflow-y-auto pr-1">
                     @for (participant of participants(); track participant.user_id) {
-                      <article class="card flex items-center justify-between gap-3 p-3">
-                        <div class="min-w-0">
-                          <p class="truncate text-sm font-medium" style="color: var(--color-text)">
-                            {{ participant.raw_name }}
-                          </p>
-                          <p class="truncate text-xs" style="color: var(--color-text-secondary)">
-                            {{ participant.username }} ·
-                            <span class="mono font-semibold text-success">
-                              ~{{
-                                formatAmount(
-                                  estimatedShare(
-                                    draftNetPreview(),
-                                    participant.weight,
-                                    totalWeight()
+                      <div class="flex items-center justify-between gap-2 p-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                        <div class="flex items-center gap-2 min-w-0">
+                          <div class="h-6 w-6 rounded bg-[var(--color-surface-2)] flex items-center justify-center text-[0.6875rem] font-mono text-[var(--color-text)] flex-shrink-0">
+                            {{ participant.raw_name.slice(0, 1).toUpperCase() }}
+                          </div>
+                          <div class="min-w-0">
+                            <p class="truncate text-xs font-medium text-[var(--color-text)]">
+                              {{ participant.raw_name }}
+                            </p>
+                            <p class="truncate text-[0.625rem] text-[var(--color-text-secondary)]">
+                              {{ participant.username }} &middot;
+                              <span class="font-mono text-[var(--color-success)]">
+                                ~{{
+                                  formatAmount(
+                                    estimatedShare(
+                                      draftNetPreview(),
+                                      participant.weight,
+                                      totalWeight()
+                                    )
                                   )
-                                )
-                              }}
-                            </span>
-                          </p>
+                                }}
+                              </span>
+                            </p>
+                          </div>
                         </div>
-                        <div class="flex shrink-0 items-center gap-2">
-                          <label class="flex items-center gap-1">
+
+                        <div class="flex items-center gap-2 flex-shrink-0">
+                          <div class="flex items-center gap-1">
                             <input
-                              class="input mono text-sm"
-                              style="width: 5rem; text-align: right"
+                              class="input font-mono text-xs text-right py-0.5 px-1 w-14"
                               type="number"
                               min="1"
                               max="100"
                               [value]="participant.weight"
                               (input)="onWeightChange(participant.user_id, $event)"
                             />
-                            <span class="text-xs" style="color: var(--color-text-secondary)"
-                              >%</span
-                            >
-                          </label>
+                            <span class="text-xs text-[var(--color-text-secondary)] font-mono">%</span>
+                          </div>
                           <button
                             type="button"
-                            class="btn btn--ghost btn--sm text-error"
+                            class="btn btn--ghost btn--sm p-1 text-xs text-[var(--color-danger)]"
                             (click)="removeParticipant(participant.user_id)"
                             [attr.aria-label]="t('splits.remove_participant')"
                           >
-                            <app-icon name="close" size="0.875rem" />
+                            &times;
                           </button>
                         </div>
-                      </article>
+                      </div>
                     }
                   </div>
                 }
-              </div>
-            </section>
+              </section>
+            </div>
           </div>
         </form>
-        <div dialogFooter>
-          <button type="button" class="btn btn--ghost" (click)="closeCreateDialog()">
+
+        <div dialogFooter class="flex items-center justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
+          <button type="button" class="btn btn--ghost btn--sm" (click)="closeCreateDialog()">
             {{ t('common.cancel') }}
           </button>
           <button
             type="submit"
             form="create-split-form"
-            class="btn btn--primary"
+            class="btn btn--primary btn--sm"
             [disabled]="
               saving() || participants().length === 0 || !draftTitle().trim() || !draftTabId()
             "
@@ -781,6 +818,11 @@ export class Splits {
   protected readonly draftNetPreview = computed(() =>
     Math.max(0, this.draftEstimated() - this.draftRepair() + this.draftBags()),
   );
+  protected readonly perParticipantShare = computed(() => {
+    const count = this.participants().length;
+    if (count === 0) return 0;
+    return Math.round(this.draftNetPreview() / count);
+  });
   protected readonly draftIslandTabs = computed(() => {
     const id = Number(this.draftIslandId());
     return this.islands().find((island) => island.id === id)?.tabs ?? [];
@@ -1260,7 +1302,6 @@ export class Splits {
       const sort = this.sortKey();
       if (sort) {
         params['sort'] = sort;
-        params['order'] = this.sortOrder() ?? 'desc';
       }
       const data = await firstValueFrom(
         this.api.get<PaginatedData<SplitSummary>>('api/splits', params),

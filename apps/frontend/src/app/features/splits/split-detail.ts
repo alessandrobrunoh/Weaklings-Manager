@@ -53,9 +53,12 @@ type DetailMode = 'view' | 'edit';
     StatusChip,
   ],
   template: `
-    <a routerLink="/splits" class="btn btn--ghost mb-4 inline-flex"
-      >← {{ t('splits.detail.back') }}</a
-    >
+    <div class="mb-4">
+      <a routerLink="/splits" class="btn btn--ghost btn--sm inline-flex items-center gap-1.5 text-xs">
+        <app-icon name="chevron-left" size="0.875rem" />
+        {{ t('splits.detail.back') }}
+      </a>
+    </div>
 
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
@@ -68,20 +71,20 @@ type DetailMode = 'view' | 'edit';
     } @else {
       @if (split(); as detail) {
         <app-page-stack>
-          <header class="card p-5">
+          <header class="card p-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
             <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <div class="mb-2 flex flex-wrap items-center gap-2">
-                  <h1 class="text-2xl font-bold" style="color: var(--color-text)">
+                <div class="mb-1.5 flex flex-wrap items-center gap-2">
+                  <h1 class="text-xl font-medium text-[var(--color-text)]">
                     {{ detail.note || t('splits.untitled', { id: detail.id }) }}
                   </h1>
                   <app-status-chip [value]="detail.status" />
                 </div>
-                <p class="text-sm" style="color: var(--color-text-secondary)">
+                <p class="text-xs text-[var(--color-text-secondary)]">
                   {{ t('splits.created_by', { name: detail.created_by_username }) }}
-                  · {{ formatDate(detail.created_at) }}
+                  &middot; {{ formatDate(detail.created_at) }}
                   @if (detail.event_title && detail.event_id) {
-                    · {{ t('splits.event_linked') }}:
+                    &middot; {{ t('splits.event_linked') }}:
                     <a
                       class="text-primary no-underline hover:underline"
                       [routerLink]="['/events', detail.event_id]"
@@ -90,37 +93,37 @@ type DetailMode = 'view' | 'edit';
                     </a>
                   }
                   @if (detail.island_tab_id) {
-                    · {{ locationLabel(detail) }}
+                    &middot; {{ locationLabel(detail) }}
                   }
                 </p>
               </div>
               <div class="flex flex-wrap gap-2">
                 @if (canEdit()) {
-                  <button type="button" class="btn btn--ghost" (click)="toggleMode()">
+                  <button type="button" class="btn btn--ghost btn--sm" (click)="toggleMode()">
                     {{ mode() === 'edit' ? t('common.close') : t('common.edit') }}
                   </button>
                 }
                 @if (detail.status === 'pending' && canAct()) {
                   <button
                     type="button"
-                    class="btn btn--primary"
+                    class="btn btn--primary btn--sm"
                     (click)="showCompleteConfirmDialog.set(true)"
                   >
                     {{ t('splits.payout_complete') }}
                   </button>
                   <button
                     type="button"
-                    class="btn btn--outline"
+                    class="btn btn--outline btn--sm"
                     (click)="closeSplit('not-completed')"
                   >
                     {{ t('splits.mark_not_completed') }}
                   </button>
-                  <button type="button" class="btn btn--danger" (click)="closeSplit('lost')">
+                  <button type="button" class="btn btn--danger btn--sm" (click)="closeSplit('lost')">
                     {{ t('splits.mark_lost') }}
                   </button>
                 }
                 @if (canAct()) {
-                  <button type="button" class="btn btn--danger" (click)="showDelete.set(true)">
+                  <button type="button" class="btn btn--danger btn--sm" (click)="showDelete.set(true)">
                     {{ t('common.delete') }}
                   </button>
                 }
@@ -129,291 +132,304 @@ type DetailMode = 'view' | 'edit';
           </header>
 
           @if (mode() === 'edit' && canEdit()) {
-            <form id="edit-split-form" class="card grid gap-4 p-5" (submit)="onEditSubmit($event)">
-              <p class="text-xs" style="color: var(--color-text-secondary)">
-                {{ t('splits.edit_subtitle') }}
-              </p>
-              <label class="block">
-                <span class="label font-medium"
-                  >{{ t('common.name') }} / {{ t('splits.note') }}</span
-                >
-                <input
-                  class="input"
-                  type="text"
-                  [value]="editNote()"
-                  (input)="onEditNoteChange($event)"
-                />
-              </label>
-
-              <div>
-                <span class="label font-medium">{{ t('splits.event_linked') }}</span>
-                <div class="flex items-center gap-2">
-                  <div
-                    class="input flex flex-1 items-center"
-                    style="background: var(--color-surface-1)"
-                  >
-                    <span class="truncate">{{ editEventTitle() || t('splits.no_event') }}</span>
-                  </div>
-                  <button
-                    type="button"
-                    class="btn btn--outline whitespace-nowrap"
-                    (click)="showEventSearch.set(true)"
-                  >
-                    {{ t('splits.link_event') }}
-                  </button>
-                  @if (editEventId()) {
-                    <button
-                      type="button"
-                      class="btn btn--danger whitespace-nowrap"
-                      [attr.aria-label]="t('splits.unlink_event')"
-                      (click)="unlinkEditEvent()"
-                    >
-                      <app-icon name="close" size="1rem" />
-                    </button>
-                  }
-                </div>
-              </div>
-
-              <div class="grid gap-3 sm:grid-cols-2">
-                <label class="block">
-                  <span class="label font-medium">{{ t('splits.island') }}</span>
-                  <select
-                    class="select"
-                    [value]="editIslandId()"
-                    (change)="onEditIslandChange($event)"
-                  >
-                    <option value="">{{ t('splits.pick_island') }}</option>
-                    @for (island of islands(); track island.id) {
-                      <option [value]="island.id">
-                        {{ cityLabel(island.city) }} · {{ island.name }}
-                      </option>
-                    }
-                  </select>
-                </label>
-                <label class="block">
-                  <span class="label font-medium">{{ t('splits.tab') }}</span>
-                  <select
-                    class="select"
-                    [value]="editTabId()"
-                    [disabled]="!editIslandId()"
-                    (change)="onEditTabChange($event)"
-                  >
-                    <option value="">{{ t('splits.pick_tab') }}</option>
-                    @for (tab of editIslandTabs(); track tab.id) {
-                      <option [value]="tab.id">{{ tab.name }}</option>
-                    }
-                  </select>
-                </label>
-              </div>
-
-              <div class="grid gap-3 sm:grid-cols-3">
-                <label class="block">
-                  <span class="label font-medium">{{ t('splits.estimated') }}</span>
-                  <input
-                    class="input mono"
-                    type="number"
-                    min="0"
-                    [value]="editEstimated()"
-                    (input)="onEditEstimatedChange($event)"
-                  />
-                </label>
-                <label class="block">
-                  <span class="label font-medium">{{ t('splits.repair_cost') }}</span>
-                  <input
-                    class="input mono"
-                    type="number"
-                    min="0"
-                    [value]="editRepair()"
-                    (input)="onEditRepairChange($event)"
-                  />
-                </label>
-                <label class="block">
-                  <span class="label font-medium">{{ t('splits.bags_value') }}</span>
-                  <input
-                    class="input mono"
-                    type="number"
-                    min="0"
-                    [value]="editBags()"
-                    (input)="onEditBagsChange($event)"
-                  />
-                </label>
-              </div>
-
-              <div
-                class="surface flex items-center justify-between rounded-lg border p-3"
-                style="border-color: var(--color-border)"
-              >
-                <div>
-                  <p
-                    class="text-xs font-semibold uppercase"
-                    style="color: var(--color-text-disabled)"
-                  >
-                    {{ t('splits.net_value') }}
-                  </p>
-                  <p class="text-xs" style="color: var(--color-text-secondary)">
-                    {{ formatAmount(editEstimated()) }} − {{ formatAmount(editRepair()) }} +
-                    {{ formatAmount(editBags()) }}
-                  </p>
-                </div>
-                <p class="mono text-xl font-bold text-success">
-                  {{ formatAmount(editNetPreview()) }}
-                </p>
-              </div>
-
-              <div class="surface space-y-3 rounded-lg p-4">
-                <div
-                  class="flex flex-wrap items-center justify-between gap-2 border-b pb-2"
-                  style="border-color: var(--color-border)"
-                >
-                  <div>
-                    <h3 class="text-sm font-semibold" style="color: var(--color-text)">
-                      {{ t('splits.roster_management') }} ({{ editParticipants().length }})
+            <form id="edit-split-form" class="space-y-4" (submit)="onEditSubmit($event)">
+              <div class="grid gap-4 lg:grid-cols-2">
+                <!-- LEFT COLUMN: NOTE & FINANCIALS -->
+                <div class="space-y-4">
+                  <!-- Note & Location Card -->
+                  <section class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] space-y-3">
+                    <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+                      {{ t('splits.location') }} &middot; {{ t('splits.note') }}
                     </h3>
-                    <p class="text-xs" style="color: var(--color-text-secondary)">
-                      {{ t('splits.roster_hint') }}
-                    </p>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <span
-                      class="chip mono font-bold"
-                      [class.chip--success]="editTotalWeight() === 100"
-                      [class.chip--warning]="editTotalWeight() !== 100"
-                    >
-                      {{ editTotalWeight() }}%
-                    </span>
-                    @if (editParticipants().length > 0) {
-                      <button
-                        type="button"
-                        class="btn btn--outline btn--sm"
-                        (click)="distributeEditWeightsEvenly()"
-                      >
-                        {{ t('splits.distribute_evenly') }}
-                      </button>
-                    }
-                    <button
-                      type="button"
-                      class="btn btn--primary btn--sm"
-                      (click)="showParticipantSearch.set(true)"
-                    >
-                      + {{ t('splits.add_participant') }}
-                    </button>
-                  </div>
-                </div>
 
-                <div class="grid max-h-64 gap-2 overflow-y-auto pr-1">
-                  @for (participant of editParticipants(); track participant.user_id) {
-                    <article class="card flex items-center justify-between gap-3 p-2.5">
-                      <div class="min-w-0">
-                        <p class="truncate text-sm font-medium" style="color: var(--color-text)">
-                          {{ participant.username }}
-                        </p>
-                        <p class="truncate text-xs" style="color: var(--color-text-secondary)">
-                          {{ t('splits.share') }}:
-                          <strong class="mono text-success">
-                            {{
-                              formatAmount(
-                                estimatedShare(
-                                  editNetPreview(),
-                                  participant.weight,
-                                  editTotalWeight()
-                                )
-                              )
-                            }}
-                          </strong>
-                        </p>
-                      </div>
-                      <div class="flex shrink-0 items-center gap-2">
-                        <label class="flex items-center gap-1">
-                          <input
-                            class="input mono text-sm"
-                            style="width: 4.5rem; text-align: right"
-                            type="number"
-                            min="1"
-                            max="100"
-                            [value]="participant.weight"
-                            (input)="onEditWeightChange(participant.user_id, $event)"
-                          />
-                          <span class="text-xs" style="color: var(--color-text-secondary)">%</span>
-                        </label>
+                    <label class="block">
+                      <span class="label font-medium text-xs">{{ t('common.name') }} / {{ t('splits.note') }}</span>
+                      <input
+                        class="input text-xs"
+                        type="text"
+                        [value]="editNote()"
+                        (input)="onEditNoteChange($event)"
+                      />
+                    </label>
+
+                    <div>
+                      <span class="label font-medium text-xs">{{ t('splits.event_linked') }}</span>
+                      <div class="flex items-center gap-2">
+                        <div
+                          class="input flex flex-1 items-center bg-[var(--color-surface-1)] text-xs truncate"
+                        >
+                          <span class="truncate">{{ editEventTitle() || t('splits.no_event') }}</span>
+                        </div>
                         <button
                           type="button"
-                          class="btn btn--ghost btn--sm text-error"
-                          (click)="removeEditParticipant(participant.user_id)"
-                          [attr.aria-label]="t('splits.remove_participant')"
+                          class="btn btn--outline btn--sm text-xs whitespace-nowrap"
+                          (click)="showEventSearch.set(true)"
                         >
-                          <app-icon name="close" size="0.875rem" />
+                          {{ t('splits.link_event') }}
+                        </button>
+                        @if (editEventId()) {
+                          <button
+                            type="button"
+                            class="btn btn--danger btn--sm whitespace-nowrap"
+                            [attr.aria-label]="t('splits.unlink_event')"
+                            (click)="unlinkEditEvent()"
+                          >
+                            <app-icon name="close" size="0.875rem" />
+                          </button>
+                        }
+                      </div>
+                    </div>
+
+                    <div class="grid gap-2 sm:grid-cols-2">
+                      <label class="block">
+                        <span class="label font-medium text-xs">{{ t('splits.island') }}</span>
+                        <select
+                          class="select text-xs"
+                          [value]="editIslandId()"
+                          (change)="onEditIslandChange($event)"
+                        >
+                          <option value="">{{ t('splits.pick_island') }}</option>
+                          @for (island of islands(); track island.id) {
+                            <option [value]="island.id">
+                              {{ cityLabel(island.city) }} &middot; {{ island.name }}
+                            </option>
+                          }
+                        </select>
+                      </label>
+                      <label class="block">
+                        <span class="label font-medium text-xs">{{ t('splits.tab') }}</span>
+                        <select
+                          class="select text-xs"
+                          [value]="editTabId()"
+                          [disabled]="!editIslandId()"
+                          (change)="onEditTabChange($event)"
+                        >
+                          <option value="">{{ t('splits.pick_tab') }}</option>
+                          @for (tab of editIslandTabs(); track tab.id) {
+                            <option [value]="tab.id">{{ tab.name }}</option>
+                          }
+                        </select>
+                      </label>
+                    </div>
+                  </section>
+
+                  <!-- Silver Breakdown & Live Computation -->
+                  <section class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] space-y-3">
+                    <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+                      {{ t('splits.net_value') }}
+                    </h3>
+
+                    <div class="grid gap-2 sm:grid-cols-3">
+                      <label class="block">
+                        <span class="label font-medium text-[0.6875rem]">{{ t('splits.estimated') }}</span>
+                        <input
+                          class="input font-mono text-xs"
+                          type="number"
+                          min="0"
+                          [value]="editEstimated()"
+                          (input)="onEditEstimatedChange($event)"
+                        />
+                      </label>
+                      <label class="block">
+                        <span class="label font-medium text-[0.6875rem]">{{ t('splits.repair_cost') }} (-)</span>
+                        <input
+                          class="input font-mono text-xs"
+                          type="number"
+                          min="0"
+                          [value]="editRepair()"
+                          (input)="onEditRepairChange($event)"
+                        />
+                      </label>
+                      <label class="block">
+                        <span class="label font-medium text-[0.6875rem]">{{ t('splits.bags_value') }} (+)</span>
+                        <input
+                          class="input font-mono text-xs"
+                          type="number"
+                          min="0"
+                          [value]="editBags()"
+                          (input)="onEditBagsChange($event)"
+                        />
+                      </label>
+                    </div>
+
+                    <div class="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] flex items-center justify-between">
+                      <div>
+                        <span class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+                          {{ t('splits.net_value') }}
+                        </span>
+                        <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5">
+                          {{ formatAmount(editEstimated()) }} &minus; {{ formatAmount(editRepair()) }} + {{ formatAmount(editBags()) }}
+                        </p>
+                      </div>
+                      <div class="text-right">
+                        <span class="font-mono text-xl font-medium text-[var(--color-success)]">
+                          {{ formatAmount(editNetPreview()) }}
+                        </span>
+                        <span class="block text-[0.6875rem] font-mono text-[var(--color-text-secondary)]">
+                          silver
+                        </span>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+
+                <!-- RIGHT COLUMN: ROSTER & WEIGHTS -->
+                <section class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] space-y-3 flex flex-col justify-between">
+                  <div class="space-y-3">
+                    <div class="flex items-center justify-between gap-2 pb-2 border-b border-[var(--color-border)]">
+                      <div class="flex items-center gap-2">
+                        <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text)]">
+                          {{ t('splits.roster_management') }} ({{ editParticipants().length }})
+                        </h3>
+                        <span
+                          class="chip font-mono text-xs font-medium"
+                          [class.chip--success]="editTotalWeight() === 100"
+                          [class.chip--warning]="editTotalWeight() !== 100"
+                        >
+                          {{ editTotalWeight() }}%
+                        </span>
+                      </div>
+
+                      <div class="flex items-center gap-1.5">
+                        @if (editParticipants().length > 0) {
+                          <button
+                            type="button"
+                            class="btn btn--outline btn--sm text-xs py-0.5 px-2"
+                            (click)="distributeEditWeightsEvenly()"
+                          >
+                            {{ t('splits.distribute_evenly') }}
+                          </button>
+                        }
+                        <button
+                          type="button"
+                          class="btn btn--primary btn--sm text-xs py-0.5 px-2"
+                          (click)="showParticipantSearch.set(true)"
+                        >
+                          + {{ t('splits.add_participant') }}
                         </button>
                       </div>
-                    </article>
-                  } @empty {
-                    <p class="py-4 text-center text-xs" style="color: var(--color-text-secondary)">
-                      {{ t('splits.roster_empty') }}
-                    </p>
-                  }
-                </div>
-              </div>
+                    </div>
 
-              <div class="flex justify-end gap-2">
-                <button type="button" class="btn btn--ghost" (click)="cancelEdit()">
-                  {{ t('common.cancel') }}
-                </button>
-                <button type="submit" class="btn btn--primary" [disabled]="saving()">
-                  {{ saving() ? t('common.loading') : t('common.save') }}
-                </button>
+                    <div class="space-y-1.5 max-h-80 overflow-y-auto pr-1">
+                      @for (participant of editParticipants(); track participant.user_id) {
+                        <div class="flex items-center justify-between gap-2 p-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                          <div class="flex items-center gap-2 min-w-0">
+                            <div class="h-6 w-6 rounded bg-[var(--color-surface-2)] flex items-center justify-center text-[0.6875rem] font-mono text-[var(--color-text)] flex-shrink-0">
+                              {{ participant.username.slice(0, 1).toUpperCase() }}
+                            </div>
+                            <div class="min-w-0">
+                              <p class="truncate text-xs font-medium text-[var(--color-text)]">
+                                {{ participant.username }}
+                              </p>
+                              <p class="truncate text-[0.625rem] text-[var(--color-text-secondary)]">
+                                {{ t('splits.share') }}:
+                                <span class="font-mono text-[var(--color-success)]">
+                                  {{
+                                    formatAmount(
+                                      estimatedShare(
+                                        editNetPreview(),
+                                        participant.weight,
+                                        editTotalWeight()
+                                      )
+                                    )
+                                  }}
+                                </span>
+                              </p>
+                            </div>
+                          </div>
+
+                          <div class="flex items-center gap-2 flex-shrink-0">
+                            <div class="flex items-center gap-1">
+                              <input
+                                class="input font-mono text-xs text-right py-0.5 px-1 w-14"
+                                type="number"
+                                min="1"
+                                max="100"
+                                [value]="participant.weight"
+                                (input)="onEditWeightChange(participant.user_id, $event)"
+                              />
+                              <span class="text-xs text-[var(--color-text-secondary)] font-mono">%</span>
+                            </div>
+                            <button
+                              type="button"
+                              class="btn btn--ghost btn--sm p-1 text-xs text-[var(--color-danger)]"
+                              (click)="removeEditParticipant(participant.user_id)"
+                              [attr.aria-label]="t('splits.remove_participant')"
+                            >
+                              &times;
+                            </button>
+                          </div>
+                        </div>
+                      } @empty {
+                        <p class="py-6 text-center text-xs text-[var(--color-text-secondary)]">
+                          {{ t('splits.roster_empty') }}
+                        </p>
+                      }
+                    </div>
+                  </div>
+
+                  <div class="flex justify-end gap-2 pt-3 border-t border-[var(--color-border)]">
+                    <button type="button" class="btn btn--ghost btn--sm" (click)="cancelEdit()">
+                      {{ t('common.cancel') }}
+                    </button>
+                    <button type="submit" class="btn btn--primary btn--sm" [disabled]="saving()">
+                      {{ saving() ? t('common.loading') : t('common.save') }}
+                    </button>
+                  </div>
+                </section>
               </div>
             </form>
           } @else {
             <section class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <article class="surface rounded-lg p-3">
-                <p class="text-xs uppercase" style="color: var(--color-text-disabled)">
+              <article class="surface rounded-xl border border-[var(--color-border)] p-3.5 bg-[var(--color-surface)]">
+                <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                   {{ t('splits.estimated') }}
                 </p>
-                <p class="mono text-base font-bold text-warning">
+                <p class="font-mono text-base font-medium text-[var(--color-warning)] mt-1">
                   {{ formatAmount(detail.estimated_market_value) }}
                 </p>
               </article>
-              <article class="surface rounded-lg p-3">
-                <p class="text-xs uppercase" style="color: var(--color-text-disabled)">
+              <article class="surface rounded-xl border border-[var(--color-border)] p-3.5 bg-[var(--color-surface)]">
+                <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                   {{ t('splits.repair_cost') }}
                 </p>
-                <p class="mono text-base font-bold text-error">
+                <p class="font-mono text-base font-medium text-[var(--color-danger)] mt-1">
                   -{{ formatAmount(detail.repair_value) }}
                 </p>
               </article>
-              <article class="surface rounded-lg p-3">
-                <p class="text-xs uppercase" style="color: var(--color-text-disabled)">
+              <article class="surface rounded-xl border border-[var(--color-border)] p-3.5 bg-[var(--color-surface)]">
+                <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                   {{ t('splits.bags_value') }}
                 </p>
-                <p class="mono text-base font-bold">+{{ formatAmount(detail.bags_value) }}</p>
+                <p class="font-mono text-base font-medium text-[var(--color-text)] mt-1">
+                  +{{ formatAmount(detail.bags_value) }}
+                </p>
               </article>
               <article
-                class="surface rounded-lg border-2 p-3"
-                style="border-color: var(--color-success)"
+                class="surface rounded-xl border border-[var(--color-success)] p-3.5 bg-[var(--color-surface)]"
               >
-                <p class="text-xs uppercase" style="color: var(--color-text-disabled)">
+                <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                   {{ t('splits.net_value') }}
                 </p>
-                <p class="mono text-base font-bold text-success">
+                <p class="font-mono text-base font-medium text-[var(--color-success)] mt-1">
                   {{ formatAmount(netOf(detail)) }}
                 </p>
               </article>
             </section>
 
             <section
-              class="surface overflow-hidden rounded-lg border"
-              style="border-color: var(--color-border)"
+              class="surface overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]"
             >
               <header
-                class="flex items-center justify-between border-b p-3"
-                style="border-color: var(--color-border)"
+                class="flex items-center justify-between border-b border-[var(--color-border)] p-3.5"
               >
-                <h2 class="text-sm font-semibold" style="color: var(--color-text)">
+                <h2 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text)]">
                   {{ t('splits.participants') }} ({{ detail.participants.length }})
                 </h2>
                 <span
-                  class="mono text-xs"
-                  [class.text-warning]="detail.status === 'pending'"
-                  [class.text-success]="detail.status !== 'pending'"
+                  class="font-mono text-xs"
+                  [class.text-[var(--color-warning)]]="detail.status === 'pending'"
+                  [class.text-[var(--color-success)]]="detail.status !== 'pending'"
                 >
                   {{
                     detail.status === 'pending' ? t('splits.pending_payout') : t('splits.paid_out')
@@ -429,13 +445,18 @@ type DetailMode = 'view' | 'edit';
                 [emptyLabel]="'splits.roster_empty'"
               >
                 <ng-template dataTableCell="username" let-row>
-                  <span class="font-medium">{{ row.username }}</span>
+                  <div class="flex items-center gap-2">
+                    <div class="h-6 w-6 rounded bg-[var(--color-surface-2)] flex items-center justify-center text-[0.6875rem] font-mono text-[var(--color-text)] flex-shrink-0">
+                      {{ row.username.slice(0, 1).toUpperCase() }}
+                    </div>
+                    <span class="font-medium text-xs">{{ row.username }}</span>
+                  </div>
                 </ng-template>
                 <ng-template dataTableCell="weight" let-row>
-                  <span class="mono">{{ row.weight }}%</span>
+                  <span class="font-mono text-xs">{{ row.weight }}%</span>
                 </ng-template>
                 <ng-template dataTableCell="share" let-row>
-                  <span class="mono font-bold text-success">
+                  <span class="font-mono text-xs font-medium text-[var(--color-success)]">
                     {{
                       formatAmount(
                         row.share_amount ?? estimatedShare(netOf(detail), row.weight, 100)
@@ -460,43 +481,39 @@ type DetailMode = 'view' | 'edit';
         <div class="space-y-4">
           @if (split(); as detail) {
             <div
-              class="rounded-xl p-3.5 border flex items-center justify-between"
-              style="background: var(--color-surface-2); border-color: var(--color-border)"
+              class="rounded-xl p-3.5 border border-[var(--color-border)] bg-[var(--color-surface-2)] flex items-center justify-between"
             >
               <div>
-                <p class="text-xs font-semibold uppercase" style="color: var(--color-text-secondary)">
+                <p class="text-xs font-semibold uppercase text-[var(--color-text-secondary)]">
                   {{ t('splits.net_value') }}
                 </p>
-                <p class="text-xs" style="color: var(--color-text-secondary)">
+                <p class="text-xs text-[var(--color-text-secondary)]">
                   {{ detail.participants.length }} {{ t('splits.participants') }}
                 </p>
               </div>
-              <p class="mono text-2xl font-bold text-success">
+              <p class="font-mono text-2xl font-medium text-[var(--color-success)]">
                 {{ formatAmount(netOf(detail)) }}
               </p>
             </div>
 
             <div
-              class="rounded-xl border overflow-hidden"
-              style="border-color: var(--color-border)"
+              class="rounded-xl border border-[var(--color-border)] overflow-hidden"
             >
               <div
-                class="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
-                style="border-color: var(--color-border); background: var(--color-surface-2); color: var(--color-text-secondary)"
+                class="px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]"
               >
                 {{ t('splits.roster_management') }}
               </div>
-              <div class="max-h-60 overflow-y-auto divide-y" style="border-color: var(--color-border)">
+              <div class="max-h-60 overflow-y-auto divide-y border-[var(--color-border)]">
                 @for (participant of detail.participants; track participant.user_id) {
                   <div
-                    class="p-2.5 flex items-center justify-between gap-3 text-sm"
-                    style="background: var(--color-surface-1)"
+                    class="p-2.5 flex items-center justify-between gap-3 text-sm bg-[var(--color-surface-1)]"
                   >
-                    <span class="font-medium" style="color: var(--color-text)">
+                    <span class="font-medium text-xs text-[var(--color-text)]">
                       {{ participant.username }}
                     </span>
                     <div class="text-right">
-                      <span class="mono font-semibold text-success">
+                      <span class="font-mono text-xs font-medium text-[var(--color-success)]">
                         {{
                           formatAmount(
                             participant.share_amount ??
@@ -504,7 +521,7 @@ type DetailMode = 'view' | 'edit';
                           )
                         }}
                       </span>
-                      <span class="text-xs ml-1" style="color: var(--color-text-secondary)">
+                      <span class="text-xs ml-1 font-mono text-[var(--color-text-secondary)]">
                         ({{ participant.weight }}%)
                       </span>
                     </div>
@@ -513,7 +530,7 @@ type DetailMode = 'view' | 'edit';
               </div>
             </div>
 
-            <p class="text-xs" style="color: var(--color-text-secondary)">
+            <p class="text-xs text-[var(--color-text-secondary)]">
               {{ t('splits.detail.confirmCompleteWarning') }}
             </p>
           }
@@ -522,14 +539,14 @@ type DetailMode = 'view' | 'edit';
         <div dialogFooter class="flex justify-end gap-2">
           <button
             type="button"
-            class="btn btn--ghost"
+            class="btn btn--ghost btn--sm"
             (click)="showCompleteConfirmDialog.set(false)"
           >
             {{ t('common.cancel') }}
           </button>
           <button
             type="button"
-            class="btn btn--primary flex items-center gap-2"
+            class="btn btn--primary btn--sm flex items-center gap-2"
             [disabled]="saving()"
             (click)="executeCompleteSplit()"
           >
@@ -542,14 +559,14 @@ type DetailMode = 'view' | 'edit';
 
     @if (showDelete()) {
       <app-dialog [title]="t('common.delete')" size="sm" (closed)="showDelete.set(false)">
-        <p>{{ t('splits.confirm_delete') }}</p>
-        <div dialogFooter>
-          <button type="button" class="btn btn--ghost" (click)="showDelete.set(false)">
+        <p class="text-xs">{{ t('splits.confirm_delete') }}</p>
+        <div dialogFooter class="flex justify-end gap-2">
+          <button type="button" class="btn btn--ghost btn--sm" (click)="showDelete.set(false)">
             {{ t('common.cancel') }}
           </button>
           <button
             type="button"
-            class="btn btn--danger"
+            class="btn btn--danger btn--sm"
             [disabled]="saving()"
             (click)="confirmDelete()"
           >
