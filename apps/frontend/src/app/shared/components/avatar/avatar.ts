@@ -34,7 +34,7 @@ const SIZE_MAP: Record<AvatarSize, string> = {
       class="relative inline-flex shrink-0 items-center justify-center overflow-hidden select-none border transition-colors"
       [class]="containerClasses()"
       [style]="customStyles()"
-      [attr.aria-label]="ariaLabel()"
+      [attr.aria-label]="showImage() ? null : ariaLabel()"
     >
       @if (showImage()) {
         <img

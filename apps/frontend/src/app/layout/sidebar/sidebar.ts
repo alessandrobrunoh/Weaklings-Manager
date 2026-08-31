@@ -30,29 +30,34 @@ export type { NavItem, NavSection } from '../nav';
     }
   `,
   template: `
-    <nav class="flex h-full w-full flex-col py-3" [attr.aria-label]="t(ariaLabelKey())">
+    <nav class="flex h-full w-full flex-col py-1.5" [attr.aria-label]="t(ariaLabelKey())">
       <!-- Brand -->
-      <div class="px-3 pb-3 flex items-center" [class.justify-center]="collapsed()">
-        <a routerLink="/dashboard" class="no-underline block" [appTooltip]="collapsed() ? 'Weaklings Manager' : null" tooltipPosition="right">
-          <app-weaklings-logo [compact]="collapsed()" />
+      <div class="flex h-11 items-center px-3" [class.justify-center]="collapsed()">
+        <a routerLink="/dashboard" class="no-underline block" aria-label="Weaklings Manager dashboard" [appTooltip]="collapsed() ? 'Weaklings Manager' : null" tooltipPosition="right">
+          <app-weaklings-logo [compact]="collapsed()" [dense]="!collapsed()" />
         </a>
       </div>
 
       <!-- Sections -->
-      <div class="flex-1 overflow-y-auto px-2 scrollbar-thin">
+      <div class="flex-1 overflow-y-auto px-2 pb-2 scrollbar-thin">
         @for (section of visibleSections(); track section.headingKey) {
-          <div class="mb-3">
+          <div class="mb-2">
             @if (!collapsed()) {
               <p
                 [id]="section.headingKey"
-                class="eyebrow px-3 pb-1.5 pt-2 text-[11px]"
+                class="eyebrow px-2 pb-1 pt-3 text-[10px]"
               >
                 {{ t(section.headingKey) }}
               </p>
             } @else {
               <div class="my-2 mx-auto w-6 border-t" style="border-color: var(--color-border)"></div>
             }
-            <ul class="flex flex-col gap-0.5" role="list" [attr.aria-labelledby]="section.headingKey">
+            <ul
+              class="flex flex-col gap-0.5"
+              role="list"
+              [attr.aria-labelledby]="collapsed() ? null : section.headingKey"
+              [attr.aria-label]="collapsed() ? t(section.headingKey) : null"
+            >
               @for (item of section.items; track item.path) {
                 <li>
                   <a
@@ -67,7 +72,7 @@ export type { NavItem, NavSection } from '../nav';
                     tooltipPosition="right"
                     (click)="navigate.emit()"
                   >
-                    <app-icon [name]="item.icon" size="1.125rem" class="shrink-0" />
+                    <app-icon [name]="item.icon" size="1rem" class="shrink-0" />
                     @if (!collapsed()) {
                       <span class="truncate">{{ t(item.labelKey) }}</span>
                     }
@@ -83,7 +88,7 @@ export type { NavItem, NavSection } from '../nav';
       <div class="hidden md:flex px-2 pt-2 border-t" style="border-color: var(--color-border)">
         <button
           type="button"
-          class="btn btn--ghost w-full flex items-center gap-2 py-2 text-xs"
+          class="btn btn--ghost btn--sm w-full flex items-center gap-2 text-xs"
           [class.justify-center]="collapsed()"
           (click)="toggleCollapse.emit()"
           [appTooltip]="collapsed() ? 'Espandi barra laterale' : 'Comprimi barra laterale'"

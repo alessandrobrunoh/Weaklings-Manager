@@ -41,7 +41,7 @@ export interface ViewToggleOption {
   template: `
     <div class="overflow-x-auto scrollbar-thin">
       <div
-        class="inline-flex gap-0.5 rounded-full border p-1"
+        class="inline-flex gap-0.5 rounded-md border p-0.5"
         style="background-color: var(--color-surface-2); border-color: var(--color-border)"
         role="tablist"
         (keydown)="onKeydown($event)"
@@ -51,13 +51,11 @@ export interface ViewToggleOption {
             #tab
             type="button"
             role="tab"
-            class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-medium"
+            class="inline-flex min-h-7 items-center gap-1.5 whitespace-nowrap rounded px-2.5 py-1 text-xs font-medium"
             [attr.aria-selected]="option.id === active()"
             [attr.tabindex]="option.id === active() ? 0 : -1"
-            [style.background-color]="option.id === active() ? 'var(--color-primary)' : 'transparent'"
-            [style.color]="
-              option.id === active() ? 'var(--color-on-primary)' : 'var(--color-text-secondary)'
-            "
+            [style.background-color]="option.id === active() ? 'var(--color-surface-3)' : 'transparent'"
+            [style.color]="option.id === active() ? 'var(--color-text)' : 'var(--color-text-tertiary)'"
             (click)="select(i)"
           >
             @if (option.icon) {

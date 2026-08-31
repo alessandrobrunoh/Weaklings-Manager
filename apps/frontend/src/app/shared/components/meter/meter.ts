@@ -19,8 +19,11 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
       <span
         class="h-1.5 overflow-hidden rounded-full"
         style="background-color: var(--color-surface-2)"
-        role="img"
+        role="progressbar"
         [attr.aria-label]="ariaLabel()"
+        [attr.aria-valuemin]="0"
+        [attr.aria-valuemax]="max()"
+        [attr.aria-valuenow]="clampedValue()"
       >
         <span
           class="block h-full rounded-full"
@@ -40,12 +43,17 @@ export class Meter {
   readonly display = input<string | null>();
   readonly tone = input<'primary' | 'success' | 'danger' | 'neutral'>('primary');
 
+  protected readonly clampedValue = computed(() => {
+    const max = this.max();
+    return !max || max <= 0 ? 0 : Math.min(max, Math.max(0, this.value()));
+  });
+
   protected readonly percent = computed(() => {
     const max = this.max();
     if (!max || max <= 0) {
       return 0;
     }
-    return Math.min(100, Math.max(0, Math.round((this.value() / max) * 100)));
+    return Math.round((this.clampedValue() / max) * 100);
   });
 
   /** Some callers pass an empty label when the surrounding context (a table

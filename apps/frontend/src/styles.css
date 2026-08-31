@@ -1189,3 +1189,305 @@
   }
 }
 
+/* -----------------------------------------------------------------
+   Weaklings Manager product system — Linear-inspired, compact dark UI.
+   These overrides deliberately keep the existing primitive API stable while
+   bringing every route onto the same operational visual language.
+   ----------------------------------------------------------------- */
+:root,
+.dark {
+  color-scheme: dark;
+  --color-void: #08090a;
+  --color-carbon: #0f1011;
+  --color-obsidian: #161718;
+  --color-graphite: #23252a;
+  --color-smoke: #383b3f;
+  --color-mist: #d0d6e0;
+  --color-bg: #08090a;
+  --color-surface: #0f1011;
+  --color-surface-1: #0f1011;
+  --color-surface-2: #161718;
+  --color-surface-3: #23252a;
+  --color-surface-hover: #1c1e21;
+  --color-surface-charcoal: #08090a;
+  --color-border: #23252a;
+  --color-border-strong: #383b3f;
+  --color-text: #ffffff;
+  --color-text-heading: #ffffff;
+  --color-text-secondary: #d0d6e0;
+  --color-text-tertiary: #8a8f98;
+  --color-text-steel: #8a8f98;
+  --color-text-disabled: #62666d;
+  --color-weaklings-red: #dc2626;
+  --color-primary: var(--color-weaklings-red);
+  --color-primary-hover: #ef4444;
+  --color-primary-container: color-mix(in oklab, #dc2626 16%, transparent);
+  --color-primary-soft: var(--color-primary-container);
+  --color-on-primary: #08090a;
+  --color-logo-glow: color-mix(in oklab, #eb5757 18%, transparent);
+  --color-success: #4cc36a;
+  --color-success-container: color-mix(in oklab, #4cc36a 13%, transparent);
+  --color-warning: #eab308;
+  --color-warning-container: color-mix(in oklab, #eab308 13%, transparent);
+  --color-error: #eb5757;
+  --color-error-container: color-mix(in oklab, #eb5757 13%, transparent);
+  --color-danger: var(--color-error);
+  --color-info: #75b7ff;
+  --radius-sm: 2px;
+  --radius-md: 6px;
+  --radius-xl: 12px;
+  --radius-2xl: 12px;
+  --radius-cards: 12px;
+  --radius-badges: 4px;
+  --radius-inputs: 6px;
+  --radius-buttons: 6px;
+  --radius-smallcards: 6px;
+  --shadow-subtle: inset 0 0 0 1px #23252a;
+  --shadow-subtle-2: inset 0 0 0 1px #23252a;
+  --shadow-xl: 0 1rem 2rem color-mix(in srgb, #08090a 72%, transparent);
+  --font-universalsans: 'Inter Variable', Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-universalsansdisplay: var(--font-universalsans);
+  --font-geistmono: 'Berkeley Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-sans: var(--font-universalsans);
+  --font-display: var(--font-universalsans);
+  --font-mono: var(--font-geistmono);
+  --page-gap: 1.5rem;
+}
+
+.light {
+  color-scheme: light;
+  --color-bg: #f7f7f8;
+  --color-surface: #ffffff;
+  --color-surface-1: #ffffff;
+  --color-surface-2: #f1f2f4;
+  --color-surface-3: #e7e9ed;
+  --color-surface-hover: #eceef1;
+  --color-surface-charcoal: #151617;
+  --color-border: #dfe1e5;
+  --color-border-strong: #c6c9cf;
+  --color-text: #151617;
+  --color-text-heading: #08090a;
+  --color-text-secondary: #42464d;
+  --color-text-tertiary: #62666d;
+  --color-text-steel: #4e5259;
+  --color-text-disabled: #8a8f98;
+  --color-weaklings-red: #b91c1c;
+  --color-primary: var(--color-weaklings-red);
+  --color-primary-hover: #991b1b;
+  --color-primary-container: #fee2e2;
+  --color-primary-soft: var(--color-primary-container);
+  --color-on-primary: #08090a;
+  --color-success: #247a3a;
+  --color-success-container: #e5f5e9;
+  --color-warning: #956d00;
+  --color-warning-container: #fff5cc;
+  --color-error: #c53b3b;
+  --color-error-container: #ffebeb;
+  --color-danger: var(--color-error);
+  --color-info: #176bb8;
+  --shadow-subtle: inset 0 0 0 1px #dfe1e5;
+  --shadow-subtle-2: inset 0 0 0 1px #dfe1e5;
+  --shadow-xl: 0 1rem 2rem rgb(21 22 23 / 12%);
+}
+
+@layer components {
+  body {
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv01' on, 'ss03' on, 'zero' on;
+    letter-spacing: -0.01em;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  .surface,
+  .card,
+  .card--flat,
+  .card--elevated {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-cards);
+    box-shadow: none;
+  }
+
+  .card--flat { background: var(--color-surface); }
+  .card:hover { border-color: var(--color-border-strong); }
+
+  .btn {
+    min-height: 2.25rem;
+    padding: 0.4375rem 0.75rem;
+    border-radius: var(--radius-buttons);
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    font-weight: 510;
+    letter-spacing: -0.01em;
+    transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out, transform 150ms ease-out;
+  }
+
+  .btn--primary { background: var(--color-primary); color: var(--color-on-primary); }
+  .btn--primary:hover:not(:disabled) { background: var(--color-primary-hover); }
+  .btn--ghost { color: var(--color-text-secondary); }
+  .btn--ghost:hover:not(:disabled), .btn--tonal:hover:not(:disabled) { background: var(--color-surface-hover); color: var(--color-text); }
+  .btn--outline { border-color: var(--color-border); color: var(--color-text-secondary); }
+  .btn--outline:hover:not(:disabled) { background: var(--color-surface-hover); border-color: var(--color-border-strong); color: var(--color-text); }
+  .btn--tonal { background: var(--color-surface-2); color: var(--color-text); }
+  .btn--danger { background: var(--color-error-container); border-color: color-mix(in oklab, var(--color-error) 30%, transparent); color: var(--color-error); }
+  .btn--danger:hover:not(:disabled) { background: color-mix(in oklab, var(--color-error) 20%, var(--color-surface)); }
+  .btn--sm { min-height: 2rem; padding: 0.3125rem 0.625rem; font-size: 0.75rem; }
+  .btn--icon { min-width: 2rem; min-height: 2rem; padding: 0.375rem; }
+
+  .input, .select, .textarea {
+    min-height: 2.25rem;
+    padding: 0.5rem 0.625rem;
+    background: var(--color-surface-2);
+    border-color: var(--color-border);
+    border-radius: var(--radius-inputs);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+  }
+  .textarea { resize: vertical; }
+  .input::placeholder, .textarea::placeholder { color: var(--color-text-tertiary); }
+  .input:focus-visible, .select:focus-visible, .textarea:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; border-color: var(--color-primary); box-shadow: none; }
+  .input:focus, .select:focus, .textarea:focus { box-shadow: none; }
+  .input--sm, .select--sm { min-height: 2rem; padding: 0.3125rem 0.5rem; font-size: 0.75rem; }
+  .label { margin-bottom: 0.25rem; color: var(--color-text-secondary); font-size: 0.75rem; font-weight: 510; letter-spacing: -0.01em; }
+
+  .chip {
+    min-height: 1.25rem;
+    padding: 0.0625rem 0.375rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-badges);
+    background: color-mix(in oklab, var(--color-surface-3) 76%, transparent);
+    color: var(--color-text-tertiary);
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: 510;
+  }
+  .chip--neutral, .chip--info { background: color-mix(in oklab, var(--color-surface-3) 76%, transparent); color: var(--color-text-secondary); }
+  .chip--success { background: var(--color-success-container); color: var(--color-success); }
+  .chip--warning { background: var(--color-warning-container); color: var(--color-warning); }
+  .chip--error { background: var(--color-error-container); color: var(--color-error); }
+
+  .nav-link {
+    gap: 0.625rem;
+    min-height: 2.125rem;
+    padding: 0.375rem 0.625rem;
+    border-radius: var(--radius-md);
+    color: var(--color-text-tertiary);
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    font-weight: 400;
+  }
+  .nav-link:hover { background: var(--color-surface-hover); color: var(--color-text); }
+  .nav-link--active, .nav-link--active:hover { background: color-mix(in oklab, var(--color-primary) 14%, var(--color-surface)); color: var(--color-text); font-weight: 510; box-shadow: inset 2px 0 var(--color-primary); }
+
+  .table { font-size: 0.8125rem; }
+  .table thead th { padding: 0.5625rem 0.75rem; background: var(--color-surface-2); color: var(--color-text-tertiary); font-size: 0.6875rem; font-weight: 510; letter-spacing: 0.04em; }
+  .table tbody td { padding: 0.625rem 0.75rem; color: var(--color-text-secondary); }
+  .table tbody tr:hover { background: var(--color-surface-hover); }
+
+  .mono, .tabular { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.013em; }
+  .eyebrow { color: var(--color-text-tertiary); font-family: var(--font-sans); font-size: 0.6875rem; font-weight: 510; letter-spacing: 0.04em; }
+  .display, .heading-lg, .heading, .subheading, .heading-sm { font-family: var(--font-sans); color: var(--color-text-heading); font-weight: 510; letter-spacing: -0.022em; }
+  .app-tooltip { background: var(--color-obsidian); color: var(--color-mist); border-color: var(--color-border-strong); border-radius: var(--radius-md); box-shadow: var(--shadow-xl); }
+  .scrollbar-thin { scrollbar-color: var(--color-border-strong) transparent; scrollbar-gutter: stable; }
+
+  .app-dialog { background: var(--color-surface); border-color: var(--color-border-strong); border-radius: var(--radius-xl); box-shadow: var(--shadow-xl); }
+  .app-dialog__header, .app-dialog__body { background: var(--color-surface); }
+  .app-dialog__footer { background: var(--color-surface-2); }
+  .app-dialog__title { color: var(--color-text); font-size: 0.9375rem; font-weight: 510; }
+  .app-dialog__subtitle { color: var(--color-text-secondary); }
+  .app-dialog::backdrop { background: rgb(8 9 10 / 72%); backdrop-filter: none; }
+
+  .workspace-header {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.625rem;
+    color: var(--color-text);
+    font-size: 0.8125rem;
+    font-weight: 510;
+    letter-spacing: -0.012em;
+  }
+  .workspace-header__mark {
+    inline-size: 0.5rem;
+    block-size: 0.5rem;
+    border-radius: 2px;
+    background: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-primary-container);
+  }
+  .workspace-header__meta { color: var(--color-text-tertiary); font-size: 0.75rem; font-weight: 400; }
+
+  .cta-star { color: var(--color-primary); animation: none; }
+}
+
+@media (pointer: coarse) {
+  .btn, .input, .select, .textarea { min-height: 2.5rem; }
+  .btn--sm, .btn--icon { min-width: 2.5rem; min-height: 2.5rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .btn, .card, .surface, .nav-link, .app-tooltip, .app-dialog, .spinner { transition-duration: 0.01ms; animation-duration: 0.01ms; animation-iteration-count: 1; }
+}
+
+/* Issue-tracker workspace treatment. Kept outside Tailwind layers so existing
+   feature templates inherit the same dense product geometry immediately. */
+app-shell .card {
+  border-color: var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  box-shadow: inset 0 1px rgb(255 255 255 / 2%);
+}
+
+app-shell .card.p-5 { padding: 1rem; }
+app-shell .card.p-4 { padding: 0.875rem; }
+app-shell .card.p-3 { padding: 0.75rem; }
+app-shell .surface { border-radius: 6px; }
+
+app-shell .card > :where(h2, h3) {
+  font-weight: 510;
+  letter-spacing: -0.012em;
+}
+
+app-shell .card :where(.rounded-xl, .rounded-2xl) { border-radius: 6px; }
+
+app-shell .table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-surface-2);
+}
+
+app-shell .table tbody tr {
+  transition: background-color 120ms ease-out;
+}
+
+app-shell .table tbody tr:hover {
+  background: color-mix(in oklab, var(--color-primary) 4%, var(--color-surface));
+}
+
+app-shell .data-table-card {
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+
+app-shell .data-table__toolbar,
+app-shell .data-table__footer {
+  background: var(--color-surface);
+}
+
+app-shell .data-table__table thead th {
+  background: var(--color-surface-2);
+}
+
+app-shell .data-table__row--clickable:hover,
+app-shell .data-table__row--clickable:focus-visible {
+  background: color-mix(in oklab, var(--color-primary) 5%, var(--color-surface));
+}
+

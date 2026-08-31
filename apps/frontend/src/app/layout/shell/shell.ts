@@ -30,14 +30,17 @@ import { Topbar } from '../topbar/topbar';
   selector: 'app-shell',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [AlbionLinkGate, RouterOutlet, Sidebar, Topbar],
+  host: {
+    '(document:keydown.escape)': 'closeDrawer()',
+  },
   template: `
-    <div class="flex h-screen overflow-hidden" style="background-color: var(--color-bg)">
+    <div class="flex h-dvh overflow-hidden" style="background-color: var(--color-bg)">
       <!-- Desktop sidebar -->
       <aside
         class="hidden md:flex flex-col shrink-0 transition-all duration-200 ease-in-out"
-        [style.width]="isSidebarCollapsed() ? '72px' : '260px'"
-        [style.min-width]="isSidebarCollapsed() ? '72px' : '260px'"
-        [style.max-width]="isSidebarCollapsed() ? '72px' : '260px'"
+        [style.width]="isSidebarCollapsed() ? '56px' : '248px'"
+        [style.min-width]="isSidebarCollapsed() ? '56px' : '248px'"
+        [style.max-width]="isSidebarCollapsed() ? '56px' : '248px'"
         style="background-color: var(--color-surface); border-right: 1px solid var(--color-border)"
       >
         <app-sidebar
@@ -50,7 +53,7 @@ import { Topbar } from '../topbar/topbar';
 
       <!-- Mobile drawer -->
       @if (isDrawerOpen()) {
-        <div class="md:hidden fixed inset-0 z-40 flex" role="dialog" aria-modal="true">
+        <div class="md:hidden fixed inset-0 z-40 flex" role="dialog" aria-modal="true" aria-label="Navigation menu">
           <button
             type="button"
             class="absolute inset-0"
@@ -60,7 +63,7 @@ import { Topbar } from '../topbar/topbar';
           ></button>
           <div
             class="relative w-72 max-w-[80%] flex flex-col h-full"
-            style="background-color: var(--color-surface); box-shadow: var(--shadow-xl)"
+            style="background-color: var(--color-surface); border-right: 1px solid var(--color-border)"
           >
             <app-sidebar
               [sections]="navSections()"
@@ -79,8 +82,8 @@ import { Topbar } from '../topbar/topbar';
           (menuToggle)="toggleDrawer()"
           (collapseToggle)="toggleSidebarCollapse()"
         />
-        <main #main class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 scrollbar-thin">
-          <div class="mx-auto w-full max-w-[1200px]">
+        <main #main class="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-4 scrollbar-thin">
+          <div class="w-full min-w-0">
             <router-outlet />
           </div>
         </main>

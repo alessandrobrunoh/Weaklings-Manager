@@ -10,6 +10,8 @@ import {
 
 export type TooltipPosition = 'top' | 'bottom' | 'left' | 'right';
 
+let nextTooltipId = 0;
+
 /**
  * Lightweight, accessible tooltip directive.
  *
@@ -27,6 +29,8 @@ export type TooltipPosition = 'top' | 'bottom' | 'left' | 'right';
     '(focusin)': 'onFocusIn()',
     '(focusout)': 'onFocusOut()',
     '(click)': 'onClick()',
+    '(window:resize)': 'updatePosition()',
+    '(document:scroll)': 'updatePosition()',
   },
 })
 export class TooltipDirective implements OnDestroy {
@@ -88,9 +92,11 @@ export class TooltipDirective implements OnDestroy {
 
     const tip = this.renderer.createElement('div') as HTMLElement;
     tip.className = 'app-tooltip';
+    tip.id = `app-tooltip-${++nextTooltipId}`;
     tip.setAttribute('role', 'tooltip');
     tip.textContent = text;
 
+    this.renderer.setAttribute(this.el.nativeElement, 'aria-describedby', tip.id);
     this.renderer.appendChild(document.body, tip);
     this.tooltipEl = tip;
 
@@ -103,7 +109,7 @@ export class TooltipDirective implements OnDestroy {
     });
   }
 
-  private updatePosition(): void {
+  protected updatePosition(): void {
     if (!this.tooltipEl || !this.el.nativeElement) {
       return;
     }
@@ -149,6 +155,7 @@ export class TooltipDirective implements OnDestroy {
     if (this.tooltipEl) {
       const tip = this.tooltipEl;
       this.tooltipEl = null;
+      this.renderer.removeAttribute(this.el.nativeElement, 'aria-describedby');
       tip.classList.remove('app-tooltip--visible');
       setTimeout(() => {
         if (tip.parentNode) {

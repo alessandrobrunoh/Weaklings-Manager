@@ -10,12 +10,12 @@ import { Icon, type IconName } from '../icon/icon';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Icon],
   template: `
-    <div class="card p-5 flex flex-col justify-between h-full">
-      <div class="flex items-center justify-between gap-2 mb-2">
+    <div class="card p-3 flex flex-col justify-between h-full">
+      <div class="flex items-center justify-between gap-2 mb-3">
         <p class="eyebrow truncate">{{ label() }}</p>
         @if (icon()) {
           <span
-            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+            class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
             style="background-color: var(--color-surface-2); color: var(--color-text-secondary)"
             aria-hidden="true"
           >
@@ -24,11 +24,11 @@ import { Icon, type IconName } from '../icon/icon';
         }
       </div>
       <div>
-        <p class="mono text-2xl font-normal leading-tight tracking-tight" [style.color]="valueColor()">
+        <p class="mono text-xl font-normal leading-tight tracking-[-0.02em]" [style.color]="valueColor()">
           {{ value() !== null && value() !== undefined ? value() : '—' }}
         </p>
         @if (sub()) {
-          <p class="mt-1 text-xs" style="color: var(--color-text-secondary)">{{ sub() }}</p>
+          <p class="mt-1 text-[11px]" style="color: var(--color-text-tertiary)">{{ sub() }}</p>
         }
       </div>
     </div>

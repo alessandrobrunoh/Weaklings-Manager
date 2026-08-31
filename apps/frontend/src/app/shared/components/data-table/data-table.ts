@@ -281,6 +281,14 @@ export class DataTable<T> {
     return current.direction === 'asc' ? '▲' : '▼';
   }
 
+  protected sortAria(columnKey: string): 'none' | 'ascending' | 'descending' {
+    const current = this.sort();
+    if (!current || current.columnKey !== columnKey) {
+      return 'none';
+    }
+    return current.direction === 'asc' ? 'ascending' : 'descending';
+  }
+
   protected onRowClick(row: T): void {
     if (!this.rowClickable()) {
       return;

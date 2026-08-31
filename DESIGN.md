@@ -3,7 +3,9 @@
 
 **Theme:** dark
 
-Linear's design system is a midnight command center built on near-black surfaces (#08090a) with paper-white type and one electric acid-lime accent (#e4f222) that functions as a functional flashlight — small, high-contrast, and used sparingly to signal action. The interface treats darkness as a substrate rather than a theme: text is crisp white at tight tracking (-0.022em), weights sit in a low 400–510 band rather than bold, and borders are hairline-thin (0.5px) to let geometry do the work that shadows usually would. Components feel precision-machined — 6px and 12px radii, compact 8–12px paddings, and almost no decorative ornament — letting the product UI (issue cards, kanban boards, AI agent panels) be the only visual texture in an otherwise quiet system.
+> **Weaklings brand override:** retain Linear's compact, precision-oriented product grammar, but use the Weaklings logo red, `#dc2626`, as the functional action accent. Red is never decorative. Status colors remain semantic and distinct from primary actions.
+
+Weaklings Manager is a midnight command center built on near-black surfaces (#08090a) with paper-white type and one controlled Weaklings-red accent (#dc2626) that functions as a functional flashlight — small, high-contrast, and used sparingly to signal action. The interface treats darkness as a substrate rather than a theme: text is crisp white at tight tracking (-0.022em), weights sit in a low 400–510 band rather than bold, and borders are hairline-thin (0.5px) to let geometry do the work that shadows usually would. Components feel precision-machined — 6px and 12px radii, compact 8–12px paddings, and almost no decorative ornament — letting the product UI (issue cards, kanban boards, AI agent panels) be the only visual texture in an otherwise quiet system.
 
 
 
@@ -21,7 +23,7 @@ Linear's design system is a midnight command center built on near-black surfaces
 | Mist | `#d0d6e0` | `--color-mist` | Secondary headings, button text on dark surfaces |
 | Bone | `#e5e5e6` | `--color-bone` | Near-white surface fills, high-contrast button text |
 | Paper | `#ffffff` | `--color-paper` | Primary headings, hero type, max-contrast emphasis text |
-| Acid Lime | `#e4f222` | `--color-acid-lime` | Primary action buttons, active nav indicators — electric accent that breaks the monochrome system |
+| Weaklings Red | `#dc2626` | `--color-weaklings-red` | Primary action buttons, active nav indicator, focus treatment — derived from the Weaklings logo |
 | Pulse Green | `#27a644` | `--color-pulse-green` | Green outline accent for tags, dividers, and focused UI edges. Use as a supporting accent, not as a status color |
 | Coral Red | `#eb5757` | `--color-coral-red` | Red wash for highlight backgrounds, decorative bands, and soft emphasis behind content. Use as a supporting accent, not as a status color |
 | Signal Teal | `#02b8cc` | `--color-signal-teal` | Decorative accent, informational icon fills |
@@ -121,10 +123,10 @@ Linear's design system is a midnight command center built on near-black surfaces
 
 ## Components
 
-### Primary Action Button (Acid Lime)
+### Primary Action Button (Weaklings Red)
 **Role:** High-emphasis CTA — the one chromatic button in the system
 
-Background #e4f222, text #08090a, border-radius 6px, padding 10px 16px, Inter 14px / weight 510, letter-spacing -0.011em. Sits as the sole filled chromatic element — every other button on the site is neutral.
+Background #dc2626, text #ffffff, border-radius 6px, padding 10px 16px, Inter 14px / weight 510, letter-spacing -0.011em. Sits as the sole filled chromatic element — every other button on the site is neutral.
 
 ### Nav Text Button
 **Role:** Top navigation items
@@ -144,7 +146,7 @@ Transparent background, border 1px #23252a, text #d0d6e0, border-radius 6px, pad
 ### Sign-up Button (Rounded Pill, Neutral)
 **Role:** High-emphasis nav CTA
 
-Background #ffffff, text #08090a, border-radius 9999px, padding 8px 16px, Inter 13px / weight 510. White pill against the dark nav bar — the second highest-contrast element after the acid-lime CTA.
+Background #ffffff, text #08090a, border-radius 9999px, padding 8px 16px, Inter 13px / weight 510. White pill against the dark nav bar — the second highest-contrast element after the Weaklings-red CTA.
 
 ### Card (Product Screenshot Frame)
 **Role:** Large showcase surface for product UI screenshots
@@ -185,7 +187,7 @@ Linear gradient from rgb(8,9,10) at 10% to rgb(208,214,224) at 100% — a subtle
 
 ### Do
 - Use Inter Variable with font-feature-settings 'cv01' on, 'ss03' on, 'zero' on — these alternate glyphs define Linear's typographic identity
-- Use #e4f222 exclusively for the single primary action per view — never for decoration, never for secondary buttons
+- Use #dc2626 exclusively for the single primary action per view — never for decoration, never for secondary buttons
 - Set body text at 16px Inter weight 400 with line-height 1.5 — larger reading sizes (17px+ at weight 590) are reserved for body emphasis blocks
 - Use letter-spacing -0.022em at 48px and above — tight tracking is non-negotiable for display type
 - Set card radius to 12px, button radius to 6px, pill radius to 9999px — three radii is the entire radius vocabulary
@@ -195,7 +197,7 @@ Linear gradient from rgb(8,9,10) at 10% to rgb(208,214,224) at 100% — a subtle
 ### Don't
 - Do not use bold weights (700+) — Linear's type scale caps at weight 590, the system deliberately avoids heavy display weights
 - Do not use decorative gradients on buttons, cards, or text — gradients are reserved for the hero atmospheric floor only
-- Do not introduce additional chromatic accent colors as actions — the acid-lime button is the only chromatic UI element
+- Do not introduce additional chromatic accent colors as actions — the Weaklings-red button is the only chromatic UI element
 - Do not use large radii (16px+) on cards or panels — 12px is the max card radius in this system
 - Do not use shadows to separate cards from the canvas — use hairline borders (#23252a) and inner inset shadows instead
 - Do not use chromatic text colors for body copy — all body text sits in the #d0d6e0 / #8a8f98 / #62666d grey scale
@@ -212,7 +214,7 @@ Linear gradient from rgb(8,9,10) at 10% to rgb(208,214,224) at 100% — a subtle
 
 ## Elevation
 
-Elevation in Linear's system is achieved almost entirely through hairline borders (0.5px #23252a or 1px inset #23252a) and subtle dark drop shadows (rgba(0,0,0,0.4) 0 2px 4px) rather than layered shadow stacks. The visual hierarchy comes from the surface-level progression (#08090a → #0f1011 → #161718 → #23252a) and border definition, not from ambient shadow. The acid-lime CTA button uses an inset shadow stack (0px 5px 2px / 0px 3px 2px / 0px 1px 1px) — the only place in the system where a real shadow is applied to a chrome element.
+Elevation is achieved almost entirely through hairline borders (0.5px #23252a or 1px inset #23252a) and subtle dark drop shadows (rgba(0,0,0,0.4) 0 2px 4px) rather than layered shadow stacks. The visual hierarchy comes from the surface-level progression (#08090a → #0f1011 → #161718 → #23252a) and border definition, not from ambient shadow. The Weaklings-red CTA may use a restrained inset shadow — the only place where chrome carries a real shadow.
 
 ## Imagery
 
@@ -231,8 +233,8 @@ Layout is max-width contained at ~1200px, centered, with full-bleed dark backgro
 - background (canvas): #08090a
 - background (card): #0f1011
 - border (hairline): #23252a
-- accent (CTA): #e4f222
-- primary action: #e4f222 (filled action)
+- accent (CTA): #dc2626
+- primary action: #dc2626 (filled action)
 
 **3-5 Example Component Prompts:**
 
@@ -240,7 +242,7 @@ Layout is max-width contained at ~1200px, centered, with full-bleed dark backgro
 
 2. **Product screenshot card:** Background #0f1011, border-radius 12px, inset border 1px #23252a via box-shadow, padding 24px. Contains a simulated app UI at full opacity over the card surface. No outer drop shadow.
 
-3. **Acid-lime primary action button:** Background #e4f222, text #08090a, border-radius 6px, padding 10px 16px, Inter 14px weight 510, letter-spacing -0.011em. Only one per view.
+3. **Weaklings-red primary action button:** Background #dc2626, text #ffffff, border-radius 6px, padding 10px 16px, Inter 14px weight 510, letter-spacing -0.011em. Only one per view.
 
 4. **Nav top bar:** Background #08090a (transparent over canvas), padding 16px horizontal, max-width 1200px centered. Logo wordmark #ffffff at 16px weight 510 left-aligned. Nav links #d0d6e0 at 13px weight 400, 8px gaps. Right-aligned white pill sign-up button: bg #ffffff, text #08090a, border-radius 9999px, padding 8px 16px.
 
@@ -264,7 +266,7 @@ Micro: 10px / 510 / lh 1.5 / ls default
 ## Similar Brands
 
 - **Vercel** — Same dark-canvas-first approach with hairline borders, tight Inter typography, and product-screenshot-as-hero layout — both treat the product UI as the visual content rather than illustration
-- **Cursor** — Identical midnight dark mode with acid-lime accent CTA, compact Inter type at 400–510 weights, and product-screenshot showcase cards at 12px radius
+- **Cursor** — Similar midnight dark mode, compact Inter type at 400–510 weights, and product-screenshot showcase cards at 12px radius
 - **Raycast** — Shared dark precision-instrument aesthetic — compact spacing, 6px button radius, monochromatic chrome with a single functional accent color for active states
 - **Framer** — Same dark-canvas layout language with large 48–64px Inter headings at tight tracking, product-screenshot hero cards, and minimal ornament between sections
 
@@ -285,7 +287,7 @@ Micro: 10px / 510 / lh 1.5 / ls default
   --color-mist: #d0d6e0;
   --color-bone: #e5e5e6;
   --color-paper: #ffffff;
-  --color-acid-lime: #e4f222;
+  --color-weaklings-red: #dc2626;
   --color-pulse-green: #27a644;
   --color-coral-red: #eb5757;
   --color-signal-teal: #02b8cc;
@@ -402,7 +404,7 @@ Micro: 10px / 510 / lh 1.5 / ls default
   --color-mist: #d0d6e0;
   --color-bone: #e5e5e6;
   --color-paper: #ffffff;
-  --color-acid-lime: #e4f222;
+  --color-weaklings-red: #dc2626;
   --color-pulse-green: #27a644;
   --color-coral-red: #eb5757;
   --color-signal-teal: #02b8cc;

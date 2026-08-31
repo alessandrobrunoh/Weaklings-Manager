@@ -54,47 +54,36 @@ import { StatCard } from '../../shared/components/stat-card/stat-card';
         />
       </section>
 
-      <section class="card p-5">
-        <h2 class="eyebrow mb-4">{{ t('admin.hub.panels') }}</h2>
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <section class="card overflow-hidden" aria-labelledby="admin-panels-heading">
+        <header class="px-4 py-3" style="border-bottom: 1px solid var(--color-border)">
+          <h2 id="admin-panels-heading" class="eyebrow">{{ t('admin.hub.panels') }}</h2>
+        </header>
+        <div>
           @for (panel of visiblePanels(); track panel.path) {
             <a
-              class="card flex flex-col justify-between p-4 transition-all hover:scale-[1.01] hover:border-primary no-underline"
-              style="color: var(--color-text); background: var(--color-surface-1)"
+              class="flex items-center gap-3 px-4 py-3 no-underline transition-colors hover:bg-[var(--color-surface-hover)]"
+              style="color: var(--color-text); border-bottom: 1px solid var(--color-border)"
               [routerLink]="panel.path"
             >
-              <div>
-                <div class="flex items-center justify-between mb-3">
-                  <div
-                    class="flex h-10 w-10 items-center justify-center rounded-xl"
-                    style="background: var(--color-surface-2); color: var(--color-primary)"
-                  >
-                    <app-icon [name]="panel.icon" size="1.25rem" />
-                  </div>
-                  <app-icon name="chevron-right" size="1.125rem" style="color: var(--color-text-secondary)" />
-                </div>
-                <h3 class="font-semibold text-base mb-1" style="color: var(--color-text)">
-                  {{ t(panel.labelKey) }}
-                </h3>
-                <p class="text-xs" style="color: var(--color-text-secondary)">
-                  {{ t(panel.hintKey) }}
-                </p>
-              </div>
-              <div class="mt-4 flex items-center gap-1 text-xs font-medium" style="color: var(--color-primary)">
-                <span>{{ t('common.open') }}</span>
-                <app-icon name="chevron-right" size="0.75rem" />
-              </div>
+              <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md" style="background: var(--color-surface-2); color: var(--color-text-secondary)" aria-hidden="true">
+                <app-icon [name]="panel.icon" size="1rem" />
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block text-sm font-medium">{{ t(panel.labelKey) }}</span>
+                <span class="mt-0.5 block truncate text-xs" style="color: var(--color-text-secondary)">{{ t(panel.hintKey) }}</span>
+              </span>
+              <app-icon name="chevron-right" size="1rem" style="color: var(--color-text-tertiary)" aria-hidden="true" />
             </a>
           }
         </div>
       </section>
 
-      <section class="card p-5">
-        <h2 class="eyebrow mb-4">{{ t('admin.hub.elsewhere') }}</h2>
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <section class="card p-4">
+        <h2 class="eyebrow mb-3">{{ t('admin.hub.elsewhere') }}</h2>
+        <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           @for (link of elsewhereLinks; track link.path) {
             <a
-              class="flex items-center justify-between gap-3 rounded-xl p-3 no-underline border transition-colors hover:bg-surface-2"
+              class="flex items-center justify-between gap-3 rounded-md p-2.5 no-underline border transition-colors hover:bg-surface-2"
               style="color: var(--color-text); border-color: var(--color-border); background: var(--color-surface-1)"
               [routerLink]="link.path"
             >

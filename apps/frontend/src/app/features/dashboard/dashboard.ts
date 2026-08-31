@@ -50,6 +50,23 @@ interface DashboardStat {
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Icon, PageHeader, PageStack, RouterLink, StatCard, StatusChip, TooltipDirective],
+  styles: `
+    .dashboard-shortcut {
+      display: flex;
+      min-block-size: 2.75rem;
+      align-items: center;
+      gap: 0.625rem;
+      padding: 0.5rem 0.625rem;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      background: var(--color-surface);
+      color: var(--color-text);
+      text-decoration: none;
+    }
+    .dashboard-shortcut:hover { border-color: var(--color-border-strong); background: var(--color-surface-hover); }
+    .dashboard-shortcut__icon { display: inline-flex; inline-size: 1.75rem; block-size: 1.75rem; flex: 0 0 auto; align-items: center; justify-content: center; border-radius: 4px; background: var(--color-surface-2); color: var(--color-text-tertiary); }
+    .dashboard-shortcut__copy { min-inline-size: 0; }
+  `,
   template: `
     <app-page-header [title]="welcomeText()" [subtitle]="t('app.tagline')">
       <button
@@ -68,7 +85,7 @@ interface DashboardStat {
     <app-page-stack>
       <!-- Guild operational snapshot -->
       <section aria-label="Guild snapshot">
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
           @for (stat of stats; track stat.labelKey) {
             <div [appTooltip]="stat.tooltip" tooltipPosition="top">
               <app-stat-card
@@ -85,27 +102,27 @@ interface DashboardStat {
 
       <!-- Quick action navigation hubs -->
       <section aria-label="Quick actions">
-        <h2 class="eyebrow mb-3">
+        <h2 class="eyebrow mb-2">
           {{ t('dashboard.quick_actions') }}
         </h2>
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
           @for (action of actions; track action.path) {
             <a
               [routerLink]="action.path"
-              class="card group flex flex-col items-start gap-2.5 p-4 no-underline transition-all hover:border-[var(--color-border-strong)] hover:shadow-sm"
+              class="dashboard-shortcut"
               style="color: var(--color-text)"
               [appTooltip]="action.desc"
               tooltipPosition="top"
             >
               <span
-                class="flex h-9 w-9 items-center justify-center rounded-lg transition-transform group-hover:scale-105"
+                class="dashboard-shortcut__icon"
                 style="background-color: var(--color-surface-2); color: var(--color-text)"
                 aria-hidden="true"
               >
                 <app-icon [name]="action.icon" size="1.125rem" />
               </span>
-              <div class="min-w-0 w-full">
-                <span class="text-xs font-semibold block truncate group-hover:underline">{{ t(action.labelKey) }}</span>
+              <div class="dashboard-shortcut__copy">
+                <span class="text-xs font-medium block truncate group-hover:underline">{{ t(action.labelKey) }}</span>
                 <span class="text-[11px] block truncate mt-0.5" style="color: var(--color-text-secondary)">{{ action.desc }}</span>
               </div>
             </a>
@@ -114,10 +131,10 @@ interface DashboardStat {
       </section>
 
       <!-- Two-column activity panels -->
-      <section class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <section class="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <!-- Live & upcoming events -->
-        <div class="card p-5">
-          <div class="mb-4 flex items-center justify-between">
+        <div class="card p-4">
+          <div class="mb-3 flex items-center justify-between">
             <div class="flex items-center gap-2">
               <span class="inline-block h-2 w-2 rounded-full" style="background-color: var(--color-success)"></span>
               <h2 class="eyebrow">
@@ -146,8 +163,8 @@ interface DashboardStat {
                 <li>
                   <a
                     [routerLink]="['/events', event.id]"
-                    class="flex items-center gap-3 rounded-lg p-2.5 no-underline transition-colors hover:bg-[var(--color-surface-hover)]"
-                    style="color: var(--color-text); border: 1px solid var(--color-border)"
+                    class="flex items-center gap-3 rounded-md px-2 py-2 no-underline transition-colors hover:bg-[var(--color-surface-hover)]"
+                    style="color: var(--color-text)"
                   >
                     <span
                       class="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -179,8 +196,8 @@ interface DashboardStat {
         </div>
 
         <!-- Recent splits -->
-        <div class="card p-5">
-          <div class="mb-4 flex items-center justify-between">
+        <div class="card p-4">
+          <div class="mb-3 flex items-center justify-between">
             <div class="flex items-center gap-2">
               <span class="inline-block h-2 w-2 rounded-full" style="background-color: var(--color-primary)"></span>
               <h2 class="eyebrow">
@@ -209,8 +226,8 @@ interface DashboardStat {
                 <li>
                   <a
                     [routerLink]="['/splits', split.id]"
-                    class="flex items-center gap-3 rounded-lg p-2.5 no-underline transition-colors hover:bg-[var(--color-surface-hover)]"
-                    style="color: var(--color-text); border: 1px solid var(--color-border)"
+                    class="flex items-center gap-3 rounded-md px-2 py-2 no-underline transition-colors hover:bg-[var(--color-surface-hover)]"
+                    style="color: var(--color-text)"
                   >
                     <div class="min-w-0 flex-1">
                       <p class="truncate text-sm font-medium">

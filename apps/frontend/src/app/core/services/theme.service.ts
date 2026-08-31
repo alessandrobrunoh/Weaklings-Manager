@@ -43,6 +43,7 @@ export class ThemeService {
       this.isDark.set(isDark);
       if (typeof document !== 'undefined') {
         document.documentElement.classList.toggle('dark', isDark);
+        document.documentElement.classList.toggle('light', !isDark);
       }
     });
   }
@@ -75,7 +76,7 @@ export class ThemeService {
         return saved;
       }
     }
-    return 'system';
+    return 'dark';
   }
 
   private readSystemIsDark(): boolean {

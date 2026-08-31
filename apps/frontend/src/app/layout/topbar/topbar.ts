@@ -44,15 +44,19 @@ import type { NavSection } from '../sidebar/sidebar';
   `,
   template: `
     <header
-      class="flex h-14 items-center justify-between gap-3 px-4 sm:px-6 backdrop-blur-md transition-colors"
-      style="background-color: color-mix(in srgb, var(--color-surface) 92%, transparent); border-bottom: 1px solid var(--color-border)"
+      class="flex h-12 items-center justify-between gap-3 px-3 sm:px-5 transition-colors"
+      style="background-color: var(--color-surface); border-bottom: 1px solid var(--color-border)"
     >
-      <div class="flex items-center gap-2">
+      <div class="flex min-w-0 items-center gap-2">
+        <div class="workspace-header hidden min-w-0 md:inline-flex" aria-label="Weaklings Manager workspace">
+          <span class="workspace-header__mark" aria-hidden="true"></span>
+          <span class="truncate">Weaklings</span>
+          <span class="workspace-header__meta hidden lg:inline">Guild operations</span>
+        </div>
         <!-- Mobile menu toggle -->
         <button
           type="button"
-          class="btn btn--ghost md:hidden"
-          style="min-width: 36px; padding: 0.4rem"
+          class="btn btn--ghost btn--icon md:hidden"
           (click)="menuToggle.emit()"
           [appTooltip]="t('nav.openMenu')"
           tooltipPosition="bottom"
@@ -64,8 +68,7 @@ import type { NavSection } from '../sidebar/sidebar';
         <!-- Desktop sidebar collapse toggle -->
         <button
           type="button"
-          class="btn btn--ghost hidden md:inline-flex"
-          style="min-width: 34px; height: 34px; padding: 0.35rem"
+          class="btn btn--ghost btn--icon hidden md:inline-flex"
           (click)="collapseToggle.emit()"
           [appTooltip]="isSidebarCollapsed() ? 'Espandi barra laterale' : 'Comprimi barra laterale'"
           tooltipPosition="bottom"
@@ -76,7 +79,7 @@ import type { NavSection } from '../sidebar/sidebar';
       </div>
 
       <!-- Center / Right controls -->
-      <div class="flex items-center gap-2.5 sm:gap-3 shrink-0">
+      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
         <!-- Albion Server UTC Clock -->
         <div
           class="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs mono"
@@ -89,10 +92,9 @@ import type { NavSection } from '../sidebar/sidebar';
         </div>
 
         <!-- Language picker -->
-        <div class="relative flex items-center">
+        <div class="relative hidden sm:flex items-center">
           <select
-            class="select text-xs cursor-pointer font-medium"
-            style="width: auto; height: 32px; padding: 0.25rem 0.6rem; border-radius: 6px; background-color: var(--color-surface-2); border-color: var(--color-border)"
+            class="select select--sm w-auto cursor-pointer font-medium"
             [value]="translate.language()"
             (change)="onLanguageChange($event)"
             [appTooltip]="t('language.label')"
@@ -108,8 +110,7 @@ import type { NavSection } from '../sidebar/sidebar';
         <!-- Theme toggle -->
         <button
           type="button"
-          class="btn btn--ghost shrink-0"
-          style="min-width: 34px; height: 34px; padding: 0.35rem; border-radius: 6px;"
+          class="btn btn--ghost btn--icon shrink-0"
           (click)="theme.toggle()"
           [appTooltip]="theme.isDark() ? 'Attiva tema chiaro' : 'Attiva tema scuro'"
           tooltipPosition="bottom"
@@ -132,11 +133,11 @@ import type { NavSection } from '../sidebar/sidebar';
               [appTooltip]="profile.username + ' · ' + profile.highest_role"
               tooltipPosition="bottom"
             >
-              <span class="text-xs font-semibold" style="color: var(--color-text)">
+              <span class="text-xs font-medium" style="color: var(--color-text)">
                 {{ profile.username }}
               </span>
               <span
-                class="eyebrow text-[9px] mt-0.5"
+                class="eyebrow text-[10px] mt-0.5"
                 style="color: var(--color-text-secondary)"
               >
                 {{ profile.highest_role }}
@@ -154,8 +155,7 @@ import type { NavSection } from '../sidebar/sidebar';
 
             <button
               type="button"
-              class="btn btn--ghost shrink-0 text-xs font-medium"
-              style="min-width: 32px; height: 32px; padding: 0.3rem"
+              class="btn btn--ghost btn--icon shrink-0 text-xs font-medium"
               (click)="onLogout()"
               [appTooltip]="t('nav.logout')"
               tooltipPosition="bottom"
@@ -181,8 +181,8 @@ import type { NavSection } from '../sidebar/sidebar';
     >
       @for (toast of toasts.toasts(); track toast.id) {
         <div
-          class="pointer-events-auto flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-md"
-          style="background-color: var(--color-surface); border: 1px solid var(--color-border)"
+          class="pointer-events-auto flex items-center gap-3 rounded-md px-3 py-2.5 text-sm"
+          style="background-color: var(--color-surface); border: 1px solid var(--color-border-strong); box-shadow: var(--shadow-xl)"
         >
           <app-icon [name]="iconFor(toast.kind)" size="1rem" />
           <span style="color: var(--color-text)">{{ toast.message }}</span>
