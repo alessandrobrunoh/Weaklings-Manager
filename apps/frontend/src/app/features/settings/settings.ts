@@ -191,6 +191,19 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
           </div>
         </section>
 
+        <section class="card p-5 flex flex-wrap items-center justify-between gap-4" aria-labelledby="profile-specializations-heading">
+          <div>
+            <h2 id="profile-specializations-heading" class="text-base font-semibold" style="color: var(--color-text)">Specializzazioni Combat</h2>
+            <p class="text-xs mt-1" style="color: var(--color-text-secondary)">Imposta il livello per ogni arma e armatura nella tua Destiny Board.</p>
+          </div>
+          @if (profile()?.user_id; as profileId) {
+            <a class="btn btn--primary btn--sm flex items-center gap-1.5" [routerLink]="['/users', profileId]">
+              <app-icon name="sparkles" size="0.8rem" />
+              Gestisci specializzazioni
+            </a>
+          }
+        </section>
+
         <!-- TAB 1: OVERVIEW & PROGRESSION -->
         @if (activeTab() === 'overview') {
           <!-- Season Progression Card -->

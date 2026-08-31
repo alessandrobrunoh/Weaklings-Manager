@@ -55,6 +55,8 @@ mod m20260831_000002_seed_officer_operations_permissions;
 mod m20260831_000003_add_regear_to_events;
 mod m20260831_000004_add_split_forum_channel;
 mod m20260831_000005_add_split_discord_sync;
+mod m20260831_000006_create_user_specializations;
+mod m20260831_000007_seed_user_specialization_permission;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -114,6 +116,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260831_000003_add_regear_to_events::Migration),
             Box::new(m20260831_000004_add_split_forum_channel::Migration),
             Box::new(m20260831_000005_add_split_discord_sync::Migration),
+            Box::new(m20260831_000006_create_user_specializations::Migration),
+            Box::new(m20260831_000007_seed_user_specialization_permission::Migration),
         ]
     }
 }

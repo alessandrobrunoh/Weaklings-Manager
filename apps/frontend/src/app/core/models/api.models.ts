@@ -41,6 +41,7 @@ export type PermissionKey =
   | 'splits.manage'
   | 'splits.islands.manage'
   | 'users.create'
+  | 'users.specializations.manage'
   | 'permissions.reload'
   | 'roles.manage'
   | 'autorole.manage'
@@ -87,6 +88,37 @@ export interface UserProfile {
   username: string;
   email: string;
   role: Role;
+}
+
+export type AlbionCombatCategory = 'weapon' | 'armor';
+
+export interface AlbionCombatItem {
+  id: number;
+  name: string;
+  tier: string | null;
+  item_power: number | null;
+  item_type: AlbionCombatCategory | null;
+  identifier: string | null;
+  icon: string | null;
+}
+
+export interface UserSpecialization {
+  node_key: string;
+  node_name: string;
+  category: AlbionCombatCategory;
+  level: number;
+  updated_at: string;
+}
+
+export interface UserSpecializationInput {
+  node_key: string;
+  node_name: string;
+  category: AlbionCombatCategory;
+  level: number;
+}
+
+export interface UpdateSpecializationsRequest {
+  specializations: UserSpecializationInput[];
 }
 
 export interface UserMetrics {
@@ -402,6 +434,7 @@ export interface EventParticipant {
   primary_build_name: string;
   secondary_build_id: number | null;
   secondary_build_name: string | null;
+  specializations?: Record<string, number>;
 }
 
 export interface EventFilters {
