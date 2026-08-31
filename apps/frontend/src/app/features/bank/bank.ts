@@ -4,6 +4,8 @@ import { firstValueFrom } from 'rxjs';
 
 import type {
   BalanceSummary,
+  BankAnalyticsSummary,
+  GuildReport,
   PaginatedData,
   TransactionStatus,
   TransactionView,
@@ -29,7 +31,7 @@ import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
-type ConfirmAll = 'accept' | 'reject';
+type BankViewMode = 'personal' | 'guild' | 'finance';
 
 export interface BankTableRow {
   id: number;
@@ -68,6 +70,31 @@ function emptyPageChange(): DataTablePageChange {
     TooltipDirective,
     ViewToggle,
   ],
+  styles: `
+    .finance-overview { display: grid; gap: 1rem; }
+    .finance-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
+    .finance-heading h2 { margin: 0; color: var(--color-text); font-size: 0.875rem; font-weight: 510; letter-spacing: -0.012em; }
+    .finance-heading p { margin: 0; color: var(--color-text-tertiary); font-size: 0.75rem; }
+    .finance-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--color-border); border-radius: 8px; overflow: hidden; background: var(--color-surface); }
+    .finance-metric { min-inline-size: 0; padding: 0.875rem 1rem; border-inline-end: 1px solid var(--color-border); }
+    .finance-metric:last-child { border-inline-end: 0; }
+    .finance-metric__label { margin: 0; color: var(--color-text-tertiary); font-size: 0.6875rem; font-weight: 510; letter-spacing: 0.035em; text-transform: uppercase; }
+    .finance-metric__value { margin: 0.5rem 0 0; color: var(--color-text); font-family: var(--font-mono); font-size: 1.25rem; letter-spacing: -0.02em; }
+    .finance-metric__detail { margin: 0.25rem 0 0; color: var(--color-text-tertiary); font-size: 0.6875rem; }
+    .finance-panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
+    .finance-panel { min-inline-size: 0; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); }
+    .finance-panel__header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.75rem 0.875rem; border-block-end: 1px solid var(--color-border); }
+    .finance-panel__title { margin: 0; color: var(--color-text-secondary); font-size: 0.75rem; font-weight: 510; }
+    .finance-list { margin: 0; padding: 0; list-style: none; }
+    .finance-list__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.75rem; padding: 0.625rem 0.875rem; border-block-end: 1px solid var(--color-border); }
+    .finance-list__row:last-child { border-block-end: 0; }
+    .finance-list__label { overflow: hidden; color: var(--color-text-secondary); font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
+    .finance-list__meta { display: block; margin-block-start: 0.125rem; color: var(--color-text-tertiary); font-size: 0.6875rem; }
+    .finance-list__amount { color: var(--color-text); font-family: var(--font-mono); font-size: 0.75rem; }
+    .finance-note { margin: 0; padding: 0.75rem 0.875rem; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text-tertiary); font-size: 0.75rem; line-height: 1.5; }
+    @media (max-width: 72rem) { .finance-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .finance-metric:nth-child(2) { border-inline-end: 0; } .finance-metric:nth-child(-n + 2) { border-block-end: 1px solid var(--color-border); } .finance-panels { grid-template-columns: 1fr; } }
+    @media (max-width: 40rem) { .finance-metrics { grid-template-columns: 1fr; } .finance-metric, .finance-metric:nth-child(2) { border-inline-end: 0; border-block-end: 1px solid var(--color-border); } .finance-metric:last-child { border-block-end: 0; } }
+  `,
   template: `
     <app-page-header [title]="t('bank.title')" [subtitle]="t('bank.subtitle')">
       <button
@@ -75,7 +102,7 @@ function emptyPageChange(): DataTablePageChange {
         class="btn btn--outline btn--sm"
         [disabled]="loading()"
         (click)="refreshNow()"
-        [appTooltip]="'Aggiorna saldo e transazioni'"
+        [appTooltip]="t('bank.refreshTooltip')"
         tooltipPosition="bottom"
       >
         <app-icon name="sparkles" size="0.875rem" />
@@ -87,35 +114,14 @@ function emptyPageChange(): DataTablePageChange {
           type="button"
           class="btn btn--tonal btn--sm"
           (click)="requestWithdrawal()"
-          [appTooltip]="'Richiedi il prelievo del tuo saldo'"
+          [appTooltip]="t('bank.requestTooltip')"
           tooltipPosition="bottom"
         >
           {{ t('bank.withdraw.request') }}
         </button>
-      } @else if (canAccept()) {
-        <button
-          type="button"
-          class="btn btn--outline btn--sm"
-          [disabled]="(balance()?.requested_count ?? 0) === 0"
-          (click)="confirmAll.set('reject')"
-          [appTooltip]="'Rifiuta tutte le richieste pendenti'"
-          tooltipPosition="bottom"
-        >
-          {{ t('bank.withdraw.reject') }}
-        </button>
-        <button
-          type="button"
-          class="btn btn--primary btn--sm"
-          [disabled]="(balance()?.requested_count ?? 0) === 0"
-          (click)="openAllRequestedReview()"
-          [appTooltip]="'Accetta e liquida tutte le richieste pendenti'"
-          tooltipPosition="bottom"
-        >
-          {{ t('bank.withdraw.accept') }}
-        </button>
       }
 
-      @if (canAccept()) {
+      @if (canAccept() || canViewFinance()) {
         <app-view-toggle
           pageTabs
           [options]="viewOptions()"
@@ -126,6 +132,94 @@ function emptyPageChange(): DataTablePageChange {
     </app-page-header>
 
     <app-page-stack>
+      @if (viewMode() === 'finance') {
+        <section class="finance-overview" [attr.aria-label]="t('bank.finance.ariaLabel')">
+          <div class="finance-heading">
+            <div>
+              <h2>{{ t('bank.finance.heading') }}</h2>
+              <p>{{ t('bank.finance.description') }}</p>
+            </div>
+            @if (financeLoading()) {
+              <span class="chip chip--neutral">{{ t('bank.finance.loading') }}</span>
+            }
+          </div>
+
+          @if (financeSummary(); as summary) {
+            <div class="finance-metrics">
+              <div class="finance-metric">
+                <p class="finance-metric__label">{{ t('bank.finance.openLiability') }}</p>
+                <p class="finance-metric__value">{{ formatAmount(summary.outstanding_total) }}</p>
+                <p class="finance-metric__detail">{{ t('bank.finance.creditsOwed', { count: summary.outstanding_count }) }}</p>
+              </div>
+              <div class="finance-metric">
+                <p class="finance-metric__label">{{ t('bank.finance.awaitingApproval') }}</p>
+                <p class="finance-metric__value">{{ formatAmount(summary.requested_total) }}</p>
+                <p class="finance-metric__detail">{{ t('bank.finance.requestedWithdrawals', { count: summary.requested_count }) }}</p>
+              </div>
+              <div class="finance-metric">
+                <p class="finance-metric__label">{{ t('bank.finance.paidOut') }}</p>
+                <p class="finance-metric__value">{{ formatAmount(summary.paid_out_total) }}</p>
+                <p class="finance-metric__detail">{{ t('bank.finance.settledPayouts', { count: summary.paid_out_count }) }}</p>
+              </div>
+              <div class="finance-metric">
+                <p class="finance-metric__label">{{ t('bank.finance.donatedBack') }}</p>
+                <p class="finance-metric__value">{{ formatAmount(summary.donated_total) }}</p>
+                <p class="finance-metric__detail">{{ t('bank.finance.memberDonations', { count: summary.donated_count }) }}</p>
+              </div>
+            </div>
+
+            <div class="finance-panels">
+              <section class="finance-panel" aria-labelledby="finance-type-heading">
+                <header class="finance-panel__header">
+                  <h3 id="finance-type-heading" class="finance-panel__title">{{ t('bank.finance.creditsBySource') }}</h3>
+                </header>
+                <ul class="finance-list">
+                  @for (line of summary.transaction_types; track line.label) {
+                    <li class="finance-list__row">
+                      <span class="finance-list__label">{{ line.label }}<span class="finance-list__meta">{{ line.transaction_count }} ledger entries</span></span>
+                      <span class="finance-list__amount">{{ formatAmount(line.total_amount) }}</span>
+                    </li>
+                  }
+                </ul>
+              </section>
+
+              <section class="finance-panel" aria-labelledby="finance-destination-heading">
+                <header class="finance-panel__header">
+                  <h3 id="finance-destination-heading" class="finance-panel__title">{{ t('bank.finance.fundDestinations') }}</h3>
+                </header>
+                <ul class="finance-list">
+                  @for (line of summary.destinations.slice(0, 6); track line.label) {
+                    <li class="finance-list__row">
+                      <span class="finance-list__label">{{ line.label }}<span class="finance-list__meta">{{ line.transaction_count }} entries</span></span>
+                      <span class="finance-list__amount">{{ formatAmount(line.total_amount) }}</span>
+                    </li>
+                  }
+                </ul>
+              </section>
+
+              <section class="finance-panel" aria-labelledby="finance-period-heading">
+                <header class="finance-panel__header">
+                  <h3 id="finance-period-heading" class="finance-panel__title">{{ t('bank.finance.lastThirtyDays') }}</h3>
+                </header>
+                @if (financeReport(); as report) {
+                  <ul class="finance-list">
+                    <li class="finance-list__row"><span class="finance-list__label">{{ t('bank.finance.lootCreated') }}</span><span class="finance-list__amount">{{ formatAmount(report.economy.loot_in) }}</span></li>
+                    <li class="finance-list__row"><span class="finance-list__label">{{ t('bank.finance.memberOutflow') }}</span><span class="finance-list__amount">{{ formatAmount(report.economy.outflow_total) }}</span></li>
+                    <li class="finance-list__row"><span class="finance-list__label">{{ t('bank.finance.regearPaid') }}</span><span class="finance-list__amount">{{ formatAmount(report.economy.regear_paid) }}</span></li>
+                    <li class="finance-list__row"><span class="finance-list__label">{{ t('bank.finance.siphonedNet') }}<span class="finance-list__meta">{{ t('bank.finance.siphonedDetail') }}</span></span><span class="finance-list__amount">{{ formatAmount(report.economy.siphoned_net) }}</span></li>
+                  </ul>
+                } @else {
+                  <p class="finance-note">{{ t('bank.finance.reportPermission') }}</p>
+                }
+              </section>
+            </div>
+
+            <p class="finance-note">{{ t('bank.finance.ledgerNote') }}</p>
+          } @else if (!financeLoading()) {
+            <p class="finance-note">{{ t('bank.finance.unavailable') }}</p>
+          }
+        </section>
+      } @else {
       <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Bank summary">
         <app-stat-card
           [label]="t('bank.balance.pending')"
@@ -238,6 +332,7 @@ function emptyPageChange(): DataTablePageChange {
             }
           </ng-template>
         </app-data-table>
+      }
       }
     </app-page-stack>
 
@@ -373,31 +468,7 @@ function emptyPageChange(): DataTablePageChange {
       </app-dialog>
     }
 
-    @if (confirmAll(); as action) {
-      <app-dialog [title]="t('common.confirm')" (closed)="confirmAll.set(null)">
-        <p>
-          {{
-            action === 'accept'
-              ? translate.t('bank.withdraw.confirmAcceptAll', { amount: confirmAmount() })
-              : translate.t('bank.withdraw.confirmRejectAll', { amount: confirmAmount() })
-          }}
-        </p>
-        <div dialogFooter>
-          <button type="button" class="btn btn--ghost" (click)="confirmAll.set(null)">
-            {{ t('common.cancel') }}
-          </button>
-          <button
-            type="button"
-            class="btn"
-            [class.btn--primary]="action === 'accept'"
-            [class.btn--danger]="action === 'reject'"
-            (click)="runConfirmAll(action)"
-          >
-            {{ action === 'accept' ? t('bank.withdraw.accept') : t('bank.withdraw.reject') }}
-          </button>
-        </div>
-      </app-dialog>
-    }
+
   `,
 })
 export class Bank {
@@ -413,9 +484,11 @@ export class Bank {
   protected readonly transactionTotal = signal(0);
   protected readonly loading = signal(false);
   protected readonly transactionsLoadFailed = signal(false);
-  protected readonly viewMode = signal<'personal' | 'guild'>('personal');
+  protected readonly viewMode = signal<BankViewMode>('personal');
+  protected readonly financeSummary = signal<BankAnalyticsSummary | null>(null);
+  protected readonly financeReport = signal<GuildReport | null>(null);
+  protected readonly financeLoading = signal(false);
   protected readonly statusFilter = signal<TransactionStatus | ''>('');
-  protected readonly confirmAll = signal<ConfirmAll | null>(null);
 
   protected readonly reviewingPlayer = signal<BankTableRow | null>(null);
   protected readonly selectedTxIds = signal<ReadonlySet<number>>(new Set<number>());
@@ -439,14 +512,17 @@ export class Bank {
   });
 
   protected readonly tableKey = computed(() => `${this.viewMode()}:${this.statusFilter()}`);
-  protected readonly viewOptions = computed<ViewToggleOption[]>(() => [
-    { id: 'personal', label: this.t('bank.view.personal') },
-    { id: 'guild', label: this.t('bank.view.guild') },
-  ]);
+  protected readonly viewOptions = computed<ViewToggleOption[]>(() => {
+    const options: ViewToggleOption[] = [{ id: 'personal', label: this.t('bank.view.personal') }];
+    if (this.canAccept()) {
+      options.push({ id: 'guild', label: this.t('bank.view.guild') });
+    }
+    if (this.canViewFinance()) {
+      options.push({ id: 'finance', label: this.t('bank.view.finance') });
+    }
+    return options;
+  });
   protected readonly trackRow = (row: BankTableRow): unknown => `${row.to_user_id}-${row.status}-${row.id}`;
-  protected readonly confirmAmount = computed(() =>
-    this.formatAmount(this.balance()?.requested_total),
-  );
 
   private readonly tableQuery = signal<DataTablePageChange>(emptyPageChange());
 
@@ -568,6 +644,10 @@ export class Bank {
   });
 
   protected async refreshNow(): Promise<void> {
+    if (this.viewMode() === 'finance') {
+      await this.loadFinance();
+      return;
+    }
     await this.load();
   }
 
@@ -608,12 +688,20 @@ export class Bank {
     return this.auth.hasPermission('bank.withdraw.accept');
   }
 
+  protected canViewFinance(): boolean {
+    return this.auth.hasPermission('bank.view_others');
+  }
+
   protected setViewMode(next: string): void {
-    if (next !== 'personal' && next !== 'guild') return;
+    if (next !== 'personal' && next !== 'guild' && next !== 'finance') return;
     if (this.viewMode() === next) return;
     this.viewMode.set(next);
     this.statusFilter.set(next === 'guild' ? 'requested' : '');
     this.tableQuery.set(emptyPageChange());
+    if (next === 'finance') {
+      void this.loadFinance();
+      return;
+    }
     void this.loadTransactions();
   }
 
@@ -689,39 +777,11 @@ export class Bank {
     });
   }
 
-  protected openAllRequestedReview(): void {
-    const requested = this.transactions().filter((t) => t.status === 'requested');
-    if (requested.length === 0) return;
-    const totalAmount = requested.reduce((sum, t) => sum + Number(t.amount || 0), 0);
-    const virtualRow: BankTableRow = {
-      id: 0,
-      to_user_id: 0,
-      to_username: this.t('bank.view.guild'),
-      amount: totalAmount,
-      status: 'requested',
-      count: requested.length,
-      created_at: new Date().toISOString(),
-      transactions: requested,
-    };
-    this.openPlayerReview(virtualRow);
-  }
 
   protected async requestWithdrawal(): Promise<void> {
     await this.mutate('api/bank/transactions/withdraw', 'bank.withdraw.request', { all: true });
   }
 
-  protected async runConfirmAll(action: ConfirmAll): Promise<void> {
-    this.confirmAll.set(null);
-    if (action === 'accept') {
-      await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept', {
-        all: true,
-      });
-      return;
-    }
-    await this.mutate('api/bank/transactions/withdraw/reject', 'bank.withdraw.reject', {
-      all: true,
-    });
-  }
 
   protected async acceptSingle(id: number): Promise<void> {
     await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept', {
@@ -737,6 +797,25 @@ export class Bank {
 
   private async load(): Promise<void> {
     await Promise.all([this.loadBalance(), this.loadTransactions()]);
+  }
+
+  private async loadFinance(): Promise<void> {
+    if (!this.canViewFinance()) {
+      return;
+    }
+    this.financeLoading.set(true);
+    const [bankResult, reportResult] = await Promise.allSettled([
+      firstValueFrom(this.api.get<BankAnalyticsSummary>('api/bank/admin/summary')),
+      firstValueFrom(this.api.get<GuildReport>('api/intel/report')),
+    ]);
+    if (bankResult.status === 'fulfilled') {
+      this.financeSummary.set(bankResult.value);
+    } else {
+      this.financeSummary.set(null);
+      this.toasts.error(this.t('common.error'));
+    }
+    this.financeReport.set(reportResult.status === 'fulfilled' ? reportResult.value : null);
+    this.financeLoading.set(false);
   }
 
   private async loadBalance(): Promise<void> {
@@ -798,11 +877,11 @@ export class Bank {
     }
   }
 
-  protected formatAmount(value: number | null | undefined): string {
-    if (value === null || value === undefined) {
-      return '0';
-    }
-    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
+  protected formatAmount(value: number | string | null | undefined): string {
+    const numeric = Number(value ?? 0);
+    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(
+      Number.isFinite(numeric) ? numeric : 0,
+    );
   }
 
   protected formatDate(iso: string | null | undefined): string {

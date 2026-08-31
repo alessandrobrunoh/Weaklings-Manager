@@ -870,7 +870,7 @@ fn compute_economy(raw: &RawData, overview: &ReportOverview) -> ReportEconomy {
     let outflow_other = outflow_total - outflow_splits - outflow_regear;
 
     let split_net = |s: &split::Model| -> i64 {
-        let net = to_i64(s.estimated_market_value) - to_i64(s.repair_value) - to_i64(s.bags_value);
+        let net = to_i64(s.estimated_market_value) - to_i64(s.repair_value) + to_i64(s.bags_value);
         net.max(0)
     };
     let split_pending: i64 = raw
@@ -1340,9 +1340,8 @@ fn compute_trends(raw: &RawData, fights: &[Fight], range: &DateRange) -> Vec<Tre
         // completed without that timestamp ever being set.
         let paid_at = split.finalized_at.unwrap_or(split.created_at);
         if let Some(bucket) = buckets.get_mut(&week_start_utc(paid_at)) {
-            let net = to_i64(split.estimated_market_value)
-                - to_i64(split.repair_value)
-                - to_i64(split.bags_value);
+            let net = to_i64(split.estimated_market_value) - to_i64(split.repair_value)
+                + to_i64(split.bags_value);
             bucket.loot_in += net.max(0);
         }
     }
@@ -1765,6 +1764,7 @@ mod tests {
             id: 1,
             from_user_id: None,
             to_user_id: 1,
+            to_guild_bank: false,
             amount: Decimal::new(42_000, 0),
             status: "withdrawn".to_string(),
             r#type: "split_credit".to_string(),
@@ -1778,6 +1778,7 @@ mod tests {
             id: 2,
             from_user_id: None,
             to_user_id: 1,
+            to_guild_bank: false,
             amount: Decimal::new(7_000, 0),
             status: "requested".to_string(),
             r#type: "split_credit".to_string(),
@@ -1787,12 +1788,16 @@ mod tests {
             withdrawn_at: None,
         });
 
+        let economy = compute_economy(&raw, &compute_overview(&[], &HashSet::new()));
+        assert_eq!(economy.split_completed, 95_000);
+        assert_eq!(economy.loot_in, 95_000);
+
         let buckets = compute_trends(&raw, &[], &range);
         let week = buckets
             .iter()
             .find(|b| b.week_start == week_start_utc(ts("2026-08-19T00:00:00Z")).to_rfc3339())
             .unwrap();
-        assert_eq!(week.loot_in, 85_000);
+        assert_eq!(week.loot_in, 95_000);
         assert_eq!(week.outflow, 42_000);
     }
 }

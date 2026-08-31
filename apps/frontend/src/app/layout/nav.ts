@@ -122,6 +122,13 @@ export const APP_NAV_SECTIONS: NavSection[] = [
 
 export const ADMIN_PANELS: readonly AdminPanel[] = [
   {
+    path: '/bank',
+    icon: 'bank',
+    labelKey: 'nav.bank',
+    hintKey: 'bank.subtitle',
+    permissions: ['bank.view_others'],
+  },
+  {
     path: '/users',
     icon: 'users',
     labelKey: 'nav.admin.users',

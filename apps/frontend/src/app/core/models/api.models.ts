@@ -149,6 +149,30 @@ export interface GuildBankSummary {
   paid_count: number;
 }
 
+/** One source, destination, or transaction-type line in the guild bank report. */
+export interface BankBreakdown {
+  label: string;
+  transaction_count: number;
+  total_amount: number | string;
+}
+
+/** Server-side, whole-ledger finance totals for officers and administrators. */
+export interface BankAnalyticsSummary {
+  transaction_count: number;
+  ledger_volume: number | string;
+  outstanding_total: number | string;
+  outstanding_count: number;
+  requested_total: number | string;
+  requested_count: number;
+  paid_out_total: number | string;
+  paid_out_count: number;
+  donated_total: number | string;
+  donated_count: number;
+  sources: BankBreakdown[];
+  destinations: BankBreakdown[];
+  transaction_types: BankBreakdown[];
+}
+
 export interface WithdrawRequest {
   transaction_ids?: number[];
   all?: boolean;
