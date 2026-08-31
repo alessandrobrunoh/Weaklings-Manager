@@ -148,6 +148,7 @@ pub struct BattleLinkingContext {
     guild_id: String,
     allied_guild_ids: HashSet<String>,
     allied_guild_names: HashSet<String>,
+    server: Option<String>,
 }
 
 impl BattleLinkingContext {
@@ -171,7 +172,21 @@ impl BattleLinkingContext {
                 .iter()
                 .map(|name| name.to_ascii_lowercase())
                 .collect(),
+            server: None,
         }
+    }
+
+    /// Sets the AlbionBB server used by automatic battle linking.
+    #[must_use]
+    pub fn with_server(mut self, server: Option<String>) -> Self {
+        self.server = server;
+        self
+    }
+
+    /// AlbionBB server path segment, if configured.
+    #[must_use]
+    pub fn server(&self) -> Option<&str> {
+        self.server.as_deref()
     }
 
     /// Returns `true` when a battle guild belongs to our side.
@@ -1330,33 +1345,11 @@ impl EventService {
 
     // --- Battle linker -----------------------------------------------------
 
-    /// Counts current sign-ups for `event_id`.
-    async fn count_participants(db: &DatabaseConnection, event_id: i64) -> Result<usize, AppError> {
-        let n = event_participation::Entity::find()
-            .filter(event_participation::Column::EventId.eq(event_id))
-            .count(db)
-            .await
-            .map_err(AppError::Database)?;
-        Ok(n as usize)
-    }
-
-    /// Returns the accepted guild-player-count range for the event.
+    /// Links every AlbionBB battle for the guild that falls in the event's time window.
     ///
-    /// Rule agreed in planning: if `n` signed up, accept battles where the guild
-    /// had between `n/2` and `n*1.5` players (e.g. 20 -> 10..30).
-    #[must_use]
-    fn participant_target_range(participants: usize) -> (i64, i64) {
-        let n = participants as i64;
-        let min = (n / 2).max(1);
-        let max = ((n * 3) / 2).max(min);
-        (min, max)
-    }
-
-    /// Links AlbionBB battles to an event by time window and guild-player count.
-    ///
-    /// The worker calls this repeatedly because AlbionBB can lag up to ~30m.
-    /// Each tick re-fetches all battles for the guild and upserts matches in the
-    /// event's `[started_at, stopped_at|now]` window.
+    /// The worker calls this repeatedly because AlbionBB can lag up to ~30m. The
+    /// listing is paginated, and no player-count heuristic is applied: the number
+    /// of sign-ups is not a reliable indication of the actual fight size.
     pub async fn link_battles_for_event(
         db: &DatabaseConnection,
         albionbb: &AlbionBbService,
@@ -1378,18 +1371,33 @@ impl EventService {
             .map(|t| t.with_timezone(&Utc))
             .unwrap_or_else(Utc::now);
 
-        let participant_count = Self::count_participants(db, event_id).await?;
-        let (min_guild_players, max_guild_players) =
-            Self::participant_target_range(participant_count);
-
-        let filters = AlbionBbBattlesFilters {
-            guild_id: Some(context.guild_id().to_string()),
-            min_players: Some(min_guild_players),
-            min_guild_players: Some(min_guild_players),
-            page: Some(1),
-            ..Default::default()
-        };
-        let (battles, _) = albionbb.get_battles(None, &filters).await?;
+        // AlbionBB returns a raw array without pagination metadata. Walk pages until
+        // an empty page (or a page with no new IDs) is returned, with a safety cap
+        // so an upstream pagination regression cannot spin the worker forever.
+        const MAX_BATTLE_PAGES: u64 = 100;
+        let mut battles = Vec::new();
+        let mut seen_battle_ids = HashSet::new();
+        for page in 1..=MAX_BATTLE_PAGES {
+            let filters = AlbionBbBattlesFilters {
+                guild_id: Some(context.guild_id().to_string()),
+                page: Some(page),
+                ..Default::default()
+            };
+            let (page_battles, _) = albionbb.get_battles(context.server(), &filters).await?;
+            if page_battles.is_empty() {
+                break;
+            }
+            let mut added_on_page = 0;
+            for battle in page_battles {
+                if seen_battle_ids.insert(battle.id) {
+                    battles.push(battle);
+                    added_on_page += 1;
+                }
+            }
+            if added_on_page == 0 {
+                break;
+            }
+        }
         let next_link_attempts = model.link_attempts + 1;
 
         let mut active: event::ActiveModel = model.into();
@@ -1410,11 +1418,6 @@ impl EventService {
             }
 
             let snapshot = linked_battle_snapshot(&battle, context);
-            if snapshot.guild_players_count < min_guild_players
-                || snapshot.guild_players_count > max_guild_players
-            {
-                continue;
-            }
 
             let existing = event_battle::Entity::find()
                 .filter(event_battle::Column::EventId.eq(event_id))

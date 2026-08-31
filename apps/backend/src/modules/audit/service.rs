@@ -174,6 +174,11 @@ impl AuditService {
             }
         }
 
+        let entity_type_display = entity_type.unwrap_or("—");
+        let entity_id_display = entity_id
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "—".to_string());
+
         // Send to Discord audit log channel if configured
         let audit_channel_id = guild_settings
             .as_ref()
@@ -181,10 +186,10 @@ impl AuditService {
         if let Some(channel_id) = audit_channel_id {
             if let Some(token) = &cfg.discord_bot_token {
                 let mut message = format!(
-                    "**Audit Log:** `{}`\n**Entity:** `{:?}` (ID: {:?})\n**User:** {}{}\n**Details:**\n```json\n{}\n```",
+                    "**Audit Log:** `{}`\n**Entity:** `{}` (ID: {})\n**User:** {}{}\n**Details:**\n```json\n{}\n```",
                     action,
-                    entity_type,
-                    entity_id,
+                    entity_type_display,
+                    entity_id_display,
                     user_display,
                     target_display,
                     details.as_ref().map(|v| v.to_string()).unwrap_or_default()
@@ -203,9 +208,9 @@ impl AuditService {
             if let Some(token) = &cfg.discord_bot_token {
                 if entity_type == Some("TRANSACTION") {
                     let mut message = format!(
-                        "**Transaction Activity:** `{}`\n**Entity ID:** {:?}\n**User:** {}{}\n**Details:**\n```json\n{}\n```",
+                        "**Transaction Activity:** `{}`\n**Entity ID:** {}\n**User:** {}{}\n**Details:**\n```json\n{}\n```",
                         action,
-                        entity_id,
+                        entity_id_display,
                         user_display,
                         target_display,
                         serde_json::to_string_pretty(&inserted.details).unwrap_or_default()

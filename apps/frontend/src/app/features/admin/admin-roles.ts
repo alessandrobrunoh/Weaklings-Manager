@@ -89,13 +89,11 @@ interface NewRoleDraft {
                     @if (discordRoles().length) {
                       <select
                         class="input mt-1 w-full"
-                        [value]="
-                          roleDrafts()[role.role_id]?.discord_role_id ?? role.discord_role_id ?? ''
-                        "
+                        [value]="roleDiscordRoleId(role)"
                         (change)="updateRoleDraft(role, 'discord_role_id', $event)"
                       >
                         <option value="">{{ t('admin.roles.unlinked') }}</option>
-                        @for (drole of discordRoleOptions(role.discord_role_id); track drole.id) {
+                        @for (drole of discordRoleOptions(role); track drole.id) {
                           <option [value]="drole.id">{{ drole.name }}</option>
                         }
                       </select>
@@ -103,7 +101,7 @@ interface NewRoleDraft {
                       <input
                         class="input mt-1 w-full mono"
                         [value]="
-                          roleDrafts()[role.role_id]?.discord_role_id ?? role.discord_role_id ?? ''
+                          roleDiscordRoleId(role)
                         "
                         [attr.placeholder]="t('admin.roles.discordIdPlaceholder')"
                         (input)="updateRoleDraft(role, 'discord_role_id', $event)"
@@ -255,13 +253,33 @@ export class AdminRoles {
     void this.loadDiscordRoles();
   }
 
-  protected discordRoleOptions(currentId: string | null): DiscordRoleView[] {
+  protected roleDiscordRoleId(role: RolePermissionsView): string {
+    return this.roleDrafts()[role.role_id]?.discord_role_id ?? role.discord_role_id ?? '';
+  }
+
+  protected discordRoleOptions(role: RolePermissionsView | null): DiscordRoleView[] {
+    const currentId = role ? this.roleDiscordRoleId(role) : this.newRole().discord_role_id;
     const linked = new Set(
       (this.matrix()?.roles ?? [])
-        .map((role) => role.discord_role_id)
+        .map((item) => item.discord_role_id)
         .filter((id): id is string => Boolean(id)),
     );
-    return this.discordRoles().filter((role) => role.id === currentId || !linked.has(role.id));
+    const options = this.discordRoles().filter((discordRole) =>
+      discordRole.id === currentId || !linked.has(discordRole.id),
+    );
+
+    // Keep a saved link visible even when Discord no longer returns that role
+    // (for example, after a guild/token mismatch or a deleted role).
+    if (currentId && !options.some((discordRole) => discordRole.id === currentId)) {
+      options.unshift({
+        id: currentId,
+        name: `Linked role (${currentId})`,
+        position: 0,
+        managed: false,
+      });
+    }
+
+    return options;
   }
 
   protected async load(): Promise<void> {

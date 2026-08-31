@@ -71,7 +71,10 @@ async fn run_cycle(
         &cfg.albion_guild_id,
         &cfg.albion_allied_guild_ids(),
         &cfg.albion_allied_guild_names(),
-    );
+    )
+    .with_server(Some(crate::modules::albionbb::client::normalize_server(
+        Some(&cfg.albion_api_region),
+    )));
     let guild = ExtractionGuildContext {
         guild_id: cfg.albion_guild_id.clone(),
         // The extractor treats an empty region as "use the service default".

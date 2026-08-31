@@ -14,7 +14,8 @@ import {
   buildEventSummaryEmbed,
 } from "../embeds/event.embed.js";
 import { buildBattleListEmbed } from "../embeds/battle.embed.js";
-import { createResponseEmbed } from "../embeds/theme.js";
+import { createResponseEmbed } from '../embeds/theme.js';
+import { formatSilver } from '../format.js';
 
 const GUILD_NAME = process.env["GUILD_NAME"] ?? "";
 
@@ -419,8 +420,8 @@ async function handleBankButton(
       interaction.user.id,
     );
 
-    const total = txs.reduce((sum, tx) => sum + tx.amount, 0);
-    const totalFmt = total.toLocaleString("en-US");
+    const total = txs.reduce((sum, tx) => sum + Number(tx.amount), 0);
+    const totalFmt = formatSilver(total);
 
     const desc = [
       `• 💰 **Total Amount:** **${totalFmt} silver**`,

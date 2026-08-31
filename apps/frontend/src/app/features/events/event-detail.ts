@@ -484,7 +484,7 @@ export interface CompPartyGroup {
                 } @else if (compSlots().length === 0) {
                   <app-empty-state [message]="t('events.detail.no_builds')" icon="package" />
                 } @else {
-                  <!-- VIEW 1: 5-MAN PARTIES VIEW -->
+                  <!-- VIEW 1: 20-MAN PARTIES VIEW -->
                   @if (rosterView() === 'parties') {
                     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-2">
                       @for (party of compParties(); track party.partyNumber) {
@@ -1943,14 +1943,14 @@ export class EventDetailPage {
   });
 
   /**
-   * Group composition slots into 5-man Parties (Party 1, Party 2, Party 3, etc.)
+   * Group composition slots into 20-man Parties (Party 1, Party 2, Party 3, etc.)
    */
   protected readonly compParties = computed<CompPartyGroup[]>(() => {
     const slots = this.compSlots();
     if (slots.length === 0) return [];
     
     const parties: CompPartyGroup[] = [];
-    const partySize = 5;
+    const partySize = 20;
     const numParties = Math.ceil(slots.length / partySize);
 
     for (let p = 0; p < numParties; p++) {

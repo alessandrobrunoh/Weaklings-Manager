@@ -1193,6 +1193,7 @@ export interface TrendBucket {
   attendance: number;
   loot_in: number;
   outflow: number;
+  regear_paid: number;
 }
 
 export interface HourBucket {
