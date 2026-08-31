@@ -14,6 +14,7 @@ import { ThemeService } from '../../core/services/theme.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService, type Language } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { Avatar } from '../../shared/components/avatar/avatar';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { NotificationsPanel } from './notifications-panel';
@@ -25,12 +26,12 @@ import type { NavSection } from '../sidebar/sidebar';
  * Top application bar.
  *
  * Contains the menu toggle (mobile), desktop collapse toggle, live UTC clock,
- * language picker, theme toggle, and user profile capsule with tooltips.
+ * language picker, theme toggle, notification bell, and user profile capsule.
  */
 @Component({
   selector: 'app-topbar',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, NotificationsPanel, TooltipDirective],
+  imports: [Avatar, Icon, NotificationsPanel, TooltipDirective],
   styles: `
     :host {
       display: block;
@@ -142,14 +143,14 @@ import type { NavSection } from '../sidebar/sidebar';
               </span>
             </div>
 
-            <span
-              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold select-none cursor-default"
-              style="background-color: var(--color-surface-2); color: var(--color-text); border: 1px solid var(--color-border)"
+            <app-avatar
+              [userId]="profile.id"
+              [avatar]="profile.avatar"
+              [username]="profile.username"
+              size="sm"
               [appTooltip]="profile.username + ' (' + profile.highest_role + ')'"
               tooltipPosition="bottom"
-            >
-              {{ initials(profile.username) }}
-            </span>
+            />
 
             <button
               type="button"
@@ -229,14 +230,6 @@ export class Topbar {
   }
 
   protected t = (key: TranslationKey) => this.translate.t(key);
-
-  protected initials(name: string): string {
-    return name
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((part) => part.charAt(0).toUpperCase())
-      .join('');
-  }
 
   protected iconFor(kind: 'success' | 'error' | 'info'): IconName {
     if (kind === 'success') {

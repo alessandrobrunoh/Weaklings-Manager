@@ -120,6 +120,23 @@ impl WarnService {
         )
         .await;
 
+        if req.user_id != issuer_user_id {
+            crate::modules::notifications::notify_best_effort(
+                db,
+                crate::modules::notifications::NotifySpec {
+                    kind: crate::modules::notifications::NotificationKind::WarnIssued,
+                    user_ids: &[req.user_id],
+                    title: "Warning issued".into(),
+                    body: format!("You received a {}: {reason}", severity.as_str()),
+                    link_path: Some("/warns".into()),
+                    source_type: "user_warn",
+                    source_id: row.id,
+                    created_by_user_id: Some(issuer_user_id),
+                },
+            )
+            .await;
+        }
+
         Ok(warn_view(&row, None, None))
     }
 
@@ -552,6 +569,35 @@ mod tests {
             multiplier: None,
             multiplier_expires_at: None,
         }
+    }
+
+    #[tokio::test]
+    async fn issue_notifies_the_target_not_the_officer() {
+        let db = seed_db().await;
+        let officer = insert_user(&db, "officer", "officer@example.com").await;
+        let target = insert_user(&db, "target", "target@example.com").await;
+        insert_covering_season(&db).await;
+
+        let warn = WarnService::new()
+            .issue(&db, officer, &issue_req(target, "late to CTA"))
+            .await
+            .unwrap();
+
+        let inbox = crate::modules::notifications::entities::NotificationEntity::find()
+            .filter(crate::modules::notifications::entities::NotificationColumn::UserId.eq(target))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(inbox[0].kind, "warn_issued");
+        assert_eq!(inbox[0].source_id, warn.id);
+        assert!(inbox[0].body.contains("late to CTA"));
+        let officer_inbox = crate::modules::notifications::entities::NotificationEntity::find()
+            .filter(crate::modules::notifications::entities::NotificationColumn::UserId.eq(officer))
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(officer_inbox.is_empty());
     }
 
     #[tokio::test]

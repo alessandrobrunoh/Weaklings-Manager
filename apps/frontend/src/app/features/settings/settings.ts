@@ -23,6 +23,7 @@ import { ThemeService, type ThemePreference } from '../../core/services/theme.se
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService, type Language } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { Avatar } from '../../shared/components/avatar/avatar';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
@@ -64,6 +65,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
   selector: 'app-profile',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    Avatar,
     DatePipe,
     DecimalPipe,
     DataTable,
@@ -119,12 +121,13 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
         <section class="card p-6">
           <div class="flex flex-wrap items-center justify-between gap-4">
             <div class="flex items-center gap-4">
-              <div
-                class="flex h-16 w-16 items-center justify-center rounded-2xl font-bold text-xl select-none"
-                style="background: var(--color-primary-soft); color: var(--color-primary); border: 1px solid var(--color-border)"
-              >
-                {{ getInitials(profile()?.username ?? 'U') }}
-              </div>
+              <app-avatar
+                [userId]="profile()?.id"
+                [avatar]="profile()?.avatar"
+                [username]="profile()?.username ?? 'U'"
+                size="lg"
+                shape="rounded"
+              />
               <div>
                 <div class="flex items-center gap-2">
                   <h1 class="text-xl font-bold tracking-tight" style="color: var(--color-text)">
@@ -776,11 +779,6 @@ export class Settings {
 
   constructor() {
     void this.load();
-  }
-
-  protected getInitials(username: string): string {
-    if (!username) return '?';
-    return username.slice(0, 2).toUpperCase();
   }
 
   protected roleChip(role?: Role | string): string {

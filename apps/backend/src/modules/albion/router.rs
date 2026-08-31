@@ -257,7 +257,10 @@ pub struct LinkPlayerRequest {
         constraints in the database, not just application logic. The server re-fetches the \
         configured guild's roster and rejects `albion_player_id` values that aren't currently a \
         member (`400`), so this cannot be used to claim a character outside the configured guild. \
-        There is no \"re-link\"/\"force\" option: `DELETE /albion/link` first, then call this again.",
+        There is no \"re-link\"/\"force\" option: `DELETE /albion/link` first, then call this again. \
+        After a successful link the backend best-effort sets the caller's Discord guild nickname \
+        to the Albion character name (identical, truncated to 32 characters). Nickname failures \
+        never roll back the link.",
     security(("session_cookie" = [])),
     request_body(content = LinkPlayerRequest, description = "The Albion character to claim, as picked from GET /albion/guild/roster."),
     responses(
@@ -289,6 +292,8 @@ pub async fn link_player(
     let link = link_service
         .create_link(&db, &user.id, &matched.id, &matched.name)
         .await?;
+
+    super::discord_nick::sync_guild_nickname(&cfg, &user.id, &matched.name).await;
 
     Ok(Json(ApiResponse::new(AlbionLinkStatus::from(Some(link)))))
 }
@@ -365,6 +370,8 @@ pub async fn admin_link_user_handler(
     let link = link_service
         .admin_link_user(&db, user_id, &matched.id, &matched.name)
         .await?;
+
+    super::discord_nick::sync_guild_nickname(&cfg, &link.discord_id, &matched.name).await;
 
     Ok(Json(ApiResponse::new(AlbionLinkStatus::from(Some(link)))))
 }

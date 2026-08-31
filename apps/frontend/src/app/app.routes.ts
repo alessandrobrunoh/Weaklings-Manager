@@ -22,9 +22,13 @@ export const routes: Routes = [
         loadComponent: () => import('./features/dashboard/dashboard').then((m) => m.Dashboard),
       },
       {
-        path: 'leaderboards',
+        path: 'season',
         loadComponent: () =>
-          import('./features/leaderboards/leaderboards').then((m) => m.Leaderboards),
+          import('./features/leaderboards/leaderboards').then((m) => m.SeasonOverview),
+      },
+      {
+        path: 'leaderboards',
+        redirectTo: 'season',
       },
       {
         path: 'bank',
@@ -38,6 +42,18 @@ export const routes: Routes = [
         path: 'splits/:splitId',
         loadComponent: () =>
           import('./features/splits/split-detail').then((m) => m.SplitDetailPage),
+      },
+      {
+        path: 'islands/:islandId',
+        redirectTo: (route) => `/admin/islands/${route.params['islandId'] ?? ''}`,
+      },
+      {
+        path: 'islands',
+        redirectTo: '/admin/islands',
+      },
+      {
+        path: 'manage-islands',
+        redirectTo: '/admin/islands',
       },
       {
         path: 'events',
@@ -153,6 +169,12 @@ export const routes: Routes = [
             canActivate: [permissionGuardTo('/admin', 'splits.islands.manage')],
             loadComponent: () =>
               import('./features/admin/admin-islands').then((m) => m.AdminIslands),
+          },
+          {
+            path: 'islands/:islandId',
+            canActivate: [permissionGuardTo('/admin', 'splits.islands.manage')],
+            loadComponent: () =>
+              import('./features/admin/admin-island-detail').then((m) => m.AdminIslandDetail),
           },
           {
             path: 'users',

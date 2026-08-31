@@ -14,34 +14,61 @@
   } @else {
     @if (showToolbar()) {
       <div class="data-table__toolbar">
-        @if (!hideSearch()) {
-          <div class="data-table__search-wrapper">
-            <app-icon name="search" size="0.875rem" class="data-table__search-icon" />
-            <input
-              type="search"
-              class="data-table__search-input"
-              [placeholder]="t('common.search')"
-              [value]="search()"
-              (input)="onSearchInput($event)"
-            />
-          </div>
-        }
-        @if (hasColumnFilters()) {
-          <div class="data-table__filters">
-            @for (column of columns(); track column.key) {
-              @if (column.filterOptions && column.filterOptions.length > 0) {
-                <select
-                  class="select select--sm"
-                  [value]="columnFilterValue(column.key)"
-                  (change)="onColumnFilter(column.key, $event)"
+        <div class="data-table__toolbar-left">
+          @if (!hideSearch()) {
+            <div class="data-table__search-wrapper">
+              <app-icon name="search" size="0.875rem" class="data-table__search-icon" />
+              <input
+                type="search"
+                class="data-table__search-input"
+                [placeholder]="t('common.search')"
+                [value]="search()"
+                (input)="onSearchInput($event)"
+              />
+              @if (search().length > 0) {
+                <button
+                  type="button"
+                  class="data-table__search-clear"
+                  (click)="clearSearch()"
+                  [attr.aria-label]="t('common.close')"
                 >
-                  <option value="">{{ t(column.label) }}: {{ t('common.all') }}</option>
-                  @for (option of column.filterOptions; track option.value) {
-                    <option [value]="option.value">{{ option.label }}</option>
-                  }
-                </select>
+                  <app-icon name="close" size="0.75rem" />
+                </button>
               }
-            }
+            </div>
+          }
+          @if (hasColumnFilters()) {
+            <div class="data-table__filters">
+              @for (column of columns(); track column.key) {
+                @if (column.filterOptions && column.filterOptions.length > 0) {
+                  <select
+                    class="select select--sm data-table__filter-select"
+                    [class.data-table__filter-select--active]="!!columnFilterValue(column.key)"
+                    [value]="columnFilterValue(column.key)"
+                    (change)="onColumnFilter(column.key, $event)"
+                  >
+                    <option value="">{{ t(column.label) }}: {{ t('common.all') }}</option>
+                    @for (option of column.filterOptions; track option.value) {
+                      <option [value]="option.value">{{ option.label }}</option>
+                    }
+                  </select>
+                }
+              }
+            </div>
+          }
+        </div>
+
+        @if (hasActiveFilters()) {
+          <div class="data-table__toolbar-right">
+            <button
+              type="button"
+              class="btn btn--outline btn--sm data-table__clear-filters-btn"
+              (click)="clearAllFilters()"
+            >
+              <app-icon name="close" size="0.75rem" />
+              <span>{{ t('common.clearFilters') }}</span>
+              <span class="data-table__filter-badge">{{ activeFilterCount() }}</span>
+            </button>
           </div>
         }
       </div>

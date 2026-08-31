@@ -18,6 +18,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { Avatar } from '../../shared/components/avatar/avatar';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
@@ -54,6 +55,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
   selector: 'app-user-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    Avatar,
     DatePipe,
     Dialog,
     EmptyState,
@@ -106,12 +108,12 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
         <section class="card p-6">
           <div class="flex flex-wrap items-center justify-between gap-4">
             <div class="flex items-center gap-4">
-              <div
-                class="flex h-16 w-16 items-center justify-center rounded-2xl font-bold text-xl select-none"
-                style="background: var(--color-primary-soft); color: var(--color-primary); border: 1px solid var(--color-border)"
-              >
-                {{ getInitials(user.username) }}
-              </div>
+              <app-avatar
+                [userId]="user.id"
+                [username]="user.username"
+                size="lg"
+                shape="rounded"
+              />
               <div>
                 <div class="flex items-center gap-2">
                   <h1 class="text-xl font-bold tracking-tight" style="color: var(--color-text)">
@@ -477,11 +479,6 @@ export class UserDetailPage {
 
   constructor() {
     void this.load();
-  }
-
-  protected getInitials(username: string): string {
-    if (!username) return '?';
-    return username.slice(0, 2).toUpperCase();
   }
 
   protected roleChip(role: Role): string {

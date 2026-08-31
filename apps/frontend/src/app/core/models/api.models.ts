@@ -267,6 +267,27 @@ export interface SplitIsland {
   tabs: SplitIslandTab[];
 }
 
+export interface CreateIslandRequest {
+  name: string;
+  city: SplitIslandCity;
+  tabs: string[];
+}
+
+export interface UpdateIslandRequest {
+  name?: string;
+  city?: SplitIslandCity;
+}
+
+export interface CreateIslandTabRequest {
+  name: string;
+  sort_order?: number;
+}
+
+export interface UpdateIslandTabRequest {
+  name?: string;
+  sort_order?: number;
+}
+
 /* ----------------------------- Events ------------------------------- */
 
 export type EventStatus = 'scheduled' | 'live' | 'stopped' | 'auto_stopped';
@@ -1442,6 +1463,7 @@ export type NotificationKind =
   | 'bank_withdraw_accepted'
   | 'bank_withdraw_rejected'
   | 'warn_issued'
+  | 'split_credited'
   | 'event_created'
   | 'event_reminder_1h';
 

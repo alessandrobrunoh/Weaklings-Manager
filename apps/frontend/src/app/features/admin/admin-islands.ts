@@ -1,7 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
-import type { SplitIsland, SplitIslandCity } from '../../core/models/api.models';
+import type { SplitIsland, SplitIslandCity, UpdateIslandRequest } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
@@ -32,7 +33,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
 @Component({
   selector: 'app-admin-islands',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DataTable, DataTableCell, Dialog, PageHeader, PageStack],
+  imports: [DataTable, DataTableCell, Dialog, PageHeader, PageStack, RouterLink],
   template: `
     <app-page-header [title]="t('admin.islands.title')" [subtitle]="t('admin.islands.hint')">
       <button type="button" class="btn btn--primary" (click)="openCreate()">
@@ -52,6 +53,14 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
         emptyIcon="swords"
         [pageSize]="25"
       >
+        <ng-template dataTableCell="name" let-row>
+          <a
+            class="font-medium text-primary no-underline hover:underline cursor-pointer"
+            [routerLink]="['/admin/islands', row.id]"
+          >
+            {{ row.name }}
+          </a>
+        </ng-template>
         <ng-template dataTableCell="tabs" let-row>
           <div class="flex flex-col gap-2">
             <div class="flex flex-wrap gap-1.5">
@@ -80,14 +89,29 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
           </div>
         </ng-template>
         <ng-template dataTableCell="actions" let-row>
-          <button
-            type="button"
-            class="btn btn--danger btn--sm"
-            [disabled]="deletingId() === row.id"
-            (click)="askDelete(row)"
-          >
-            {{ t('common.delete') }}
-          </button>
+          <div class="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              class="btn btn--outline btn--sm"
+              (click)="openEdit(row)"
+            >
+              {{ t('common.edit') }}
+            </button>
+            <a
+              [routerLink]="['/admin/islands', row.id]"
+              class="btn btn--ghost btn--sm"
+            >
+              {{ t('common.view') }}
+            </a>
+            <button
+              type="button"
+              class="btn btn--danger btn--sm"
+              [disabled]="deletingId() === row.id"
+              (click)="askDelete(row)"
+            >
+              {{ t('common.delete') }}
+            </button>
+          </div>
         </ng-template>
       </app-data-table>
     </app-page-stack>
@@ -145,6 +169,49 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
       </app-dialog>
     }
 
+    @if (editTarget(); as island) {
+      <app-dialog [title]="t('admin.islands.editTitle')" size="sm" (closed)="closeEdit()">
+        <form id="edit-island-form" class="grid gap-4" (submit)="onEditIsland($event)">
+          <label class="block">
+            <span class="label">{{ t('admin.islands.location') }}</span>
+            <select
+              class="select"
+              [value]="editIslandCity()"
+              (change)="onEditIslandCity($event)"
+            >
+              @for (city of islandCities; track city) {
+                <option [value]="city">{{ cityLabel(city) }}</option>
+              }
+            </select>
+          </label>
+          <label class="block">
+            <span class="label">{{ t('admin.islands.island') }}</span>
+            <input
+              class="input"
+              type="text"
+              required
+              autofocus
+              [value]="editIslandName()"
+              (input)="onEditIslandName($event)"
+            />
+          </label>
+        </form>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="closeEdit()">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="submit"
+            class="btn btn--primary"
+            form="edit-island-form"
+            [disabled]="editSaving()"
+          >
+            {{ editSaving() ? t('common.loading') : t('admin.islands.save') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
+
     @if (deleteTarget(); as island) {
       <app-dialog [title]="t('common.delete')" size="sm" (closed)="deleteTarget.set(null)">
         <p>{{ t('common.confirm') }}</p>
@@ -175,6 +242,10 @@ export class AdminIslands {
   protected readonly deletingId = signal<number | null>(null);
   protected readonly createOpen = signal(false);
   protected readonly deleteTarget = signal<SplitIsland | null>(null);
+  protected readonly editTarget = signal<SplitIsland | null>(null);
+  protected readonly editIslandCity = signal<SplitIslandCity>('lymhurst');
+  protected readonly editIslandName = signal('');
+  protected readonly editSaving = signal(false);
   protected readonly newIslandCity = signal<SplitIslandCity>('lymhurst');
   protected readonly newIslandName = signal('');
   protected readonly newIslandTabs = signal('');
@@ -226,6 +297,52 @@ export class AdminIslands {
 
   protected closeCreate(): void {
     this.createOpen.set(false);
+  }
+
+  protected openEdit(island: SplitIsland): void {
+    this.editTarget.set(island);
+    this.editIslandCity.set(island.city);
+    this.editIslandName.set(island.name);
+  }
+
+  protected closeEdit(): void {
+    this.editTarget.set(null);
+  }
+
+  protected onEditIslandCity(event: Event): void {
+    this.editIslandCity.set((event.target as HTMLSelectElement).value as SplitIslandCity);
+  }
+
+  protected onEditIslandName(event: Event): void {
+    this.editIslandName.set((event.target as HTMLInputElement).value);
+  }
+
+  protected async onEditIsland(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    const island = this.editTarget();
+    if (!island) {
+      return;
+    }
+    const name = this.editIslandName().trim();
+    const city = this.editIslandCity();
+    if (!name) {
+      this.toasts.error(this.t('validation.required'));
+      return;
+    }
+    this.editSaving.set(true);
+    try {
+      const payload: UpdateIslandRequest = { name, city };
+      await firstValueFrom(
+        this.api.patch<SplitIsland>(`api/splits/islands/${island.id}`, payload),
+      );
+      this.closeEdit();
+      await this.refresh();
+      this.toasts.success(this.t('admin.islands.updated'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.editSaving.set(false);
+    }
   }
 
   protected onNewIslandCity(event: Event): void {

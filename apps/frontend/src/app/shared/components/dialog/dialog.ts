@@ -13,9 +13,9 @@ import {
 
 import { TranslateService } from '../../../core/services/translate.service';
 import type { TranslationKey } from '../../../i18n/en';
-import { Icon } from '../icon/icon';
+import { Icon, type IconName } from '../icon/icon';
 
-export type DialogSize = 'sm' | 'md' | 'lg';
+export type DialogSize = 'sm' | 'md' | 'lg' | 'xl';
 
 let nextDialogTitleId = 0;
 
@@ -37,23 +37,37 @@ let nextDialogTitleId = 0;
       [class.app-dialog--sm]="size() === 'sm'"
       [class.app-dialog--md]="size() === 'md'"
       [class.app-dialog--lg]="size() === 'lg'"
+      [class.app-dialog--xl]="size() === 'xl'"
       [attr.closedby]="'any'"
       [attr.aria-labelledby]="titleId"
+      [attr.aria-describedby]="subtitle() ? subtitleId : null"
       (close)="onNativeClose()"
       (click)="onBackdropClick($event)"
     >
       <header class="app-dialog__header">
-        <h2 [id]="titleId" class="app-dialog__title">{{ title() }}</h2>
+        <div class="app-dialog__header-content">
+          <div class="app-dialog__title-row">
+            @if (icon(); as iconName) {
+              <div class="app-dialog__icon-wrapper">
+                <app-icon [name]="iconName" size="1.125rem" class="app-dialog__icon" />
+              </div>
+            }
+            <h2 [id]="titleId" class="app-dialog__title">{{ title() }}</h2>
+          </div>
+          @if (subtitle(); as sub) {
+            <p [id]="subtitleId" class="app-dialog__subtitle">{{ sub }}</p>
+          }
+        </div>
         <button
           type="button"
-          class="btn btn--ghost btn--icon"
+          class="btn btn--ghost btn--icon app-dialog__close"
           [attr.aria-label]="closeLabel"
           (click)="dismiss()"
         >
-          <app-icon name="close" size="1.25rem" />
+          <app-icon name="close" size="1.125rem" />
         </button>
       </header>
-      <div class="app-dialog__body">
+      <div class="app-dialog__body scrollbar-thin">
         <ng-content />
       </div>
       <footer class="app-dialog__footer">
@@ -71,13 +85,19 @@ export class Dialog {
   readonly open = input(true);
   /** Accessible title shown in the header. */
   readonly title = input.required<string>();
-  /** Width preset. */
+  /** Optional subtitle or description. */
+  readonly subtitle = input<string | undefined>(undefined);
+  /** Optional header icon. */
+  readonly icon = input<IconName | undefined>(undefined);
+  /** Width preset: sm (380px), md (520px), lg (720px), xl (900px). */
   readonly size = input<DialogSize>('md');
 
   /** Emitted when the dialog is dismissed (Esc, backdrop, close button, or `open` going false). */
   readonly closed = output<void>();
 
-  protected readonly titleId = `app-dialog-title-${++nextDialogTitleId}`;
+  private readonly id = ++nextDialogTitleId;
+  protected readonly titleId = `app-dialog-title-${this.id}`;
+  protected readonly subtitleId = `app-dialog-sub-${this.id}`;
   protected readonly closeLabel = this.translate.t('common.close' satisfies TranslationKey);
 
   constructor() {

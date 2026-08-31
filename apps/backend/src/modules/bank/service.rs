@@ -416,6 +416,25 @@ impl BankService {
                 })),
             )
             .await?;
+            if updated.to_user_id != officer_user_id {
+                crate::modules::notifications::notify_best_effort(
+                    db,
+                    crate::modules::notifications::NotifySpec {
+                        kind: crate::modules::notifications::NotificationKind::BankWithdrawAccepted,
+                        user_ids: &[updated.to_user_id],
+                        title: "Withdrawal paid".into(),
+                        body: format!(
+                            "Your withdrawal of {amount} silver was paid out.",
+                            amount = updated.amount
+                        ),
+                        link_path: Some("/bank".into()),
+                        source_type: "transaction",
+                        source_id: updated.id,
+                        created_by_user_id: Some(officer_user_id),
+                    },
+                )
+                .await;
+            }
         }
 
         let updated_views = to_views_with_usernames(db, updated_models).await?;
@@ -500,6 +519,25 @@ impl BankService {
                 })),
             )
             .await?;
+            if updated.to_user_id != officer_user_id {
+                crate::modules::notifications::notify_best_effort(
+                    db,
+                    crate::modules::notifications::NotifySpec {
+                        kind: crate::modules::notifications::NotificationKind::BankWithdrawRejected,
+                        user_ids: &[updated.to_user_id],
+                        title: "Withdrawal rejected".into(),
+                        body: format!(
+                            "Your withdrawal of {amount} silver was rejected.",
+                            amount = updated.amount
+                        ),
+                        link_path: Some("/bank".into()),
+                        source_type: "transaction",
+                        source_id: updated.id,
+                        created_by_user_id: Some(officer_user_id),
+                    },
+                )
+                .await;
+            }
         }
 
         let updated_views = to_views_with_usernames(db, updated_models).await?;
@@ -661,6 +699,20 @@ mod tests {
         assert_eq!(accepted.len(), 1);
         assert_eq!(accepted[0].status, TransactionStatus::Withdrawn);
         assert_eq!(accepted[0].from_user_id, Some(officer));
+
+        let inbox = crate::modules::notifications::entities::NotificationEntity::find()
+            .filter(crate::modules::notifications::entities::NotificationColumn::UserId.eq(alice))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(inbox[0].kind, "bank_withdraw_accepted");
+        let officer_inbox = crate::modules::notifications::entities::NotificationEntity::find()
+            .filter(crate::modules::notifications::entities::NotificationColumn::UserId.eq(officer))
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(officer_inbox.is_empty());
     }
 
     #[tokio::test]

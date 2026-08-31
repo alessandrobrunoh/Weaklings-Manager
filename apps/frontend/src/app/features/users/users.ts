@@ -7,6 +7,7 @@ import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { Avatar } from '../../shared/components/avatar/avatar';
 import {
   DataTable,
   type DataTableColumn,
@@ -39,7 +40,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
 @Component({
   selector: 'app-users',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, PageStack, DataTable, DataTableCell, Icon, StatCard, TooltipDirective],
+  imports: [Avatar, PageHeader, PageStack, DataTable, DataTableCell, Icon, StatCard, TooltipDirective],
   template: `
     <app-page-header
       [title]="t('users.title')"
@@ -102,7 +103,10 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         (pageChange)="onTableChange($event)"
       >
         <ng-template dataTableCell="username" let-row>
-          <span style="font-weight: 500">{{ row.username }}</span>
+          <div class="flex items-center gap-2.5">
+            <app-avatar [userId]="row.id" [username]="row.username" size="sm" />
+            <span style="font-weight: 500">{{ row.username }}</span>
+          </div>
         </ng-template>
         <ng-template dataTableCell="email" let-row>
           <span style="color: var(--color-text-secondary)">{{ row.email }}</span>

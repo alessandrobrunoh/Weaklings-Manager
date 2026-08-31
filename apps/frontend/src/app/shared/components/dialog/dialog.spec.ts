@@ -53,4 +53,17 @@ describe('Dialog', () => {
     button.click();
     expect(closed).toHaveBeenCalledTimes(1);
   });
+
+  it('renders subtitle and icon when provided', async () => {
+    fixture.componentRef.setInput('subtitle', 'Select an option');
+    fixture.componentRef.setInput('icon', 'sparkles');
+    fixture.componentRef.setInput('size', 'xl');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const dialog = fixture.nativeElement.querySelector('dialog') as HTMLDialogElement;
+    expect(dialog.classList.contains('app-dialog--xl')).toBe(true);
+    expect(dialog.querySelector('.app-dialog__subtitle')?.textContent).toContain('Select an option');
+    expect(dialog.querySelector('.app-dialog__icon-wrapper')).toBeTruthy();
+  });
 });

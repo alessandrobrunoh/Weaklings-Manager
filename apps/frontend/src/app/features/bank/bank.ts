@@ -14,6 +14,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { Avatar } from '../../shared/components/avatar/avatar';
 import {
   DataTable,
   type DataTableColumn,
@@ -46,6 +47,7 @@ function emptyPageChange(): DataTablePageChange {
   selector: 'app-bank',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    Avatar,
     PageHeader,
     PageStack,
     DataTable,
@@ -182,14 +184,7 @@ function emptyPageChange(): DataTablePageChange {
           </ng-template>
           <ng-template dataTableCell="to_username" let-row>
             <div class="flex items-center gap-2">
-              <span
-                class="inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold"
-                style="
-                  background-color: var(--color-primary-container);
-                  color: var(--color-primary);
-                "
-                >{{ row.to_username.charAt(0).toUpperCase() }}</span
-              >
+              <app-avatar [userId]="row.to_user_id" [username]="row.to_username" size="sm" />
               <span class="font-medium text-sm">{{ row.to_username }}</span>
             </div>
           </ng-template>

@@ -15,12 +15,17 @@ describe('isAdminUrl', () => {
     expect(isAdminUrl('/admin/roles')).toBe(true);
     expect(isAdminUrl('/admin/permissions?reload=1')).toBe(true);
     expect(isAdminUrl('/admin/discord#autorole')).toBe(true);
+    expect(isAdminUrl('/users')).toBe(true);
+    expect(isAdminUrl('/users/')).toBe(true);
+    expect(isAdminUrl('/users/123')).toBe(true);
+    expect(isAdminUrl('/users/abc-456?tab=xp#top')).toBe(true);
   });
 
   it('does not treat similarly prefixed app routes as the console', () => {
     expect(isAdminUrl('/dashboard')).toBe(false);
     expect(isAdminUrl('/administrator')).toBe(false);
     expect(isAdminUrl('/admins')).toBe(false);
+    expect(isAdminUrl('/users-list')).toBe(false);
     expect(isAdminUrl('/profile')).toBe(false);
     expect(isAdminUrl('/')).toBe(false);
   });

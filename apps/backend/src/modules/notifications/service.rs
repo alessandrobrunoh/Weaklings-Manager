@@ -215,7 +215,6 @@ impl NotificationService {
     /// # Errors
     ///
     /// `400` on invalid title/body/link; database errors otherwise.
-    #[allow(dead_code)] // Wired from regear/bank/warn/event in later slices; tests cover it now.
     pub async fn notify(
         &self,
         db: &DatabaseConnection,
@@ -235,6 +234,16 @@ impl NotificationService {
             created_by_user_id: spec.created_by_user_id,
         };
         insert_many(db, &spec).await
+    }
+}
+
+/// Writes inbox rows without failing the surrounding domain mutation.
+pub async fn notify_best_effort(db: &DatabaseConnection, spec: NotifySpec<'_>) {
+    if spec.user_ids.is_empty() {
+        return;
+    }
+    if let Err(error) = NotificationService::new().notify(db, spec).await {
+        tracing::warn!(error = %error, "failed to write inbox notification");
     }
 }
 

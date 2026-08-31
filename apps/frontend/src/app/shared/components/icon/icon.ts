@@ -8,10 +8,13 @@ export type IconName =
   | 'calendar'
   | 'chart'
   | 'check'
+  | 'chevron-down'
   | 'chevron-left'
   | 'chevron-right'
+  | 'chevron-up'
   | 'close'
   | 'discord'
+  | 'filter'
   | 'hammer'
   | 'info'
   | 'link'
@@ -20,6 +23,7 @@ export type IconName =
   | 'moon'
   | 'package'
   | 'plus'
+  | 'refresh'
   | 'scan'
   | 'search'
   | 'settings'
@@ -99,11 +103,17 @@ export type IconName =
         @case ('check') {
           <path d="M20 6 9 17l-5-5" />
         }
+        @case ('chevron-down') {
+          <path d="m6 9 6 6 6-6" />
+        }
         @case ('chevron-left') {
           <path d="m15 18-6-6 6-6" />
         }
         @case ('chevron-right') {
           <path d="m9 18 6-6-6-6" />
+        }
+        @case ('chevron-up') {
+          <path d="m18 15-6-6-6 6" />
         }
         @case ('close') {
           <path d="M18 6 6 18" />
@@ -120,6 +130,9 @@ export type IconName =
           />
           <path d="m8 6-.7-2" />
           <path d="m16 6 .7-2" />
+        }
+        @case ('filter') {
+          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
         }
         @case ('hammer') {
           <path d="m15 12-8.5 8.5a2.1 2.1 0 0 1-3-3L12 9" />
@@ -160,6 +173,12 @@ export type IconName =
         @case ('plus') {
           <path d="M5 12h14" />
           <path d="M12 5v14" />
+        }
+        @case ('refresh') {
+          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+          <path d="M3 3v5h5" />
+          <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+          <path d="M16 16h5v5" />
         }
         @case ('scan') {
           <path d="M3 7V5a2 2 0 0 1 2-2h2" />

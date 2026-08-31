@@ -46,7 +46,13 @@ export const ADMIN_ACCESS_PERMISSIONS = [
  */
 export function isAdminUrl(url: string): boolean {
   const path = url.split('?')[0].split('#')[0];
-  return path === '/admin' || path === '/admin/' || path.startsWith('/admin/');
+  return (
+    path === '/admin' ||
+    path === '/admin/' ||
+    path.startsWith('/admin/') ||
+    path === '/users' ||
+    path.startsWith('/users/')
+  );
 }
 
 /** Hide items the session cannot reach; drop sections that become empty. */
@@ -72,7 +78,7 @@ export const APP_NAV_SECTIONS: NavSection[] = [
     headingKey: 'nav.section.main',
     items: [
       { path: '/dashboard', icon: 'chart', labelKey: 'nav.dashboard' },
-      { path: '/leaderboards', icon: 'trophy', labelKey: 'nav.leaderboards' },
+      { path: '/season', icon: 'trophy', labelKey: 'nav.season' },
     ],
   },
   {

@@ -22,6 +22,8 @@ pub enum NotificationKind {
     BankWithdrawRejected,
     /// Warn issued against the recipient.
     WarnIssued,
+    /// Loot-split share credited to the guild bank.
+    SplitCredited,
     /// New event created. In-app only (Discord already pings the events channel).
     EventCreated,
     /// Event starts within one hour. In-app only for signed-up participants.
@@ -39,6 +41,7 @@ impl NotificationKind {
             Self::BankWithdrawAccepted => "bank_withdraw_accepted",
             Self::BankWithdrawRejected => "bank_withdraw_rejected",
             Self::WarnIssued => "warn_issued",
+            Self::SplitCredited => "split_credited",
             Self::EventCreated => "event_created",
             Self::EventReminder1h => "event_reminder_1h",
         }
@@ -70,6 +73,7 @@ impl FromStr for NotificationKind {
             "bank_withdraw_accepted" => Ok(Self::BankWithdrawAccepted),
             "bank_withdraw_rejected" => Ok(Self::BankWithdrawRejected),
             "warn_issued" => Ok(Self::WarnIssued),
+            "split_credited" => Ok(Self::SplitCredited),
             "event_created" => Ok(Self::EventCreated),
             "event_reminder_1h" => Ok(Self::EventReminder1h),
             other => Err(format!("unknown notification kind: {other}")),
@@ -137,6 +141,7 @@ mod tests {
             NotificationKind::BankWithdrawAccepted,
             NotificationKind::BankWithdrawRejected,
             NotificationKind::WarnIssued,
+            NotificationKind::SplitCredited,
             NotificationKind::EventCreated,
             NotificationKind::EventReminder1h,
         ] {

@@ -171,6 +171,22 @@ export class DataTable<T> {
     return Math.max(1, Math.ceil(total / this.currentPageSize()));
   });
 
+  /** Active filter count (search + column filters). */
+  protected readonly activeFilterCount = computed<number>(() => {
+    let count = 0;
+    if (this.search().trim().length > 0) {
+      count++;
+    }
+    for (const val of Object.values(this.columnFilters())) {
+      if (val) {
+        count++;
+      }
+    }
+    return count;
+  });
+
+  protected readonly hasActiveFilters = computed<boolean>(() => this.activeFilterCount() > 0);
+
   /** True when at least one column exposes filter options. */
   protected readonly hasColumnFilters = computed(() =>
     this.columns().some((column) => column.filterOptions && column.filterOptions.length > 0),
@@ -203,6 +219,22 @@ export class DataTable<T> {
 
   protected onSearchInput(event: Event): void {
     this.search.set((event.target as HTMLInputElement).value);
+    this.page.set(1);
+    this.emitChange();
+  }
+
+  protected clearSearch(): void {
+    if (!this.search()) {
+      return;
+    }
+    this.search.set('');
+    this.page.set(1);
+    this.emitChange();
+  }
+
+  protected clearAllFilters(): void {
+    this.search.set('');
+    this.columnFilters.set({});
     this.page.set(1);
     this.emitChange();
   }

@@ -1366,6 +1366,30 @@ impl SplitService {
 
         txn.commit().await?;
 
+        let recipients: Vec<i64> = participants
+            .iter()
+            .map(|participant| participant.user_id)
+            .filter(|user_id| *user_id != officer_user_id)
+            .collect();
+        if !recipients.is_empty() {
+            crate::modules::notifications::notify_best_effort(
+                db,
+                crate::modules::notifications::NotifySpec {
+                    kind: crate::modules::notifications::NotificationKind::SplitCredited,
+                    user_ids: &recipients,
+                    title: "Loot split credited".into(),
+                    body: format!(
+                        "Your share from split #{split_id} was credited to the guild bank."
+                    ),
+                    link_path: Some(format!("/splits/{split_id}")),
+                    source_type: "split",
+                    source_id: split_id,
+                    created_by_user_id: Some(officer_user_id),
+                },
+            )
+            .await;
+        }
+
         self.to_detail(db, updated_split).await
     }
 

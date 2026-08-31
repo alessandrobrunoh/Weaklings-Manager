@@ -335,6 +335,26 @@ impl RegearService {
         )
         .await;
 
+        if user_id != officer_user_id {
+            crate::modules::notifications::notify_best_effort(
+                db,
+                crate::modules::notifications::NotifySpec {
+                    kind: crate::modules::notifications::NotificationKind::RegearAccepted,
+                    user_ids: &[user_id],
+                    title: "Regear approved".into(),
+                    body: format!(
+                        "Your regear was credited to the guild bank ({amount} silver).",
+                        amount = req.final_amount
+                    ),
+                    link_path: Some(format!("/regears/{death_id}")),
+                    source_type: "regear_death",
+                    source_id: updated.id,
+                    created_by_user_id: Some(officer_user_id),
+                },
+            )
+            .await;
+        }
+
         to_view_with_joins(db, updated).await
     }
 
@@ -376,6 +396,7 @@ impl RegearService {
             )));
         }
 
+        let recipient = model.user_id;
         let now = Utc::now().into();
         let mut active: RegearDeathActiveModel = model.into();
         active.status = Set(RegearStatus::Rejected.to_string());
@@ -395,6 +416,25 @@ impl RegearService {
             Some(serde_json::json!({ "note": trimmed })),
         )
         .await;
+
+        if let Some(user_id) = recipient
+            && user_id != officer_user_id
+        {
+            crate::modules::notifications::notify_best_effort(
+                db,
+                crate::modules::notifications::NotifySpec {
+                    kind: crate::modules::notifications::NotificationKind::RegearRejected,
+                    user_ids: &[user_id],
+                    title: "Regear rejected".into(),
+                    body: format!("Your regear request was rejected: {trimmed}"),
+                    link_path: Some(format!("/regears/{death_id}")),
+                    source_type: "regear_death",
+                    source_id: updated.id,
+                    created_by_user_id: Some(officer_user_id),
+                },
+            )
+            .await;
+        }
 
         to_view_with_joins(db, updated).await
     }
@@ -870,5 +910,65 @@ mod tests {
             AppError::Validation(message) => assert!(message.contains("fame")),
             other => panic!("expected validation, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn accept_request_notifies_the_victim() {
+        let db = seed_db().await;
+        let victim = crate::modules::users::entities::ActiveModel {
+            username: Set("victim".into()),
+            email: Set("victim@example.com".into()),
+            role: Set("User".into()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("victim")
+        .id;
+        let officer = crate::modules::users::entities::ActiveModel {
+            username: Set("officer".into()),
+            email: Set("officer@example.com".into()),
+            role: Set("User".into()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("officer")
+        .id;
+        let now = Utc::now().into();
+        let death = insert_death(&db, "Victim", RegearStatus::Pending, now, "k-victim").await;
+        let mut active: RegearDeathActiveModel = death.clone().into();
+        active.user_id = Set(Some(victim));
+        active.update(&db).await.expect("link victim");
+
+        RegearService::new()
+            .accept_request(
+                &db,
+                officer,
+                death.id,
+                &AcceptRegearRequest {
+                    final_amount: Decimal::from(100),
+                    breakdown: vec![BreakdownRow {
+                        slot: BuildSlot::Weapon,
+                        item_id: "T8_MAIN_X".into(),
+                        quality: 1,
+                        unit_price: Decimal::from(100),
+                        quantity: 1,
+                        included: true,
+                    }],
+                    note: None,
+                },
+            )
+            .await
+            .expect("accept");
+
+        let inbox = crate::modules::notifications::entities::NotificationEntity::find()
+            .filter(crate::modules::notifications::entities::NotificationColumn::UserId.eq(victim))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(inbox[0].kind, "regear_accepted");
+        assert_eq!(inbox[0].source_id, death.id);
     }
 }

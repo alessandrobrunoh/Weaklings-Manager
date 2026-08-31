@@ -5,6 +5,7 @@
 //! player account linking.
 
 pub mod client;
+pub mod discord_nick;
 pub mod entities;
 pub mod router;
 pub mod service;
