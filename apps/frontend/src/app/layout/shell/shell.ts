@@ -12,7 +12,8 @@ import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 
 import { AlbionLinkGate } from '../../shared/components/albion-link-gate/albion-link-gate';
-import { ADMIN_NAV_SECTIONS, APP_NAV_SECTIONS, isAdminUrl } from '../nav';
+import { AuthService } from '../../core/services/auth.service';
+import { ADMIN_NAV_SECTIONS, APP_NAV_SECTIONS, ADMIN_ACCESS_PERMISSIONS, isAdminUrl } from '../nav';
 import { Sidebar } from '../sidebar/sidebar';
 import { Topbar } from '../topbar/topbar';
 
@@ -100,17 +101,29 @@ import { Topbar } from '../topbar/topbar';
 })
 export class Shell {
   private readonly router = inject(Router);
+  private readonly auth = inject(AuthService);
   private readonly main = viewChild<ElementRef<HTMLElement>>('main');
 
   protected readonly isDrawerOpen = signal(false);
   protected readonly isSidebarCollapsed = signal(false);
-  protected readonly inAdmin = signal(isAdminUrl(this.router.url));
+  protected readonly inAdmin = signal(this.shouldUseAdminNavigation(this.router.url));
   protected readonly navSections = computed(() =>
     this.inAdmin() ? ADMIN_NAV_SECTIONS : APP_NAV_SECTIONS,
   );
   protected readonly navAriaLabelKey = computed(() =>
     this.inAdmin() ? 'nav.aria.admin' : 'nav.aria.primary',
   );
+
+  private shouldUseAdminNavigation(url: string): boolean {
+    const path = url.split('?')[0].split('#')[0];
+    if (path === '/users' || path === '/users/') {
+      return true;
+    }
+    if (path.startsWith('/users/')) {
+      return ADMIN_ACCESS_PERMISSIONS.some((permission) => this.auth.hasPermission(permission));
+    }
+    return isAdminUrl(path);
+  }
 
   constructor() {
     try {
@@ -133,7 +146,7 @@ export class Shell {
         takeUntilDestroyed(),
       )
       .subscribe((event) => {
-        this.inAdmin.set(isAdminUrl(event.urlAfterRedirects));
+        this.inAdmin.set(this.shouldUseAdminNavigation(event.urlAfterRedirects));
         const element = this.main()?.nativeElement;
         if (element) {
           element.scrollTop = 0;

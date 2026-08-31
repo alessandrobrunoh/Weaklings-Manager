@@ -154,10 +154,26 @@ impl UserService {
             .order_by_asc(super::specializations::Column::NodeName)
             .all(db)
             .await?;
-        Ok(rows
-            .into_iter()
-            .map(super::specializations::UserSpecializationView::from)
-            .collect())
+        let mut by_key = HashMap::new();
+        for row in rows {
+            let mut view = super::specializations::UserSpecializationView::from(row);
+            view.node_key = super::specializations::canonical_node_key(&view.node_key);
+            let replace = by_key.get(&view.node_key).is_none_or(
+                |current: &super::specializations::UserSpecializationView| {
+                    view.level > current.level
+                },
+            );
+            if replace {
+                by_key.insert(view.node_key.clone(), view);
+            }
+        }
+        let mut views: Vec<_> = by_key.into_values().collect();
+        views.sort_by(|left, right| {
+            left.category
+                .cmp(&right.category)
+                .then_with(|| left.node_name.cmp(&right.node_name))
+        });
+        Ok(views)
     }
 
     /// Validates and upserts specialization levels without deleting omitted rows.
@@ -179,7 +195,7 @@ impl UserService {
             .specializations
             .iter()
             .map(|item| {
-                let key = item.node_key.trim();
+                let key = super::specializations::canonical_node_key(&item.node_key);
                 let category = item.category.trim().to_lowercase();
                 let name = item.node_name.trim();
                 if key.is_empty() || name.is_empty() || key.len() > 128 || name.len() > 160 {
@@ -193,7 +209,7 @@ impl UserService {
                     .is_some_and(|identifier| !identifier.is_empty() && !identifier.contains(':'));
                 if !matches!(category.as_str(), "weapon" | "armor")
                     || !valid_catalog_key
-                    || !keys.insert(key.to_string())
+                    || !keys.insert(key.clone())
                 {
                     return Err(AppError::Validation(
                         "Invalid or duplicated combat specialization".to_string(),
@@ -206,7 +222,7 @@ impl UserService {
                 }
                 Ok(super::specializations::ActiveModel {
                     user_id: Set(target_user_id as i64),
-                    node_key: Set(key.to_string()),
+                    node_key: Set(key),
                     node_name: Set(name.to_string()),
                     category: Set(category),
                     level: Set(item.level),

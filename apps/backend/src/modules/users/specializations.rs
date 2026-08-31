@@ -32,6 +32,27 @@ pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
 
+/// Converts legacy tier-specific keys into the canonical specialization key.
+///
+/// For example, `weapon:T8_MAIN_NATURESTAFF` becomes `weapon:MAIN_NATURESTAFF`.
+pub fn canonical_node_key(node_key: &str) -> String {
+    let Some((category, identifier)) = node_key.trim().split_once(':') else {
+        return node_key.trim().to_string();
+    };
+    let identifier = identifier.trim().to_ascii_uppercase();
+    let identifier = identifier
+        .strip_prefix("T1_")
+        .or_else(|| identifier.strip_prefix("T2_"))
+        .or_else(|| identifier.strip_prefix("T3_"))
+        .or_else(|| identifier.strip_prefix("T4_"))
+        .or_else(|| identifier.strip_prefix("T5_"))
+        .or_else(|| identifier.strip_prefix("T6_"))
+        .or_else(|| identifier.strip_prefix("T7_"))
+        .or_else(|| identifier.strip_prefix("T8_"))
+        .unwrap_or(&identifier);
+    format!("{}:{}", category.trim().to_ascii_lowercase(), identifier)
+}
+
 /// Public specialization row returned to the frontend.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct UserSpecializationView {
