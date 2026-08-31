@@ -677,6 +677,8 @@ export const en = {
   'users.detail.back': 'Back to members',
   'users.detail.notFound': 'This member was not found.',
   'users.detail.profile': 'Profile',
+  'users.specializations': 'Combat specialization',
+  'events.detail.specialization': 'Spec level',
 
   // Admin
   'admin.title': 'Administration',

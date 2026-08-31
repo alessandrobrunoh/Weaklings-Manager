@@ -5,12 +5,16 @@ import { firstValueFrom } from 'rxjs';
 
 import type {
   AdjustProgressionRequest,
+  AlbionCombatCategory,
+  AlbionCombatItem,
   AlbionGuildMember,
   AlbionLinkStatus,
   PaginatedData,
   ProgressionMeView,
   Role,
   UserProfile,
+  UserSpecialization,
+  UserSpecializationInput,
   WarnView,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
@@ -28,6 +32,15 @@ import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+
+interface SpecializationNode extends UserSpecializationInput {
+  icon: string | null;
+}
+
+interface SpecializationGroup {
+  category: AlbionCombatCategory;
+  items: SpecializationNode[];
+}
 
 interface AdjustDraft {
   addXp: string;
@@ -284,6 +297,95 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
           </form>
         }
 
+        <!-- Albion Combat Specializations -->
+        <section class="card p-6" aria-labelledby="specializations-heading">
+          <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 id="specializations-heading" class="text-base font-semibold" style="color: var(--color-text)">
+                Destiny Board · Specializzazioni Combat
+              </h2>
+              <p class="text-xs mt-1" style="color: var(--color-text-secondary)">
+                Livello personale per ogni arma e armatura, da 0 a 120.
+              </p>
+            </div>
+            @if (canManageSpecializations()) {
+              <button type="button" class="btn btn--outline btn--sm" (click)="toggleSpecializationEditing()" [disabled]="specLoading()">
+                <app-icon [name]="specializationEditing() ? 'close' : 'sparkles'" size="0.8rem" />
+                {{ specializationEditing() ? 'Annulla' : 'Modifica spec' }}
+              </button>
+            }
+          </div>
+
+          @if (specLoading()) {
+            <div class="p-8 flex justify-center"><app-loading label="Caricamento specializzazioni..." /></div>
+          } @else if (specLoadFailed()) {
+            <div class="p-4 rounded-xl border" style="border-color: var(--color-border); background: var(--color-surface-2)">
+              <p class="text-sm" style="color: var(--color-text-secondary)">Catalogo Albion non disponibile.</p>
+              <button type="button" class="btn btn--ghost btn--sm mt-2" (click)="loadSpecializations()">Riprova</button>
+            </div>
+          } @else {
+            <div class="flex flex-wrap gap-2 mb-4">
+              <input class="input flex-1 min-w-[12rem]" type="search" placeholder="Cerca arma o armatura..." aria-label="Cerca specializzazione" [value]="specSearch()" (input)="updateSpecSearch($event)" />
+              <select class="input w-auto" aria-label="Filtra specializzazioni" [value]="specCategory()" (change)="updateSpecCategory($event)">
+                <option value="all">Tutte</option>
+                <option value="weapon">Armi</option>
+                <option value="armor">Armature</option>
+              </select>
+            </div>
+
+            <div class="rounded-2xl border p-4 mb-4 text-center" style="border-color: var(--color-border); background: radial-gradient(circle, var(--color-surface-2), transparent 72%)">
+              <span class="inline-flex items-center gap-2 chip chip--info font-mono">
+                <span class="h-2 w-2 rounded-full bg-[var(--color-primary)]"></span>
+                COMBAT BOARD · {{ masteredSpecializations() }}/{{ specializationNodes().length }} nodi allenati
+              </span>
+            </div>
+
+            <div class="grid gap-4 lg:grid-cols-2">
+              @for (group of specializationGroups(); track group.category) {
+                <section class="rounded-2xl border p-4" [attr.aria-label]="group.category === 'weapon' ? 'Armi' : 'Armature'" style="border-color: var(--color-border); background: var(--color-surface-2)">
+                  <div class="flex items-center gap-2 mb-3">
+                    <span class="h-3 w-3 rounded-full" [class.bg-orange-500]="group.category === 'weapon'" [class.bg-cyan-400]="group.category === 'armor'"></span>
+                    <h3 class="font-semibold" style="color: var(--color-text)">{{ group.category === 'weapon' ? 'Armi' : 'Armature' }}</h3>
+                    <span class="text-xs ml-auto" style="color: var(--color-text-secondary)">{{ group.items.length }} nodi</span>
+                  </div>
+                  <div class="grid gap-2 sm:grid-cols-2">
+                    @for (node of group.items; track node.node_key) {
+                      <div class="relative rounded-xl border p-3" style="border-color: var(--color-border); background: var(--color-surface-1)">
+                        <div class="flex items-center gap-2 min-w-0">
+                          @if (node.icon) {
+                            <img class="h-8 w-8 rounded object-contain" [src]="node.icon" [alt]="node.node_name" loading="lazy" />
+                          } @else {
+                            <span class="h-8 w-8 rounded bg-[var(--color-surface-2)] flex items-center justify-center"><app-icon name="shield" size="0.85rem" /></span>
+                          }
+                          <span class="text-sm font-medium truncate" style="color: var(--color-text)">{{ node.node_name }}</span>
+                          <span class="ml-auto text-xs font-mono font-bold" style="color: var(--color-primary)">{{ node.level }}/120</span>
+                        </div>
+                        <div class="h-1.5 rounded-full mt-2 overflow-hidden" style="background: var(--color-surface-3)">
+                          <div class="h-full rounded-full bg-[var(--color-primary)]" [style.width.%]="(node.level / 120) * 100"></div>
+                        </div>
+                        @if (specializationEditing() && canManageSpecializations()) {
+                          <label class="sr-only" [for]="'spec-' + node.node_key">Livello {{ node.node_name }}</label>
+                          <input class="input input--sm w-full mt-2" [id]="'spec-' + node.node_key" type="number" min="0" max="120" step="1" [value]="node.level" (input)="updateSpecializationLevel(node.node_key, $event)" />
+                        }
+                      </div>
+                    } @empty {
+                      <p class="text-sm col-span-full" style="color: var(--color-text-secondary)">Nessun nodo trovato.</p>
+                    }
+                  </div>
+                </section>
+              }
+            </div>
+            @if (specializationEditing() && canManageSpecializations()) {
+              <div class="flex justify-end gap-2 mt-4 pt-4 border-t" style="border-color: var(--color-border)">
+                <button type="button" class="btn btn--ghost btn--sm" (click)="toggleSpecializationEditing()">Annulla</button>
+                <button type="button" class="btn btn--primary btn--sm" (click)="saveSpecializations()" [disabled]="specSaving()">
+                  {{ specSaving() ? 'Salvataggio...' : 'Salva specializzazioni' }}
+                </button>
+              </div>
+            }
+          }
+        </section>
+
         <!-- Warns Section -->
         @if (canViewWarns()) {
           <section class="card p-6">
@@ -449,6 +551,31 @@ export class UserDetailPage {
   protected readonly albionLink = signal<AlbionLinkStatus | null>(null);
   protected readonly draft = signal<AdjustDraft>(emptyAdjustDraft());
 
+  protected readonly specLoading = signal(false);
+  protected readonly specLoadFailed = signal(false);
+  protected readonly specSaving = signal(false);
+  protected readonly specializationEditing = signal(false);
+  protected readonly specSearch = signal('');
+  protected readonly specCategory = signal<AlbionCombatCategory | 'all'>('all');
+  protected readonly specializationNodes = signal<SpecializationNode[]>([]);
+
+  protected readonly specializationGroups = computed<SpecializationGroup[]>(() => {
+    const query = this.specSearch().trim().toLowerCase();
+    const category = this.specCategory();
+    return (['weapon', 'armor'] as const)
+      .filter((value) => category === 'all' || category === value)
+      .map((value) => ({
+        category: value,
+        items: this.specializationNodes().filter((node) =>
+          node.category === value && (!query || node.node_name.toLowerCase().includes(query)),
+        ),
+      }));
+  });
+
+  protected readonly masteredSpecializations = computed(
+    () => this.specializationNodes().filter((node) => node.level > 0).length,
+  );
+
   // Albion Link Management State
   protected readonly linkDialogOpen = signal(false);
   protected readonly unlinkConfirmOpen = signal(false);
@@ -461,6 +588,15 @@ export class UserDetailPage {
 
   protected readonly canAdjust = computed(() => this.auth.hasPermission('progression.adjust'));
   protected readonly canViewWarns = computed(() => this.auth.hasPermission('warns.view'));
+  protected readonly canManageSpecializations = computed(() => {
+    const target = this.member()?.id;
+    const ownId = this.auth.profile()?.user_id;
+    return (
+      (target != null && ownId === target) ||
+      this.auth.hasPermission('users.specializations.manage')
+    );
+  });
+
   protected readonly canManageLinks = computed(
     () =>
       this.auth.hasPermission('roles.manage') ||
@@ -518,6 +654,56 @@ export class UserDetailPage {
 
   protected formatDate(value: string): string {
     return new Date(value).toLocaleString();
+  }
+
+  protected updateSpecSearch(event: Event): void {
+    this.specSearch.set((event.target as HTMLInputElement).value);
+  }
+
+  protected updateSpecCategory(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.specCategory.set(value === 'weapon' || value === 'armor' ? value : 'all');
+  }
+
+  protected updateSpecializationLevel(nodeKey: string, event: Event): void {
+    const level = Number((event.target as HTMLInputElement).value);
+    this.specializationNodes.update((nodes) =>
+      nodes.map((node) => (node.node_key === nodeKey ? { ...node, level } : node)),
+    );
+  }
+
+  protected toggleSpecializationEditing(): void {
+    if (!this.canManageSpecializations()) return;
+    this.specializationEditing.update((editing) => !editing);
+    if (!this.specializationEditing()) void this.loadSpecializations();
+  }
+
+  protected async saveSpecializations(): Promise<void> {
+    const member = this.member();
+    if (!member || !this.canManageSpecializations() || this.specSaving()) return;
+    const nodes = this.specializationNodes();
+    if (nodes.some((node) => !Number.isInteger(node.level) || node.level < 0 || node.level > 120)) {
+      this.toasts.error('Ogni livello deve essere un numero intero tra 0 e 120');
+      return;
+    }
+    this.specSaving.set(true);
+    try {
+      const updated = await firstValueFrom(
+        this.api.put<UserSpecialization[]>(`api/users/${member.id}/specializations`, {
+          specializations: nodes.map(({ icon: _icon, ...node }) => node),
+        }),
+      );
+      const updatedByKey = new Map(updated.map((row) => [row.node_key, row]));
+      this.specializationNodes.update((current) =>
+        current.map((node) => ({ ...node, level: updatedByKey.get(node.node_key)?.level ?? node.level })),
+      );
+      this.specializationEditing.set(false);
+      this.toasts.success('Specializzazioni salvate');
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.specSaving.set(false);
+    }
   }
 
   protected toggleEditing(): void {
@@ -674,6 +860,54 @@ export class UserDetailPage {
     }
   }
 
+  private setSpecializationNodes(
+    saved: UserSpecialization[],
+    previous: readonly SpecializationNode[] = [],
+    catalog: readonly AlbionCombatItem[] = [],
+  ): void {
+    const savedByKey = new Map(saved.map((row) => [row.node_key, row]));
+    const previousByKey = new Map(previous.map((row) => [row.node_key, row]));
+    const nodes: SpecializationNode[] = catalog.map((item) => {
+      const category = item.item_type === 'armor' ? 'armor' : 'weapon';
+      const nodeKey = `${category}:${item.id}`;
+      const stored = savedByKey.get(nodeKey);
+      const draft = previousByKey.get(nodeKey);
+      return {
+        node_key: nodeKey,
+        node_name: item.name,
+        category,
+        level: draft?.level ?? stored?.level ?? 0,
+        icon: item.icon,
+      };
+    });
+    const known = new Set(nodes.map((node) => node.node_key));
+    for (const row of saved) {
+      if (!known.has(row.node_key) && (row.category === 'weapon' || row.category === 'armor')) {
+        nodes.push({ ...row, icon: null });
+      }
+    }
+    this.specializationNodes.set(nodes);
+  }
+
+  protected async loadSpecializations(userId = Number(this.route.snapshot.paramMap.get('userId'))): Promise<void> {
+    if (!Number.isFinite(userId) || userId <= 0) return;
+    this.specLoading.set(true);
+    this.specLoadFailed.set(false);
+    try {
+      const [saved, weapons, armor] = await Promise.all([
+        firstValueFrom(this.api.get<UserSpecialization[]>(`api/users/${userId}/specializations`)),
+        firstValueFrom(this.api.get<PaginatedData<AlbionCombatItem>>('api/openalbion/items', { type: 'weapon', page: 1, limit: 500 })),
+        firstValueFrom(this.api.get<PaginatedData<AlbionCombatItem>>('api/openalbion/items', { type: 'armor', page: 1, limit: 500 })),
+      ]);
+      this.setSpecializationNodes(saved, [], [...asPaginated(weapons), ...asPaginated(armor)]);
+    } catch (error) {
+      this.specLoadFailed.set(true);
+      this.toasts.error(error instanceof Error ? error.message : 'Impossibile caricare le specializzazioni');
+    } finally {
+      this.specLoading.set(false);
+    }
+  }
+
   protected async load(): Promise<void> {
     const userId = Number(this.route.snapshot.paramMap.get('userId'));
     if (!Number.isFinite(userId) || userId <= 0) {
@@ -685,6 +919,8 @@ export class UserDetailPage {
     try {
       const member = await firstValueFrom(this.api.get<UserProfile>(`api/users/${userId}`));
       this.member.set(member);
+
+      void this.loadSpecializations(userId);
 
       const [xp, link] = await Promise.all([
         firstValueFrom(this.api.get<ProgressionMeView>(`api/progression/users/${userId}`)).catch(

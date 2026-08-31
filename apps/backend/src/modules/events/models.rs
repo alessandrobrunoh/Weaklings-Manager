@@ -179,6 +179,8 @@ pub struct EventParticipantView {
     pub secondary_build_id: Option<i64>,
     /// The name of the secondary build (if any).
     pub secondary_build_name: Option<String>,
+    /// Combat specialization levels keyed by `weapon:<id>` or `armor:<id>`.
+    pub specializations: std::collections::HashMap<String, i32>,
 }
 
 /// A battle linked to an event session.

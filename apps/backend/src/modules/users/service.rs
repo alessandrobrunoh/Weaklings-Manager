@@ -5,10 +5,11 @@
 use crate::errors::AppError;
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set,
+    TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use utoipa::ToSchema;
 
 use crate::modules::albion::service::AlbionLinkService;
@@ -139,6 +140,122 @@ impl UserService {
             Some(model) => Ok(Some(UserProfile::from_model(db, model).await?)),
             None => Ok(None),
         }
+    }
+
+    /// Lists all saved specialization levels for a user.
+    pub async fn list_specializations(
+        &self,
+        db: &DatabaseConnection,
+        user_id: u64,
+    ) -> Result<Vec<super::specializations::UserSpecializationView>, AppError> {
+        let rows = super::specializations::Entity::find()
+            .filter(super::specializations::Column::UserId.eq(user_id as i64))
+            .order_by_asc(super::specializations::Column::Category)
+            .order_by_asc(super::specializations::Column::NodeName)
+            .all(db)
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(super::specializations::UserSpecializationView::from)
+            .collect())
+    }
+
+    /// Validates and upserts specialization levels without deleting omitted rows.
+    pub async fn update_specializations(
+        &self,
+        db: &DatabaseConnection,
+        target_user_id: u64,
+        editor_user_id: i64,
+        request: &super::specializations::UpdateSpecializationsRequest,
+    ) -> Result<Vec<super::specializations::UserSpecializationView>, AppError> {
+        if request.specializations.len() > 500 {
+            return Err(AppError::Validation(
+                "At most 500 specializations can be updated at once".to_string(),
+            ));
+        }
+        let mut keys = HashSet::new();
+        let now: sea_orm::prelude::DateTimeWithTimeZone = chrono::Utc::now().into();
+        let rows = request
+            .specializations
+            .iter()
+            .map(|item| {
+                let key = item.node_key.trim();
+                let category = item.category.trim().to_lowercase();
+                let name = item.node_name.trim();
+                if key.is_empty() || name.is_empty() || key.len() > 128 || name.len() > 160 {
+                    return Err(AppError::Validation(
+                        "Specialization key and name are required and within size limits"
+                            .to_string(),
+                    ));
+                }
+                let valid_catalog_id = key
+                    .strip_prefix(&format!("{category}:"))
+                    .and_then(|id| id.parse::<i64>().ok())
+                    .is_some_and(|id| id > 0);
+                if !matches!(category.as_str(), "weapon" | "armor")
+                    || !valid_catalog_id
+                    || !keys.insert(key.to_string())
+                {
+                    return Err(AppError::Validation(
+                        "Invalid or duplicated combat specialization".to_string(),
+                    ));
+                }
+                if !(0..=120).contains(&item.level) {
+                    return Err(AppError::Validation(
+                        "Specialization level must be between 0 and 120".to_string(),
+                    ));
+                }
+                Ok(super::specializations::ActiveModel {
+                    user_id: Set(target_user_id as i64),
+                    node_key: Set(key.to_string()),
+                    node_name: Set(name.to_string()),
+                    category: Set(category),
+                    level: Set(item.level),
+                    updated_at: Set(now.clone()),
+                    updated_by_user_id: Set(Some(editor_user_id)),
+                    ..Default::default()
+                })
+            })
+            .collect::<Result<Vec<_>, AppError>>()?;
+
+        if !rows.is_empty() {
+            let txn = db.begin().await.map_err(AppError::Database)?;
+            super::specializations::Entity::insert_many(rows)
+                .on_conflict(
+                    sea_orm::sea_query::OnConflict::columns([
+                        super::specializations::Column::UserId,
+                        super::specializations::Column::NodeKey,
+                    ])
+                    .update_columns([
+                        super::specializations::Column::NodeName,
+                        super::specializations::Column::Category,
+                        super::specializations::Column::Level,
+                        super::specializations::Column::UpdatedAt,
+                        super::specializations::Column::UpdatedByUserId,
+                    ])
+                    .to_owned(),
+                )
+                .exec(&txn)
+                .await
+                .map_err(AppError::Database)?;
+            txn.commit().await.map_err(AppError::Database)?;
+        }
+
+        let _ = crate::modules::audit::service::AuditService::log(
+            db,
+            "USER_SPECIALIZATIONS_UPDATED",
+            Some("USER_SPECIALIZATIONS"),
+            Some(target_user_id as i64),
+            Some(editor_user_id),
+            Some(serde_json::json!({
+                "target_user_id": target_user_id,
+                "nodes_updated": request.specializations.len(),
+                "node_keys": request.specializations.iter().map(|item| item.node_key.trim()).collect::<Vec<_>>(),
+            })),
+        )
+        .await;
+
+        self.list_specializations(db, target_user_id).await
     }
 
     /// Computes and returns the metrics for a given user.

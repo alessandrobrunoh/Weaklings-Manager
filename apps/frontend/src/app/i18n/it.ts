@@ -664,6 +664,8 @@ export const it: TranslationDict = {
   'users.detail.back': 'Torna ai membri',
   'users.detail.notFound': 'Questo membro non è stato trovato.',
   'users.detail.profile': 'Profilo',
+  'users.specializations': 'Specializzazione combat',
+  'events.detail.specialization': 'Livello spec',
 
   'admin.permissions.reload': 'Ricarica cache permessi',
   'admin.permissions.reloaded': 'Cache permessi ricaricata.',

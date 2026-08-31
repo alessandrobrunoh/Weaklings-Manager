@@ -747,6 +747,27 @@ impl EventService {
             .resolve_active_comp(db, event_model.comp_id, participations.len())
             .await?;
 
+        let participant_user_ids: Vec<i64> = participations.iter().map(|p| p.user_id).collect();
+        let specialization_rows = if participant_user_ids.is_empty() {
+            Vec::new()
+        } else {
+            crate::modules::users::specializations::Entity::find()
+                .filter(
+                    crate::modules::users::specializations::Column::UserId
+                        .is_in(participant_user_ids),
+                )
+                .all(db)
+                .await
+                .map_err(AppError::Database)?
+        };
+        let mut specializations_by_user: HashMap<i64, HashMap<String, i32>> = HashMap::new();
+        for row in specialization_rows {
+            specializations_by_user
+                .entry(row.user_id)
+                .or_default()
+                .insert(row.node_key, row.level);
+        }
+
         let mut participant_views = Vec::new();
         for p in participations {
             let user = crate::modules::users::entities::Entity::find_by_id(p.user_id)
@@ -783,6 +804,9 @@ impl EventService {
                 primary_build_name: primary_build.name,
                 secondary_build_id: p.secondary_build_id,
                 secondary_build_name,
+                specializations: specializations_by_user
+                    .remove(&p.user_id)
+                    .unwrap_or_default(),
             });
         }
 

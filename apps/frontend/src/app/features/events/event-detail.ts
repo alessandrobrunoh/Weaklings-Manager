@@ -13,6 +13,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
+  AlbionCombatItem,
   BattleDetail,
   BattleLossEstimate,
   BattleSummary,
@@ -488,6 +489,25 @@ export interface CompPartyGroup {
             <div class="grid gap-5 lg:grid-cols-[1fr_20rem] xl:grid-cols-[1fr_22rem]">
               <!-- COMPOSITION BOARD -->
               <div class="space-y-4">
+                <section class="card p-4 border border-[var(--color-border)] rounded-xl" aria-labelledby="roster-spec-heading">
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h2 id="roster-spec-heading" class="text-sm font-semibold text-[var(--color-text)]">Filtro spec arma</h2>
+                      <p class="text-xs text-[var(--color-text-secondary)]">Mostra il livello della specializzazione accanto ai partecipanti.</p>
+                    </div>
+                    <select class="input w-full sm:w-auto" aria-label="Seleziona arma o armatura" [value]="selectedSpecializationKey()" (change)="selectSpecialization($event)">
+                      <option value="">Nessuna spec selezionata</option>
+                      @for (item of specializationCatalog(); track item.id + ':' + item.item_type) {
+                        <option [value]="specializationKey(item)">{{ item.name }}</option>
+                      }
+                    </select>
+                  </div>
+                  @if (selectedSpecializationKey()) {
+                    <p class="mt-2 text-xs text-[var(--color-text-secondary)]">
+                      Spec selezionata: <strong class="text-[var(--color-text)]">{{ selectedSpecializationName() }}</strong> · usa la colonna nella vista tabella per ordinare i giocatori.
+                    </p>
+                  }
+                </section>
                 @if (compLoading()) {
                   <app-loading [label]="t('common.loading')" />
                 } @else if (compSlots().length === 0) {
@@ -756,6 +776,15 @@ export interface CompPartyGroup {
                           <span style="color: var(--color-text-secondary)">{{
                             row.secondary_build_name ?? t('common.none')
                           }}</span>
+                        </ng-template>
+                        <ng-template dataTableCell="specialization_level" let-row>
+                          @if (selectedSpecializationKey()) {
+                            <span class="font-mono font-semibold" [class.text-[var(--color-success)]]="participantSpecLevel(row) >= 100" [class.text-[var(--color-warning)]]="participantSpecLevel(row) > 0 && participantSpecLevel(row) < 100">
+                              {{ participantSpecLevel(row) }}/120
+                            </span>
+                          } @else {
+                            <span class="text-[var(--color-text-disabled)]">—</span>
+                          }
                         </ng-template>
                       </app-data-table>
                     </div>
@@ -1769,6 +1798,13 @@ export class EventDetailPage {
   protected readonly autoFilling = signal(false);
   protected readonly dragOverSlotKey = signal<string | null>(null);
   protected readonly draggedMember = signal<EventParticipant | null>(null);
+  protected readonly specializationCatalog = signal<AlbionCombatItem[]>([]);
+  protected readonly selectedSpecializationKey = signal('');
+
+  protected readonly selectedSpecializationName = computed(() => {
+    const key = this.selectedSpecializationKey();
+    return this.specializationCatalog().find((item) => this.specializationKey(item) === key)?.name ?? 'Nessuna';
+  });
 
   protected readonly tabOptions = computed<ViewToggleOption[]>(() => {
     const detail = this.event();
@@ -2284,6 +2320,14 @@ export class EventDetailPage {
       },
     },
     {
+      key: 'specialization_level',
+      label: 'events.detail.specialization',
+      sortable: true,
+      accessor: (participant) => this.participantSpecLevel(participant),
+      comparator: (a, b) => this.participantSpecLevel(a) - this.participantSpecLevel(b),
+      align: 'right',
+    },
+    {
       key: 'secondary_build_name',
       label: 'events.detail.secondary_build',
       sortable: true,
@@ -2298,6 +2342,18 @@ export class EventDetailPage {
   ];
 
   protected readonly trackParticipant = (participant: EventParticipant): unknown => participant.user_id;
+
+  protected specializationKey(item: AlbionCombatItem): string {
+    return `${item.item_type === 'armor' ? 'armor' : 'weapon'}:${item.id}`;
+  }
+
+  protected participantSpecLevel(participant: EventParticipant): number {
+    return participant.specializations?.[this.selectedSpecializationKey()] ?? 0;
+  }
+
+  protected selectSpecialization(event: Event): void {
+    this.selectedSpecializationKey.set((event.target as HTMLSelectElement).value);
+  }
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
@@ -3307,6 +3363,19 @@ export class EventDetailPage {
     return Math.min(100, Math.round((current / target) * 100));
   }
 
+  private async loadSpecializationCatalog(): Promise<void> {
+    if (this.specializationCatalog().length > 0) return;
+    try {
+      const [weapons, armor] = await Promise.all([
+        firstValueFrom(this.api.get<PaginatedData<AlbionCombatItem>>('api/openalbion/items', { type: 'weapon', page: 1, limit: 500 })),
+        firstValueFrom(this.api.get<PaginatedData<AlbionCombatItem>>('api/openalbion/items', { type: 'armor', page: 1, limit: 500 })),
+      ]);
+      this.specializationCatalog.set([...weapons.items, ...armor.items]);
+    } catch {
+      // The roster remains usable without the optional specialization selector.
+    }
+  }
+
   protected async load(): Promise<void> {
     if (!this.eventId) return;
     this.loading.set(true);
@@ -3317,6 +3386,7 @@ export class EventDetailPage {
       );
       this.event.set(detail);
       this.eventLossEstimate.set(detail.estimated_losses ?? emptyLossEstimate());
+      void this.loadSpecializationCatalog();
       await Promise.all([this.loadActiveComp(), this.loadLinkedBattleLosses(detail)]);
     } catch (error) {
       this.loadFailed.set(true);

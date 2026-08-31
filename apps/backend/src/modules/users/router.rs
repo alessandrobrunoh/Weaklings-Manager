@@ -3,6 +3,7 @@
 //! Exposes HTTP endpoints for interacting with user resources.
 
 use super::service::{UserFilters, UserProfile, UserService};
+use super::specializations::{UpdateSpecializationsRequest, UserSpecializationView};
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedUserProfile, PaginationParams};
@@ -45,8 +46,16 @@ pub fn router() -> Router {
     Router::new()
         .route("/me", get(get_my_profile))
         .route("/me/metrics", get(get_my_metrics))
+        .route(
+            "/me/specializations",
+            get(get_my_specializations).put(update_my_specializations),
+        )
         .route("/", get(list_users).post(create_user))
         .route("/{user_id}", get(get_user))
+        .route(
+            "/{user_id}/specializations",
+            get(get_user_specializations).put(update_user_specializations),
+        )
 }
 
 /// Retrieve the profile of the currently authenticated user.
@@ -107,6 +116,71 @@ async fn get_my_metrics(
         .get_metrics(&db, user.user_id as u64, &user.id)
         .await?;
     Ok(Json(ApiResponse::new(metrics)))
+}
+
+/// Return the caller's saved Albion combat specializations.
+async fn get_my_specializations(
+    user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<Vec<UserSpecializationView>>>, AppError> {
+    let service = UserService::new();
+    Ok(Json(ApiResponse::new(
+        service
+            .list_specializations(&db, user.user_id as u64)
+            .await?,
+    )))
+}
+
+/// Update the caller's Albion combat specializations.
+async fn update_my_specializations(
+    user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Json(body): Json<UpdateSpecializationsRequest>,
+) -> Result<Json<ApiResponse<Vec<UserSpecializationView>>>, AppError> {
+    let service = UserService::new();
+    Ok(Json(ApiResponse::new(
+        service
+            .update_specializations(&db, user.user_id as u64, user.user_id, &body)
+            .await?,
+    )))
+}
+
+/// Return another user's saved Albion combat specializations.
+async fn get_user_specializations(
+    _user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(user_id): Path<u64>,
+) -> Result<Json<ApiResponse<Vec<UserSpecializationView>>>, AppError> {
+    let service = UserService::new();
+    if service.get_profile(&db, user_id).await?.is_none() {
+        return Err(AppError::NotFound(format!("user {user_id} not found")));
+    }
+    Ok(Json(ApiResponse::new(
+        service.list_specializations(&db, user_id).await?,
+    )))
+}
+
+/// Update another user's Albion combat specializations with the dedicated admin permission.
+async fn update_user_specializations(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(user_id): Path<u64>,
+    Json(body): Json<UpdateSpecializationsRequest>,
+) -> Result<Json<ApiResponse<Vec<UserSpecializationView>>>, AppError> {
+    if user.user_id as u64 != user_id {
+        user.require(&perms, Permission::UsersSpecializationsManage)
+            .await?;
+    }
+    let service = UserService::new();
+    if service.get_profile(&db, user_id).await?.is_none() {
+        return Err(AppError::NotFound(format!("user {user_id} not found")));
+    }
+    Ok(Json(ApiResponse::new(
+        service
+            .update_specializations(&db, user_id, user.user_id, &body)
+            .await?,
+    )))
 }
 
 /// List all user profiles with pagination and filtering.

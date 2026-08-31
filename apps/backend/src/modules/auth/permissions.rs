@@ -55,6 +55,9 @@ pub enum Permission {
     /// Reload the in-memory permission cache after a DB change. Admin-only.
     #[strum(serialize = "permissions.reload")]
     PermissionsReload,
+    /// Edit another member's Albion combat specialization levels. Admin-only.
+    #[strum(serialize = "users.specializations.manage")]
+    UsersSpecializationsManage,
     /// Create, update, link, and delete gestionale roles. Distinct from editing the matrix.
     #[strum(serialize = "roles.manage")]
     RolesManage,
@@ -217,7 +220,7 @@ mod tests {
 
     #[test]
     fn all_contains_every_variant() {
-        assert_eq!(Permission::all().len(), 31);
+        assert_eq!(Permission::all().len(), 32);
     }
 
     #[test]
