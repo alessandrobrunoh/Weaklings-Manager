@@ -1,0 +1,48 @@
+import { describe, expect, it } from 'vitest';
+
+import type { OpenAlbionItem } from '../../core/models/api.models';
+import {
+  deduplicateAlbionCombatCatalog,
+  normalizeAlbionEquipmentName,
+} from './albion-equipment-catalog';
+
+function item(identifier: string, tier: string): OpenAlbionItem {
+  return {
+    id: Number(`${tier.replace('T', '')}${identifier.length}`),
+    name: identifier,
+    tier,
+    type: 'weapon',
+    category_id: null,
+    subcategory_id: null,
+    identifier: `${tier}_${identifier}`,
+    icon: null,
+  };
+}
+
+describe('Albion equipment catalog names', () => {
+  it('uses Albion weapon names instead of technical faction identifiers', () => {
+    expect(normalizeAlbionEquipmentName('T8_MAIN_CURSEDSTAFF')).toBe('Cursed Staff');
+    expect(normalizeAlbionEquipmentName('T8_2H_CURSEDSTAFF')).toBe('Great Cursed Staff');
+    expect(normalizeAlbionEquipmentName('T8_MAIN_CURSEDSTAFF_UNDEAD')).toBe('Lifecurse Staff');
+    expect(normalizeAlbionEquipmentName('T8_MAIN_CURSEDSTAFF_AVALON')).toBe('Shadowcaller');
+    expect(normalizeAlbionEquipmentName('T8_MAIN_CURSEDSTAFF_CRYSTAL')).toBe('Rotcaller Staff');
+    expect(normalizeAlbionEquipmentName('T8_MAIN_NATURESTAFF_CRYSTAL')).toBe('Forgebark Staff');
+    expect(normalizeAlbionEquipmentName('T8_ARMOR_PLATE_SET1')).toBe('Armor Plate Set1');
+    expect(normalizeAlbionEquipmentName('T8_ARMOR_PLATE_SET1', 'Plate Armor')).toBe('Plate Armor');
+  });
+
+  it('keeps one specialization node per weapon family across all tiers', () => {
+    const catalog = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8'].flatMap((tier) => [
+      item('MAIN_CURSEDSTAFF', tier),
+      item('2H_CURSEDSTAFF', tier),
+    ]);
+
+    const nodes = deduplicateAlbionCombatCatalog(catalog);
+
+    expect(nodes).toHaveLength(2);
+    expect(nodes.map(({ identifier, name }) => ({ identifier, name }))).toEqual([
+      { identifier: 'MAIN_CURSEDSTAFF', name: 'Cursed Staff' },
+      { identifier: '2H_CURSEDSTAFF', name: 'Great Cursed Staff' },
+    ]);
+  });
+});

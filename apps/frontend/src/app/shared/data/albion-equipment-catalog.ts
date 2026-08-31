@@ -25,6 +25,7 @@ const ALBION_ITEM_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   '2H_DUALSCIMITAR_UNDEAD': 'Galatine Pair',
   '2H_CLAYMORE_AVALON': 'Kingmaker',
   '2H_DUALSWORD_CRYSTAL': 'Infinity Blade',
+  MAIN_SWORD_CRYSTAL: 'Infinity Blade',
   MAIN_AXE: 'Battleaxe',
   '2H_AXE': 'Greataxe',
   '2H_HALBERD': 'Halberd',
@@ -68,6 +69,70 @@ const ALBION_ITEM_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   MAIN_SPEAR: 'Spear',
   '2H_SPEAR': 'Pike',
   '2H_GLAIVE': 'Glaive',
+  MAIN_CURSEDSTAFF: 'Cursed Staff',
+  '2H_CURSEDSTAFF': 'Great Cursed Staff',
+  '2H_DEMONICSTAFF': 'Demonic Staff',
+  MAIN_CURSEDSTAFF_UNDEAD: 'Lifecurse Staff',
+  '2H_SKULLORB_HELL': 'Cursed Skull',
+  '2H_CURSEDSTAFF_MORGANA': 'Damnation Staff',
+  MAIN_CURSEDSTAFF_AVALON: 'Shadowcaller',
+  MAIN_CURSEDSTAFF_CRYSTAL: 'Rotcaller Staff',
+  MAIN_FIRESTAFF: 'Fire Staff',
+  '2H_FIRESTAFF': 'Great Fire Staff',
+  '2H_INFERNOSTAFF': 'Infernal Staff',
+  MAIN_FIRESTAFF_KEEPER: 'Wildfire Staff',
+  '2H_FIRESTAFF_HELL': 'Brimstone Staff',
+  '2H_INFERNOSTAFF_MORGANA': 'Blazing Staff',
+  '2H_FIRE_RINGPAIR_AVALON': 'Dawnsong',
+  MAIN_FIRESTAFF_CRYSTAL: 'Flamewalker Staff',
+  MAIN_FROSTSTAFF: 'Frost Staff',
+  '2H_FROSTSTAFF': 'Great Frost Staff',
+  '2H_GLACIALSTAFF': 'Glacial Staff',
+  MAIN_FROSTSTAFF_KEEPER: 'Hoarfrost Staff',
+  '2H_ICEGAUNTLETS_HELL': 'Icicle Staff',
+  '2H_ICECRYSTAL_UNDEAD': 'Permafrost Prism',
+  MAIN_FROSTSTAFF_AVALON: 'Chillhowl',
+  '2H_FROSTSTAFF_CRYSTAL': 'Arctic Staff',
+  MAIN_ARCANESTAFF: 'Arcane Staff',
+  '2H_ARCANESTAFF': 'Great Arcane Staff',
+  '2H_ENIGMATICSTAFF': 'Enigmatic Staff',
+  MAIN_ARCANESTAFF_UNDEAD: 'Witchwork Staff',
+  '2H_ARCANESTAFF_HELL': 'Occult Staff',
+  '2H_ENIGMATICORB_MORGANA': 'Malevolent Locus',
+  '2H_ARCANE_RINGPAIR_AVALON': 'Evensong',
+  '2H_ARCANESTAFF_CRYSTAL': 'Astral Staff',
+  MAIN_HOLYSTAFF: 'Holy Staff',
+  '2H_HOLYSTAFF': 'Great Holy Staff',
+  '2H_DIVINESTAFF': 'Divine Staff',
+  MAIN_HOLYSTAFF_MORGANA: 'Lifetouch Staff',
+  '2H_HOLYSTAFF_HELL': 'Fallen Staff',
+  '2H_HOLYSTAFF_UNDEAD': 'Redemption Staff',
+  MAIN_HOLYSTAFF_AVALON: 'Hallowfall',
+  '2H_HOLYSTAFF_CRYSTAL': 'Exalted Staff',
+  '2H_QUARTERSTAFF': 'Quarterstaff',
+  '2H_IRONCLADEDSTAFF': 'Iron-clad Staff',
+  '2H_DOUBLEBLADEDSTAFF': 'Double Bladed Staff',
+  '2H_COMBATSTAFF_MORGANA': 'Black Monk Stave',
+  '2H_TWINSCYTHE_HELL': 'Soulscythe',
+  '2H_ROCKSTAFF_KEEPER': 'Staff of Balance',
+  '2H_QUARTERSTAFF_AVALON': 'Grailseeker',
+  '2H_DOUBLEBLADEDSTAFF_CRYSTAL': 'Phantom Twinblade',
+  '2H_KNUCKLES_SET1': 'Brawler Gloves',
+  '2H_KNUCKLES_SET2': 'Battle Bracers',
+  '2H_KNUCKLES_SET3': 'Spiked Gauntlets',
+  '2H_KNUCKLES_KEEPER': 'Ursine Maulers',
+  '2H_KNUCKLES_HELL': 'Hellfire Hands',
+  '2H_KNUCKLES_MORGANA': 'Ravenstrike Cestus',
+  '2H_KNUCKLES_AVALON': 'Fists of Avalon',
+  '2H_KNUCKLES_CRYSTAL': 'Forcepulse Bracers',
+  '2H_SHAPESHIFTER_SET1': 'Prowling Staff',
+  '2H_SHAPESHIFTER_SET2': 'Rootbound Staff',
+  '2H_SHAPESHIFTER_SET3': 'Primal Staff',
+  '2H_SHAPESHIFTER_MORGANA': 'Bloodmoon Staff',
+  '2H_SHAPESHIFTER_HELL': 'Hellspawn Staff',
+  '2H_SHAPESHIFTER_KEEPER': 'Earthrune Staff',
+  '2H_SHAPESHIFTER_AVALON': 'Lightcaller',
+  '2H_SHAPESHIFTER_CRYSTAL': 'Stillgaze Staff',
 
   MAIN_NATURESTAFF: 'Nature Staff',
   '2H_NATURESTAFF': 'Great Nature Staff',
@@ -76,7 +141,7 @@ const ALBION_ITEM_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   '2H_NATURESTAFF_HELL': 'Blight Staff',
   '2H_NATURESTAFF_KEEPER': 'Rampant Staff',
   MAIN_NATURESTAFF_AVALON: 'Ironroot Staff',
-  MAIN_NATURESTAFF_CRYSTAL: 'Dawnsong',
+  MAIN_NATURESTAFF_CRYSTAL: 'Forgebark Staff',
   MAIN_SPEAR_KEEPER: 'Heron Spear',
   '2H_HARPOON_HELL': 'Spirithunter',
   '2H_TRIDENT_UNDEAD': 'Trinity Spear',
@@ -564,9 +629,15 @@ export function normalizeAlbionEquipmentName(identifier: string, fallback = iden
      .replace(/([A-Z]+?)(CROSSBOW|QUARTERSTAFF|NATURESTAFF|FIRESTAFF|FROSTSTAFF|HOLYSTAFF|CURSEDSTAFF|ARCANESTAFF|DEMONICSTAFF|WILDSTAFF|DIVINESTAFF|GLACIALSTAFF|ENIGMATICSTAFF|STAFF|SWORD|AXE|MACE|HAMMER|BOW|SPEAR|DAGGER|SCYTHE|GAUNTLETS|SHIELD|TORCH|BOOK|ORB|TOME)/g, '$1 $2')
      .replace(/_/g, ' ')
      .trim();
-   if (!spaced) return fallback.trim();
-   return spaced.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
- }
+  const curatedName = fallback.trim();
+  const normalizedFallback = albionSpecializationIdentifier(curatedName).replace(/_/g, ' ');
+  const technicalName = baseIdentifier.replace(/_/g, ' ');
+  if (curatedName && normalizedFallback.toLowerCase() !== technicalName.toLowerCase()) {
+    return curatedName;
+  }
+  if (!spaced) return curatedName;
+  return spaced.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
 
 /** Returns one specialization item per base weapon/armor identifier. */
 export function deduplicateAlbionCombatCatalog(catalog: readonly OpenAlbionItem[]): OpenAlbionItem[] {
