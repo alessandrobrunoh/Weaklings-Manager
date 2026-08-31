@@ -318,6 +318,7 @@ impl SplitService {
             created_at: split.created_at.to_rfc3339(),
             finalized_at: split.finalized_at.map(|dt| dt.to_rfc3339()),
             participant_count,
+            updated_at: split.updated_at.to_rfc3339(),
         })
     }
 
@@ -330,6 +331,16 @@ impl SplitService {
             .filter(ParticipantColumn::SplitId.eq(split.id))
             .all(db)
             .await?;
+
+        let participant_user_ids: Vec<i64> = participants.iter().map(|p| p.user_id).collect();
+        let participant_users = UserEntity::find()
+            .filter(UserColumn::Id.is_in(participant_user_ids))
+            .all(db)
+            .await?;
+        let discord_ids: std::collections::HashMap<i64, Option<String>> = participant_users
+            .into_iter()
+            .map(|u| (u.id, u.discord_id))
+            .collect();
 
         let total_weight: i64 = participants.iter().map(|p| i64::from(p.weight)).sum();
         let net_value = split.net_value;
@@ -370,6 +381,7 @@ impl SplitService {
             });
             views.push(SplitParticipantView {
                 user_id: p.user_id,
+                discord_id: discord_ids.get(&p.user_id).cloned().flatten(),
                 username,
                 weight: p.weight,
                 share_amount,
@@ -503,6 +515,7 @@ impl SplitService {
             .await?;
         let mut active: SplitActiveModel = split.into();
         active.status = Set(status.to_string());
+        active.updated_at = Set(chrono::Utc::now().into());
         let updated = active.update(db).await?;
         self.to_detail(db, updated).await
     }
@@ -557,6 +570,8 @@ impl SplitService {
             .load_with_status(db, split_id, SplitStatus::Pending, "update")
             .await?;
         let mut active: SplitActiveModel = split.into();
+
+        active.updated_at = Set(chrono::Utc::now().into());
 
         if let Some(value) = req.estimated_market_value {
             active.estimated_market_value = Set(value);
@@ -1206,6 +1221,9 @@ impl SplitService {
             active.insert(db).await?;
         }
 
+        let mut split_active: SplitActiveModel = split.into();
+        split_active.updated_at = Set(chrono::Utc::now().into());
+        let split = split_active.update(db).await?;
         self.to_detail(db, split).await
     }
 
@@ -1231,6 +1249,9 @@ impl SplitService {
             .exec(db)
             .await?;
 
+        let mut split_active: SplitActiveModel = split.into();
+        split_active.updated_at = Set(chrono::Utc::now().into());
+        let split = split_active.update(db).await?;
         self.to_detail(db, split).await
     }
 
@@ -1359,6 +1380,7 @@ impl SplitService {
         }
 
         let mut split_active: SplitActiveModel = split.into();
+        split_active.updated_at = Set(chrono::Utc::now().into());
         split_active.status = Set(SplitStatus::Completed.to_string());
         split_active.net_value = Set(Some(net_value));
         split_active.finalized_at = Set(Some(chrono::Utc::now().into()));

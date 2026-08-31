@@ -192,8 +192,10 @@ pub struct LinkedEvent {
     pub id: i64,
     /// Event title.
     pub title: String,
-    /// Whether the event was a call-to-arms, which is what entitles regears.
+    /// Whether the event was a call-to-arms announcement.
     pub call_to_arms: bool,
+    /// Whether the event enables regear processing.
+    pub regear: bool,
 }
 
 impl From<&AlbionBbGuild> for BattleGuildSummary {

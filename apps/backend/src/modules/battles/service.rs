@@ -739,5 +739,6 @@ async fn find_linked_event(
             id: row.id,
             title: row.title,
             call_to_arms: row.call_to_arms,
+            regear: row.regear,
         }))
 }

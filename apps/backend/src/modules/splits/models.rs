@@ -16,6 +16,8 @@ pub struct SplitParticipantView {
     /// The participating user's id.
     #[schema(example = 7)]
     pub user_id: i64,
+    /// The participant's Discord snowflake, when the account is linked.
+    pub discord_id: Option<String>,
     /// The participating user's username.
     #[schema(example = "rust_developer")]
     pub username: String,
@@ -94,6 +96,8 @@ pub struct SplitSummary {
     /// The number of participants in the split.
     #[schema(example = 3)]
     pub participant_count: u64,
+    /// Monotonic change timestamp used by incremental bot synchronization.
+    pub updated_at: String,
 }
 
 /// A split's full detail, including participants.

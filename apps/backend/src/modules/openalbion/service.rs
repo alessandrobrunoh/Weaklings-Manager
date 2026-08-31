@@ -185,6 +185,21 @@ impl OpenAlbionService {
         ))
     }
 
+    /// Returns the complete catalog across weapons, armor, accessories and consumables.
+    /// Each branch is cached independently for one hour, then combined into one stable list.
+    pub async fn list_catalog(&self) -> Result<Vec<OpenAlbionItem>, AppError> {
+        let mut catalog = Vec::new();
+        for item_type in [
+            OpenAlbionItemType::Weapon,
+            OpenAlbionItemType::Armor,
+            OpenAlbionItemType::Accessory,
+            OpenAlbionItemType::Consumable,
+        ] {
+            catalog.extend(self.get_all_items_cached(item_type).await?);
+        }
+        Ok(catalog)
+    }
+
     /// Fetches per-quality-tier stats for a single weapon by ID.
     pub async fn get_weapon_stats(
         &self,

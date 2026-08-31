@@ -53,7 +53,7 @@ fn requestable_status_condition() -> Condition {
         .add(Column::Status.eq(TransactionStatus::Rejected.to_string()))
 }
 
-async fn to_views_with_usernames(
+pub(crate) async fn to_views_with_usernames(
     db: &DatabaseConnection,
     models: Vec<Model>,
 ) -> Result<Vec<TransactionView>, AppError> {
@@ -493,6 +493,7 @@ impl BankService {
             let mut active: ActiveModel = model.into();
             active.status = Set(TransactionStatus::Requested.to_string());
             active.requested_at = Set(Some(now));
+            active.updated_at = Set(now);
             let updated = active.update(&txn).await?;
             updated_models.push(updated);
         }
@@ -573,6 +574,7 @@ impl BankService {
             active.status = Set(TransactionStatus::Withdrawn.to_string());
             active.from_user_id = Set(Some(officer_user_id));
             active.withdrawn_at = Set(Some(now));
+            active.updated_at = Set(now);
             let updated = active.update(&txn).await?;
             updated_models.push(updated);
         }
@@ -676,6 +678,7 @@ impl BankService {
             let mut active: ActiveModel = model.into();
             active.status = Set(TransactionStatus::Rejected.to_string());
             active.requested_at = Set(None);
+            active.updated_at = Set(chrono::Utc::now().into());
             let updated = active.update(&txn).await?;
             updated_models.push(updated);
         }

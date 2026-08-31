@@ -154,17 +154,49 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
                   />
                 </label>
 
-                <label class="text-left">
-                  <span class="label">Result</span>
-                  <select class="select" [value]="draftItemId()" (change)="onItemSelect($event)">
-                    <option value="">
-                      {{ searchLoading() ? 'Searching…' : 'Select an item' }}
-                    </option>
-                    @for (item of searchResults(); track item.id) {
-                      <option [value]="item.id">{{ item.name }} · {{ item.tier }}</option>
+                <div class="text-left">
+                  <span class="label" id="equipment-result-label">Result</span>
+                  <div
+                    class="equipment-picker__results"
+                    role="listbox"
+                    aria-labelledby="equipment-result-label"
+                    [attr.aria-busy]="searchLoading()"
+                  >
+                    @if (searchLoading()) {
+                      <p class="equipment-picker__empty" role="status">Searching…</p>
+                    } @else if (searchResults().length === 0) {
+                      <p class="equipment-picker__empty">Type to search the catalogue</p>
+                    } @else {
+                      @for (item of searchResults(); track item.id) {
+                        <button
+                          type="button"
+                          class="equipment-picker__option"
+                          role="option"
+                          [class.equipment-picker__option--selected]="isSelected(item)"
+                          [attr.aria-selected]="isSelected(item)"
+                          [attr.aria-label]="item.name + ', ' + item.tier"
+                          (click)="selectItem(item)"
+                        >
+                          <img
+                            class="equipment-picker__option-icon"
+                            [src]="item.icon ?? ''"
+                            alt=""
+                            width="48"
+                            height="48"
+                            loading="lazy"
+                          />
+                          <span class="equipment-picker__option-copy">
+                            <strong>{{ item.name }}</strong>
+                            <small>{{ item.tier }} · {{ item.identifier ?? '' }}</small>
+                          </span>
+                          @if (isSelected(item)) {
+                            <span class="equipment-picker__check" aria-hidden="true">✓</span>
+                          }
+                        </button>
+                      }
                     }
-                  </select>
-                </label>
+                  </div>
+                </div>
               </div>
 
               <div class="flex justify-between gap-2">
@@ -253,6 +285,14 @@ export class EquipmentGrid {
 
   protected slotLabel(slot: BuildSlot): string {
     return SLOT_LABELS[slot] ?? slot;
+  }
+
+  protected isSelected(item: OpenAlbionItem): boolean {
+    return String(item.id) === this.draftItemId();
+  }
+
+  protected selectItem(item: OpenAlbionItem): void {
+    this.itemSelect.emit(String(item.id));
   }
 
   /**

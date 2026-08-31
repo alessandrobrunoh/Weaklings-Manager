@@ -165,6 +165,16 @@ pub struct ApiResponsePaginatedOpenAlbionItems {
     pub data: crate::pagination::PaginatedOpenAlbionItem,
 }
 
+/// `OpenAPI` schema wrapper for the complete `OpenAlbion` item catalog.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseOpenAlbionCatalog {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Complete item catalog data payload.
+    pub data: Vec<crate::modules::openalbion::client::OpenAlbionItem>,
+}
+
 /// `OpenAPI` schema wrapper for Albion Online Data market prices.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseAlbionDataMarketPriceList {

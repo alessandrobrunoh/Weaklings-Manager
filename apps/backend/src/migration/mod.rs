@@ -52,6 +52,9 @@ mod m20260830_000001_create_notifications;
 mod m20260830_000002_seed_notifications_broadcast_permission;
 mod m20260831_000001_add_guild_bank_destination;
 mod m20260831_000002_seed_officer_operations_permissions;
+mod m20260831_000003_add_regear_to_events;
+mod m20260831_000004_add_split_forum_channel;
+mod m20260831_000005_add_split_discord_sync;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -108,6 +111,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260830_000002_seed_notifications_broadcast_permission::Migration),
             Box::new(m20260831_000001_add_guild_bank_destination::Migration),
             Box::new(m20260831_000002_seed_officer_operations_permissions::Migration),
+            Box::new(m20260831_000003_add_regear_to_events::Migration),
+            Box::new(m20260831_000004_add_split_forum_channel::Migration),
+            Box::new(m20260831_000005_add_split_discord_sync::Migration),
         ]
     }
 }

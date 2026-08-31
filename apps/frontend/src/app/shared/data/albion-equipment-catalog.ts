@@ -15,6 +15,126 @@ import type { BuildSlot, OpenAlbionItem } from '../../core/models/api.models';
  * console.log(weapons[0]?.identifier); // "T8_2H_BOW"
  * ```
  */
+/** Friendly names for the weapon families used in build authoring. The renderer identifier remains
+ * the canonical persisted value, while this map keeps the picker readable for players. */
+const ALBION_ITEM_DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  MAIN_SWORD: 'Broadsword',
+  '2H_CLAYMORE': 'Claymore',
+  '2H_DUALSWORD': 'Dual Swords',
+  MAIN_SCIMITAR_MORGANA: 'Clarent Blade',
+  '2H_CLEAVER_HELL': 'Carving Sword',
+  '2H_DUALSCIMITAR_UNDEAD': 'Galatine Pair',
+  '2H_CLAYMORE_AVALON': 'Kingmaker',
+  '2H_DUALSWORD_CRYSTAL': 'Infinity Blade',
+  MAIN_AXE: 'Battleaxe',
+  '2H_AXE': 'Greataxe',
+  '2H_HALBERD': 'Halberd',
+  '2H_HALBERD_MORGANA': 'Carrioncaller',
+  '2H_SCYTHE_HELL': 'Infernal Scythe',
+  '2H_DUALAXE_KEEPER': 'Bear Paws',
+  '2H_AXE_AVALON': 'Realmbreaker',
+  '2H_SCYTHE_CRYSTAL': 'Crystal Reaper',
+  MAIN_MACE: 'Mace',
+  '2H_MACE': 'Heavy Mace',
+  '2H_FLAIL': 'Morning Star',
+  MAIN_ROCKMACE_KEEPER: 'Bedrock Mace',
+  MAIN_MACE_HELL: 'Incubus Mace',
+  '2H_MACE_MORGANA': 'Camlann Mace',
+  '2H_DUALMACE_AVALON': 'Oathkeepers',
+  MAIN_MACE_CRYSTAL: 'Dreadstorm Monarch',
+  MAIN_HAMMER: 'Hammer',
+  '2H_POLEHAMMER': 'Polehammer',
+  '2H_HAMMER': 'Great Hammer',
+  '2H_HAMMER_UNDEAD': 'Tombhammer',
+  '2H_DUALHAMMER_HELL': 'Forge Hammers',
+  '2H_RAM_KEEPER': 'Grovekeeper',
+  '2H_HAMMER_AVALON': 'Hand of Justice',
+  '2H_HAMMER_CRYSTAL': 'Truebolt Hammer',
+  '2H_BOW': 'Bow',
+  '2H_WARBOW': 'Warbow',
+  '2H_LONGBOW': 'Longbow',
+  '2H_LONGBOW_UNDEAD': 'Whispering Bow',
+  '2H_BOW_HELL': 'Wailing Bow',
+  '2H_BOW_KEEPER': 'Bow of Badon',
+  '2H_BOW_AVALON': 'Mistpiercer',
+  '2H_BOW_CRYSTAL': 'Skystrider Bow',
+  '2H_CROSSBOW': 'Crossbow',
+  MAIN_1HCROSSBOW: 'Light Crossbow',
+  '2H_CROSSBOWLARGE': 'Heavy Crossbow',
+  '2H_REPEATINGCROSSBOW_UNDEAD': 'Weeping Repeater',
+  '2H_DUALCROSSBOW_HELL': 'Boltcasters',
+  '2H_CROSSBOWLARGE_MORGANA': 'Siegebow',
+  '2H_CROSSBOW_CANNON_AVALON': 'Energy Shaper',
+  '2H_DUALCROSSBOW_CRYSTAL': 'Arclight Blasters',
+  MAIN_SPEAR: 'Spear',
+  '2H_SPEAR': 'Pike',
+  '2H_GLAIVE': 'Glaive',
+  MAIN_SPEAR_KEEPER: 'Heron Spear',
+  '2H_HARPOON_HELL': 'Spirithunter',
+  '2H_TRIDENT_UNDEAD': 'Trinity Spear',
+  MAIN_SPEAR_LANCE_AVALON: 'Daybreaker',
+  '2H_GLAIVE_CRYSTAL': 'Rift Glaive',
+  MAIN_DAGGER: 'Dagger',
+  OFF_TORCH: 'Torch',
+  OFF_HORN_KEEPER: 'Mistcaller',
+  OFF_LAMP_UNDEAD: 'Leering Cane',
+  OFF_TORCH_CRYSTAL: 'Sacred Scepter',
+  OFF_BOOK: 'Tome of Spells',
+  OFF_ORB_MORGANA: 'Eye of Secrets',
+  OFF_DEMONSKULL_HELL: 'Muisak',
+  OFF_TOTEM_KEEPER: 'Taproot',
+  OFF_CENSER_AVALON: 'Celestial Censer',
+  OFF_TOWERSHIELD_UNDEAD: 'Sarcophagus',
+  OFF_SHIELD_HELL: 'Caitiff Shield',
+  OFF_SPIKEDSHIELD_MORGANA: 'Facebreaker',
+  OFF_SHIELD_AVALON: 'Astral Aegis',
+  OFF_SHIELD_CRYSTAL: 'Unbreakable Ward',
+  MOUNT_MULE: 'Mule',
+  MOUNT_HORSE: 'Riding Horse',
+  MOUNT_ARMORED_HORSE: 'Armored Horse',
+  MOUNT_OX: 'Transport Ox',
+  MOUNT_DIREWOLF: 'Direwolf',
+  MOUNT_SWIFTCLAW: 'Swiftclaw',
+  MOUNT_COUGAR_KEEPER: 'Rageclaw',
+  MOUNT_PANTHER: 'Black Panther',
+  MOUNT_BOAR: 'Saddled Wild Boar',
+  MOUNT_DIREBOAR: 'Saddled Direboar',
+  MOUNT_DIREBOAR_UNDEAD: 'Spectral Direboar',
+  MOUNT_DIREBEAR: 'Saddled Direbear',
+  MOUNT_BEAR: 'Saddled Winter Bear',
+  MOUNT_GIANTBEAR: 'Grizzly Bear',
+  MOUNT_GIANTSTAG: 'Giant Stag',
+  MOUNT_MOOSE: 'Moose',
+  MOUNT_RAM: 'Bighorn Ram',
+  MOUNT_RAM_XMAS: 'Frost Ram',
+  MOUNT_TERRORBIRD: 'Saddled Terrorbird',
+  MOUNT_RAVEN: 'Morgana Raven',
+  MOUNT_OWL: 'Divine Owl',
+  MOUNT_MYSTICOWL: 'Saddled Mystic Owl',
+  MOUNT_SWAMPDRAGON: 'Saddled Swamp Dragon',
+  MOUNT_PESTLIZARD: 'Pest Lizard',
+  MOUNT_BASILISK_AVALON: 'Avalonian Basilisk',
+  MOUNT_BASILISK_FIRE: 'Flame Basilisk',
+  MOUNT_BASILISK_POISON: 'Venom Basilisk',
+  MOUNT_FIREWING_DRAKE: 'Firewing Drake',
+  MOUNT_NIGHTMARE: 'Morgana Nightmare',
+  MOUNT_SPECTRALHORSE: 'Spectral Bonehorse',
+  MOUNT_SPECTRALBAT: 'Spectral Bat',
+  MOUNT_HUSKY: 'Snow Husky',
+  MOUNT_RABBIT: 'Spring Cottontail',
+  MOUNT_HELLSPIDER: 'Hellspinner',
+  MOUNT_SOULSPIDER: 'Soulspinner',
+  MOUNT_MAMMOTH_TRANSPORT: 'Transport Mammoth',
+  MOUNT_MAMMOTH_COMMAND: 'Command Mammoth',
+  '2H_DAGGERPAIR': 'Dagger Pair',
+  '2H_CLAWPAIR': 'Claws',
+  MAIN_RAPIER_MORGANA: 'Bloodletter',
+  MAIN_DAGGER_HELL: 'Demonfang',
+  '2H_DUALSICKLE_UNDEAD': 'Deathgivers',
+  '2H_DAGGER_KATAR_AVALON': 'Bridled Fury',
+  '2H_DAGGERPAIR_CRYSTAL': 'Twin Slayers',
+};
+
 export const ALBION_EQUIPMENT_FILE_NAMES: readonly string[] = [
   'OFF_SHIELD',
   'OFF_TOWERSHIELD_UNDEAD',
@@ -318,6 +438,43 @@ export const ALBION_EQUIPMENT_FILE_NAMES: readonly string[] = [
   'POTION_LAVA',
   'POTION_GATHER',
   'POTION_TORNADO',
+  'MOUNT_MULE',
+  'MOUNT_HORSE',
+  'MOUNT_ARMORED_HORSE',
+  'MOUNT_OX',
+  'MOUNT_DIREWOLF',
+  'MOUNT_SWIFTCLAW',
+  'MOUNT_COUGAR_KEEPER',
+  'MOUNT_PANTHER',
+  'MOUNT_BOAR',
+  'MOUNT_DIREBOAR',
+  'MOUNT_DIREBOAR_UNDEAD',
+  'MOUNT_DIREBEAR',
+  'MOUNT_BEAR',
+  'MOUNT_GIANTBEAR',
+  'MOUNT_GIANTSTAG',
+  'MOUNT_MOOSE',
+  'MOUNT_RAM',
+  'MOUNT_RAM_XMAS',
+  'MOUNT_TERRORBIRD',
+  'MOUNT_RAVEN',
+  'MOUNT_OWL',
+  'MOUNT_MYSTICOWL',
+  'MOUNT_SWAMPDRAGON',
+  'MOUNT_PESTLIZARD',
+  'MOUNT_BASILISK_AVALON',
+  'MOUNT_BASILISK_FIRE',
+  'MOUNT_BASILISK_POISON',
+  'MOUNT_FIREWING_DRAKE',
+  'MOUNT_NIGHTMARE',
+  'MOUNT_SPECTRALHORSE',
+  'MOUNT_SPECTRALBAT',
+  'MOUNT_HUSKY',
+  'MOUNT_RABBIT',
+  'MOUNT_HELLSPIDER',
+  'MOUNT_SOULSPIDER',
+  'MOUNT_MAMMOTH_TRANSPORT',
+  'MOUNT_MAMMOTH_COMMAND',
 ];
 
 /**
@@ -337,16 +494,32 @@ export function searchAlbionEquipmentCatalog(
   slot: BuildSlot,
   tier: string,
 ): OpenAlbionItem[] {
-  const normalizedQuery = normalizeSearchText(query);
-  const matchingFileNames = ALBION_EQUIPMENT_FILE_NAMES.filter((fileName) =>
-    belongsToSlot(fileName, slot),
-  ).filter(
-    (fileName) =>
-      normalizedQuery.length === 0 || normalizeSearchText(fileName).includes(normalizedQuery),
+  return filterAlbionEquipmentCatalog(
+    ALBION_EQUIPMENT_FILE_NAMES.map((fileName) => toOpenAlbionItem(fileName, tier)),
+    query,
+    slot,
+    tier,
   );
+}
 
-  return Array.from(new Set(matchingFileNames))
-    .map((fileName) => toOpenAlbionItem(fileName, tier))
+/** Filters the catalog returned by the backend for one build slot. */
+export function filterAlbionEquipmentCatalog(
+  catalog: readonly OpenAlbionItem[],
+  query: string,
+  slot: BuildSlot,
+  tier: string,
+): OpenAlbionItem[] {
+  const normalizedQuery = normalizeSearchText(query);
+  return catalog
+    .filter(
+      (item) =>
+        (item.identifier ?? '').toUpperCase().startsWith(`${tier.toUpperCase()}_`) &&
+        belongsToSlot(item.identifier ?? '', slot),
+    )
+    .filter(
+      (item) =>
+        normalizedQuery.length === 0 || normalizeSearchText(item.name).includes(normalizedQuery),
+    )
     .slice(0, 100);
 }
 
@@ -365,7 +538,7 @@ function toOpenAlbionItem(fileName: string, tier: string): OpenAlbionItem {
   const identifier = `${tier}_${fileName}`;
   return {
     id: deterministicItemId(identifier),
-    name: fileName,
+    name: ALBION_ITEM_DISPLAY_NAMES[fileName] ?? fileName.replace(/_/g, ' '),
     tier,
     type: itemTypeForFileName(fileName),
     category_id: null,
@@ -408,7 +581,7 @@ function belongsToSlot(fileName: string, slot: BuildSlot): boolean {
     case 'food':
       return fileName.startsWith('MEAL_');
     case 'mount':
-      return false;
+      return fileName.startsWith('MOUNT_');
   }
 }
 
@@ -421,6 +594,9 @@ function itemTypeForFileName(fileName: string): string {
   }
   if (fileName.startsWith('MEAL_') || fileName.startsWith('POTION_')) {
     return 'consumable';
+  }
+  if (fileName.startsWith('MOUNT_')) {
+    return 'mount';
   }
   if (fileName === 'CAPE' || fileName.startsWith('CAPEITEM_')) {
     return 'cape';

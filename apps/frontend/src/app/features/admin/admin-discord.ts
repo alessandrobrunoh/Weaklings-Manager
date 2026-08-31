@@ -24,6 +24,7 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
   discord_transaction_spam_channel_id: '',
   discord_event_role_id: '',
   discord_auto_role_id: '',
+  discord_splits_forum_channel_id: '',
 };
 
 /**
@@ -84,6 +85,19 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
               />
               <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
                 {{ t('admin.discord.ctaChannelHint') }}
+              </span>
+            </label>
+            <label>
+              <span class="label">{{ t('admin.discord.splitsForumChannel') }}</span>
+              <input
+                class="input mono"
+                type="text"
+                [placeholder]="t('admin.discord.placeholder')"
+                [value]="guildSettingsDraft().discord_splits_forum_channel_id"
+                (input)="updateDraftField('discord_splits_forum_channel_id', $event)"
+              />
+              <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                {{ t('admin.discord.splitsForumChannelHint') }}
               </span>
             </label>
             <label>
@@ -240,6 +254,7 @@ export class AdminDiscord {
         discord_audit_log_channel_id: draft.discord_audit_log_channel_id.trim(),
         discord_transaction_spam_channel_id: draft.discord_transaction_spam_channel_id.trim(),
         discord_event_role_id: draft.discord_event_role_id.trim(),
+        discord_splits_forum_channel_id: draft.discord_splits_forum_channel_id.trim(),
       };
       const updated = await firstValueFrom(
         this.api.put<GuildSettingsView>('api/admin/settings', body),
@@ -261,7 +276,17 @@ export class AdminDiscord {
         firstValueFrom(this.api.get<AutoRoleSettingsView>('api/admin/autorole')),
       ]);
       this.discordRoles.set(roles);
-      this.autoRoleDraft.set(settings.discord_auto_role_id ?? '');
+      const savedRoleId = settings.discord_auto_role_id ?? '';
+      this.autoRoleDraft.set(savedRoleId);
+
+      // Keep a saved selection visible even if the Discord role list is temporarily
+      // incomplete (for example while the bot cache/token is being refreshed).
+      if (savedRoleId && !roles.some((role) => role.id === savedRoleId)) {
+        this.discordRoles.update((current) => [
+          ...current,
+          { id: savedRoleId, name: `Linked role (${savedRoleId})`, position: 0, managed: false },
+        ]);
+      }
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -303,5 +328,6 @@ function toDraft(settings: GuildSettingsView): Record<keyof GuildSettingsView, s
     discord_transaction_spam_channel_id: settings.discord_transaction_spam_channel_id ?? '',
     discord_event_role_id: settings.discord_event_role_id ?? '',
     discord_auto_role_id: settings.discord_auto_role_id ?? '',
+    discord_splits_forum_channel_id: settings.discord_splits_forum_channel_id ?? '',
   };
 }

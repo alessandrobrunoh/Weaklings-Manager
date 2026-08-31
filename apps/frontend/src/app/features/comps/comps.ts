@@ -30,7 +30,7 @@ import type {
 } from '../../core/models/api.models';
 import {
   albionEquipmentIconUrl,
-  searchAlbionEquipmentCatalog,
+  filterAlbionEquipmentCatalog,
 } from '../../shared/data/albion-equipment-catalog';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
@@ -45,6 +45,7 @@ import {
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
+import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
 import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
@@ -523,6 +524,7 @@ export class Comps {
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
+  private readonly albionCatalog = inject(AlbionCatalogService);
 
   protected readonly PAGE_SIZE = PAGE_SIZE;
   protected readonly tab = signal<TabId>('comps');
@@ -1265,17 +1267,24 @@ export class Comps {
     return `T${normalized.split('.')[0]}`;
   }
 
-  private searchItems(): void {
+  private async searchItems(): Promise<void> {
     const slot = this.draftItemSlot();
     if (!slot) {
       this.itemSearchResults.set([]);
       return;
     }
     this.itemSearchLoading.set(true);
-    this.itemSearchResults.set(
-      searchAlbionEquipmentCatalog(this.draftItemSearch(), slot, this.draftItemTier()),
-    );
-    this.itemSearchLoading.set(false);
+    try {
+      const catalog = await this.albionCatalog.load();
+      this.itemSearchResults.set(
+        filterAlbionEquipmentCatalog(catalog, this.draftItemSearch(), slot, this.draftItemTier()),
+      );
+    } catch {
+      this.itemSearchResults.set([]);
+      this.toasts.error(this.t('common.error'));
+    } finally {
+      this.itemSearchLoading.set(false);
+    }
   }
 
   private listParams(event: DataTablePageChange | null): Record<string, string | number> {

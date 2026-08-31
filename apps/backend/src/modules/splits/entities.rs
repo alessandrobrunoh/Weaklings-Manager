@@ -32,6 +32,8 @@ pub mod split {
         pub created_at: DateTimeWithTimeZone,
         /// The timestamp when the split was finalized, if it has been.
         pub finalized_at: Option<DateTimeWithTimeZone>,
+        /// Last application change, used as the incremental sync watermark.
+        pub updated_at: DateTimeWithTimeZone,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]
@@ -130,6 +132,26 @@ pub mod split_participant {
         }
     }
 
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+pub mod split_discord_sync {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "split_discord_sync")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub split_id: i64,
+        pub thread_id: Option<String>,
+        pub summary_message_id: Option<String>,
+        pub last_audit_id: i64,
+        pub last_transaction_id: i64,
+        pub created_at: DateTimeWithTimeZone,
+        pub updated_at: DateTimeWithTimeZone,
+    }
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
     impl ActiveModelBehavior for ActiveModel {}
 }
 

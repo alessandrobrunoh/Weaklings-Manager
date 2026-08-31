@@ -121,6 +121,8 @@ pub struct EventView {
     pub description: Option<String>,
     /// Whether this event is a priority call-to-arms announcement.
     pub call_to_arms: bool,
+    /// Whether this event enables automatic and manual regear processing.
+    pub regear: bool,
     /// The base composition ID associated with the event.
     #[schema(example = 10)]
     pub comp_id: i64,
@@ -282,6 +284,9 @@ pub struct CreateEventRequest {
     /// Whether this event is a priority call-to-arms announcement (default: false).
     #[serde(default)]
     pub call_to_arms: bool,
+    /// Whether this event enables automatic and manual regear processing.
+    #[serde(default)]
+    pub regear: bool,
     /// The base composition ID to use.
     pub comp_id: i64,
     /// The start date and time of the event (UTC, e.g. RFC3339).
@@ -312,6 +317,8 @@ pub struct UpdateEventRequest {
     pub description: Option<String>,
     /// Whether this event should be treated as a call-to-arms announcement.
     pub call_to_arms: Option<bool>,
+    /// Whether this event enables automatic and manual regear processing.
+    pub regear: Option<bool>,
     /// The new base composition ID.
     pub comp_id: Option<i64>,
     /// The new start date and time of the event (UTC, e.g. RFC3339).

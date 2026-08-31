@@ -63,6 +63,10 @@ export class SettingsService {
   async autoRoleId(): Promise<string | null> {
     return (await this.get()).discord_auto_role_id;
   }
+
+  async splitsForumChannelId(): Promise<string | null> {
+    return (await this.get()).discord_splits_forum_channel_id;
+  }
 }
 
 let instance: SettingsService | null = null;

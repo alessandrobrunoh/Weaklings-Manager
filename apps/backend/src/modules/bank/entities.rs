@@ -31,6 +31,8 @@ pub struct Model {
     pub requested_at: Option<DateTimeWithTimeZone>,
     /// The timestamp when an officer accepted the withdrawal (paid it out), if they have.
     pub withdrawn_at: Option<DateTimeWithTimeZone>,
+    /// Last mutation of this ledger row.
+    pub updated_at: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter)]

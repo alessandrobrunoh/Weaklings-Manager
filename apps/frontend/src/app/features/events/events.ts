@@ -225,15 +225,26 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
             </label>
           </div>
 
-          <label class="flex items-center gap-2">
-            <input
-              class="checkbox"
-              type="checkbox"
-              [checked]="draftCallToArms()"
-              (change)="onCallToArmsChange($event)"
-            />
-            <span>{{ t('events.call_to_arms') }}</span>
-          </label>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <label class="flex items-center gap-2">
+              <input
+                class="checkbox"
+                type="checkbox"
+                [checked]="draftCallToArms()"
+                (change)="onCallToArmsChange($event)"
+              />
+              <span>{{ t('events.call_to_arms') }}</span>
+            </label>
+            <label class="flex items-center gap-2">
+              <input
+                class="checkbox"
+                type="checkbox"
+                [checked]="draftRegear()"
+                (change)="onRegearChange($event)"
+              />
+              <span>{{ t('events.regear') }}</span>
+            </label>
+          </div>
 
           <label class="flex items-start gap-2">
             <input
@@ -360,6 +371,7 @@ export class Events {
   protected readonly draftScheduledAt = signal(defaultScheduledAt());
   protected readonly minScheduledAt = minScheduledAt();
   protected readonly draftCallToArms = signal(false);
+  protected readonly draftRegear = signal(false);
   protected readonly draftCreateSplit = signal(false);
   protected readonly islands = signal<SplitIsland[]>([]);
   protected readonly draftIslandId = signal('');
@@ -509,6 +521,10 @@ export class Events {
     this.draftCallToArms.set((event.target as HTMLInputElement).checked);
   }
 
+  protected onRegearChange(event: Event): void {
+    this.draftRegear.set((event.target as HTMLInputElement).checked);
+  }
+
   protected onIslandChange(event: Event): void {
     this.draftIslandId.set((event.target as HTMLSelectElement).value);
     this.draftTabId.set('');
@@ -548,6 +564,7 @@ export class Events {
       comp_id: compId,
       event_date_utc: scheduledAt.toISOString(),
       call_to_arms: this.draftCallToArms(),
+      regear: this.draftRegear(),
       create_split: this.draftCreateSplit(),
       island_tab_id: this.draftCreateSplit() ? Number(this.draftTabId()) : undefined,
     };
@@ -601,6 +618,7 @@ export class Events {
     this.draftCompId.set('');
     this.draftScheduledAt.set(defaultScheduledAt());
     this.draftCallToArms.set(false);
+    this.draftRegear.set(false);
     this.draftCreateSplit.set(false);
     this.draftIslandId.set('');
     this.draftTabId.set('');

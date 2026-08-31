@@ -52,6 +52,7 @@ use utoipa::OpenApi;
         crate::modules::openalbion::router::get_weapon_stats,
         crate::modules::openalbion::router::list_categories,
         crate::modules::openalbion::router::list_items,
+        crate::modules::openalbion::router::get_catalog,
         crate::modules::albiondata::router::get_prices,
         crate::modules::albiondata::router::get_item_icon,
         crate::modules::admin::router::reload_permissions,
