@@ -221,18 +221,18 @@ pub async fn list_items(
     )))
 }
 
-/// Return the complete cached catalog used by build authoring.
+/// Return the manually curated catalog bundled with the application.
 #[utoipa::path(
     get,
     path = "/api/openalbion/catalog",
     tag = "openalbion",
     summary = "Get the complete Albion item catalog",
-    description = "Returns the complete catalog for weapons, armor, accessories and consumables in one response. Reference data is cached in memory for up to one hour and item icons are normalized to Albion's public render service.",
+    description = "Returns the manually curated catalog for weapons, armor, accessories and consumables bundled with the application. This endpoint does not call the upstream OpenAlbion API.",
     security(("session_cookie" = [])),
     responses(
         (status = 200, description = "Complete item catalog", body = crate::responses::ApiResponseOpenAlbionCatalog),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 502, description = "Upstream OpenAlbion API error", body = ProblemDetails)
+        (status = 500, description = "The bundled catalog is invalid", body = ProblemDetails)
     )
 )]
 pub async fn get_catalog(

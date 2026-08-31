@@ -1,13 +1,12 @@
 import type { BuildSlot, OpenAlbionItem } from '../../core/models/api.models';
 
 /**
- * Local Albion equipment catalogue used by build pickers.
+ * Legacy Albion equipment catalogue and identifier utilities.
  *
- * The OpenAlbion search endpoint is intentionally bypassed for build authoring
- * so officers only see the curated item families that the guild supports.
- * Entries are stored as item base identifiers; the picker expands them with
- * the selected tier at runtime to produce Albion render identifiers such as
- * `T8_2H_BOW`.
+ * Build pickers now receive their catalog from `GET /api/openalbion/catalog`; this data remains
+ * available as a compatibility fallback and as the canonical identifier/rendering utility. Entries
+ * are stored as item base identifiers; the picker expands them with the selected tier at runtime
+ * to produce Albion render identifiers such as `T8_2H_BOW`.
  *
  * @example
  * ```ts

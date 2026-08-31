@@ -92,15 +92,6 @@ export interface UserProfile {
 
 export type AlbionCombatCategory = 'weapon' | 'armor';
 
-export interface AlbionCombatItem {
-  id: number;
-  name: string;
-  tier: string | null;
-  item_power: number | null;
-  item_type: AlbionCombatCategory | null;
-  identifier: string | null;
-  icon: string | null;
-}
 
 export interface UserSpecialization {
   node_key: string;

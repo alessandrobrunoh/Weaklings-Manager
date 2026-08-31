@@ -188,12 +188,11 @@ impl UserService {
                             .to_string(),
                     ));
                 }
-                let valid_catalog_id = key
+                let valid_catalog_key = key
                     .strip_prefix(&format!("{category}:"))
-                    .and_then(|id| id.parse::<i64>().ok())
-                    .is_some_and(|id| id > 0);
+                    .is_some_and(|identifier| !identifier.is_empty() && !identifier.contains(':'));
                 if !matches!(category.as_str(), "weapon" | "armor")
-                    || !valid_catalog_id
+                    || !valid_catalog_key
                     || !keys.insert(key.to_string())
                 {
                     return Err(AppError::Validation(

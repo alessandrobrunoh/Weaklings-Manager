@@ -1,8 +1,8 @@
 //! `OpenAlbion` service logic module.
 //!
-//! `OpenAlbionService` wraps the generic OpenAlbion API client and adds an in-memory cache of
-//! the full weapon catalog (reference data that changes only on Albion Online patches) plus
-//! local name/tier filtering and pagination, mirroring `AlbionService`'s guild roster search.
+//! `OpenAlbionService` wraps the generic OpenAlbion API client and exposes the manually curated
+//! local catalog used by the application. The local catalog is bundled at compile time so build
+//! pickers and specialization screens do not depend on the upstream API.
 
 use super::client::{
     OpenAlbionApiClient, OpenAlbionCategory, OpenAlbionItem, OpenAlbionItemType, OpenAlbionWeapon,
@@ -11,7 +11,7 @@ use super::client::{
 use crate::errors::AppError;
 use crate::pagination::{PaginatedData, PaginationParams};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
@@ -185,19 +185,13 @@ impl OpenAlbionService {
         ))
     }
 
-    /// Returns the complete catalog across weapons, armor, accessories and consumables.
-    /// Each branch is cached independently for one hour, then combined into one stable list.
+    /// Returns the manually curated catalog bundled with the application.
+    ///
+    /// This endpoint intentionally never contacts OpenAlbion: the JSON file is the canonical
+    /// source for the build picker and the user specialization board. The other legacy endpoints
+    /// remain available for existing integrations that explicitly request live upstream data.
     pub async fn list_catalog(&self) -> Result<Vec<OpenAlbionItem>, AppError> {
-        let mut catalog = Vec::new();
-        for item_type in [
-            OpenAlbionItemType::Weapon,
-            OpenAlbionItemType::Armor,
-            OpenAlbionItemType::Accessory,
-            OpenAlbionItemType::Consumable,
-        ] {
-            catalog.extend(self.get_all_items_cached(item_type).await?);
-        }
-        Ok(catalog)
+        Ok(local_catalog().to_vec())
     }
 
     /// Fetches per-quality-tier stats for a single weapon by ID.
@@ -207,6 +201,14 @@ impl OpenAlbionService {
     ) -> Result<Vec<OpenAlbionWeaponStats>, AppError> {
         self.client.get_weapon_stats(weapon_id).await
     }
+}
+
+fn local_catalog() -> &'static [OpenAlbionItem] {
+    static CATALOG: OnceLock<Vec<OpenAlbionItem>> = OnceLock::new();
+    CATALOG.get_or_init(|| {
+        serde_json::from_str(include_str!("catalog.json"))
+            .expect("bundled OpenAlbion catalog must be valid JSON")
+    })
 }
 
 impl Default for OpenAlbionService {

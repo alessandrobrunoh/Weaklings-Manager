@@ -6,7 +6,6 @@ import { firstValueFrom } from 'rxjs';
 import type {
   AdjustProgressionRequest,
   AlbionCombatCategory,
-  AlbionCombatItem,
   AlbionGuildMember,
   AlbionLinkStatus,
   PaginatedData,
@@ -15,12 +14,14 @@ import type {
   UserProfile,
   UserSpecialization,
   UserSpecializationInput,
+  OpenAlbionItem,
   WarnView,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
+import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
 import type { TranslationKey } from '../../i18n/en';
 import { Avatar } from '../../shared/components/avatar/avatar';
 import { Dialog } from '../../shared/components/dialog/dialog';
@@ -35,6 +36,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 interface SpecializationNode extends UserSpecializationInput {
   icon: string | null;
+  identifier: string;
 }
 
 interface SpecializationGroup {
@@ -539,6 +541,7 @@ export class UserDetailPage {
   private readonly route = inject(ActivatedRoute);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
+  private readonly albionCatalog = inject(AlbionCatalogService);
 
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
@@ -863,27 +866,30 @@ export class UserDetailPage {
   private setSpecializationNodes(
     saved: UserSpecialization[],
     previous: readonly SpecializationNode[] = [],
-    catalog: readonly AlbionCombatItem[] = [],
+    catalog: readonly OpenAlbionItem[] = [],
   ): void {
     const savedByKey = new Map(saved.map((row) => [row.node_key, row]));
     const previousByKey = new Map(previous.map((row) => [row.node_key, row]));
-    const nodes: SpecializationNode[] = catalog.map((item) => {
-      const category = item.item_type === 'armor' ? 'armor' : 'weapon';
-      const nodeKey = `${category}:${item.id}`;
+    const nodes: SpecializationNode[] = catalog.flatMap((item) => {
+      const category = item.type === 'armor' || item.type === 'weapon' ? item.type : null;
+      const identifier = item.identifier?.trim();
+      if (!category || !identifier) return [];
+      const nodeKey = `${category}:${identifier}`;
       const stored = savedByKey.get(nodeKey);
       const draft = previousByKey.get(nodeKey);
-      return {
+      return [{
         node_key: nodeKey,
         node_name: item.name,
         category,
         level: draft?.level ?? stored?.level ?? 0,
-        icon: item.icon,
-      };
+        icon: item.icon ?? null,
+        identifier,
+      }];
     });
     const known = new Set(nodes.map((node) => node.node_key));
     for (const row of saved) {
       if (!known.has(row.node_key) && (row.category === 'weapon' || row.category === 'armor')) {
-        nodes.push({ ...row, icon: null });
+        nodes.push({ ...row, icon: null, identifier: row.node_key.split(':').slice(1).join(':') });
       }
     }
     this.specializationNodes.set(nodes);
@@ -894,12 +900,11 @@ export class UserDetailPage {
     this.specLoading.set(true);
     this.specLoadFailed.set(false);
     try {
-      const [saved, weapons, armor] = await Promise.all([
+      const [saved, catalog] = await Promise.all([
         firstValueFrom(this.api.get<UserSpecialization[]>(`api/users/${userId}/specializations`)),
-        firstValueFrom(this.api.get<PaginatedData<AlbionCombatItem>>('api/openalbion/items', { type: 'weapon', page: 1, limit: 500 })),
-        firstValueFrom(this.api.get<PaginatedData<AlbionCombatItem>>('api/openalbion/items', { type: 'armor', page: 1, limit: 500 })),
+        this.albionCatalog.load(),
       ]);
-      this.setSpecializationNodes(saved, [], [...asPaginated(weapons), ...asPaginated(armor)]);
+      this.setSpecializationNodes(saved, [], catalog);
     } catch (error) {
       this.specLoadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : 'Impossibile caricare le specializzazioni');
