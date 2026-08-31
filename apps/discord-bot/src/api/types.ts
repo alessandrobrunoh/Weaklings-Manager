@@ -224,6 +224,7 @@ export interface EventView {
   title: string;
   description: string | null;
   call_to_arms: boolean;
+  discord_role_ids: string[];
   regear: boolean;
   comp_id: number;
   comp_name: string;
@@ -263,6 +264,7 @@ export interface CreateEventRequest {
   regear?: boolean;
   comp_id: number;
   event_date_utc: string;
+  discord_role_ids?: string[];
 }
 
 export interface ParticipateEventRequest {

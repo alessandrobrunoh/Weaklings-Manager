@@ -54,6 +54,7 @@ pub mod event {
         Creator,
         Participations,
         EventBattles,
+        DiscordRoles,
     }
 
     impl RelationTrait for Relation {
@@ -69,6 +70,7 @@ pub mod event {
                     .into(),
                 Self::Participations => Entity::has_many(super::event_participation::Entity).into(),
                 Self::EventBattles => Entity::has_many(super::event_battle::Entity).into(),
+                Self::DiscordRoles => Entity::has_many(super::event_discord_role::Entity).into(),
             }
         }
     }
@@ -94,6 +96,51 @@ pub mod event {
     impl Related<super::event_battle::Entity> for Entity {
         fn to() -> RelationDef {
             Relation::EventBattles.def()
+        }
+    }
+
+    impl Related<super::event_discord_role::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::DiscordRoles.def()
+        }
+    }
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+pub mod event_discord_role {
+    use sea_orm::entity::prelude::*;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
+    #[sea_orm(table_name = "event_discord_roles")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub event_id: i64,
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub discord_role_id: String,
+        pub sort_order: i32,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter)]
+    pub enum Relation {
+        Event,
+    }
+
+    impl RelationTrait for Relation {
+        fn def(&self) -> RelationDef {
+            match self {
+                Self::Event => Entity::belongs_to(super::event::Entity)
+                    .from(Column::EventId)
+                    .to(super::event::Column::Id)
+                    .into(),
+            }
+        }
+    }
+
+    impl Related<super::event::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Event.def()
         }
     }
 

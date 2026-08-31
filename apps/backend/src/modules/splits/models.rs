@@ -21,9 +21,9 @@ pub struct SplitParticipantView {
     /// The participating user's username.
     #[schema(example = "rust_developer")]
     pub username: String,
-    /// The normalized weight of this participant relative to others in the split.
-    #[schema(example = 20)]
-    pub weight: i32,
+    /// The normalized weight of this participant relative to other participants in the split.
+    #[schema(value_type = String, example = "12.33")]
+    pub weight: Decimal,
     /// The computed share amount. Populated once the split is completed.
     #[schema(value_type = Option<String>, example = "16.66")]
     pub share_amount: Option<Decimal>,
@@ -121,8 +121,8 @@ pub struct SplitDetail {
     "bags_value": "5.00",
     "note": "Ancient Avalon boss drop",
     "participants": [
-        { "user_id": 7, "weight": 20 },
-        { "user_id": 12, "weight": 10 }
+        { "user_id": 7, "weight": "12.33" },
+        { "user_id": 12, "weight": "87.67" }
     ]
 }))]
 pub struct CreateSplitRequest {
@@ -191,8 +191,8 @@ pub struct UpsertParticipantRequest {
     #[schema(example = 7)]
     pub user_id: i64,
     /// The normalized weight to assign this participant. Must be positive.
-    #[schema(example = 20)]
-    pub weight: i32,
+    #[schema(value_type = String, example = "12.33")]
+    pub weight: Decimal,
 }
 
 /// Request body for matching a list of raw (e.g. OCR-extracted) names against known,

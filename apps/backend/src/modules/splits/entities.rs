@@ -16,6 +16,8 @@ pub mod split {
         pub status: String,
         /// The estimated market value of the loot before deductions.
         pub estimated_market_value: Decimal,
+        /// The percentage of the estimated market value retained as a split fee.
+        pub fee: Decimal,
         /// The repair costs deducted from the market value.
         pub repair_value: Decimal,
         /// The bags/consumables costs deducted from the market value.
@@ -100,7 +102,7 @@ pub mod split_participant {
         /// The user participating in the split.
         pub user_id: i64,
         /// The normalized weight of this participant relative to other participants in the split.
-        pub weight: i32,
+        pub weight: Decimal,
         /// The timestamp when the participant was added.
         pub created_at: DateTimeWithTimeZone,
     }

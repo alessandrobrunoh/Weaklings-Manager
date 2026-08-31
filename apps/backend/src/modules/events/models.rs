@@ -121,6 +121,8 @@ pub struct EventView {
     pub description: Option<String>,
     /// Whether this event is a priority call-to-arms announcement.
     pub call_to_arms: bool,
+    /// Discord role IDs mentioned by this event's announcement, in stable order.
+    pub discord_role_ids: Vec<String>,
     /// Whether this event enables automatic and manual regear processing.
     pub regear: bool,
     /// The base composition ID associated with the event.
@@ -293,6 +295,9 @@ pub struct CreateEventRequest {
     pub comp_id: i64,
     /// The start date and time of the event (UTC, e.g. RFC3339).
     pub event_date_utc: String,
+    /// Discord role snowflakes to mention in the event announcement.
+    #[serde(default)]
+    pub discord_role_ids: Vec<String>,
     /// Also create an empty loot split already linked to this event.
     ///
     /// Saves the officer from creating the split by hand after the fight and

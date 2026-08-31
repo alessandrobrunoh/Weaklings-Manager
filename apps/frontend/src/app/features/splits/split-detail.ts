@@ -33,6 +33,15 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
 
 type DetailMode = 'view' | 'edit';
 
+function parseWeightInput(raw: string): number | null {
+  const normalized = raw.trim().replace(/%\s*$/, '').replace(',', '.');
+  if (!normalized || !/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) {
+    return null;
+  }
+  const value = Number(normalized);
+  return Number.isFinite(value) ? value : null;
+}
+
 /**
  * View-first split page. Officers can switch to edit only while the split
  * is still pending.
@@ -328,7 +337,7 @@ type DetailMode = 'view' | 'edit';
                                     formatAmount(
                                       estimatedShare(
                                         editNetPreview(),
-                                        participant.weight,
+                                        toNumber(participant.weight),
                                         editTotalWeight()
                                       )
                                     )
@@ -342,10 +351,10 @@ type DetailMode = 'view' | 'edit';
                             <div class="flex items-center gap-1">
                               <input
                                 class="input font-mono text-xs text-right py-0.5 px-1 w-14"
-                                type="number"
-                                min="1"
-                                max="100"
-                                [value]="participant.weight"
+                                type="text"
+                                inputmode="decimal"
+                                placeholder="12,33"
+                                [value]="editWeightValue(participant)"
                                 (input)="onEditWeightChange(participant.user_id, $event)"
                               />
                               <span class="text-xs text-[var(--color-text-secondary)] font-mono">%</span>
@@ -459,7 +468,7 @@ type DetailMode = 'view' | 'edit';
                   <span class="font-mono text-xs font-medium text-[var(--color-success)]">
                     {{
                       formatAmount(
-                        row.share_amount ?? estimatedShare(netOf(detail), row.weight, 100)
+                        row.share_amount ?? estimatedShare(netOf(detail), toNumber(row.weight), 100)
                       )
                     }}
                   </span>
@@ -517,7 +526,7 @@ type DetailMode = 'view' | 'edit';
                         {{
                           formatAmount(
                             participant.share_amount ??
-                              estimatedShare(netOf(detail), participant.weight, 100)
+                              estimatedShare(netOf(detail), toNumber(participant.weight), 100)
                           )
                         }}
                       </span>
@@ -627,6 +636,7 @@ export class SplitDetailPage {
   protected readonly editIslandId = signal('');
   protected readonly editTabId = signal('');
   protected readonly editParticipants = signal<SplitParticipant[]>([]);
+  protected readonly editWeightInputs = signal<Record<number, string>>({});
 
   protected readonly showEventSearch = signal(false);
   protected readonly eventSearchOptions = signal<SearchDialogOption[]>([]);
@@ -703,7 +713,18 @@ export class SplitDetailPage {
   }
 
   protected editTotalWeight(): number {
-    return this.editParticipants().reduce((sum, participant) => sum + participant.weight, 0);
+    return this.editParticipants().reduce(
+      (sum, participant) => sum + Number(participant.weight),
+      0,
+    );
+  }
+
+  protected editWeightValue(participant: SplitParticipant): string {
+    return this.editWeightInputs()[participant.user_id] ?? String(participant.weight);
+  }
+
+  protected toNumber(value: number | string | null | undefined): number {
+    return Number(value) || 0;
   }
 
   protected estimatedShare(netValue: number, weight: number, totalWeight: number): number {
@@ -748,7 +769,12 @@ export class SplitDetailPage {
     this.editTabId.set((event.target as HTMLSelectElement).value);
   }
   protected onEditWeightChange(userId: number, event: Event): void {
-    const weight = Math.max(1, Number((event.target as HTMLInputElement).value) || 1);
+    const raw = (event.target as HTMLInputElement).value;
+    this.editWeightInputs.update((inputs) => ({ ...inputs, [userId]: raw }));
+    const weight = parseWeightInput(raw);
+    if (weight === null) {
+      return;
+    }
     this.editParticipants.update((list) =>
       list.map((participant) =>
         participant.user_id === userId ? { ...participant, weight } : participant,
@@ -762,12 +788,12 @@ export class SplitDetailPage {
       return;
     }
     const baseWeight = Math.floor(100 / list.length);
-    this.editParticipants.set(
-      list.map((participant, index) => ({
-        ...participant,
-        weight: index === list.length - 1 ? 100 - baseWeight * index : baseWeight,
-      })),
-    );
+    const redistributed = list.map((participant, index) => ({
+      ...participant,
+      weight: index === list.length - 1 ? 100 - baseWeight * index : baseWeight,
+    }));
+    this.editParticipants.set(redistributed);
+    this.editWeightInputs.set(this.weightInputsFor(redistributed));
   }
 
   protected unlinkEditEvent(): void {
@@ -867,7 +893,8 @@ export class SplitDetailPage {
         }),
       );
       this.split.set(detail);
-      this.editParticipants.set([...detail.participants]);
+      this.editParticipants.set(this.normalizeParticipants(detail.participants));
+      this.editWeightInputs.set(this.weightInputsFor(detail.participants));
       this.toasts.success(this.t('splits.added_to_split', { name: hit.matched_name }));
       this.showParticipantSearch.set(false);
     } catch (error) {
@@ -886,11 +913,17 @@ export class SplitDetailPage {
       );
       if (detail?.participants) {
         this.split.set(detail);
-        this.editParticipants.set([...detail.participants]);
+        this.editParticipants.set(this.normalizeParticipants(detail.participants));
+        this.editWeightInputs.set(this.weightInputsFor(detail.participants));
       } else {
         this.editParticipants.update((list) =>
           list.filter((participant) => participant.user_id !== userId),
         );
+        this.editWeightInputs.update((inputs) => {
+          const next = { ...inputs };
+          delete next[userId];
+          return next;
+        });
       }
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -903,6 +936,17 @@ export class SplitDetailPage {
     if (!current) {
       return;
     }
+
+    const weights: Array<{ participant: SplitParticipant; weight: number }> = [];
+    for (const participant of this.editParticipants()) {
+      const weight = parseWeightInput(this.editWeightValue(participant));
+      if (weight === null || weight <= 0) {
+        this.toasts.error(this.t('validation.positive'));
+        return;
+      }
+      weights.push({ participant, weight });
+    }
+
     this.saving.set(true);
     try {
       const request: UpdateSplitRequest = {
@@ -916,11 +960,11 @@ export class SplitDetailPage {
       let detail = await firstValueFrom(
         this.api.patch<SplitDetail>(`api/splits/${current.id}`, request),
       );
-      for (const participant of this.editParticipants()) {
+      for (const { participant, weight } of weights) {
         detail = await firstValueFrom(
           this.api.post<SplitDetail>(`api/splits/${current.id}/participants`, {
             user_id: participant.user_id,
-            weight: participant.weight,
+            weight,
           }),
         );
       }
@@ -1004,7 +1048,8 @@ export class SplitDetailPage {
     this.editEventTitle.set(detail.event_title || '');
     this.editIslandId.set(detail.island_id ? String(detail.island_id) : '');
     this.editTabId.set(detail.island_tab_id ? String(detail.island_tab_id) : '');
-    this.editParticipants.set([...detail.participants]);
+    this.editParticipants.set(this.normalizeParticipants(detail.participants));
+    this.editWeightInputs.set(this.weightInputsFor(detail.participants));
   }
 
   private async load(id: number): Promise<void> {
@@ -1023,6 +1068,19 @@ export class SplitDetailPage {
     } finally {
       this.loading.set(false);
     }
+  }
+
+  private normalizeParticipants(participants: SplitParticipant[]): SplitParticipant[] {
+    return participants.map((participant) => ({
+      ...participant,
+      weight: Number(participant.weight),
+    }));
+  }
+
+  private weightInputsFor(participants: SplitParticipant[]): Record<number, string> {
+    return Object.fromEntries(
+      participants.map((participant) => [participant.user_id, String(participant.weight)]),
+    );
   }
 
   private async loadIslands(): Promise<void> {

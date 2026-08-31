@@ -100,7 +100,7 @@ async fn validate_event_link(
 /// Events only record who signed up, not how the loot should be weighted, so imported
 /// participants receive this baseline. Officers can still tune weights afterwards via
 /// `add_or_update_participant`.
-const IMPORTED_EVENT_PARTICIPANT_WEIGHT: i32 = 1;
+const IMPORTED_EVENT_PARTICIPANT_WEIGHT: Decimal = Decimal::ONE;
 
 /// Resolves the user ids of every player signed up to `event_id`.
 ///
@@ -342,7 +342,7 @@ impl SplitService {
             .map(|u| (u.id, u.discord_id))
             .collect();
 
-        let total_weight: i64 = participants.iter().map(|p| i64::from(p.weight)).sum();
+        let total_weight: Decimal = participants.iter().map(|p| p.weight).sum();
         let net_value = split.net_value;
 
         // Once completed, the authoritative share amounts are whatever was actually written to
@@ -372,10 +372,10 @@ impl SplitService {
                 .unwrap_or_else(|| "Unknown".to_string());
             let share_amount = generated_amounts.get(&p.user_id).copied().or_else(|| {
                 net_value.map(|net| {
-                    if total_weight == 0 {
+                    if total_weight == Decimal::ZERO {
                         Decimal::ZERO
                     } else {
-                        (net * Decimal::from(p.weight) / Decimal::from(total_weight)).round_dp(2)
+                        (net * p.weight / total_weight).round_dp(2)
                     }
                 })
             });
@@ -440,7 +440,7 @@ impl SplitService {
                 "a split must be requested with at least one participant".to_string(),
             ));
         }
-        if participants.iter().any(|p| p.weight <= 0) {
+        if participants.iter().any(|p| p.weight <= Decimal::ZERO) {
             return Err(AppError::Validation("weight must be positive".to_string()));
         }
         let mut seen = HashSet::with_capacity(participants.len());
@@ -1197,7 +1197,7 @@ impl SplitService {
             .load_with_status(db, split_id, SplitStatus::Pending, "modify")
             .await?;
 
-        if req.weight <= 0 {
+        if req.weight <= Decimal::ZERO {
             return Err(AppError::Validation("weight must be positive".to_string()));
         }
 
@@ -1336,7 +1336,7 @@ impl SplitService {
             ));
         }
 
-        let total_weight: i64 = participants.iter().map(|p| i64::from(p.weight)).sum();
+        let total_weight: Decimal = participants.iter().map(|p| p.weight).sum();
 
         let txn = db.begin().await?;
 
@@ -1346,9 +1346,7 @@ impl SplitService {
             let share = if i == last_index {
                 net_value - running_total
             } else {
-                let s = (net_value * Decimal::from(participant.weight)
-                    / Decimal::from(total_weight))
-                .round_dp(2);
+                let s = (net_value * participant.weight / total_weight).round_dp(2);
                 running_total += s;
                 s
             };
@@ -1608,11 +1606,11 @@ mod tests {
                     vec![
                         UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         },
                         UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 2,
+                            weight: Decimal::from(2),
                         },
                     ],
                 ),
@@ -1640,7 +1638,7 @@ mod tests {
                         "0.00",
                         vec![UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         }],
                     ),
                     tab_id,
@@ -1651,6 +1649,39 @@ mod tests {
 
         assert_eq!(split.summary.status, SplitStatus::Pending);
         assert_eq!(split.participants.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_create_split_accepts_decimal_weights() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let tab_id = seed_tab(&db).await;
+
+        let split = SplitService::new()
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request(
+                        "100.00",
+                        "0.00",
+                        "0.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: "12.33".parse().unwrap(),
+                        }],
+                    ),
+                    tab_id,
+                ),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            split.participants[0].weight,
+            "12.33".parse::<Decimal>().unwrap()
+        );
     }
 
     #[tokio::test]
@@ -1674,7 +1705,10 @@ mod tests {
                         "0.00",
                         vec![alice, bob, carol]
                             .into_iter()
-                            .map(|user_id| UpsertParticipantRequest { user_id, weight: 1 })
+                            .map(|user_id| UpsertParticipantRequest {
+                                user_id,
+                                weight: Decimal::ONE,
+                            })
                             .collect(),
                     ),
                     tab_id,
@@ -1716,7 +1750,7 @@ mod tests {
                         "0.00",
                         vec![UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         }],
                     ),
                     tab_id,
@@ -1752,7 +1786,7 @@ mod tests {
                         "0.00",
                         vec![UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         }],
                     ),
                     tab_id,
@@ -1790,7 +1824,7 @@ mod tests {
                         "0.00",
                         vec![UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         }],
                     ),
                     tab_id,
@@ -1998,7 +2032,7 @@ mod tests {
                         "0.00",
                         vec![UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         }],
                     ),
                     999,
@@ -2026,7 +2060,7 @@ mod tests {
                         "0.00",
                         vec![UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         }],
                     ),
                     tab_id,
@@ -2070,7 +2104,7 @@ mod tests {
             .unwrap();
         let participant = vec![UpsertParticipantRequest {
             user_id: alice,
-            weight: 1,
+            weight: Decimal::ONE,
         }];
         service
             .create_split(
@@ -2136,7 +2170,7 @@ mod tests {
             .unwrap();
         let participant = vec![UpsertParticipantRequest {
             user_id: alice,
-            weight: 1,
+            weight: Decimal::ONE,
         }];
         service
             .create_split(
@@ -2247,7 +2281,7 @@ mod tests {
         let service = SplitService::new();
         let participant = vec![UpsertParticipantRequest {
             user_id: alice,
-            weight: 1,
+            weight: Decimal::ONE,
         }];
         let mut zebra = located(
             request("10.00", "0.00", "0.00", participant.clone()),
@@ -2330,7 +2364,7 @@ mod tests {
                         "0.00",
                         vec![UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         }],
                     ),
                     island.tabs[0].id,
@@ -2385,7 +2419,7 @@ mod tests {
                         "0.00",
                         vec![UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         }],
                     ),
                     island.tabs[0].id,
@@ -2443,7 +2477,7 @@ mod tests {
                         "0.00",
                         vec![UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         }],
                     ),
                     island.tabs[0].id,

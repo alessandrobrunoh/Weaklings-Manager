@@ -16,23 +16,20 @@ import { BOT_COLORS, createBaseEmbed } from "./theme.js";
  * `time | date` layout.
  *
  * @example
- * const content = buildEventAnnouncementContent(event, '123456789012345678');
- * await channel.send({ content, allowedMentions: { roles: ['123456789012345678'] } });
+ * const content = buildEventAnnouncementContent(event);
+ * await channel.send({ content, allowedMentions: { roles: event.discord_role_ids } });
  */
-export function buildEventAnnouncementContent(
-  event: EventView,
-  eventRoleId: string | null | undefined,
-): string {
+export function buildEventAnnouncementContent(event: EventView): string {
   const timestamp = Math.floor(new Date(event.event_date_utc).getTime() / 1000);
   const description = event.description?.trim() || "*No description provided.*";
-  const roleMention = eventRoleId ? `<@&${eventRoleId}>` : "@Weak";
+  const roleMentions = (event.discord_role_ids ?? []).map((roleId) => `<@&${roleId}>`).join(" ");
 
   return [
     `📌 ${event.title} - <t:${timestamp}:t> | <t:${timestamp}:d>`,
     "",
     description,
     "",
-    `|| ${roleMention} ||`,
+    `|| ${roleMentions} ||`,
     "",
     "---",
   ].join("\n");

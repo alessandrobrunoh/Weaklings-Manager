@@ -57,6 +57,9 @@ mod m20260831_000004_add_split_forum_channel;
 mod m20260831_000005_add_split_discord_sync;
 mod m20260831_000006_create_user_specializations;
 mod m20260831_000007_seed_user_specialization_permission;
+mod m20260831_000008_create_event_discord_roles;
+mod m20260831_000009_decimal_split_participant_weights;
+mod m20260831_000010_add_fee_to_splits;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -118,6 +121,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260831_000005_add_split_discord_sync::Migration),
             Box::new(m20260831_000006_create_user_specializations::Migration),
             Box::new(m20260831_000007_seed_user_specialization_permission::Migration),
+            Box::new(m20260831_000008_create_event_discord_roles::Migration),
+            Box::new(m20260831_000009_decimal_split_participant_weights::Migration),
+            Box::new(m20260831_000010_add_fee_to_splits::Migration),
         ]
     }
 }

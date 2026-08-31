@@ -36,7 +36,7 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(SplitParticipants::Weight)
-                            .integer()
+                            .decimal_len(16, 2)
                             .not_null(),
                     )
                     .col(
