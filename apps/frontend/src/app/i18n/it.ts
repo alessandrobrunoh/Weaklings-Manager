@@ -207,6 +207,7 @@ export const it: TranslationDict = {
   'splits.participants': 'Partecipanti',
   'splits.net_value': 'Valore netto',
   'splits.estimated': 'Valore di mercato stimato',
+  'splits.fee': 'Fee',
   'splits.repair_cost': 'Costi di riparazione',
   'splits.bags_value': 'Borse / Consumabili',
   'splits.match_ocr': 'Abbina da screenshot',
@@ -252,8 +253,9 @@ export const it: TranslationDict = {
   'splits.create_hint':
     'Carica uno screenshot del party, abbina i nomi o cerca nel roster di gilda.',
   'splits.net_preview': 'Anteprima',
-  'splits.net_formula': 'Stimato − Riparazioni + Borse',
+  'splits.net_formula': 'Stimato − Fee − Riparazioni + Borse',
   'splits.roster_hint': 'Regola le quote in percentuale',
+  'splits.fee_invalid': 'La fee deve essere tra 0 e 100%.',
   'splits.roster_empty': 'Nessun partecipante nel roster',
   'splits.remove_participant': 'Rimuovi partecipante',
   'splits.pending_payout': 'Pagamento in attesa',

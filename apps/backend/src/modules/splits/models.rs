@@ -36,7 +36,7 @@ pub struct SplitKpiSummary {
     pub pending_count: u64,
     /// Splits that have been paid out.
     pub completed_count: u64,
-    /// Sum of completed net values (falls back to estimated − repair + bags).
+    /// Sum of completed net values (falls back to estimated − fee − repair + bags).
     #[schema(value_type = String, example = "125000")]
     pub total_net_distributed: Decimal,
     /// Sum of estimated market value across every split.
@@ -60,6 +60,9 @@ pub struct SplitSummary {
     /// The estimated market value of the loot before deductions.
     #[schema(value_type = String, example = "100.00")]
     pub estimated_market_value: Decimal,
+    /// The percentage of the estimated market value retained as a split fee.
+    #[schema(value_type = String, example = "20.00")]
+    pub fee: Decimal,
     /// The repair costs deducted from the market value.
     #[schema(value_type = String, example = "10.00")]
     pub repair_value: Decimal,
@@ -67,7 +70,7 @@ pub struct SplitSummary {
     #[schema(value_type = String, example = "5.00")]
     pub bags_value: Decimal,
     /// The net value distributed among participants, set only once completed.
-    #[schema(value_type = Option<String>, example = "85.00")]
+    #[schema(value_type = Option<String>, example = "75.00")]
     pub net_value: Option<Decimal>,
     /// An optional free-text note (e.g. boss/item name).
     #[schema(example = "Ancient Avalon boss drop")]
@@ -117,6 +120,7 @@ pub struct SplitDetail {
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[schema(example = json!({
     "estimated_market_value": "100.00",
+    "fee": "20.00",
     "repair_value": "10.00",
     "bags_value": "5.00",
     "note": "Ancient Avalon boss drop",
@@ -129,6 +133,9 @@ pub struct CreateSplitRequest {
     /// The estimated market value of the loot before deductions.
     #[schema(value_type = String, example = "100.00")]
     pub estimated_market_value: Decimal,
+    /// The percentage of the estimated market value retained as a split fee. Defaults to 20%.
+    #[schema(value_type = Option<String>, example = "20.00")]
+    pub fee: Option<Decimal>,
     /// The repair costs deducted from the market value.
     #[schema(value_type = String, example = "10.00")]
     pub repair_value: Decimal,
@@ -152,10 +159,11 @@ pub struct CreateSplitRequest {
     pub participants: Vec<UpsertParticipantRequest>,
 }
 
-/// Request body for editing the mutable fields of a pending split.
+/// Request body for editing the mutable fields of a pending split. Fee must be between 0 and 100 percent.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[schema(example = json!({
     "estimated_market_value": "125.00",
+    "fee": "20.00",
     "repair_value": "12.00",
     "bags_value": "5.00",
     "note": "Updated Avalon boss drop"
@@ -164,6 +172,9 @@ pub struct UpdateSplitRequest {
     /// New estimated market value. Omit to keep the current value.
     #[schema(value_type = Option<String>, example = "125.00")]
     pub estimated_market_value: Option<Decimal>,
+    /// New fee percentage. Omit to keep the current value.
+    #[schema(value_type = Option<String>, example = "20.00")]
+    pub fee: Option<Decimal>,
     /// New repair costs. Omit to keep the current value.
     #[schema(value_type = Option<String>, example = "12.00")]
     pub repair_value: Option<Decimal>,

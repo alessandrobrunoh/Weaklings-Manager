@@ -229,6 +229,7 @@ export interface SplitSummary {
   created_by_username: string;
   status: SplitStatus;
   estimated_market_value: number;
+  fee: number | string;
   repair_value: number;
   bags_value: number;
   net_value: number | null;
@@ -261,6 +262,7 @@ export interface SplitFilters {
 export interface CreateSplitRequest {
   note?: string;
   estimated_market_value: number;
+  fee: number;
   repair_value: number;
   bags_value: number;
   event_id?: number;
@@ -271,6 +273,7 @@ export interface CreateSplitRequest {
 export interface UpdateSplitRequest {
   note?: string;
   estimated_market_value?: number;
+  fee?: number;
   repair_value?: number;
   bags_value?: number;
   event_id?: number | null;

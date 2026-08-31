@@ -123,7 +123,7 @@ pub async fn split_kpi_summary(
         officer closes it out with one of `POST /splits/{id}/complete`, `.../not-completed`, or \
         `.../lost` — see the `splits` tag description for the full lifecycle. `net_value` is `null` \
         until completed; the preview formula the frontend can show before that is \
-        `estimated_market_value - repair_value + bags_value`.",
+        `estimated_market_value - (estimated_market_value * fee / 100) - repair_value + bags_value`, with a default fee of 20%.",
     security(("session_cookie" = [])),
     request_body(content = CreateSplitRequest, description = "Loot values plus the full participant list up front."),
     responses(
@@ -227,7 +227,7 @@ async fn get_split(
     path = "/api/splits/{id}",
     tag = "splits",
     summary = "Edit a pending split's values and note (Officer/Admin only)",
-    description = "Updates note, estimated_market_value, repair_value, and bags_value while the split is still pending. Once completed/not_completed/lost, values are immutable.",
+    description = "Updates note, estimated_market_value, fee, repair_value, and bags_value while the split is still pending. Fee must be between 0 and 100 percent. Once completed/not_completed/lost, values are immutable.",
     security(("session_cookie" = ["splits.manage"])),
     params(("id" = i64, Path, description = "The split id")),
     request_body(content = UpdateSplitRequest, description = "Mutable split fields to update."),

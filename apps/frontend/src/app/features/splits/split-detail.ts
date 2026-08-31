@@ -33,7 +33,9 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
 
 type DetailMode = 'view' | 'edit';
 
-function parseWeightInput(raw: string): number | null {
+const DEFAULT_SPLIT_FEE = 20;
+
+function parsePercentageInput(raw: string): number | null {
   const normalized = raw.trim().replace(/%\s*$/, '').replace(',', '.');
   if (!normalized || !/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) {
     return null;
@@ -228,7 +230,7 @@ function parseWeightInput(raw: string): number | null {
                       {{ t('splits.net_value') }}
                     </h3>
 
-                    <div class="grid gap-2 sm:grid-cols-3">
+                    <div class="grid gap-2 sm:grid-cols-4">
                       <label class="block">
                         <span class="label font-medium text-[0.6875rem]">{{ t('splits.estimated') }}</span>
                         <input
@@ -238,6 +240,19 @@ function parseWeightInput(raw: string): number | null {
                           [value]="editEstimated()"
                           (input)="onEditEstimatedChange($event)"
                         />
+                      </label>
+                      <label class="block">
+                        <span class="label font-medium text-[0.6875rem]">{{ t('splits.fee') }}</span>
+                        <div class="flex items-center gap-1">
+                          <input
+                            class="input font-mono text-xs"
+                            type="text"
+                            inputmode="decimal"
+                            [value]="editFeeInput()"
+                            (input)="onEditFeeChange($event)"
+                          />
+                          <span class="text-xs text-[var(--color-text-secondary)] font-mono">%</span>
+                        </div>
                       </label>
                       <label class="block">
                         <span class="label font-medium text-[0.6875rem]">{{ t('splits.repair_cost') }} (-)</span>
@@ -267,7 +282,7 @@ function parseWeightInput(raw: string): number | null {
                           {{ t('splits.net_value') }}
                         </span>
                         <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5">
-                          {{ formatAmount(editEstimated()) }} &minus; {{ formatAmount(editRepair()) }} + {{ formatAmount(editBags()) }}
+                          {{ formatAmount(editEstimated()) }} − {{ formatAmount(editEstimated() * editFee() / 100) }} ({{ editFee() }}%) − {{ formatAmount(editRepair()) }} + {{ formatAmount(editBags()) }}
                         </p>
                       </div>
                       <div class="text-right">
@@ -389,13 +404,21 @@ function parseWeightInput(raw: string): number | null {
               </div>
             </form>
           } @else {
-            <section class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <section class="grid grid-cols-2 gap-3 sm:grid-cols-5">
               <article class="surface rounded-xl border border-[var(--color-border)] p-3.5 bg-[var(--color-surface)]">
                 <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                   {{ t('splits.estimated') }}
                 </p>
                 <p class="font-mono text-base font-medium text-[var(--color-warning)] mt-1">
                   {{ formatAmount(detail.estimated_market_value) }}
+                </p>
+              </article>
+              <article class="surface rounded-xl border border-[var(--color-border)] p-3.5 bg-[var(--color-surface)]">
+                <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+                  {{ t('splits.fee') }}
+                </p>
+                <p class="font-mono text-base font-medium text-[var(--color-danger)] mt-1">
+                  {{ formatAmount(toNumber(detail.estimated_market_value) * toNumber(detail.fee ?? defaultFee) / 100) }} ({{ detail.fee ?? defaultFee }}%)
                 </p>
               </article>
               <article class="surface rounded-xl border border-[var(--color-border)] p-3.5 bg-[var(--color-surface)]">
@@ -626,9 +649,11 @@ export class SplitDetailPage {
   protected readonly showDelete = signal(false);
   protected readonly showCompleteConfirmDialog = signal(false);
   protected readonly islands = signal<SplitIsland[]>([]);
+  protected readonly defaultFee = DEFAULT_SPLIT_FEE;
 
   protected readonly editNote = signal('');
   protected readonly editEstimated = signal(0);
+  protected readonly editFeeInput = signal(String(DEFAULT_SPLIT_FEE));
   protected readonly editRepair = signal(0);
   protected readonly editBags = signal(0);
   protected readonly editEventId = signal<number | null>(null);
@@ -658,8 +683,12 @@ export class SplitDetailPage {
 
   protected readonly canAct = computed(() => this.auth.hasPermission('splits.manage'));
   protected readonly canEdit = computed(() => this.canAct() && this.split()?.status === 'pending');
+  protected readonly editFee = computed(() => parsePercentageInput(this.editFeeInput()) ?? DEFAULT_SPLIT_FEE);
   protected readonly editNetPreview = computed(() =>
-    Math.max(0, this.editEstimated() - this.editRepair() + this.editBags()),
+    Math.max(
+      0,
+      this.editEstimated() - (this.editEstimated() * this.editFee()) / 100 - this.editRepair() + this.editBags(),
+    ),
   );
   protected readonly editIslandTabs = computed(() => {
     const id = Number(this.editIslandId());
@@ -707,8 +736,10 @@ export class SplitDetailPage {
     if (split.net_value !== null && split.net_value !== undefined) {
       return Number(split.net_value);
     }
-    return (
-      Number(split.estimated_market_value) - Number(split.repair_value) + Number(split.bags_value)
+    const estimated = Number(split.estimated_market_value);
+    return Math.max(
+      0,
+      estimated - (estimated * Number(split.fee ?? DEFAULT_SPLIT_FEE)) / 100 - Number(split.repair_value) + Number(split.bags_value),
     );
   }
 
@@ -755,6 +786,9 @@ export class SplitDetailPage {
   protected onEditEstimatedChange(event: Event): void {
     this.editEstimated.set(Number((event.target as HTMLInputElement).value) || 0);
   }
+  protected onEditFeeChange(event: Event): void {
+    this.editFeeInput.set((event.target as HTMLInputElement).value);
+  }
   protected onEditRepairChange(event: Event): void {
     this.editRepair.set(Number((event.target as HTMLInputElement).value) || 0);
   }
@@ -771,7 +805,7 @@ export class SplitDetailPage {
   protected onEditWeightChange(userId: number, event: Event): void {
     const raw = (event.target as HTMLInputElement).value;
     this.editWeightInputs.update((inputs) => ({ ...inputs, [userId]: raw }));
-    const weight = parseWeightInput(raw);
+    const weight = parsePercentageInput(raw);
     if (weight === null) {
       return;
     }
@@ -937,9 +971,15 @@ export class SplitDetailPage {
       return;
     }
 
+    const fee = parsePercentageInput(this.editFeeInput());
+    if (fee === null || fee < 0 || fee > 100) {
+      this.toasts.error(this.t('splits.fee_invalid'));
+      return;
+    }
+
     const weights: Array<{ participant: SplitParticipant; weight: number }> = [];
     for (const participant of this.editParticipants()) {
-      const weight = parseWeightInput(this.editWeightValue(participant));
+      const weight = parsePercentageInput(this.editWeightValue(participant));
       if (weight === null || weight <= 0) {
         this.toasts.error(this.t('validation.positive'));
         return;
@@ -952,6 +992,7 @@ export class SplitDetailPage {
       const request: UpdateSplitRequest = {
         note: this.editNote().trim(),
         estimated_market_value: this.editEstimated(),
+        fee,
         repair_value: this.editRepair(),
         bags_value: this.editBags(),
         event_id: this.editEventId(),
@@ -1042,6 +1083,7 @@ export class SplitDetailPage {
     }
     this.editNote.set(detail.note || '');
     this.editEstimated.set(Number(detail.estimated_market_value) || 0);
+    this.editFeeInput.set(String(detail.fee ?? DEFAULT_SPLIT_FEE));
     this.editRepair.set(Number(detail.repair_value) || 0);
     this.editBags.set(Number(detail.bags_value) || 0);
     this.editEventId.set(detail.event_id ?? null);
