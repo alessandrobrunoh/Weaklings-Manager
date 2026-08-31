@@ -91,6 +91,8 @@ function emptyPageChange(): DataTablePageChange {
           <app-icon name="plus" size="0.875rem" />
           {{ t('siphoned.addEntry') }}
         </button>
+      }
+      @if (canIngest()) {
         <button type="button" class="btn btn--primary btn--sm" (click)="openIngestForm()">
           <app-icon name="sparkles" size="0.875rem" />
           {{ t('siphoned.ingest') }}
