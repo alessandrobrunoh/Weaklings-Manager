@@ -68,6 +68,15 @@ const ALBION_ITEM_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   MAIN_SPEAR: 'Spear',
   '2H_SPEAR': 'Pike',
   '2H_GLAIVE': 'Glaive',
+
+  MAIN_NATURESTAFF: 'Nature Staff',
+  '2H_NATURESTAFF': 'Great Nature Staff',
+  '2H_WILDSTAFF': 'Wild Staff',
+  MAIN_NATURESTAFF_KEEPER: 'Druidic Staff',
+  '2H_NATURESTAFF_HELL': 'Blight Staff',
+  '2H_NATURESTAFF_KEEPER': 'Rampant Staff',
+  MAIN_NATURESTAFF_AVALON: 'Ironroot Staff',
+  MAIN_NATURESTAFF_CRYSTAL: 'Dawnsong',
   MAIN_SPEAR_KEEPER: 'Heron Spear',
   '2H_HARPOON_HELL': 'Spirithunter',
   '2H_TRIDENT_UNDEAD': 'Trinity Spear',
@@ -522,8 +531,62 @@ export function filterAlbionEquipmentCatalog(
     .slice(0, 100);
 }
 
-/**
- * Builds a render URL matching Albion's public item image CDN.
+/** Removes the tier prefix so all eight tiers share one specialization node. */
+export function albionSpecializationIdentifier(identifier: string): string {
+   return identifier.trim().toUpperCase().replace(/^T\d+_/, '');
+ }
+
+/** Returns the stable key shared by profile and event specialization views. */
+export function albionSpecializationKey(item: Pick<OpenAlbionItem, 'type' | 'identifier' | 'id'>): string {
+   const category = item.type === 'armor' ? 'armor' : 'weapon';
+   const identifier = albionSpecializationIdentifier(item.identifier ?? String(item.id));
+   return `${category}:${identifier}`;
+ }
+
+/** Canonicalizes keys saved by older versions that included the tier. */
+export function normalizeAlbionSpecializationKey(nodeKey: string): string {
+   const separator = nodeKey.indexOf(':');
+   if (separator < 0) return nodeKey.trim();
+   const category = nodeKey.slice(0, separator).trim().toLowerCase();
+   const identifier = albionSpecializationIdentifier(nodeKey.slice(separator + 1));
+   return `${category}:${identifier}`;
+ }
+
+/** Converts catalog identifiers such as `MAIN_NATURESTAFF` to player-facing names. */
+export function normalizeAlbionEquipmentName(identifier: string, fallback = identifier): string {
+   const baseIdentifier = albionSpecializationIdentifier(identifier);
+   const mapped = ALBION_ITEM_DISPLAY_NAMES[baseIdentifier];
+   if (mapped) return mapped;
+
+   const withoutHand = baseIdentifier.replace(/^(?:MAIN|2H)_/, '');
+   const spaced = withoutHand
+     .replace(/(DAGGERPAIR|CLAWPAIR|RINGPAIR)/g, ' $1')
+     .replace(/([A-Z]+?)(CROSSBOW|QUARTERSTAFF|NATURESTAFF|FIRESTAFF|FROSTSTAFF|HOLYSTAFF|CURSEDSTAFF|ARCANESTAFF|DEMONICSTAFF|WILDSTAFF|DIVINESTAFF|GLACIALSTAFF|ENIGMATICSTAFF|STAFF|SWORD|AXE|MACE|HAMMER|BOW|SPEAR|DAGGER|SCYTHE|GAUNTLETS|SHIELD|TORCH|BOOK|ORB|TOME)/g, '$1 $2')
+     .replace(/_/g, ' ')
+     .trim();
+   if (!spaced) return fallback.trim();
+   return spaced.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+ }
+
+/** Returns one specialization item per base weapon/armor identifier. */
+export function deduplicateAlbionCombatCatalog(catalog: readonly OpenAlbionItem[]): OpenAlbionItem[] {
+   const seen = new Set<string>();
+   return catalog.flatMap((item) => {
+     if (item.type !== 'weapon' && item.type !== 'armor') return [];
+     const identifier = item.identifier?.trim();
+     if (!identifier) return [];
+     const key = albionSpecializationKey(item);
+     if (seen.has(key)) return [];
+     seen.add(key);
+     return [{
+       ...item,
+       identifier: albionSpecializationIdentifier(identifier),
+       name: normalizeAlbionEquipmentName(identifier, item.name),
+     }];
+   });
+ }
+
+/** Builds a render URL matching Albion's public item image CDN.
  *
  * The CDN expects tier-prefixed identifiers for equipment, e.g.
  * `T8_MAIN_SWORD`. Consumables use the same convention in the renderer, so

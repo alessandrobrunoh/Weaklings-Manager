@@ -172,7 +172,7 @@ pub struct ApiResponseOpenAlbionCatalog {
     #[schema(example = "success")]
     pub status: String,
     /// Complete item catalog data payload.
-    pub data: Vec<crate::modules::openalbion::client::OpenAlbionItem>,
+    pub data: Vec<crate::modules::openalbion::catalog::OpenAlbionItem>,
 }
 
 /// `OpenAPI` schema wrapper for Albion Online Data market prices.

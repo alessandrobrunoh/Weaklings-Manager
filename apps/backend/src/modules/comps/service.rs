@@ -339,22 +339,17 @@ impl CompService {
 
     ///
     /// For every `BuildItemView` whose `openalbion_item_icon` is `None`, looks
-    /// up the item in the OpenAlbion catalog (batched by `openalbion_item_type`)
-    /// and fills in the `render.albiononline.com` PNG URL derived from the
-    /// item's identifier.
+    /// up the item in the bundled Albion catalog and fills in its local catalog
+    /// render URL.
     ///
     /// # Errors
     ///
-    /// Returns `AppError::Validation` for invalid stored item types and
-    /// `AppError::UpstreamService` when OpenAlbion cannot provide the catalog
-    /// needed to derive the render URL.
+    /// Returns `AppError::Database` if the local catalog cannot be read.
     async fn resolve_missing_icons(
         &self,
         item_views: &mut [BuildItemView],
     ) -> Result<(), AppError> {
-        use crate::modules::openalbion::client::OpenAlbionApiClient;
-        use crate::modules::openalbion::client::OpenAlbionItemType;
-        use crate::modules::openalbion::client::OpenAlbionWeaponFilters;
+        use crate::modules::openalbion::service::OpenAlbionService;
 
         let missing: Vec<&mut BuildItemView> = item_views
             .iter_mut()
@@ -374,26 +369,14 @@ impl CompService {
                 .insert(v.openalbion_item_id);
         }
 
-        // Build an id → icon lookup by fetching each item type's catalog.
-        let client = OpenAlbionApiClient::new();
+        // Build an id → icon lookup from the bundled catalog in one local read.
+        let catalog = OpenAlbionService::new().list_catalog().await?;
         let mut icon_map: std::collections::HashMap<i64, String> = std::collections::HashMap::new();
-
         for (type_str, ids) in &needed_by_type {
-            let item_type = OpenAlbionItemType::from_str(type_str).map_err(|message| {
-                AppError::Validation(format!(
-                    "Failed to resolve build item icon because item type '{type_str}' is invalid: {message}"
-                ))
-            })?;
-            let filters = OpenAlbionWeaponFilters::default();
-            let items = client.get_items(item_type, &filters).await.map_err(|error| {
-                AppError::UpstreamService(format!(
-                    "Failed to resolve build item icon for item type '{type_str}' because OpenAlbion returned an error: {error}"
-                ))
-            })?;
-            for item in items {
-                if ids.contains(&item.id) {
-                    if let Some(icon) = item.icon {
-                        icon_map.insert(item.id, icon);
+            for item in &catalog {
+                if item.item_type.as_deref() == Some(type_str.as_str()) && ids.contains(&item.id) {
+                    if let Some(icon) = &item.icon {
+                        icon_map.insert(item.id, icon.clone());
                     }
                 }
             }

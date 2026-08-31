@@ -22,6 +22,11 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
+import {
+  deduplicateAlbionCombatCatalog,
+  normalizeAlbionEquipmentName,
+  normalizeAlbionSpecializationKey,
+} from '../../shared/data/albion-equipment-catalog';
 import type { TranslationKey } from '../../i18n/en';
 import { Avatar } from '../../shared/components/avatar/avatar';
 import { Dialog } from '../../shared/components/dialog/dialog';
@@ -691,12 +696,20 @@ export class UserDetailPage {
     }
     this.specSaving.set(true);
     try {
-      const updated = await firstValueFrom(
-        this.api.put<UserSpecialization[]>(`api/users/${member.id}/specializations`, {
-          specializations: nodes.map(({ icon: _icon, ...node }) => node),
-        }),
+      const payload = nodes.map(({ icon: _icon, identifier: _identifier, ...node }) => node);
+      const updated: UserSpecialization[] = [];
+      for (let offset = 0; offset < payload.length; offset += 500) {
+        const batch = payload.slice(offset, offset + 500);
+        const result = await firstValueFrom(
+          this.api.put<UserSpecialization[]>(`api/users/${member.id}/specializations`, {
+            specializations: batch,
+          }),
+        );
+        updated.push(...result);
+      }
+      const updatedByKey = new Map(
+        updated.map((row) => [normalizeAlbionSpecializationKey(row.node_key), row]),
       );
-      const updatedByKey = new Map(updated.map((row) => [row.node_key, row]));
       this.specializationNodes.update((current) =>
         current.map((node) => ({ ...node, level: updatedByKey.get(node.node_key)?.level ?? node.level })),
       );
@@ -868,9 +881,22 @@ export class UserDetailPage {
     previous: readonly SpecializationNode[] = [],
     catalog: readonly OpenAlbionItem[] = [],
   ): void {
-    const savedByKey = new Map(saved.map((row) => [row.node_key, row]));
+    const savedByKey = new Map<string, UserSpecialization>();
+    for (const row of saved) {
+      const nodeKey = normalizeAlbionSpecializationKey(row.node_key);
+      if (!nodeKey.includes(':')) continue;
+      const normalizedRow = {
+        ...row,
+        node_key: nodeKey,
+        node_name: normalizeAlbionEquipmentName(nodeKey.split(':').slice(1).join(':')),
+      };
+      const current = savedByKey.get(nodeKey);
+      if (!current || normalizedRow.level > current.level) {
+        savedByKey.set(nodeKey, normalizedRow);
+      }
+    }
     const previousByKey = new Map(previous.map((row) => [row.node_key, row]));
-    const nodes: SpecializationNode[] = catalog.flatMap((item) => {
+    const nodes: SpecializationNode[] = deduplicateAlbionCombatCatalog(catalog).flatMap((item) => {
       const category = item.type === 'armor' || item.type === 'weapon' ? item.type : null;
       const identifier = item.identifier?.trim();
       if (!category || !identifier) return [];
@@ -879,7 +905,7 @@ export class UserDetailPage {
       const draft = previousByKey.get(nodeKey);
       return [{
         node_key: nodeKey,
-        node_name: item.name,
+        node_name: normalizeAlbionEquipmentName(identifier, item.name),
         category,
         level: draft?.level ?? stored?.level ?? 0,
         icon: item.icon ?? null,
@@ -887,9 +913,13 @@ export class UserDetailPage {
       }];
     });
     const known = new Set(nodes.map((node) => node.node_key));
-    for (const row of saved) {
+    for (const row of savedByKey.values()) {
       if (!known.has(row.node_key) && (row.category === 'weapon' || row.category === 'armor')) {
-        nodes.push({ ...row, icon: null, identifier: row.node_key.split(':').slice(1).join(':') });
+        nodes.push({
+          ...row,
+          icon: null,
+          identifier: row.node_key.split(':').slice(1).join(':'),
+        });
       }
     }
     this.specializationNodes.set(nodes);

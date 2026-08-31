@@ -40,6 +40,11 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
+import {
+  albionSpecializationKey,
+  deduplicateAlbionCombatCatalog,
+  normalizeAlbionEquipmentName,
+} from '../../shared/data/albion-equipment-catalog';
 import type { TranslationKey } from '../../i18n/en';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
@@ -1805,7 +1810,8 @@ export class EventDetailPage {
 
   protected readonly selectedSpecializationName = computed(() => {
     const key = this.selectedSpecializationKey();
-    return this.specializationCatalog().find((item) => this.specializationKey(item) === key)?.name ?? 'Nessuna';
+    const item = this.specializationCatalog().find((entry) => this.specializationKey(entry) === key);
+    return item ? normalizeAlbionEquipmentName(item.identifier ?? '', item.name) : 'Nessuna';
   });
 
   protected readonly tabOptions = computed<ViewToggleOption[]>(() => {
@@ -2346,8 +2352,7 @@ export class EventDetailPage {
   protected readonly trackParticipant = (participant: EventParticipant): unknown => participant.user_id;
 
   protected specializationKey(item: OpenAlbionItem): string {
-    const category = item.type === 'armor' ? 'armor' : 'weapon';
-    return `${category}:${item.identifier ?? item.id}`;
+    return albionSpecializationKey(item);
   }
 
   protected participantSpecLevel(participant: EventParticipant): number {
@@ -3370,9 +3375,7 @@ export class EventDetailPage {
     if (this.specializationCatalog().length > 0) return;
     try {
       const catalog = await this.albionCatalog.load();
-      this.specializationCatalog.set(
-        catalog.filter((item) => item.type === 'weapon' || item.type === 'armor'),
-      );
+      this.specializationCatalog.set(deduplicateAlbionCombatCatalog(catalog));
     } catch {
       // The roster remains usable without the optional specialization selector.
     }

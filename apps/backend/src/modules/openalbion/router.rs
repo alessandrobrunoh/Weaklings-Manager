@@ -1,9 +1,9 @@
-//! `OpenAlbion` routing module.
+//! Local Albion catalog routing module.
 //!
-//! Exposes HTTP endpoints for browsing the OpenAlbion item database: the full weapon catalog
-//! (used by the frontend's comp builder), item categories, and per-weapon quality-tier stats.
+//! Exposes the historical `/api/openalbion/*` endpoints for compatibility. Their data is served
+//! from the bundled manual catalog and never fetched from the third-party OpenAlbion service.
 
-use super::client::{
+use super::catalog::{
     OpenAlbionCategory, OpenAlbionItem, OpenAlbionItemType, OpenAlbionWeaponFilters,
     OpenAlbionWeaponStats,
 };
@@ -68,26 +68,19 @@ impl WeaponListQuery {
     }
 }
 
-/// List the full Albion Online weapon catalog, optionally filtered and paginated.
+/// List the full local Albion weapon catalog, optionally filtered and paginated.
 #[utoipa::path(
     get,
     path = "/api/openalbion/weapons",
     tag = "openalbion",
     summary = "Browse/search the weapon catalog (for the comp/loadout builder)",
-    description = "Static reference data, not live game state. The unfiltered (no `category_id`/ \
-        `subcategory_id`) case is served from an in-process cache refreshed at most once per hour, \
-        so results may lag a fresh Albion Online patch by up to that long; passing `category_id` or \
-        `subcategory_id` always bypasses the cache and hits OpenAlbion directly (since the cached \
-        catalog doesn't carry category membership). `q` filters by name substring (case-insensitive), \
-        `tier` matches weapons whose tier string starts with the given number (e.g. `tier=4` matches \
-        both `4` and `4.1`). Every weapon's `id` is what you pass to \
-        `GET /openalbion/weapons/{id}/stats`. Standard `page`/`limit` pagination.",
+    description = "Static reference data from the bundled manual catalog, not live game state. `q` filters by name substring (case-insensitive), `tier` matches weapons whose tier string starts with the given number (e.g. `tier=4` matches both `4` and `4.1`). Every weapon's `id` is what you pass to `GET /openalbion/weapons/{id}/stats`. Standard `page`/`limit` pagination.",
     security(("session_cookie" = [])),
     params(WeaponListQuery),
     responses(
         (status = 200, description = "Weapons retrieved successfully", body = ApiResponsePaginatedOpenAlbionWeapons),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 502, description = "Upstream OpenAlbion API error - the OpenAlbion item database failed or timed out", body = ProblemDetails)
+        (status = 500, description = "Bundled catalog error", body = ProblemDetails)
     )
 )]
 pub async fn list_weapons(
@@ -117,7 +110,7 @@ pub async fn list_weapons(
         This is the one exception; see the API-wide description. The array has one entry per \
         enchantment level (0/1/2/3/4), each containing per-quality-tier (Normal, Good, Outstanding, \
         Excellent, Masterpiece) stat blocks — a weapon's full stat table is the union of all entries. \
-        Always hits OpenAlbion live, uncached (unlike the weapon catalog list). `id` comes from \
+        The local catalog does not currently include stat tables, so known weapons return an empty compatible array. `id` comes from \
         `GET /openalbion/weapons`.",
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "OpenAlbion weapon ID, from GET /openalbion/weapons")),
@@ -125,7 +118,7 @@ pub async fn list_weapons(
         (status = 200, description = "Weapon stats retrieved successfully — raw JSON array, NOT wrapped in {status, data}", body = Vec<OpenAlbionWeaponStats>),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 404, description = "No weapon exists with this id", body = ProblemDetails),
-        (status = 502, description = "Upstream OpenAlbion API error - the OpenAlbion item database failed or timed out", body = ProblemDetails)
+        (status = 500, description = "Bundled catalog error", body = ProblemDetails)
     )
 )]
 pub async fn get_weapon_stats(
@@ -188,20 +181,13 @@ impl ItemListQuery {
     path = "/api/openalbion/items",
     tag = "openalbion",
     summary = "Browse/search the unified item catalog (for the comp/loadout builder)",
-    description = "Static reference data, not live game state. The unfiltered (no `category_id`/ \
-        `subcategory_id`) case is served from an in-process cache refreshed at most once per hour, \
-        so results may lag a fresh Albion Online patch by up to that long; passing `category_id` or \
-        `subcategory_id` always bypasses the cache and hits OpenAlbion directly (since the cached \
-        catalog doesn't carry category membership). `q` filters by name substring (case-insensitive), \
-        `tier` matches items whose tier string starts with the given number (e.g. `tier=4` matches \
-        both `4` and `4.1`). `type` selects the item type (`weapon`, `armor`, `accessory`, `consumable`; \
-        defaults to `weapon`). Standard `page`/`limit` pagination.",
+    description = "Static reference data from the bundled manual catalog, not live game state. `q` filters by name substring (case-insensitive), `tier` matches items whose tier string starts with the given number (e.g. `tier=4` matches both `4` and `4.1`). `type` selects the item type (`weapon`, `armor`, `accessory`, `consumable`; defaults to `weapon`). Standard `page`/`limit` pagination.",
     security(("session_cookie" = [])),
     params(ItemListQuery),
     responses(
         (status = 200, description = "Items retrieved successfully", body = crate::responses::ApiResponsePaginatedOpenAlbionItems),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 502, description = "Upstream OpenAlbion API error - the OpenAlbion item database failed or timed out", body = ProblemDetails)
+        (status = 500, description = "Bundled catalog error", body = ProblemDetails)
     )
 )]
 pub async fn list_items(
@@ -227,7 +213,7 @@ pub async fn list_items(
     path = "/api/openalbion/catalog",
     tag = "openalbion",
     summary = "Get the complete Albion item catalog",
-    description = "Returns the manually curated catalog for weapons, armor, accessories and consumables bundled with the application. This endpoint does not call the upstream OpenAlbion API.",
+    description = "Returns the manually curated catalog for weapons, armor, accessories and consumables bundled with the application. This endpoint is served entirely from local application data.",
     security(("session_cookie" = [])),
     responses(
         (status = 200, description = "Complete item catalog", body = crate::responses::ApiResponseOpenAlbionCatalog),
@@ -262,13 +248,13 @@ pub struct CategoryListQuery {
         the ids from here — top-level `id` or a nested `subcategories[].id` — are what you pass as \
         `category_id`/`subcategory_id` to `GET /openalbion/weapons`. Filter with `?type=weapon` (or \
         `armor`/`accessory`/`consumable`) to narrow to one top-level branch; omit for everything. \
-        Always hits OpenAlbion live, uncached.",
+        Results come from the bundled manual catalog.",
     security(("session_cookie" = [])),
     params(CategoryListQuery),
     responses(
         (status = 200, description = "Categories retrieved successfully — raw JSON array, NOT wrapped in {status, data}", body = Vec<OpenAlbionCategory>),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 502, description = "Upstream OpenAlbion API error - the OpenAlbion item database failed or timed out", body = ProblemDetails)
+        (status = 500, description = "Bundled catalog error", body = ProblemDetails)
     )
 )]
 pub async fn list_categories(

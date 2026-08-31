@@ -762,10 +762,14 @@ impl EventService {
         };
         let mut specializations_by_user: HashMap<i64, HashMap<String, i32>> = HashMap::new();
         for row in specialization_rows {
+            let node_key =
+                crate::modules::users::specializations::canonical_node_key(&row.node_key);
             specializations_by_user
                 .entry(row.user_id)
                 .or_default()
-                .insert(row.node_key, row.level);
+                .entry(node_key)
+                .and_modify(|level| *level = (*level).max(row.level))
+                .or_insert(row.level);
         }
 
         let mut participant_views = Vec::new();

@@ -1,11 +1,9 @@
-//! `OpenAlbion` integration module.
+//! Local Albion equipment catalog module.
 //!
-//! Provides a reusable client for the public OpenAlbion API (<https://openalbion.com/>), a
-//! community-maintained reference database for Albion Online items (weapons, armors,
-//! accessories, spells, etc.). Used to power the item catalog exposed to the frontend's
-//! comp-builder page.
+//! The public API surface keeps the historical `/api/openalbion/*` routes for compatibility, but
+//! every response is now served from the curated local catalog. No third-party item API is used.
 
-pub mod client;
+pub mod catalog;
 pub mod router;
 pub mod service;
 

@@ -263,7 +263,7 @@ impl From<PaginatedData<crate::modules::albion::client::AlbionGuildMember>>
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedOpenAlbionWeapon {
     /// List of weapons on the current page.
-    pub items: Vec<crate::modules::openalbion::client::OpenAlbionWeapon>,
+    pub items: Vec<crate::modules::openalbion::catalog::OpenAlbionWeapon>,
     /// Total number of items across all pages.
     #[schema(example = 42)]
     pub total_items: u64,
@@ -278,10 +278,10 @@ pub struct PaginatedOpenAlbionWeapon {
     pub limit: u64,
 }
 
-impl From<PaginatedData<crate::modules::openalbion::client::OpenAlbionWeapon>>
+impl From<PaginatedData<crate::modules::openalbion::catalog::OpenAlbionWeapon>>
     for PaginatedOpenAlbionWeapon
 {
-    fn from(data: PaginatedData<crate::modules::openalbion::client::OpenAlbionWeapon>) -> Self {
+    fn from(data: PaginatedData<crate::modules::openalbion::catalog::OpenAlbionWeapon>) -> Self {
         Self {
             items: data.items,
             total_items: data.total_items,
@@ -296,7 +296,7 @@ impl From<PaginatedData<crate::modules::openalbion::client::OpenAlbionWeapon>>
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedOpenAlbionItem {
     /// List of items on the current page.
-    pub items: Vec<crate::modules::openalbion::client::OpenAlbionItem>,
+    pub items: Vec<crate::modules::openalbion::catalog::OpenAlbionItem>,
     /// Total number of items across all pages.
     #[schema(example = 42)]
     pub total_items: u64,
@@ -311,10 +311,10 @@ pub struct PaginatedOpenAlbionItem {
     pub limit: u64,
 }
 
-impl From<PaginatedData<crate::modules::openalbion::client::OpenAlbionItem>>
+impl From<PaginatedData<crate::modules::openalbion::catalog::OpenAlbionItem>>
     for PaginatedOpenAlbionItem
 {
-    fn from(data: PaginatedData<crate::modules::openalbion::client::OpenAlbionItem>) -> Self {
+    fn from(data: PaginatedData<crate::modules::openalbion::catalog::OpenAlbionItem>) -> Self {
         Self {
             items: data.items,
             total_items: data.total_items,
