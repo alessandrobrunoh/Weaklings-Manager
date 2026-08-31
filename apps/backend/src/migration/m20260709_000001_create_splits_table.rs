@@ -37,6 +37,12 @@ impl MigrationTrait for Migration {
                             .default(0),
                     )
                     .col(
+                        ColumnDef::new(Splits::Fee)
+                            .decimal_len(16, 2)
+                            .not_null()
+                            .default(20),
+                    )
+                    .col(
                         ColumnDef::new(Splits::RepairValue)
                             .decimal_len(16, 2)
                             .not_null()
@@ -91,6 +97,7 @@ pub enum Splits {
     CreatedBy,
     Status,
     EstimatedMarketValue,
+    Fee,
     RepairValue,
     BagsValue,
     NetValue,

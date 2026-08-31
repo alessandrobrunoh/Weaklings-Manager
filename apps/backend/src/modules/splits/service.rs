@@ -95,12 +95,39 @@ async fn validate_event_link(
     Err(AppError::NotFound(format!("Event {event_id} not found")))
 }
 
+/// Default fee percentage retained from the estimated market value.
+const DEFAULT_SPLIT_FEE_PERCENT: i32 = 20;
+
 /// Default weight assigned to split participants imported from a linked event.
 ///
 /// Events only record who signed up, not how the loot should be weighted, so imported
 /// participants receive this baseline. Officers can still tune weights afterwards via
 /// `add_or_update_participant`.
-const IMPORTED_EVENT_PARTICIPANT_WEIGHT: i32 = 1;
+const IMPORTED_EVENT_PARTICIPANT_WEIGHT: Decimal = Decimal::ONE;
+
+fn default_split_fee() -> Decimal {
+    Decimal::from(DEFAULT_SPLIT_FEE_PERCENT)
+}
+
+fn validate_fee(fee: Decimal) -> Result<(), AppError> {
+    if !(Decimal::ZERO..=Decimal::from(100)).contains(&fee) {
+        return Err(AppError::Validation(
+            "fee must be between 0 and 100".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn calculate_net_value(
+    estimated_market_value: Decimal,
+    fee: Decimal,
+    repair_value: Decimal,
+    bags_value: Decimal,
+) -> Decimal {
+    (estimated_market_value - (estimated_market_value * fee / Decimal::from(100)) - repair_value
+        + bags_value)
+        .round_dp(2)
+}
 
 /// Resolves the user ids of every player signed up to `event_id`.
 ///
@@ -304,6 +331,7 @@ impl SplitService {
             created_by_username,
             status,
             estimated_market_value: split.estimated_market_value,
+            fee: split.fee,
             repair_value: split.repair_value,
             bags_value: split.bags_value,
             net_value: split.net_value,
@@ -342,7 +370,7 @@ impl SplitService {
             .map(|u| (u.id, u.discord_id))
             .collect();
 
-        let total_weight: i64 = participants.iter().map(|p| i64::from(p.weight)).sum();
+        let total_weight: Decimal = participants.iter().map(|p| p.weight).sum();
         let net_value = split.net_value;
 
         // Once completed, the authoritative share amounts are whatever was actually written to
@@ -372,10 +400,10 @@ impl SplitService {
                 .unwrap_or_else(|| "Unknown".to_string());
             let share_amount = generated_amounts.get(&p.user_id).copied().or_else(|| {
                 net_value.map(|net| {
-                    if total_weight == 0 {
+                    if total_weight == Decimal::ZERO {
                         Decimal::ZERO
                     } else {
-                        (net * Decimal::from(p.weight) / Decimal::from(total_weight)).round_dp(2)
+                        (net * p.weight / total_weight).round_dp(2)
                     }
                 })
             });
@@ -440,7 +468,9 @@ impl SplitService {
                 "a split must be requested with at least one participant".to_string(),
             ));
         }
-        if participants.iter().any(|p| p.weight <= 0) {
+        let fee = req.fee.unwrap_or_else(default_split_fee);
+        validate_fee(fee)?;
+        if participants.iter().any(|p| p.weight <= Decimal::ZERO) {
             return Err(AppError::Validation("weight must be positive".to_string()));
         }
         let mut seen = HashSet::with_capacity(participants.len());
@@ -458,6 +488,7 @@ impl SplitService {
             created_by: Set(creator_id),
             status: Set(SplitStatus::Pending.to_string()),
             estimated_market_value: Set(req.estimated_market_value),
+            fee: Set(fee),
             repair_value: Set(req.repair_value),
             bags_value: Set(req.bags_value),
             net_value: Set(None),
@@ -581,6 +612,10 @@ impl SplitService {
         }
         if let Some(value) = req.bags_value {
             active.bags_value = Set(value);
+        }
+        if let Some(fee) = req.fee {
+            validate_fee(fee)?;
+            active.fee = Set(fee);
         }
         if let Some(note) = req.note {
             let trimmed = note.trim().to_string();
@@ -737,9 +772,12 @@ impl SplitService {
                 SplitStatus::Pending => pending_count += 1,
                 SplitStatus::Completed => {
                     completed_count += 1;
-                    total_net_distributed += split.net_value.unwrap_or(
-                        split.estimated_market_value - split.repair_value + split.bags_value,
-                    );
+                    total_net_distributed += split.net_value.unwrap_or(calculate_net_value(
+                        split.estimated_market_value,
+                        split.fee,
+                        split.repair_value,
+                        split.bags_value,
+                    ));
                 }
                 SplitStatus::NotCompleted | SplitStatus::Lost => {}
             }
@@ -1197,7 +1235,7 @@ impl SplitService {
             .load_with_status(db, split_id, SplitStatus::Pending, "modify")
             .await?;
 
-        if req.weight <= 0 {
+        if req.weight <= Decimal::ZERO {
             return Err(AppError::Validation("weight must be positive".to_string()));
         }
 
@@ -1329,14 +1367,19 @@ impl SplitService {
             ));
         }
 
-        let net_value = split.estimated_market_value - split.repair_value + split.bags_value;
+        let net_value = calculate_net_value(
+            split.estimated_market_value,
+            split.fee,
+            split.repair_value,
+            split.bags_value,
+        );
         if net_value <= Decimal::ZERO {
             return Err(AppError::Validation(
                 "split net value must be positive to complete".to_string(),
             ));
         }
 
-        let total_weight: i64 = participants.iter().map(|p| i64::from(p.weight)).sum();
+        let total_weight: Decimal = participants.iter().map(|p| p.weight).sum();
 
         let txn = db.begin().await?;
 
@@ -1346,9 +1389,7 @@ impl SplitService {
             let share = if i == last_index {
                 net_value - running_total
             } else {
-                let s = (net_value * Decimal::from(participant.weight)
-                    / Decimal::from(total_weight))
-                .round_dp(2);
+                let s = (net_value * participant.weight / total_weight).round_dp(2);
                 running_total += s;
                 s
             };
@@ -1549,6 +1590,7 @@ mod tests {
     ) -> CreateSplitRequest {
         CreateSplitRequest {
             estimated_market_value: market.parse().unwrap(),
+            fee: Some(Decimal::ZERO),
             repair_value: repair.parse().unwrap(),
             bags_value: bags.parse().unwrap(),
             note: None,
@@ -1608,11 +1650,11 @@ mod tests {
                     vec![
                         UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         },
                         UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 2,
+                            weight: Decimal::from(2),
                         },
                     ],
                 ),
@@ -1640,7 +1682,7 @@ mod tests {
                         "0.00",
                         vec![UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         }],
                     ),
                     tab_id,
@@ -1651,6 +1693,115 @@ mod tests {
 
         assert_eq!(split.summary.status, SplitStatus::Pending);
         assert_eq!(split.participants.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_create_split_accepts_decimal_weights() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let tab_id = seed_tab(&db).await;
+
+        let split = SplitService::new()
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request(
+                        "100.00",
+                        "0.00",
+                        "0.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: "12.33".parse().unwrap(),
+                        }],
+                    ),
+                    tab_id,
+                ),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            split.participants[0].weight,
+            "12.33".parse::<Decimal>().unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_create_split_defaults_fee_to_twenty_percent() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let tab_id = seed_tab(&db).await;
+        let mut req = request(
+            "100.00",
+            "0.00",
+            "0.00",
+            vec![UpsertParticipantRequest {
+                user_id: alice,
+                weight: Decimal::ONE,
+            }],
+        );
+        req.fee = None;
+
+        let split = SplitService::new()
+            .create_split(&db, admin, located(req, tab_id))
+            .await
+            .unwrap();
+
+        assert_eq!(split.summary.fee, Decimal::from(20));
+        let completed = SplitService::new()
+            .complete_split(&db, split.summary.id, admin)
+            .await
+            .unwrap();
+        assert_eq!(completed.summary.net_value, Some(Decimal::from(80)));
+    }
+
+    #[tokio::test]
+    async fn test_update_split_changes_fee() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let tab_id = seed_tab(&db).await;
+        let split = SplitService::new()
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request(
+                        "100.00",
+                        "0.00",
+                        "0.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: Decimal::ONE,
+                        }],
+                    ),
+                    tab_id,
+                ),
+            )
+            .await
+            .unwrap();
+
+        let updated = SplitService::new()
+            .update_split(
+                &db,
+                split.summary.id,
+                UpdateSplitRequest {
+                    estimated_market_value: None,
+                    fee: Some("12.50".parse().unwrap()),
+                    repair_value: None,
+                    bags_value: None,
+                    note: None,
+                    event_id: None,
+                    island_tab_id: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(updated.summary.fee, "12.50".parse().unwrap());
     }
 
     #[tokio::test]
@@ -1674,7 +1825,10 @@ mod tests {
                         "0.00",
                         vec![alice, bob, carol]
                             .into_iter()
-                            .map(|user_id| UpsertParticipantRequest { user_id, weight: 1 })
+                            .map(|user_id| UpsertParticipantRequest {
+                                user_id,
+                                weight: Decimal::ONE,
+                            })
                             .collect(),
                     ),
                     tab_id,
@@ -1716,7 +1870,7 @@ mod tests {
                         "0.00",
                         vec![UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         }],
                     ),
                     tab_id,
@@ -1752,7 +1906,7 @@ mod tests {
                         "0.00",
                         vec![UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         }],
                     ),
                     tab_id,
@@ -1790,7 +1944,7 @@ mod tests {
                         "0.00",
                         vec![UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         }],
                     ),
                     tab_id,
@@ -1998,7 +2152,7 @@ mod tests {
                         "0.00",
                         vec![UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         }],
                     ),
                     999,
@@ -2026,7 +2180,7 @@ mod tests {
                         "0.00",
                         vec![UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         }],
                     ),
                     tab_id,
@@ -2070,7 +2224,7 @@ mod tests {
             .unwrap();
         let participant = vec![UpsertParticipantRequest {
             user_id: alice,
-            weight: 1,
+            weight: Decimal::ONE,
         }];
         service
             .create_split(
@@ -2136,7 +2290,7 @@ mod tests {
             .unwrap();
         let participant = vec![UpsertParticipantRequest {
             user_id: alice,
-            weight: 1,
+            weight: Decimal::ONE,
         }];
         service
             .create_split(
@@ -2247,7 +2401,7 @@ mod tests {
         let service = SplitService::new();
         let participant = vec![UpsertParticipantRequest {
             user_id: alice,
-            weight: 1,
+            weight: Decimal::ONE,
         }];
         let mut zebra = located(
             request("10.00", "0.00", "0.00", participant.clone()),
@@ -2330,7 +2484,7 @@ mod tests {
                         "0.00",
                         vec![UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         }],
                     ),
                     island.tabs[0].id,
@@ -2344,6 +2498,7 @@ mod tests {
                 split.summary.id,
                 UpdateSplitRequest {
                     estimated_market_value: None,
+                    fee: None,
                     repair_value: None,
                     bags_value: None,
                     note: None,
@@ -2385,7 +2540,7 @@ mod tests {
                         "0.00",
                         vec![UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         }],
                     ),
                     island.tabs[0].id,
@@ -2403,6 +2558,7 @@ mod tests {
                 split.summary.id,
                 UpdateSplitRequest {
                     estimated_market_value: None,
+                    fee: None,
                     repair_value: None,
                     bags_value: None,
                     note: None,
@@ -2443,7 +2599,7 @@ mod tests {
                         "0.00",
                         vec![UpsertParticipantRequest {
                             user_id: alice,
-                            weight: 1,
+                            weight: Decimal::ONE,
                         }],
                     ),
                     island.tabs[0].id,

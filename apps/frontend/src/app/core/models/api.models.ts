@@ -220,8 +220,8 @@ export interface SplitKpiSummary {
 export interface SplitParticipant {
   user_id: number;
   username: string;
-  weight: number;
-  share_amount: number | null;
+  weight: number | string;
+  share_amount: number | string | null;
 }
 
 export interface SplitSummary {
@@ -229,6 +229,7 @@ export interface SplitSummary {
   created_by_username: string;
   status: SplitStatus;
   estimated_market_value: number;
+  fee: number | string;
   repair_value: number;
   bags_value: number;
   net_value: number | null;
@@ -261,6 +262,7 @@ export interface SplitFilters {
 export interface CreateSplitRequest {
   note?: string;
   estimated_market_value: number;
+  fee: number;
   repair_value: number;
   bags_value: number;
   event_id?: number;
@@ -271,6 +273,7 @@ export interface CreateSplitRequest {
 export interface UpdateSplitRequest {
   note?: string;
   estimated_market_value?: number;
+  fee?: number;
   repair_value?: number;
   bags_value?: number;
   event_id?: number | null;
@@ -344,6 +347,7 @@ export interface EventView {
   title: string;
   description: string | null;
   call_to_arms: boolean;
+  discord_role_ids: string[];
   regear: boolean;
   comp_id: number;
   comp_name: string;
@@ -460,6 +464,8 @@ export interface CreateEventRequest {
   regear?: boolean;
   comp_id: number;
   event_date_utc: string;
+  /** Discord role IDs to mention in the event announcement. */
+  discord_role_ids?: string[];
   /** Also create an empty loot split already linked to this event. */
   create_split?: boolean;
   island_tab_id?: number;

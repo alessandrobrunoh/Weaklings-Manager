@@ -43,6 +43,16 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 const SORT_WHITELIST = new Set(['created_at', 'status', 'note']);
+const DEFAULT_SPLIT_FEE = 20;
+
+function parsePercentageInput(raw: string): number | null {
+  const normalized = raw.trim().replace(/%\s*$/, '').replace(',', '.');
+  if (!normalized || !/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) {
+    return null;
+  }
+  const value = Number(normalized);
+  return Number.isFinite(value) ? value : null;
+}
 
 interface SplitParticipantDraft {
   readonly raw_name: string;
@@ -357,7 +367,7 @@ interface SplitParticipantDraft {
                   {{ t('splits.net_value') }}
                 </h3>
 
-                <div class="grid gap-2 sm:grid-cols-3">
+                <div class="grid gap-2 sm:grid-cols-4">
                   <label class="block">
                     <span class="label font-medium text-[0.6875rem]">{{ t('splits.estimated') }}</span>
                     <input
@@ -367,6 +377,19 @@ interface SplitParticipantDraft {
                       [value]="draftEstimated()"
                       (input)="onEstimatedChange($event)"
                     />
+                  </label>
+                  <label class="block">
+                    <span class="label font-medium text-[0.6875rem]">{{ t('splits.fee') }}</span>
+                    <div class="flex items-center gap-1">
+                      <input
+                        class="input font-mono text-xs"
+                        type="text"
+                        inputmode="decimal"
+                        [value]="draftFeeInput()"
+                        (input)="onFeeChange($event)"
+                      />
+                      <span class="text-xs text-[var(--color-text-secondary)] font-mono">%</span>
+                    </div>
                   </label>
                   <label class="block">
                     <span class="label font-medium text-[0.6875rem]">{{ t('splits.repair_cost') }} (-)</span>
@@ -775,6 +798,7 @@ export class Splits {
   protected readonly draftEventId = signal('');
   protected readonly draftEventTitle = signal('');
   protected readonly draftEstimated = signal(0);
+  protected readonly draftFeeInput = signal(String(DEFAULT_SPLIT_FEE));
   protected readonly draftRepair = signal(0);
   protected readonly draftBags = signal(0);
   protected readonly draftIslandId = signal('');
@@ -815,8 +839,12 @@ export class Splits {
     const pending = this.pendingSplits();
     return pending.length > 0 && pending.every((split) => this.selectedIds().has(split.id));
   });
+  protected readonly draftFee = computed(() => parsePercentageInput(this.draftFeeInput()) ?? 0);
   protected readonly draftNetPreview = computed(() =>
-    Math.max(0, this.draftEstimated() - this.draftRepair() + this.draftBags()),
+    Math.max(
+      0,
+      this.draftEstimated() - (this.draftEstimated() * this.draftFee()) / 100 - this.draftRepair() + this.draftBags(),
+    ),
   );
   protected readonly perParticipantShare = computed(() => {
     const count = this.participants().length;
@@ -917,8 +945,13 @@ export class Splits {
     if (split.net_value !== null && split.net_value !== undefined) {
       return Number(split.net_value);
     }
-    return (
-      Number(split.estimated_market_value) - Number(split.repair_value) + Number(split.bags_value)
+    const estimated = Number(split.estimated_market_value);
+    return Math.max(
+      0,
+      estimated -
+        (estimated * Number(split.fee ?? DEFAULT_SPLIT_FEE)) / 100 -
+        Number(split.repair_value) +
+        Number(split.bags_value),
     );
   }
 
@@ -997,6 +1030,9 @@ export class Splits {
   }
   protected onEstimatedChange(event: Event): void {
     this.draftEstimated.set(Number((event.target as HTMLInputElement).value) || 0);
+  }
+  protected onFeeChange(event: Event): void {
+    this.draftFeeInput.set((event.target as HTMLInputElement).value);
   }
   protected onRepairChange(event: Event): void {
     this.draftRepair.set(Number((event.target as HTMLInputElement).value) || 0);
@@ -1319,8 +1355,13 @@ export class Splits {
   private async createSplit(): Promise<void> {
     const title = this.draftTitle().trim();
     const finalParticipants = this.participants();
+    const fee = parsePercentageInput(this.draftFeeInput());
     if (!title || finalParticipants.length === 0 || !this.draftTabId()) {
       this.toasts.error(this.t('validation.required'));
+      return;
+    }
+    if (fee === null || fee < 0 || fee > 100) {
+      this.toasts.error(this.t('splits.fee_invalid'));
       return;
     }
     this.saving.set(true);
@@ -1328,6 +1369,7 @@ export class Splits {
       const request: CreateSplitRequest = {
         note: title,
         estimated_market_value: this.draftEstimated(),
+        fee,
         repair_value: this.draftRepair(),
         bags_value: this.draftBags(),
         event_id: this.draftEventId() ? Number(this.draftEventId()) : undefined,
@@ -1353,6 +1395,7 @@ export class Splits {
     this.draftEventId.set('');
     this.draftEventTitle.set('');
     this.draftEstimated.set(0);
+    this.draftFeeInput.set(String(DEFAULT_SPLIT_FEE));
     this.draftRepair.set(0);
     this.draftBags.set(0);
     this.draftIslandId.set('');

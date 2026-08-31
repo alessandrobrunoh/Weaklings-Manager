@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import type {
   CompSummary,
   CreateEventRequest,
+  DiscordRoleView,
   EventStatus,
   EventView,
   PaginatedData,
@@ -225,6 +226,61 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
             </label>
           </div>
 
+          <fieldset class="grid gap-3">
+            <legend class="label">{{ t('events.discordRoles.label') }}</legend>
+            <p id="event-discord-roles-hint" class="text-xs" style="color: var(--color-text-secondary)">
+              {{ t('events.discordRoles.hint') }}
+            </p>
+            @if (compsLoading()) {
+              <p class="text-sm" style="color: var(--color-text-secondary)">{{ t('common.loading') }}</p>
+            } @else if (roleError()) {
+              <p class="text-sm" style="color: var(--color-danger)" aria-live="polite">{{ roleError() }}</p>
+            } @else {
+              <label>
+                <span class="sr-only">{{ t('events.discordRoles.search') }}</span>
+                <input
+                  class="input"
+                  type="search"
+                  name="discord_role_search"
+                  [placeholder]="t('events.discordRoles.search')"
+                  [value]="roleSearch()"
+                  aria-describedby="event-discord-roles-hint"
+                  (input)="onRoleSearchChange($event)"
+                />
+              </label>
+              @if (filteredDiscordRoles().length === 0) {
+                <p class="text-sm" style="color: var(--color-text-secondary)">
+                  {{ discordRoles().length === 0 ? t('events.discordRoles.empty') : t('events.discordRoles.noMatches') }}
+                </p>
+              } @else {
+                <div class="grid gap-2" role="group" aria-describedby="event-discord-roles-hint">
+                  @for (role of filteredDiscordRoles(); track role.id) {
+                    <label class="flex min-h-12 items-center gap-2 rounded-md border border-(--color-border) px-3 py-2">
+                      <input
+                        class="checkbox"
+                        type="checkbox"
+                        name="discord_role_ids"
+                        [value]="role.id"
+                        [checked]="isDiscordRoleSelected(role.id)"
+                        (change)="toggleDiscordRole(role.id, $event)"
+                      />
+                      <span>@{{ role.name }}</span>
+                    </label>
+                  }
+                </div>
+              }
+              <div class="flex flex-wrap gap-2" aria-live="polite">
+                @if (selectedDiscordRoles().length === 0) {
+                  <span class="text-xs" style="color: var(--color-text-secondary)">{{ t('events.discordRoles.none') }}</span>
+                } @else {
+                  @for (role of selectedDiscordRoles(); track role.id) {
+                    <span class="badge">@{{ role.name }}</span>
+                  }
+                }
+              </div>
+            }
+          </fieldset>
+
           <div class="grid gap-3 sm:grid-cols-2">
             <label class="flex items-center gap-2">
               <input
@@ -372,6 +428,20 @@ export class Events {
   protected readonly minScheduledAt = minScheduledAt();
   protected readonly draftCallToArms = signal(false);
   protected readonly draftRegear = signal(false);
+  protected readonly discordRoles = signal<DiscordRoleView[]>([]);
+  protected readonly draftDiscordRoleIds = signal<string[]>([]);
+  protected readonly roleSearch = signal('');
+  protected readonly roleError = signal<string | null>(null);
+  protected readonly filteredDiscordRoles = computed(() => {
+    const query = this.roleSearch().trim().toLocaleLowerCase();
+    if (!query) return this.discordRoles();
+    return this.discordRoles().filter((role) => role.name.toLocaleLowerCase().includes(query));
+  });
+  protected readonly selectedDiscordRoles = computed(() =>
+    this.draftDiscordRoleIds()
+      .map((id) => this.discordRoles().find((role) => role.id === id))
+      .filter((role): role is DiscordRoleView => role !== undefined),
+  );
   protected readonly draftCreateSplit = signal(false);
   protected readonly islands = signal<SplitIsland[]>([]);
   protected readonly draftIslandId = signal('');
@@ -525,6 +595,21 @@ export class Events {
     this.draftRegear.set((event.target as HTMLInputElement).checked);
   }
 
+  protected onRoleSearchChange(event: Event): void {
+    this.roleSearch.set((event.target as HTMLInputElement).value);
+  }
+
+  protected isDiscordRoleSelected(roleId: string): boolean {
+    return this.draftDiscordRoleIds().includes(roleId);
+  }
+
+  protected toggleDiscordRole(roleId: string, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.draftDiscordRoleIds.update((current) =>
+      checked ? (current.includes(roleId) ? current : [...current, roleId]) : current.filter((id) => id !== roleId),
+    );
+  }
+
   protected onIslandChange(event: Event): void {
     this.draftIslandId.set((event.target as HTMLSelectElement).value);
     this.draftTabId.set('');
@@ -565,6 +650,7 @@ export class Events {
       event_date_utc: scheduledAt.toISOString(),
       call_to_arms: this.draftCallToArms(),
       regear: this.draftRegear(),
+      discord_role_ids: this.draftDiscordRoleIds(),
       create_split: this.draftCreateSplit(),
       island_tab_id: this.draftCreateSplit() ? Number(this.draftTabId()) : undefined,
     };
@@ -619,6 +705,9 @@ export class Events {
     this.draftScheduledAt.set(defaultScheduledAt());
     this.draftCallToArms.set(false);
     this.draftRegear.set(false);
+    this.draftDiscordRoleIds.set([]);
+    this.roleSearch.set('');
+    this.roleError.set(null);
     this.draftCreateSplit.set(false);
     this.draftIslandId.set('');
     this.draftTabId.set('');
@@ -635,6 +724,15 @@ export class Events {
       this.comps.set(comps.items);
       this.islands.set(islands);
     } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    }
+
+    try {
+      const discordRoles = await firstValueFrom(this.api.get<DiscordRoleView[]>('api/events/discord-roles'));
+      this.discordRoles.set(discordRoles);
+      this.roleError.set(null);
+    } catch (error) {
+      this.roleError.set(error instanceof Error ? error.message : this.t('common.error'));
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.compsLoading.set(false);

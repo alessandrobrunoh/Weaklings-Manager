@@ -16,12 +16,15 @@ use crate::responses::{
 };
 use axum::http::StatusCode;
 use sea_orm::EntityTrait;
+use std::collections::HashSet;
 
 use super::models::{
     CreateEventRequest, EventDetailView, EventFilters, EventView, ParticipateEventRequest,
     SetParticipantRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
 use super::service::{BattleLinkingContext, EventService};
+use crate::modules::admin::models::DiscordRoleView;
+use crate::modules::admin::service::AdminService;
 use crate::modules::albionbb::client::normalize_server;
 use crate::modules::albionbb::service::AlbionBbService;
 
@@ -33,6 +36,7 @@ pub fn router() -> Router {
             "/{id}",
             get(get_event).patch(update_event).delete(delete_event),
         )
+        .route("/discord-roles", get(list_event_discord_roles))
         .route(
             "/{id}/participate",
             post(participate).delete(cancel_participation),
@@ -144,12 +148,57 @@ async fn create_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
     Json(req): Json<CreateEventRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     user.require(&perms, Permission::EventsManage).await?;
+
+    if !req.discord_role_ids.is_empty() {
+        let allowed_role_ids: HashSet<String> = AdminService::discord_roles(&cfg)
+            .await?
+            .into_iter()
+            .map(|role| role.id)
+            .collect();
+        if let Some(invalid_role_id) = req
+            .discord_role_ids
+            .iter()
+            .find(|role_id| !allowed_role_ids.contains(role_id.trim()))
+        {
+            return Err(AppError::Validation(format!(
+                "Discord role {invalid_role_id} was not found in the configured guild or cannot be selected"
+            )));
+        }
+    }
+
     let service = EventService::new();
     let event = service.create_event(&db, user.user_id, req).await?;
     Ok(Json(ApiResponse::new(event)))
+}
+
+/// Lists selectable Discord roles for users who can create events.
+#[utoipa::path(
+    get,
+    path = "/api/events/discord-roles",
+    tag = "events",
+    summary = "List Discord roles available for event announcements",
+    description = "Returns non-managed roles in the configured Discord guild. Requires events.manage.",
+    security(("session_cookie" = [])),
+    responses(
+        (status = 200, description = "Discord roles retrieved", body = [DiscordRoleView]),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 502, description = "Discord API unavailable or bot token missing", body = ProblemDetails)
+    )
+)]
+async fn list_event_discord_roles(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(cfg): Extension<Config>,
+) -> Result<Json<ApiResponse<Vec<DiscordRoleView>>>, AppError> {
+    user.require(&perms, Permission::EventsManage).await?;
+    Ok(Json(ApiResponse::new(
+        AdminService::discord_roles(&cfg).await?,
+    )))
 }
 
 /// Updates an existing event.

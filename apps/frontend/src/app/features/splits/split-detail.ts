@@ -33,6 +33,17 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
 
 type DetailMode = 'view' | 'edit';
 
+const DEFAULT_SPLIT_FEE = 20;
+
+function parsePercentageInput(raw: string): number | null {
+  const normalized = raw.trim().replace(/%\s*$/, '').replace(',', '.');
+  if (!normalized || !/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) {
+    return null;
+  }
+  const value = Number(normalized);
+  return Number.isFinite(value) ? value : null;
+}
+
 /**
  * View-first split page. Officers can switch to edit only while the split
  * is still pending.
@@ -219,7 +230,7 @@ type DetailMode = 'view' | 'edit';
                       {{ t('splits.net_value') }}
                     </h3>
 
-                    <div class="grid gap-2 sm:grid-cols-3">
+                    <div class="grid gap-2 sm:grid-cols-4">
                       <label class="block">
                         <span class="label font-medium text-[0.6875rem]">{{ t('splits.estimated') }}</span>
                         <input
@@ -229,6 +240,19 @@ type DetailMode = 'view' | 'edit';
                           [value]="editEstimated()"
                           (input)="onEditEstimatedChange($event)"
                         />
+                      </label>
+                      <label class="block">
+                        <span class="label font-medium text-[0.6875rem]">{{ t('splits.fee') }}</span>
+                        <div class="flex items-center gap-1">
+                          <input
+                            class="input font-mono text-xs"
+                            type="text"
+                            inputmode="decimal"
+                            [value]="editFeeInput()"
+                            (input)="onEditFeeChange($event)"
+                          />
+                          <span class="text-xs text-[var(--color-text-secondary)] font-mono">%</span>
+                        </div>
                       </label>
                       <label class="block">
                         <span class="label font-medium text-[0.6875rem]">{{ t('splits.repair_cost') }} (-)</span>
@@ -258,7 +282,7 @@ type DetailMode = 'view' | 'edit';
                           {{ t('splits.net_value') }}
                         </span>
                         <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5">
-                          {{ formatAmount(editEstimated()) }} &minus; {{ formatAmount(editRepair()) }} + {{ formatAmount(editBags()) }}
+                          {{ formatAmount(editEstimated()) }} − {{ formatAmount(editEstimated() * editFee() / 100) }} ({{ editFee() }}%) − {{ formatAmount(editRepair()) }} + {{ formatAmount(editBags()) }}
                         </p>
                       </div>
                       <div class="text-right">
@@ -328,7 +352,7 @@ type DetailMode = 'view' | 'edit';
                                     formatAmount(
                                       estimatedShare(
                                         editNetPreview(),
-                                        participant.weight,
+                                        toNumber(participant.weight),
                                         editTotalWeight()
                                       )
                                     )
@@ -342,10 +366,10 @@ type DetailMode = 'view' | 'edit';
                             <div class="flex items-center gap-1">
                               <input
                                 class="input font-mono text-xs text-right py-0.5 px-1 w-14"
-                                type="number"
-                                min="1"
-                                max="100"
-                                [value]="participant.weight"
+                                type="text"
+                                inputmode="decimal"
+                                placeholder="12,33"
+                                [value]="editWeightValue(participant)"
                                 (input)="onEditWeightChange(participant.user_id, $event)"
                               />
                               <span class="text-xs text-[var(--color-text-secondary)] font-mono">%</span>
@@ -380,13 +404,21 @@ type DetailMode = 'view' | 'edit';
               </div>
             </form>
           } @else {
-            <section class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <section class="grid grid-cols-2 gap-3 sm:grid-cols-5">
               <article class="surface rounded-xl border border-[var(--color-border)] p-3.5 bg-[var(--color-surface)]">
                 <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                   {{ t('splits.estimated') }}
                 </p>
                 <p class="font-mono text-base font-medium text-[var(--color-warning)] mt-1">
                   {{ formatAmount(detail.estimated_market_value) }}
+                </p>
+              </article>
+              <article class="surface rounded-xl border border-[var(--color-border)] p-3.5 bg-[var(--color-surface)]">
+                <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
+                  {{ t('splits.fee') }}
+                </p>
+                <p class="font-mono text-base font-medium text-[var(--color-danger)] mt-1">
+                  {{ formatAmount(toNumber(detail.estimated_market_value) * toNumber(detail.fee ?? defaultFee) / 100) }} ({{ detail.fee ?? defaultFee }}%)
                 </p>
               </article>
               <article class="surface rounded-xl border border-[var(--color-border)] p-3.5 bg-[var(--color-surface)]">
@@ -459,7 +491,7 @@ type DetailMode = 'view' | 'edit';
                   <span class="font-mono text-xs font-medium text-[var(--color-success)]">
                     {{
                       formatAmount(
-                        row.share_amount ?? estimatedShare(netOf(detail), row.weight, 100)
+                        row.share_amount ?? estimatedShare(netOf(detail), toNumber(row.weight), 100)
                       )
                     }}
                   </span>
@@ -517,7 +549,7 @@ type DetailMode = 'view' | 'edit';
                         {{
                           formatAmount(
                             participant.share_amount ??
-                              estimatedShare(netOf(detail), participant.weight, 100)
+                              estimatedShare(netOf(detail), toNumber(participant.weight), 100)
                           )
                         }}
                       </span>
@@ -617,9 +649,11 @@ export class SplitDetailPage {
   protected readonly showDelete = signal(false);
   protected readonly showCompleteConfirmDialog = signal(false);
   protected readonly islands = signal<SplitIsland[]>([]);
+  protected readonly defaultFee = DEFAULT_SPLIT_FEE;
 
   protected readonly editNote = signal('');
   protected readonly editEstimated = signal(0);
+  protected readonly editFeeInput = signal(String(DEFAULT_SPLIT_FEE));
   protected readonly editRepair = signal(0);
   protected readonly editBags = signal(0);
   protected readonly editEventId = signal<number | null>(null);
@@ -627,6 +661,7 @@ export class SplitDetailPage {
   protected readonly editIslandId = signal('');
   protected readonly editTabId = signal('');
   protected readonly editParticipants = signal<SplitParticipant[]>([]);
+  protected readonly editWeightInputs = signal<Record<number, string>>({});
 
   protected readonly showEventSearch = signal(false);
   protected readonly eventSearchOptions = signal<SearchDialogOption[]>([]);
@@ -648,8 +683,12 @@ export class SplitDetailPage {
 
   protected readonly canAct = computed(() => this.auth.hasPermission('splits.manage'));
   protected readonly canEdit = computed(() => this.canAct() && this.split()?.status === 'pending');
+  protected readonly editFee = computed(() => parsePercentageInput(this.editFeeInput()) ?? DEFAULT_SPLIT_FEE);
   protected readonly editNetPreview = computed(() =>
-    Math.max(0, this.editEstimated() - this.editRepair() + this.editBags()),
+    Math.max(
+      0,
+      this.editEstimated() - (this.editEstimated() * this.editFee()) / 100 - this.editRepair() + this.editBags(),
+    ),
   );
   protected readonly editIslandTabs = computed(() => {
     const id = Number(this.editIslandId());
@@ -697,13 +736,26 @@ export class SplitDetailPage {
     if (split.net_value !== null && split.net_value !== undefined) {
       return Number(split.net_value);
     }
-    return (
-      Number(split.estimated_market_value) - Number(split.repair_value) + Number(split.bags_value)
+    const estimated = Number(split.estimated_market_value);
+    return Math.max(
+      0,
+      estimated - (estimated * Number(split.fee ?? DEFAULT_SPLIT_FEE)) / 100 - Number(split.repair_value) + Number(split.bags_value),
     );
   }
 
   protected editTotalWeight(): number {
-    return this.editParticipants().reduce((sum, participant) => sum + participant.weight, 0);
+    return this.editParticipants().reduce(
+      (sum, participant) => sum + Number(participant.weight),
+      0,
+    );
+  }
+
+  protected editWeightValue(participant: SplitParticipant): string {
+    return this.editWeightInputs()[participant.user_id] ?? String(participant.weight);
+  }
+
+  protected toNumber(value: number | string | null | undefined): number {
+    return Number(value) || 0;
   }
 
   protected estimatedShare(netValue: number, weight: number, totalWeight: number): number {
@@ -734,6 +786,9 @@ export class SplitDetailPage {
   protected onEditEstimatedChange(event: Event): void {
     this.editEstimated.set(Number((event.target as HTMLInputElement).value) || 0);
   }
+  protected onEditFeeChange(event: Event): void {
+    this.editFeeInput.set((event.target as HTMLInputElement).value);
+  }
   protected onEditRepairChange(event: Event): void {
     this.editRepair.set(Number((event.target as HTMLInputElement).value) || 0);
   }
@@ -748,7 +803,12 @@ export class SplitDetailPage {
     this.editTabId.set((event.target as HTMLSelectElement).value);
   }
   protected onEditWeightChange(userId: number, event: Event): void {
-    const weight = Math.max(1, Number((event.target as HTMLInputElement).value) || 1);
+    const raw = (event.target as HTMLInputElement).value;
+    this.editWeightInputs.update((inputs) => ({ ...inputs, [userId]: raw }));
+    const weight = parsePercentageInput(raw);
+    if (weight === null) {
+      return;
+    }
     this.editParticipants.update((list) =>
       list.map((participant) =>
         participant.user_id === userId ? { ...participant, weight } : participant,
@@ -762,12 +822,12 @@ export class SplitDetailPage {
       return;
     }
     const baseWeight = Math.floor(100 / list.length);
-    this.editParticipants.set(
-      list.map((participant, index) => ({
-        ...participant,
-        weight: index === list.length - 1 ? 100 - baseWeight * index : baseWeight,
-      })),
-    );
+    const redistributed = list.map((participant, index) => ({
+      ...participant,
+      weight: index === list.length - 1 ? 100 - baseWeight * index : baseWeight,
+    }));
+    this.editParticipants.set(redistributed);
+    this.editWeightInputs.set(this.weightInputsFor(redistributed));
   }
 
   protected unlinkEditEvent(): void {
@@ -867,7 +927,8 @@ export class SplitDetailPage {
         }),
       );
       this.split.set(detail);
-      this.editParticipants.set([...detail.participants]);
+      this.editParticipants.set(this.normalizeParticipants(detail.participants));
+      this.editWeightInputs.set(this.weightInputsFor(detail.participants));
       this.toasts.success(this.t('splits.added_to_split', { name: hit.matched_name }));
       this.showParticipantSearch.set(false);
     } catch (error) {
@@ -886,11 +947,17 @@ export class SplitDetailPage {
       );
       if (detail?.participants) {
         this.split.set(detail);
-        this.editParticipants.set([...detail.participants]);
+        this.editParticipants.set(this.normalizeParticipants(detail.participants));
+        this.editWeightInputs.set(this.weightInputsFor(detail.participants));
       } else {
         this.editParticipants.update((list) =>
           list.filter((participant) => participant.user_id !== userId),
         );
+        this.editWeightInputs.update((inputs) => {
+          const next = { ...inputs };
+          delete next[userId];
+          return next;
+        });
       }
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -903,11 +970,29 @@ export class SplitDetailPage {
     if (!current) {
       return;
     }
+
+    const fee = parsePercentageInput(this.editFeeInput());
+    if (fee === null || fee < 0 || fee > 100) {
+      this.toasts.error(this.t('splits.fee_invalid'));
+      return;
+    }
+
+    const weights: Array<{ participant: SplitParticipant; weight: number }> = [];
+    for (const participant of this.editParticipants()) {
+      const weight = parsePercentageInput(this.editWeightValue(participant));
+      if (weight === null || weight <= 0) {
+        this.toasts.error(this.t('validation.positive'));
+        return;
+      }
+      weights.push({ participant, weight });
+    }
+
     this.saving.set(true);
     try {
       const request: UpdateSplitRequest = {
         note: this.editNote().trim(),
         estimated_market_value: this.editEstimated(),
+        fee,
         repair_value: this.editRepair(),
         bags_value: this.editBags(),
         event_id: this.editEventId(),
@@ -916,11 +1001,11 @@ export class SplitDetailPage {
       let detail = await firstValueFrom(
         this.api.patch<SplitDetail>(`api/splits/${current.id}`, request),
       );
-      for (const participant of this.editParticipants()) {
+      for (const { participant, weight } of weights) {
         detail = await firstValueFrom(
           this.api.post<SplitDetail>(`api/splits/${current.id}/participants`, {
             user_id: participant.user_id,
-            weight: participant.weight,
+            weight,
           }),
         );
       }
@@ -998,13 +1083,15 @@ export class SplitDetailPage {
     }
     this.editNote.set(detail.note || '');
     this.editEstimated.set(Number(detail.estimated_market_value) || 0);
+    this.editFeeInput.set(String(detail.fee ?? DEFAULT_SPLIT_FEE));
     this.editRepair.set(Number(detail.repair_value) || 0);
     this.editBags.set(Number(detail.bags_value) || 0);
     this.editEventId.set(detail.event_id ?? null);
     this.editEventTitle.set(detail.event_title || '');
     this.editIslandId.set(detail.island_id ? String(detail.island_id) : '');
     this.editTabId.set(detail.island_tab_id ? String(detail.island_tab_id) : '');
-    this.editParticipants.set([...detail.participants]);
+    this.editParticipants.set(this.normalizeParticipants(detail.participants));
+    this.editWeightInputs.set(this.weightInputsFor(detail.participants));
   }
 
   private async load(id: number): Promise<void> {
@@ -1023,6 +1110,19 @@ export class SplitDetailPage {
     } finally {
       this.loading.set(false);
     }
+  }
+
+  private normalizeParticipants(participants: SplitParticipant[]): SplitParticipant[] {
+    return participants.map((participant) => ({
+      ...participant,
+      weight: Number(participant.weight),
+    }));
+  }
+
+  private weightInputsFor(participants: SplitParticipant[]): Record<number, string> {
+    return Object.fromEntries(
+      participants.map((participant) => [participant.user_id, String(participant.weight)]),
+    );
   }
 
   private async loadIslands(): Promise<void> {

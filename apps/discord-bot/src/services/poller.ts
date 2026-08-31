@@ -230,12 +230,12 @@ export class Poller {
       const channel = await this.getTextChannel(eventsChannelId);
       if (!channel) return;
 
-      const eventRoleId = await this.settings.eventRoleId();
       for (const event of newEvents) {
+        const roleIds = event.discord_role_ids ?? [];
         const announcementMessage = await channel.send({
-          content: buildEventAnnouncementContent(event, eventRoleId),
-          allowedMentions: eventRoleId
-            ? { roles: [eventRoleId] }
+          content: buildEventAnnouncementContent(event),
+          allowedMentions: roleIds.length > 0
+            ? { roles: roleIds }
             : { parse: [] },
         });
         const thread = await createEventAnnouncementThread(

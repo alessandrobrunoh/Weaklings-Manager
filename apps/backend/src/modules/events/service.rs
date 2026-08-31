@@ -12,7 +12,7 @@ use sea_orm::{
 
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 
-use super::entities::{event, event_battle, event_participation};
+use super::entities::{event, event_battle, event_discord_role, event_participation};
 use super::models::{
     BattlePerformanceStats, CompPerformanceView, CreateEventRequest, EventBattleView,
     EventDetailView, EventParticipantView, EventSplitStats, EventView, OpponentPerformanceView,
@@ -43,18 +43,54 @@ const MAX_SESSION_DURATION: ChronoDuration = ChronoDuration::hours(3);
 /// re-fetching AlbionBB to absorb the upstream's slow ingestion (~30 minutes).
 const LINK_GRACE_PERIOD: ChronoDuration = ChronoDuration::minutes(45);
 
+fn normalize_discord_role_ids(role_ids: Vec<String>) -> Result<Vec<String>, AppError> {
+    let mut normalized = Vec::with_capacity(role_ids.len());
+    let mut seen = HashSet::with_capacity(role_ids.len());
+
+    for role_id in role_ids {
+        let role_id = role_id.trim();
+        if !role_id.chars().all(|character| character.is_ascii_digit())
+            || !(17..=20).contains(&role_id.len())
+        {
+            return Err(AppError::Validation(
+                "discord_role_ids must contain Discord snowflakes (17-20 digits)".to_string(),
+            ));
+        }
+        if seen.insert(role_id.to_string()) {
+            normalized.push(role_id.to_string());
+        }
+    }
+
+    Ok(normalized)
+}
+
+async fn load_event_discord_role_ids(
+    db: &DatabaseConnection,
+    event_id: i64,
+) -> Result<Vec<String>, AppError> {
+    Ok(event_discord_role::Entity::find()
+        .filter(event_discord_role::Column::EventId.eq(event_id))
+        .order_by_asc(event_discord_role::Column::SortOrder)
+        .all(db)
+        .await
+        .map_err(AppError::Database)?
+        .into_iter()
+        .map(|role| role.discord_role_id)
+        .collect())
+}
+
 /// Formats event announcements for Discord without depending on interactive components.
 ///
 /// This keeps backend-created call-to-arms messages visually aligned with bot-created events while
-/// allowing Discord to localize the timestamp per user. The function performs no I/O and only emits
-/// an inert `@Weak` label when no role ID is configured, preventing accidental broad mentions.
+/// allowing Discord to localize the timestamp per user. The function performs no I/O and emits
+/// only the explicitly selected role mentions, so an empty selection cannot ping a role.
 ///
 /// # Example
 /// ```ignore
-/// let content = build_event_announcement_content(&event_view, Some("123"));
+/// let content = build_event_announcement_content(&event_view);
 /// assert!(content.contains("<@&123>"));
 /// ```
-fn build_event_announcement_content(event_view: &EventView, event_role_id: Option<&str>) -> String {
+fn build_event_announcement_content(event_view: &EventView) -> String {
     let scheduled_at = format_event_timestamp(&event_view.event_date_utc);
     let description = event_view
         .description
@@ -62,13 +98,16 @@ fn build_event_announcement_content(event_view: &EventView, event_role_id: Optio
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or("*No description provided.*");
-    let role_mention = event_role_id
+    let role_mentions = event_view
+        .discord_role_ids
+        .iter()
         .map(|role_id| format!("<@&{role_id}>"))
-        .unwrap_or_else(|| "@Weak".to_string());
+        .collect::<Vec<_>>()
+        .join(" ");
 
     format!(
         "📌 {} - {}\n\n{}\n\n|| {} ||\n\n---",
-        event_view.title, scheduled_at, description, role_mention
+        event_view.title, scheduled_at, description, role_mentions
     )
 }
 
@@ -573,12 +612,14 @@ impl EventService {
 
         let created_by_username =
             crate::modules::users::display_name::resolve_by_id(db, model.created_by).await?;
+        let discord_role_ids = load_event_discord_role_ids(db, model.id).await?;
 
         Ok(EventView {
             id: model.id,
             title: model.title,
             description: model.description,
             call_to_arms: model.call_to_arms,
+            discord_role_ids,
             regear: model.regear,
             comp_id: model.comp_id,
             comp_name: comp.name,
@@ -1006,6 +1047,8 @@ impl EventService {
         creator_id: i64,
         req: CreateEventRequest,
     ) -> Result<EventView, AppError> {
+        let discord_role_ids = normalize_discord_role_ids(req.discord_role_ids)?;
+
         // Validate comp exists
         let comp_exists = comp::Entity::find_by_id(req.comp_id)
             .count(db)
@@ -1051,6 +1094,19 @@ impl EventService {
         .map_err(AppError::Database)?;
 
         let event_id = event_model.id;
+        for (sort_order, discord_role_id) in discord_role_ids.into_iter().enumerate() {
+            event_discord_role::ActiveModel {
+                event_id: Set(event_id),
+                discord_role_id: Set(discord_role_id),
+                sort_order: Set(i32::try_from(sort_order).map_err(|_| {
+                    AppError::Validation("too many Discord roles selected".to_string())
+                })?),
+            }
+            .insert(db)
+            .await
+            .map_err(AppError::Database)?;
+        }
+
         let event_view = self.to_event_view(db, event_model).await?;
 
         if let Some(island_tab_id) = linked_split_tab {
@@ -1118,11 +1174,12 @@ impl EventService {
             return;
         };
 
-        let event_role_id = settings.discord_event_role_id.as_deref();
-        let message = build_event_announcement_content(event_view, event_role_id);
-        let allowed_mentions = event_role_id
-            .map(|role_id| serde_json::json!({ "roles": [role_id] }))
-            .unwrap_or_else(|| serde_json::json!({ "parse": [] }));
+        let message = build_event_announcement_content(event_view);
+        let allowed_mentions = if event_view.discord_role_ids.is_empty() {
+            serde_json::json!({ "parse": [] })
+        } else {
+            serde_json::json!({ "roles": event_view.discord_role_ids })
+        };
 
         let payload = serde_json::json!({
             "content": message,
@@ -1976,6 +2033,11 @@ mod tests {
                     regear: false,
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    discord_role_ids: vec![
+                        "111111111111111111".to_string(),
+                        "222222222222222222".to_string(),
+                        "333333333333333333".to_string(),
+                    ],
                     create_split: false,
                     island_tab_id: None,
                 },
@@ -1985,6 +2047,32 @@ mod tests {
 
         assert_eq!(event.title, "ZvZ Castle Fight");
         assert_eq!(event.comp_id, comp_id);
+        assert_eq!(
+            event.discord_role_ids,
+            vec![
+                "111111111111111111".to_string(),
+                "222222222222222222".to_string(),
+                "333333333333333333".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn normalize_discord_role_ids_deduplicates_and_rejects_invalid_ids() {
+        assert_eq!(
+            normalize_discord_role_ids(vec![
+                " 111111111111111111 ".to_string(),
+                "111111111111111111".to_string(),
+                "222222222222222222".to_string(),
+            ])
+            .unwrap(),
+            vec![
+                "111111111111111111".to_string(),
+                "222222222222222222".to_string(),
+            ]
+        );
+        assert!(normalize_discord_role_ids(vec!["not-a-role".to_string()]).is_err());
+        assert!(normalize_discord_role_ids(vec!["123".to_string()]).is_err());
     }
 
     #[tokio::test]
@@ -2004,6 +2092,7 @@ mod tests {
                     regear: false,
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    discord_role_ids: vec![],
                     create_split: true,
                     island_tab_id: None,
                 },
@@ -2042,6 +2131,7 @@ mod tests {
                     regear: false,
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    discord_role_ids: vec![],
                     create_split: true,
                     island_tab_id: Some(tab_id),
                 },
@@ -2107,6 +2197,7 @@ mod tests {
                     regear: false,
                     comp_id: base_comp,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
                 },
@@ -2195,6 +2286,7 @@ mod tests {
                     regear: false,
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
                 },
@@ -2302,6 +2394,7 @@ mod tests {
                     regear: false,
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
                 },
@@ -2350,6 +2443,7 @@ mod tests {
                     regear: false,
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
                 },
@@ -2398,6 +2492,7 @@ mod tests {
                     regear: false,
                     comp_id,
                     event_date_utc: "2026-07-21T20:00:00Z".to_string(),
+                    discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
                 },
@@ -2415,6 +2510,7 @@ mod tests {
                     regear: false,
                     comp_id,
                     event_date_utc: "2026-07-22T20:00:00Z".to_string(),
+                    discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
                 },

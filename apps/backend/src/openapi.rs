@@ -83,6 +83,7 @@ use utoipa::OpenApi;
         crate::modules::events::router::list_events,
         crate::modules::events::router::get_event,
         crate::modules::events::router::create_event,
+        crate::modules::events::router::list_event_discord_roles,
         crate::modules::events::router::update_event,
         crate::modules::events::router::delete_event,
         crate::modules::events::router::participate,
