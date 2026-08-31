@@ -27,8 +27,11 @@ describe('Albion equipment catalog names', () => {
     expect(normalizeAlbionEquipmentName('T8_MAIN_CURSEDSTAFF_AVALON')).toBe('Shadowcaller');
     expect(normalizeAlbionEquipmentName('T8_MAIN_CURSEDSTAFF_CRYSTAL')).toBe('Rotcaller Staff');
     expect(normalizeAlbionEquipmentName('T8_MAIN_NATURESTAFF_CRYSTAL')).toBe('Forgebark Staff');
-    expect(normalizeAlbionEquipmentName('T8_ARMOR_PLATE_SET1')).toBe('Armor Plate Set1');
-    expect(normalizeAlbionEquipmentName('T8_ARMOR_PLATE_SET1', 'Plate Armor')).toBe('Plate Armor');
+    expect(normalizeAlbionEquipmentName('T8_SHOES_PLATE_FEY')).toBe('Duskweaver Boots');
+    expect(normalizeAlbionEquipmentName('T8_MEAL_PIE')).toBe('Pork Pie');
+    expect(normalizeAlbionEquipmentName('T8_POTION_HEAL')).toBe('Healing Potion');
+    expect(normalizeAlbionEquipmentName('T8_ARMOR_PLATE_SET1')).toBe('Soldier Armor');
+    expect(normalizeAlbionEquipmentName('T8_UNKNOWN_THING', 'Friendly Name')).toBe('Friendly Name');
   });
 
   it('keeps one specialization node per weapon family across all tiers', () => {
