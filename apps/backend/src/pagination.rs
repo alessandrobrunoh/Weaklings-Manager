@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::errors::AppError;
 use crate::modules::bank::models::TransactionView;
 
 /// Parameters for pagination in request queries.
@@ -30,6 +31,72 @@ impl PaginationParams {
     pub fn offset_page(&self) -> u64 {
         self.page.unwrap_or(1).saturating_sub(1)
     }
+}
+
+/// Slices an already-filtered in-memory list into a [`PaginatedData`] envelope.
+#[must_use]
+pub fn paginate_vec<T>(items: Vec<T>, pagination: &PaginationParams) -> PaginatedData<T> {
+    let limit = pagination.limit().max(1);
+    let total_items = items.len() as u64;
+    let total_pages = total_items.div_ceil(limit).max(1);
+    let start = (pagination.offset_page() * limit) as usize;
+    let page_items = if start >= items.len() {
+        Vec::new()
+    } else {
+        items.into_iter().skip(start).take(limit as usize).collect()
+    };
+    PaginatedData::new(
+        page_items,
+        total_items,
+        total_pages,
+        pagination.offset_page() + 1,
+        limit,
+    )
+}
+
+/// Sort direction for list endpoints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum SortOrder {
+    /// Oldest / smallest first.
+    Asc,
+    /// Newest / largest first. Default when the client omits `order`.
+    #[default]
+    Desc,
+}
+
+impl SortOrder {
+    /// Parses `order=asc|desc`. Anything else, including absence, is descending.
+    #[must_use]
+    pub fn from_query(value: Option<&str>) -> Self {
+        match value.map(str::trim).map(str::to_ascii_lowercase).as_deref() {
+            Some("asc") => Self::Asc,
+            _ => Self::Desc,
+        }
+    }
+}
+
+/// Resolves a requested sort key against a whitelist.
+///
+/// An unknown key is a validation error so a typo cannot silently fall back
+/// to the default and look like the API ignored the client.
+///
+/// # Errors
+///
+/// Returns [`AppError::Validation`] when `requested` is non-empty and not in `allowed`.
+pub fn resolve_sort_key<T: Copy>(
+    requested: Option<&str>,
+    allowed: &[(&str, T)],
+    default: T,
+) -> Result<T, AppError> {
+    let Some(key) = requested.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(default);
+    };
+    allowed
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case(key))
+        .map(|(_, value)| *value)
+        .ok_or_else(|| AppError::Validation(format!("unknown sort column '{key}'")))
 }
 
 /// A standard paginated data envelope.
@@ -403,6 +470,39 @@ pub struct PaginatedEntryView {
     pub limit: u64,
 }
 
+/// Concrete paginated player-balance response schema for OpenAPI.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PaginatedPlayerBalance {
+    /// Balance rows on the current page.
+    pub items: Vec<crate::modules::siphoned::models::PlayerBalance>,
+    /// Total number of items across all pages.
+    #[schema(example = 42)]
+    pub total_items: u64,
+    /// Total number of pages.
+    #[schema(example = 5)]
+    pub total_pages: u64,
+    /// The current page number (1-indexed).
+    #[schema(example = 1)]
+    pub current_page: u64,
+    /// The number of items per page.
+    #[schema(example = 10)]
+    pub limit: u64,
+}
+
+impl From<PaginatedData<crate::modules::siphoned::models::PlayerBalance>>
+    for PaginatedPlayerBalance
+{
+    fn from(data: PaginatedData<crate::modules::siphoned::models::PlayerBalance>) -> Self {
+        Self {
+            items: data.items,
+            total_items: data.total_items,
+            total_pages: data.total_pages,
+            current_page: data.current_page,
+            limit: data.limit,
+        }
+    }
+}
+
 impl From<PaginatedData<crate::modules::siphoned::models::EntryView>> for PaginatedEntryView {
     fn from(data: PaginatedData<crate::modules::siphoned::models::EntryView>) -> Self {
         Self {
@@ -608,5 +708,75 @@ impl From<PaginatedData<crate::modules::warns::models::WarnEscalationView>>
             current_page: data.current_page,
             limit: data.limit,
         }
+    }
+}
+
+/// Concrete paginated notification list response schema for OpenAPI.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PaginatedNotificationView {
+    /// Inbox rows on the current page.
+    pub items: Vec<crate::modules::notifications::models::NotificationView>,
+    /// Total number of items across all pages.
+    #[schema(example = 42)]
+    pub total_items: u64,
+    /// Total number of pages.
+    #[schema(example = 5)]
+    pub total_pages: u64,
+    /// The current page number (1-indexed).
+    #[schema(example = 1)]
+    pub current_page: u64,
+    /// The number of items per page.
+    #[schema(example = 10)]
+    pub limit: u64,
+}
+
+impl From<PaginatedData<crate::modules::notifications::models::NotificationView>>
+    for PaginatedNotificationView
+{
+    fn from(data: PaginatedData<crate::modules::notifications::models::NotificationView>) -> Self {
+        Self {
+            items: data.items,
+            total_items: data.total_items,
+            total_pages: data.total_pages,
+            current_page: data.current_page,
+            limit: data.limit,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SortOrder, resolve_sort_key};
+    use crate::errors::AppError;
+
+    #[test]
+    fn resolve_sort_key_falls_back_to_default_when_absent() {
+        let column = resolve_sort_key(None, &[("title", "title")], "created_at").unwrap();
+        assert_eq!(column, "created_at");
+        let column = resolve_sort_key(Some("  "), &[("title", "title")], "created_at").unwrap();
+        assert_eq!(column, "created_at");
+    }
+
+    #[test]
+    fn resolve_sort_key_matches_whitelist_case_insensitively() {
+        let column = resolve_sort_key(Some("Title"), &[("title", "title")], "created_at").unwrap();
+        assert_eq!(column, "title");
+    }
+
+    #[test]
+    fn resolve_sort_key_rejects_unknown_columns() {
+        let error =
+            resolve_sort_key(Some("fame"), &[("title", "title")], "created_at").unwrap_err();
+        match error {
+            AppError::Validation(message) => assert!(message.contains("fame")),
+            other => panic!("expected validation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn sort_order_from_query_defaults_to_desc() {
+        assert_eq!(SortOrder::from_query(None), SortOrder::Desc);
+        assert_eq!(SortOrder::from_query(Some("ASC")), SortOrder::Asc);
+        assert_eq!(SortOrder::from_query(Some("nope")), SortOrder::Desc);
     }
 }

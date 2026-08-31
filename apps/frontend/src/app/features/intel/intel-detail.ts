@@ -1,8 +1,18 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+  untracked,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
+import { AuthService } from '../../core/services/auth.service';
 import { IntelService } from '../../core/services/intel.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
@@ -14,6 +24,7 @@ import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { Meter } from '../../shared/components/meter/meter';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 
@@ -38,6 +49,7 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
     Loading,
     Meter,
     PageHeader,
+    PageStack,
     RouterLink,
     StatCard,
     StatusChip,
@@ -62,9 +74,78 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
 
         <app-page-header [title]="s.opponent_guild_name" [subtitle]="s.name">
           <app-status-chip [value]="s.category" />
+          @if (s.is_archived) {
+            <span class="chip">{{ t('intel.detail.archived') }}</span>
+          }
+          @if (canManage()) {
+            @if (editing()) {
+              <button
+                type="button"
+                class="btn btn--primary btn--sm"
+                [disabled]="saving()"
+                (click)="saveEdit()"
+              >
+                {{ t('common.save') }}
+              </button>
+              <button
+                type="button"
+                class="btn btn--ghost btn--sm"
+                [disabled]="saving()"
+                (click)="cancelEdit()"
+              >
+                {{ t('common.cancel') }}
+              </button>
+            } @else {
+              <button type="button" class="btn btn--outline btn--sm" (click)="startEdit()">
+                {{ t('common.edit') }}
+              </button>
+            }
+          }
         </app-page-header>
 
-        <div class="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <app-page-stack>
+        @if (editing()) {
+          <section class="card p-4">
+            <div class="grid gap-3 sm:grid-cols-2">
+              <label>
+                <span class="label">{{ t('common.name') }}</span>
+                <input
+                  class="input"
+                  type="text"
+                  [value]="draftName()"
+                  (input)="onDraftName($event)"
+                />
+              </label>
+              <label class="flex items-end gap-2 pb-2">
+                <input
+                  type="checkbox"
+                  class="checkbox"
+                  [checked]="draftArchived()"
+                  (change)="onDraftArchived($event)"
+                />
+                <span>{{ t('intel.detail.archive') }}</span>
+              </label>
+              <label class="sm:col-span-2">
+                <span class="label">{{ t('intel.detail.notes') }}</span>
+                <textarea
+                  class="input"
+                  rows="3"
+                  [value]="draftNotes()"
+                  (input)="onDraftNotes($event)"
+                ></textarea>
+              </label>
+            </div>
+          </section>
+        } @else if (s.notes) {
+          <section class="card p-4">
+            <h2 class="eyebrow mb-2">{{ t('intel.detail.notes') }}</h2>
+            <p class="whitespace-pre-wrap text-sm" style="color: var(--color-text-secondary)">
+              {{ s.notes }}
+            </p>
+          </section>
+        }
+
+        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <app-stat-card [label]="t('intel.players')" [value]="s.player_count.toString()" />
           <app-stat-card [label]="t('intel.avgIp')" [value]="(s.avg_ip | number: '1.0-0') ?? '—'" />
           <app-stat-card
@@ -238,11 +319,13 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
             </table>
           </section>
         </div>
+        </app-page-stack>
       }
     }
   `,
 })
 export class IntelDetailPage {
+  private readonly auth = inject(AuthService);
   private readonly intel = inject(IntelService);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
@@ -254,6 +337,13 @@ export class IntelDetailPage {
   protected readonly loadFailed = signal(false);
   protected readonly scout = signal<ScoutedCompDetail | null>(null);
   protected readonly similar = signal<SimilarityHit[]>([]);
+  protected readonly editing = signal(false);
+  protected readonly saving = signal(false);
+  protected readonly draftName = signal('');
+  protected readonly draftNotes = signal('');
+  protected readonly draftArchived = signal(false);
+
+  protected readonly canManage = computed(() => this.auth.hasPermission('intel.manage'));
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
@@ -302,8 +392,63 @@ export class IntelDetailPage {
    */
   constructor() {
     effect(() => {
-      void this.load();
+      this.scoutId();
+      untracked(() => {
+        this.editing.set(false);
+        void this.load();
+      });
     });
+  }
+
+  protected startEdit(): void {
+    const current = this.scout();
+    if (!current || !this.canManage()) {
+      return;
+    }
+    this.draftName.set(current.name);
+    this.draftNotes.set(current.notes ?? '');
+    this.draftArchived.set(current.is_archived);
+    this.editing.set(true);
+  }
+
+  protected cancelEdit(): void {
+    this.editing.set(false);
+  }
+
+  protected onDraftName(event: Event): void {
+    this.draftName.set((event.target as HTMLInputElement).value);
+  }
+
+  protected onDraftNotes(event: Event): void {
+    this.draftNotes.set((event.target as HTMLTextAreaElement).value);
+  }
+
+  protected onDraftArchived(event: Event): void {
+    this.draftArchived.set((event.target as HTMLInputElement).checked);
+  }
+
+  protected async saveEdit(): Promise<void> {
+    const current = this.scout();
+    if (!current || !this.canManage()) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      const updated = await firstValueFrom(
+        this.intel.updateScout(current.id, {
+          name: this.draftName().trim() || current.name,
+          notes: this.draftNotes(),
+          is_archived: this.draftArchived(),
+        }),
+      );
+      this.scout.set(updated);
+      this.editing.set(false);
+      this.toasts.success(this.t('intel.detail.saved'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
   }
 
   protected async load(): Promise<void> {

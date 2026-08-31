@@ -1,0 +1,774 @@
+[     107ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[     130ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[     150ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[     172ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[   13263ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:1002
+[   20159ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[   20184ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[   20248ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[   20255ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[   20270ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[  180382ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[  180390ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[  180403ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[  970348ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[  970370ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[  970404ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[  975750ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[  975765ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[  975787ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1615686ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1615701ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1615726ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1620281ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1620296ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1620342ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1624176ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1624184ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1624200ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/src/app/i18n/it.ts?t=1788108731686:0
+[ 1624201ms] [ERROR] ERROR TypeError: Failed to fetch dynamically imported module: http://localhost:5173/src/app/features/auth/login.ts?t=1788108731686 @ http://localhost:5173/node_modules/.vite/deps/_resource-chunk-DDMsXBIB.js?v=f487a37b:2607
+[ 1624201ms] [LOG] Angular hydrated 1 component(s) and 3 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1625896ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1625903ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1625914ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1625943ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1631541ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1631551ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1631576ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1645625ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1645639ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1645675ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1654394ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1654407ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1654425ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1659873ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1659892ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1659907ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1664151ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1664164ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1664190ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1670092ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1670098ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1670124ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1674047ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1674053ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1674073ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1681581ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1681589ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1681605ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1691818ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1691825ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1691840ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1703452ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1703458ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1703488ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1713788ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1713794ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1713821ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1720274ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1720284ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1720305ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1725069ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:1002
+[ 1725427ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1725442ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1725473ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1734217ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1734241ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1734274ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1741065ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1741094ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1741225ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1749002ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1749007ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1749039ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1754404ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1754414ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1754439ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1767731ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1767744ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1767770ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1773406ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1773424ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1773437ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1782384ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1782405ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1782437ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1791471ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1791477ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1791502ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1797394ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1797404ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1797419ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1802958ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1802976ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1803001ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1806712ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1806722ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1806738ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1812861ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1812867ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1812903ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1816534ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1816541ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1816568ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1836695ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1836700ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1836716ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1841141ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1841152ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1841166ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1846925ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1846942ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1846966ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1856465ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1856473ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1856500ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1871409ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1871424ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1871483ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1879427ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1879436ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1879449ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1895480ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1895493ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1895515ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1899996ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1900008ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1900031ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1906316ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1906330ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1906347ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1910055ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1910068ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1910082ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1913949ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1913955ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1913980ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1923144ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1923157ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1923179ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1929185ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1929197ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1929212ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1934663ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1934677ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1934699ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1965344ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1965362ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1965412ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1978781ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1978787ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1978811ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1987232ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 1987253ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 1987292ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2000787ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2000793ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2000824ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2008130ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2008145ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2008175ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2019035ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2019048ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2019073ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2044947ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2044953ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2044972ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2052319ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2052332ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2052355ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2060333ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2060340ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2060355ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2065206ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2065227ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2065255ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2075363ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2075374ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2075388ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2085355ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2085363ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2085388ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2091041ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2091051ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2091070ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2110159ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2110164ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2110186ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2114186ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2114199ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2114219ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2119114ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2119124ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2119152ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2139529ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2139538ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2139567ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2148971ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2149003ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2149034ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2154439ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2154451ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2154483ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2163026ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:1002
+[ 2169900ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2169969ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2170022ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2170054ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2170100ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2546190ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2546206ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2546238ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2559658ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2559717ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2559756ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2564758ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2564778ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2564805ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2572497ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2572508ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2572520ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2577559ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2577572ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2577603ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2586601ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2586621ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2586640ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2594863ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2594874ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2594904ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2597950ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2597971ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2598006ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2609312ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2609328ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2609352ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2617086ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2617096ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2617118ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2622349ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2622355ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2622386ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2626680ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2626687ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2626719ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2740575ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2740593ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2740625ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2765916ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2765939ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2765969ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2775787ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2775792ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2775820ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2781731ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2781739ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2781768ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2787045ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2787051ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2787085ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2792266ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2792277ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2792317ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2801805ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2801830ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2801850ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2807033ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 2807041ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 2807068ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3013621ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3013642ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 3013675ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3027064ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3027119ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 3027160ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3035195ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3035221ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 3035256ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3043279ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3043285ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 3043322ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3058920ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3058950ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 3059004ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3148042ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3148071ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 3148117ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3175540ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3175574ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 3175620ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3202691ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3202724ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 3202764ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3222738ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3222773ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 3222798ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3294972ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3294987ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 3295012ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3321152ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3321164ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 3321190ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3357487ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3357495ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 3357522ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3422248ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3422265ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 3422303ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3445730ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3445772ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 3445803ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3445730ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3445803ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3445772ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 3458486ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3458536ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 3458567ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3464025ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 3464038ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 3464070ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 4177346ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 4177365ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 4177385ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 4179216ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 4179224ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 4179253ms] [LOG] Angular hydrated 5 component(s) and 178 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 4189302ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 4189317ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[ 4189343ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/src/app/i18n/it.ts?t=1788111296801:0
+[ 4189343ms] [ERROR] ERROR TypeError: Failed to fetch dynamically imported module: http://localhost:5173/src/app/features/auth/login.ts?t=1788111296801 @ http://localhost:5173/node_modules/.vite/deps/_resource-chunk-DDMsXBIB.js?v=f487a37b:2607
+[ 4189344ms] [LOG] Angular hydrated 1 component(s) and 3 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[ 4189731ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:1002
+[30758521ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[30758545ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[30758553ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[30758577ms] [LOG] Angular hydrated 5 component(s) and 182 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[30759051ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[30759057ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[30759076ms] [LOG] Angular hydrated 5 component(s) and 182 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[30814733ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:1002
+[30825787ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[30825954ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[30826019ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[30826047ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[30826094ms] [LOG] Angular hydrated 5 component(s) and 182 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31169262ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31170116ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31170172ms] [LOG] Angular hydrated 5 component(s) and 182 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31180874ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31180914ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31180976ms] [LOG] Angular hydrated 5 component(s) and 182 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31193648ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31193654ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31193673ms] [LOG] Angular hydrated 5 component(s) and 182 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31210660ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31210666ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31210691ms] [LOG] Angular hydrated 5 component(s) and 182 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31215974ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31215980ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31216006ms] [LOG] Angular hydrated 5 component(s) and 182 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31219092ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31219101ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31219123ms] [LOG] Angular hydrated 5 component(s) and 182 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31228923ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31228931ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31228955ms] [LOG] Angular hydrated 5 component(s) and 182 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31236542ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31236576ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31236655ms] [LOG] Angular hydrated 5 component(s) and 182 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31240580ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31240587ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31240622ms] [LOG] Angular hydrated 5 component(s) and 182 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31243512ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31243523ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31243555ms] [LOG] Angular hydrated 5 component(s) and 182 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31244627ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31244632ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31244655ms] [LOG] Angular hydrated 5 component(s) and 182 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31245172ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31245177ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31245188ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/src/app/i18n/es.ts?t=1788138352705:0
+[31245189ms] [ERROR] ERROR TypeError: Failed to fetch dynamically imported module: http://localhost:5173/src/app/features/auth/login.ts?t=1788138352705 @ http://localhost:5173/node_modules/.vite/deps/_resource-chunk-DDMsXBIB.js?v=f487a37b:2607
+[31245189ms] [LOG] Angular hydrated 1 component(s) and 3 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31245401ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:1002
+[31559450ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31559490ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/auth/me:0
+[31559504ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/auth/me:0
+[31559549ms] [LOG] Angular hydrated 5 component(s) and 198 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31563242ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31563258ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/auth/me:0
+[31563281ms] [LOG] Angular hydrated 5 component(s) and 198 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31600006ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31600096ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31600155ms] [LOG] Angular hydrated 5 component(s) and 198 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31609807ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31609828ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31609862ms] [LOG] Angular hydrated 5 component(s) and 198 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31619146ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31619177ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31619210ms] [LOG] Angular hydrated 5 component(s) and 198 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31661521ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31661581ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31661626ms] [LOG] Angular hydrated 5 component(s) and 198 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31667917ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31667937ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31667954ms] [LOG] Angular hydrated 5 component(s) and 198 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31932832ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31932869ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31932926ms] [LOG] Angular hydrated 5 component(s) and 198 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31935510ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31935528ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31935594ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31941083ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31941100ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31941129ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31960084ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31960111ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31960159ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31964051ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31964078ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31964108ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31967869ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31967886ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31967924ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31981946ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31981960ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31981973ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31988872ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[31988884ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[31988909ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32000571ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32000581ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32000622ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32004625ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32004649ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32004675ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32011853ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32011864ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32011891ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32016526ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32016546ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32016589ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32020063ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32020098ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32020122ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32024205ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32024221ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32024256ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32032274ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32032293ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32032341ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32037511ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32037524ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32037553ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32041288ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32041294ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32041321ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32045095ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32045111ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32045136ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32065683ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32065711ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32065754ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32074815ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32074845ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32074988ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32080711ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32080725ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32080751ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32241509ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32241516ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32241542ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32243780ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32243785ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32243827ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32264060ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32264091ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32264125ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32289172ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32289184ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32289223ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32298727ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32298750ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32298774ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32304394ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32304407ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32304424ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32503213ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32503227ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32503247ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32503747ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32503777ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32503797ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32506272ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[32506280ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[32506296ms] [LOG] Angular hydrated 5 component(s) and 202 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33104607ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33104690ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33104785ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33170177ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33170192ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33170218ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33178415ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33178419ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33178450ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33189678ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33189705ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33189738ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33208531ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33208542ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33208566ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33232028ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33232039ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33232065ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33299878ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33300036ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33300083ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33312559ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33312567ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33312600ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33323473ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33323484ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33323496ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33332235ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33332248ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33332264ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33336403ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33336407ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33336430ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33349299ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33349307ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33349330ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33360371ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33360385ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33360415ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33370109ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33370146ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33370164ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33386193ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33386213ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33386246ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33390870ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33390875ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33390896ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33406685ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33406700ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33406729ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33412972ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33412993ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33413012ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33468574ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33468615ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33468744ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33469208ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33469258ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33469294ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33505024ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33505031ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33505059ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33522265ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33522286ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33522309ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33536657ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33536693ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33536725ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33543681ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33543694ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33543709ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33680697ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33680717ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33680754ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33695555ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33695566ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33695630ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33718104ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33718175ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33718206ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33723323ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33723347ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33723421ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33723425ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33723455ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33799163ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33799173ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33799200ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33813748ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33813781ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33813815ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33820755ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33820820ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33820884ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33973701ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33973752ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33973794ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33995248ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[33995256ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[33995276ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34017875ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34017881ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[34017909ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34033424ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34033433ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[34033459ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34050677ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34050706ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[34050727ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34055722ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34055728ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[34055743ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34109930ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:1002
+[34133951ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34133975ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[34134042ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34134053ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[34134078ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34636125ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34636164ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[34636187ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34674833ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34674866ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[34674920ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34699202ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34699213ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[34699237ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34712913ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34712917ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[34712936ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34721325ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34721331ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[34721352ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34741322ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34741404ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[34741491ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34748154ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34748169ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[34748186ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34984075ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[34984121ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[34984166ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35025963ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35025971ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[35025998ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35038009ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35038015ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[35038032ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35064156ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35064164ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[35064197ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35090316ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35090374ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[35090413ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35095624ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35095632ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[35095681ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35175490ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:1002
+[35186256ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35186368ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35186381ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/auth/me:0
+[35186415ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35230995ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35231007ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[35231026ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35260086ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35260095ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[35260125ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35260086ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35260125ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35260095ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[35275627ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35275643ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[35275677ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35280395ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35280402ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[35280493ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35280498ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[35280524ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35584933ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35584988ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[35585054ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35605853ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35605860ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[35605888ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35626937ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/login:0
+[35649796ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/login:0
+[35671835ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/login:0
+[35678229ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/login:0
+[35705628ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:1002
+[35713556ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35713663ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/auth/me:0
+[35713752ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[35713862ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/auth/me:0
+[35714020ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36146102ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36146132ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36146167ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36154709ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36154725ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36154764ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36180195ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36180213ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36180229ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/src/app/i18n/en.ts?t=1788143287394:0
+[36180230ms] [ERROR] ERROR TypeError: Failed to fetch dynamically imported module: http://localhost:5173/src/app/features/auth/login.ts?t=1788143287572 @ http://localhost:5173/node_modules/.vite/deps/_resource-chunk-DDMsXBIB.js?v=f487a37b:2607
+[36180232ms] [LOG] Angular hydrated 1 component(s) and 3 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36180234ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/src/app/i18n/es.ts?t=1788143287572:0
+[36180254ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/src/app/i18n/it.ts?t=1788143287485:0
+[36180697ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:1002
+[36259010ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36259084ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36259096ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36259141ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36406003ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36406059ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36406087ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36413358ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36413362ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36413403ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36422228ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36422235ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36422247ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/src/app/i18n/es.ts?t=1788143529758:0
+[36422247ms] [ERROR] ERROR TypeError: Failed to fetch dynamically imported module: http://localhost:5173/src/app/features/auth/login.ts?t=1788143529758 @ http://localhost:5173/node_modules/.vite/deps/_resource-chunk-DDMsXBIB.js?v=f487a37b:2607
+[36422247ms] [LOG] Angular hydrated 1 component(s) and 3 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36422263ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/src/app/i18n/en.ts?t=1788143529625:0
+[36422265ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/src/app/i18n/it.ts?t=1788143529684:0
+[36422680ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:1002
+[36493738ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36493798ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36493819ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36493919ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36692712ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36692763ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36692836ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36701594ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36701600ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36701635ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36713165ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36713174ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36713217ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36752440ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36752535ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36752572ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36753602ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:1002
+[36764591ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36764617ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36764689ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36764694ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36764733ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36790636ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:1002
+[36817098ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36817111ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36817197ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36817205ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36817248ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36844327ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36844334ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36844348ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36844327ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36844348ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36844334ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36858661ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36858670ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36858717ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36864237ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36864248ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[36864275ms] [LOG] Angular hydrated 5 component(s) and 194 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[36993937ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:1002

@@ -15,39 +15,28 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import { EmptyState } from '../../shared/components/empty-state/empty-state';
-import { ErrorState } from '../../shared/components/error-state/error-state';
-import { Loading } from '../../shared/components/loading/loading';
-import { PageHeader } from '../../shared/components/page-header/page-header';
 import {
   DataTable,
   type DataTableColumn,
-  type DataTableFilterOption,
+  type DataTablePageChange,
 } from '../../shared/components/data-table/data-table';
-import {
-  ViewToggle,
-  type ViewToggleOption,
-} from '../../shared/components/view-toggle/view-toggle';
+import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { Dialog } from '../../shared/components/dialog/dialog';
+import { Icon } from '../../shared/components/icon/icon';
+import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { StatCard } from '../../shared/components/stat-card/stat-card';
+import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 
 type SiphonedTab = 'balances' | 'entries' | 'batches';
+type SiphonedIngestRow = SiphonedIngestRequest['rows'][number];
+type EntryDraft = Record<'occurred_at' | 'player_name' | 'reason' | 'amount', string>;
+type ConfirmTarget = { kind: 'entry'; id: number } | { kind: 'batch'; id: string };
 
 function isSiphonedTab(value: string): value is SiphonedTab {
   return value === 'balances' || value === 'entries' || value === 'batches';
 }
 
-const ENTRIES_LOAD_LIMIT = 1000;
-
-type SiphonedIngestRow = SiphonedIngestRequest['rows'][number];
-type EntryDraft = Record<'occurred_at' | 'player_name' | 'reason' | 'amount', string>;
-
-/**
- * Empty manual ledger form state.
- *
- * Keeping this as a factory prevents accidental shared object mutation when signals are reset.
- *
- * @example
- * const draft = emptyEntryDraft();
- */
 function emptyEntryDraft(): EntryDraft {
   return {
     occurred_at: '',
@@ -57,6 +46,10 @@ function emptyEntryDraft(): EntryDraft {
   };
 }
 
+function emptyPageChange(): DataTablePageChange {
+  return { page: 1, pageSize: 10, search: '', sort: null, columnFilters: {} };
+}
+
 /**
  * Siphoned Energy operations page.
  *
@@ -64,181 +57,134 @@ function emptyEntryDraft(): EntryDraft {
  * every authenticated member with view permission can inspect debts and the
  * raw ledger. The parser accepts comma, semicolon, or tab-separated exports so
  * it works with copied spreadsheet data without a separate preprocessing step.
- *
- * # Example
- * ```text
- * 2026-08-10 20:37:41;Galvdon;Withdrawal;-10
- * ```
  */
 @Component({
   selector: 'app-siphoned',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, ErrorState, Loading, DataTable, ViewToggle],
+  imports: [
+    DataTable,
+    DataTableCell,
+    Dialog,
+    Icon,
+    PageHeader,
+    PageStack,
+    StatCard,
+    ViewToggle,
+  ],
+  styles: `
+    .siphoned-permission-note { margin: 0; padding: 0.75rem 0.875rem; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text-secondary); font-size: 0.75rem; line-height: 1.5; }
+  `,
   template: `
     <app-page-header [title]="t('siphoned.title')" [subtitle]="t('siphoned.subtitle')">
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        [disabled]="loading()"
+        (click)="refreshNow()"
+      >
+        <app-icon name="sparkles" size="0.875rem" />
+        {{ t('common.refreshNow') }}
+      </button>
+
       @if (canIngest()) {
-        <button type="button" class="btn btn--primary" (click)="toggleIngestForm()">
-          {{ showIngestForm() ? t('common.close') : t('siphoned.ingest') }}
+        <button type="button" class="btn btn--tonal btn--sm" (click)="openEntryForm()">
+          <app-icon name="plus" size="0.875rem" />
+          {{ t('siphoned.addEntry') }}
         </button>
       }
+      @if (canIngest()) {
+        <button type="button" class="btn btn--primary btn--sm" (click)="openIngestForm()">
+          <app-icon name="sparkles" size="0.875rem" />
+          {{ t('siphoned.ingest') }}
+        </button>
+      }
+      <app-view-toggle
+        pageTabs
+        [options]="tabOptions()"
+        [active]="tab()"
+        (activeChange)="switchTab($event)"
+      />
     </app-page-header>
 
-    <section class="card mb-6 p-5">
-      <p class="text-sm font-semibold" style="color: var(--color-text-secondary)">
-        Weekly manual update
-      </p>
-      <p class="mt-2 text-3xl font-bold" style="color: var(--color-text)">
-        Last updated: {{ lastUpdatedLabel() }}
-      </p>
-      <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
-        Update this ledger manually at least once per week by importing the latest Albion export.
-      </p>
-    </section>
-
-    @if (showIngestForm()) {
-      <form class="card mb-6 grid gap-4 p-5" (submit)="onIngestSubmit($event)">
-        <label>
-          <span class="label">Albion export rows</span>
-          <textarea
-            class="textarea font-mono text-xs"
-            rows="8"
-            [value]="rawExport()"
-            (input)="onRawExportChange($event)"
-            placeholder='"Date"&#9;"Player"&#9;"Reason"&#9;"Amount"&#10;"2026-08-10 20:37:41"&#9;"Galvdon"&#9;"Withdrawal"&#9;"-10"'
-          ></textarea>
-        </label>
-        <p class="text-xs" style="color: var(--color-text-secondary)">
-          Expected columns: Date, Player, Reason, Amount. You can paste the quoted tab-separated
-          Albion export directly.
-        </p>
-        <div class="flex justify-end gap-2">
-          <button type="button" class="btn btn--ghost" (click)="toggleIngestForm()">
-            {{ t('common.cancel') }}
-          </button>
-          <button type="submit" class="btn btn--primary" [disabled]="saving()">
-            {{ t('siphoned.ingest') }}
-          </button>
-        </div>
-      </form>
-    }
-
-    <div class="mb-4">
-      <app-view-toggle [options]="tabOptions()" [active]="tab()" (activeChange)="switchTab($event)" />
-    </div>
-
-    @if (loading()) {
-      <app-loading [label]="t('common.loading')" />
-    } @else if (loadFailed()) {
-      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
-    } @else if (tab() === 'balances') {
-      @if (balances().length === 0) {
-        <app-empty-state [message]="t('common.empty')" icon="activity" />
-      } @else {
-        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          @for (balance of balances(); track balance.player_name) {
-            <article class="card p-5">
-              <div class="mb-3 flex items-start justify-between gap-3">
-                <h2 class="font-semibold" style="color: var(--color-text)">
-                  {{ balance.player_name }}
-                </h2>
-                <span
-                  class="chip"
-                  [class.chip--error]="toNumber(balance.net) < 0"
-                  [class.chip--success]="toNumber(balance.net) > 0"
-                >
-                  {{ balanceStatusLabel(balance.net) }}
-                  {{ formatAmount(absoluteAmount(balance.net)) }}
-                </span>
-              </div>
-              <dl class="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <dt style="color: var(--color-text-secondary)">Deposited</dt>
-                  <dd>{{ formatAmount(balance.total_deposited) }}</dd>
-                </div>
-                <div>
-                  <dt style="color: var(--color-text-secondary)">Withdrawn</dt>
-                  <dd>{{ formatAmount(balance.total_withdrawn) }}</dd>
-                </div>
-                <div>
-                  <dt style="color: var(--color-text-secondary)">Entries</dt>
-                  <dd>{{ balance.entry_count }}</dd>
-                </div>
-                <div>
-                  <dt style="color: var(--color-text-secondary)">Last seen</dt>
-                  <dd>{{ formatDate(balance.last_seen) }}</dd>
-                </div>
-              </dl>
-            </article>
-          }
-        </div>
+    <app-page-stack>
+      @if (!canIngest()) {
+        <p class="siphoned-permission-note" role="status">{{ t('siphoned.missingManagePermission') }}</p>
       }
-    } @else if (tab() === 'entries') {
-      @if (canIngest()) {
-        <form class="card mb-4 grid gap-3 p-5" (submit)="onEntrySubmit($event)">
-          <div class="grid gap-3 md:grid-cols-4">
-            <label>
-              <span class="label">Date</span>
-              <input
-                class="input"
-                type="datetime-local"
-                step="1"
-                [value]="entryDraft().occurred_at"
-                (input)="updateEntryDraft('occurred_at', $event)"
-              />
-            </label>
-            <label>
-              <span class="label">Player</span>
-              <input
-                class="input"
-                type="text"
-                [value]="entryDraft().player_name"
-                (input)="updateEntryDraft('player_name', $event)"
-                placeholder="Galvdon"
-              />
-            </label>
-            <label>
-              <span class="label">Reason</span>
-              <input
-                class="input"
-                type="text"
-                [value]="entryDraft().reason"
-                (input)="updateEntryDraft('reason', $event)"
-                placeholder="Deposit or Withdrawal"
-              />
-            </label>
-            <label>
-              <span class="label">Amount</span>
-              <input
-                class="input"
-                type="number"
-                step="1"
-                [value]="entryDraft().amount"
-                (input)="updateEntryDraft('amount', $event)"
-                placeholder="-10"
-              />
-            </label>
-          </div>
-          <div class="flex justify-end gap-2">
-            @if (editingEntryId() !== null) {
-              <button type="button" class="btn btn--ghost" (click)="resetEntryDraft()">
-                {{ t('common.cancel') }}
-              </button>
-            }
-            <button type="submit" class="btn btn--primary" [disabled]="saving()">
-              {{ editingEntryId() === null ? 'Add entry' : 'Save entry' }}
-            </button>
-          </div>
-        </form>
-      }
+      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Siphoned summary">
+        <app-stat-card
+          [label]="t('siphoned.stat.deposited')"
+          [value]="formatAmount(totalDeposited())"
+          icon="bank"
+          tone="success"
+        />
+        <app-stat-card
+          [label]="t('siphoned.stat.withdrawn')"
+          [value]="formatAmount(totalWithdrawn())"
+          icon="bank"
+          tone="warning"
+        />
+        <app-stat-card
+          [label]="t('siphoned.stat.net')"
+          [value]="formatAmount(netTotal())"
+          [sub]="t('siphoned.lastUpdated') + ': ' + lastUpdatedLabel()"
+          icon="chart"
+          [tone]="netTotal() >= 0 ? 'success' : 'danger'"
+        />
+        <app-stat-card
+          [label]="t('siphoned.stat.entries')"
+          [value]="tab() === 'balances' ? balanceTotal() : tab() === 'entries' ? entryTotal() : batches().length"
+          icon="list"
+          tone="neutral"
+        />
+      </section>
 
-      @if (entries().length === 0) {
-        <app-empty-state [message]="t('common.empty')" icon="activity" />
-      } @else {
+      @if (tab() === 'balances') {
+        <app-data-table
+          [columns]="balanceColumns"
+          [rows]="balances()"
+          [loading]="loading()"
+          [error]="loadFailed()"
+          (retry)="load()"
+          [trackBy]="trackBalance"
+          [serverMode]="true"
+          [totalItems]="balanceTotal()"
+          [pageSize]="10"
+          emptyIcon="activity"
+          (pageChange)="onBalancesChange($event)"
+        >
+          <ng-template dataTableCell="net" let-row>
+            <span
+              class="chip"
+              [class.chip--error]="toNumber(row.net) < 0"
+              [class.chip--success]="toNumber(row.net) > 0"
+            >
+              {{ balanceStatusLabel(row.net) }}
+              {{ formatAmount(absoluteAmount(row.net)) }}
+            </span>
+          </ng-template>
+          <ng-template dataTableCell="total_deposited" let-row>
+            {{ formatAmount(row.total_deposited) }}
+          </ng-template>
+          <ng-template dataTableCell="total_withdrawn" let-row>
+            {{ formatAmount(row.total_withdrawn) }}
+          </ng-template>
+          <ng-template dataTableCell="last_seen" let-row>
+            {{ formatDate(row.last_seen) }}
+          </ng-template>
+        </app-data-table>
+      } @else if (tab() === 'entries') {
         <app-data-table
           [columns]="entryColumns()"
           [rows]="entries()"
+          [loading]="loading()"
+          [error]="loadFailed()"
+          (retry)="load()"
           [trackBy]="trackEntry"
+          [serverMode]="true"
+          [totalItems]="entryTotal()"
           [pageSize]="10"
+          emptyIcon="activity"
+          (pageChange)="onEntriesChange($event)"
         >
           <ng-template dataTableCell="occurred_at" let-row>
             {{ formatDate(row.occurred_at) }}
@@ -251,42 +197,154 @@ function emptyEntryDraft(): EntryDraft {
           </ng-template>
           <ng-template dataTableCell="actions" let-row>
             @if (canIngest()) {
-              <div class="flex gap-2">
-                <button type="button" class="btn btn--ghost" (click)="editEntry(row)">Edit</button>
-                <button type="button" class="btn btn--danger" (click)="deleteEntry(row.id)">
+              <div class="flex justify-end gap-2">
+                <button type="button" class="btn btn--ghost" (click)="editEntry(row)">
+                  {{ t('common.edit') }}
+                </button>
+                <button type="button" class="btn btn--danger" (click)="askDeleteEntry(row.id)">
                   {{ t('common.delete') }}
                 </button>
               </div>
             }
           </ng-template>
         </app-data-table>
-      }
-    } @else {
-      @if (batches().length === 0) {
-        <app-empty-state [message]="t('common.empty')" icon="activity" />
       } @else {
-        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          @for (batch of batches(); track batch.batch_id) {
-            <article class="card p-5">
-              <p class="font-mono text-xs" style="color: var(--color-text-secondary)">
-                {{ batch.batch_id }}
-              </p>
-              <p class="mt-2 text-sm">
-                {{ batch.row_count }} rows · {{ formatDate(batch.ingested_at) }}
-              </p>
-              @if (canIngest()) {
-                <button
-                  type="button"
-                  class="btn btn--danger mt-4"
-                  (click)="deleteBatch(batch.batch_id)"
-                >
-                  {{ t('common.delete') }}
-                </button>
-              }
-            </article>
-          }
-        </div>
+        <app-data-table
+          [columns]="batchColumns()"
+          [rows]="batches()"
+          [loading]="loading()"
+          [error]="loadFailed()"
+          (retry)="load()"
+          [trackBy]="trackBatch"
+          [pageSize]="10"
+          emptyIcon="activity"
+        >
+          <ng-template dataTableCell="ingested_at" let-row>
+            {{ formatDate(row.ingested_at) }}
+          </ng-template>
+          <ng-template dataTableCell="actions" let-row>
+            @if (canIngest()) {
+              <button type="button" class="btn btn--danger" (click)="askDeleteBatch(row.batch_id)">
+                {{ t('common.delete') }}
+              </button>
+            }
+          </ng-template>
+        </app-data-table>
       }
+    </app-page-stack>
+
+    @if (showIngestForm()) {
+      <app-dialog [title]="t('siphoned.ingest')" (closed)="showIngestForm.set(false)">
+        <form id="siphoned-ingest-form" class="grid gap-4" (submit)="onIngestSubmit($event)">
+          <label>
+            <span class="label">{{ t('siphoned.exportRows') }}</span>
+            <textarea
+              class="textarea font-mono text-xs"
+              rows="8"
+              [value]="rawExport()"
+              (input)="onRawExportChange($event)"
+              placeholder='"Date"&#9;"Player"&#9;"Reason"&#9;"Amount"&#10;"2026-08-10 20:37:41"&#9;"Galvdon"&#9;"Withdrawal"&#9;"-10"'
+            ></textarea>
+          </label>
+          <p class="text-xs" style="color: var(--color-text-secondary)">
+            {{ t('siphoned.ingestHint') }}
+          </p>
+        </form>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="showIngestForm.set(false)">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="submit"
+            class="btn btn--primary"
+            form="siphoned-ingest-form"
+            [disabled]="saving()"
+          >
+            {{ t('siphoned.ingest') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
+
+    @if (showEntryForm()) {
+      <app-dialog [title]="entryDialogTitle()" (closed)="closeEntryForm()">
+        <form id="siphoned-entry-form" class="grid gap-4" (submit)="onEntrySubmit($event)">
+          <label>
+            <span class="label">{{ t('common.date') }}</span>
+            <input
+              class="input"
+              type="datetime-local"
+              step="1"
+              [value]="entryDraft().occurred_at"
+              (input)="updateEntryDraft('occurred_at', $event)"
+            />
+          </label>
+          <label>
+            <span class="label">{{ t('common.player') }}</span>
+            <input
+              class="input"
+              type="text"
+              [value]="entryDraft().player_name"
+              (input)="updateEntryDraft('player_name', $event)"
+              placeholder="Galvdon"
+            />
+          </label>
+          <label>
+            <span class="label">{{ t('siphoned.reason') }}</span>
+            <input
+              class="input"
+              type="text"
+              [value]="entryDraft().reason"
+              (input)="updateEntryDraft('reason', $event)"
+              placeholder="Deposit or Withdrawal"
+            />
+          </label>
+          <label>
+            <span class="label">{{ t('common.amount') }}</span>
+            <input
+              class="input"
+              type="number"
+              step="1"
+              [value]="entryDraft().amount"
+              (input)="updateEntryDraft('amount', $event)"
+              placeholder="-10"
+            />
+          </label>
+        </form>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="closeEntryForm()">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="submit"
+            class="btn btn--primary"
+            form="siphoned-entry-form"
+            [disabled]="saving()"
+          >
+            {{ editingEntryId() === null ? t('siphoned.addEntry') : t('siphoned.saveEntry') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
+
+    @if (confirm(); as target) {
+      <app-dialog [title]="t('common.confirm')" (closed)="confirm.set(null)">
+        <p>
+          {{
+            target.kind === 'batch'
+              ? t('siphoned.confirmDeleteBatch')
+              : t('siphoned.confirmDeleteEntry')
+          }}
+        </p>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="confirm.set(null)">
+            {{ t('common.cancel') }}
+          </button>
+          <button type="button" class="btn btn--danger" (click)="runConfirm()">
+            {{ t('common.delete') }}
+          </button>
+        </div>
+      </app-dialog>
     }
   `,
 })
@@ -297,7 +355,6 @@ export class Siphoned {
   private readonly translate = inject(TranslateService);
 
   protected readonly tab = signal<SiphonedTab>('balances');
-
   protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
     { id: 'balances', label: this.t('siphoned.balances') },
     { id: 'entries', label: this.t('siphoned.entries') },
@@ -307,72 +364,170 @@ export class Siphoned {
   protected readonly loadFailed = signal(false);
   protected readonly saving = signal(false);
   protected readonly showIngestForm = signal(false);
+  protected readonly showEntryForm = signal(false);
   protected readonly rawExport = signal('');
   protected readonly balances = signal<SiphonedPlayerBalance[]>([]);
+  protected readonly balanceTotal = signal(0);
   protected readonly entries = signal<SiphonedEntryView[]>([]);
+  protected readonly entryTotal = signal(0);
   protected readonly batches = signal<SiphonedBatchSummary[]>([]);
   protected readonly lastUpdatedAt = signal<string | null>(null);
+
+  protected readonly totalDeposited = computed(() =>
+    this.balances().reduce((sum, b) => sum + this.toNumber(b.total_deposited || 0), 0),
+  );
+  protected readonly totalWithdrawn = computed(() =>
+    this.balances().reduce((sum, b) => sum + this.toNumber(b.total_withdrawn || 0), 0),
+  );
+  protected readonly netTotal = computed(() =>
+    this.balances().reduce((sum, b) => sum + this.toNumber(b.net || 0), 0),
+  );
+
+  protected async refreshNow(): Promise<void> {
+    await Promise.all([this.refreshLastUpdated(), this.load()]);
+  }
   protected readonly editingEntryId = signal<number | null>(null);
   protected readonly entryDraft = signal<EntryDraft>(emptyEntryDraft());
+  protected readonly confirm = signal<ConfirmTarget | null>(null);
+  protected readonly trackBalance = (row: SiphonedPlayerBalance): unknown => row.player_name;
   protected readonly trackEntry = (entry: SiphonedEntryView): unknown => entry.id;
+  protected readonly trackBatch = (batch: SiphonedBatchSummary): unknown => batch.batch_id;
 
-  /** Dynamic columns for entries table - actions column only included when user can ingest */
+  private readonly entryQuery = signal<DataTablePageChange>(emptyPageChange());
+  private readonly balanceQuery = signal<DataTablePageChange>(emptyPageChange());
+
+  protected readonly canIngest = computed(() => this.auth.hasPermission('siphoned.ingest'));
+
+  protected readonly balanceColumns: readonly DataTableColumn<SiphonedPlayerBalance>[] = [
+    {
+      key: 'player_name',
+      label: 'common.player',
+      sortable: true,
+      searchable: true,
+      accessor: (row) => row.player_name,
+      comparator: (a, b) => a.player_name.localeCompare(b.player_name),
+    },
+    {
+      key: 'net',
+      label: 'siphoned.net',
+      sortable: true,
+      accessor: (row) => row.net,
+      comparator: (a, b) => this.toNumber(a.net) - this.toNumber(b.net),
+    },
+    {
+      key: 'total_deposited',
+      label: 'siphoned.deposited',
+      sortable: true,
+      accessor: (row) => row.total_deposited,
+      comparator: (a, b) => this.toNumber(a.total_deposited) - this.toNumber(b.total_deposited),
+      align: 'right',
+    },
+    {
+      key: 'total_withdrawn',
+      label: 'siphoned.withdrawn',
+      sortable: true,
+      accessor: (row) => row.total_withdrawn,
+      comparator: (a, b) => this.toNumber(a.total_withdrawn) - this.toNumber(b.total_withdrawn),
+      align: 'right',
+    },
+    {
+      key: 'entry_count',
+      label: 'siphoned.entryCount',
+      sortable: true,
+      accessor: (row) => row.entry_count,
+      comparator: (a, b) => a.entry_count - b.entry_count,
+      align: 'right',
+    },
+    {
+      key: 'last_seen',
+      label: 'siphoned.lastSeen',
+      sortable: true,
+      accessor: (row) => row.last_seen,
+      comparator: (a, b) => a.last_seen.localeCompare(b.last_seen),
+    },
+  ];
+
   protected readonly entryColumns = computed<DataTableColumn<SiphonedEntryView>[]>(() => {
-    const baseColumns: DataTableColumn<SiphonedEntryView>[] = [
+    const columns: DataTableColumn<SiphonedEntryView>[] = [
       {
         key: 'occurred_at',
         label: 'common.date',
         sortable: true,
-        searchable: true,
         accessor: (entry) => entry.occurred_at,
-        comparator: (a, b) => a.occurred_at.localeCompare(b.occurred_at),
       },
       {
         key: 'player_name',
-        label: 'common.name',
+        label: 'common.player',
         sortable: true,
         searchable: true,
         accessor: (entry) => entry.player_name,
-        comparator: (a, b) => a.player_name.localeCompare(b.player_name),
       },
       {
         key: 'reason',
-        label: 'common.status',
+        label: 'siphoned.reason',
         sortable: true,
         searchable: true,
         accessor: (entry) => entry.reason,
-        comparator: (a, b) => a.reason.localeCompare(b.reason),
-        filterOptions: this.reasonFilterOptions(),
+        filterOptions: [
+          { value: 'Deposit', label: this.t('siphoned.deposited') },
+          { value: 'Withdrawal', label: this.t('siphoned.withdrawn') },
+        ],
       },
       {
         key: 'amount',
         label: 'common.amount',
         sortable: true,
         accessor: (entry) => entry.amount,
-        comparator: (a, b) => a.amount - b.amount,
         align: 'right',
       },
     ];
-
     if (this.canIngest()) {
-      return [
-        ...baseColumns,
-        {
-          key: 'actions',
-          label: 'common.actions',
-          sortable: false,
-          accessor: () => null,
-        },
-      ];
+      columns.push({
+        key: 'actions',
+        label: 'common.actions',
+        sortable: false,
+        align: 'right',
+        accessor: () => null,
+      });
     }
-
-    return baseColumns;
+    return columns;
   });
 
-  /** Builds filter options from unique reason values in the entries */
-  protected readonly reasonFilterOptions = computed<DataTableFilterOption[]>(() => {
-    const uniqueReasons = new Set(this.entries().map((entry) => entry.reason));
-    return [...uniqueReasons].sort().map((reason) => ({ value: reason, label: reason }));
+  protected readonly batchColumns = computed<DataTableColumn<SiphonedBatchSummary>[]>(() => {
+    const columns: DataTableColumn<SiphonedBatchSummary>[] = [
+      {
+        key: 'batch_id',
+        label: 'siphoned.batchId',
+        sortable: true,
+        searchable: true,
+        accessor: (batch) => batch.batch_id,
+        comparator: (a, b) => a.batch_id.localeCompare(b.batch_id),
+      },
+      {
+        key: 'ingested_at',
+        label: 'common.date',
+        sortable: true,
+        accessor: (batch) => batch.ingested_at,
+        comparator: (a, b) => a.ingested_at.localeCompare(b.ingested_at),
+      },
+      {
+        key: 'row_count',
+        label: 'siphoned.rowCount',
+        sortable: true,
+        accessor: (batch) => batch.row_count,
+        comparator: (a, b) => a.row_count - b.row_count,
+        align: 'right',
+      },
+    ];
+    if (this.canIngest()) {
+      columns.push({
+        key: 'actions',
+        label: 'common.actions',
+        sortable: false,
+        accessor: () => null,
+      });
+    }
+    return columns;
   });
 
   protected t = (key: TranslationKey) => this.translate.t(key);
@@ -382,11 +537,27 @@ export class Siphoned {
     void this.load();
   }
 
-  /** Whether the current user can ingest new entries (officer permission) */
-  protected readonly canIngest = computed(() => this.auth.hasPermission('siphoned.ingest'));
+  protected entryDialogTitle(): string {
+    return this.editingEntryId() === null ? this.t('siphoned.addEntry') : this.t('siphoned.editEntry');
+  }
 
-  protected toggleIngestForm(): void {
-    this.showIngestForm.update((isVisible) => !isVisible);
+  protected openIngestForm(): void {
+    this.showIngestForm.set(true);
+  }
+
+  protected openEntryForm(): void {
+    if (this.tab() !== 'entries') {
+      this.tab.set('entries');
+      this.entryQuery.set(emptyPageChange());
+      void this.load();
+    }
+    this.resetEntryDraft();
+    this.showEntryForm.set(true);
+  }
+
+  protected closeEntryForm(): void {
+    this.showEntryForm.set(false);
+    this.resetEntryDraft();
   }
 
   protected onRawExportChange(event: Event): void {
@@ -398,6 +569,18 @@ export class Siphoned {
       return;
     }
     this.tab.set(tab);
+    this.entryQuery.set(emptyPageChange());
+    this.balanceQuery.set(emptyPageChange());
+    void this.load();
+  }
+
+  protected onBalancesChange(event: DataTablePageChange): void {
+    this.balanceQuery.set(event);
+    void this.load();
+  }
+
+  protected onEntriesChange(event: DataTablePageChange): void {
+    this.entryQuery.set(event);
     void this.load();
   }
 
@@ -424,11 +607,33 @@ export class Siphoned {
       reason: entry.reason,
       amount: String(entry.amount),
     });
+    this.showEntryForm.set(true);
   }
 
   protected resetEntryDraft(): void {
     this.editingEntryId.set(null);
     this.entryDraft.set(emptyEntryDraft());
+  }
+
+  protected askDeleteEntry(entryId: number): void {
+    this.confirm.set({ kind: 'entry', id: entryId });
+  }
+
+  protected askDeleteBatch(batchId: string): void {
+    this.confirm.set({ kind: 'batch', id: batchId });
+  }
+
+  protected async runConfirm(): Promise<void> {
+    const target = this.confirm();
+    this.confirm.set(null);
+    if (!target) {
+      return;
+    }
+    if (target.kind === 'entry') {
+      await this.deleteEntry(target.id);
+      return;
+    }
+    await this.deleteBatch(target.id);
   }
 
   private async ingest(): Promise<void> {
@@ -444,7 +649,9 @@ export class Siphoned {
       );
       this.rawExport.set('');
       this.showIngestForm.set(false);
-      this.toasts.success(`${response.ingested_count} rows imported`);
+      this.toasts.success(
+        this.translate.t('siphoned.ingestSuccess', { count: response.ingested_count }),
+      );
       await this.refreshLastUpdated();
       await this.load();
     } catch (error) {
@@ -465,15 +672,15 @@ export class Siphoned {
       const editingId = this.editingEntryId();
       if (editingId === null) {
         await firstValueFrom(this.api.post<SiphonedEntryView>('api/siphoned/entries', request));
-        this.toasts.success('Entry added');
+        this.toasts.success(this.t('siphoned.entryAdded'));
       } else {
         await firstValueFrom(
           this.api.put<SiphonedEntryView>(`api/siphoned/entries/${editingId}`, request),
         );
-        this.toasts.success('Entry updated');
+        this.toasts.success(this.t('siphoned.entryUpdated'));
       }
-      this.resetEntryDraft();
-      await this.loadEntriesAndBalancesAfterMutation();
+      this.closeEntryForm();
+      await this.load();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -481,21 +688,17 @@ export class Siphoned {
     }
   }
 
-  protected async deleteEntry(entryId: number): Promise<void> {
-    if (!confirm(this.t('common.confirm'))) return;
+  private async deleteEntry(entryId: number): Promise<void> {
     try {
       await firstValueFrom(this.api.delete(`api/siphoned/entries/${entryId}`));
       this.toasts.success(this.t('common.delete'));
-      await this.loadEntriesAndBalancesAfterMutation();
+      await this.load();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     }
   }
 
-  /** A batch is a whole import — potentially hundreds of rows — hence a
-   *  message that says so, rather than the app's bare one-word confirm. */
-  protected async deleteBatch(batchId: string): Promise<void> {
-    if (!confirm(this.t('siphoned.confirmDeleteBatch'))) return;
+  private async deleteBatch(batchId: string): Promise<void> {
     try {
       await firstValueFrom(this.api.delete(`api/siphoned/batches/${encodeURIComponent(batchId)}`));
       await this.refreshLastUpdated();
@@ -517,7 +720,7 @@ export class Siphoned {
   protected lastUpdatedLabel(): string {
     const lastUpdatedAt = this.lastUpdatedAt();
     if (!lastUpdatedAt) {
-      return 'Never';
+      return this.t('siphoned.lastUpdatedNever');
     }
     return this.formatDate(lastUpdatedAt);
   }
@@ -526,42 +729,21 @@ export class Siphoned {
     return typeof value === 'number' ? value : Number(value);
   }
 
-  /**
-   * Keeps balance chips readable by showing magnitude separately from debt/credit direction.
-   *
-   * @example
-   * absoluteAmount('-28')
-   */
   protected absoluteAmount(value: number | string): number {
     return Math.abs(this.toNumber(value));
   }
 
-  /**
-   * Labels the accounting direction so positive balances are clearly visible next to debts.
-   *
-   * @example
-   * balanceStatusLabel(28)
-   */
-  protected balanceStatusLabel(value: number | string): 'Credit' | 'Debt' | 'Even' {
+  protected balanceStatusLabel(value: number | string): string {
     const amount = this.toNumber(value);
     if (amount > 0) {
-      return 'Credit';
+      return this.t('siphoned.credit');
     }
     if (amount < 0) {
-      return 'Debt';
+      return this.t('siphoned.debt');
     }
-    return 'Even';
+    return this.t('siphoned.even');
   }
 
-  /**
-   * Converts the single-entry form into the backend mutation payload.
-   *
-   * Manual corrections share the same validation constraints as imported rows: complete timestamp,
-   * non-empty player/reason, and non-zero numeric amount.
-   *
-   * @example
-   * const request = component['buildEntryMutationRequest']();
-   */
   private buildEntryMutationRequest(): SiphonedEntryMutationRequest | null {
     const draft = this.entryDraft();
     const amount = Number(draft.amount);
@@ -570,7 +752,7 @@ export class Siphoned {
       return null;
     }
     if (!Number.isFinite(amount) || amount === 0) {
-      this.toasts.error('Amount must be a non-zero number');
+      this.toasts.error(this.t('siphoned.amountInvalid'));
       return null;
     }
 
@@ -582,15 +764,7 @@ export class Siphoned {
     };
   }
 
-  /**
-   * Converts an ISO timestamp into the value expected by `datetime-local` inputs.
-   *
-   * The ledger treats copied Albion timestamps as UTC, so the rendered editor keeps UTC fields
-   * instead of shifting them into the browser timezone.
-   *
-   * @example
-   * toDateTimeLocal('2026-08-10T20:37:41Z')
-   */
+  /** Keeps UTC fields in the editor so copied Albion timestamps are not shifted. */
   private toDateTimeLocal(iso: string): string {
     const date = new Date(iso);
     const year = date.getUTCFullYear();
@@ -602,17 +776,6 @@ export class Siphoned {
     return `${year}-${month}-${day}T${hour}:${minute}:${second}`;
   }
 
-  /**
-   * Converts the pasted Albion ledger into the backend ingest payload.
-   *
-   * The export copied from spreadsheets is commonly quoted TSV and includes a header row. Invalid
-   * non-empty data rows fail the whole import so operators do not accidentally write partial or
-   * timestamp-shifted ledger entries.
-   *
-   * @example
-   * component.rawExport.set('"Date"\t"Player"\t"Reason"\t"Amount"\n"2026-08-10 20:37:41"\t"Galvdon"\t"Withdrawal"\t"-10"');
-   * const request = component['buildIngestRequest']();
-   */
   private buildIngestRequest(): SiphonedIngestRequest | null {
     try {
       const rows = this.rawExport()
@@ -632,15 +795,6 @@ export class Siphoned {
     }
   }
 
-  /**
-   * Parses one pasted export row while preserving quoted separators inside fields.
-   *
-   * Empty lines and the canonical header row are ignored. Every other malformed line reports its
-   * line number so the officer can fix the source paste before writing an immutable batch.
-   *
-   * @example
-   * parseExportLine('"2026-08-10 20:37:41"\t"Galvdon"\t"Withdrawal"\t"-10"', 2)
-   */
   private parseExportLine(line: string, lineNumber: number): SiphonedIngestRow | null {
     const trimmed = line.trim();
     if (!trimmed) {
@@ -672,15 +826,6 @@ export class Siphoned {
     };
   }
 
-  /**
-   * Splits CSV/TSV-style text without breaking quoted fields.
-   *
-   * Albion exports copied from sheets are tab-separated, but older users may paste semicolon or
-   * comma files. The separator is detected from the first unquoted delimiter in the row.
-   *
-   * @example
-   * parseDelimitedLine('"Date"\t"Player"\t"Reason"\t"Amount"')
-   */
   private parseDelimitedLine(line: string): string[] {
     const separator = this.detectSeparator(line);
     const fields: string[] = [];
@@ -712,15 +857,6 @@ export class Siphoned {
     return fields;
   }
 
-  /**
-   * Chooses the delimiter from the pasted row using only unquoted characters.
-   *
-   * Tabs are preferred because the official copied table uses TSV; comma and semicolon remain for
-   * manually exported files.
-   *
-   * @example
-   * detectSeparator('"Date"\t"Player"')
-   */
   private detectSeparator(line: string): '\t' | ';' | ',' {
     const counts: Record<'\t' | ';' | ',', number> = { '\t': 0, ';': 0, ',': 0 };
     let isInsideQuotes = false;
@@ -745,15 +881,6 @@ export class Siphoned {
     return ',';
   }
 
-  /**
-   * Removes one surrounding quote pair while preserving quotes inside the value.
-   *
-   * Spreadsheet copies quote every cell; stripping here keeps the rest of the parser independent
-   * from the source format.
-   *
-   * @example
-   * stripOuterQuotes('"Withdrawal"')
-   */
   private stripOuterQuotes(value: string): string {
     if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
       return value.slice(1, -1).replace(/""/g, '"');
@@ -761,15 +888,6 @@ export class Siphoned {
     return value;
   }
 
-  /**
-   * Detects the optional exported header row.
-   *
-   * The comparison is case-insensitive so translated spreadsheet tools or casing changes do not
-   * accidentally import the header as a ledger row.
-   *
-   * @example
-   * isHeaderRow('Date', 'Player', 'Reason', 'Amount')
-   */
   private isHeaderRow(
     dateValue: string | undefined,
     playerName: string | undefined,
@@ -784,18 +902,7 @@ export class Siphoned {
     );
   }
 
-  /**
-   * Normalizes Albion's timezone-less timestamp into a UTC ISO string accepted by the backend.
-   *
-   * The copied export does not include an offset, so constructing `Date` from the string directly
-   * would apply the browser's local timezone and shift the stored hour. Parsing the components with
-   * `Date.UTC` preserves the visible Albion timestamp as UTC. Invalid dates throw instead of
-   * falling back to `now`, because this ledger is immutable and a hidden replacement would corrupt
-   * debt calculations.
-   *
-   * @example
-   * normalizeDate('2026-08-10 20:37:41', 2)
-   */
+  /** Parses Albion's timezone-less timestamp as UTC so the browser locale cannot shift the hour. */
   private normalizeDate(value: string, lineNumber: number): string {
     const normalizedValue = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) ? `${value}:00` : value;
     const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/.exec(normalizedValue);
@@ -826,39 +933,18 @@ export class Siphoned {
     return date.toISOString();
   }
 
-  /**
-   * Refreshes the weekly update banner from the latest import batch.
-   *
-   * Batch timestamps represent when officers pasted a full Albion export, which is the important
-   * weekly operational checkpoint. Manual single-entry corrections do not move this reminder.
-   *
-   * @example
-   * await refreshLastUpdated();
-   */
   private async refreshLastUpdated(): Promise<void> {
     try {
       const batches = await firstValueFrom(
         this.api.get<SiphonedBatchSummary[]>('api/siphoned/batches'),
       );
-      this.batches.set(batches);
       this.lastUpdatedAt.set(batches[0]?.ingested_at ?? null);
+      if (this.tab() === 'batches') {
+        this.batches.set(batches);
+      }
     } catch {
       this.lastUpdatedAt.set(null);
     }
-  }
-
-  /**
-   * Keeps the visible ledger and accounting totals in sync after single-row corrections.
-   *
-   * @example
-   * await loadEntriesAndBalancesAfterMutation();
-   */
-  private async loadEntriesAndBalancesAfterMutation(): Promise<void> {
-    await this.load();
-    const balances = await firstValueFrom(
-      this.api.get<SiphonedPlayerBalance[]>('api/siphoned/balances'),
-    );
-    this.balances.set(balances);
   }
 
   protected async load(): Promise<void> {
@@ -866,21 +952,51 @@ export class Siphoned {
     this.loadFailed.set(false);
     try {
       if (this.tab() === 'balances') {
-        const balances = await firstValueFrom(
-          this.api.get<SiphonedPlayerBalance[]>('api/siphoned/balances'),
+        const query = this.balanceQuery();
+        const params: Record<string, string | number> = {
+          page: query.page,
+          limit: query.pageSize,
+        };
+        if (query.search.trim()) {
+          params['search'] = query.search.trim();
+        }
+        if (query.sort) {
+          const sortMap: Record<string, string> = {
+            player_name: 'name_asc',
+            net: query.sort.direction === 'desc' ? 'net_desc' : 'net_asc',
+          };
+          params['sort'] = sortMap[query.sort.columnKey] ?? 'net_asc';
+        }
+        const data = await firstValueFrom(
+          this.api.get<PaginatedData<SiphonedPlayerBalance>>('api/siphoned/balances', params),
         );
-        this.balances.set(balances);
+        this.balances.set(data.items);
+        this.balanceTotal.set(data.total_items);
         return;
       }
 
       if (this.tab() === 'entries') {
+        const query = this.entryQuery();
+        const params: Record<string, string | number | boolean> = {
+          page: query.page,
+          limit: query.pageSize,
+        };
+        if (query.search.trim()) {
+          params['search'] = query.search.trim();
+        }
+        if (query.sort) {
+          params['sort'] = query.sort.columnKey;
+          params['order'] = query.sort.direction;
+        }
+        const reason = query.columnFilters['reason'];
+        if (reason) {
+          params['reason'] = reason;
+        }
         const page = await firstValueFrom(
-          this.api.get<PaginatedData<SiphonedEntryView>>('api/siphoned/entries', {
-            page: 1,
-            limit: ENTRIES_LOAD_LIMIT,
-          }),
+          this.api.get<PaginatedData<SiphonedEntryView>>('api/siphoned/entries', params),
         );
         this.entries.set(page.items);
+        this.entryTotal.set(page.total_items);
         return;
       }
 

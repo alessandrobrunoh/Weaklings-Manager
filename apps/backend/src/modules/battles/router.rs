@@ -19,7 +19,7 @@ use super::service::BattlesService;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::auth::UserContext;
-use crate::pagination::{PaginatedBattleSummary, PaginationParams};
+use crate::pagination::{PaginatedBattleSummary, PaginationParams, SortOrder};
 use crate::responses::{ApiResponse, ApiResponsePaginatedBattles};
 
 /// Creates the router for the `battles` module.
@@ -40,8 +40,18 @@ pub fn router() -> Router {
 pub struct BattlesListQuery {
     /// 1-indexed page number. Defaults to 1.
     pub page: Option<u64>,
+    /// Page size. Defaults to 10.
+    pub limit: Option<u64>,
     /// Minimum total players threshold. Defaults to 10.
     pub min_players: Option<i64>,
+    /// Case-insensitive match on battle id, guild name, or alliance.
+    pub search: Option<String>,
+    /// Sort column: `start_time` (default), `fame`, `kills`, `deaths`, `players`, `id`, `outcome`.
+    pub sort: Option<String>,
+    /// Sort direction: `asc` or `desc` (default).
+    pub order: Option<String>,
+    /// Derived outcome filter: `victory`, `defeat`, or `contested`.
+    pub outcome: Option<String>,
 }
 
 /// Query parameters for `/me`.
@@ -51,6 +61,14 @@ pub struct MyBattlesQuery {
     pub page: Option<u64>,
     /// Maximum number of items per page. Defaults to 10.
     pub limit: Option<u64>,
+    /// Case-insensitive match on battle id, guild name, or alliance.
+    pub search: Option<String>,
+    /// Sort column: `start_time` (default), `fame`, `kills`, `deaths`, `players`, `id`, `outcome`.
+    pub sort: Option<String>,
+    /// Sort direction: `asc` or `desc` (default).
+    pub order: Option<String>,
+    /// Derived outcome filter: `victory`, `defeat`, or `contested`.
+    pub outcome: Option<String>,
 }
 
 /// List recent battles of the configured Weaklings guild.
@@ -59,9 +77,9 @@ pub struct MyBattlesQuery {
     path = "/api/battles",
     tag = "battles",
     summary = "List recent battles of the configured Weaklings guild",
-    description = "Paginated list of battles involving the configured guild. `page` is passed \
-        straight through to AlbionBB. `min_players` defaults to 10. Use `/battles/{battle_id}` for \
-        full per-player and kill timeline details.",
+    description = "Paginated list of battles involving the configured guild. AlbionBB cannot sort, \
+        so the backend hydrates recent pages, then filters/sorts/paginates locally. \
+        `min_players` defaults to 10. Use `/battles/{battle_id}` for full per-player details.",
     security(("session_cookie" = [])),
     params(BattlesListQuery),
     responses(
@@ -75,9 +93,20 @@ pub async fn list_battles(
     Extension(service): Extension<BattlesService>,
     Query(query): Query<BattlesListQuery>,
 ) -> Result<Json<ApiResponse<PaginatedBattleSummary>>, AppError> {
-    let page = query.page.unwrap_or(1).max(1);
-    let min_players = query.min_players.or(Some(10));
-    let paginated = service.list_guild_battles(min_players, page).await?;
+    let pagination = PaginationParams {
+        page: query.page,
+        limit: query.limit,
+    };
+    let paginated = service
+        .list_guild_battles(
+            query.min_players,
+            &pagination,
+            query.search.as_deref(),
+            query.sort.as_deref(),
+            SortOrder::from_query(query.order.as_deref()),
+            query.outcome.as_deref(),
+        )
+        .await?;
     Ok(Json(ApiResponse::new(PaginatedBattleSummary::from(
         paginated,
     ))))
@@ -142,7 +171,17 @@ pub async fn list_my_battles(
         page: query.page,
         limit: query.limit,
     };
-    let paginated = service.list_my_battles(&db, &user.id, &pagination).await?;
+    let paginated = service
+        .list_my_battles(
+            &db,
+            &user.id,
+            &pagination,
+            query.search.as_deref(),
+            query.sort.as_deref(),
+            SortOrder::from_query(query.order.as_deref()),
+            query.outcome.as_deref(),
+        )
+        .await?;
     Ok(Json(ApiResponse::new(PaginatedBattleSummary::from(
         paginated,
     ))))

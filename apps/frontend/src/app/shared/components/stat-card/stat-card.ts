@@ -1,38 +1,45 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { Icon, type IconName } from '../icon/icon';
 
 /**
- * Compact KPI tile: a quiet label above a large tabular figure.
- *
- * Numbers are set in the mono face so columns of figures line up and read as
- * measurements rather than prose. `tone` tints only the value, never the
- * surface — the card itself stays neutral so a row of tiles reads as one
- * object rather than a traffic light.
- *
- * @example
- * <app-stat-card [label]="'Win rate'" [value]="'62%'" [sub]="'18 fights'" tone="success" />
+ * Modular KPI tile: quiet eyebrow label, optional icon, and mono figure.
+ * Reusable across Dashboard, Battles, Events, Bank, Compositions, etc.
  */
 @Component({
   selector: 'app-stat-card',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Icon],
   template: `
-    <div class="card p-4">
-      <p class="eyebrow">{{ label() }}</p>
-      <p class="mono mt-1.5 text-xl leading-none" [style.color]="valueColor()">
-        {{ value() ?? '—' }}
-      </p>
-      @if (sub()) {
-        <p class="mt-1.5 text-xs" style="color: var(--color-text-secondary)">{{ sub() }}</p>
-      }
+    <div class="card p-3 flex flex-col justify-between h-full">
+      <div class="flex items-center justify-between gap-2 mb-3">
+        <p class="eyebrow truncate">{{ label() }}</p>
+        @if (icon()) {
+          <span
+            class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
+            style="background-color: var(--color-surface-2); color: var(--color-text-secondary)"
+            aria-hidden="true"
+          >
+            <app-icon [name]="icon()!" size="0.875rem" />
+          </span>
+        }
+      </div>
+      <div>
+        <p class="mono text-xl font-normal leading-tight tracking-[-0.02em]" [style.color]="valueColor()">
+          {{ value() !== null && value() !== undefined ? value() : '—' }}
+        </p>
+        @if (sub()) {
+          <p class="mt-1 text-[11px]" style="color: var(--color-text-tertiary)">{{ sub() }}</p>
+        }
+      </div>
     </div>
   `,
 })
 export class StatCard {
   readonly label = input.required<string>();
-  readonly value = input.required<string | null>();
-  /** Optional supporting line under the figure. */
+  readonly value = input.required<string | number | null>();
   readonly sub = input<string>();
-  /** Tints the figure only. */
-  readonly tone = input<'default' | 'success' | 'warning' | 'danger' | 'primary'>('default');
+  readonly icon = input<IconName | undefined>(undefined);
+  readonly tone = input<'default' | 'neutral' | 'success' | 'warning' | 'danger' | 'primary'>('default');
 
   protected valueColor(): string {
     switch (this.tone()) {
@@ -43,7 +50,7 @@ export class StatCard {
       case 'danger':
         return 'var(--color-error)';
       case 'primary':
-        return 'var(--color-primary)';
+        return 'var(--color-text)';
       default:
         return 'var(--color-text)';
     }

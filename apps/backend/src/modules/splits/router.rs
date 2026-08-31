@@ -10,14 +10,15 @@ use axum::{
 
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
+use crate::modules::bank::service::BankService;
 use crate::pagination::{PaginatedSplitSummary, PaginationParams};
 use crate::responses::{ApiResponse, ApiResponseMatchedParticipantList, ApiResponseSplitDetail};
 
 use super::models::{
     CompleteSplitsBatchRequest, CompleteSplitsBatchResult, CreateIslandRequest,
     CreateIslandTabRequest, CreateSplitRequest, MatchParticipantsRequest, MatchedParticipant,
-    SplitDetail, SplitFilters, SplitIslandView, UpdateIslandRequest, UpdateIslandTabRequest,
-    UpdateSplitRequest, UpsertParticipantRequest,
+    SplitDetail, SplitFilters, SplitIslandView, SplitKpiSummary, UpdateIslandRequest,
+    UpdateIslandTabRequest, UpdateSplitRequest, UpsertParticipantRequest,
 };
 use super::service::SplitService;
 
@@ -32,6 +33,10 @@ pub struct ListSplitsQuery {
     pub page: Option<u64>,
     /// The maximum number of items per page. Defaults to 10.
     pub limit: Option<u64>,
+    /// Sort column. Allowed: `created_at` (default), `status`, `note`.
+    pub sort: Option<String>,
+    /// Sort direction: `asc` or `desc` (default).
+    pub order: Option<String>,
     /// The filter query parameters.
     #[serde(flatten)]
     pub filters: SplitFilters,
@@ -54,6 +59,7 @@ pub fn router() -> Router {
             "/islands/{id}",
             axum::routing::patch(update_island).delete(delete_island),
         )
+        .route("/summary", get(split_kpi_summary))
         .route("/islands/{id}/tabs", post(add_island_tab))
         .route(
             "/islands/{id}/tabs/{tab_id}",
@@ -69,11 +75,34 @@ pub fn router() -> Router {
             "/{id}/participants/{user_id}",
             axum::routing::delete(remove_participant),
         )
+        .route("/{id}/donate", post(donate_split_share))
         .route("/complete-batch", post(complete_splits_batch))
         .route("/{id}/complete", post(complete_split))
         .route("/{id}/not-completed", post(not_completed_split))
         .route("/{id}/lost", post(lost_split))
         .route("/match-participants", post(match_participants))
+}
+
+/// Guild-wide split KPI totals (not scoped to the current list page).
+#[utoipa::path(
+    get,
+    path = "/api/splits/summary",
+    tag = "splits",
+    summary = "Guild-wide loot-split KPI totals",
+    description = "Aggregates every split so list-page cards stay correct when the table is \
+        filtered or paginated. Open to any authenticated member.",
+    security(("session_cookie" = [])),
+    responses(
+        (status = 200, description = "KPI totals", body = crate::responses::ApiResponseSplitKpiSummary),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
+    )
+)]
+pub async fn split_kpi_summary(
+    _user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<SplitKpiSummary>>, AppError> {
+    let summary = SplitService::new().kpi_summary(&db).await?;
+    Ok(Json(ApiResponse::new(summary)))
 }
 
 /// Request a new split together with its participants.
@@ -126,7 +155,8 @@ async fn create_split(
         `GET /bank/transactions`); everyone sees every split. Each item is a `SplitSummary` (no \
         participant list — call `GET /splits/{id}` for that). Filter with `?status=pending`, \
         `?status=completed`, `?status=not_completed`, or `?status=lost`; omit to get every status. \
-        Standard `page`/`limit` pagination, default `limit=10`.",
+        Standard `page`/`limit` pagination, default `limit=10`. Sort with `?sort=created_at|status|note` \
+        and `?order=asc|desc` (default `created_at desc`). Unknown `sort` values return 400.",
     security(("session_cookie" = [])),
     params(ListSplitsQuery),
     responses(
@@ -142,7 +172,13 @@ async fn list_splits(
     let service = SplitService::new();
     let pagination = query.pagination();
     let paginated = service
-        .list_splits(&db, &pagination, &query.filters)
+        .list_splits_sorted(
+            &db,
+            &pagination,
+            &query.filters,
+            query.sort.as_deref(),
+            query.order.as_deref(),
+        )
         .await?;
     Ok(Json(ApiResponse::new(PaginatedSplitSummary::from(
         paginated,
@@ -372,6 +408,34 @@ async fn complete_split(
     Ok(Json(ApiResponse::new(split)))
 }
 
+/// Donate the caller's own requestable share from a completed split to the Guild Bank.
+#[utoipa::path(
+    post,
+    path = "/api/splits/{id}/donate",
+    tag = "splits",
+    summary = "Donate the caller's split share to the Guild Bank",
+    description = "Irreversibly marks the caller's own pending or rejected `split_credit` transaction as donated to the virtual Guild Bank. The operation never affects another participant's share and cannot be undone.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "The completed split id")),
+    responses(
+        (status = 200, description = "Share donated and split detail returned", body = ApiResponseSplitDetail),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 409, description = "No requestable share is available for this user", body = ProblemDetails),
+        (status = 404, description = "No split exists with this id", body = ProblemDetails)
+    )
+)]
+pub async fn donate_split_share(
+    user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
+    BankService::new()
+        .donate_split_share(&db, id, user.user_id)
+        .await?;
+    let split = SplitService::new().get_split(&db, id).await?;
+    Ok(Json(ApiResponse::new(split)))
+}
+
 /// Mark a pending split as not completed (terminal, no transactions generated).
 ///
 /// Requires the Admin or Officer role.
@@ -561,7 +625,8 @@ async fn create_island(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<CreateIslandRequest>,
 ) -> Result<Json<ApiResponse<SplitIslandView>>, AppError> {
-    user.require(&perms, Permission::SplitsIslandsManage).await?;
+    user.require(&perms, Permission::SplitsIslandsManage)
+        .await?;
     let island = SplitService::new().create_island(&db, req).await?;
     Ok(Json(ApiResponse::new(island)))
 }
@@ -588,7 +653,8 @@ async fn update_island(
     Path(id): Path<i64>,
     Json(req): Json<UpdateIslandRequest>,
 ) -> Result<Json<ApiResponse<SplitIslandView>>, AppError> {
-    user.require(&perms, Permission::SplitsIslandsManage).await?;
+    user.require(&perms, Permission::SplitsIslandsManage)
+        .await?;
     let island = SplitService::new().update_island(&db, id, req).await?;
     Ok(Json(ApiResponse::new(island)))
 }
@@ -614,7 +680,8 @@ async fn delete_island(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<axum::response::Response, AppError> {
-    user.require(&perms, Permission::SplitsIslandsManage).await?;
+    user.require(&perms, Permission::SplitsIslandsManage)
+        .await?;
     SplitService::new().delete_island(&db, id).await?;
     Ok(axum::response::Response::builder()
         .status(axum::http::StatusCode::NO_CONTENT)
@@ -644,7 +711,8 @@ async fn add_island_tab(
     Path(id): Path<i64>,
     Json(req): Json<CreateIslandTabRequest>,
 ) -> Result<Json<ApiResponse<SplitIslandView>>, AppError> {
-    user.require(&perms, Permission::SplitsIslandsManage).await?;
+    user.require(&perms, Permission::SplitsIslandsManage)
+        .await?;
     let island = SplitService::new().add_island_tab(&db, id, req).await?;
     Ok(Json(ApiResponse::new(island)))
 }
@@ -674,7 +742,8 @@ async fn update_island_tab(
     Path((id, tab_id)): Path<(i64, i64)>,
     Json(req): Json<UpdateIslandTabRequest>,
 ) -> Result<Json<ApiResponse<SplitIslandView>>, AppError> {
-    user.require(&perms, Permission::SplitsIslandsManage).await?;
+    user.require(&perms, Permission::SplitsIslandsManage)
+        .await?;
     let island = SplitService::new()
         .update_island_tab(&db, id, tab_id, req)
         .await?;
@@ -705,7 +774,8 @@ async fn delete_island_tab(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path((id, tab_id)): Path<(i64, i64)>,
 ) -> Result<Json<ApiResponse<SplitIslandView>>, AppError> {
-    user.require(&perms, Permission::SplitsIslandsManage).await?;
+    user.require(&perms, Permission::SplitsIslandsManage)
+        .await?;
     let island = SplitService::new()
         .delete_island_tab(&db, id, tab_id)
         .await?;

@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 
-import { authGuard, permissionGuard, redirectIfAuthenticatedGuard } from './core/guards/auth.guard';
+import { authGuard, permissionGuard, permissionGuardTo, redirectIfAuthenticatedGuard } from './core/guards/auth.guard';
+import { ADMIN_ACCESS_PERMISSIONS } from './layout/nav';
 
 /**
  * Top-level routes.
@@ -21,9 +22,13 @@ export const routes: Routes = [
         loadComponent: () => import('./features/dashboard/dashboard').then((m) => m.Dashboard),
       },
       {
-        path: 'leaderboards',
+        path: 'season',
         loadComponent: () =>
-          import('./features/leaderboards/leaderboards').then((m) => m.Leaderboards),
+          import('./features/leaderboards/leaderboards').then((m) => m.SeasonOverview),
+      },
+      {
+        path: 'leaderboards',
+        redirectTo: 'season',
       },
       {
         path: 'bank',
@@ -34,15 +39,27 @@ export const routes: Routes = [
         loadComponent: () => import('./features/splits/splits').then((m) => m.Splits),
       },
       {
+        path: 'splits/:splitId',
+        loadComponent: () =>
+          import('./features/splits/split-detail').then((m) => m.SplitDetailPage),
+      },
+      {
+        path: 'islands/:islandId',
+        redirectTo: (route) => `/admin/islands/${route.params['islandId'] ?? ''}`,
+      },
+      {
+        path: 'islands',
+        redirectTo: '/admin/islands',
+      },
+      {
+        path: 'manage-islands',
+        redirectTo: '/admin/islands',
+      },
+      {
         path: 'events',
         loadComponent: () => import('./features/events/events').then((m) => m.Events),
       },
-      {
-        path: 'events/new',
-        canActivate: [permissionGuard('events.manage')],
-        loadComponent: () =>
-          import('./features/events/event-create').then((m) => m.EventCreatePage),
-      },
+      { path: 'events/new', redirectTo: '/events' },
       {
         path: 'events/:eventId',
         loadComponent: () =>
@@ -93,8 +110,17 @@ export const routes: Routes = [
         loadComponent: () => import('./features/regears/regears').then((m) => m.Regears),
       },
       {
+        path: 'regears/:deathId',
+        loadComponent: () =>
+          import('./features/regears/regear-detail').then((m) => m.RegearDetailPage),
+      },
+      {
         path: 'users',
         loadComponent: () => import('./features/users/users').then((m) => m.Users),
+      },
+      {
+        path: 'users/:userId',
+        loadComponent: () => import('./features/users/user-detail').then((m) => m.UserDetailPage),
       },
       {
         path: 'warns',
@@ -103,8 +129,64 @@ export const routes: Routes = [
       },
       {
         path: 'admin',
-        canActivate: [permissionGuard('roles.manage', 'permissions.reload', 'admin.settings.manage')],
-        loadComponent: () => import('./features/admin/admin').then((m) => m.Admin),
+        canActivate: [permissionGuard(...ADMIN_ACCESS_PERMISSIONS)],
+        children: [
+          {
+            path: '',
+            pathMatch: 'full',
+            loadComponent: () => import('./features/admin/admin-hub').then((m) => m.AdminHub),
+          },
+          {
+            path: 'finance',
+            canActivate: [permissionGuardTo('/admin', 'bank.view_others')],
+            loadComponent: () =>
+              import('./features/admin/admin-finance').then((m) => m.AdminFinance),
+          },
+          {
+            path: 'roles',
+            canActivate: [permissionGuardTo('/admin', 'roles.manage')],
+            loadComponent: () => import('./features/admin/admin-roles').then((m) => m.AdminRoles),
+          },
+          {
+            path: 'permissions',
+            canActivate: [permissionGuardTo('/admin', 'roles.manage', 'permissions.reload')],
+            loadComponent: () =>
+              import('./features/admin/admin-permissions').then((m) => m.AdminPermissions),
+          },
+          {
+            path: 'discord',
+            canActivate: [permissionGuardTo('/admin', 'admin.settings.manage', 'autorole.manage')],
+            loadComponent: () => import('./features/admin/admin-discord').then((m) => m.AdminDiscord),
+          },
+          {
+            path: 'progression',
+            canActivate: [permissionGuardTo('/admin', 'progression.settings.manage')],
+            loadComponent: () =>
+              import('./features/admin/admin-progression').then((m) => m.AdminProgression),
+          },
+          {
+            path: 'regears',
+            canActivate: [permissionGuardTo('/admin', 'regear.settings.manage')],
+            loadComponent: () =>
+              import('./features/admin/admin-regears').then((m) => m.AdminRegears),
+          },
+          {
+            path: 'islands',
+            canActivate: [permissionGuardTo('/admin', 'splits.islands.manage')],
+            loadComponent: () =>
+              import('./features/admin/admin-islands').then((m) => m.AdminIslands),
+          },
+          {
+            path: 'islands/:islandId',
+            canActivate: [permissionGuardTo('/admin', 'splits.islands.manage')],
+            loadComponent: () =>
+              import('./features/admin/admin-island-detail').then((m) => m.AdminIslandDetail),
+          },
+          {
+            path: 'users',
+            redirectTo: '/users',
+          },
+        ],
       },
       {
         path: 'audit',
@@ -117,8 +199,7 @@ export const routes: Routes = [
       },
       {
         path: 'settings',
-        loadComponent: () =>
-          import('./features/albion-settings/albion-settings').then((m) => m.AlbionSettings),
+        redirectTo: 'profile',
       },
     ],
   },

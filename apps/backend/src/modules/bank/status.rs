@@ -21,6 +21,8 @@ pub enum TransactionStatus {
     Rejected,
     /// An officer accepted the withdrawal request and paid it out.
     Withdrawn,
+    /// The recipient donated the outstanding split share back to the Guild Bank.
+    Donated,
 }
 
 impl TransactionStatus {
@@ -31,6 +33,7 @@ impl TransactionStatus {
             Self::Requested => "requested",
             Self::Rejected => "rejected",
             Self::Withdrawn => "withdrawn",
+            Self::Donated => "donated",
         }
     }
 }
@@ -50,6 +53,7 @@ impl FromStr for TransactionStatus {
             "requested" => Ok(Self::Requested),
             "rejected" => Ok(Self::Rejected),
             "withdrawn" => Ok(Self::Withdrawn),
+            "donated" => Ok(Self::Donated),
             other => Err(format!("unknown transaction status: {other}")),
         }
     }

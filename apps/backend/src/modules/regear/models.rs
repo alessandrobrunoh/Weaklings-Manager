@@ -288,6 +288,15 @@ pub struct DeathFilters {
     pub global: Option<bool>,
     /// Filter by bank transaction id (used by the bank UI to render regear credits).
     pub bank_transaction_id: Option<i64>,
+    /// Case-insensitive substring match on `player_name`.
+    pub search: Option<String>,
+    /// Sort column. Allowed: `killed_at` (default), `status`, `player_name`.
+    pub sort: Option<String>,
+    /// Sort direction: `asc` or `desc`. Defaults to `desc`.
+    pub order: Option<String>,
+    /// If `true` and `status` is omitted, only terminal (`approved` / `rejected`) deaths.
+    #[serde(default, deserialize_with = "deserialize_optional_bool")]
+    pub history: Option<bool>,
 }
 
 /// Per-user budget usage returned by `GET /me/summary`.

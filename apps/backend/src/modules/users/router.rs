@@ -7,7 +7,11 @@ use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedUserProfile, PaginationParams};
 use crate::responses::{ApiResponse, ApiResponseUserMetrics, ApiResponseUserProfile};
-use axum::{Extension, Json, Router, extract::Query, routing::get};
+use axum::{
+    Extension, Json, Router,
+    extract::{Path, Query},
+    routing::get,
+};
 
 /// Router query parameters for listing users, combining pagination and filtering.
 ///
@@ -42,6 +46,7 @@ pub fn router() -> Router {
         .route("/me", get(get_my_profile))
         .route("/me/metrics", get(get_my_metrics))
         .route("/", get(list_users).post(create_user))
+        .route("/{user_id}", get(get_user))
 }
 
 /// Retrieve the profile of the currently authenticated user.
@@ -121,8 +126,9 @@ async fn get_my_metrics(
         request form uses to populate its participant picker, and the only way to resolve a \
         username to the internal `user_id` needed by `POST /splits` or `POST /splits/{id}/participants`. \
         Supports filtering by `username` (case-insensitive substring), exact `email`, or `role`, plus \
-        standard `page`/`limit` pagination (default `limit=10` — pass a larger `limit`, e.g. 100, when \
-        populating a picker so you get the whole roster in one call).",
+        standard `page`/`limit` pagination (default `limit=10`). Page through results rather than \
+        requesting an oversized `limit`. Sort with `sort=username|role` and `order=asc|desc`; \
+        unknown `sort` values return 400.",
     security(("session_cookie" = [])),
     params(
         ListUsersQuery
@@ -143,6 +149,42 @@ async fn list_users(
     let response_data = PaginatedUserProfile::from(paginated);
 
     Ok(Json(ApiResponse::new(response_data)))
+}
+
+/// Fetch one user profile by internal id.
+///
+/// Open to any authenticated user, matching [`list_users`].
+///
+/// # Errors
+///
+/// * Returns `AppError::Unauthorized` if there is no active session.
+/// * Returns `AppError::NotFound` if the user does not exist.
+#[utoipa::path(
+    get,
+    path = "/api/users/{user_id}",
+    tag = "users",
+    summary = "Get one guild member by internal id",
+    description = "Returns the same `UserProfile` shape as `GET /api/users`. Open to any \
+        authenticated user so member detail pages can load without a full roster dump.",
+    security(("session_cookie" = [])),
+    params(("user_id" = u64, Path, description = "Internal user id")),
+    responses(
+        (status = 200, description = "Profile retrieved successfully", body = ApiResponseUserProfile),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 404, description = "User not found", body = ProblemDetails)
+    )
+)]
+pub async fn get_user(
+    _user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(user_id): Path<u64>,
+) -> Result<Json<ApiResponse<UserProfile>>, AppError> {
+    let service = UserService::new();
+    let profile = service
+        .get_profile(&db, user_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("user {user_id} not found")))?;
+    Ok(Json(ApiResponse::new(profile)))
 }
 
 /// Create a new user profile.

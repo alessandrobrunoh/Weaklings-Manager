@@ -27,6 +27,11 @@ pub struct TransactionView {
     /// The username of the user who is owed / receives the amount.
     #[schema(example = "Alice")]
     pub to_username: String,
+    /// The display label for the actual destination. This is `Guild Bank` for donations.
+    #[schema(example = "Guild Bank")]
+    pub to_label: String,
+    /// Whether this row represents a movement to the virtual Guild Bank.
+    pub to_guild_bank: bool,
     /// The transaction amount.
     #[schema(value_type = String, example = "42.50")]
     pub amount: Decimal,
@@ -58,12 +63,19 @@ impl TransactionView {
                 .from_user_id
                 .map_or_else(|| "Guild Bank".to_string(), |id| id.to_string())
         });
+        let to_label = if model.to_guild_bank {
+            "Guild Bank".to_string()
+        } else {
+            to_username.clone()
+        };
         Self {
             id: model.id,
             from_user_id: model.from_user_id,
             from_label,
             to_user_id: model.to_user_id,
             to_username,
+            to_label,
+            to_guild_bank: model.to_guild_bank,
             amount: model.amount,
             status,
             r#type: model.r#type,
@@ -111,11 +123,61 @@ pub struct GuildBankSummary {
     pub paid_count: u64,
 }
 
+/// One grouped money-flow line in the administrator bank report.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct BankBreakdown {
+    /// Human-readable group label, such as a username, `Guild Bank`, or transaction type.
+    pub label: String,
+    /// Number of ledger rows in this group.
+    pub transaction_count: u64,
+    /// Sum of the positive amounts represented by this group.
+    #[schema(value_type = String, example = "1250.00")]
+    pub total_amount: Decimal,
+}
+
+/// Guild-wide bank statistics for the administrator panel.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct BankAnalyticsSummary {
+    /// Number of ledger rows, regardless of current status.
+    pub transaction_count: u64,
+    /// Sum of all ledger row amounts.
+    #[schema(value_type = String, example = "12500.00")]
+    pub ledger_volume: Decimal,
+    /// Rows that are still available to request or request again.
+    #[schema(value_type = String, example = "3000.00")]
+    pub outstanding_total: Decimal,
+    pub outstanding_count: u64,
+    /// Rows whose withdrawal was requested but not yet paid.
+    #[schema(value_type = String, example = "800.00")]
+    pub requested_total: Decimal,
+    pub requested_count: u64,
+    /// Rows already paid out by an officer.
+    #[schema(value_type = String, example = "9000.00")]
+    pub paid_out_total: Decimal,
+    pub paid_out_count: u64,
+    /// Rows donated back to the Guild Bank.
+    #[schema(value_type = String, example = "500.00")]
+    pub donated_total: Decimal,
+    pub donated_count: u64,
+    /// Aggregation by recorded source.
+    pub sources: Vec<BankBreakdown>,
+    /// Aggregation by actual destination.
+    pub destinations: Vec<BankBreakdown>,
+    /// Aggregation by transaction type.
+    pub transaction_types: Vec<BankBreakdown>,
+}
+
 /// Filters that can be applied when listing transactions.
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema, Default)]
 pub struct TransactionFilters {
     /// Filter by transaction status.
     pub status: Option<TransactionStatus>,
+    /// Case-insensitive substring match on the recipient username.
+    pub search: Option<String>,
+    /// Sort column. Allowed: `created_at` (default), `amount`, `status`, `to_username`.
+    pub sort: Option<String>,
+    /// Sort direction: `asc` or `desc`. Defaults to `desc`.
+    pub order: Option<String>,
 }
 
 /// Request body to request withdrawal of one, several, or all of the caller's requestable

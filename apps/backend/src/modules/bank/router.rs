@@ -13,8 +13,8 @@ use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedTransactionView, PaginationParams};
 use crate::responses::{
-    ApiResponse, ApiResponseBalanceSummary, ApiResponseGuildBankSummary,
-    ApiResponseTransactionViewList,
+    ApiResponse, ApiResponseBalanceSummary, ApiResponseBankAnalyticsSummary,
+    ApiResponseGuildBankSummary, ApiResponseTransactionViewList,
 };
 
 use super::models::{
@@ -64,6 +64,7 @@ pub fn router() -> Router {
     Router::new()
         .route("/balance", get(get_balance))
         .route("/guild/summary", get(get_guild_summary))
+        .route("/admin/summary", get(get_admin_summary))
         .route("/transactions", get(list_transactions))
         .route("/transactions/withdraw", post(withdraw))
         .route("/transactions/withdraw/accept", post(accept_withdrawal))
@@ -150,6 +151,29 @@ async fn get_guild_summary(
     Ok(Json(ApiResponse::new(summary)))
 }
 
+/// Retrieve guild-wide bank analytics for the administrator panel.
+#[utoipa::path(
+    get,
+    path = "/api/bank/admin/summary",
+    tag = "bank",
+    summary = "Get guild-wide Guild Bank money-flow analytics",
+    description = "Returns totals and grouped source, destination, and transaction-type breakdowns for every ledger row. Requires `bank.view_others` because the response includes guild-wide member-level labels.",
+    security(("session_cookie" = ["bank.view_others"])),
+    responses(
+        (status = 200, description = "Bank analytics retrieved successfully", body = ApiResponseBankAnalyticsSummary),
+        (status = 403, description = "Forbidden - requires bank.view_others", body = ProblemDetails)
+    )
+)]
+pub async fn get_admin_summary(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<super::models::BankAnalyticsSummary>>, AppError> {
+    user.require(&perms, Permission::BankViewOthers).await?;
+    let summary = BankService::new().get_analytics_summary(&db).await?;
+    Ok(Json(ApiResponse::new(summary)))
+}
+
 /// List the caller's transactions with pagination and optional status filtering.
 ///
 /// # Errors
@@ -164,7 +188,9 @@ async fn get_guild_summary(
         `from_label` is a display-ready string: `\"Guild Bank\"` while `status` is `pending` or \
         `requested`, or the paying officer's user id once `status` is `withdrawn`. Filter with \
         `?status=pending`, `?status=requested`, `?status=rejected`, or `?status=withdrawn` (see \
-        `TransactionStatus`); omit it to get every status. Standard `page`/`limit` pagination. Pass `?user_id=<id>` to view \
+        `TransactionStatus`); omit it to get every status. Search recipients with `search` \
+        (case-insensitive username substring). Sort with `sort=created_at|amount|status|to_username` \
+        and `order=asc|desc` (default `created_at` desc). Standard `page`/`limit` pagination. Pass `?user_id=<id>` to view \
         another member's transactions — administrator-only, same rule as `GET /bank/balance`.",
     security(("session_cookie" = [])),
     params(ListTransactionsQuery),

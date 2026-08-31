@@ -27,6 +27,23 @@ pub struct SplitParticipantView {
     pub share_amount: Option<Decimal>,
 }
 
+/// Guild-wide split totals for the list-page KPI cards.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct SplitKpiSummary {
+    /// Splits currently awaiting payout.
+    pub pending_count: u64,
+    /// Splits that have been paid out.
+    pub completed_count: u64,
+    /// Sum of completed net values (falls back to estimated − repair + bags).
+    #[schema(value_type = String, example = "125000")]
+    pub total_net_distributed: Decimal,
+    /// Sum of estimated market value across every split.
+    #[schema(value_type = String, example = "200000")]
+    pub total_estimated_volume: Decimal,
+    /// Total participant rows across every split.
+    pub total_participants: u64,
+}
+
 /// A split's summary, as shown in list views.
 #[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct SplitSummary {
@@ -201,7 +218,7 @@ pub struct MatchedParticipant {
 }
 
 /// Filters that can be applied when listing splits.
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
 pub struct SplitFilters {
     /// Filter splits by their status.
     pub status: Option<SplitStatus>,

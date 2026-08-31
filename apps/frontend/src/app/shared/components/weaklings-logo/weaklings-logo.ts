@@ -16,10 +16,10 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
   selector: 'app-weaklings-logo',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="brand" [class.brand--compact]="compact()" aria-label="WEAKLINGS">
+    <div class="brand" [class.brand--compact]="compact()" [class.brand--dense]="dense()" aria-label="WEAKLINGS">
       <svg viewBox="0 0 120 112" class="brand__mark" aria-hidden="true">
         <defs>
-          <linearGradient id="gemGradient" x1="0" x2="1" y1="0" y2="1">
+          <linearGradient [attr.id]="gradientId" x1="0" x2="1" y1="0" y2="1">
             <stop offset="0" stop-color="#fecaca" />
             <stop offset="0.45" stop-color="#dc2626" />
             <stop offset="1" stop-color="#450a0a" />
@@ -27,7 +27,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
         </defs>
         <path class="brand__line" d="M60 8 110 78H10L60 8Z" />
         <path class="brand__line" d="M60 32 94 86H26L60 32Z" />
-        <path class="brand__gem" d="M60 42 88 72 74 104H46L32 72 60 42Z" />
+        <path class="brand__gem" [attr.fill]="'url(#' + gradientId + ')'" d="M60 42 88 72 74 104H46L32 72 60 42Z" />
         <path class="brand__facet" d="M60 42v62M32 72h56M60 42 46 104M60 42l14 62" />
         <circle cx="60" cy="82" r="3.5" fill="#fff" opacity="0.9" />
       </svg>
@@ -51,6 +51,27 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
       gap: 0;
     }
 
+    .brand--dense {
+      gap: 0.5rem;
+    }
+
+    .brand--dense .brand__mark {
+      width: 1.75rem;
+      height: 1.75rem;
+      filter: none;
+    }
+
+    .brand--dense .brand__name {
+      font-family: var(--font-sans);
+      font-size: 0.8125rem;
+      font-weight: 510;
+      letter-spacing: -0.012em;
+    }
+
+    .brand--dense .brand__tagline {
+      display: none;
+    }
+
     .brand__mark {
       width: 3rem;
       height: 3rem;
@@ -71,7 +92,6 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
     }
 
     .brand__gem {
-      fill: url(#gemGradient);
       stroke: currentColor;
       stroke-width: 3;
       stroke-linejoin: round;
@@ -109,5 +129,9 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
   `,
 })
 export class WeaklingsLogo {
+  private static nextGradientId = 0;
+
   readonly compact = input(false);
+  readonly dense = input(false);
+  protected readonly gradientId = `weaklings-gem-${++WeaklingsLogo.nextGradientId}`;
 }

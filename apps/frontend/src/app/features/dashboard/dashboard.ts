@@ -13,15 +13,19 @@ import type {
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { TranslateService } from '../../core/services/translate.service';
-import { PageHeader } from '../../shared/components/page-header/page-header';
 import type { TranslationKey } from '../../i18n/en';
+import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
+import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 interface QuickAction {
   readonly path: string;
   readonly icon: IconName;
   readonly labelKey: TranslationKey;
+  readonly desc: string;
 }
 
 type StatTone = 'primary' | 'warning' | 'success' | 'neutral';
@@ -33,202 +37,218 @@ interface DashboardStat {
   readonly tone: StatTone;
   readonly value: () => string;
   readonly hint: () => string;
+  readonly tooltip: string;
 }
 
 /**
  * Landing page of the authenticated experience.
  *
- * Aggregates a cross-module snapshot (bank, splits, events, members) so the
- * first screen is useful without duplicating the richer workflows that live
- * on each feature page. Data loads are best-effort: a failing endpoint only
- * blanks its own card.
+ * Provides a high-utility command center with real-time guild KPIs,
+ * quick action portals, live events, and recent loot splits.
  */
 @Component({
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, PageHeader, RouterLink, StatusChip],
+  imports: [Icon, PageHeader, PageStack, RouterLink, StatCard, StatusChip, TooltipDirective],
+  styles: `
+    .dashboard-shortcut {
+      display: flex;
+      min-block-size: 2.75rem;
+      align-items: center;
+      gap: 0.625rem;
+      padding: 0.5rem 0.625rem;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      background: var(--color-surface);
+      color: var(--color-text);
+      text-decoration: none;
+    }
+    .dashboard-shortcut:hover { border-color: var(--color-border-strong); background: var(--color-surface-hover); }
+    .dashboard-shortcut__icon { display: inline-flex; inline-size: 1.75rem; block-size: 1.75rem; flex: 0 0 auto; align-items: center; justify-content: center; border-radius: 4px; background: var(--color-surface-2); color: var(--color-text-tertiary); }
+    .dashboard-shortcut__copy { min-inline-size: 0; }
+  `,
   template: `
-    <app-page-header [title]="welcomeText()" [subtitle]="t('app.tagline')" [actions]="false" />
-
-    <!-- Quick actions -->
-    <section class="mb-8">
-      <h2
-        class="mb-3 text-sm font-semibold uppercase tracking-wider"
-        style="color: var(--color-text-secondary)"
+    <app-page-header [title]="welcomeText()" [subtitle]="t('app.tagline')">
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        [disabled]="loading()"
+        (click)="refreshNow()"
+        [appTooltip]="'Aggiorna dati in tempo reale'"
+        tooltipPosition="bottom"
       >
-        {{ t('dashboard.quick_actions') }}
-      </h2>
-      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        @for (action of actions; track action.path) {
-          <a
-            [routerLink]="action.path"
-            class="card flex flex-col items-start gap-3 p-4 no-underline transition hover:-translate-y-0.5"
-            style="color: var(--color-text)"
-          >
-            <span
-              class="flex h-9 w-9 items-center justify-center rounded-full"
-              style="background-color: var(--color-primary-container); color: var(--color-primary)"
-              aria-hidden="true"
+        <app-icon name="sparkles" size="0.875rem" />
+        {{ t('common.refreshNow') }}
+      </button>
+    </app-page-header>
+
+    <app-page-stack>
+      <!-- Guild operational snapshot -->
+      <section aria-label="Guild snapshot">
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          @for (stat of stats; track stat.labelKey) {
+            <div [appTooltip]="stat.tooltip" tooltipPosition="top">
+              <app-stat-card
+                [label]="t(stat.labelKey)"
+                [value]="stat.value()"
+                [sub]="stat.hint()"
+                [icon]="stat.icon"
+                [tone]="stat.tone"
+              />
+            </div>
+          }
+        </div>
+      </section>
+
+      <!-- Quick action navigation hubs -->
+      <section aria-label="Quick actions">
+        <h2 class="eyebrow mb-2">
+          {{ t('dashboard.quick_actions') }}
+        </h2>
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          @for (action of actions; track action.path) {
+            <a
+              [routerLink]="action.path"
+              class="dashboard-shortcut"
+              style="color: var(--color-text)"
+              [appTooltip]="action.desc"
+              tooltipPosition="top"
             >
-              <app-icon [name]="action.icon" size="1.1rem" />
-            </span>
-            <span class="text-xs font-medium">{{ t(action.labelKey) }}</span>
-          </a>
-        }
-      </div>
-    </section>
-
-    <!-- Guild snapshot -->
-    <section class="mb-8">
-      <h2
-        class="mb-3 text-sm font-semibold uppercase tracking-wider"
-        style="color: var(--color-text-secondary)"
-      >
-        {{ t('dashboard.snapshot') }}
-      </h2>
-      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        @for (stat of stats; track stat.labelKey) {
-          <div class="card flex flex-col gap-2 p-4">
-            <div class="flex items-center justify-between">
               <span
-                class="flex h-8 w-8 items-center justify-center rounded-full"
-                [style.backgroundColor]="toneBg(stat.tone)"
-                [style.color]="toneFg(stat.tone)"
+                class="dashboard-shortcut__icon"
+                style="background-color: var(--color-surface-2); color: var(--color-text)"
                 aria-hidden="true"
               >
-                <app-icon [name]="stat.icon" size="1rem" />
+                <app-icon [name]="action.icon" size="1.125rem" />
               </span>
-              @if (stat.sublabelKey) {
-                <span class="text-[10px] uppercase tracking-wider opacity-60">
-                  {{ t(stat.sublabelKey) }}
-                </span>
-              }
+              <div class="dashboard-shortcut__copy">
+                <span class="text-xs font-medium block truncate group-hover:underline">{{ t(action.labelKey) }}</span>
+                <span class="text-[11px] block truncate mt-0.5" style="color: var(--color-text-secondary)">{{ action.desc }}</span>
+              </div>
+            </a>
+          }
+        </div>
+      </section>
+
+      <!-- Two-column activity panels -->
+      <section class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <!-- Live & upcoming events -->
+        <div class="card p-4">
+          <div class="mb-3 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="inline-block h-2 w-2 rounded-full" style="background-color: var(--color-success)"></span>
+              <h2 class="eyebrow">
+                {{ t('dashboard.events.upcoming') }}
+              </h2>
             </div>
-            <p
-              class="text-xl font-semibold leading-tight"
-              style="color: var(--color-text)"
-              [class.animate-pulse]="stat.value() === '—'"
+            <a
+              routerLink="/events"
+              class="text-xs font-medium no-underline hover:underline"
+              style="color: var(--color-text-secondary)"
+              [appTooltip]="'Tutti gli eventi di gilda'"
+              tooltipPosition="left"
             >
-              {{ stat.value() }}
-            </p>
-            <p class="text-[11px] font-medium uppercase tracking-wider opacity-70">
-              {{ t(stat.labelKey) }}
-            </p>
-            <p class="text-[11px]" style="color: var(--color-text-secondary)">
-              {{ stat.hint() }}
-            </p>
+              {{ t('dashboard.view_all') }} →
+            </a>
           </div>
-        }
-      </div>
-    </section>
 
-    <!-- Two-column activity panels -->
-    <section class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <!-- Live & upcoming events -->
-      <div class="card p-5">
-        <div class="mb-4 flex items-center justify-between">
-          <h2
-            class="text-sm font-semibold uppercase tracking-wider"
-            style="color: var(--color-text-secondary)"
-          >
-            {{ t('dashboard.events.upcoming') }}
-          </h2>
-          <a
-            routerLink="/events"
-            class="text-xs font-medium no-underline hover:underline"
-            style="color: var(--color-primary)"
-          >
-            {{ t('dashboard.view_all') }}
-          </a>
+          @if (visibleEvents().length === 0) {
+            <div class="py-8 text-center" style="color: var(--color-text-secondary)">
+              <app-icon name="calendar" size="2rem" class="opacity-40 mx-auto mb-2" />
+              <p class="text-sm">{{ t('dashboard.events.empty') }}</p>
+            </div>
+          } @else {
+            <ul class="flex flex-col gap-2">
+              @for (event of visibleEvents(); track event.id) {
+                <li>
+                  <a
+                    [routerLink]="['/events', event.id]"
+                    class="flex items-center gap-3 rounded-md px-2 py-2 no-underline transition-colors hover:bg-[var(--color-surface-hover)]"
+                    style="color: var(--color-text)"
+                  >
+                    <span
+                      class="h-2.5 w-2.5 shrink-0 rounded-full"
+                      [style.backgroundColor]="eventDotColor(event.status)"
+                      [appTooltip]="event.status"
+                      aria-hidden="true"
+                    ></span>
+                    <div class="min-w-0 flex-1">
+                      <p class="truncate text-sm font-medium flex items-center gap-1.5">
+                        @if (event.call_to_arms) {
+                          <span
+                            class="cta-star font-bold text-xs"
+                            [appTooltip]="t('events.call_to_arms')"
+                            style="color: var(--color-warning)"
+                          >★ CTA</span>
+                        }
+                        {{ event.title }}
+                      </p>
+                      <p class="truncate text-xs mt-0.5" style="color: var(--color-text-secondary)">
+                        {{ event.comp_name }} · {{ formatEventDate(event.event_date_utc) }}
+                      </p>
+                    </div>
+                    <app-status-chip [value]="event.status" />
+                  </a>
+                </li>
+              }
+            </ul>
+          }
         </div>
 
-        @if (visibleEvents().length === 0) {
-          <p class="py-6 text-center text-sm" style="color: var(--color-text-secondary)">
-            {{ t('dashboard.events.empty') }}
-          </p>
-        } @else {
-          <ul class="flex flex-col gap-2">
-            @for (event of visibleEvents(); track event.id) {
-              <li>
-                <a
-                  [routerLink]="['/events', event.id]"
-                  class="flex items-center gap-3 rounded-lg p-2 no-underline transition hover:bg-(--color-surface-hover)"
-                  style="color: var(--color-text)"
-                >
-                  <span
-                    class="h-2 w-2 shrink-0 rounded-full"
-                    [style.backgroundColor]="eventDotColor(event.status)"
-                    aria-hidden="true"
-                  ></span>
-                  <div class="min-w-0 flex-1">
-                    <p class="truncate text-sm font-medium">
-                      @if (event.call_to_arms) {
-                        <span class="cta-star" title="{{ t('events.call_to_arms') }}">★</span>
-                      }
-                      {{ event.title }}
-                    </p>
-                    <p class="truncate text-xs" style="color: var(--color-text-secondary)">
-                      {{ event.comp_name }} · {{ formatEventDate(event.event_date_utc) }}
-                    </p>
-                  </div>
-                  <app-status-chip [value]="event.status" />
-                </a>
-              </li>
-            }
-          </ul>
-        }
-      </div>
+        <!-- Recent splits -->
+        <div class="card p-4">
+          <div class="mb-3 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="inline-block h-2 w-2 rounded-full" style="background-color: var(--color-primary)"></span>
+              <h2 class="eyebrow">
+                {{ t('dashboard.splits.recent') }}
+              </h2>
+            </div>
+            <a
+              routerLink="/splits"
+              class="text-xs font-medium no-underline hover:underline"
+              style="color: var(--color-text-secondary)"
+              [appTooltip]="'Tutte le split di bottino'"
+              tooltipPosition="left"
+            >
+              {{ t('dashboard.view_all') }} →
+            </a>
+          </div>
 
-      <!-- Recent splits -->
-      <div class="card p-5">
-        <div class="mb-4 flex items-center justify-between">
-          <h2
-            class="text-sm font-semibold uppercase tracking-wider"
-            style="color: var(--color-text-secondary)"
-          >
-            {{ t('dashboard.splits.recent') }}
-          </h2>
-          <a
-            routerLink="/splits"
-            class="text-xs font-medium no-underline hover:underline"
-            style="color: var(--color-primary)"
-          >
-            {{ t('dashboard.view_all') }}
-          </a>
+          @if (visibleSplits().length === 0) {
+            <div class="py-8 text-center" style="color: var(--color-text-secondary)">
+              <app-icon name="swords" size="2rem" class="opacity-40 mx-auto mb-2" />
+              <p class="text-sm">{{ t('dashboard.splits.empty') }}</p>
+            </div>
+          } @else {
+            <ul class="flex flex-col gap-2">
+              @for (split of visibleSplits(); track split.id) {
+                <li>
+                  <a
+                    [routerLink]="['/splits', split.id]"
+                    class="flex items-center gap-3 rounded-md px-2 py-2 no-underline transition-colors hover:bg-[var(--color-surface-hover)]"
+                    style="color: var(--color-text)"
+                  >
+                    <div class="min-w-0 flex-1">
+                      <p class="truncate text-sm font-medium">
+                        {{ split.event_title ?? split.created_by_username }}
+                      </p>
+                      <p class="truncate text-xs mt-0.5" style="color: var(--color-text-secondary)">
+                        {{ split.participant_count }} partecipanti · {{ formatRelative(split.created_at) }}
+                      </p>
+                    </div>
+                    <span class="text-sm font-semibold tabular-nums mono" style="color: var(--color-success)">
+                      {{ formatValue(split.estimated_market_value) }}
+                    </span>
+                    <app-status-chip [value]="split.status" />
+                  </a>
+                </li>
+              }
+            </ul>
+          }
         </div>
-
-        @if (visibleSplits().length === 0) {
-          <p class="py-6 text-center text-sm" style="color: var(--color-text-secondary)">
-            {{ t('dashboard.splits.empty') }}
-          </p>
-        } @else {
-          <ul class="flex flex-col gap-2">
-            @for (split of visibleSplits(); track split.id) {
-              <li>
-                <a
-                  [routerLink]="['/splits', split.id]"
-                  class="flex items-center gap-3 rounded-lg p-2 no-underline transition hover:bg-(--color-surface-hover)"
-                  style="color: var(--color-text)"
-                >
-                  <div class="min-w-0 flex-1">
-                    <p class="truncate text-sm font-medium">
-                      {{ split.event_title ?? split.created_by_username }}
-                    </p>
-                    <p class="truncate text-xs" style="color: var(--color-text-secondary)">
-                      {{ split.participant_count }} · {{ formatRelative(split.created_at) }}
-                    </p>
-                  </div>
-                  <span class="text-sm font-semibold tabular-nums">
-                    {{ formatValue(split.estimated_market_value) }}
-                  </span>
-                  <app-status-chip [value]="split.status" />
-                </a>
-              </li>
-            }
-          </ul>
-        }
-      </div>
-    </section>
+      </section>
+    </app-page-stack>
   `,
 })
 export class Dashboard {
@@ -256,12 +276,12 @@ export class Dashboard {
   });
 
   protected readonly actions: ReadonlyArray<QuickAction> = [
-    { path: '/bank', icon: 'bank', labelKey: 'nav.bank' },
-    { path: '/splits', icon: 'swords', labelKey: 'nav.splits' },
-    { path: '/events', icon: 'calendar', labelKey: 'nav.events' },
-    { path: '/battles', icon: 'shield', labelKey: 'nav.battles' },
-    { path: '/comps', icon: 'package', labelKey: 'nav.comps' },
-    { path: '/siphoned', icon: 'activity', labelKey: 'nav.siphoned' },
+    { path: '/bank', icon: 'bank', labelKey: 'nav.bank', desc: 'Saldo e prelievi' },
+    { path: '/splits', icon: 'swords', labelKey: 'nav.splits', desc: 'Divisione bottino' },
+    { path: '/events', icon: 'calendar', labelKey: 'nav.events', desc: 'Attività & CTA' },
+    { path: '/battles', icon: 'shield', labelKey: 'nav.battles', desc: 'Registro PvP' },
+    { path: '/comps', icon: 'package', labelKey: 'nav.comps', desc: 'Build & setup' },
+    { path: '/siphoned', icon: 'activity', labelKey: 'nav.siphoned', desc: 'Monitor energia' },
   ];
 
   protected readonly stats: ReadonlyArray<DashboardStat> = [
@@ -272,6 +292,7 @@ export class Dashboard {
       value: () => this.formatNumber(this.bankBalance()?.pending_total ?? null),
       hint: () =>
         this.formatCountHint(this.bankBalance()?.pending_count ?? null, 'dashboard.stat.balance'),
+      tooltip: 'Argento in attesa nel bilancio personale',
     },
     {
       labelKey: 'dashboard.stat.requested',
@@ -283,6 +304,7 @@ export class Dashboard {
           this.bankBalance()?.requested_count ?? null,
           'dashboard.stat.requested',
         ),
+      tooltip: 'Argento richiesto per il prelievo',
     },
     {
       labelKey: 'dashboard.stat.pending_splits',
@@ -290,6 +312,7 @@ export class Dashboard {
       tone: 'neutral',
       value: () => this.formatCount(this.pendingSplitCount()),
       hint: () => this.translate.t('nav.splits'),
+      tooltip: 'Divisioni di bottino in attesa di liquidazione',
     },
     {
       labelKey: 'dashboard.stat.completed_splits',
@@ -297,6 +320,7 @@ export class Dashboard {
       tone: 'success',
       value: () => this.formatCount(this.completedSplitCount()),
       hint: () => this.translate.t('nav.splits'),
+      tooltip: 'Divisioni di bottino completate con successo',
     },
     {
       labelKey: 'dashboard.stat.live_events',
@@ -304,6 +328,7 @@ export class Dashboard {
       tone: 'success',
       value: () => this.formatCount(this.liveEventCount()),
       hint: () => this.translate.t('dashboard.stat.scheduled_events'),
+      tooltip: 'Eventi e attività di gilda attualmente in corso',
     },
     {
       labelKey: 'dashboard.stat.guild_paid',
@@ -312,6 +337,7 @@ export class Dashboard {
       value: () => this.formatNumber(this.guildSummary()?.paid_total ?? null),
       hint: () =>
         this.formatCountHint(this.guildSummary()?.paid_count ?? null, 'dashboard.stat.guild_paid'),
+      tooltip: 'Totale argento liquidato complessivamente dalla gilda',
     },
   ];
 
@@ -325,8 +351,19 @@ export class Dashboard {
     this.recentSplits().slice(0, 5),
   );
 
+  protected readonly loading = signal(false);
+
   constructor() {
     void this.loadSnapshot();
+  }
+
+  protected async refreshNow(): Promise<void> {
+    this.loading.set(true);
+    try {
+      await this.loadSnapshot();
+    } finally {
+      this.loading.set(false);
+    }
   }
 
   private async loadSnapshot(): Promise<void> {
@@ -393,21 +430,34 @@ export class Dashboard {
     return 2;
   }
 
-  private formatCount(value: number | null): string {
-    return value === null ? '—' : value.toLocaleString();
+  private getLocale(): string {
+    const lang = this.translate.language();
+    if (lang === 'it') return 'it-IT';
+    if (lang === 'es') return 'es-ES';
+    return 'en-US';
   }
 
-  protected formatNumber(value: number | null): string {
-    return value === null ? '—' : value.toLocaleString();
+  private formatCount(value: number | null | undefined): string {
+    if (value === null || value === undefined) return '—';
+    return value.toLocaleString(this.getLocale());
   }
 
-  private formatCountHint(count: number | null, _key: TranslationKey): string {
-    if (count === null) return '';
-    return `${count} tx`;
+  protected formatNumber(value: number | string | null | undefined): string {
+    if (value === null || value === undefined || value === '') return '—';
+    const num = typeof value === 'number' ? value : Number(value);
+    if (Number.isNaN(num)) return '—';
+    return num.toLocaleString(this.getLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  protected formatValue(value: number): string {
-    return value.toLocaleString();
+  private formatCountHint(count: number | null | undefined, _key: TranslationKey): string {
+    if (count === null || count === undefined) return '';
+    return `${count.toLocaleString(this.getLocale())} tx`;
+  }
+
+  protected formatValue(value: number | string): string {
+    const num = typeof value === 'number' ? value : Number(value);
+    if (Number.isNaN(num)) return '—';
+    return num.toLocaleString(this.getLocale());
   }
 
   protected formatEventDate(iso: string): string {
@@ -447,7 +497,6 @@ export class Dashboard {
     if (status === 'scheduled') return 'var(--color-primary)';
     return 'var(--color-text-disabled)';
   }
-
 }
 
 const TONE_BG: Record<StatTone, string> = {

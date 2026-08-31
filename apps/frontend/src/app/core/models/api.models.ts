@@ -65,7 +65,8 @@ export type PermissionKey =
   | 'progression.adjust'
   | 'warns.view'
   | 'warns.issue'
-  | 'vod.submit';
+  | 'vod.submit'
+  | 'notifications.broadcast';
 
 export interface DiscordUserProfile {
   id: string;
@@ -148,6 +149,30 @@ export interface GuildBankSummary {
   paid_count: number;
 }
 
+/** One source, destination, or transaction-type line in the guild bank report. */
+export interface BankBreakdown {
+  label: string;
+  transaction_count: number;
+  total_amount: number | string;
+}
+
+/** Server-side, whole-ledger finance totals for officers and administrators. */
+export interface BankAnalyticsSummary {
+  transaction_count: number;
+  ledger_volume: number | string;
+  outstanding_total: number | string;
+  outstanding_count: number;
+  requested_total: number | string;
+  requested_count: number;
+  paid_out_total: number | string;
+  paid_out_count: number;
+  donated_total: number | string;
+  donated_count: number;
+  sources: BankBreakdown[];
+  destinations: BankBreakdown[];
+  transaction_types: BankBreakdown[];
+}
+
 export interface WithdrawRequest {
   transaction_ids?: number[];
   all?: boolean;
@@ -160,6 +185,14 @@ export type RejectWithdrawalRequest = WithdrawRequest;
 /* ----------------------------- Splits ------------------------------- */
 
 export type SplitStatus = 'pending' | 'completed' | 'not_completed' | 'lost';
+
+export interface SplitKpiSummary {
+  pending_count: number;
+  completed_count: number;
+  total_net_distributed: number;
+  total_estimated_volume: number;
+  total_participants: number;
+}
 
 export interface SplitParticipant {
   user_id: number;
@@ -256,6 +289,27 @@ export interface SplitIsland {
   name: string;
   city: SplitIslandCity;
   tabs: SplitIslandTab[];
+}
+
+export interface CreateIslandRequest {
+  name: string;
+  city: SplitIslandCity;
+  tabs: string[];
+}
+
+export interface UpdateIslandRequest {
+  name?: string;
+  city?: SplitIslandCity;
+}
+
+export interface CreateIslandTabRequest {
+  name: string;
+  sort_order?: number;
+}
+
+export interface UpdateIslandTabRequest {
+  name?: string;
+  sort_order?: number;
 }
 
 /* ----------------------------- Events ------------------------------- */
@@ -1421,6 +1475,55 @@ export interface CreateWarnRequest {
   severity: WarnSeverity;
   multiplier?: number;
   multiplier_expires_at?: string;
+}
+
+/* -------------------------- Notifications --------------------------- */
+
+/** Kind of in-app notification. */
+export type NotificationKind =
+  | 'broadcast'
+  | 'regear_accepted'
+  | 'regear_rejected'
+  | 'bank_withdraw_accepted'
+  | 'bank_withdraw_rejected'
+  | 'warn_issued'
+  | 'split_credited'
+  | 'event_created'
+  | 'event_reminder_1h';
+
+/** One inbox row as seen by the recipient. */
+export interface NotificationView {
+  id: number;
+  kind: NotificationKind;
+  title: string;
+  body: string;
+  link_path: string | null;
+  source_type: string;
+  source_id: number;
+  read_at: string | null;
+  created_at: string;
+}
+
+/** Unread badge payload. */
+export interface UnreadCountView {
+  count: number;
+}
+
+/** Result of mark-all-read. */
+export interface ReadAllResult {
+  updated: number;
+}
+
+/** Result of a guild-wide broadcast. */
+export interface BroadcastResult {
+  id: number;
+  recipient_count: number;
+}
+
+/** Body for `POST /notifications/broadcast`. */
+export interface BroadcastRequest {
+  title: string;
+  body: string;
 }
 
 /** One admin-facing kick/handle reminder when the warn threshold is hit. */

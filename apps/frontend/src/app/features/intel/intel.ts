@@ -1,10 +1,10 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import { IntelService } from '../../core/services/intel.service';
+import type { ScoutListParams } from '../../core/services/intel.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
@@ -14,12 +14,19 @@ import type {
   ScoutedCompSummary,
   TrendBucket,
 } from '../../core/models/api.models';
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTablePageChange,
+} from '../../shared/components/data-table/data-table';
+import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { Meter } from '../../shared/components/meter/meter';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import {
@@ -27,44 +34,63 @@ import {
   type ViewToggleOption,
 } from '../../shared/components/view-toggle/view-toggle';
 
-/** How many scouts to pull in one page of the library. */
-const SCOUT_PAGE_LIMIT = 60;
-/** Weapons shown on a card before the rest are summarised. */
-const CARD_WEAPON_LIMIT = 4;
+type MatchupRow = NonNullable<MatchupReport>['rows'][number];
+type RosterRow = NonNullable<GuildReport>['members'][number];
+
+/** Default page size for the scout library table. */
+const SCOUT_PAGE_LIMIT = 25;
 
 /**
  * Enemy intel: the scouted-composition library and the matchup matrix.
- *
- * Everything here is derived server-side, because it aggregates across
- * battles, events and comps that the browser never holds in full.
- *
- * Two honesty rules shape the presentation:
- * - a similarity or weapon figure drawn from a partial kill feed is labelled
- *   as such, never presented as if the whole enemy force was observed;
- * - a sparse matchup matrix reports *why* it is sparse, since battles that
- *   were never linked to an event carry no comp and cannot be attributed.
+ * Streamlined into 4 intuitive workspaces:
+ * - Overview: Executive combat health, KPIs, notable battles, and 24h activity.
+ * - Matchups: Comp vs Comp win matrix, weapon meta analysis, and weekly trends.
+ * - Enemy Scouts: Full scout library with threat scoring, weapon coverage, and filters.
+ * - Operations: Guild roster performance, role fill rates, and economic flow.
  */
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+
 @Component({
   selector: 'app-intel',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     DatePipe,
     DecimalPipe,
+    DataTable,
+    DataTableCell,
     EmptyState,
     ErrorState,
-    FormsModule,
     Icon,
     Loading,
     Meter,
     PageHeader,
+    PageStack,
     RouterLink,
     StatCard,
     StatusChip,
+    TooltipDirective,
     ViewToggle,
   ],
   template: `
     <app-page-header [title]="t('intel.title')" [subtitle]="t('intel.subtitle')">
-      <app-view-toggle [options]="tabs()" [active]="tab()" (activeChange)="tab.set($event)" />
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        [disabled]="loading()"
+        (click)="load()"
+        [appTooltip]="'Aggiorna dati di intelligence e report'"
+        tooltipPosition="bottom"
+      >
+        <app-icon name="sparkles" size="0.875rem" />
+        {{ t('common.refreshNow') }}
+      </button>
+
+      <app-view-toggle
+        pageTabs
+        [options]="tabs()"
+        [active]="tab()"
+        (activeChange)="onTabChange($event)"
+      />
     </app-page-header>
 
     @if (loading()) {
@@ -72,698 +98,731 @@ const CARD_WEAPON_LIMIT = 4;
     } @else if (loadFailed()) {
       <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     } @else {
-      <!-- Headline numbers, always visible so the tabs never hide the shape
-           of the library. -->
-      <div class="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <app-stat-card [label]="t('intel.stat.scouts')" [value]="scouts().length.toString()" />
-        <app-stat-card
-          [label]="t('intel.stat.topThreat')"
-          [value]="topThreat()?.opponent_guild_name ?? '—'"
-          [sub]="topThreat() ? t('intel.stat.threatScore') + ' ' + topThreat()!.threat_score : ''"
-          tone="danger"
-        />
-        <app-stat-card
-          [label]="t('intel.stat.record')"
-          [value]="recordLabel()"
-          [sub]="t('intel.stat.acrossFights')"
-          [tone]="recordTone()"
-        />
-        <app-stat-card
-          [label]="t('intel.stat.coverage')"
-          [value]="coverageLabel()"
-          [sub]="t('intel.stat.coverageSub')"
-          [tone]="coverageTone()"
-        />
-      </div>
+      <app-page-stack>
+        <!-- Top KPI headline strip -->
+        <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Intel summary">
+          <app-stat-card
+            [label]="t('intel.stat.scouts')"
+            [value]="headlineTotal().toString()"
+            icon="search"
+            tone="neutral"
+          />
+          <app-stat-card
+            [label]="t('intel.stat.topThreat')"
+            [value]="topThreat()?.opponent_guild_name ?? '—'"
+            [sub]="topThreat() ? t('intel.stat.threatScore') + ' ' + topThreat()!.threat_score : ''"
+            icon="alert"
+            tone="danger"
+          />
+          <app-stat-card
+            [label]="t('intel.stat.record')"
+            [value]="recordLabel()"
+            [sub]="t('intel.stat.acrossFights')"
+            icon="swords"
+            [tone]="recordTone()"
+          />
+          <app-stat-card
+            [label]="t('intel.stat.coverage')"
+            [value]="coverageLabel()"
+            [sub]="t('intel.stat.coverageSub')"
+            icon="shield"
+            [tone]="coverageTone()"
+          />
+        </section>
 
-      @switch (tab()) {
-        @case ('overview') {
-          @if (report(); as r) {
-            <div class="grid gap-4 lg:grid-cols-2">
-              <section class="card p-4">
-                <h2 class="eyebrow mb-3">{{ t('intel.tab.performance') }}</h2>
-                <div class="grid grid-cols-2 gap-3">
-                  <app-stat-card
-                    [label]="t('intel.winRate')"
-                    [value]="(r.overview.win_rate | number: '1.0-0') + '%'"
-                    [sub]="r.overview.wins + '–' + r.overview.losses"
-                    [tone]="r.overview.win_rate >= 50 ? 'success' : 'danger'"
-                  />
-                  <app-stat-card
-                    [label]="'K/D'"
-                    [value]="r.overview.kill_death_ratio | number: '1.2-2'"
-                    [sub]="r.overview.kills + ' / ' + r.overview.deaths"
-                  />
-                  <app-stat-card
-                    [label]="t('intel.streak')"
-                    [value]="r.overview.win_streak.toString()"
-                    [tone]="r.overview.win_streak > 0 ? 'success' : 'default'"
-                  />
-                  <app-stat-card
-                    [label]="t('intel.ipDelta')"
-                    [value]="(r.overview.item_power_delta > 0 ? '+' : '') + (r.overview.item_power_delta | number: '1.0-0')"
-                    [sub]="t('intel.ipDeltaSub')"
-                    [tone]="r.overview.item_power_delta >= 0 ? 'success' : 'warning'"
-                  />
-                </div>
-              </section>
-
-              <section class="card p-4">
-                <h2 class="eyebrow mb-3">{{ t('intel.tab.notableFights') }}</h2>
-                @for (fight of notableFights(); track fight.label) {
-                  @if (fight.data; as f) {
-                    <a
-                      class="mb-2 flex items-center justify-between rounded-2xl p-3 no-underline"
-                      [style.background-color]="f.is_win ? 'var(--color-success-container)' : 'var(--color-error-container)'"
-                      [routerLink]="['/battles', f.battle_id]"
-                    >
-                      <span>
-                        <span class="eyebrow" [style.color]="f.is_win ? 'var(--color-success)' : 'var(--color-error)'">
-                          {{ fight.label }} · {{ f.is_win ? t('common.win') : t('common.loss') }}
-                        </span>
-                        <span class="mt-0.5 block text-sm" style="color: var(--color-text)">
-                          {{ f.opponent ?? t('intel.unknownOpponent') }}
-                        </span>
-                      </span>
-                      <span class="mono text-xs" style="color: var(--color-text-secondary)">
-                        {{ f.kills }}/{{ f.deaths }}
-                      </span>
-                    </a>
-                  }
-                }
-                @if (!r.overview.best_fight) {
-                  <p class="text-sm" style="color: var(--color-text-secondary)">
-                    {{ t('common.empty') }}
-                  </p>
-                }
-              </section>
-
-              <section class="card p-4 lg:col-span-2">
-                <h2 class="eyebrow mb-3">{{ t('intel.tab.timeline') }}</h2>
-                @for (entry of r.timeline; track entry.at + entry.title) {
-                  <div class="flex items-baseline gap-3 border-t py-2" style="border-color: var(--color-border)">
-                    <span class="mono shrink-0 text-[11px]" style="color: var(--color-text-disabled)">
-                      {{ entry.at | date: 'MMM d, HH:mm' }}
-                    </span>
-                    <span class="min-w-0 flex-1">
-                      <span class="text-sm" style="color: var(--color-text)">{{ entry.title }}</span>
-                      <span class="ml-2 text-xs" style="color: var(--color-text-secondary)">{{ entry.detail }}</span>
-                    </span>
-                  </div>
-                }
-              </section>
-            </div>
-          } @else {
-            <app-empty-state icon="alert" [message]="t('intel.reportUnavailable')" [hint]="t('intel.reportUnavailableHint')" />
-          }
-        }
-
-        @case ('trends') {
-          @if (report(); as r) {
-            @if (r.trends.length === 0) {
-              <app-empty-state icon="chart" [message]="t('common.empty')" />
-            } @else {
-              <div class="card overflow-x-auto">
-                <table class="table">
-                  <thead>
-                    <tr>
-                      <th>{{ t('intel.trends.week') }}</th>
-                      <th class="text-right">{{ t('intel.fights') }}</th>
-                      <th class="text-right">{{ t('intel.record') }}</th>
-                      <th class="w-40">{{ t('intel.winRate') }}</th>
-                      <th class="text-right">{{ t('intel.trends.attendance') }}</th>
-                      <th class="text-right">{{ t('intel.trends.net') }}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (week of r.trends; track week.week_start) {
-                      <tr>
-                        <td>{{ week.week_start | date: 'MMM d' }}</td>
-                        <td class="mono text-right">{{ week.fights }}</td>
-                        <td class="mono text-right">
-                          <span style="color: var(--color-success)">{{ week.wins }}</span>
-                          <span style="color: var(--color-text-disabled)">/</span>
-                          <span style="color: var(--color-error)">{{ week.losses }}</span>
-                        </td>
-                        <td>
-                          @if (week.fights > 0) {
-                            <app-meter
-                              [label]="''"
-                              [value]="week.wins"
-                              [max]="week.fights"
-                              [display]="weekWinRate(week) + '%'"
-                              [tone]="weekWinRate(week) >= 50 ? 'success' : 'danger'"
-                            />
-                          } @else {
-                            <span style="color: var(--color-text-disabled)">—</span>
-                          }
-                        </td>
-                        <td class="mono text-right">
-                          {{ week.attendance }}
-                          @if (week.events > 0) {
-                            <span class="text-xs" style="color: var(--color-text-secondary)">
-                              ({{ week.events }} {{ t('intel.events') }})
-                            </span>
-                          }
-                        </td>
-                        <td class="mono text-right" [style.color]="weekNet(week) >= 0 ? 'var(--color-success)' : 'var(--color-error)'">
-                          {{ weekNet(week) | number: '1.0-0' }}
-                        </td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
-
-              <!-- Week-over-week deltas on the headline measures, so a single
-                   number ("62% win rate") reads alongside its direction. -->
-              @if (weekOverWeek(); as delta) {
-                <div class="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-                  <app-stat-card
-                    [label]="t('intel.trends.winRateDelta')"
-                    [value]="formatDelta(delta.winRate) + 'pp'"
-                    [tone]="delta.winRate >= 0 ? 'success' : 'danger'"
-                  />
-                  <app-stat-card
-                    [label]="t('intel.trends.attendanceDelta')"
-                    [value]="formatDelta(delta.attendance)"
-                    [tone]="delta.attendance >= 0 ? 'success' : 'danger'"
-                  />
-                  <app-stat-card
-                    [label]="t('intel.trends.netDelta')"
-                    [value]="formatDelta(delta.net)"
-                    [tone]="delta.net >= 0 ? 'success' : 'danger'"
-                  />
-                  <app-stat-card
-                    [label]="t('intel.trends.fightsDelta')"
-                    [value]="formatDelta(delta.fights)"
-                    [tone]="delta.fights >= 0 ? 'success' : 'danger'"
-                  />
-                </div>
-                <p class="mt-3 text-xs" style="color: var(--color-text-secondary)">
-                  {{ t('intel.trends.deltaHint') }}
-                </p>
-              }
-            }
-          } @else {
-            <app-empty-state icon="alert" [message]="t('intel.reportUnavailable')" [hint]="t('intel.reportUnavailableHint')" />
-          }
-        }
-
-        @case ('ops') {
-          @if (report(); as r) {
-            <div class="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <app-stat-card [label]="t('intel.roster')" [value]="r.operations.roster.toString()" />
-              <app-stat-card [label]="t('intel.officers')" [value]="r.operations.officers.toString()" />
-              <app-stat-card
-                [label]="t('intel.unlinked')"
-                [value]="r.operations.unlinked.toString()"
-                [tone]="r.operations.unlinked > 0 ? 'warning' : 'success'"
-              />
-              <app-stat-card
-                [label]="t('intel.fillRate')"
-                [value]="(r.operations.fill_rate | number: '1.0-0') + '%'"
-                [sub]="r.operations.attendance + ' / ' + r.operations.slots"
-              />
-            </div>
-
-            <div class="grid gap-4 lg:grid-cols-2">
-              <section class="card p-4">
-                <h2 class="eyebrow mb-2">{{ t('intel.roleCoverage') }}</h2>
-                @for (role of roleCoverage(); track role.name) {
-                  <app-meter
-                    [label]="role.name"
-                    [value]="role.filled"
-                    [max]="role.needed || 1"
-                    [display]="role.filled + ' / ' + role.needed"
-                    [tone]="role.filled >= role.needed ? 'success' : 'danger'"
-                  />
-                }
-              </section>
-
-              <section class="card p-4">
-                <h2 class="eyebrow mb-2">{{ t('intel.inactive') }}</h2>
-                @if (r.operations.inactive_members.length === 0) {
-                  <p class="text-sm" style="color: var(--color-success)">{{ t('intel.allActive') }}</p>
-                } @else {
-                  <p class="text-sm" style="color: var(--color-text-secondary)">
-                    {{ r.operations.inactive_members.join(', ') }}
-                  </p>
-                }
-              </section>
-            </div>
-
-            @if (r.data_quality.unlinked_players.length) {
-              <p class="mt-4 text-xs" style="color: var(--color-warning)">
-                {{ t('intel.unlinkedPlayers') }}: {{ r.data_quality.unlinked_players.join(', ') }}
-              </p>
-            }
-          } @else {
-            <app-empty-state icon="alert" [message]="t('intel.reportUnavailable')" />
-          }
-        }
-
-        @case ('comps') {
-          @if (report(); as r) {
-            <div class="card overflow-x-auto">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>{{ t('intel.ourComp') }}</th>
-                    <th class="text-right">{{ t('intel.seats') }}</th>
-                    <th class="text-right">{{ t('intel.events') }}</th>
-                    <th class="text-right">{{ t('intel.fights') }}</th>
-                    <th class="text-right">{{ t('intel.record') }}</th>
-                    <th class="text-right">{{ t('intel.fillRate') }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (row of r.comps; track row.comp_id) {
-                    <tr>
-                      <td>
-                        <a class="no-underline" [routerLink]="['/comps', row.comp_id]" style="color: var(--color-primary)">
-                          {{ row.name }}
-                        </a>
-                      </td>
-                      <td class="mono text-right">{{ row.seats }}</td>
-                      <td class="mono text-right">{{ row.events }}</td>
-                      <td class="mono text-right">{{ row.fights }}</td>
-                      <td class="mono text-right">
-                        <span style="color: var(--color-success)">{{ row.wins }}</span>
-                        <span style="color: var(--color-text-disabled)">/</span>
-                        <span style="color: var(--color-error)">{{ row.losses }}</span>
-                      </td>
-                      <td class="mono text-right">{{ row.fill_rate | number: '1.0-0' }}%</td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          } @else {
-            <app-empty-state icon="alert" [message]="t('intel.reportUnavailable')" />
-          }
-        }
-
-        @case ('roster') {
-          @if (report(); as r) {
-            <div class="card overflow-x-auto">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>{{ t('common.username') }}</th>
-                    <th class="text-right">{{ t('intel.events') }}</th>
-                    <th class="text-right">{{ t('intel.fights') }}</th>
-                    <th class="text-right">K/D</th>
-                    <th class="text-right">{{ t('intel.silverLost') }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (row of r.members; track row.user_id) {
-                    <tr>
-                      <td>
-                        {{ row.username }}
-                        @if (!row.linked) {
-                          <span class="chip chip--warning ml-2">{{ t('intel.notLinked') }}</span>
-                        }
-                      </td>
-                      <td class="mono text-right">{{ row.events_signed }}</td>
-                      <td class="mono text-right">{{ row.fights }}</td>
-                      <td class="mono text-right">{{ row.kill_death_ratio | number: '1.2-2' }}</td>
-                      <td class="mono text-right">{{ row.silver_lost | number: '1.0-0' }}</td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          } @else {
-            <app-empty-state icon="alert" [message]="t('intel.reportUnavailable')" />
-          }
-        }
-
-        @case ('timing') {
-          @if (report(); as r) {
-            <section class="card p-4">
-              <h2 class="eyebrow mb-1">{{ t('intel.tab.timing') }}</h2>
-              <p class="mb-4 text-xs" style="color: var(--color-text-secondary)">
-                {{ t('intel.timingHint') }}
-              </p>
-              <div class="flex h-40 items-end gap-1">
-                @for (bucket of r.hours; track bucket.hour) {
-                  <button
-                    type="button"
-                    class="flex flex-1 flex-col justify-end gap-px border-0 bg-transparent p-0 cursor-pointer"
-                    [title]="bucket.hour + ':00 — ' + bucket.wins + 'W ' + bucket.losses + 'L'"
-                    [attr.aria-label]="bucket.hour + ':00 — ' + bucket.wins + ' ' + t('common.win') + ', ' + bucket.losses + ' ' + t('common.loss')"
-                  >
-                    <span
-                      class="w-full rounded-t-sm"
-                      style="background-color: var(--color-success)"
-                      [style.height.px]="barHeight(bucket.wins)"
-                    ></span>
-                    <span
-                      class="w-full"
-                      style="background-color: var(--color-error)"
-                      [style.height.px]="barHeight(bucket.losses)"
-                    ></span>
-                  </button>
-                }
-              </div>
-              <div class="mt-2 flex justify-between text-[10px]" style="color: var(--color-text-disabled)">
-                <span>00</span><span>06</span><span>12</span><span>18</span><span>23</span>
-              </div>
-            </section>
-          } @else {
-            <app-empty-state icon="alert" [message]="t('intel.reportUnavailable')" />
-          }
-        }
-
-        @case ('meta') {
-          @if (report(); as r) {
-            <div class="grid gap-4 lg:grid-cols-2">
-              <section class="card p-4">
-                <h2 class="eyebrow mb-2">{{ t('intel.ourMeta') }}</h2>
-                @if (r.our_meta.length === 0) {
-                  <p class="text-sm" style="color: var(--color-text-secondary)">{{ t('common.empty') }}</p>
-                } @else {
-                  @for (w of r.our_meta; track w.weapon) {
-                    <app-meter
-                      [label]="prettyWeapon(w.weapon)"
-                      [value]="w.count"
-                      [max]="r.our_meta[0].count"
-                      [display]="w.count.toString()"
+        @switch (tab()) {
+          @case ('overview') {
+            @if (report(); as r) {
+              <!-- Performance Cards + Notable Battles -->
+              <div class="grid gap-4 lg:grid-cols-2">
+                <section class="card p-5">
+                  <h2 class="eyebrow mb-4">{{ t('intel.tab.performance') }}</h2>
+                  <div class="grid grid-cols-2 gap-3">
+                    <app-stat-card
+                      [label]="t('intel.winRate')"
+                      [value]="(r.overview.win_rate | number: '1.0-0') + '%'"
+                      [sub]="r.overview.wins + '–' + r.overview.losses"
+                      [tone]="r.overview.win_rate >= 50 ? 'success' : 'danger'"
                     />
-                  }
-                }
-              </section>
-              <section class="card p-4">
-                <h2 class="eyebrow mb-2">{{ t('intel.enemyMeta') }}</h2>
-                @if (r.enemy_meta.length === 0) {
-                  <p class="text-sm" style="color: var(--color-text-secondary)">{{ t('common.empty') }}</p>
-                } @else {
-                  @for (w of r.enemy_meta; track w.weapon) {
-                    <app-meter
-                      [label]="prettyWeapon(w.weapon)"
-                      [value]="w.count"
-                      [max]="r.enemy_meta[0].count"
-                      [display]="w.count.toString()"
-                      tone="danger"
+                    <app-stat-card
+                      [label]="'K/D'"
+                      [value]="r.overview.kill_death_ratio | number: '1.2-2'"
+                      [sub]="r.overview.kills + ' / ' + r.overview.deaths"
                     />
-                  }
-                }
-              </section>
-            </div>
-            <p class="mt-3 text-xs" style="color: var(--color-text-secondary)">
-              {{ t('intel.metaHint') }}
-            </p>
-          } @else {
-            <app-empty-state icon="alert" [message]="t('intel.reportUnavailable')" />
-          }
-        }
-
-        @case ('economy') {
-          @if (report(); as r) {
-            <div class="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <app-stat-card
-                [label]="t('intel.lootIn')"
-                [value]="r.economy.loot_in | number: '1.0-0'"
-                tone="success"
-              />
-              <app-stat-card
-                [label]="t('intel.outflow')"
-                [value]="r.economy.outflow_total | number: '1.0-0'"
-                tone="warning"
-              />
-              <app-stat-card
-                [label]="t('intel.net')"
-                [value]="r.economy.net | number: '1.0-0'"
-                [tone]="r.economy.net >= 0 ? 'success' : 'danger'"
-              />
-              <app-stat-card
-                [label]="t('intel.famePerMillion')"
-                [value]="r.economy.fame_per_million_lost | number: '1.0-0'"
-                [sub]="t('intel.famePerMillionSub')"
-              />
-            </div>
-
-            <section class="card p-4">
-              <h2 class="eyebrow mb-1">{{ t('intel.outflowBreakdown') }}</h2>
-              <p class="mb-3 text-xs" style="color: var(--color-text-secondary)">
-                {{ t('intel.outflowHint') }}
-              </p>
-              <app-meter
-                [label]="t('intel.splits')"
-                [value]="r.economy.outflow_splits"
-                [max]="r.economy.outflow_total || 1"
-                [display]="(r.economy.outflow_splits | number: '1.0-0') ?? '0'"
-              />
-              <app-meter
-                [label]="t('intel.regears')"
-                [value]="r.economy.outflow_regear"
-                [max]="r.economy.outflow_total || 1"
-                [display]="(r.economy.outflow_regear | number: '1.0-0') ?? '0'"
-                tone="danger"
-              />
-              <app-meter
-                [label]="t('intel.other')"
-                [value]="r.economy.outflow_other"
-                [max]="r.economy.outflow_total || 1"
-                [display]="(r.economy.outflow_other | number: '1.0-0') ?? '0'"
-                tone="neutral"
-              />
-            </section>
-          } @else {
-            <app-empty-state icon="alert" [message]="t('intel.reportUnavailable')" />
-          }
-        }
-
-        @case ('enemies') {
-          <div class="mb-4 flex flex-wrap items-center gap-2">
-            <input
-              class="input max-w-xs"
-              type="search"
-              [placeholder]="t('intel.search')"
-              [attr.aria-label]="t('intel.search')"
-              [ngModel]="query()"
-              (ngModelChange)="query.set($event)"
-            />
-            <select
-              class="select max-w-[10rem]"
-              [attr.aria-label]="t('common.category')"
-              [ngModel]="category()"
-              (ngModelChange)="category.set($event)"
-            >
-              <option value="">{{ t('common.all') }}</option>
-              <option value="gank">{{ t('intel.category.gank') }}</option>
-              <option value="small_scale">{{ t('intel.category.smallScale') }}</option>
-              <option value="zvz">{{ t('intel.category.zvz') }}</option>
-            </select>
-          </div>
-
-          @if (visibleScouts().length === 0) {
-            <app-empty-state
-              icon="search"
-              [message]="t('intel.empty')"
-              [hint]="t('intel.emptyHint')"
-            />
-          } @else {
-            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              @for (scout of visibleScouts(); track scout.id) {
-                <a
-                  class="card block p-4 no-underline"
-                  [routerLink]="['/intel', scout.id]"
-                  [style.color]="'var(--color-text)'"
-                >
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="min-w-0">
-                      <p class="truncate font-medium">{{ scout.opponent_guild_name }}</p>
-                      <p class="eyebrow mt-0.5">{{ scout.name }}</p>
-                    </div>
-                    <app-status-chip [value]="scout.category" />
+                    <app-stat-card
+                      [label]="t('intel.streak')"
+                      [value]="r.overview.win_streak.toString()"
+                      [tone]="r.overview.win_streak > 0 ? 'success' : 'neutral'"
+                    />
+                    <app-stat-card
+                      [label]="t('intel.ipDelta')"
+                      [value]="(r.overview.item_power_delta > 0 ? '+' : '') + (r.overview.item_power_delta | number: '1.0-0')"
+                      [sub]="t('intel.ipDeltaSub')"
+                      [tone]="r.overview.item_power_delta >= 0 ? 'success' : 'warning'"
+                    />
                   </div>
+                </section>
 
-                  <div class="mt-3 grid grid-cols-3 gap-2 text-center">
-                    <div>
-                      <p class="eyebrow">{{ t('intel.players') }}</p>
-                      <p class="mono text-sm">{{ scout.player_count }}</p>
-                    </div>
-                    <div>
-                      <p class="eyebrow">{{ t('intel.avgIp') }}</p>
-                      <p class="mono text-sm">{{ scout.avg_ip | number: '1.0-0' }}</p>
-                    </div>
-                    <div>
-                      <p class="eyebrow">{{ t('intel.threat') }}</p>
-                      <p class="mono text-sm" style="color: var(--color-error)">
-                        {{ scout.threat_score }}
-                      </p>
-                    </div>
-                  </div>
-
-                  @if (topWeapons(scout).length) {
-                    <div class="mt-3 flex flex-wrap gap-1.5">
-                      @for (weapon of topWeapons(scout); track weapon.name) {
-                        <span
-                          class="rounded-full px-2 py-0.5 text-[11px]"
-                          style="background-color: var(--color-surface-2); color: var(--color-text-secondary)"
+                <section class="card p-5">
+                  <h2 class="eyebrow mb-4">{{ t('intel.tab.notableFights') }}</h2>
+                  <div class="flex flex-col gap-3">
+                    @for (fight of notableFights(); track fight.label) {
+                      @if (fight.data; as f) {
+                        <a
+                          class="flex items-center justify-between rounded-xl p-3.5 no-underline transition-colors hover:opacity-90"
+                          [style.background-color]="f.is_win ? 'var(--color-success-container)' : 'var(--color-error-container)'"
+                          [routerLink]="['/battles', f.battle_id]"
                         >
-                          {{ prettyWeapon(weapon.name) }} ×{{ weapon.count }}
+                          <div>
+                            <span class="eyebrow text-xs font-semibold" [style.color]="f.is_win ? 'var(--color-success)' : 'var(--color-error)'">
+                              {{ fight.label }} · {{ f.is_win ? t('common.win') : t('common.loss') }}
+                            </span>
+                            <span class="mt-1 block text-sm font-medium" style="color: var(--color-text)">
+                              {{ f.opponent ?? t('intel.unknownOpponent') }}
+                            </span>
+                          </div>
+                          <div class="text-right">
+                            <span class="mono text-sm font-medium" style="color: var(--color-text)">
+                              {{ f.kills }}k / {{ f.deaths }}d
+                            </span>
+                          </div>
+                        </a>
+                      }
+                    }
+                    @if (!r.overview.best_fight && !r.overview.worst_fight) {
+                      <p class="text-sm" style="color: var(--color-text-secondary)">
+                        {{ t('common.empty') }}
+                      </p>
+                    }
+                  </div>
+                </section>
+
+                <!-- Activity by hour of day -->
+                <section class="card p-5 lg:col-span-2">
+                  <div class="flex items-center justify-between mb-3">
+                    <div>
+                      <h2 class="eyebrow">{{ t('intel.tab.timing') }}</h2>
+                      <p class="text-xs mt-0.5" style="color: var(--color-text-secondary)">{{ t('intel.timingHint') }}</p>
+                    </div>
+                  </div>
+                  <div class="flex h-36 items-end gap-1 pt-4">
+                    @for (bucket of r.hours; track bucket.hour) {
+                      <button
+                        type="button"
+                        class="flex flex-1 flex-col justify-end gap-0.5 border-0 bg-transparent p-0 cursor-pointer group"
+                        [title]="bucket.hour + ':00 — ' + bucket.wins + 'W ' + bucket.losses + 'L'"
+                        [attr.aria-label]="bucket.hour + ':00 — ' + bucket.wins + ' ' + t('common.win') + ', ' + bucket.losses + ' ' + t('common.loss')"
+                      >
+                        <span
+                          class="w-full rounded-t-sm transition-opacity group-hover:opacity-80"
+                          style="background-color: var(--color-success)"
+                          [style.height.px]="barHeight(bucket.wins)"
+                        ></span>
+                        <span
+                          class="w-full transition-opacity group-hover:opacity-80"
+                          style="background-color: var(--color-error)"
+                          [style.height.px]="barHeight(bucket.losses)"
+                        ></span>
+                      </button>
+                    }
+                  </div>
+                  <div class="mt-2 flex justify-between text-[11px] mono" style="color: var(--color-text-secondary)">
+                    <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span>
+                  </div>
+                </section>
+
+                <!-- Activity Timeline -->
+                <section class="card p-5 lg:col-span-2">
+                  <h2 class="eyebrow mb-3">{{ t('intel.tab.timeline') }}</h2>
+                  <div class="divide-y divide-[var(--color-border)]">
+                    @for (entry of r.timeline; track entry.at + entry.title) {
+                      <div class="flex items-baseline gap-3 py-2.5">
+                        <span class="mono shrink-0 text-xs" style="color: var(--color-text-secondary)">
+                          {{ entry.at | date: 'MMM d, HH:mm' }}
                         </span>
+                        <div class="min-w-0 flex-1 flex flex-wrap items-baseline gap-2">
+                          <span class="text-sm font-medium" style="color: var(--color-text)">{{ entry.title }}</span>
+                          <span class="text-xs" style="color: var(--color-text-secondary)">{{ entry.detail }}</span>
+                        </div>
+                      </div>
+                    }
+                  </div>
+                </section>
+              </div>
+            } @else {
+              <app-empty-state icon="alert" [message]="t('intel.reportUnavailable')" [hint]="t('intel.reportUnavailableHint')" />
+            }
+          }
+
+          @case ('matchups') {
+            <!-- Matchup Matrix DataTable -->
+            <div class="space-y-6">
+              <section>
+                <div class="mb-2">
+                  <h2 class="text-lg font-semibold" style="color: var(--color-text)">{{ t('intel.nav.matchups') }}</h2>
+                  <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('intel.coverageNoteHint') }}</p>
+                </div>
+                <app-data-table
+                  [columns]="matchupColumns()"
+                  [rows]="matchupRows()"
+                  [trackBy]="trackMatchup"
+                  [hidePageSize]="false"
+                  emptyIcon="swords"
+                  [emptyLabel]="'intel.noMatchups'"
+                >
+                  <ng-template dataTableCell="our_comp" let-row>
+                    <a class="font-medium no-underline hover:underline" [routerLink]="['/comps', row.our_comp_id]" style="color: var(--color-text)">
+                      {{ row.our_comp_name }}
+                    </a>
+                  </ng-template>
+                  <ng-template dataTableCell="enemy" let-row>
+                    <a class="no-underline hover:underline text-sm" [routerLink]="['/intel', row.scouted_comp_id]" style="color: var(--color-text-secondary)">
+                      {{ scoutName(row.scouted_comp_id) }}
+                    </a>
+                  </ng-template>
+                  <ng-template dataTableCell="record" let-row>
+                    <span class="mono">
+                      <span style="color: var(--color-success)">{{ row.wins }}</span>
+                      <span class="opacity-40">/</span>
+                      <span style="color: var(--color-error)">{{ row.losses }}</span>
+                    </span>
+                  </ng-template>
+                  <ng-template dataTableCell="win_rate" let-row>
+                    @let totalFights = row.wins + row.losses;
+                    @let wr = totalFights > 0 ? (row.wins / totalFights) * 100 : 0;
+                    <app-meter
+                      [label]="''"
+                      [value]="row.wins"
+                      [max]="totalFights || 1"
+                      [display]="(wr | number: '1.0-0') + '%'"
+                      [tone]="wr >= 50 ? 'success' : 'danger'"
+                    />
+                  </ng-template>
+                </app-data-table>
+              </section>
+
+              <!-- Meta Weapon Breakdown -->
+              @if (report(); as r) {
+                <div class="grid gap-4 lg:grid-cols-2">
+                  <section class="card p-5">
+                    <h3 class="eyebrow mb-3">{{ t('intel.ourMeta') }}</h3>
+                    @if (r.our_meta.length === 0) {
+                      <p class="text-sm" style="color: var(--color-text-secondary)">{{ t('common.empty') }}</p>
+                    } @else {
+                      <div class="space-y-2">
+                        @for (w of r.our_meta; track w.weapon) {
+                          <app-meter
+                            [label]="prettyWeapon(w.weapon)"
+                            [value]="w.count"
+                            [max]="r.our_meta[0].count"
+                            [display]="w.count.toString()"
+                            tone="primary"
+                          />
+                        }
+                      </div>
+                    }
+                  </section>
+
+                  <section class="card p-5">
+                    <h3 class="eyebrow mb-3">{{ t('intel.enemyMeta') }}</h3>
+                    @if (r.enemy_meta.length === 0) {
+                      <p class="text-sm" style="color: var(--color-text-secondary)">{{ t('common.empty') }}</p>
+                    } @else {
+                      <div class="space-y-2">
+                        @for (w of r.enemy_meta; track w.weapon) {
+                          <app-meter
+                            [label]="prettyWeapon(w.weapon)"
+                            [value]="w.count"
+                            [max]="r.enemy_meta[0].count"
+                            [display]="w.count.toString()"
+                            tone="danger"
+                          />
+                        }
+                      </div>
+                    }
+                  </section>
+                </div>
+
+                <!-- Weekly Performance Trends -->
+                <section class="space-y-3">
+                  <div>
+                    <h3 class="text-base font-semibold" style="color: var(--color-text)">{{ t('intel.nav.trends') }}</h3>
+                  </div>
+                  <app-data-table
+                    [columns]="trendsColumns()"
+                    [rows]="r.trends"
+                    [trackBy]="trackTrend"
+                    [hideSearch]="true"
+                    emptyIcon="chart"
+                  >
+                    <ng-template dataTableCell="week_start" let-row>
+                      <span class="mono">{{ row.week_start | date: 'mediumDate' }}</span>
+                    </ng-template>
+                    <ng-template dataTableCell="record" let-row>
+                      <span class="mono">
+                        <span style="color: var(--color-success)">{{ row.wins }}</span>
+                        <span class="opacity-40">/</span>
+                        <span style="color: var(--color-error)">{{ row.losses }}</span>
+                      </span>
+                    </ng-template>
+                    <ng-template dataTableCell="win_rate" let-row>
+                      <app-meter
+                        [label]="''"
+                        [value]="row.wins"
+                        [max]="row.fights || 1"
+                        [display]="weekWinRate(row) + '%'"
+                        [tone]="weekWinRate(row) >= 50 ? 'success' : 'danger'"
+                      />
+                    </ng-template>
+                    <ng-template dataTableCell="net" let-row>
+                      <span class="mono" [style.color]="weekNet(row) >= 0 ? 'var(--color-success)' : 'var(--color-error)'">
+                        {{ weekNet(row) | number: '1.0-0' }}
+                      </span>
+                    </ng-template>
+                  </app-data-table>
+
+                  @if (weekOverWeek(); as delta) {
+                    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4 pt-2">
+                      <app-stat-card
+                        [label]="t('intel.trends.winRateDelta')"
+                        [value]="formatDelta(delta.winRate) + 'pp'"
+                        [tone]="delta.winRate >= 0 ? 'success' : 'danger'"
+                      />
+                      <app-stat-card
+                        [label]="t('intel.trends.attendanceDelta')"
+                        [value]="formatDelta(delta.attendance)"
+                        [tone]="delta.attendance >= 0 ? 'success' : 'danger'"
+                      />
+                      <app-stat-card
+                        [label]="t('intel.trends.netDelta')"
+                        [value]="formatDelta(delta.net)"
+                        [tone]="delta.net >= 0 ? 'success' : 'danger'"
+                      />
+                      <app-stat-card
+                        [label]="t('intel.trends.fightsDelta')"
+                        [value]="formatDelta(delta.fights)"
+                        [tone]="delta.fights >= 0 ? 'success' : 'danger'"
+                      />
+                    </div>
+                  }
+                </section>
+              }
+            </div>
+          }
+
+          @case ('scouts') {
+            <!-- Enemy Scout Library DataTable -->
+            <app-data-table
+              [columns]="libraryColumns()"
+              [rows]="scouts()"
+              [loading]="libraryLoading()"
+              [error]="libraryFailed()"
+              (retry)="reloadLibrary()"
+              [trackBy]="trackScout"
+              [pageSize]="SCOUT_PAGE_LIMIT"
+              [serverMode]="true"
+              [totalItems]="libraryTotal()"
+              emptyIcon="search"
+              [emptyLabel]="libraryEmptyLabel"
+              [rowClickable]="true"
+              (rowClick)="openScout($event)"
+              (pageChange)="onLibraryPageChange($event)"
+            >
+              <ng-template dataTableCell="opponent" let-row>
+                <span class="font-medium">{{ row.opponent_guild_name }}</span>
+              </ng-template>
+              <ng-template dataTableCell="name" let-row>
+                <span class="text-sm" style="color: var(--color-text-secondary)">{{ row.name }}</span>
+              </ng-template>
+              <ng-template dataTableCell="category" let-row>
+                <app-status-chip [value]="row.category" />
+              </ng-template>
+              <ng-template dataTableCell="avg_ip" let-row>
+                <span class="mono">{{ row.avg_ip | number: '1.0-0' }}</span>
+              </ng-template>
+              <ng-template dataTableCell="threat" let-row>
+                <span class="mono font-semibold" style="color: var(--color-error)">{{ row.threat_score }}</span>
+              </ng-template>
+              <ng-template dataTableCell="battles" let-row>
+                <span class="mono">{{ row.source_battle_count }}</span>
+              </ng-template>
+              <ng-template dataTableCell="saved_at" let-row>
+                <span class="text-sm" style="color: var(--color-text-secondary)">{{ row.saved_at | date: 'short' }}</span>
+              </ng-template>
+              <ng-template dataTableCell="coverage" let-row>
+                @if (!row.full_weapon_coverage) {
+                  <span
+                    class="chip chip--warning text-[11px]"
+                    [title]="t('intel.partialCoverageHint')"
+                  >
+                    {{ row.weapon_sample_size }}/{{ row.player_count }}
+                  </span>
+                }
+              </ng-template>
+            </app-data-table>
+          }
+
+          @case ('operations') {
+            @if (report(); as r) {
+              <div class="space-y-6">
+                <!-- Operations Stats Strip -->
+                <section class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                  <app-stat-card [label]="t('intel.roster')" [value]="r.operations.roster.toString()" icon="users" />
+                  <app-stat-card [label]="t('intel.officers')" [value]="r.operations.officers.toString()" icon="shield" />
+                  <app-stat-card
+                    [label]="t('intel.unlinked')"
+                    [value]="r.operations.unlinked.toString()"
+                    icon="alert"
+                    [tone]="r.operations.unlinked > 0 ? 'warning' : 'success'"
+                  />
+                  <app-stat-card
+                    [label]="t('intel.fillRate')"
+                    [value]="(r.operations.fill_rate | number: '1.0-0') + '%'"
+                    [sub]="r.operations.attendance + ' / ' + r.operations.slots"
+                    icon="chart"
+                  />
+                </section>
+
+                <!-- Role coverage + Inactive members -->
+                <div class="grid gap-4 lg:grid-cols-2">
+                  <section class="card p-5">
+                    <h2 class="eyebrow mb-3">{{ t('intel.roleCoverage') }}</h2>
+                    <div class="space-y-2.5">
+                      @for (role of roleCoverage(); track role.name) {
+                        <app-meter
+                          [label]="role.name"
+                          [value]="role.filled"
+                          [max]="role.needed || 1"
+                          [display]="role.filled + ' / ' + role.needed"
+                          [tone]="role.filled >= role.needed ? 'success' : 'danger'"
+                        />
                       }
                     </div>
-                  }
+                  </section>
 
-                  @if (!scout.full_weapon_coverage) {
-                    <p
-                      class="mt-3 flex items-center gap-1.5 text-[11px]"
-                      style="color: var(--color-warning)"
-                      [title]="t('intel.partialCoverageHint')"
-                    >
-                      <app-icon name="info" size="0.85rem" />
-                      {{ t('intel.partialCoverage') }}
-                      {{ scout.weapon_sample_size }}/{{ scout.player_count }}
-                    </p>
-                  }
-                </a>
-              }
-            </div>
-          }
-        }
+                  <section class="card p-5">
+                    <h2 class="eyebrow mb-3">{{ t('intel.inactive') }}</h2>
+                    @if (r.operations.inactive_members.length === 0) {
+                      <p class="text-sm" style="color: var(--color-success)">{{ t('intel.allActive') }}</p>
+                    } @else {
+                      <div class="flex flex-wrap gap-1.5">
+                        @for (m of r.operations.inactive_members; track m) {
+                          <span class="chip chip--warning text-xs">{{ m }}</span>
+                        }
+                      </div>
+                    }
+                  </section>
+                </div>
 
-        @case ('matchups') {
-          @if (matchupRows().length === 0) {
-            <app-empty-state
-              icon="swords"
-              [message]="t('intel.noMatchups')"
-              [hint]="t('intel.noMatchupsHint')"
-            />
-          } @else {
-            <div class="card overflow-x-auto">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>{{ t('intel.ourComp') }}</th>
-                    <th>{{ t('intel.enemy') }}</th>
-                    <th class="text-right">{{ t('intel.fights') }}</th>
-                    <th class="text-right">{{ t('intel.record') }}</th>
-                    <th class="w-40">{{ t('intel.winRate') }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (row of matchupRows(); track row.our_comp_id + ':' + row.scouted_comp_id) {
-                    <tr>
-                      <td>
-                        <a
-                          class="no-underline"
-                          [routerLink]="['/comps', row.our_comp_id]"
-                          style="color: var(--color-primary)"
-                        >
-                          {{ row.our_comp_name }}
-                        </a>
-                      </td>
-                      <td>
-                        <a
-                          class="no-underline"
-                          [routerLink]="['/intel', row.scouted_comp_id]"
-                          style="color: var(--color-text)"
-                        >
-                          {{ scoutName(row.scouted_comp_id) }}
-                        </a>
-                      </td>
-                      <td class="mono text-right">{{ row.battles }}</td>
-                      <td class="mono text-right">
-                        <span style="color: var(--color-success)">{{ row.wins }}</span>
-                        <span style="color: var(--color-text-disabled)"> / </span>
-                        <span style="color: var(--color-error)">{{ row.losses }}</span>
-                      </td>
-                      <td>
-                        <app-meter
-                          [label]="''"
-                          [value]="row.win_rate"
-                          [max]="100"
-                          [display]="(row.win_rate | number: '1.0-0') + '%'"
-                          [tone]="row.win_rate >= 50 ? 'success' : 'danger'"
-                        />
-                      </td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
+                <!-- Economy Overview Strip -->
+                <section class="space-y-3">
+                  <h3 class="text-base font-semibold" style="color: var(--color-text)">{{ t('intel.nav.economy') }}</h3>
+                  <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                    <app-stat-card
+                      [label]="t('intel.lootIn')"
+                      [value]="r.economy.loot_in | number: '1.0-0'"
+                      icon="bank"
+                      tone="success"
+                    />
+                    <app-stat-card
+                      [label]="t('intel.outflow')"
+                      [value]="r.economy.outflow_total | number: '1.0-0'"
+                      icon="bank"
+                      tone="warning"
+                    />
+                    <app-stat-card
+                      [label]="t('intel.net')"
+                      [value]="r.economy.net | number: '1.0-0'"
+                      icon="chart"
+                      [tone]="r.economy.net >= 0 ? 'success' : 'danger'"
+                    />
+                    <app-stat-card
+                      [label]="t('intel.famePerMillion')"
+                      [value]="r.economy.fame_per_million_lost | number: '1.0-0'"
+                      [sub]="t('intel.famePerMillionSub')"
+                      icon="sparkles"
+                    />
+                  </div>
+                  <div class="card p-5">
+                    <h4 class="eyebrow mb-2">{{ t('intel.outflowBreakdown') }}</h4>
+                    <p class="text-xs mb-3" style="color: var(--color-text-secondary)">{{ t('intel.outflowHint') }}</p>
+                    <div class="space-y-2.5">
+                      <app-meter
+                        [label]="t('intel.splits')"
+                        [value]="r.economy.outflow_splits"
+                        [max]="r.economy.outflow_total || 1"
+                        [display]="(r.economy.outflow_splits | number: '1.0-0') ?? '0'"
+                      />
+                      <app-meter
+                        [label]="t('intel.regears')"
+                        [value]="r.economy.outflow_regear"
+                        [max]="r.economy.outflow_total || 1"
+                        [display]="(r.economy.outflow_regear | number: '1.0-0') ?? '0'"
+                        tone="danger"
+                      />
+                      <app-meter
+                        [label]="t('intel.other')"
+                        [value]="r.economy.outflow_other"
+                        [max]="r.economy.outflow_total || 1"
+                        [display]="(r.economy.outflow_other | number: '1.0-0') ?? '0'"
+                        tone="neutral"
+                      />
+                    </div>
+                  </div>
+                </section>
 
-            @if (coverage(); as cov) {
-              @if (cov.battles_with_comp < cov.total_battles) {
-                <p class="mt-3 text-xs" style="color: var(--color-text-secondary)">
-                  {{ t('intel.coverageNote') }}
-                  {{ cov.battles_with_comp }}/{{ cov.total_battles }}.
-                  {{ t('intel.coverageNoteHint') }}
-                </p>
-              }
+                <!-- Combat Member Roster DataTable -->
+                <section class="space-y-3">
+                  <h3 class="text-base font-semibold" style="color: var(--color-text)">{{ t('intel.nav.roster') }}</h3>
+                  <app-data-table
+                    [columns]="rosterColumns()"
+                    [rows]="r.members"
+                    [trackBy]="trackMember"
+                    emptyIcon="users"
+                  >
+                    <ng-template dataTableCell="username" let-row>
+                      <div class="flex items-center gap-2">
+                        <span class="font-medium">{{ row.username }}</span>
+                        @if (!row.linked) {
+                          <span class="chip chip--warning text-[10px]">{{ t('intel.notLinked') }}</span>
+                        }
+                      </div>
+                    </ng-template>
+                    <ng-template dataTableCell="silver_lost" let-row>
+                      <span class="mono">{{ row.silver_lost | number: '1.0-0' }}</span>
+                    </ng-template>
+                  </app-data-table>
+                </section>
+              </div>
+            } @else {
+              <app-empty-state icon="alert" [message]="t('intel.reportUnavailable')" />
             }
           }
         }
-      }
+      </app-page-stack>
     }
   `,
 })
 export class Intel {
   private readonly intel = inject(IntelService);
+  private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
 
+  protected readonly SCOUT_PAGE_LIMIT = SCOUT_PAGE_LIMIT;
+  protected readonly libraryEmptyLabel: TranslationKey = 'intel.empty';
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
   protected readonly scouts = signal<ScoutedCompSummary[]>([]);
   protected readonly matchups = signal<MatchupReport | null>(null);
   protected readonly report = signal<GuildReport | null>(null);
   protected readonly tab = signal('overview');
-  protected readonly query = signal('');
-  protected readonly category = signal('');
+  protected readonly headlineTotal = signal(0);
+  protected readonly headlineTopThreat = signal<ScoutedCompSummary | null>(null);
+  protected readonly libraryTotal = signal(0);
+  protected readonly libraryLoading = signal(false);
+  protected readonly libraryFailed = signal(false);
+  private readonly scoutNames = signal<Readonly<Record<number, string>>>({});
 
-  /**
-   * The reference design had a per-map tab. AlbionBB carries no map or zone
-   * for a battle anywhere in this pipeline, so it is replaced by an
-   * hour-of-day view, which the data does support.
-   */
+  private libraryParams: DataTablePageChange = {
+    page: 1,
+    pageSize: SCOUT_PAGE_LIMIT,
+    search: '',
+    sort: null,
+    columnFilters: {},
+  };
+
   protected readonly tabs = computed<ViewToggleOption[]>(() => [
     { id: 'overview', label: this.t('intel.nav.overview') },
-    { id: 'trends', label: this.t('intel.nav.trends') },
-    { id: 'ops', label: this.t('intel.nav.ops') },
-    { id: 'enemies', label: this.t('intel.nav.enemies') },
     { id: 'matchups', label: this.t('intel.nav.matchups') },
-    { id: 'comps', label: this.t('intel.nav.comps') },
-    { id: 'roster', label: this.t('intel.nav.roster') },
-    { id: 'timing', label: this.t('intel.nav.timing') },
-    { id: 'meta', label: this.t('intel.nav.meta') },
-    { id: 'economy', label: this.t('intel.nav.economy') },
+    { id: 'scouts', label: this.t('intel.nav.enemies') },
+    { id: 'operations', label: this.t('intel.nav.ops') },
   ]);
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
-  /** Client-side narrowing; the library is small enough not to re-query. */
-  protected readonly visibleScouts = computed(() => {
-    const q = this.query().trim().toLowerCase();
-    const cat = this.category();
-    return this.scouts().filter((scout) => {
-      if (cat && scout.category !== cat) {
-        return false;
-      }
-      if (!q) {
-        return true;
-      }
-      return (
-        scout.name.toLowerCase().includes(q) ||
-        scout.opponent_guild_name.toLowerCase().includes(q) ||
-        Object.keys(scout.weapons).some((weapon) => weapon.toLowerCase().includes(q))
-      );
-    });
-  });
+  protected readonly libraryColumns = computed<readonly DataTableColumn<ScoutedCompSummary>[]>(
+    () => [
+      {
+        key: 'opponent',
+        label: 'intel.enemy',
+        searchable: true,
+        accessor: (row) => row.opponent_guild_name,
+      },
+      {
+        key: 'name',
+        label: 'common.name',
+        searchable: true,
+        accessor: (row) => row.name,
+      },
+      {
+        key: 'category',
+        label: 'common.category',
+        accessor: (row) => row.category,
+        filterOptions: [
+          { value: 'gank', label: this.t('intel.category.gank') },
+          { value: 'small_scale', label: this.t('intel.category.smallScale') },
+          { value: 'zvz', label: this.t('intel.category.zvz') },
+        ],
+      },
+      {
+        key: 'players',
+        label: 'intel.players',
+        accessor: (row) => row.player_count,
+        align: 'right',
+      },
+      {
+        key: 'avg_ip',
+        label: 'intel.avgIp',
+        accessor: (row) => row.avg_ip,
+        align: 'right',
+      },
+      {
+        key: 'threat',
+        label: 'intel.threat',
+        sortable: true,
+        accessor: (row) => row.threat_score,
+        align: 'right',
+      },
+      {
+        key: 'battles',
+        label: 'intel.fights',
+        sortable: true,
+        accessor: (row) => row.source_battle_count,
+        align: 'right',
+      },
+      {
+        key: 'saved_at',
+        label: 'intel.detail.lastSeen',
+        sortable: true,
+        accessor: (row) => row.saved_at,
+      },
+      {
+        key: 'coverage',
+        label: '',
+      },
+    ],
+  );
 
-  /**
-   * `at(0)` rather than `[0]`: indexed access is typed as always-present here,
-   * which would let the template dereference a scout that does not exist when
-   * the library is empty.
-   */
+  protected readonly matchupColumns = computed<readonly DataTableColumn<MatchupRow>[]>(() => [
+    {
+      key: 'our_comp',
+      label: 'intel.ourComp',
+      searchable: true,
+      accessor: (row) => row.our_comp_name,
+    },
+    {
+      key: 'enemy',
+      label: 'intel.enemy',
+      searchable: true,
+      accessor: (row) => this.scoutName(row.scouted_comp_id),
+    },
+    {
+      key: 'fights',
+      label: 'intel.fights',
+      sortable: true,
+      accessor: (row) => row.wins + row.losses,
+      align: 'right',
+    },
+    {
+      key: 'record',
+      label: 'intel.record',
+      accessor: (row) => `${row.wins}-${row.losses}`,
+      align: 'right',
+    },
+    {
+      key: 'win_rate',
+      label: 'intel.winRate',
+      sortable: true,
+      accessor: (row) => (row.wins + row.losses > 0 ? (row.wins / (row.wins + row.losses)) * 100 : 0),
+    },
+  ]);
+
+  protected readonly trendsColumns = computed<readonly DataTableColumn<TrendBucket>[]>(() => [
+    {
+      key: 'week_start',
+      label: 'intel.trends.week',
+      sortable: true,
+      accessor: (row) => row.week_start,
+    },
+    {
+      key: 'fights',
+      label: 'intel.fights',
+      sortable: true,
+      accessor: (row) => row.fights,
+      align: 'right',
+    },
+    {
+      key: 'record',
+      label: 'intel.record',
+      accessor: (row) => `${row.wins}-${row.losses}`,
+      align: 'right',
+    },
+    {
+      key: 'win_rate',
+      label: 'intel.winRate',
+      accessor: (row) => this.weekWinRate(row),
+    },
+    {
+      key: 'attendance',
+      label: 'intel.trends.attendance',
+      sortable: true,
+      accessor: (row) => row.attendance,
+      align: 'right',
+    },
+    {
+      key: 'net',
+      label: 'intel.trends.net',
+      sortable: true,
+      accessor: (row) => this.weekNet(row),
+      align: 'right',
+    },
+  ]);
+
+  protected readonly rosterColumns = computed<readonly DataTableColumn<RosterRow>[]>(() => [
+    {
+      key: 'username',
+      label: 'common.username',
+      searchable: true,
+      accessor: (row) => row.username,
+    },
+    {
+      key: 'events_signed',
+      label: 'intel.events',
+      sortable: true,
+      accessor: (row) => row.events_signed,
+      align: 'right',
+    },
+    {
+      key: 'fights',
+      label: 'intel.fights',
+      sortable: true,
+      accessor: (row) => row.fights,
+      align: 'right',
+    },
+    {
+      key: 'kill_death_ratio',
+      label: 'intel.kd',
+      sortable: true,
+      accessor: (row) => row.kill_death_ratio,
+      align: 'right',
+    },
+    {
+      key: 'silver_lost',
+      label: 'intel.silverLost',
+      sortable: true,
+      accessor: (row) => row.silver_lost,
+      align: 'right',
+    },
+  ]);
+
+  protected readonly trackScout = (scout: ScoutedCompSummary): unknown => scout.id;
+  protected readonly trackMatchup = (row: MatchupRow): unknown => row.our_comp_id + ':' + row.scouted_comp_id;
+  protected readonly trackTrend = (row: TrendBucket): unknown => row.week_start;
+  protected readonly trackMember = (row: RosterRow): unknown => row.user_id;
+
   protected readonly topThreat = computed<ScoutedCompSummary | null>(
-    () => [...this.scouts()].sort((a, b) => b.threat_score - a.threat_score).at(0) ?? null,
+    () => this.headlineTopThreat(),
   );
 
   protected readonly matchupRows = computed(() => this.matchups()?.rows ?? []);
@@ -806,15 +865,6 @@ export class Intel {
     return cov.battles_with_comp === cov.total_battles ? 'success' : 'warning';
   }
 
-  /** The heaviest weapons on a card, sorted by how many carried them. */
-  protected topWeapons(scout: ScoutedCompSummary): Array<{ name: string; count: number }> {
-    return Object.entries(scout.weapons)
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, CARD_WEAPON_LIMIT);
-  }
-
-  /** Turns `2H_HOLYSTAFF_MORGANA` into `Holystaff Morgana`. */
   protected prettyWeapon(id: string): string {
     return id
       .replace(/^(MAIN|2H|OFF)_/, '')
@@ -823,7 +873,6 @@ export class Intel {
       .join(' ');
   }
 
-  /** Best and worst fight, paired with their labels for the overview. */
   protected readonly notableFights = computed(() => {
     const overview = this.report()?.overview;
     return [
@@ -832,7 +881,6 @@ export class Intel {
     ].filter((entry) => entry.data !== null);
   });
 
-  /** Role coverage as `needed` versus `filled`, ordered by shortfall. */
   protected readonly roleCoverage = computed(() => {
     const ops = this.report()?.operations;
     if (!ops) {
@@ -849,34 +897,23 @@ export class Intel {
       .sort((a, b) => a.filled - a.needed - (b.filled - b.needed));
   });
 
-  /** Tallest hour sets the scale, so the histogram always fills its box. */
   private readonly peakHour = computed(() =>
     Math.max(1, ...(this.report()?.hours ?? []).map((h) => h.fights)),
   );
 
   protected barHeight(value: number): number {
-    const HISTOGRAM_PX = 150;
+    const HISTOGRAM_PX = 120;
     return Math.round((value / this.peakHour()) * HISTOGRAM_PX);
   }
 
-  /** A week's net silver: what came in from splits minus what left the bank. */
   protected weekNet(week: TrendBucket): number {
     return week.loot_in - week.outflow;
   }
 
-  /** A week's win rate, 0-100; zero on a quiet week rather than NaN. */
   protected weekWinRate(week: TrendBucket): number {
     return week.fights === 0 ? 0 : Math.round((week.wins / week.fights) * 100);
   }
 
-  /**
-   * Compares the most recent week against the one before it.
-   *
-   * Deliberately last-vs-previous rather than last-vs-average: a single
-   * outlier week should not get smoothed away by a season's worth of history,
-   * since the point of this card is "did this week go better or worse than
-   * the last one", not a long-run baseline.
-   */
   protected weekOverWeek(): {
     winRate: number;
     attendance: number;
@@ -897,18 +934,44 @@ export class Intel {
     };
   }
 
-  /** Signs a delta so a drop reads as "-12" rather than a bare "12". */
   protected formatDelta(value: number): string {
     const rounded = Math.round(value);
     return rounded > 0 ? `+${rounded}` : String(rounded);
   }
 
   protected scoutName(id: number): string {
-    return this.scouts().find((scout) => scout.id === id)?.opponent_guild_name ?? `#${id}`;
+    return this.scoutNames()[id] ?? `#${id}`;
+  }
+
+  private rememberScoutNames(items: readonly ScoutedCompSummary[]): void {
+    this.scoutNames.update((map) => {
+      const next: Record<number, string> = { ...map };
+      for (const scout of items) {
+        next[scout.id] = scout.name;
+      }
+      return next;
+    });
   }
 
   constructor() {
     void this.load();
+  }
+
+  protected onTabChange(tab: string): void {
+    this.tab.set(tab);
+  }
+
+  protected openScout(scout: ScoutedCompSummary): void {
+    void this.router.navigate(['/intel', scout.id]);
+  }
+
+  protected onLibraryPageChange(event: DataTablePageChange): void {
+    this.libraryParams = event;
+    void this.loadLibrary();
+  }
+
+  protected reloadLibrary(): void {
+    void this.loadLibrary();
   }
 
   protected async load(): Promise<void> {
@@ -916,20 +979,15 @@ export class Intel {
     this.loadFailed.set(false);
     try {
       const [library, matchups, report] = await Promise.all([
-        // The headline stat cards (always visible, independent of the
-        // active tab) are derived from the library, so a failure here is
-        // treated as fatal for the whole page — same as before.
-        firstValueFrom(this.intel.listScouts({ limit: SCOUT_PAGE_LIMIT, sort: 'threat' })),
-        // Only the Matchups tab needs this. A failure/timeout here must not
-        // blank Operations/Comps/Roster/Timing/Meta/Economy, which only
-        // depend on `report` below — same reasoning as its own `.catch()`.
+        firstValueFrom(this.intel.listScouts({ limit: SCOUT_PAGE_LIMIT, sort: 'threat', page: 1 })),
         firstValueFrom(this.intel.matchups()).catch(() => null),
-        // The report needs `intel.report.view`, which members may not hold.
-        // A member should still get the scout library rather than an error
-        // page, so this arm degrades instead of failing the whole load.
         firstValueFrom(this.intel.report()).catch(() => null),
       ]);
       this.scouts.set(library.items);
+      this.rememberScoutNames(library.items);
+      this.libraryTotal.set(library.total_items);
+      this.headlineTotal.set(library.total_items);
+      this.headlineTopThreat.set(library.items.at(0) ?? null);
       this.matchups.set(matchups);
       this.report.set(report);
     } catch (error) {
@@ -938,5 +996,36 @@ export class Intel {
     } finally {
       this.loading.set(false);
     }
+  }
+
+  private async loadLibrary(): Promise<void> {
+    this.libraryLoading.set(true);
+    this.libraryFailed.set(false);
+    try {
+      const library = await firstValueFrom(this.intel.listScouts(this.toScoutParams()));
+      this.scouts.set(library.items);
+      this.rememberScoutNames(library.items);
+      this.libraryTotal.set(library.total_items);
+    } catch (error) {
+      this.libraryFailed.set(true);
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.libraryLoading.set(false);
+    }
+  }
+
+  private toScoutParams(): ScoutListParams {
+    const event = this.libraryParams;
+    const sortKey = event.sort?.columnKey;
+    const sort: ScoutListParams['sort'] =
+      sortKey === 'saved_at' ? 'saved_at' : sortKey === 'battles' ? 'battles' : 'threat';
+    const category = event.columnFilters['category'] || undefined;
+    return {
+      q: event.search.trim() || undefined,
+      category,
+      sort,
+      page: event.page,
+      limit: event.pageSize,
+    };
   }
 }

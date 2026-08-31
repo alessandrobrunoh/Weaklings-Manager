@@ -304,10 +304,8 @@ pub fn resolve_linked_roles(
     member_discord_role_ids: &[String],
     db_roles: &[super::entities::role::Model],
 ) -> (Vec<String>, String) {
-    let held: std::collections::HashSet<&str> = member_discord_role_ids
-        .iter()
-        .map(String::as_str)
-        .collect();
+    let held: std::collections::HashSet<&str> =
+        member_discord_role_ids.iter().map(String::as_str).collect();
 
     let mut matched: Vec<&super::entities::role::Model> = db_roles
         .iter()
@@ -322,7 +320,11 @@ pub fn resolve_linked_roles(
         return fallback_unmatched_roles(db_roles);
     }
 
-    matched.sort_by(|a, b| b.priority.cmp(&a.priority).then_with(|| a.name.cmp(&b.name)));
+    matched.sort_by(|a, b| {
+        b.priority
+            .cmp(&a.priority)
+            .then_with(|| a.name.cmp(&b.name))
+    });
     let names: Vec<String> = matched.iter().map(|role| role.name.clone()).collect();
     let highest = names.first().cloned().unwrap_or_else(|| "User".to_string());
     (names, highest)
@@ -363,11 +365,16 @@ mod tests {
     #[test]
     fn matches_discord_role_id_not_internal_id() {
         let roles = vec![
-            role("uuid-raid-lead", "Raid Lead", 80, Some("999888777666555444"), false),
+            role(
+                "uuid-raid-lead",
+                "Raid Lead",
+                80,
+                Some("999888777666555444"),
+                false,
+            ),
             role("222333444555666777", "User", 10, None, true),
         ];
-        let (names, highest) =
-            resolve_linked_roles(&["999888777666555444".into()], &roles);
+        let (names, highest) = resolve_linked_roles(&["999888777666555444".into()], &roles);
         assert_eq!(names, vec!["Raid Lead".to_string()]);
         assert_eq!(highest, "Raid Lead");
     }
@@ -380,8 +387,7 @@ mod tests {
             role("999888777666555444", "Stale", 90, None, false),
             role("user-uuid", "Member", 10, None, true),
         ];
-        let (names, highest) =
-            resolve_linked_roles(&["999888777666555444".into()], &roles);
+        let (names, highest) = resolve_linked_roles(&["999888777666555444".into()], &roles);
         assert_eq!(names, vec!["Member".to_string()]);
         assert_eq!(highest, "Member");
     }
@@ -393,8 +399,7 @@ mod tests {
             role("b", "Raider", 30, Some("222"), false),
             role("c", "User", 10, None, true),
         ];
-        let (names, highest) =
-            resolve_linked_roles(&["222".into(), "111".into()], &roles);
+        let (names, highest) = resolve_linked_roles(&["222".into(), "111".into()], &roles);
         assert_eq!(names, vec!["Officer".to_string(), "Raider".to_string()]);
         assert_eq!(highest, "Officer");
     }

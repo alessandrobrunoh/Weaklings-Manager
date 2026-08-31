@@ -9,11 +9,13 @@ use std::str::FromStr;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, TransactionTrait,
 };
 
+use sea_orm::sea_query::{Expr, Func};
+
 use crate::errors::AppError;
-use crate::pagination::{PaginatedData, PaginationParams};
+use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
 use super::entities::{build, build_category, build_item, comp, comp_build, comp_category};
 use super::entities::{
@@ -419,7 +421,7 @@ impl CompService {
         let limit = pagination.limit();
         let page = pagination.offset_page();
 
-        let mut query = build::Entity::find().order_by_desc(BuildColumn::UpdatedAt);
+        let mut query = build::Entity::find();
 
         if let Some(role) = filters.role {
             query = query.filter(BuildColumn::Role.eq(role.to_string()));
@@ -428,22 +430,33 @@ impl CompService {
             query = query.filter(BuildColumn::CategoryId.eq(category_id));
         }
 
-        let total_items = query.clone().count(db).await?;
-
-        // Name filter is applied locally (case-insensitive contains) since it's a simple
-        // substring search — keeps the DB query portable across SQLite/Postgres.
-        let mut builds = query.offset(page * limit).limit(limit).all(db).await?;
-
-        if let Some(q) = filters.q.as_deref().filter(|q| !q.trim().is_empty()) {
-            let needle = q.to_lowercase();
-            builds.retain(|b| b.name.to_lowercase().contains(&needle));
+        let search = filters.search.or(filters.q);
+        if let Some(s) = search.filter(|value| !value.trim().is_empty()) {
+            let pattern = format!("%{}%", s.trim());
+            query = query.filter(
+                Expr::expr(Func::lower(Expr::col(BuildColumn::Name))).like(pattern.to_lowercase()),
+            );
         }
 
-        let total_pages = if limit == 0 {
-            0
-        } else {
-            total_items.div_ceil(limit)
+        let sort_column = resolve_sort_key(
+            filters.sort.as_deref(),
+            &[
+                ("name", BuildColumn::Name),
+                ("role", BuildColumn::Role),
+                ("created_at", BuildColumn::CreatedAt),
+            ],
+            BuildColumn::CreatedAt,
+        )?;
+        let order = SortOrder::from_query(filters.order.as_deref());
+        let query = match order {
+            SortOrder::Asc => query.order_by_asc(sort_column),
+            SortOrder::Desc => query.order_by_desc(sort_column),
         };
+
+        let paginator = query.paginate(db, limit);
+        let total_items = paginator.num_items().await?;
+        let total_pages = paginator.num_pages().await?;
+        let builds = paginator.fetch_page(page).await?;
 
         let mut summaries = Vec::with_capacity(builds.len());
         for b in builds {
@@ -737,25 +750,18 @@ impl CompService {
         let limit = pagination.limit();
         let page = pagination.offset_page();
 
-        let mut query = comp::Entity::find().order_by_desc(CompColumn::CreatedAt);
+        let mut query = comp::Entity::find();
 
         if let Some(category_id) = filters.category_id {
             query = query.filter(CompColumn::CategoryId.eq(category_id));
         }
 
         let search = filters.search.or(filters.q);
-        if let Some(s) = search {
-            if !s.trim().is_empty() {
-                let pattern = format!("%{}%", s.trim());
-                query = query.filter(
-                    sea_orm::Condition::any().add(
-                        sea_orm::sea_query::Expr::expr(sea_orm::sea_query::Func::lower(
-                            sea_orm::sea_query::Expr::col(CompColumn::Name),
-                        ))
-                        .like(pattern.to_lowercase()),
-                    ),
-                );
-            }
+        if let Some(s) = search.filter(|value| !value.trim().is_empty()) {
+            let pattern = format!("%{}%", s.trim());
+            query = query.filter(
+                Expr::expr(Func::lower(Expr::col(CompColumn::Name))).like(pattern.to_lowercase()),
+            );
         }
 
         if let Some(date_from) = filters.date_from {
@@ -770,15 +776,25 @@ impl CompService {
             }
         }
 
-        let total_items = query.clone().count(db).await?;
-
-        let comps = query.offset(page * limit).limit(limit).all(db).await?;
-
-        let total_pages = if limit == 0 {
-            0
-        } else {
-            total_items.div_ceil(limit)
+        let sort_column = resolve_sort_key(
+            filters.sort.as_deref(),
+            &[
+                ("name", CompColumn::Name),
+                ("created_at", CompColumn::CreatedAt),
+                ("category", CompColumn::CategoryId),
+            ],
+            CompColumn::CreatedAt,
+        )?;
+        let order = SortOrder::from_query(filters.order.as_deref());
+        let query = match order {
+            SortOrder::Asc => query.order_by_asc(sort_column),
+            SortOrder::Desc => query.order_by_desc(sort_column),
         };
+
+        let paginator = query.paginate(db, limit);
+        let total_items = paginator.num_items().await?;
+        let total_pages = paginator.num_pages().await?;
+        let comps = paginator.fetch_page(page).await?;
 
         let mut summaries = Vec::with_capacity(comps.len());
         for c in comps {
@@ -1022,5 +1038,200 @@ impl CompService {
 impl Default for CompService {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::migration::MigratorTrait;
+    use crate::modules::users::entities::ActiveModel as UserActiveModel;
+    use crate::pagination::PaginationParams;
+    use sea_orm::Database;
+
+    use super::super::entities::{
+        build::ActiveModel as BuildActiveModel,
+        build_category::ActiveModel as BuildCategoryActiveModel,
+        comp::ActiveModel as CompActiveModel,
+        comp_category::ActiveModel as CompCategoryActiveModel,
+    };
+
+    async fn seed_db() -> DatabaseConnection {
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("Failed to connect to test database");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("Failed to run database migrations");
+        db
+    }
+
+    async fn insert_user(db: &DatabaseConnection, username: &str, email: &str) -> i64 {
+        UserActiveModel {
+            username: Set(username.to_string()),
+            email: Set(email.to_string()),
+            role: Set("User".to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("Failed to insert user")
+        .id
+    }
+
+    async fn insert_build_category(db: &DatabaseConnection, name: &str) -> i64 {
+        BuildCategoryActiveModel {
+            name: Set(name.to_string()),
+            slug: Set(name.to_lowercase()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("Failed to insert build category")
+        .id
+    }
+
+    async fn insert_comp_category(db: &DatabaseConnection, name: &str) -> i64 {
+        CompCategoryActiveModel {
+            name: Set(name.to_string()),
+            slug: Set(name.to_lowercase()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("Failed to insert comp category")
+        .id
+    }
+
+    async fn insert_build(
+        db: &DatabaseConnection,
+        name: &str,
+        role: &str,
+        category_id: i64,
+        created_by: i64,
+    ) -> i64 {
+        BuildActiveModel {
+            name: Set(name.to_string()),
+            role: Set(role.to_string()),
+            category_id: Set(category_id),
+            created_by: Set(created_by),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("Failed to insert build")
+        .id
+    }
+
+    async fn insert_comp(
+        db: &DatabaseConnection,
+        name: &str,
+        category_id: i64,
+        created_by: i64,
+    ) -> i64 {
+        CompActiveModel {
+            name: Set(name.to_string()),
+            category_id: Set(category_id),
+            created_by: Set(created_by),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("Failed to insert comp")
+        .id
+    }
+
+    #[tokio::test]
+    async fn list_comps_sorts_by_name_and_rejects_unknown_sort() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let cat = insert_comp_category(&db, "ZvZ").await;
+        insert_comp(&db, "Alpha", cat, user).await;
+        insert_comp(&db, "Zebra", cat, user).await;
+        let service = CompService::new();
+        let pagination = PaginationParams {
+            page: None,
+            limit: None,
+        };
+
+        let sorted = service
+            .list_comps(
+                &db,
+                CompFilters {
+                    sort: Some("name".to_string()),
+                    order: Some("asc".to_string()),
+                    ..Default::default()
+                },
+                pagination.clone(),
+            )
+            .await
+            .unwrap();
+        let names: Vec<_> = sorted.items.iter().map(|comp| comp.name.as_str()).collect();
+        assert_eq!(names, vec!["Alpha", "Zebra"]);
+
+        let error = service
+            .list_comps(
+                &db,
+                CompFilters {
+                    sort: Some("fame".to_string()),
+                    ..Default::default()
+                },
+                pagination,
+            )
+            .await
+            .unwrap_err();
+        match error {
+            AppError::Validation(message) => assert!(message.contains("fame")),
+            other => panic!("expected validation, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn list_builds_sorts_by_name_and_rejects_unknown_sort() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let cat = insert_build_category(&db, "Weapons").await;
+        insert_build(&db, "Alpha", "dps", cat, user).await;
+        insert_build(&db, "Zebra", "tank", cat, user).await;
+        let service = CompService::new();
+        let pagination = PaginationParams {
+            page: None,
+            limit: None,
+        };
+
+        let sorted = service
+            .list_builds(
+                &db,
+                BuildFilters {
+                    sort: Some("name".to_string()),
+                    order: Some("asc".to_string()),
+                    ..Default::default()
+                },
+                pagination.clone(),
+            )
+            .await
+            .unwrap();
+        let names: Vec<_> = sorted
+            .items
+            .iter()
+            .map(|build| build.name.as_str())
+            .collect();
+        assert_eq!(names, vec!["Alpha", "Zebra"]);
+
+        let error = service
+            .list_builds(
+                &db,
+                BuildFilters {
+                    sort: Some("fame".to_string()),
+                    ..Default::default()
+                },
+                pagination,
+            )
+            .await
+            .unwrap_err();
+        match error {
+            AppError::Validation(message) => assert!(message.contains("fame")),
+            other => panic!("expected validation, got {other:?}"),
+        }
     }
 }

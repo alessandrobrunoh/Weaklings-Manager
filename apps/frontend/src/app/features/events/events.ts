@@ -1,132 +1,320 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
-import type { EventDetailView, EventView, PaginatedData } from '../../core/models/api.models';
+import type {
+  CompSummary,
+  CreateEventRequest,
+  EventStatus,
+  EventView,
+  PaginatedData,
+  SplitIsland,
+  SplitIslandCity,
+} from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import { EmptyState } from '../../shared/components/empty-state/empty-state';
-import { ErrorState } from '../../shared/components/error-state/error-state';
-import { Loading } from '../../shared/components/loading/loading';
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTablePageChange,
+} from '../../shared/components/data-table/data-table';
+import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { Dialog } from '../../shared/components/dialog/dialog';
+import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+
 const PAGE_SIZE = 10;
+const EVENT_STATUSES: readonly EventStatus[] = ['scheduled', 'live', 'stopped', 'auto_stopped'];
+
+const SORT_COLUMNS: Readonly<Record<string, string>> = {
+  title: 'title',
+  date: 'event_date_utc',
+  status: 'status',
+};
 
 /**
  * Events list page.
  *
- * Shows a paginated grid of guild events with quick state actions (join, leave,
- * start, stop). Creation now lives on a dedicated route (`/events/new`) so the
- * list stays focused on browsing; clicking any card opens the analytics view.
+ * Server-driven table of guild events. Create lives in a native `<dialog>`
+ * (focus trap, Esc, light-dismiss) so `/events/new` is no longer a route.
+ * Row actions stay compact: Open is primary, Join still lands on detail,
+ * and Start/Stop/Leave stay on the detail page.
  */
 @Component({
   selector: 'app-events',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, EmptyState, ErrorState, Loading, StatusChip],
+  imports: [DataTable, DataTableCell, Dialog, Icon, PageHeader, PageStack, StatCard, StatusChip, TooltipDirective],
   template: `
     <app-page-header [title]="t('events.title')" [subtitle]="t('events.subtitle')">
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        [disabled]="loading()"
+        (click)="refreshNow()"
+        [appTooltip]="'Aggiorna elenco eventi'"
+        tooltipPosition="bottom"
+      >
+        <app-icon name="sparkles" size="0.875rem" />
+        {{ t('common.refreshNow') }}
+      </button>
+
       @if (canManage()) {
-        <button type="button" class="btn btn--primary" (click)="openCreateForm()">
+        <button
+          type="button"
+          class="btn btn--primary btn--sm"
+          (click)="openCreate()"
+          [appTooltip]="'Crea un nuovo evento di gilda'"
+          tooltipPosition="bottom"
+        >
+          <app-icon name="plus" size="0.875rem" />
           {{ t('events.new') }}
         </button>
       }
     </app-page-header>
 
-    @if (loading()) {
-      <app-loading [label]="t('common.loading')" />
-    } @else if (loadFailed()) {
-      <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
-    } @else if (events().length === 0) {
-      <app-empty-state [message]="t('common.empty')" icon="calendar" />
-    } @else {
-      <div class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-        @for (event of events(); track event.id) {
-          <article class="card p-5">
-            <header
-              class="mb-3 flex cursor-pointer items-start justify-between gap-2"
-              (click)="openEventDetail(event.id)"
-            >
-              <h2 class="text-base font-semibold" style="color: var(--color-text)">
-                @if (event.call_to_arms) {
-                  <span class="cta-star" title="{{ t('events.call_to_arms') }}">★</span>
-                }
-                {{ event.title }}
-              </h2>
-              <app-status-chip [value]="event.status" />
-            </header>
+    <app-page-stack>
+      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Events summary">
+        <app-stat-card
+          [label]="t('events.stat.total')"
+          [value]="totalItems()"
+          icon="calendar"
+          tone="neutral"
+        />
+        <app-stat-card
+          [label]="t('events.stat.live')"
+          [value]="liveCount()"
+          icon="sparkles"
+          tone="success"
+        />
+        <app-stat-card
+          [label]="t('events.stat.scheduled')"
+          [value]="scheduledCount()"
+          icon="calendar"
+          tone="primary"
+        />
+        <app-stat-card
+          [label]="t('events.stat.cta')"
+          [value]="ctaCount()"
+          icon="alert"
+          tone="warning"
+        />
+      </section>
 
-            @if (event.description) {
-              <p
-                class="mb-3 cursor-pointer text-sm"
-                style="color: var(--color-text-secondary)"
-                (click)="openEventDetail(event.id)"
-              >
-                {{ event.description }}
-              </p>
+      <app-data-table
+        [columns]="columns()"
+        [rows]="events()"
+        [loading]="loading()"
+        [error]="loadFailed()"
+        (retry)="load()"
+        [trackBy]="trackById"
+        [serverMode]="true"
+        [totalItems]="totalItems()"
+        [pageSize]="pageSize()"
+        emptyIcon="calendar"
+        [rowClickable]="true"
+        (rowClick)="openEventDetail($event.id)"
+        (pageChange)="onPageChange($event)"
+      >
+        <ng-template dataTableCell="title" let-row>
+          <span class="font-medium" style="color: var(--color-text)">
+            @if (row.call_to_arms) {
+              <span class="cta-star" [title]="t('events.call_to_arms')">★</span>
             }
-
-            <p
-              class="mb-4 cursor-pointer text-xs"
-              style="color: var(--color-text-secondary)"
-              (click)="openEventDetail(event.id)"
+            {{ row.title }}
+          </span>
+        </ng-template>
+        <ng-template dataTableCell="date" let-row>
+          <span style="color: var(--color-text-secondary)">{{ formatDate(row.event_date_utc) }}</span>
+        </ng-template>
+        <ng-template dataTableCell="comp" let-row>
+          {{ row.comp_name }}
+        </ng-template>
+        <ng-template dataTableCell="status" let-row>
+          <app-status-chip [value]="row.status" />
+        </ng-template>
+        <ng-template dataTableCell="actions" let-row>
+          <div class="flex flex-wrap justify-end gap-1">
+            <button
+              type="button"
+              class="btn btn--primary btn--sm"
+              (click)="$event.stopPropagation(); openEventDetail(row.id)"
             >
-              {{ t('common.date') }}: {{ formatDate(event.event_date_utc) }} · {{ event.comp_name }}
-            </p>
-
-            <footer class="flex flex-wrap gap-2">
-              @if (event.status === 'scheduled') {
-                <button type="button" class="btn btn--tonal" (click)="join(event.id)">
-                  {{ t('events.viewAndJoin') }}
-                </button>
-                <button type="button" class="btn btn--outline" (click)="leave(event.id)">
-                  {{ t('events.leave') }}
-                </button>
-              }
-              @if (canManage() && event.status === 'scheduled') {
-                <button type="button" class="btn btn--primary" (click)="start(event.id)">
-                  {{ t('events.start') }}
-                </button>
-              }
-              @if (canManage() && event.status === 'live') {
-                <button type="button" class="btn btn--danger" (click)="stop(event.id)">
-                  {{ t('events.stop') }}
-                </button>
-              }
-              <button type="button" class="btn btn--outline" (click)="openEventDetail(event.id)">
-                {{ t('common.view') }}
+              {{ t('common.open') }}
+            </button>
+            @if (row.status === 'scheduled') {
+              <button
+                type="button"
+                class="btn btn--tonal btn--sm"
+                (click)="$event.stopPropagation(); join(row.id)"
+              >
+                {{ t('events.participate') }}
               </button>
-              @if (canManage()) {
-                <button type="button" class="btn btn--danger" (click)="deleteEvent(event.id)">
-                  {{ t('common.delete') }}
-                </button>
-              }
-            </footer>
-          </article>
-        }
-      </div>
+            }
+            @if (canManage()) {
+              <button
+                type="button"
+                class="btn btn--danger btn--sm"
+                (click)="$event.stopPropagation(); requestDelete(row)"
+              >
+                {{ t('common.delete') }}
+              </button>
+            }
+          </div>
+        </ng-template>
+      </app-data-table>
+    </app-page-stack>
 
-      <div class="mt-4 flex items-center justify-between">
-        <p class="text-xs" style="color: var(--color-text-secondary)">
-          {{ t('common.page') }} {{ page() }} {{ t('common.of') }} {{ totalPages() }}
-        </p>
-        <div class="flex gap-2">
-          <button type="button" class="btn btn--outline" [disabled]="page() <= 1" (click)="prev()">
-            {{ t('common.prev') }}
+    @if (createOpen()) {
+      <app-dialog [title]="t('events.new')" size="lg" (closed)="closeCreate()">
+        <form id="create-event-form" class="grid gap-4" (submit)="onCreateSubmit($event)">
+          <label>
+            <span class="label">{{ t('common.name') }}</span>
+            <input
+              class="input"
+              type="text"
+              required
+              autofocus
+              [value]="draftTitle()"
+              (input)="onTitleChange($event)"
+            />
+          </label>
+
+          <label>
+            <span class="label">{{ t('common.description') }}</span>
+            <textarea
+              class="textarea"
+              rows="3"
+              [value]="draftDescription()"
+              (input)="onDescriptionChange($event)"
+            ></textarea>
+          </label>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <label>
+              <span class="label">{{ t('events.detail.comp') }}</span>
+              <select
+                class="select"
+                [value]="draftCompId()"
+                [disabled]="compsLoading()"
+                (change)="onCompChange($event)"
+              >
+                <option value="">{{ compsLoading() ? t('common.loading') : '—' }}</option>
+                @for (comp of comps(); track comp.id) {
+                  <option [value]="comp.id">{{ comp.name }}</option>
+                }
+              </select>
+            </label>
+
+            <label>
+              <span class="label">{{ t('common.date') }}</span>
+              <input
+                class="input"
+                type="datetime-local"
+                [attr.min]="minScheduledAt"
+                [value]="draftScheduledAt()"
+                (input)="onScheduledAtChange($event)"
+              />
+            </label>
+          </div>
+
+          <label class="flex items-center gap-2">
+            <input
+              class="checkbox"
+              type="checkbox"
+              [checked]="draftCallToArms()"
+              (change)="onCallToArmsChange($event)"
+            />
+            <span>{{ t('events.call_to_arms') }}</span>
+          </label>
+
+          <label class="flex items-start gap-2">
+            <input
+              class="checkbox mt-0.5"
+              type="checkbox"
+              [checked]="draftCreateSplit()"
+              (change)="onCreateSplitChange($event)"
+            />
+            <span>
+              {{ t('events.createSplit') }}
+              <span class="mt-0.5 block text-xs" style="color: var(--color-text-secondary)">
+                {{ t('events.createSplitHint') }}
+              </span>
+            </span>
+          </label>
+
+          @if (draftCreateSplit()) {
+            <div class="grid gap-3 sm:grid-cols-2">
+              <label>
+                <span class="label">{{ t('splits.island') }}</span>
+                <select class="select" [value]="draftIslandId()" (change)="onIslandChange($event)">
+                  <option value="">{{ t('splits.pick_island') }}</option>
+                  @for (island of islands(); track island.id) {
+                    <option [value]="island.id">{{ cityLabel(island.city) }} · {{ island.name }}</option>
+                  }
+                </select>
+              </label>
+              <label>
+                <span class="label">{{ t('splits.tab') }}</span>
+                <select
+                  class="select"
+                  [value]="draftTabId()"
+                  [disabled]="!draftIslandId()"
+                  (change)="onTabChange($event)"
+                >
+                  <option value="">{{ t('splits.pick_tab') }}</option>
+                  @for (tab of draftTabs(); track tab.id) {
+                    <option [value]="tab.id">{{ tab.name }}</option>
+                  }
+                </select>
+              </label>
+            </div>
+          }
+
+          @if (compError()) {
+            <p class="text-sm" style="color: var(--color-danger)">{{ compError() }}</p>
+          }
+        </form>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="closeCreate()">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="submit"
+            class="btn btn--primary"
+            form="create-event-form"
+            [disabled]="saving()"
+          >
+            {{ t('common.create') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
+
+    @if (pendingDelete()) {
+      <app-dialog [title]="t('events.detail.delete')" size="sm" (closed)="cancelDelete()">
+        <p>{{ t('events.detail.confirm_delete') }}</p>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="cancelDelete()">
+            {{ t('common.cancel') }}
           </button>
           <button
             type="button"
-            class="btn btn--outline"
-            [disabled]="page() >= totalPages()"
-            (click)="next()"
+            class="btn btn--danger"
+            [disabled]="deleting()"
+            (click)="confirmDelete()"
           >
-            {{ t('common.next') }}
+            {{ t('common.delete') }}
           </button>
         </div>
-      </div>
+      </app-dialog>
     }
   `,
 })
@@ -141,7 +329,84 @@ export class Events {
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
   protected readonly page = signal(1);
-  protected readonly totalPages = signal(1);
+  protected readonly pageSize = signal(PAGE_SIZE);
+  protected readonly totalItems = signal(0);
+  protected readonly search = signal('');
+  protected readonly statusFilter = signal('');
+  protected readonly sortColumn = signal<string | null>(null);
+  protected readonly sortOrder = signal<'asc' | 'desc' | null>(null);
+
+  protected readonly liveCount = computed(
+    () => this.events().filter((e) => e.status === 'live').length,
+  );
+  protected readonly scheduledCount = computed(
+    () => this.events().filter((e) => e.status === 'scheduled').length,
+  );
+  protected readonly ctaCount = computed(
+    () => this.events().filter((e) => e.call_to_arms).length,
+  );
+
+  protected async refreshNow(): Promise<void> {
+    await this.load();
+  }
+
+  protected readonly createOpen = signal(false);
+  protected readonly saving = signal(false);
+  protected readonly compsLoading = signal(false);
+  protected readonly comps = signal<CompSummary[]>([]);
+  protected readonly draftTitle = signal('');
+  protected readonly draftDescription = signal('');
+  protected readonly draftCompId = signal('');
+  protected readonly draftScheduledAt = signal(defaultScheduledAt());
+  protected readonly minScheduledAt = minScheduledAt();
+  protected readonly draftCallToArms = signal(false);
+  protected readonly draftCreateSplit = signal(false);
+  protected readonly islands = signal<SplitIsland[]>([]);
+  protected readonly draftIslandId = signal('');
+  protected readonly draftTabId = signal('');
+  protected readonly draftTabs = computed(() => {
+    const id = Number(this.draftIslandId());
+    return this.islands().find((island) => island.id === id)?.tabs ?? [];
+  });
+  protected readonly compError = signal<string | null>(null);
+
+  protected readonly pendingDelete = signal<EventView | null>(null);
+  protected readonly deleting = signal(false);
+
+  protected readonly trackById = (event: EventView): number => event.id;
+
+  protected readonly columns = computed<readonly DataTableColumn<EventView>[]>(() => [
+    {
+      key: 'title',
+      label: 'common.name',
+      sortable: true,
+      searchable: true,
+      accessor: (event) => event.title,
+    },
+    {
+      key: 'date',
+      label: 'common.date',
+      sortable: true,
+      accessor: (event) => event.event_date_utc,
+    },
+    {
+      key: 'comp',
+      label: 'events.detail.comp',
+      searchable: true,
+      accessor: (event) => event.comp_name,
+    },
+    {
+      key: 'status',
+      label: 'common.status',
+      sortable: true,
+      accessor: (event) => event.status,
+      filterOptions: EVENT_STATUSES.map((status) => ({
+        value: status,
+        label: this.t(statusLabel(status)),
+      })),
+    },
+    { key: 'actions', label: 'common.actions', align: 'right' },
+  ]);
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
@@ -149,14 +414,23 @@ export class Events {
     void this.load();
   }
 
-  /** True when the current user can create, start, or stop events. */
+  /** True when the current user can create or delete events. */
   protected canManage(): boolean {
     return this.auth.hasPermission('events.manage');
   }
 
-  /** Opens the dedicated create event route. */
-  protected openCreateForm(): void {
-    void this.router.navigate(['/events/new']);
+  protected cityLabel(city: SplitIslandCity): string {
+    return this.t(`splits.city.${city}` as TranslationKey);
+  }
+
+  protected openCreate(): void {
+    this.resetCreateDraft();
+    this.createOpen.set(true);
+    void this.loadCreateOptions();
+  }
+
+  protected closeCreate(): void {
+    this.createOpen.set(false);
   }
 
   /** Opens the analytics view for a single event. */
@@ -169,70 +443,150 @@ export class Events {
     return new Date(iso).toLocaleString();
   }
 
-  /** Opens the detail page, where picking a build is what actually joins. */
-  protected async join(id: number): Promise<void> {
+  /** Join still lands on detail, where picking a build is what actually joins. */
+  protected join(id: number): void {
     void this.router.navigate(['/events', id]);
   }
 
-  /** Cancels the current user's participation in the event. */
-  protected async leave(id: number): Promise<void> {
-    await this.mutate(`api/events/${id}/participate`, 'DELETE', null);
+  protected requestDelete(event: EventView): void {
+    this.pendingDelete.set(event);
   }
 
-  /** Marks a scheduled event as live; reserved to officers/admins. */
-  protected async start(id: number): Promise<void> {
-    await this.mutate(`api/events/${id}/start`, 'POST', {});
+  protected cancelDelete(): void {
+    this.pendingDelete.set(null);
   }
 
-  /** Stops a live event; reserved to officers/admins. Stopping closes
-   *  participation and triggers regear extraction from every linked battle —
-   *  a real, mostly-irreversible consequence — so it needs the same confirm
-   *  guard event-detail.ts's identical action already has. */
-  protected async stop(id: number): Promise<void> {
-    if (!window.confirm(this.t('common.confirm'))) {
+  protected async confirmDelete(): Promise<void> {
+    const doomed = this.pendingDelete();
+    if (!doomed) {
       return;
     }
-    await this.mutate(`api/events/${id}/stop`, 'POST', {});
+    this.deleting.set(true);
+    try {
+      await firstValueFrom(this.api.delete(`api/events/${doomed.id}`));
+      this.pendingDelete.set(null);
+      this.toasts.success(this.t('common.delete'));
+      await this.load();
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.deleting.set(false);
+    }
   }
 
-  /** Deletes an event from the list; reserved to officers/admins. */
-  protected async deleteEvent(id: number): Promise<void> {
-    if (!window.confirm(this.t('common.confirm'))) {
-      return;
-    }
-    await this.mutate(`api/events/${id}`, 'DELETE', null);
+  protected onPageChange(change: DataTablePageChange): void {
+    this.page.set(change.page);
+    this.pageSize.set(change.pageSize);
+    this.search.set(change.search);
+    this.statusFilter.set(change.columnFilters['status'] ?? '');
+    this.sortColumn.set(change.sort?.columnKey ?? null);
+    this.sortOrder.set(change.sort?.direction ?? null);
+    void this.load();
   }
 
-  /** Advances to the next page of events. */
-  protected async next(): Promise<void> {
-    if (this.page() >= this.totalPages()) {
-      return;
-    }
-    this.page.update((p) => p + 1);
-    await this.load();
+  protected onTitleChange(event: Event): void {
+    this.draftTitle.set((event.target as HTMLInputElement).value);
   }
 
-  /** Returns to the previous page of events. */
-  protected async prev(): Promise<void> {
-    if (this.page() <= 1) {
+  protected onDescriptionChange(event: Event): void {
+    this.draftDescription.set((event.target as HTMLTextAreaElement).value);
+  }
+
+  protected onScheduledAtChange(event: Event): void {
+    this.draftScheduledAt.set((event.target as HTMLInputElement).value);
+  }
+
+  protected onCompChange(event: Event): void {
+    this.draftCompId.set((event.target as HTMLSelectElement).value);
+    this.compError.set(null);
+  }
+
+  protected onCreateSplitChange(event: Event): void {
+    this.draftCreateSplit.set((event.target as HTMLInputElement).checked);
+  }
+
+  protected onCallToArmsChange(event: Event): void {
+    this.draftCallToArms.set((event.target as HTMLInputElement).checked);
+  }
+
+  protected onIslandChange(event: Event): void {
+    this.draftIslandId.set((event.target as HTMLSelectElement).value);
+    this.draftTabId.set('');
+  }
+
+  protected onTabChange(event: Event): void {
+    this.draftTabId.set((event.target as HTMLSelectElement).value);
+  }
+
+  protected async onCreateSubmit(submit: SubmitEvent): Promise<void> {
+    submit.preventDefault();
+
+    const title = this.draftTitle().trim();
+    const compId = Number(this.draftCompId());
+
+    if (!title) {
+      this.toasts.error(this.t('validation.required'));
       return;
     }
-    this.page.update((p) => p - 1);
-    await this.load();
+    if (compId <= 0) {
+      this.compError.set(this.t('events.create.comp_required'));
+      return;
+    }
+    if (this.draftCreateSplit() && !this.draftTabId()) {
+      this.toasts.error(this.t('validation.required'));
+      return;
+    }
+
+    const scheduledAt = new Date(this.draftScheduledAt());
+    if (Number.isNaN(scheduledAt.getTime())) {
+      this.toasts.error(this.t('validation.required'));
+      return;
+    }
+
+    const request: CreateEventRequest = {
+      title,
+      comp_id: compId,
+      event_date_utc: scheduledAt.toISOString(),
+      call_to_arms: this.draftCallToArms(),
+      create_split: this.draftCreateSplit(),
+      island_tab_id: this.draftCreateSplit() ? Number(this.draftTabId()) : undefined,
+    };
+    const description = this.draftDescription().trim();
+    if (description) {
+      request.description = description;
+    }
+
+    this.saving.set(true);
+    try {
+      const created = await firstValueFrom(this.api.post<EventView>('api/events', request));
+      this.toasts.success(this.t('common.create'));
+      this.closeCreate();
+      await this.load();
+      void this.router.navigate(['/events', created.id]);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
   }
 
   protected async load(): Promise<void> {
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
+      const sort = this.sortColumn() ? (SORT_COLUMNS[this.sortColumn()!] ?? this.sortColumn()) : undefined;
       const data = await firstValueFrom(
         this.api.get<PaginatedData<EventView>>('api/events', {
           page: this.page(),
-          limit: PAGE_SIZE,
+          limit: this.pageSize(),
+          search: this.search().trim() || undefined,
+          status: this.statusFilter() || undefined,
+          sort,
+          order: sort ? (this.sortOrder() ?? 'asc') : undefined,
         }),
       );
       this.events.set(data.items);
-      this.totalPages.set(data.total_pages);
+      this.totalItems.set(data.total_items);
     } catch (error) {
       this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -241,16 +595,62 @@ export class Events {
     }
   }
 
-  private async mutate(path: string, method: 'POST' | 'DELETE', body: unknown): Promise<void> {
+  private resetCreateDraft(): void {
+    this.draftTitle.set('');
+    this.draftDescription.set('');
+    this.draftCompId.set('');
+    this.draftScheduledAt.set(defaultScheduledAt());
+    this.draftCallToArms.set(false);
+    this.draftCreateSplit.set(false);
+    this.draftIslandId.set('');
+    this.draftTabId.set('');
+    this.compError.set(null);
+  }
+
+  private async loadCreateOptions(): Promise<void> {
+    this.compsLoading.set(true);
     try {
-      if (method === 'POST') {
-        await firstValueFrom(this.api.post<EventDetailView>(path, body));
-      } else {
-        await firstValueFrom(this.api.delete<EventDetailView>(path));
-      }
-      await this.load();
+      const [comps, islands] = await Promise.all([
+        firstValueFrom(this.api.get<PaginatedData<CompSummary>>('api/comps', { page: 1, limit: 100 })),
+        firstValueFrom(this.api.get<SplitIsland[]>('api/splits/islands')),
+      ]);
+      this.comps.set(comps.items);
+      this.islands.set(islands);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.compsLoading.set(false);
     }
   }
+}
+
+function statusLabel(status: EventStatus): TranslationKey {
+  switch (status) {
+    case 'scheduled':
+      return 'events.status.scheduled';
+    case 'live':
+      return 'events.status.live';
+    case 'stopped':
+      return 'events.status.stopped';
+    case 'auto_stopped':
+      return 'events.status.auto_stopped';
+  }
+}
+
+/** Formats a `Date` as `YYYY-MM-DDTHH:mm` in the user's local timezone. */
+function formatDatetimeLocal(date: Date): string {
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** Snap to the next whole hour so the default event time is human-readable. */
+function defaultScheduledAt(): string {
+  const nextHour = new Date(Date.now() + 60 * 60 * 1000);
+  nextHour.setMinutes(0, 0, 0);
+  return formatDatetimeLocal(nextHour);
+}
+
+/** Floor for the date picker — officers can still pick sooner than the next hour. */
+function minScheduledAt(): string {
+  return formatDatetimeLocal(new Date());
 }

@@ -84,6 +84,16 @@ pub struct ApiResponseGuildBankSummary {
     pub data: crate::modules::bank::models::GuildBankSummary,
 }
 
+/// `OpenAPI` schema wrapper for administrator Guild Bank analytics.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseBankAnalyticsSummary {
+    /// Indicates the outcome of the request, always `"success"`.
+    #[schema(example = "success")]
+    pub status: String,
+    /// Guild-wide bank analytics payload.
+    pub data: crate::modules::bank::models::BankAnalyticsSummary,
+}
+
 /// `OpenAPI` schema wrapper for a list-of-`TransactionView` response (the withdrawal
 /// request/accept endpoints return the transactions they just touched, not paginated).
 #[derive(Debug, Serialize, ToSchema)]
@@ -93,6 +103,16 @@ pub struct ApiResponseTransactionViewList {
     pub status: String,
     /// The list of transactions that were just requested or accepted.
     pub data: Vec<crate::modules::bank::models::TransactionView>,
+}
+
+/// `OpenAPI` schema wrapper for split KPI totals.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseSplitKpiSummary {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Guild-wide split totals.
+    pub data: crate::modules::splits::models::SplitKpiSummary,
 }
 
 /// `OpenAPI` schema wrapper for `SplitDetail` response.
@@ -385,14 +405,14 @@ pub struct ApiResponsePaginatedEntryView {
     pub data: crate::pagination::PaginatedEntryView,
 }
 
-/// `OpenAPI` schema wrapper for `PlayerBalance` list response (siphoned module).
+/// `OpenAPI` schema wrapper for paginated player balances.
 #[derive(Debug, Serialize, ToSchema)]
-pub struct ApiResponsePlayerBalanceList {
+pub struct ApiResponsePaginatedPlayerBalance {
     /// Indicates the outcome of the request, always "success".
     #[schema(example = "success")]
     pub status: String,
-    /// The per-player balance list payload.
-    pub data: Vec<crate::modules::siphoned::models::PlayerBalance>,
+    /// The paginated per-player balance payload.
+    pub data: crate::pagination::PaginatedPlayerBalance,
 }
 
 /// `OpenAPI` schema wrapper for `PlayerBalanceDetail` response (siphoned module).
@@ -523,4 +543,54 @@ pub struct ApiResponsePaginatedWarnEscalationView {
     pub status: String,
     /// Escalation page.
     pub data: crate::pagination::PaginatedWarnEscalationView,
+}
+
+/// `OpenAPI` schema wrapper for a notification inbox row.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseNotificationView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Inbox row.
+    pub data: crate::modules::notifications::models::NotificationView,
+}
+
+/// `OpenAPI` schema wrapper for a paginated inbox.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponsePaginatedNotificationView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Inbox page.
+    pub data: crate::pagination::PaginatedNotificationView,
+}
+
+/// `OpenAPI` schema wrapper for the unread badge.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseUnreadCountView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Unread count.
+    pub data: crate::modules::notifications::models::UnreadCountView,
+}
+
+/// `OpenAPI` schema wrapper for mark-all-read.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseReadAllResult {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// How many rows flipped to read.
+    pub data: crate::modules::notifications::models::ReadAllResult,
+}
+
+/// `OpenAPI` schema wrapper for a guild broadcast.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseBroadcastResult {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Fan-out result.
+    pub data: crate::modules::notifications::models::BroadcastResult,
 }

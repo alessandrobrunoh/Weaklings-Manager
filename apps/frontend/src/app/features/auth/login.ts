@@ -24,7 +24,7 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
   imports: [Icon, WeaklingsLogo],
   template: `
     <div
-      class="min-h-screen flex items-center justify-center p-6"
+      class="min-h-dvh flex items-center justify-center p-4 sm:p-6"
       style="background-color: var(--color-bg)"
     >
       <div class="absolute top-4 right-4 flex items-center gap-2">
@@ -41,8 +41,7 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
         </select>
         <button
           type="button"
-          class="btn btn--ghost"
-          style="min-width: 40px; padding: 0.5rem"
+          class="btn btn--ghost btn--icon"
           (click)="theme.toggle()"
           [attr.aria-label]="t('theme.toggle')"
         >
@@ -50,8 +49,8 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
         </button>
       </div>
 
-      <section class="card w-full max-w-md p-8 sm:p-10" aria-labelledby="login-title">
-        <div class="mb-8 flex flex-col items-center text-center">
+      <section class="card w-full max-w-md p-6 sm:p-8" aria-labelledby="login-title">
+        <div class="mb-6 flex flex-col items-center text-center">
           <app-weaklings-logo />
           <h1 id="login-title" class="sr-only">{{ t('app.title') }}</h1>
           <p class="mt-1 text-sm" style="color: var(--color-text-secondary)">

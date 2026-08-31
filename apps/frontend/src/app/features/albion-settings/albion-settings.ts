@@ -13,11 +13,13 @@ import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 
 /** Shortest term the upstream search will accept without returning noise. */
@@ -37,167 +39,209 @@ const MIN_QUERY_LENGTH = 2;
 @Component({
   selector: 'app-albion-settings',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, DecimalPipe, EmptyState, ErrorState, FormsModule, Icon, Loading, PageHeader, StatCard],
+  imports: [
+    DatePipe,
+    DecimalPipe,
+    Dialog,
+    EmptyState,
+    ErrorState,
+    FormsModule,
+    Icon,
+    Loading,
+    PageHeader,
+    PageStack,
+    StatCard,
+  ],
   template: `
-    <app-page-header [title]="t('albionSettings.title')" [subtitle]="t('albionSettings.subtitle')" />
+    <app-page-header
+      [title]="t('albionSettings.title')"
+      [subtitle]="t('albionSettings.subtitle')"
+    />
 
-    <!-- Character link -->
-    <section class="card mb-6 p-5">
-      <h2 class="eyebrow mb-3">{{ t('albionSettings.link.title') }}</h2>
-      @if (linkLoading()) {
-        <app-loading />
-      } @else if (link(); as status) {
-        @if (status.linked) {
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p class="text-sm" style="color: var(--color-text-secondary)">
-                {{ t('albionSettings.link.linkedAs') }}
-              </p>
-              <p class="mono mt-0.5 text-lg" style="color: var(--color-text)">
-                {{ status.albion_player_name }}
-              </p>
-              @if (status.linked_at) {
-                <p class="eyebrow mt-1">
-                  {{ t('albionSettings.link.since') }} {{ status.linked_at | date: 'mediumDate' }}
+    <app-page-stack>
+      <!-- Character link -->
+      <section class="card p-5">
+        <h2 class="eyebrow mb-3">{{ t('albionSettings.link.title') }}</h2>
+        @if (linkLoading()) {
+          <app-loading />
+        } @else if (link(); as status) {
+          @if (status.linked) {
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p class="text-sm" style="color: var(--color-text-secondary)">
+                  {{ t('albionSettings.link.linkedAs') }}
                 </p>
-              }
+                <p class="mono mt-0.5 text-lg" style="color: var(--color-text)">
+                  {{ status.albion_player_name }}
+                </p>
+                @if (status.linked_at) {
+                  <p class="eyebrow mt-1">
+                    {{ t('albionSettings.link.since') }} {{ status.linked_at | date: 'mediumDate' }}
+                  </p>
+                }
+              </div>
+              <button
+                type="button"
+                class="btn btn--outline"
+                [disabled]="unlinking()"
+                (click)="askUnlink()"
+              >
+                {{ t('albionSettings.link.unlink') }}
+              </button>
             </div>
-            <button
-              type="button"
-              class="btn btn--outline"
-              [disabled]="unlinking()"
-              (click)="unlink()"
-            >
-              {{ t('albionSettings.link.unlink') }}
-            </button>
-          </div>
-        } @else {
-          <p class="text-sm" style="color: var(--color-warning)">
-            {{ t('albionSettings.link.notLinked') }}
-          </p>
-          <p class="mt-1 text-xs" style="color: var(--color-text-secondary)">
-            {{ t('albionSettings.link.notLinkedHint') }}
-          </p>
+          } @else {
+            <p class="text-sm" style="color: var(--color-warning)">
+              {{ t('albionSettings.link.notLinked') }}
+            </p>
+            <p class="mt-1 text-xs" style="color: var(--color-text-secondary)">
+              {{ t('albionSettings.link.notLinkedHint') }}
+            </p>
+          }
+        } @else if (linkLoadFailed()) {
+          <app-error-state
+            [message]="t('common.error')"
+            [retryLabel]="t('common.retry')"
+            (retry)="loadLink()"
+          />
         }
-      } @else if (linkLoadFailed()) {
-        <app-error-state
-          [message]="t('common.error')"
-          [retryLabel]="t('common.retry')"
-          (retry)="loadLink()"
-        />
-      }
-    </section>
+      </section>
 
-    <!-- Live lookup -->
-    <section class="card p-5">
-      <h2 class="eyebrow mb-1">{{ t('albionSettings.lookup.title') }}</h2>
-      <p class="mb-4 text-xs" style="color: var(--color-text-secondary)">
-        {{ t('albionSettings.lookup.hint') }}
-      </p>
+      <!-- Live lookup -->
+      <section class="card p-5">
+        <h2 class="eyebrow mb-1">{{ t('albionSettings.lookup.title') }}</h2>
+        <p class="mb-4 text-xs" style="color: var(--color-text-secondary)">
+          {{ t('albionSettings.lookup.hint') }}
+        </p>
 
-      <form class="flex flex-wrap gap-2" (ngSubmit)="search()">
-        <input
-          class="input max-w-sm"
-          type="search"
-          [placeholder]="t('albionSettings.lookup.placeholder')"
-          [ngModel]="query()"
-          (ngModelChange)="query.set($event)"
-          name="q"
-        />
-        <button type="submit" class="btn btn--primary" [disabled]="!canSearch() || searching()">
-          <app-icon name="search" size="1rem" />
-          {{ t('common.search') }}
-        </button>
-      </form>
+        <form class="flex flex-wrap gap-2" (ngSubmit)="search()">
+          <input
+            class="input max-w-sm"
+            type="search"
+            [placeholder]="t('albionSettings.lookup.placeholder')"
+            [ngModel]="query()"
+            (ngModelChange)="query.set($event)"
+            name="q"
+          />
+          <button type="submit" class="btn btn--primary" [disabled]="!canSearch() || searching()">
+            <app-icon name="search" size="1rem" />
+            {{ t('common.search') }}
+          </button>
+        </form>
 
-      @if (searching()) {
-        <app-loading />
-      } @else if (results(); as found) {
-        @if (found.players.length === 0 && found.guilds.length === 0) {
-          <app-empty-state icon="search" [message]="t('albionSettings.lookup.noResults')" />
-        } @else {
-          <div class="mt-5 grid gap-5 lg:grid-cols-2">
-            <div>
-              <h3 class="eyebrow mb-2">{{ t('albionSettings.lookup.players') }}</h3>
-              @for (player of found.players; track player.id) {
-                <button
-                  type="button"
-                  class="flex w-full items-center justify-between border-t px-1 py-2 text-left"
-                  style="border-color: var(--color-border)"
-                  (click)="selectPlayer(player)"
-                >
-                  <span class="min-w-0">
-                    <span class="block truncate text-sm" style="color: var(--color-text)">
-                      {{ player.name }}
+        @if (searching()) {
+          <app-loading />
+        } @else if (results(); as found) {
+          @if (found.players.length === 0 && found.guilds.length === 0) {
+            <app-empty-state icon="search" [message]="t('albionSettings.lookup.noResults')" />
+          } @else {
+            <div class="mt-5 grid gap-5 lg:grid-cols-2">
+              <div>
+                <h3 class="eyebrow mb-2">{{ t('albionSettings.lookup.players') }}</h3>
+                @for (player of found.players; track player.id) {
+                  <button
+                    type="button"
+                    class="flex w-full items-center justify-between border-t px-1 py-2 text-left"
+                    style="border-color: var(--color-border)"
+                    (click)="selectPlayer(player)"
+                  >
+                    <span class="min-w-0">
+                      <span class="block truncate text-sm" style="color: var(--color-text)">
+                        {{ player.name }}
+                      </span>
+                      <span class="eyebrow">{{
+                        player.guild_name ?? t('albionSettings.lookup.noGuild')
+                      }}</span>
                     </span>
-                    <span class="eyebrow">{{ player.guild_name ?? t('albionSettings.lookup.noGuild') }}</span>
-                  </span>
-                  <span class="mono shrink-0 text-xs" style="color: var(--color-text-secondary)">
-                    {{ player.kill_fame | number: '1.0-0' }}
-                  </span>
-                </button>
-              }
-              @if (found.players.length === 0) {
-                <p class="text-sm" style="color: var(--color-text-secondary)">—</p>
-              }
+                    <span class="mono shrink-0 text-xs" style="color: var(--color-text-secondary)">
+                      {{ player.kill_fame | number: '1.0-0' }}
+                    </span>
+                  </button>
+                }
+                @if (found.players.length === 0) {
+                  <p class="text-sm" style="color: var(--color-text-secondary)">—</p>
+                }
+              </div>
+
+              <div>
+                <h3 class="eyebrow mb-2">{{ t('albionSettings.lookup.guilds') }}</h3>
+                @for (guild of found.guilds; track guild.id) {
+                  <div
+                    class="flex items-center justify-between border-t px-1 py-2"
+                    style="border-color: var(--color-border)"
+                  >
+                    <span class="min-w-0">
+                      <span class="block truncate text-sm" style="color: var(--color-text)">
+                        {{ guild.name }}
+                      </span>
+                      <span class="eyebrow">
+                        {{ guild.member_count }} {{ t('albionSettings.lookup.members') }}
+                      </span>
+                    </span>
+                    <span class="mono shrink-0 text-xs" style="color: var(--color-text-secondary)">
+                      {{ guild.kill_fame | number: '1.0-0' }}
+                    </span>
+                  </div>
+                }
+                @if (found.guilds.length === 0) {
+                  <p class="text-sm" style="color: var(--color-text-secondary)">—</p>
+                }
+              </div>
             </div>
+          }
+        }
 
-            <div>
-              <h3 class="eyebrow mb-2">{{ t('albionSettings.lookup.guilds') }}</h3>
-              @for (guild of found.guilds; track guild.id) {
-                <div
-                  class="flex items-center justify-between border-t px-1 py-2"
-                  style="border-color: var(--color-border)"
-                >
-                  <span class="min-w-0">
-                    <span class="block truncate text-sm" style="color: var(--color-text)">
-                      {{ guild.name }}
-                    </span>
-                    <span class="eyebrow">
-                      {{ guild.member_count }} {{ t('albionSettings.lookup.members') }}
-                    </span>
-                  </span>
-                  <span class="mono shrink-0 text-xs" style="color: var(--color-text-secondary)">
-                    {{ guild.kill_fame | number: '1.0-0' }}
-                  </span>
-                </div>
-              }
-              @if (found.guilds.length === 0) {
-                <p class="text-sm" style="color: var(--color-text-secondary)">—</p>
-              }
+        <!-- Player dossier -->
+        @if (selected(); as player) {
+          <div class="mt-6 border-t pt-5" style="border-color: var(--color-border)">
+            <h3 class="eyebrow mb-3">{{ player.name }}</h3>
+            <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <app-stat-card
+                [label]="t('albionSettings.lookup.killFame')"
+                [value]="player.kill_fame | number: '1.0-0'"
+                tone="success"
+              />
+              <app-stat-card
+                [label]="t('albionSettings.lookup.deathFame')"
+                [value]="player.death_fame | number: '1.0-0'"
+                tone="danger"
+              />
+              <app-stat-card
+                [label]="t('albionSettings.lookup.fameRatio')"
+                [value]="fameRatio(player)"
+                [sub]="t('albionSettings.lookup.fameRatioSub')"
+              />
+              <app-stat-card
+                [label]="t('albionSettings.lookup.guild')"
+                [value]="player.guild_name ?? '—'"
+              />
             </div>
           </div>
         }
-      }
+      </section>
+    </app-page-stack>
 
-      <!-- Player dossier -->
-      @if (selected(); as player) {
-        <div class="mt-6 border-t pt-5" style="border-color: var(--color-border)">
-          <h3 class="eyebrow mb-3">{{ player.name }}</h3>
-          <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <app-stat-card
-              [label]="t('albionSettings.lookup.killFame')"
-              [value]="player.kill_fame | number: '1.0-0'"
-              tone="success"
-            />
-            <app-stat-card
-              [label]="t('albionSettings.lookup.deathFame')"
-              [value]="player.death_fame | number: '1.0-0'"
-              tone="danger"
-            />
-            <app-stat-card
-              [label]="t('albionSettings.lookup.fameRatio')"
-              [value]="fameRatio(player)"
-              [sub]="t('albionSettings.lookup.fameRatioSub')"
-            />
-            <app-stat-card
-              [label]="t('albionSettings.lookup.guild')"
-              [value]="player.guild_name ?? '—'"
-            />
-          </div>
+    @if (unlinkConfirm()) {
+      <app-dialog
+        [title]="t('albionSettings.link.unlink')"
+        size="sm"
+        (closed)="unlinkConfirm.set(false)"
+      >
+        <p>{{ t('albionSettings.link.unlinkConfirm') }}</p>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="unlinkConfirm.set(false)">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn--danger"
+            [disabled]="unlinking()"
+            (click)="confirmUnlink()"
+          >
+            {{ t('albionSettings.link.unlink') }}
+          </button>
         </div>
-      }
-    </section>
+      </app-dialog>
+    }
   `,
 })
 export class AlbionSettings {
@@ -209,6 +253,7 @@ export class AlbionSettings {
   protected readonly linkLoadFailed = signal(false);
   protected readonly link = signal<AlbionLinkStatus | null>(null);
   protected readonly unlinking = signal(false);
+  protected readonly unlinkConfirm = signal(false);
 
   protected readonly query = signal('');
   protected readonly searching = signal(false);
@@ -217,9 +262,7 @@ export class AlbionSettings {
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
-  protected readonly canSearch = computed(
-    () => this.query().trim().length >= MIN_QUERY_LENGTH,
-  );
+  protected readonly canSearch = computed(() => this.query().trim().length >= MIN_QUERY_LENGTH);
 
   /** Kill fame over death fame — the usual shorthand for how a player trades. */
   protected fameRatio(player: AlbionPlayer): string {
@@ -248,12 +291,16 @@ export class AlbionSettings {
 
   /** Unlinking drops the identity every regear/split/battle lookup in the
    *  app resolves through — a misclick has real consequences elsewhere. */
-  protected async unlink(): Promise<void> {
-    if (!confirm(this.t('common.confirm'))) return;
+  protected askUnlink(): void {
+    this.unlinkConfirm.set(true);
+  }
+
+  protected async confirmUnlink(): Promise<void> {
     this.unlinking.set(true);
     try {
       await firstValueFrom(this.api.delete<null>('api/albion/link'));
       this.link.set({ linked: false });
+      this.unlinkConfirm.set(false);
       this.toasts.success(this.t('albionSettings.link.unlinked'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

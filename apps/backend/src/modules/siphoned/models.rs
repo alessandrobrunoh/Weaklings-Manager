@@ -121,6 +121,12 @@ pub struct BalanceQuery {
     pub min_debt: Option<Decimal>,
     /// Sort order. Defaults to `net_asc` (biggest debtors first).
     pub sort: Option<BalanceSort>,
+    /// Case-insensitive substring match on player name.
+    pub search: Option<String>,
+    /// 1-indexed page. Defaults to 1.
+    pub page: Option<u64>,
+    /// Page size. Defaults to 10.
+    pub limit: Option<u64>,
 }
 
 /// Editable fields for a single siphoned ledger row.
@@ -188,6 +194,12 @@ pub struct EntryFilters {
     pub until: Option<DateTime<FixedOffset>>,
     /// Restrict to rows from one ingestion batch.
     pub batch_id: Option<String>,
+    /// Case-insensitive substring match on `player_name` or `reason`.
+    pub search: Option<String>,
+    /// Sort column. Allowed: `occurred_at` (default), `player_name`, `amount`, `reason`, `ingested_at`.
+    pub sort: Option<String>,
+    /// Sort direction: `asc` or `desc`. Defaults to `desc`.
+    pub order: Option<String>,
 }
 
 /// One row of `GET /batches`.

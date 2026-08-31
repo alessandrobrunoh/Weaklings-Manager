@@ -15,8 +15,9 @@ import { TranslateService } from '../../../core/services/translate.service';
 import type { TranslationKey } from '../../../i18n/en';
 import { EmptyState } from '../empty-state/empty-state';
 import { ErrorState } from '../error-state/error-state';
-import { type IconName } from '../icon/icon';
+import { Icon, type IconName } from '../icon/icon';
 import { Loading } from '../loading/loading';
+import { TooltipDirective } from '../../directives/tooltip.directive';
 import { DataTableCell } from './data-table-cell';
 export type {
   DataTableColumn,
@@ -35,46 +36,10 @@ import type {
 const DEFAULT_PAGE_SIZE = 10;
 const DEFAULT_PAGE_SIZES: readonly number[] = [10, 25, 50, 100];
 
-/**
- * Generic, reusable data table with built-in pagination, search, per-column
- * filters and column sorting.
- *
- * Operates in two modes:
- * - **Client mode** (default): pass the full dataset via `rows`. The component
- *   handles slicing, sorting and filtering in memory.
- * - **Server mode**: set `serverMode = true` and provide `totalItems`. The
- *   component becomes stateless for data, emitting `pageChange` whenever the
- *   user moves the page, types a search, picks a filter or sorts a column.
- *
- * The component is intentionally presentational: it never owns data fetching,
- * so it can be reused across the battles, events, bank, siphoned and users
- * features without coupling to their respective API services.
- *
- * @example
- * ```html
- * <app-data-table
- *   [columns]="columns"
- *   [rows]="users()"
- *   [trackBy]="trackById"
- * />
- * ```
- *
- * @example Server-side pagination
- * ```html
- * <app-data-table
- *   [columns]="columns"
- *   [rows]="users()"
- *   [serverMode]="true"
- *   [totalItems]="totalItems()"
- *   [loading]="isLoading()"
- *   (pageChange)="loadPage($event)"
- * />
- * ```
- */
 @Component({
   selector: 'app-data-table',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EmptyState, ErrorState, Loading, NgTemplateOutlet],
+  imports: [EmptyState, ErrorState, Icon, Loading, NgTemplateOutlet, TooltipDirective],
   templateUrl: './data-table.html',
   styleUrl: './data-table.css',
 })
@@ -206,6 +171,22 @@ export class DataTable<T> {
     return Math.max(1, Math.ceil(total / this.currentPageSize()));
   });
 
+  /** Active filter count (search + column filters). */
+  protected readonly activeFilterCount = computed<number>(() => {
+    let count = 0;
+    if (this.search().trim().length > 0) {
+      count++;
+    }
+    for (const val of Object.values(this.columnFilters())) {
+      if (val) {
+        count++;
+      }
+    }
+    return count;
+  });
+
+  protected readonly hasActiveFilters = computed<boolean>(() => this.activeFilterCount() > 0);
+
   /** True when at least one column exposes filter options. */
   protected readonly hasColumnFilters = computed(() =>
     this.columns().some((column) => column.filterOptions && column.filterOptions.length > 0),
@@ -232,20 +213,36 @@ export class DataTable<T> {
       return;
     }
     this.sort.set(this.nextDirection(column.key, this.sort()));
-    this.resetPageIfClient();
+    this.page.set(1);
     this.emitChange();
   }
 
   protected onSearchInput(event: Event): void {
     this.search.set((event.target as HTMLInputElement).value);
-    this.resetPageIfClient();
+    this.page.set(1);
+    this.emitChange();
+  }
+
+  protected clearSearch(): void {
+    if (!this.search()) {
+      return;
+    }
+    this.search.set('');
+    this.page.set(1);
+    this.emitChange();
+  }
+
+  protected clearAllFilters(): void {
+    this.search.set('');
+    this.columnFilters.set({});
+    this.page.set(1);
     this.emitChange();
   }
 
   protected onColumnFilter(columnKey: string, event: Event): void {
     const value = (event.target as HTMLSelectElement).value;
     this.columnFilters.update((filters) => ({ ...filters, [columnKey]: value }));
-    this.resetPageIfClient();
+    this.page.set(1);
     this.emitChange();
   }
 
@@ -284,6 +281,14 @@ export class DataTable<T> {
     return current.direction === 'asc' ? '▲' : '▼';
   }
 
+  protected sortAria(columnKey: string): 'none' | 'ascending' | 'descending' {
+    const current = this.sort();
+    if (!current || current.columnKey !== columnKey) {
+      return 'none';
+    }
+    return current.direction === 'asc' ? 'ascending' : 'descending';
+  }
+
   protected onRowClick(row: T): void {
     if (!this.rowClickable()) {
       return;
@@ -315,13 +320,6 @@ export class DataTable<T> {
       return '';
     }
     return String(value);
-  }
-
-  /** Resets to the first page after a structural change in client mode. */
-  private resetPageIfClient(): void {
-    if (!this.serverMode()) {
-      this.page.set(1);
-    }
   }
 
   private applyFilters(rows: readonly T[]): T[] {

@@ -5,6 +5,7 @@ use std::str::FromStr;
 use chrono::{DateTime, FixedOffset, Utc};
 use rust_decimal::prelude::FromPrimitive;
 use sea_orm::prelude::Decimal;
+use sea_orm::sea_query::{Expr, Func};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait,
     PaginatorTrait, QueryFilter, QueryOrder,
@@ -14,7 +15,7 @@ use crate::errors::AppError;
 use crate::modules::audit::service::AuditService;
 use crate::modules::progression::service::ProgressionService;
 use crate::modules::users::entities::Entity as UserEntity;
-use crate::pagination::{PaginatedData, PaginationParams};
+use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
 use super::entities::{
     UserWarnActiveModel, UserWarnColumn, UserWarnEntity, UserWarnModel, WarnEscalationActiveModel,
@@ -119,14 +120,31 @@ impl WarnService {
         )
         .await;
 
-        Ok(warn_view(&row))
+        if req.user_id != issuer_user_id {
+            crate::modules::notifications::notify_best_effort(
+                db,
+                crate::modules::notifications::NotifySpec {
+                    kind: crate::modules::notifications::NotificationKind::WarnIssued,
+                    user_ids: &[req.user_id],
+                    title: "Warning issued".into(),
+                    body: format!("You received a {}: {reason}", severity.as_str()),
+                    link_path: Some("/warns".into()),
+                    source_type: "user_warn",
+                    source_id: row.id,
+                    created_by_user_id: Some(issuer_user_id),
+                },
+            )
+            .await;
+        }
+
+        Ok(warn_view(&row, None, None))
     }
 
-    /// Lists warns (including revoked unless filtered), newest first.
+    /// Lists warns (including revoked unless filtered), newest first by default.
     ///
     /// # Errors
     ///
-    /// Database errors.
+    /// `400` for an unknown `sort` column; database errors otherwise.
     pub async fn list(
         &self,
         db: &DatabaseConnection,
@@ -149,18 +167,54 @@ impl WarnService {
             }
             None => {}
         }
+        if let Some(search) = filters
+            .search
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            let pattern = format!("%{}%", search.to_lowercase());
+            query = query
+                .filter(Expr::expr(Func::lower(Expr::col(UserWarnColumn::Reason))).like(pattern));
+        }
+
+        let sort_column = resolve_sort_key(
+            filters.sort.as_deref(),
+            &[
+                ("created_at", UserWarnColumn::CreatedAt),
+                ("severity", UserWarnColumn::Severity),
+                ("reason", UserWarnColumn::Reason),
+            ],
+            UserWarnColumn::CreatedAt,
+        )?;
+        let order = SortOrder::from_query(filters.order.as_deref());
+        query = match order {
+            SortOrder::Asc => query
+                .order_by_asc(sort_column)
+                .order_by_asc(UserWarnColumn::Id),
+            SortOrder::Desc => query
+                .order_by_desc(sort_column)
+                .order_by_desc(UserWarnColumn::Id),
+        };
 
         let limit = pagination.limit();
         let page = pagination.offset_page();
-        let paginator = query
-            .order_by_desc(UserWarnColumn::CreatedAt)
-            .order_by_desc(UserWarnColumn::Id)
-            .paginate(db, limit);
+        let paginator = query.paginate(db, limit);
         let total_items = paginator.num_items().await?;
         let total_pages = paginator.num_pages().await?;
         let models = paginator.fetch_page(page).await?;
+        let names = warn_names(db, &models).await?;
         Ok(PaginatedData::new(
-            models.iter().map(warn_view).collect(),
+            models
+                .iter()
+                .map(|row| {
+                    warn_view(
+                        row,
+                        names.get(&row.user_id).cloned(),
+                        names.get(&row.issued_by_user_id).cloned(),
+                    )
+                })
+                .collect(),
             total_items,
             total_pages,
             page + 1,
@@ -215,19 +269,21 @@ impl WarnService {
         )
         .await;
 
-        Ok(warn_view(&updated))
+        Ok(warn_view(&updated, None, None))
     }
 
     /// Lists escalations, optionally only still-open ones.
     ///
     /// # Errors
     ///
-    /// Database errors.
+    /// `400` for an unknown `sort` column; database errors otherwise.
     pub async fn list_escalations(
         &self,
         db: &DatabaseConnection,
         pagination: &PaginationParams,
         open_only: bool,
+        sort: Option<&str>,
+        order: Option<&str>,
     ) -> Result<PaginatedData<WarnEscalationView>, AppError> {
         let mut query = WarnEscalationEntity::find();
         if open_only {
@@ -235,17 +291,37 @@ impl WarnService {
                 .filter(WarnEscalationColumn::AcknowledgedAt.is_null())
                 .filter(WarnEscalationColumn::ClosedReason.is_null());
         }
+        let sort_column = resolve_sort_key(
+            sort,
+            &[
+                ("opened_at", WarnEscalationColumn::OpenedAt),
+                ("warn_count_at_time", WarnEscalationColumn::WarnCountAtTime),
+                ("threshold_at_time", WarnEscalationColumn::ThresholdAtTime),
+            ],
+            WarnEscalationColumn::OpenedAt,
+        )?;
+        let order = SortOrder::from_query(order);
+        query = match order {
+            SortOrder::Asc => query
+                .order_by_asc(sort_column)
+                .order_by_asc(WarnEscalationColumn::Id),
+            SortOrder::Desc => query
+                .order_by_desc(sort_column)
+                .order_by_desc(WarnEscalationColumn::Id),
+        };
         let limit = pagination.limit();
         let page = pagination.offset_page();
-        let paginator = query
-            .order_by_desc(WarnEscalationColumn::OpenedAt)
-            .order_by_desc(WarnEscalationColumn::Id)
-            .paginate(db, limit);
+        let paginator = query.paginate(db, limit);
         let total_items = paginator.num_items().await?;
         let total_pages = paginator.num_pages().await?;
         let models = paginator.fetch_page(page).await?;
+        let user_ids: Vec<i64> = models.iter().map(|row| row.user_id).collect();
+        let names = crate::modules::users::display_name::resolve_by_ids(db, &user_ids).await?;
         Ok(PaginatedData::new(
-            models.iter().map(escalation_view).collect(),
+            models
+                .iter()
+                .map(|row| escalation_view(row, names.get(&row.user_id).cloned()))
+                .collect(),
             total_items,
             total_pages,
             page + 1,
@@ -289,7 +365,7 @@ impl WarnService {
         )
         .await;
 
-        Ok(escalation_view(&updated))
+        Ok(escalation_view(&updated, None))
     }
 }
 
@@ -390,11 +466,29 @@ async fn close_open_escalation(
     Ok(())
 }
 
-fn warn_view(row: &UserWarnModel) -> WarnView {
+async fn warn_names(
+    db: &DatabaseConnection,
+    rows: &[UserWarnModel],
+) -> Result<std::collections::HashMap<i64, String>, AppError> {
+    let mut user_ids: Vec<i64> = Vec::with_capacity(rows.len() * 2);
+    for row in rows {
+        user_ids.push(row.user_id);
+        user_ids.push(row.issued_by_user_id);
+    }
+    crate::modules::users::display_name::resolve_by_ids(db, &user_ids).await
+}
+
+fn warn_view(
+    row: &UserWarnModel,
+    username: Option<String>,
+    issued_by_username: Option<String>,
+) -> WarnView {
     WarnView {
         id: row.id,
         user_id: row.user_id,
+        username,
         issued_by_user_id: row.issued_by_user_id,
+        issued_by_username,
         reason: row.reason.clone(),
         severity: WarnSeverity::from_str(&row.severity).unwrap_or(WarnSeverity::Warn),
         multiplier: row.multiplier,
@@ -405,10 +499,11 @@ fn warn_view(row: &UserWarnModel) -> WarnView {
     }
 }
 
-fn escalation_view(row: &WarnEscalationModel) -> WarnEscalationView {
+fn escalation_view(row: &WarnEscalationModel, username: Option<String>) -> WarnEscalationView {
     WarnEscalationView {
         id: row.id,
         user_id: row.user_id,
+        username,
         threshold_at_time: row.threshold_at_time,
         warn_count_at_time: row.warn_count_at_time,
         opened_at: row.opened_at.to_rfc3339(),
@@ -477,6 +572,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn issue_notifies_the_target_not_the_officer() {
+        let db = seed_db().await;
+        let officer = insert_user(&db, "officer", "officer@example.com").await;
+        let target = insert_user(&db, "target", "target@example.com").await;
+        insert_covering_season(&db).await;
+
+        let warn = WarnService::new()
+            .issue(&db, officer, &issue_req(target, "late to CTA"))
+            .await
+            .unwrap();
+
+        let inbox = crate::modules::notifications::entities::NotificationEntity::find()
+            .filter(crate::modules::notifications::entities::NotificationColumn::UserId.eq(target))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(inbox[0].kind, "warn_issued");
+        assert_eq!(inbox[0].source_id, warn.id);
+        assert!(inbox[0].body.contains("late to CTA"));
+        let officer_inbox = crate::modules::notifications::entities::NotificationEntity::find()
+            .filter(crate::modules::notifications::entities::NotificationColumn::UserId.eq(officer))
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(officer_inbox.is_empty());
+    }
+
+    #[tokio::test]
     async fn count_only_non_revoked_and_threshold_opens_one_escalation() {
         let db = seed_db().await;
         let officer = insert_user(&db, "officer", "officer@example.com").await;
@@ -500,6 +624,8 @@ mod tests {
                     limit: Some(20),
                 },
                 true,
+                None,
+                None,
             )
             .await
             .unwrap();
@@ -517,6 +643,8 @@ mod tests {
                     limit: Some(20),
                 },
                 true,
+                None,
+                None,
             )
             .await
             .unwrap();
@@ -535,6 +663,8 @@ mod tests {
                     limit: Some(20),
                 },
                 true,
+                None,
+                None,
             )
             .await
             .unwrap();
@@ -550,6 +680,8 @@ mod tests {
                     limit: Some(20),
                 },
                 true,
+                None,
+                None,
             )
             .await
             .unwrap();
@@ -566,6 +698,8 @@ mod tests {
                     limit: Some(20),
                 },
                 true,
+                None,
+                None,
             )
             .await
             .unwrap();
@@ -579,6 +713,8 @@ mod tests {
                     limit: Some(20),
                 },
                 false,
+                None,
+                None,
             )
             .await
             .unwrap();
@@ -609,6 +745,8 @@ mod tests {
                     limit: Some(20),
                 },
                 false,
+                None,
+                None,
             )
             .await
             .unwrap();
@@ -663,5 +801,59 @@ mod tests {
             .unwrap()
             .expect("account");
         assert_eq!(account.xp_multiplier, Decimal::from_f64(0.5).unwrap());
+    }
+
+    #[tokio::test]
+    async fn list_warns_sorts_by_reason_and_rejects_unknown_column() {
+        let db = seed_db().await;
+        let officer = insert_user(&db, "officer", "officer@example.com").await;
+        let target = insert_user(&db, "target", "target@example.com").await;
+        let service = WarnService::new();
+        service
+            .issue(&db, officer, &issue_req(target, "zebra"))
+            .await
+            .unwrap();
+        service
+            .issue(&db, officer, &issue_req(target, "alpha"))
+            .await
+            .unwrap();
+
+        let sorted = service
+            .list(
+                &db,
+                &PaginationParams {
+                    page: Some(1),
+                    limit: Some(20),
+                },
+                &WarnFilters {
+                    sort: Some("reason".into()),
+                    order: Some("asc".into()),
+                    ..WarnFilters::default()
+                },
+            )
+            .await
+            .unwrap();
+        let reasons: Vec<_> = sorted.items.iter().map(|row| row.reason.as_str()).collect();
+        assert_eq!(reasons, vec!["alpha", "zebra"]);
+        assert_eq!(sorted.items[0].username.as_deref(), Some("target"));
+
+        let error = service
+            .list(
+                &db,
+                &PaginationParams {
+                    page: Some(1),
+                    limit: Some(20),
+                },
+                &WarnFilters {
+                    sort: Some("fame".into()),
+                    ..WarnFilters::default()
+                },
+            )
+            .await
+            .unwrap_err();
+        match error {
+            AppError::Validation(message) => assert!(message.contains("fame")),
+            other => panic!("expected validation, got {other:?}"),
+        }
     }
 }

@@ -20,13 +20,15 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
         let backend = manager.get_database_backend();
         let admin_role = db
-            .query_one(backend.build(
-                &Query::select()
-                    .column(Roles::Id)
-                    .from(Roles::Table)
-                    .and_where(Expr::col(Roles::Name).eq("Admin"))
-                    .to_owned(),
-            ))
+            .query_one(
+                backend.build(
+                    &Query::select()
+                        .column(Roles::Id)
+                        .from(Roles::Table)
+                        .and_where(Expr::col(Roles::Name).eq("Admin"))
+                        .to_owned(),
+                ),
+            )
             .await?;
 
         if let Some(row) = admin_role {

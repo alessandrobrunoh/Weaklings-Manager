@@ -15,6 +15,12 @@ pub struct EventFilters {
     pub date_from: Option<String>,
     /// Filter by end date (inclusive).
     pub date_to: Option<String>,
+    /// Filter by session status (`scheduled`, `live`, `stopped`, `auto_stopped`).
+    pub status: Option<String>,
+    /// Sort column. Allowed: `event_date_utc` (default), `title`, `created_at`, `status`.
+    pub sort: Option<String>,
+    /// Sort direction: `asc` or `desc`. Defaults to `asc` for the date column.
+    pub order: Option<String>,
 }
 
 /// Aggregated performance metrics for an event or composition.

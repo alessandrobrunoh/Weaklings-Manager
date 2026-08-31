@@ -14,6 +14,7 @@ pub mod comps;
 pub mod events;
 pub mod health;
 pub mod intel;
+pub mod notifications;
 pub mod openalbion;
 pub mod progression;
 pub mod regear;
@@ -52,4 +53,5 @@ pub fn router() -> Router {
         .nest("/progression", progression::router())
         .nest("/vods", vods::router())
         .nest("/warns", warns::router())
+        .nest("/notifications", notifications::router())
 }

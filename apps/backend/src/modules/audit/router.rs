@@ -1,13 +1,12 @@
 use super::entities;
+use super::service::{AuditListFilters, AuditService};
 use crate::{
     errors::AppError,
     modules::auth::{Permission, Permissions, UserContext},
     pagination::{PaginatedData, PaginationParams},
 };
 use axum::{Extension, Json, Router, extract::Query, routing::get};
-use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
-};
+use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, utoipa::IntoParams)]
@@ -18,6 +17,12 @@ pub struct AuditLogQuery {
     pub entity_type: Option<String>,
     pub entity_id: Option<i64>,
     pub user_id: Option<i64>,
+    /// Case-insensitive substring match on `action`.
+    pub search: Option<String>,
+    /// Sort column: `created_at` (default), `action`, `entity_type`, `user_id`.
+    pub sort: Option<String>,
+    /// Sort direction: `asc` or `desc`. Defaults to `desc`.
+    pub order: Option<String>,
 }
 
 impl AuditLogQuery {
@@ -106,33 +111,29 @@ async fn list_audit_logs(
 ) -> Result<Json<ApiResponsePaginatedAuditLogs>, AppError> {
     user.require(&perms, Permission::AuditView).await?;
 
-    let mut q = entities::Entity::find().order_by_desc(entities::Column::CreatedAt);
-
-    if let Some(action) = &query.action {
-        q = q.filter(entities::Column::Action.eq(action));
-    }
-    if let Some(entity_type) = &query.entity_type {
-        q = q.filter(entities::Column::EntityType.eq(entity_type));
-    }
-    if let Some(entity_id) = query.entity_id {
-        q = q.filter(entities::Column::EntityId.eq(entity_id));
-    }
-    if let Some(user_id) = query.user_id {
-        q = q.filter(entities::Column::UserId.eq(user_id));
-    }
-
     let pagination = query.pagination();
-    let limit = pagination.limit();
-    let page = pagination.offset_page();
-
-    let paginator = q.paginate(&db, limit);
-    let total_items = paginator.num_items().await?;
-    let total_pages = paginator.num_pages().await?;
-    let models = paginator.fetch_page(page).await?;
-
-    let items = models.into_iter().map(AuditLogResponse::from).collect();
-
-    let paginated = PaginatedData::new(items, total_items, total_pages, page + 1, limit);
+    let page = AuditService::list(
+        &db,
+        &pagination,
+        &AuditListFilters {
+            action: query.action,
+            entity_type: query.entity_type,
+            entity_id: query.entity_id,
+            user_id: query.user_id,
+            search: query.search,
+            sort: query.sort,
+            order: query.order,
+        },
+    )
+    .await?;
+    let items = page.items.into_iter().map(AuditLogResponse::from).collect();
+    let paginated = PaginatedData::new(
+        items,
+        page.total_items,
+        page.total_pages,
+        page.current_page,
+        page.limit,
+    );
 
     Ok(Json(ApiResponsePaginatedAuditLogs {
         status: "success".to_string(),

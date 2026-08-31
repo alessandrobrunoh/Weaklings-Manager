@@ -24,7 +24,7 @@ use crate::modules::events::entities::event_participation::{
     Column as EventParticipationColumn, Entity as EventParticipationEntity,
 };
 use crate::modules::users::entities::{Column as UserColumn, Entity as UserEntity};
-use crate::pagination::{PaginatedData, PaginationParams};
+use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
 use super::city::SplitIslandCity;
 use super::entities::split::{
@@ -44,7 +44,7 @@ use super::entities::split_participant::{
 use super::models::{
     BatchFailure, CompleteSplitsBatchResult, CreateIslandRequest, CreateIslandTabRequest,
     CreateSplitRequest, MatchedParticipant, SplitDetail, SplitFilters, SplitIslandTabView,
-    SplitIslandView, SplitParticipantView, SplitSummary, UpdateIslandRequest,
+    SplitIslandView, SplitKpiSummary, SplitParticipantView, SplitSummary, UpdateIslandRequest,
     UpdateIslandTabRequest, UpdateSplitRequest, UpsertParticipantRequest,
 };
 use super::status::SplitStatus;
@@ -56,6 +56,26 @@ use super::status::SplitStatus;
 fn parse_status(split: &SplitModel) -> Result<SplitStatus, AppError> {
     SplitStatus::from_str(&split.status)
         .map_err(|_| AppError::Internal(format!("Unknown split status: {}", split.status)))
+}
+
+/// Resolves list-splits `sort`/`order` against the whitelist.
+///
+/// Default is `created_at` descending. An unknown `sort` is a validation error
+/// so a typo cannot silently fall back.
+fn resolve_split_list_sort(
+    sort: Option<&str>,
+    order: Option<&str>,
+) -> Result<(SplitColumn, SortOrder), AppError> {
+    let column = resolve_sort_key(
+        sort,
+        &[
+            ("created_at", SplitColumn::CreatedAt),
+            ("status", SplitColumn::Status),
+            ("note", SplitColumn::Note),
+        ],
+        SplitColumn::CreatedAt,
+    )?;
+    Ok((column, SortOrder::from_query(order)))
 }
 
 /// Ensures an optional event link points to a real event.
@@ -192,9 +212,9 @@ async fn island_name_taken(
         .filter(IslandColumn::City.eq(city))
         .all(db)
         .await?;
-    Ok(islands.iter().any(|island| {
-        except_id != Some(island.id) && island.name.eq_ignore_ascii_case(name)
-    }))
+    Ok(islands
+        .iter()
+        .any(|island| except_id != Some(island.id) && island.name.eq_ignore_ascii_case(name)))
 }
 
 async fn tab_name_taken(
@@ -682,6 +702,43 @@ impl SplitService {
         Ok(())
     }
 
+    /// Guild-wide KPI totals for the splits list page.
+    ///
+    /// Aggregates every split, not the current list page, so the cards stay
+    /// honest when the table is filtered or paginated.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::Database` if a query fails.
+    pub async fn kpi_summary(&self, db: &DatabaseConnection) -> Result<SplitKpiSummary, AppError> {
+        let splits = SplitEntity::find().all(db).await?;
+        let mut pending_count = 0_u64;
+        let mut completed_count = 0_u64;
+        let mut total_net_distributed = Decimal::ZERO;
+        let mut total_estimated_volume = Decimal::ZERO;
+        for split in &splits {
+            total_estimated_volume += split.estimated_market_value;
+            match parse_status(split)? {
+                SplitStatus::Pending => pending_count += 1,
+                SplitStatus::Completed => {
+                    completed_count += 1;
+                    total_net_distributed += split.net_value.unwrap_or(
+                        split.estimated_market_value - split.repair_value + split.bags_value,
+                    );
+                }
+                SplitStatus::NotCompleted | SplitStatus::Lost => {}
+            }
+        }
+        let total_participants = ParticipantEntity::find().count(db).await?;
+        Ok(SplitKpiSummary {
+            pending_count,
+            completed_count,
+            total_net_distributed,
+            total_estimated_volume,
+            total_participants,
+        })
+    }
+
     /// Fetches a split's full detail by id.
     ///
     /// # Errors
@@ -701,6 +758,9 @@ impl SplitService {
 
     /// Lists paginated and filtered splits from the database.
     ///
+    /// Defaults to `created_at desc`. Use [`Self::list_splits_sorted`] to pick
+    /// a column.
+    ///
     /// # Errors
     ///
     /// Returns `AppError::Database` if the query fails.
@@ -710,6 +770,28 @@ impl SplitService {
         pagination: &PaginationParams,
         filters: &SplitFilters,
     ) -> Result<PaginatedData<SplitSummary>, AppError> {
+        self.list_splits_sorted(db, pagination, filters, None, None)
+            .await
+    }
+
+    /// Lists paginated splits with an explicit sort column and direction.
+    ///
+    /// Allowed `sort` keys: `created_at` (default), `status`, `note`. Unknown
+    /// keys are a validation error. `order` is `asc` or `desc` (default desc).
+    ///
+    /// # Errors
+    ///
+    /// * [`AppError::Validation`] when `sort` is not in the whitelist.
+    /// * [`AppError::Database`] if the query fails.
+    pub async fn list_splits_sorted(
+        &self,
+        db: &DatabaseConnection,
+        pagination: &PaginationParams,
+        filters: &SplitFilters,
+        sort: Option<&str>,
+        order: Option<&str>,
+    ) -> Result<PaginatedData<SplitSummary>, AppError> {
+        let (sort_column, sort_order) = resolve_split_list_sort(sort, order)?;
         let mut query = SplitEntity::find();
         if let Some(status) = filters.status {
             query = query.filter(SplitColumn::Status.eq(status.to_string()));
@@ -763,6 +845,15 @@ impl SplitService {
                 query = query.filter(SplitColumn::CreatedAt.lte(dt));
             }
         }
+
+        let query = match sort_order {
+            SortOrder::Asc => query
+                .order_by_asc(sort_column)
+                .order_by_asc(SplitColumn::Id),
+            SortOrder::Desc => query
+                .order_by_desc(sort_column)
+                .order_by_desc(SplitColumn::Id),
+        };
 
         let limit = pagination.limit();
         let page = pagination.offset_page();
@@ -1274,6 +1365,30 @@ impl SplitService {
         let updated_split = split_active.update(&txn).await?;
 
         txn.commit().await?;
+
+        let recipients: Vec<i64> = participants
+            .iter()
+            .map(|participant| participant.user_id)
+            .filter(|user_id| *user_id != officer_user_id)
+            .collect();
+        if !recipients.is_empty() {
+            crate::modules::notifications::notify_best_effort(
+                db,
+                crate::modules::notifications::NotifySpec {
+                    kind: crate::modules::notifications::NotificationKind::SplitCredited,
+                    user_ids: &recipients,
+                    title: "Loot split credited".into(),
+                    body: format!(
+                        "Your share from split #{split_id} was credited to the guild bank."
+                    ),
+                    link_path: Some(format!("/splits/{split_id}")),
+                    source_type: "split",
+                    source_id: split_id,
+                    created_by_user_id: Some(officer_user_id),
+                },
+            )
+            .await;
+        }
 
         self.to_detail(db, updated_split).await
     }
@@ -1939,7 +2054,10 @@ mod tests {
             .create_split(
                 &db,
                 admin,
-                located(request("10.00", "0.00", "0.00", participant.clone()), first.tabs[0].id),
+                located(
+                    request("10.00", "0.00", "0.00", participant.clone()),
+                    first.tabs[0].id,
+                ),
             )
             .await
             .unwrap();
@@ -1947,7 +2065,10 @@ mod tests {
             .create_split(
                 &db,
                 admin,
-                located(request("20.00", "0.00", "0.00", participant), second.tabs[0].id),
+                located(
+                    request("20.00", "0.00", "0.00", participant),
+                    second.tabs[0].id,
+                ),
             )
             .await
             .unwrap();
@@ -1972,6 +2093,67 @@ mod tests {
             .unwrap();
         assert_eq!(listed.items.len(), 1);
         assert_eq!(listed.items[0].island_id, Some(first.id));
+    }
+
+    #[tokio::test]
+    async fn kpi_summary_counts_all_splits_not_the_current_page() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let service = SplitService::new();
+        let island = service
+            .create_island(
+                &db,
+                CreateIslandRequest {
+                    name: "kpi".to_string(),
+                    city: "lymhurst".to_string(),
+                    tabs: vec!["Loot".to_string()],
+                },
+            )
+            .await
+            .unwrap();
+        let participant = vec![UpsertParticipantRequest {
+            user_id: alice,
+            weight: 1,
+        }];
+        service
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request("10.00", "0.00", "0.00", participant.clone()),
+                    island.tabs[0].id,
+                ),
+            )
+            .await
+            .unwrap();
+        let completed = service
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request("20.00", "1.00", "2.00", participant),
+                    island.tabs[0].id,
+                ),
+            )
+            .await
+            .unwrap();
+        SplitActiveModel {
+            id: Set(completed.summary.id),
+            status: Set(SplitStatus::Completed.to_string()),
+            net_value: Set(Some("21.00".parse().unwrap())),
+            ..Default::default()
+        }
+        .update(&db)
+        .await
+        .unwrap();
+
+        let kpi = service.kpi_summary(&db).await.unwrap();
+        assert_eq!(kpi.pending_count, 1);
+        assert_eq!(kpi.completed_count, 1);
+        assert_eq!(kpi.total_participants, 2);
+        assert_eq!(kpi.total_net_distributed, "21.00".parse().unwrap());
+        assert_eq!(kpi.total_estimated_volume, "30.00".parse().unwrap());
     }
 
     #[tokio::test]
@@ -2013,6 +2195,89 @@ mod tests {
             .unwrap();
         assert_eq!(listed.items.len(), 1);
         assert_eq!(listed.items[0].island_tab_id, None);
+    }
+
+    #[test]
+    fn list_splits_rejects_unknown_sort_column() {
+        let error = resolve_split_list_sort(Some("fame"), None).unwrap_err();
+        match error {
+            AppError::Validation(message) => assert!(message.contains("fame")),
+            other => panic!("expected validation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn list_splits_default_sort_is_created_at_desc() {
+        let (column, order) = resolve_split_list_sort(None, None).unwrap();
+        assert!(matches!(column, SplitColumn::CreatedAt));
+        assert_eq!(order, SortOrder::Desc);
+        let (column, order) = resolve_split_list_sort(Some("NOTE"), Some("asc")).unwrap();
+        assert!(matches!(column, SplitColumn::Note));
+        assert_eq!(order, SortOrder::Asc);
+    }
+
+    #[tokio::test]
+    async fn list_splits_sorts_by_note() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let tab_id = seed_tab(&db).await;
+        let service = SplitService::new();
+        let participant = vec![UpsertParticipantRequest {
+            user_id: alice,
+            weight: 1,
+        }];
+        let mut zebra = located(
+            request("10.00", "0.00", "0.00", participant.clone()),
+            tab_id,
+        );
+        zebra.note = Some("Zebra".to_string());
+        service.create_split(&db, admin, zebra).await.unwrap();
+        let mut alpha = located(request("20.00", "0.00", "0.00", participant), tab_id);
+        alpha.note = Some("Alpha".to_string());
+        service.create_split(&db, admin, alpha).await.unwrap();
+
+        let listed = service
+            .list_splits_sorted(
+                &db,
+                &PaginationParams {
+                    page: None,
+                    limit: Some(10),
+                },
+                &SplitFilters::default(),
+                Some("note"),
+                Some("asc"),
+            )
+            .await
+            .unwrap();
+        let notes: Vec<_> = listed
+            .items
+            .iter()
+            .map(|split| split.note.as_deref().unwrap_or(""))
+            .collect();
+        assert_eq!(notes, vec!["Alpha", "Zebra"]);
+    }
+
+    #[tokio::test]
+    async fn list_splits_sorted_rejects_unknown_column() {
+        let db = seed_db().await;
+        let error = SplitService::new()
+            .list_splits_sorted(
+                &db,
+                &PaginationParams {
+                    page: None,
+                    limit: Some(10),
+                },
+                &SplitFilters::default(),
+                Some("fame"),
+                None,
+            )
+            .await
+            .unwrap_err();
+        match error {
+            AppError::Validation(message) => assert!(message.contains("fame")),
+            other => panic!("expected validation, got {other:?}"),
+        }
     }
 
     #[tokio::test]

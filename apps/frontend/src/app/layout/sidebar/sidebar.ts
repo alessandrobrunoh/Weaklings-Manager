@@ -4,71 +4,102 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import { Icon, type IconName } from '../../shared/components/icon/icon';
+import { Icon } from '../../shared/components/icon/icon';
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-logo';
+import { filterNavSections, type NavSection } from '../nav';
 
-/** Single entry in the sidebar. */
-export interface NavItem {
-  readonly path: string;
-  readonly icon: IconName;
-  readonly labelKey: TranslationKey;
-  /** Restrict visibility by permission keys (OR); undefined = everyone authenticated. */
-  readonly permissions?: readonly string[];
-}
-
-/** Group of nav entries with a small heading label. */
-export interface NavSection {
-  readonly headingKey: TranslationKey;
-  readonly items: NavItem[];
-}
+export type { NavItem, NavSection } from '../nav';
 
 /**
  * Left-hand navigation rail.
  *
- * Renders grouped links from a static definition; the `authGuard` is what
- * actually prevents unauthorized access — this list only hides links the
- * user cannot reach, so it must stay in sync with route guards.
+ * Renders grouped links with tooltip support for compact mode.
  */
 @Component({
   selector: 'app-sidebar',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, RouterLink, RouterLinkActive, WeaklingsLogo],
+  imports: [Icon, RouterLink, RouterLinkActive, TooltipDirective, WeaklingsLogo],
+  styles: `
+    :host {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+  `,
   template: `
-    <nav class="flex h-full flex-col" [attr.aria-label]="'Primary'">
+    <nav class="flex h-full w-full flex-col py-1.5" [attr.aria-label]="t(ariaLabelKey())">
       <!-- Brand -->
-      <a routerLink="/dashboard" class="mb-4 px-3 py-3 no-underline">
-        <app-weaklings-logo />
-      </a>
+      <div class="flex h-11 items-center px-3" [class.justify-center]="collapsed()">
+        <a routerLink="/dashboard" class="no-underline block" aria-label="Weaklings Manager dashboard" [appTooltip]="collapsed() ? 'Weaklings Manager' : null" tooltipPosition="right">
+          <app-weaklings-logo [compact]="collapsed()" [dense]="!collapsed()" />
+        </a>
+      </div>
 
       <!-- Sections -->
-      <div class="flex-1 overflow-y-auto px-3 scrollbar-thin">
+      <div class="flex-1 overflow-y-auto px-2 pb-2 scrollbar-thin">
         @for (section of visibleSections(); track section.headingKey) {
-          <div class="mb-4">
-            <p
-              [id]="section.headingKey"
-              class="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider"
-              style="color: var(--color-text-secondary)"
+          <div class="mb-2">
+            @if (!collapsed()) {
+              <p
+                [id]="section.headingKey"
+                class="eyebrow px-2 pb-1 pt-3 text-[10px]"
+              >
+                {{ t(section.headingKey) }}
+              </p>
+            } @else {
+              <div class="my-2 mx-auto w-6 border-t" style="border-color: var(--color-border)"></div>
+            }
+            <ul
+              class="flex flex-col gap-0.5"
+              role="list"
+              [attr.aria-labelledby]="collapsed() ? null : section.headingKey"
+              [attr.aria-label]="collapsed() ? t(section.headingKey) : null"
             >
-              {{ t(section.headingKey) }}
-            </p>
-            <ul class="flex flex-col gap-0.5" role="list" [attr.aria-labelledby]="section.headingKey">
               @for (item of section.items; track item.path) {
                 <li>
                   <a
                     [routerLink]="item.path"
                     routerLinkActive="nav-link--active"
+                    [routerLinkActiveOptions]="{ exact: item.exact === true }"
                     [ariaCurrentWhenActive]="'page'"
                     class="nav-link"
+                    [class.justify-center]="collapsed()"
+                    [class.px-0]="collapsed()"
+                    [appTooltip]="collapsed() ? t(item.labelKey) : null"
+                    tooltipPosition="right"
                     (click)="navigate.emit()"
                   >
-                    <app-icon [name]="item.icon" size="1.125rem" />
-                    <span>{{ t(item.labelKey) }}</span>
+                    <app-icon [name]="item.icon" size="1rem" class="shrink-0" />
+                    @if (!collapsed()) {
+                      <span class="truncate">{{ t(item.labelKey) }}</span>
+                    }
                   </a>
                 </li>
               }
             </ul>
           </div>
         }
+      </div>
+
+      <!-- Bottom Collapse Toggle (Desktop only) -->
+      <div class="hidden md:flex px-2 pt-2 border-t" style="border-color: var(--color-border)">
+        <button
+          type="button"
+          class="btn btn--ghost btn--sm w-full flex items-center gap-2 text-xs"
+          [class.justify-center]="collapsed()"
+          (click)="toggleCollapse.emit()"
+          [appTooltip]="collapsed() ? 'Espandi barra laterale' : 'Comprimi barra laterale'"
+          tooltipPosition="right"
+          [attr.aria-label]="collapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
+        >
+          <app-icon [name]="collapsed() ? 'chevron-right' : 'chevron-left'" size="1rem" />
+          @if (!collapsed()) {
+            <span class="truncate">{{ t('nav.collapse') }}</span>
+          }
+        </button>
       </div>
     </nav>
   `,
@@ -80,21 +111,16 @@ export class Sidebar {
   /** Emits when any link is clicked — used to auto-close the mobile drawer. */
   readonly navigate = output<void>();
 
+  /** Emits when user clicks the collapse button. */
+  readonly toggleCollapse = output<void>();
+
   readonly sections = input.required<NavSection[]>();
+  readonly ariaLabelKey = input<TranslationKey>('nav.aria.primary');
+  readonly collapsed = input<boolean>(false);
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
-  protected readonly visibleSections = computed<NavSection[]>(() => {
-    return this.sections()
-      .map((section) => ({
-        ...section,
-        items: section.items.filter((item) => {
-          if (!item.permissions?.length) {
-            return true;
-          }
-          return item.permissions.some((permission) => this.auth.hasPermission(permission));
-        }),
-      }))
-      .filter((section) => section.items.length > 0);
-  });
+  protected readonly visibleSections = computed<NavSection[]>(() =>
+    filterNavSections(this.sections(), (permission) => this.auth.hasPermission(permission)),
+  );
 }

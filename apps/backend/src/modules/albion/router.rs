@@ -7,14 +7,14 @@ use super::client::{AlbionGuild, AlbionPlayer, AlbionRegion, AlbionSearchResult}
 use super::service::{AlbionLinkService, AlbionLinkStatus, AlbionService};
 use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
-use crate::modules::auth::UserContext;
+use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedAlbionGuildMember, PaginationParams};
 use crate::responses::{
     ApiResponse, ApiResponseAlbionLinkStatus, ApiResponsePaginatedAlbionGuildMembers,
 };
 use axum::{
     Extension, Json, Router,
-    extract::Query,
+    extract::{Path, Query},
     routing::{get, post},
 };
 use serde::Deserialize;
@@ -28,6 +28,12 @@ pub fn router() -> Router {
         .route("/guilds/{id}", get(get_guild))
         .route("/link/me", get(get_link_status))
         .route("/link", post(link_player).delete(unlink_player))
+        .route(
+            "/link/users/{user_id}",
+            get(get_user_link_status)
+                .post(admin_link_user_handler)
+                .delete(admin_unlink_user_handler),
+        )
 }
 
 fn build_service(cfg: &Config) -> AlbionService {
@@ -251,7 +257,10 @@ pub struct LinkPlayerRequest {
         constraints in the database, not just application logic. The server re-fetches the \
         configured guild's roster and rejects `albion_player_id` values that aren't currently a \
         member (`400`), so this cannot be used to claim a character outside the configured guild. \
-        There is no \"re-link\"/\"force\" option: `DELETE /albion/link` first, then call this again.",
+        There is no \"re-link\"/\"force\" option: `DELETE /albion/link` first, then call this again. \
+        After a successful link the backend best-effort sets the caller's Discord guild nickname \
+        to the Albion character name (identical, truncated to 32 characters). Nickname failures \
+        never roll back the link.",
     security(("session_cookie" = [])),
     request_body(content = LinkPlayerRequest, description = "The Albion character to claim, as picked from GET /albion/guild/roster."),
     responses(
@@ -284,6 +293,8 @@ pub async fn link_player(
         .create_link(&db, &user.id, &matched.id, &matched.name)
         .await?;
 
+    super::discord_nick::sync_guild_nickname(&cfg, &user.id, &matched.name).await;
+
     Ok(Json(ApiResponse::new(AlbionLinkStatus::from(Some(link)))))
 }
 
@@ -314,5 +325,66 @@ pub async fn unlink_player(
 ) -> Result<Json<ApiResponse<()>>, AppError> {
     let link_service = AlbionLinkService::new();
     link_service.delete_link(&db, &user.id).await?;
+    Ok(Json(ApiResponse::new(())))
+}
+
+/// Retrieves the Albion player link status for a specific user.
+pub async fn get_user_link_status(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(user_id): Path<i64>,
+) -> Result<Json<ApiResponse<AlbionLinkStatus>>, AppError> {
+    if user.user_id != user_id {
+        user.require(&perms, Permission::RolesManage).await?;
+    }
+    let link_service = AlbionLinkService::new();
+    let link = link_service.get_link_for_user_id(&db, user_id).await?;
+    Ok(Json(ApiResponse::new(AlbionLinkStatus::from(link))))
+}
+
+/// Admin endpoint to link any user to an Albion player.
+pub async fn admin_link_user_handler(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Path(user_id): Path<i64>,
+    Json(body): Json<LinkPlayerRequest>,
+) -> Result<Json<ApiResponse<AlbionLinkStatus>>, AppError> {
+    user.require(&perms, Permission::RolesManage).await?;
+
+    let albion = build_service(&cfg);
+    let roster = albion.get_configured_guild_roster().await?;
+
+    let matched = roster
+        .iter()
+        .find(|member| member.id == body.albion_player_id)
+        .ok_or_else(|| {
+            AppError::Validation(
+                "Selected player is not a member of the configured guild".to_string(),
+            )
+        })?;
+
+    let link_service = AlbionLinkService::new();
+    let link = link_service
+        .admin_link_user(&db, user_id, &matched.id, &matched.name)
+        .await?;
+
+    super::discord_nick::sync_guild_nickname(&cfg, &link.discord_id, &matched.name).await;
+
+    Ok(Json(ApiResponse::new(AlbionLinkStatus::from(Some(link)))))
+}
+
+/// Admin endpoint to unlink any user from their Albion player.
+pub async fn admin_unlink_user_handler(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(user_id): Path<i64>,
+) -> Result<Json<ApiResponse<()>>, AppError> {
+    user.require(&perms, Permission::RolesManage).await?;
+    let link_service = AlbionLinkService::new();
+    link_service.admin_unlink_user(&db, user_id).await?;
     Ok(Json(ApiResponse::new(())))
 }

@@ -18,7 +18,9 @@ use crate::modules::albionbb::client::{AlbionBbBattlesFilters, AlbionBbKillEvent
 use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::albiondata::client::AlbionDataMarketPrice;
 use crate::modules::albiondata::service::AlbionDataService;
-use crate::pagination::{PaginatedData, PaginationParams};
+use crate::pagination::{
+    PaginatedData, PaginationParams, SortOrder, paginate_vec, resolve_sort_key,
+};
 
 use super::entities::Entity as GuildBattleSnapshotEntity;
 use super::entities::{
@@ -38,12 +40,14 @@ const MY_BATTLES_MAX_UPSTREAM_PAGES: u64 = 5;
 /// at least one Weaklings participant is included.
 const DEFAULT_MIN_GUILD_PLAYERS: i64 = 1;
 
-/// How long a hydrated `/battles` page stays fresh in the local cache.
+/// How long a hydrated guild-battle catalog stays fresh in the local cache.
 const LIST_CACHE_TTL: Duration = Duration::from_secs(60);
+/// AlbionBB has no sort API, so we hydrate several recent pages and page/sort locally.
+const GUILD_CATALOG_MAX_PAGES: u64 = 20;
 const LOSS_ESTIMATE_LOCATIONS: &str =
     "Caerleon,Bridgewatch,Fort Sterling,Lymhurst,Martlock,Thetford,Brecilien";
 
-type BattleListCache = Arc<RwLock<HashMap<(u64, i64), (Instant, PaginatedData<BattleSummary>)>>>;
+type BattleCatalogCache = Arc<RwLock<HashMap<i64, (Instant, Vec<BattleSummary>)>>>;
 
 /// Service exposing guild-scoped battle operations.
 #[derive(Clone)]
@@ -51,7 +55,7 @@ pub struct BattlesService {
     albionbb: AlbionBbService,
     guild_id: String,
     server: Option<String>,
-    list_cache: BattleListCache,
+    catalog_cache: BattleCatalogCache,
 }
 
 impl BattlesService {
@@ -65,60 +69,99 @@ impl BattlesService {
             } else {
                 Some(server)
             },
-            list_cache: Arc::new(RwLock::new(HashMap::new())),
+            catalog_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    /// Lists recent battles of the configured guild, paginated.
-    /// `page` is passed straight through to AlbionBB (1-indexed). When upstream
-    /// does not report totals, we synthesize conservative values from the
-    /// current page so the frontend's pagination controls stay sensible.
+    /// Lists recent battles of the configured guild.
+    ///
+    /// AlbionBB cannot sort or search, so we hydrate a short catalog of recent
+    /// pages, cache it, then filter/sort/paginate in memory.
     pub async fn list_guild_battles(
         &self,
         min_players: Option<i64>,
-        page: u64,
+        pagination: &PaginationParams,
+        search: Option<&str>,
+        sort: Option<&str>,
+        order: SortOrder,
+        outcome: Option<&str>,
     ) -> Result<PaginatedData<BattleSummary>, AppError> {
         let min_players = min_players.unwrap_or(10);
-        let cache_key = (page, min_players);
-        if let Some((fetched_at, cached)) = self.list_cache.read().await.get(&cache_key)
+        let catalog = self.guild_catalog(min_players).await?;
+        let mut page = filter_sort_page_battles(
+            catalog,
+            &self.guild_id,
+            search,
+            outcome,
+            sort,
+            order,
+            pagination,
+        )?;
+        self.hydrate_page(&mut page.items).await;
+        Ok(page)
+    }
+
+    /// Hydrates up to [`GUILD_CATALOG_MAX_PAGES`] of recent guild battles.
+    ///
+    /// Uses AlbionBB list payloads only. Per-battle detail is fetched later for
+    /// the visible page so search/sort can cover the catalog without N detail
+    /// calls per list page.
+    async fn guild_catalog(&self, min_players: i64) -> Result<Vec<BattleSummary>, AppError> {
+        if let Some((fetched_at, cached)) = self.catalog_cache.read().await.get(&min_players)
             && fetched_at.elapsed() < LIST_CACHE_TTL
         {
             return Ok(cached.clone());
         }
 
-        let filters = AlbionBbBattlesFilters {
-            search: None,
-            guild_id: Some(self.guild_id.clone()),
-            min_players: Some(min_players),
-            min_guild_players: Some(DEFAULT_MIN_GUILD_PLAYERS),
-            page: Some(page),
-        };
-        let (raw_battles, meta) = self
-            .albionbb
-            .get_battles(self.server.as_deref(), &filters)
-            .await?;
-
-        // AlbionBB's list payload is intentionally sparse (guilds only expose
-        // name/alliance/killFame there), so hydrate each summary with the cached
-        // single-battle detail to return richer guild breakdowns.
-        let mut items = Vec::with_capacity(raw_battles.len());
-        for raw in &raw_battles {
-            let detail = self
+        let mut items = Vec::new();
+        let mut seen = HashSet::new();
+        for page in 1..=GUILD_CATALOG_MAX_PAGES {
+            let filters = AlbionBbBattlesFilters {
+                search: None,
+                guild_id: Some(self.guild_id.clone()),
+                min_players: Some(min_players),
+                min_guild_players: Some(DEFAULT_MIN_GUILD_PLAYERS),
+                page: Some(page),
+            };
+            let (raw_battles, _meta) = self
                 .albionbb
-                .get_battle(self.server.as_deref(), raw.id)
+                .get_battles(self.server.as_deref(), &filters)
                 .await?;
-            items.push(BattleSummary::from_detail(&detail));
+            if raw_battles.is_empty() {
+                break;
+            }
+            for raw in raw_battles {
+                if seen.insert(raw.id) {
+                    items.push(BattleSummary::from(raw));
+                }
+            }
         }
-        let limit = raw_battles.len().max(1) as u64;
-        let total_pages = meta.total_pages.map_or(page, |v| v.max(page as i64) as u64);
-        let total_items = meta.total_results.unwrap_or(items.len() as i64).max(0) as u64;
 
-        let paginated = PaginatedData::new(items, total_items, total_pages, page, limit);
-        self.list_cache
+        self.catalog_cache
             .write()
             .await
-            .insert(cache_key, (Instant::now(), paginated.clone()));
-        Ok(paginated)
+            .insert(min_players, (Instant::now(), items.clone()));
+        Ok(items)
+    }
+
+    /// Enriches the visible page with single-battle detail (guild kills/deaths).
+    async fn hydrate_page(&self, items: &mut [BattleSummary]) {
+        for item in items.iter_mut() {
+            match self
+                .albionbb
+                .get_battle(self.server.as_deref(), item.battle_id)
+                .await
+            {
+                Ok(detail) => *item = BattleSummary::from_detail(&detail),
+                Err(error) => {
+                    tracing::warn!(
+                        battle_id = item.battle_id,
+                        error = %error,
+                        "failed to hydrate guild battle summary"
+                    );
+                }
+            }
+        }
     }
 
     /// Fetches full detail for a battle (battle + kills combined), cached
@@ -180,6 +223,10 @@ impl BattlesService {
         db: &DatabaseConnection,
         discord_id: &str,
         pagination: &PaginationParams,
+        search: Option<&str>,
+        sort: Option<&str>,
+        order: SortOrder,
+        outcome: Option<&str>,
     ) -> Result<PaginatedData<BattleSummary>, AppError> {
         let link = AlbionLinkService::new()
             .get_link_for_discord_user(db, discord_id)
@@ -224,32 +271,173 @@ impl BattlesService {
             }
         }
 
-        // Sort newest-first by start_time (string comparison works for ISO 8601).
-        matched.sort_by(|a, b| b.start_time.cmp(&a.start_time));
+        filter_sort_page_battles(
+            matched,
+            &self.guild_id,
+            search,
+            outcome,
+            sort,
+            order,
+            pagination,
+        )
+    }
+}
 
-        let total_items = matched.len() as u64;
-        let limit = pagination.limit();
-        let page = pagination.offset_page();
-        let total_pages = if limit == 0 {
-            0
-        } else {
-            total_items.div_ceil(limit)
+fn battle_deaths(battle: &BattleSummary) -> i64 {
+    battle.guilds.iter().map(|guild| guild.deaths).sum()
+}
+
+fn battle_outcome(battle: &BattleSummary, guild_id: &str) -> &'static str {
+    let Some(our) = battle.guilds.iter().find(|guild| guild.id == guild_id) else {
+        return "contested";
+    };
+    if our.winner || (our.kills > our.deaths && our.kill_fame * 20 >= battle.total_fame * 7) {
+        return "victory";
+    }
+    if our.deaths > our.kills && our.kill_fame * 4 < battle.total_fame {
+        return "defeat";
+    }
+    "contested"
+}
+
+fn battle_matches_search(battle: &BattleSummary, query: &str) -> bool {
+    if battle.battle_id.to_string().contains(query) {
+        return true;
+    }
+    battle.guilds.iter().any(|guild| {
+        guild.name.to_lowercase().contains(query)
+            || guild
+                .alliance_name
+                .as_deref()
+                .is_some_and(|name| name.to_lowercase().contains(query))
+    })
+}
+
+fn filter_sort_page_battles(
+    mut items: Vec<BattleSummary>,
+    guild_id: &str,
+    search: Option<&str>,
+    outcome: Option<&str>,
+    sort: Option<&str>,
+    order: SortOrder,
+    pagination: &PaginationParams,
+) -> Result<PaginatedData<BattleSummary>, AppError> {
+    if let Some(query) = search.map(str::trim).filter(|value| !value.is_empty()) {
+        let query = query.to_lowercase();
+        items.retain(|battle| battle_matches_search(battle, &query));
+    }
+    if let Some(wanted) = outcome.map(str::trim).filter(|value| !value.is_empty()) {
+        items.retain(|battle| battle_outcome(battle, guild_id) == wanted);
+    }
+
+    let sort_key = resolve_sort_key(
+        sort,
+        &[
+            ("start_time", "start_time"),
+            ("time", "start_time"),
+            ("fame", "fame"),
+            ("kills", "kills"),
+            ("deaths", "deaths"),
+            ("players", "players"),
+            ("id", "id"),
+            ("outcome", "outcome"),
+        ],
+        "start_time",
+    )?;
+    items.sort_by(|left, right| {
+        let ordering = match sort_key {
+            "fame" => left.total_fame.cmp(&right.total_fame),
+            "kills" => left.total_kills.cmp(&right.total_kills),
+            "deaths" => battle_deaths(left).cmp(&battle_deaths(right)),
+            "players" => left.total_players.cmp(&right.total_players),
+            "id" => left.battle_id.cmp(&right.battle_id),
+            "outcome" => battle_outcome(left, guild_id).cmp(battle_outcome(right, guild_id)),
+            _ => left.start_time.cmp(&right.start_time),
         };
+        match order {
+            SortOrder::Asc => ordering,
+            SortOrder::Desc => ordering.reverse(),
+        }
+    });
+    Ok(paginate_vec(items, pagination))
+}
 
-        let start = (page * limit) as usize;
-        let items = matched
-            .into_iter()
-            .skip(start)
-            .take(limit as usize)
-            .collect();
+#[cfg(test)]
+mod filter_tests {
+    use super::{battle_outcome, filter_sort_page_battles};
+    use crate::modules::battles::models::{BattleGuildSummary, BattleSummary};
+    use crate::pagination::{PaginationParams, SortOrder};
 
-        Ok(PaginatedData::new(
+    fn guild(
+        id: &str,
+        name: &str,
+        kills: i64,
+        deaths: i64,
+        fame: i64,
+        winner: bool,
+    ) -> BattleGuildSummary {
+        BattleGuildSummary {
+            id: id.to_string(),
+            name: name.to_string(),
+            alliance_name: None,
+            alliance_id: None,
+            players: 20,
+            kills,
+            deaths,
+            kill_fame: fame,
+            winner,
+            average_item_power: 0.0,
+        }
+    }
+
+    fn battle(id: i64, start: &str, fame: i64, guilds: Vec<BattleGuildSummary>) -> BattleSummary {
+        BattleSummary {
+            battle_id: id,
+            start_time: start.to_string(),
+            end_time: start.to_string(),
+            total_players: guilds.iter().map(|g| g.players).sum(),
+            total_kills: guilds.iter().map(|g| g.kills).sum(),
+            total_fame: fame,
+            guilds,
+        }
+    }
+
+    #[test]
+    fn filters_by_search_and_sorts_by_fame() {
+        let ours = "g1";
+        let items = vec![
+            battle(
+                1,
+                "2026-01-01T00:00:00Z",
+                100,
+                vec![guild(ours, "Weaklings", 10, 2, 80, true)],
+            ),
+            battle(
+                2,
+                "2026-01-02T00:00:00Z",
+                500,
+                vec![
+                    guild(ours, "Weaklings", 1, 8, 10, false),
+                    guild("g2", "Enemy", 8, 1, 400, true),
+                ],
+            ),
+        ];
+        let page = filter_sort_page_battles(
             items,
-            total_items,
-            total_pages,
-            page + 1,
-            limit,
-        ))
+            ours,
+            Some("enemy"),
+            None,
+            Some("fame"),
+            SortOrder::Desc,
+            &PaginationParams {
+                page: Some(1),
+                limit: Some(10),
+            },
+        )
+        .unwrap();
+        assert_eq!(page.total_items, 1);
+        assert_eq!(page.items[0].battle_id, 2);
+        assert_eq!(battle_outcome(&page.items[0], ours), "defeat");
     }
 }
 
