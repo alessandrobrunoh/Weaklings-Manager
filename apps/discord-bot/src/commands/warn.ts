@@ -76,11 +76,34 @@ export async function execute(
   if (expires) body.multiplier_expires_at = expires;
 
   const issued = await api.post<WarnView>('api/warns', body, interaction.user.id);
+  const issuedSeverity = issued.severity ?? severity ?? 'warn';
+  const issuedReason = issued.reason ?? reason;
+
+  // The warn is already persisted at this point. A DM failure must not make the
+  // moderator think the warn itself failed (the recipient may have DMs disabled).
+  try {
+    const notification = createResponseEmbed(
+      'warning',
+      'You have received a warning',
+      [
+        `A moderator has issued you a **${issuedSeverity}** in **Weaklings**.`,
+        '',
+        `**Reason:** ${issuedReason}`,
+        issued.id != null ? `**Warn ID:** \`${issued.id}\`` : '',
+        '',
+        'If you believe this warning was issued in error, contact a guild officer.',
+      ].filter(Boolean).join('\n'),
+      'MODERATION',
+    );
+    await target.send({ embeds: [notification] });
+  } catch (err) {
+    console.warn(`[WarnCommand] Could not DM ${target.tag} about warn:`, err);
+  }
 
   const lines = [
     `• **Member:** <@${target.id}>`,
-    `• **Severity:** **${issued.severity ?? severity ?? 'warn'}**`,
-    `• **Reason:** ${issued.reason ?? reason}`,
+    `• **Severity:** **${issuedSeverity}**`,
+    `• **Reason:** ${issuedReason}`,
   ];
   if (issued.id != null) lines.push(`• **ID:** \`${issued.id}\``);
 

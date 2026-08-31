@@ -1,4 +1,4 @@
-//! The death-extraction job that turns a `call_to_arms` event's linked battles into `regear_deaths`
+//! The death-extraction job that turns a Regear event's linked battles into `regear_deaths`
 //! rows.
 //!
 //! Idempotent: re-running on the same event inserts only newly discovered deaths (matched by the
@@ -73,9 +73,9 @@ impl<'a> RegearExtractor<'a> {
             .one(self.db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("event {event_id} not found")))?;
-        if !event_row.call_to_arms {
+        if !event_row.regear {
             return Err(AppError::Validation(format!(
-                "event {event_id} is not a call_to_arms event"
+                "event {event_id} is not a regear event"
             )));
         }
 

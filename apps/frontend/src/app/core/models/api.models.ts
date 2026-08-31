@@ -321,6 +321,7 @@ export interface EventView {
   title: string;
   description: string | null;
   call_to_arms: boolean;
+  regear: boolean;
   comp_id: number;
   comp_name: string;
   created_by: number;
@@ -432,6 +433,7 @@ export interface CreateEventRequest {
   title: string;
   description?: string;
   call_to_arms?: boolean;
+  regear?: boolean;
   comp_id: number;
   event_date_utc: string;
   /** Also create an empty loot split already linked to this event. */
@@ -443,6 +445,7 @@ export interface UpdateEventRequest {
   title?: string;
   description?: string;
   call_to_arms?: boolean;
+  regear?: boolean;
   event_date_utc?: string;
   comp_id?: number;
 }
@@ -672,6 +675,7 @@ export interface LinkedEvent {
   id: number;
   title: string;
   call_to_arms: boolean;
+  regear: boolean;
 }
 
 export interface BuildItemSlot {
@@ -1328,6 +1332,7 @@ export interface GuildSettingsView {
   discord_transaction_spam_channel_id: string | null;
   discord_event_role_id: string | null;
   discord_auto_role_id: string | null;
+  discord_splits_forum_channel_id: string | null;
 }
 
 /**

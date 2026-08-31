@@ -11,6 +11,8 @@ pub struct Model {
     pub action: String,
     pub entity_type: Option<String>,
     pub entity_id: Option<i64>,
+    /// Explicit split association for transaction/payment audit events.
+    pub split_id: Option<i64>,
     pub user_id: Option<i64>,
     pub details: Option<Json>,
     pub created_at: DateTimeWithTimeZone,

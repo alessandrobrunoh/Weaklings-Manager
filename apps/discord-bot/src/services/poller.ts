@@ -2,7 +2,7 @@ import { writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Client, TextChannel } from "discord.js";
 import type { ApiClient } from "../api/client.js";
-import type { PaginatedData, EventView, BattleSummary } from "../api/types.js";
+import type { PaginatedData, EventView, BattleSummary, SplitSyncBatch } from "../api/types.js";
 import { buildEventAnnouncementContent } from "../embeds/event.embed.js";
 import { buildBattleEmbed } from "../embeds/battle.embed.js";
 import { GUILD_NAME } from "../embeds/theme.js";
@@ -12,6 +12,7 @@ import {
   createEventAnnouncementThread,
   sendEventSignupMessage,
 } from "./event-announcement-thread.js";
+import { SplitForumAdapter } from "./split-forum.js";
 
 const STATE_FILE_NAME = "poller-state.json";
 
@@ -19,6 +20,7 @@ interface PollerState {
   lastEventId: number;
   lastBattleId: number;
   pinged1hEvents: number[];
+  splitCursor: string | null;
 }
 
 function createDefaultState(): PollerState {
@@ -26,6 +28,7 @@ function createDefaultState(): PollerState {
     lastEventId: 0,
     lastBattleId: 0,
     pinged1hEvents: [],
+    splitCursor: null,
   };
 }
 
@@ -85,6 +88,7 @@ function loadState(stateDirectory: string): PollerState {
       lastEventId: parsedState.lastEventId ?? 0,
       lastBattleId: parsedState.lastBattleId ?? 0,
       pinged1hEvents: parsedState.pinged1hEvents ?? [],
+      splitCursor: parsedState.splitCursor ?? null,
     };
   } catch (error) {
     console.warn(
@@ -173,31 +177,57 @@ export class Poller {
         this.checkNewEvents(),
         this.checkNewBattles(),
         this.checkUpcomingEvents(),
+        this.checkSplitSync(),
       ]);
     } finally {
       this.polling = false;
     }
   }
 
-  /** Fetches the latest events and announces any with ID > lastEventId. */
+  /** Fetches recently-created events and announces any not covered by the checkpoint. */
   private async checkNewEvents(): Promise<void> {
     try {
+      // The API defaults to event-date ordering. That is unsuitable for a creation
+      // checkpoint: an event scheduled far in the future can fall outside page 1.
       const result = await this.api.get<PaginatedData<EventView>>(
         "api/events",
         undefined,
         {
           page: 1,
-          limit: 20,
+          limit: 50,
+          sort: "created_at",
+          order: "desc",
         },
       );
+
+      const newestEventId = result.items.reduce(
+        (max, event) => Math.max(max, event.id),
+        0,
+      );
+      if (newestEventId > 0 && newestEventId < this.state.lastEventId) {
+        console.warn(
+          `[Poller] Event checkpoint ${this.state.lastEventId} is newer than the API (${newestEventId}); resetting it`,
+        );
+        this.state.lastEventId = 0;
+        saveState(this.stateDirectory, this.state);
+      }
 
       const newEvents = result.items
         .filter((e) => e.id > this.state.lastEventId)
         .sort((a, b) => a.id - b.id);
 
-      if (newEvents.length === 0) return;
+      if (newEvents.length === 0) {
+        return;
+      }
 
-      const channel = await this.getTextChannel(await this.settings.eventsChannelId());
+      const eventsChannelId = await this.settings.eventsChannelId();
+      if (!eventsChannelId) {
+        console.warn(
+          "[Poller] Cannot announce events: no Discord events channel is configured",
+        );
+        return;
+      }
+      const channel = await this.getTextChannel(eventsChannelId);
       if (!channel) return;
 
       const eventRoleId = await this.settings.eventRoleId();
@@ -223,6 +253,36 @@ export class Poller {
       }
     } catch (err) {
       console.error("[Poller] Failed to check events:", err);
+    }
+  }
+
+  /**
+   * Synchronizes split forum posts from the backend-owned incremental contract.
+   * The cursor advances only after every item in the batch has been handed to the adapter.
+   */
+  private async checkSplitSync(): Promise<void> {
+    const forumChannelId = await this.settings.splitsForumChannelId();
+    if (!forumChannelId) return;
+
+    try {
+      const params: Record<string, string | number> = { limit: 50 };
+      if (this.state.splitCursor) params.cursor = this.state.splitCursor;
+      const batch = await this.api.get<SplitSyncBatch>(
+        "api/bot/splits/sync",
+        undefined,
+        params,
+      );
+      const adapter = new SplitForumAdapter(this.client, this.api, forumChannelId);
+      for (const item of batch.items) {
+        if (!await adapter.sync(item)) return;
+      }
+      if (batch.next_cursor && batch.next_cursor !== this.state.splitCursor) {
+        this.state.splitCursor = batch.next_cursor;
+        saveState(this.stateDirectory, this.state);
+      }
+    } catch (err) {
+      // A split sync failure is isolated from event/battle announcements and retried next tick.
+      console.error("[Poller] Failed to sync split forum posts:", err);
     }
   }
 

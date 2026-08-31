@@ -81,6 +81,7 @@ pub fn router() -> Router {
         .route("/{id}/not-completed", post(not_completed_split))
         .route("/{id}/lost", post(lost_split))
         .route("/match-participants", post(match_participants))
+        .merge(super::discord_sync::router())
 }
 
 /// Guild-wide split KPI totals (not scoped to the current list page).

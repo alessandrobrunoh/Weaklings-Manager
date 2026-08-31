@@ -13,7 +13,7 @@ import type {
   OpenAlbionItem,
   UpdateBuildRequest,
 } from '../../core/models/api.models';
-import { searchAlbionEquipmentCatalog } from '../../shared/data/albion-equipment-catalog';
+import { filterAlbionEquipmentCatalog } from '../../shared/data/albion-equipment-catalog';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -23,6 +23,7 @@ import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
+import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
@@ -265,6 +266,7 @@ export class CompBuildDetailPage {
   private readonly translate = inject(TranslateService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly albionCatalog = inject(AlbionCatalogService);
 
   protected readonly SLOT_ORDER = SLOT_ORDER;
   protected readonly ITEM_TIERS = ITEM_TIERS;
@@ -564,7 +566,7 @@ export class CompBuildDetailPage {
     }
   }
 
-  private runItemSearch(): void {
+  private async runItemSearch(): Promise<void> {
     const slot = this.editingSlot();
     if (!slot) {
       this.searchResults.set([]);
@@ -572,10 +574,17 @@ export class CompBuildDetailPage {
     }
 
     this.searchLoading.set(true);
-    this.searchResults.set(
-      searchAlbionEquipmentCatalog(this.draftSearch(), slot, this.draftTier()),
-    );
-    this.searchLoading.set(false);
+    try {
+      const catalog = await this.albionCatalog.load();
+      this.searchResults.set(
+        filterAlbionEquipmentCatalog(catalog, this.draftSearch(), slot, this.draftTier()),
+      );
+    } catch {
+      this.searchResults.set([]);
+      this.toasts.error(this.translate.t('common.error'));
+    } finally {
+      this.searchLoading.set(false);
+    }
   }
 
   protected async load(buildId: number): Promise<void> {

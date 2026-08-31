@@ -1699,6 +1699,7 @@ mod tests {
             title: "Ganks".to_string(),
             description: None,
             call_to_arms: true,
+            regear: false,
             comp_id: 1,
             created_by: 1,
             event_date_utc: ts("2026-08-19T20:00:00Z"),

@@ -18,7 +18,9 @@ pub mod event {
         pub description: Option<String>,
         /// Whether this event is a priority call-to-arms announcement.
         pub call_to_arms: bool,
-        /// The composition associated with this event.
+        /// Whether this event enables automatic and manual regear processing.
+        pub regear: bool,
+        /// The composition associated with the event.
         pub comp_id: i64,
         /// The user who created the event.
         pub created_by: i64,

@@ -135,6 +135,86 @@ export interface WithdrawRequest {
   all?: boolean;
 }
 
+/* ----------------------------- Splits ------------------------------- */
+
+export type SplitStatus = 'pending' | 'completed' | 'not_completed' | 'lost';
+export type SplitParticipantCreditStatus = 'pending' | 'requested' | 'withdrawn';
+
+/** Detail returned by the bot split-sync endpoint. Financial values are authoritative backend data. */
+export interface SplitParticipant {
+  user_id: number;
+  username: string;
+  discord_id?: string | null;
+  weight: number;
+  share_amount: number | null;
+  credit_status?: SplitParticipantCreditStatus | null;
+}
+
+export interface SplitDetail {
+  id: number;
+  created_by_username: string;
+  status: SplitStatus;
+  estimated_market_value: number;
+  repair_value: number;
+  bags_value: number;
+  net_value: number | null;
+  note: string | null;
+  event_id: number | null;
+  event_title: string | null;
+  island_id: number | null;
+  island_name: string | null;
+  island_city: string | null;
+  island_tab_id: number | null;
+  island_tab_name: string | null;
+  participant_count: number;
+  created_at: string;
+  finalized_at: string | null;
+  /** Monotonic backend version or updated timestamp; required for incremental polling. */
+  updated_at?: string | null;
+  participants: SplitParticipant[];
+}
+
+export interface SplitDiscordSyncState {
+  split_id: number;
+  thread_id: string | null;
+  summary_message_id: string | null;
+  summary_version: string | null;
+  log_cursor: string | null;
+}
+
+/** A log is eligible only when the backend has explicitly associated it with this split. */
+export interface SplitSyncLog {
+  id: string;
+  occurred_at: string;
+  kind: string;
+  message: string;
+}
+
+/** Contract for GET /api/bot/splits/sync. The backend owns selection and ordering. */
+export interface SplitSyncItem {
+  split: SplitDetail;
+  sync: SplitDiscordSyncState;
+  logs_available: boolean;
+}
+
+export interface SplitSyncBatch {
+  items: SplitSyncItem[];
+  next_cursor: string | null;
+}
+
+/** Contract for GET /api/bot/splits/{id}/logs, filtered by explicit split_id server-side. */
+export interface SplitLogBatch {
+  items: SplitSyncLog[];
+  next_cursor: string | null;
+}
+
+export interface UpdateSplitDiscordSyncState {
+  thread_id: string;
+  summary_message_id: string;
+  summary_version: string;
+  log_cursor?: string | null;
+}
+
 /* ----------------------------- Events ------------------------------- */
 
 export type EventStatus = 'scheduled' | 'live' | 'stopped' | 'auto_stopped';
@@ -144,6 +224,7 @@ export interface EventView {
   title: string;
   description: string | null;
   call_to_arms: boolean;
+  regear: boolean;
   comp_id: number;
   comp_name: string;
   created_by: number;
@@ -179,6 +260,7 @@ export interface CreateEventRequest {
   title: string;
   description?: string;
   call_to_arms?: boolean;
+  regear?: boolean;
   comp_id: number;
   event_date_utc: string;
 }
@@ -273,6 +355,7 @@ export interface GuildSettingsView {
   discord_transaction_spam_channel_id: string | null;
   discord_event_role_id: string | null;
   discord_auto_role_id: string | null;
+  discord_splits_forum_channel_id: string | null;
 }
 
 /* -------------------------- Progression ----------------------------- */

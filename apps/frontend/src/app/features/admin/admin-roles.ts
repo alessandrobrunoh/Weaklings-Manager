@@ -297,12 +297,22 @@ export class AdminRoles {
 
   private async loadDiscordRoles(): Promise<void> {
     try {
+      // Use the same assignable-role endpoint as the AutoRole page. The old
+      // endpoint requires a separate permission and made valid links appear
+      // as "Not linked" when only autorole.manage was available.
       const roles = await firstValueFrom(
-        this.api.get<DiscordRoleView[]>('api/admin/discord/roles'),
+        this.api.get<DiscordRoleView[]>('api/admin/autorole/roles'),
       );
       this.discordRoles.set(roles);
     } catch {
-      // Snowflake text field remains usable when Discord listing is unavailable.
+      try {
+        const roles = await firstValueFrom(
+          this.api.get<DiscordRoleView[]>('api/admin/discord/roles'),
+        );
+        this.discordRoles.set(roles);
+      } catch {
+        // Snowflake text field remains usable when Discord listing is unavailable.
+      }
     }
   }
 

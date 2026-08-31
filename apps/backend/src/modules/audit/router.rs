@@ -34,12 +34,13 @@ impl AuditLogQuery {
     }
 }
 
-#[derive(Serialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct AuditLogResponse {
     pub id: i64,
     pub action: String,
     pub entity_type: Option<String>,
     pub entity_id: Option<i64>,
+    pub split_id: Option<i64>,
     pub user_id: Option<i64>,
     pub details: Option<serde_json::Value>,
     #[schema(example = "2026-08-11T21:00:00+00:00")]
@@ -53,6 +54,7 @@ impl From<entities::Model> for AuditLogResponse {
             action: model.action,
             entity_type: model.entity_type,
             entity_id: model.entity_id,
+            split_id: model.split_id,
             user_id: model.user_id,
             details: model.details,
             created_at: model.created_at.to_rfc3339(),

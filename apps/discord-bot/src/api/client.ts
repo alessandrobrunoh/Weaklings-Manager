@@ -32,6 +32,11 @@ export class ApiClient {
     return this.request<T>('POST', url, body, discordId);
   }
 
+  async patch<T>(path: string, body: unknown, discordId?: string): Promise<T> {
+    const url = this.buildUrl(path);
+    return this.request<T>('PATCH', url, body, discordId);
+  }
+
   async delete<T>(path: string, discordId?: string): Promise<T | null> {
     const url = this.buildUrl(path);
     return this.request<T | null>('DELETE', url, undefined, discordId);

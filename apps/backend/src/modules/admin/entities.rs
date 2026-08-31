@@ -28,6 +28,8 @@ pub struct Model {
     pub discord_event_role_id: Option<String>,
     /// Role assigned automatically to human members joining the Discord guild.
     pub discord_auto_role_id: Option<String>,
+    /// Forum Channel where the bot creates one thread per loot split.
+    pub discord_splits_forum_channel_id: Option<String>,
     /// Last admin edit.
     pub updated_at: DateTimeWithTimeZone,
     /// Last admin editor.

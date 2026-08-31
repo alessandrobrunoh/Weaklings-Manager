@@ -290,6 +290,7 @@ export const it: TranslationDict = {
   'events.title': 'Eventi',
   'events.subtitle': 'Pianifica e gestisci le attività della gilda.',
   'events.call_to_arms': 'Chiamata alle armi',
+  'events.regear': 'Regear',
   'events.new': 'Nuovo evento',
   'events.create.comp_required': 'La composizione è obbligatoria.',
   'events.start': 'Avvia',
@@ -932,6 +933,8 @@ export const it: TranslationDict = {
   'admin.discord.ctaChannel': 'Canale call-to-arms',
   'admin.discord.ctaChannelHint':
     'Gli eventi call-to-arms urgenti ricevono qui un annuncio separato.',
+  'admin.discord.splitsForumChannel': 'Forum Channel degli split',
+  'admin.discord.splitsForumChannelHint': 'Qui il bot crea un thread Forum dedicato per ogni split.',
   'admin.discord.auditLogChannel': 'Canale audit log',
   'admin.discord.auditLogChannelHint': 'Riceve una copia di ogni voce dell\u2019audit log.',
   'admin.discord.transactionSpamChannel': 'Canale attivit\u00e0 transazioni',

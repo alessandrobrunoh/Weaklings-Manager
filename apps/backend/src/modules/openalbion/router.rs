@@ -4,7 +4,8 @@
 //! (used by the frontend's comp builder), item categories, and per-weapon quality-tier stats.
 
 use super::client::{
-    OpenAlbionCategory, OpenAlbionItemType, OpenAlbionWeaponFilters, OpenAlbionWeaponStats,
+    OpenAlbionCategory, OpenAlbionItem, OpenAlbionItemType, OpenAlbionWeaponFilters,
+    OpenAlbionWeaponStats,
 };
 use super::service::OpenAlbionService;
 use crate::errors::{AppError, ProblemDetails};
@@ -26,6 +27,7 @@ pub fn router() -> Router {
         .route("/weapons/{id}/stats", get(get_weapon_stats))
         .route("/categories", get(list_categories))
         .route("/items", get(list_items))
+        .route("/catalog", get(get_catalog))
 }
 
 /// Query parameters for browsing the weapon catalog.
@@ -217,6 +219,27 @@ pub async fn list_items(
     Ok(Json(ApiResponse::new(
         crate::pagination::PaginatedOpenAlbionItem::from(paginated),
     )))
+}
+
+/// Return the complete cached catalog used by build authoring.
+#[utoipa::path(
+    get,
+    path = "/api/openalbion/catalog",
+    tag = "openalbion",
+    summary = "Get the complete Albion item catalog",
+    description = "Returns the complete catalog for weapons, armor, accessories and consumables in one response. Reference data is cached in memory for up to one hour and item icons are normalized to Albion's public render service.",
+    security(("session_cookie" = [])),
+    responses(
+        (status = 200, description = "Complete item catalog", body = crate::responses::ApiResponseOpenAlbionCatalog),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 502, description = "Upstream OpenAlbion API error", body = ProblemDetails)
+    )
+)]
+pub async fn get_catalog(
+    _user: UserContext,
+    Extension(service): Extension<OpenAlbionService>,
+) -> Result<Json<ApiResponse<Vec<OpenAlbionItem>>>, AppError> {
+    Ok(Json(ApiResponse::new(service.list_catalog().await?)))
 }
 
 /// Query parameters for browsing item categories.

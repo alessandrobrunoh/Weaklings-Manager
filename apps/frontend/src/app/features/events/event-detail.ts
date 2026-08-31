@@ -275,6 +275,15 @@ export interface CompPartyGroup {
                 />
                 <span class="text-xs font-medium">{{ t('events.call_to_arms') }}</span>
               </label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  class="checkbox"
+                  type="checkbox"
+                  [checked]="draftRegear()"
+                  (change)="onRegearChange($event)"
+                />
+                <span class="text-xs font-medium">{{ t('events.regear') }}</span>
+              </label>
               <div class="flex gap-2">
                 <button type="button" class="btn btn--ghost btn--sm" (click)="toggleEditForm()">
                   {{ t('common.cancel') }}
@@ -1826,6 +1835,7 @@ export class EventDetailPage {
   protected readonly draftDescription = signal('');
   protected readonly draftCompId = signal('');
   protected readonly draftCallToArms = signal(false);
+  protected readonly draftRegear = signal(false);
   protected readonly draftScheduledAt = signal('');
   protected readonly minScheduledAt = (() => {
     const now = new Date();
@@ -3011,6 +3021,7 @@ export class EventDetailPage {
       d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
       this.draftScheduledAt.set(d.toISOString().slice(0, 16));
       this.draftCallToArms.set(detail.call_to_arms);
+      this.draftRegear.set(detail.regear);
     }
     this.showEditForm.update((v) => !v);
   }
@@ -3035,6 +3046,10 @@ export class EventDetailPage {
     this.draftCallToArms.set((event.target as HTMLInputElement).checked);
   }
 
+  protected onRegearChange(event: Event): void {
+    this.draftRegear.set((event.target as HTMLInputElement).checked);
+  }
+
   protected async onUpdateSubmit(submit: SubmitEvent): Promise<void> {
     submit.preventDefault();
     const detail = this.event();
@@ -3050,6 +3065,7 @@ export class EventDetailPage {
     const description = this.draftDescription().trim();
     request.description = description || undefined;
     request.call_to_arms = this.draftCallToArms();
+    request.regear = this.draftRegear();
     const compId = Number(this.draftCompId());
     if (compId > 0) {
       request.comp_id = compId;

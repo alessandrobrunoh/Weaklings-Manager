@@ -121,6 +121,15 @@ impl AuditService {
             action: Set(action.to_string()),
             entity_type: Set(entity_type.map(String::from)),
             entity_id: Set(entity_id),
+            split_id: Set(details
+                .as_ref()
+                .and_then(|value| value.get("split_id"))
+                .and_then(serde_json::Value::as_i64)
+                .or_else(|| {
+                    (entity_type == Some("SPLIT"))
+                        .then_some(entity_id)
+                        .flatten()
+                })),
             user_id: Set(user_id),
             details: Set(details.clone()),
             ..Default::default()

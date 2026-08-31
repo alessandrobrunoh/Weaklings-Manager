@@ -68,6 +68,9 @@ impl AdminService {
         if let Some(value) = &req.discord_event_role_id {
             active.discord_event_role_id = Set(normalize(value));
         }
+        if let Some(value) = &req.discord_splits_forum_channel_id {
+            active.discord_splits_forum_channel_id = Set(normalize(value));
+        }
         active.updated_at = Set(chrono::Utc::now().into());
         active.updated_by_user_id = Set(Some(editor_user_id));
         let updated = active.update(db).await.map_err(AppError::Database)?;
@@ -85,6 +88,7 @@ impl AdminService {
                 "discord_audit_log_channel_id": req.discord_audit_log_channel_id,
                 "discord_transaction_spam_channel_id": req.discord_transaction_spam_channel_id,
                 "discord_event_role_id": req.discord_event_role_id,
+                "discord_splits_forum_channel_id": req.discord_splits_forum_channel_id,
             })),
         )
         .await;

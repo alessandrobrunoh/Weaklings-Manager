@@ -169,7 +169,7 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
     let super_admin_id = Some(cfg.super_admin_discord_id.clone());
 
     // If X-Discord-Id is absent, this is a background / system call (e.g. the poller).
-    // Return a "bot system" context with Admin-level access so read-only endpoints work.
+    // Return a trusted "bot system" context so background endpoints can run without a user.
     let discord_id = parts
         .headers
         .get("X-Discord-Id")
@@ -186,7 +186,9 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
             roles: vec!["Admin".to_string()],
             highest_role: "Admin".to_string(),
             user_id: 0,
-            super_admin_id,
+            // Background bot requests are trusted through BOT_API_SECRET and must not
+            // depend on the role-permission cache being seeded on this deployment.
+            super_admin_id: Some("bot_system".to_string()),
         }));
     };
 

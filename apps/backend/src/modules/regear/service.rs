@@ -285,6 +285,7 @@ impl RegearService {
             created_at: Set(now),
             requested_at: Set(None),
             withdrawn_at: Set(None),
+            updated_at: Set(now),
         };
         let inserted_bank = bank_active.insert(&txn).await?;
 

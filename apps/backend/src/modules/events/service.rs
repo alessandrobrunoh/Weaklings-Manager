@@ -579,6 +579,7 @@ impl EventService {
             title: model.title,
             description: model.description,
             call_to_arms: model.call_to_arms,
+            regear: model.regear,
             comp_id: model.comp_id,
             comp_name: comp.name,
             created_by: model.created_by,
@@ -1011,6 +1012,7 @@ impl EventService {
             title: Set(req.title),
             description: Set(req.description),
             call_to_arms: Set(req.call_to_arms),
+            regear: Set(req.regear),
             comp_id: Set(req.comp_id),
             created_by: Set(creator_id),
             event_date_utc: Set(parsed_date.into()),
@@ -1204,6 +1206,9 @@ impl EventService {
         }
         if let Some(call_to_arms) = req.call_to_arms {
             active.call_to_arms = Set(call_to_arms);
+        }
+        if let Some(regear) = req.regear {
+            active.regear = Set(regear);
         }
         if let Some(comp_id) = req.comp_id {
             // Validate comp exists
@@ -1940,6 +1945,7 @@ mod tests {
                     title: "ZvZ Castle Fight".to_string(),
                     description: Some("Fight for control".to_string()),
                     call_to_arms: false,
+                    regear: false,
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     create_split: false,
@@ -1967,6 +1973,7 @@ mod tests {
                     title: "ZvZ Castle Fight".to_string(),
                     description: None,
                     call_to_arms: false,
+                    regear: false,
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     create_split: true,
@@ -2004,6 +2011,7 @@ mod tests {
                     title: "ZvZ Castle Fight".to_string(),
                     description: None,
                     call_to_arms: false,
+                    regear: false,
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     create_split: true,
@@ -2068,6 +2076,7 @@ mod tests {
                     title: "Scaling Event".to_string(),
                     description: None,
                     call_to_arms: false,
+                    regear: false,
                     comp_id: base_comp,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     create_split: false,
@@ -2155,6 +2164,7 @@ mod tests {
                     title: "Roles Event".to_string(),
                     description: None,
                     call_to_arms: false,
+                    regear: false,
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     create_split: false,
@@ -2261,6 +2271,7 @@ mod tests {
                     title: "XP Event".to_string(),
                     description: None,
                     call_to_arms: false,
+                    regear: false,
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     create_split: false,
@@ -2308,6 +2319,7 @@ mod tests {
                     title: "Stop XP".to_string(),
                     description: None,
                     call_to_arms: false,
+                    regear: false,
                     comp_id,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     create_split: false,
@@ -2355,6 +2367,7 @@ mod tests {
                     title: "Zebra".to_string(),
                     description: None,
                     call_to_arms: false,
+                    regear: false,
                     comp_id,
                     event_date_utc: "2026-07-21T20:00:00Z".to_string(),
                     create_split: false,
@@ -2371,6 +2384,7 @@ mod tests {
                     title: "Alpha".to_string(),
                     description: None,
                     call_to_arms: false,
+                    regear: false,
                     comp_id,
                     event_date_utc: "2026-07-22T20:00:00Z".to_string(),
                     create_split: false,
