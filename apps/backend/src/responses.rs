@@ -84,6 +84,16 @@ pub struct ApiResponseGuildBankSummary {
     pub data: crate::modules::bank::models::GuildBankSummary,
 }
 
+/// `OpenAPI` schema wrapper for administrator Guild Bank analytics.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseBankAnalyticsSummary {
+    /// Indicates the outcome of the request, always `"success"`.
+    #[schema(example = "success")]
+    pub status: String,
+    /// Guild-wide bank analytics payload.
+    pub data: crate::modules::bank::models::BankAnalyticsSummary,
+}
+
 /// `OpenAPI` schema wrapper for a list-of-`TransactionView` response (the withdrawal
 /// request/accept endpoints return the transactions they just touched, not paginated).
 #[derive(Debug, Serialize, ToSchema)]

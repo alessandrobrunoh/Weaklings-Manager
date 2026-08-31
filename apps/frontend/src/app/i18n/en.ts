@@ -796,6 +796,14 @@ export const en = {
   'bank.withdraw.totalPayout': 'Total Payout Amount',
   'bank.withdraw.confirmWarning': 'This will move the selected transactions to Withdrawn status and record the payment.',
   'bank.withdraw.confirmAction': 'Accept & Pay Out',
+  'bank.withdraw.playerDialogTitle': 'Withdrawal Requests · {player}',
+  'bank.withdraw.playerDialogSubtitle': 'Select individual transactions to accept or reject',
+  'bank.withdraw.selectAll': 'Select all',
+  'bank.withdraw.selectedCount': '{count} selected',
+  'bank.withdraw.selectedTotal': 'Selected total',
+  'bank.withdraw.acceptSelected': 'Accept selected',
+  'bank.withdraw.rejectSelected': 'Reject selected',
+  'bank.withdraw.requestCount': '{count} requests',
 
   // Albion settings
   'albionSettings.title': 'Albion account',

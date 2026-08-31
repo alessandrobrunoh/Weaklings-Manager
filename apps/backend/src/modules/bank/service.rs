@@ -5,7 +5,7 @@
 //! officer accepts and pays them out — becoming the recorded payer via `from_user_id`).
 //! Request/response types live in `models.rs`; the status enum lives in `status.rs`.
 
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
 use sea_orm::prelude::Decimal;
 use sea_orm::sea_query::{Expr, Func};
@@ -16,6 +16,8 @@ use sea_orm::{
 };
 
 use crate::errors::AppError;
+use crate::modules::splits::entities::split::Entity as SplitEntity;
+use crate::modules::splits::status::SplitStatus;
 use crate::modules::users::entities::{Column as UserColumn, Entity as UserEntity};
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
@@ -28,6 +30,8 @@ use super::status::TransactionStatus;
 
 /// The transaction type generated when a split is completed.
 pub const TYPE_SPLIT_CREDIT: &str = "split_credit";
+/// The transaction type recorded when a member donates their split share back to the guild.
+pub const TYPE_SPLIT_DONATION: &str = "split_donation";
 
 fn parse_status(model: &Model) -> Result<TransactionStatus, AppError> {
     TransactionStatus::from_str(&model.status)
@@ -158,6 +162,179 @@ impl BankService {
             paid_total,
             paid_count: withdrawn.len() as u64,
         })
+    }
+
+    /// Computes the guild-wide money-flow report used by the administrator bank panel.
+    ///
+    /// The report intentionally aggregates the immutable ledger rows rather than deriving
+    /// balances from the current page of a paginated list. Donation rows use their explicit
+    /// virtual destination flag, while withdrawn rows keep the officer who paid them as source.
+    pub async fn get_analytics_summary(
+        &self,
+        db: &DatabaseConnection,
+    ) -> Result<super::models::BankAnalyticsSummary, AppError> {
+        let models = TransactionEntity::find().all(db).await?;
+        let user_ids: Vec<i64> = models
+            .iter()
+            .flat_map(|model| [model.from_user_id, Some(model.to_user_id)])
+            .flatten()
+            .collect();
+        let user_map = crate::modules::users::display_name::resolve_by_ids(db, &user_ids).await?;
+
+        let mut summary = super::models::BankAnalyticsSummary {
+            transaction_count: models.len() as u64,
+            ledger_volume: Decimal::ZERO,
+            outstanding_total: Decimal::ZERO,
+            outstanding_count: 0,
+            requested_total: Decimal::ZERO,
+            requested_count: 0,
+            paid_out_total: Decimal::ZERO,
+            paid_out_count: 0,
+            donated_total: Decimal::ZERO,
+            donated_count: 0,
+            sources: Vec::new(),
+            destinations: Vec::new(),
+            transaction_types: Vec::new(),
+        };
+        let mut sources = HashMap::new();
+        let mut destinations = HashMap::new();
+        let mut transaction_types = HashMap::new();
+
+        for model in models {
+            let status = parse_status(&model)?;
+            summary.ledger_volume += model.amount;
+            add_breakdown(
+                &mut sources,
+                model
+                    .from_user_id
+                    .and_then(|id| user_map.get(&id).cloned())
+                    .unwrap_or_else(|| "Guild Bank".to_string()),
+                model.amount,
+            );
+            add_breakdown(
+                &mut destinations,
+                if model.to_guild_bank {
+                    "Guild Bank".to_string()
+                } else {
+                    user_map
+                        .get(&model.to_user_id)
+                        .cloned()
+                        .unwrap_or_else(|| "Unknown".to_string())
+                },
+                model.amount,
+            );
+            add_breakdown(&mut transaction_types, model.r#type.clone(), model.amount);
+
+            match status {
+                TransactionStatus::Pending | TransactionStatus::Rejected => {
+                    summary.outstanding_total += model.amount;
+                    summary.outstanding_count += 1;
+                }
+                TransactionStatus::Requested => {
+                    summary.outstanding_total += model.amount;
+                    summary.outstanding_count += 1;
+                    summary.requested_total += model.amount;
+                    summary.requested_count += 1;
+                }
+                TransactionStatus::Withdrawn => {
+                    summary.paid_out_total += model.amount;
+                    summary.paid_out_count += 1;
+                }
+                TransactionStatus::Donated => {
+                    summary.donated_total += model.amount;
+                    summary.donated_count += 1;
+                }
+            }
+        }
+
+        summary.sources = finish_breakdown(sources);
+        summary.destinations = finish_breakdown(destinations);
+        summary.transaction_types = finish_breakdown(transaction_types);
+        Ok(summary)
+    }
+
+    /// Donates the caller's own requestable split credit to the virtual Guild Bank.
+    ///
+    /// The update is guarded by ownership, split linkage, transaction type, and current status
+    /// in the same database transaction as the read-back. This makes a repeated or racing request
+    /// fail instead of creating a second donation or reviving a withdrawal.
+    pub async fn donate_split_share(
+        &self,
+        db: &DatabaseConnection,
+        split_id: i64,
+        user_id: i64,
+    ) -> Result<TransactionView, AppError> {
+        let txn = db.begin().await?;
+        let split = SplitEntity::find_by_id(split_id)
+            .one(&txn)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
+        if split.status != SplitStatus::Completed.to_string() {
+            return Err(AppError::Validation(
+                "only a completed split can be donated".to_string(),
+            ));
+        }
+        let candidates = TransactionEntity::find()
+            .filter(Column::SplitId.eq(split_id))
+            .filter(Column::ToUserId.eq(user_id))
+            .filter(Column::Type.eq(TYPE_SPLIT_CREDIT))
+            .filter(requestable_status_condition())
+            .all(&txn)
+            .await?;
+
+        let Some(candidate) = candidates.into_iter().next() else {
+            return Err(AppError::Conflict(
+                "no requestable split share is available for this user".to_string(),
+            ));
+        };
+
+        let updated = TransactionEntity::update_many()
+            .filter(Column::Id.eq(candidate.id))
+            .filter(requestable_status_condition())
+            .set(ActiveModel {
+                from_user_id: Set(Some(user_id)),
+                to_guild_bank: Set(true),
+                status: Set(TransactionStatus::Donated.to_string()),
+                r#type: Set(TYPE_SPLIT_DONATION.to_string()),
+                requested_at: Set(None),
+                withdrawn_at: Set(None),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+        if updated.rows_affected != 1 {
+            return Err(AppError::Conflict(
+                "the split share is no longer available for donation".to_string(),
+            ));
+        }
+
+        let updated_model = TransactionEntity::find_by_id(candidate.id)
+            .one(&txn)
+            .await?
+            .ok_or_else(|| AppError::Internal("donated transaction disappeared".to_string()))?;
+        txn.commit().await?;
+
+        crate::modules::audit::service::AuditService::log(
+            db,
+            "SPLIT_SHARE_DONATED",
+            Some("TRANSACTION"),
+            Some(updated_model.id),
+            Some(user_id),
+            Some(serde_json::json!({
+                "split_id": split_id,
+                "amount": updated_model.amount,
+                "from_user_id": user_id,
+                "destination": "Guild Bank",
+                "type": TYPE_SPLIT_DONATION
+            })),
+        )
+        .await?;
+
+        let mut views = to_views_with_usernames(db, vec![updated_model]).await?;
+        views
+            .pop()
+            .ok_or_else(|| AppError::Internal("donated transaction view missing".to_string()))
     }
 
     /// Lists paginated transactions owed to a user, optionally filtered by status.
@@ -544,6 +721,31 @@ impl BankService {
 
         Ok(updated_views)
     }
+}
+
+fn add_breakdown(groups: &mut HashMap<String, (u64, Decimal)>, label: String, amount: Decimal) {
+    let entry = groups.entry(label).or_insert((0, Decimal::ZERO));
+    entry.0 += 1;
+    entry.1 += amount;
+}
+
+fn finish_breakdown(groups: HashMap<String, (u64, Decimal)>) -> Vec<super::models::BankBreakdown> {
+    let mut rows: Vec<_> = groups
+        .into_iter()
+        .map(
+            |(label, (transaction_count, total_amount))| super::models::BankBreakdown {
+                label,
+                transaction_count,
+                total_amount,
+            },
+        )
+        .collect();
+    rows.sort_by(|a, b| {
+        b.total_amount
+            .cmp(&a.total_amount)
+            .then_with(|| a.label.cmp(&b.label))
+    });
+    rows
 }
 
 impl Default for BankService {

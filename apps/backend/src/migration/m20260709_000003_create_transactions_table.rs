@@ -106,6 +106,7 @@ pub enum Transactions {
     Id,
     FromUserId,
     ToUserId,
+    ToGuildBank,
     Amount,
     Status,
     Type,

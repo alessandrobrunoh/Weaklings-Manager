@@ -22,15 +22,25 @@ import {
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
-import { Icon } from '../../shared/components/icon/icon';
+import { Icon, type IconName } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
-import type { IconName } from '../../shared/components/icon/icon';
 
 type ConfirmAll = 'accept' | 'reject';
+
+export interface BankTableRow {
+  id: number;
+  to_user_id: number;
+  to_username: string;
+  amount: number;
+  status: TransactionStatus;
+  count: number;
+  created_at: string;
+  transactions: TransactionView[];
+}
 
 function emptyPageChange(): DataTablePageChange {
   return { page: 1, pageSize: 10, search: '', sort: null, columnFilters: {} };
@@ -41,7 +51,7 @@ function emptyPageChange(): DataTablePageChange {
  *
  * Surfaces the caller's pending/requested totals plus a server-paginated,
  * filterable transaction list. Members can request withdrawals; officers can
- * accept or reject them.
+ * review, select, and accept/reject requested transactions grouped by player.
  */
 @Component({
   selector: 'app-bank',
@@ -97,7 +107,7 @@ function emptyPageChange(): DataTablePageChange {
           type="button"
           class="btn btn--primary btn--sm"
           [disabled]="(balance()?.requested_count ?? 0) === 0"
-          (click)="openBatchAcceptDialog()"
+          (click)="openAllRequestedReview()"
           [appTooltip]="'Accetta e liquida tutte le richieste pendenti'"
           tooltipPosition="bottom"
         >
@@ -148,16 +158,18 @@ function emptyPageChange(): DataTablePageChange {
       @for (key of [tableKey()]; track key) {
         <app-data-table
           [columns]="transactionColumns()"
-          [rows]="transactions()"
+          [rows]="displayedRows()"
           [loading]="loading()"
           [error]="transactionsLoadFailed()"
           (retry)="loadTransactions()"
-          [trackBy]="trackTransaction"
+          [trackBy]="trackRow"
           [serverMode]="true"
           [totalItems]="transactionTotal()"
           [pageSize]="10"
+          [rowClickable]="canAccept() && viewMode() === 'guild'"
           emptyIcon="bank"
           [emptyLabel]="'bank.transactions.empty'"
+          (rowClick)="onRowClick($event)"
           (pageChange)="onTableChange($event)"
         >
           <ng-template dataTableCell="status" let-row>
@@ -183,20 +195,31 @@ function emptyPageChange(): DataTablePageChange {
             </span>
           </ng-template>
           <ng-template dataTableCell="to_username" let-row>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 min-w-0">
               <app-avatar [userId]="row.to_user_id" [username]="row.to_username" size="sm" />
-              <span class="font-medium text-sm">{{ row.to_username }}</span>
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="font-medium text-sm truncate">{{ row.to_username }}</span>
+                @if (row.count > 1) {
+                  <span
+                    class="chip chip--info font-bold mono text-xs px-1.5 py-0.5"
+                    [appTooltip]="row.count + ' ' + t('bank.withdraw.requestCount', { count: row.count })"
+                    tooltipPosition="top"
+                  >
+                    {{ row.count }}
+                  </span>
+                }
+              </div>
             </div>
           </ng-template>
           <ng-template dataTableCell="actions" let-row>
             @if (row.status === 'requested' && canAccept()) {
-              <div class="flex justify-end gap-1">
+              <div class="flex justify-end gap-1" (click)="$event.stopPropagation()">
                 <button
                   type="button"
                   class="btn btn--success btn--icon btn--sm"
                   [title]="t('bank.actions.accept_title')"
                   [attr.aria-label]="t('bank.actions.accept_title')"
-                  (click)="openAcceptDialog(row)"
+                  (click)="openPlayerReview(row)"
                 >
                   <app-icon name="check" size="1rem" />
                 </button>
@@ -205,7 +228,7 @@ function emptyPageChange(): DataTablePageChange {
                   class="btn btn--error btn--icon btn--sm"
                   [title]="t('bank.actions.reject_title')"
                   [attr.aria-label]="t('bank.actions.reject_title')"
-                  (click)="rejectSingle(row.id)"
+                  (click)="openPlayerReview(row)"
                 >
                   <app-icon name="close" size="1rem" />
                 </button>
@@ -218,52 +241,89 @@ function emptyPageChange(): DataTablePageChange {
       }
     </app-page-stack>
 
-    @if (confirmAcceptTransactions(); as txList) {
+    @if (reviewingPlayer(); as row) {
       <app-dialog
-        [title]="t('bank.withdraw.confirmTitle')"
-        [subtitle]="t('bank.withdraw.confirmSubtitle')"
+        [title]="t('bank.withdraw.playerDialogTitle', { player: row.to_username })"
+        [subtitle]="t('bank.withdraw.playerDialogSubtitle')"
         size="md"
-        (closed)="confirmAcceptTransactions.set(null)"
+        (closed)="closePlayerReview()"
       >
         <div class="space-y-4">
+          <!-- Summary card -->
           <div
             class="rounded-xl p-3.5 border flex items-center justify-between"
             style="background: var(--color-surface-2); border-color: var(--color-border)"
           >
-            <div>
+            <div class="flex items-center gap-3">
+              @if (row.to_user_id > 0) {
+                <app-avatar [userId]="row.to_user_id" [username]="row.to_username" size="md" />
+              } @else {
+                <div
+                  class="flex h-10 w-10 items-center justify-center rounded-full"
+                  style="background: var(--color-surface-3)"
+                >
+                  <app-icon name="bank" size="1.25rem" />
+                </div>
+              }
+              <div>
+                <p class="font-semibold text-sm" style="color: var(--color-text)">
+                  {{ row.to_username }}
+                </p>
+                <p class="text-xs" style="color: var(--color-text-secondary)">
+                  {{ selectedTxCount() }} / {{ row.transactions.length }}
+                  {{ t('bank.withdraw.selectedCount', { count: selectedTxCount() }) }}
+                </p>
+              </div>
+            </div>
+            <div class="text-right">
               <p class="text-xs font-semibold uppercase" style="color: var(--color-text-secondary)">
-                {{ t('bank.withdraw.totalPayout') }}
+                {{ t('bank.withdraw.selectedTotal') }}
               </p>
-              <p class="text-xs" style="color: var(--color-text-secondary)">
-                {{ txList.length }} {{ t('bank.stat.transactions') }}
+              <p class="mono text-2xl font-bold text-success">
+                {{ formatAmount(selectedTxTotal()) }}
               </p>
             </div>
-            <p class="mono text-2xl font-bold text-success">
-              {{ formatAmount(calculateTotal(txList)) }}
-            </p>
           </div>
 
+          <!-- Transaction checklist -->
           <div
             class="rounded-xl border overflow-hidden"
             style="border-color: var(--color-border)"
           >
             <div
-              class="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
+              class="px-3 py-2 border-b flex items-center justify-between text-xs font-semibold uppercase tracking-wider"
               style="border-color: var(--color-border); background: var(--color-surface-2); color: var(--color-text-secondary)"
             >
-              {{ t('bank.withdraw.transactionsList') }}
+              <label class="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  class="checkbox"
+                  [checked]="allTxsSelected()"
+                  (change)="toggleAllTxs($event)"
+                />
+                <span>{{ t('bank.withdraw.selectAll') }} ({{ row.transactions.length }})</span>
+              </label>
+              <span>{{ t('bank.withdraw.transactionsList') }}</span>
             </div>
             <div class="max-h-60 overflow-y-auto divide-y" style="border-color: var(--color-border)">
-              @for (tx of txList; track tx.id) {
-                <div
-                  class="p-2.5 flex items-center justify-between gap-3 text-sm"
+              @for (tx of row.transactions; track tx.id) {
+                <label
+                  class="p-2.5 flex items-center justify-between gap-3 text-sm cursor-pointer hover:bg-surface-2 transition-colors select-none"
                   style="background: var(--color-surface-1)"
                 >
-                  <div class="flex items-center gap-2 min-w-0">
-                    <app-avatar [userId]="tx.to_user_id" [username]="tx.to_username" size="sm" />
+                  <div class="flex items-center gap-2.5 min-w-0">
+                    <input
+                      type="checkbox"
+                      class="checkbox"
+                      [checked]="isTxSelected(tx.id)"
+                      (change)="toggleTx(tx.id, $event)"
+                    />
                     <div class="min-w-0">
-                      <p class="font-medium truncate text-sm" style="color: var(--color-text)">
-                        {{ tx.to_username }}
+                      <p class="font-medium text-xs truncate" style="color: var(--color-text)">
+                        @if (row.to_user_id === 0) {
+                          {{ tx.to_username }} ·
+                        }
+                        Transazione #{{ tx.id }}
                       </p>
                       <p class="text-xs" style="color: var(--color-text-secondary)">
                         {{ formatDate(tx.created_at) }}
@@ -273,7 +333,7 @@ function emptyPageChange(): DataTablePageChange {
                   <span class="mono font-bold text-warning">
                     {{ formatAmount(tx.amount) }}
                   </span>
-                </div>
+                </label>
               }
             </div>
           </div>
@@ -283,21 +343,31 @@ function emptyPageChange(): DataTablePageChange {
           </p>
         </div>
 
-        <div dialogFooter class="flex justify-end gap-2">
+        <div dialogFooter class="flex flex-wrap justify-end gap-2">
           <button
             type="button"
             class="btn btn--ghost"
-            (click)="confirmAcceptTransactions.set(null)"
+            (click)="closePlayerReview()"
           >
             {{ t('common.cancel') }}
           </button>
           <button
             type="button"
-            class="btn btn--primary flex items-center gap-2"
-            (click)="executeAcceptTransactions(txList)"
+            class="btn btn--danger flex items-center gap-1.5"
+            [disabled]="selectedTxCount() === 0 || loading()"
+            (click)="rejectSelectedTxs()"
+          >
+            <app-icon name="close" size="1rem" />
+            {{ t('bank.withdraw.rejectSelected') }} ({{ selectedTxCount() }})
+          </button>
+          <button
+            type="button"
+            class="btn btn--primary flex items-center gap-1.5"
+            [disabled]="selectedTxCount() === 0 || loading()"
+            (click)="acceptSelectedTxs()"
           >
             <app-icon name="check" size="1rem" />
-            {{ t('bank.withdraw.confirmAction') }} ({{ txList.length }})
+            {{ t('bank.withdraw.acceptSelected') }} ({{ selectedTxCount() }})
           </button>
         </div>
       </app-dialog>
@@ -346,13 +416,34 @@ export class Bank {
   protected readonly viewMode = signal<'personal' | 'guild'>('personal');
   protected readonly statusFilter = signal<TransactionStatus | ''>('');
   protected readonly confirmAll = signal<ConfirmAll | null>(null);
-  protected readonly confirmAcceptTransactions = signal<TransactionView[] | null>(null);
+
+  protected readonly reviewingPlayer = signal<BankTableRow | null>(null);
+  protected readonly selectedTxIds = signal<ReadonlySet<number>>(new Set<number>());
+
+  protected readonly selectedTxCount = computed(() => this.selectedTxIds().size);
+  protected readonly selectedTxTotal = computed(() => {
+    const row = this.reviewingPlayer();
+    if (!row) {
+      return 0;
+    }
+    return row.transactions
+      .filter((t) => this.selectedTxIds().has(t.id))
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  });
+  protected readonly allTxsSelected = computed(() => {
+    const row = this.reviewingPlayer();
+    if (!row || row.transactions.length === 0) {
+      return false;
+    }
+    return row.transactions.every((t) => this.selectedTxIds().has(t.id));
+  });
+
   protected readonly tableKey = computed(() => `${this.viewMode()}:${this.statusFilter()}`);
   protected readonly viewOptions = computed<ViewToggleOption[]>(() => [
     { id: 'personal', label: this.t('bank.view.personal') },
     { id: 'guild', label: this.t('bank.view.guild') },
   ]);
-  protected readonly trackTransaction = (tx: TransactionView): unknown => tx.id;
+  protected readonly trackRow = (row: BankTableRow): unknown => `${row.to_user_id}-${row.status}-${row.id}`;
   protected readonly confirmAmount = computed(() =>
     this.formatAmount(this.balance()?.requested_total),
   );
@@ -365,13 +456,72 @@ export class Bank {
       .reduce((acc, t) => acc + Number(t.amount || 0), 0),
   );
 
-  protected readonly transactionColumns = computed<DataTableColumn<TransactionView>[]>(() => {
-    const baseColumns: DataTableColumn<TransactionView>[] = [
+  protected readonly displayedRows = computed<BankTableRow[]>(() => {
+    const raw = this.transactions();
+    if (this.viewMode() === 'personal') {
+      return raw.map((tx) => ({
+        id: tx.id,
+        to_user_id: tx.to_user_id,
+        to_username: tx.to_username,
+        amount: Number(tx.amount || 0),
+        status: tx.status,
+        count: 1,
+        created_at: tx.created_at,
+        transactions: [tx],
+      }));
+    }
+
+    const result: BankTableRow[] = [];
+    const requestedByPlayer = new Map<number, BankTableRow>();
+
+    for (const tx of raw) {
+      if (tx.status === 'requested') {
+        const existing = requestedByPlayer.get(tx.to_user_id);
+        if (existing) {
+          existing.amount += Number(tx.amount || 0);
+          existing.count += 1;
+          existing.transactions.push(tx);
+          if (new Date(tx.created_at) > new Date(existing.created_at)) {
+            existing.created_at = tx.created_at;
+          }
+        } else {
+          const row: BankTableRow = {
+            id: tx.to_user_id,
+            to_user_id: tx.to_user_id,
+            to_username: tx.to_username,
+            amount: Number(tx.amount || 0),
+            status: tx.status,
+            count: 1,
+            created_at: tx.created_at,
+            transactions: [tx],
+          };
+          requestedByPlayer.set(tx.to_user_id, row);
+          result.push(row);
+        }
+      } else {
+        result.push({
+          id: tx.id,
+          to_user_id: tx.to_user_id,
+          to_username: tx.to_username,
+          amount: Number(tx.amount || 0),
+          status: tx.status,
+          count: 1,
+          created_at: tx.created_at,
+          transactions: [tx],
+        });
+      }
+    }
+
+    return result;
+  });
+
+  protected readonly transactionColumns = computed<DataTableColumn<BankTableRow>[]>(() => {
+    const baseColumns: DataTableColumn<BankTableRow>[] = [
       {
         key: 'status',
         label: 'common.status',
         sortable: true,
-        accessor: (tx) => tx.status,
+        accessor: (row) => row.status,
         filterOptions: [
           { label: this.t('bank.status.pending'), value: 'pending' },
           { label: this.t('bank.status.requested'), value: 'requested' },
@@ -383,14 +533,14 @@ export class Bank {
         key: 'amount',
         label: 'common.amount',
         sortable: true,
-        accessor: (tx) => tx.amount,
+        accessor: (row) => row.amount,
         align: 'right',
       },
       {
         key: 'created_at',
         label: 'common.date',
         sortable: true,
-        accessor: (tx) => tx.created_at,
+        accessor: (row) => row.created_at,
       },
     ];
 
@@ -401,7 +551,7 @@ export class Bank {
           label: 'common.player',
           sortable: true,
           searchable: true,
-          accessor: (tx) => tx.to_username,
+          accessor: (row) => row.to_username,
         },
         ...baseColumns,
         {
@@ -421,7 +571,8 @@ export class Bank {
     await this.load();
   }
 
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
 
   constructor() {
     if (this.canAccept()) {
@@ -478,6 +629,83 @@ export class Bank {
     void this.loadTransactions();
   }
 
+  protected onRowClick(row: BankTableRow): void {
+    if (row.status === 'requested' && this.canAccept()) {
+      this.openPlayerReview(row);
+    }
+  }
+
+  protected openPlayerReview(row: BankTableRow): void {
+    this.reviewingPlayer.set(row);
+    this.selectedTxIds.set(new Set(row.transactions.map((t) => t.id)));
+  }
+
+  protected closePlayerReview(): void {
+    this.reviewingPlayer.set(null);
+    this.selectedTxIds.set(new Set());
+  }
+
+  protected isTxSelected(id: number): boolean {
+    return this.selectedTxIds().has(id);
+  }
+
+  protected toggleTx(id: number, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.selectedTxIds.update((current) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  }
+
+  protected toggleAllTxs(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    const row = this.reviewingPlayer();
+    if (!row) return;
+    this.selectedTxIds.set(
+      checked ? new Set(row.transactions.map((t) => t.id)) : new Set<number>(),
+    );
+  }
+
+  protected async acceptSelectedTxs(): Promise<void> {
+    const ids = Array.from(this.selectedTxIds());
+    if (ids.length === 0) return;
+    this.closePlayerReview();
+    await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept', {
+      transaction_ids: ids,
+    });
+  }
+
+  protected async rejectSelectedTxs(): Promise<void> {
+    const ids = Array.from(this.selectedTxIds());
+    if (ids.length === 0) return;
+    this.closePlayerReview();
+    await this.mutate('api/bank/transactions/withdraw/reject', 'bank.withdraw.reject', {
+      transaction_ids: ids,
+    });
+  }
+
+  protected openAllRequestedReview(): void {
+    const requested = this.transactions().filter((t) => t.status === 'requested');
+    if (requested.length === 0) return;
+    const totalAmount = requested.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+    const virtualRow: BankTableRow = {
+      id: 0,
+      to_user_id: 0,
+      to_username: this.t('bank.view.guild'),
+      amount: totalAmount,
+      status: 'requested',
+      count: requested.length,
+      created_at: new Date().toISOString(),
+      transactions: requested,
+    };
+    this.openPlayerReview(virtualRow);
+  }
+
   protected async requestWithdrawal(): Promise<void> {
     await this.mutate('api/bank/transactions/withdraw', 'bank.withdraw.request', { all: true });
   }
@@ -492,31 +720,6 @@ export class Bank {
     }
     await this.mutate('api/bank/transactions/withdraw/reject', 'bank.withdraw.reject', {
       all: true,
-    });
-  }
-
-  protected openBatchAcceptDialog(): void {
-    const requested = this.transactions().filter((t) => t.status === 'requested');
-    if (requested.length > 0) {
-      this.confirmAcceptTransactions.set(requested);
-    } else {
-      this.confirmAll.set('accept');
-    }
-  }
-
-  protected openAcceptDialog(tx: TransactionView): void {
-    this.confirmAcceptTransactions.set([tx]);
-  }
-
-  protected calculateTotal(txList: TransactionView[]): number {
-    return txList.reduce((acc, t) => acc + Number(t.amount || 0), 0);
-  }
-
-  protected async executeAcceptTransactions(txList: TransactionView[]): Promise<void> {
-    const ids = txList.map((t) => t.id);
-    this.confirmAcceptTransactions.set(null);
-    await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept', {
-      transaction_ids: ids,
     });
   }
 
@@ -649,3 +852,4 @@ export class Bank {
     return this.t(keyMap[status]);
   }
 }
+

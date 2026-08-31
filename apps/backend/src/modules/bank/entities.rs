@@ -14,9 +14,11 @@ pub struct Model {
     pub from_user_id: Option<i64>,
     /// The user who is owed / receives the amount.
     pub to_user_id: i64,
+    /// Whether the destination is the virtual Guild Bank instead of the historical recipient.
+    pub to_guild_bank: bool,
     /// The amount of the transaction, always positive; direction is encoded by from/to.
     pub amount: Decimal,
-    /// The lifecycle status of the transaction: `"pending"`, `"requested"`, `"rejected"`, or `"withdrawn"`.
+    /// The lifecycle status of the transaction: `"pending"`, `"requested"`, `"rejected"`, `"withdrawn"`, or `"donated"`.
     pub status: String,
     /// The kind of transaction, e.g. `"split_credit"`.
     #[sea_orm(column_name = "type")]

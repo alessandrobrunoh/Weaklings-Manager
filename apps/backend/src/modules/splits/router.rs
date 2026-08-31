@@ -10,6 +10,7 @@ use axum::{
 
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
+use crate::modules::bank::service::BankService;
 use crate::pagination::{PaginatedSplitSummary, PaginationParams};
 use crate::responses::{ApiResponse, ApiResponseMatchedParticipantList, ApiResponseSplitDetail};
 
@@ -74,6 +75,7 @@ pub fn router() -> Router {
             "/{id}/participants/{user_id}",
             axum::routing::delete(remove_participant),
         )
+        .route("/{id}/donate", post(donate_split_share))
         .route("/complete-batch", post(complete_splits_batch))
         .route("/{id}/complete", post(complete_split))
         .route("/{id}/not-completed", post(not_completed_split))
@@ -403,6 +405,34 @@ async fn complete_split(
     user.require(&perms, Permission::SplitsManage).await?;
     let service = SplitService::new();
     let split = service.complete_split(&db, id, user.user_id).await?;
+    Ok(Json(ApiResponse::new(split)))
+}
+
+/// Donate the caller's own requestable share from a completed split to the Guild Bank.
+#[utoipa::path(
+    post,
+    path = "/api/splits/{id}/donate",
+    tag = "splits",
+    summary = "Donate the caller's split share to the Guild Bank",
+    description = "Irreversibly marks the caller's own pending or rejected `split_credit` transaction as donated to the virtual Guild Bank. The operation never affects another participant's share and cannot be undone.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "The completed split id")),
+    responses(
+        (status = 200, description = "Share donated and split detail returned", body = ApiResponseSplitDetail),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 409, description = "No requestable share is available for this user", body = ProblemDetails),
+        (status = 404, description = "No split exists with this id", body = ProblemDetails)
+    )
+)]
+pub async fn donate_split_share(
+    user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
+    BankService::new()
+        .donate_split_share(&db, id, user.user_id)
+        .await?;
+    let split = SplitService::new().get_split(&db, id).await?;
     Ok(Json(ApiResponse::new(split)))
 }
 

@@ -277,6 +277,7 @@ impl RegearService {
             id: sea_orm::ActiveValue::NotSet,
             from_user_id: Set(None),
             to_user_id: Set(user_id),
+            to_guild_bank: Set(false),
             amount: Set(req.final_amount),
             status: Set(TransactionStatus::Pending.to_string()),
             r#type: Set(TYPE_REGEAR_CREDIT.to_string()),
