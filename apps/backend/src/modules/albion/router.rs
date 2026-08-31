@@ -228,24 +228,22 @@ pub async fn get_link_status(
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[schema(example = json!({ "albion_player_id": "aPngkjfLT2CGiZoWXLr8UQ", "albion_player_name": "Kay" }))]
 pub struct LinkPlayerRequest {
-    /// The Albion Online player ID to link to. Must be the `id` of a current member of the
-    /// configured guild's roster (`GET /albion/guild/roster`) — the server re-validates this
-    /// against a fresh roster fetch, it does not trust the client blindly.
+    /// The Albion Online player ID to link to, as returned by global search. The server fetches
+    /// the live player profile and never trusts the client-side name or guild information.
     #[schema(example = "aPngkjfLT2CGiZoWXLr8UQ")]
     pub albion_player_id: String,
-    /// The Albion Online player's display name. Purely informational on the client's side — the
-    /// server ignores this field and instead uses the name from its own roster lookup, so it
-    /// cannot be spoofed to attach an arbitrary display name to the link. Send the same name you
-    /// displayed for this `albion_player_id` in the picker.
+    /// The Albion Online player's display name. Informational only: the server ignores this
+    /// field and persists the name from the live Albion player profile.
+    #[serde(rename = "albion_player_name")]
     #[schema(example = "Kay")]
-    pub albion_player_name: String,
+    pub _albion_player_name: String,
 }
 
-/// Links the current Discord user to an Albion player from the configured guild's roster.
+/// Links the current Discord user to any existing Albion player.
 ///
 /// # Errors
 ///
-/// * Returns `AppError::Validation` if the player is not a member of the configured guild.
+/// * Returns an upstream/not-found error if the player cannot be resolved from Albion.
 /// * Returns `AppError::Conflict` if either side of the link is already claimed.
 #[utoipa::path(
     post,
@@ -254,18 +252,18 @@ pub struct LinkPlayerRequest {
     summary = "Self-link the caller's Discord account to one Albion character",
     description = "Strictly 1:1 in both directions: one Discord account can hold at most one link, \
         and one Albion character can be claimed by at most one Discord account — enforced by unique \
-        constraints in the database, not just application logic. The server re-fetches the \
-        configured guild's roster and rejects `albion_player_id` values that aren't currently a \
-        member (`400`), so this cannot be used to claim a character outside the configured guild. \
-        There is no \"re-link\"/\"force\" option: `DELETE /albion/link` first, then call this again. \
-        After a successful link the backend best-effort sets the caller's Discord guild nickname \
-        to the Albion character name (identical, truncated to 32 characters). Nickname failures \
-        never roll back the link.",
+        constraints in the database, not just application logic. The server resolves the selected \
+        player from Albion and persists that authoritative name, so callers may link characters in \
+        any guild or without a guild. There is no \"re-link\"/\"force\" option: `DELETE /albion/link` \
+        first, then call this again. After a successful link the backend best-effort sets the caller's \
+        Discord guild nickname to the Albion character name and assigns the configured Guild base \
+        role only when the live player profile belongs to the configured Albion guild. Discord \
+        failures never roll back the link.",
     security(("session_cookie" = [])),
-    request_body(content = LinkPlayerRequest, description = "The Albion character to claim, as picked from GET /albion/guild/roster."),
+    request_body(content = LinkPlayerRequest, description = "The Albion character to claim, as picked from GET /albion/search."),
     responses(
         (status = 200, description = "Player linked successfully; linked is now true", body = ApiResponseAlbionLinkStatus),
-        (status = 400, description = "The given albion_player_id is not currently a member of the configured guild", body = ProblemDetails),
+        (status = 404, description = "No Albion player exists for the given albion_player_id", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 409, description = "Conflict - the caller's Discord account already has a link, or this Albion character is already linked to a different Discord account", body = ProblemDetails)
     )
@@ -276,24 +274,22 @@ pub async fn link_player(
     Extension(cfg): Extension<Config>,
     Json(body): Json<LinkPlayerRequest>,
 ) -> Result<Json<ApiResponse<AlbionLinkStatus>>, AppError> {
-    let albion = build_service(&cfg);
-    let roster = albion.get_configured_guild_roster().await?;
-
-    let matched = roster
-        .iter()
-        .find(|member| member.id == body.albion_player_id)
-        .ok_or_else(|| {
-            AppError::Validation(
-                "Selected player is not a member of the configured guild".to_string(),
-            )
-        })?;
+    let player = build_service(&cfg)
+        .get_player(&body.albion_player_id)
+        .await?;
 
     let link_service = AlbionLinkService::new();
     let link = link_service
-        .create_link(&db, &user.id, &matched.id, &matched.name)
+        .create_link(&db, &user.id, &player.id, &player.name)
         .await?;
 
-    super::discord_nick::sync_guild_nickname(&cfg, &user.id, &matched.name).await;
+    super::discord_nick::sync_guild_nickname(&cfg, &user.id, &player.name).await;
+    if super::discord_guild_role::belongs_to_configured_guild(
+        player.guild_id.as_deref(),
+        &cfg.albion_guild_id,
+    ) {
+        super::discord_guild_role::assign_guild_role(&db, &cfg, &user.id).await;
+    }
 
     Ok(Json(ApiResponse::new(AlbionLinkStatus::from(Some(link)))))
 }
@@ -354,24 +350,16 @@ pub async fn admin_link_user_handler(
 ) -> Result<Json<ApiResponse<AlbionLinkStatus>>, AppError> {
     user.require(&perms, Permission::RolesManage).await?;
 
-    let albion = build_service(&cfg);
-    let roster = albion.get_configured_guild_roster().await?;
-
-    let matched = roster
-        .iter()
-        .find(|member| member.id == body.albion_player_id)
-        .ok_or_else(|| {
-            AppError::Validation(
-                "Selected player is not a member of the configured guild".to_string(),
-            )
-        })?;
+    let player = build_service(&cfg)
+        .get_player(&body.albion_player_id)
+        .await?;
 
     let link_service = AlbionLinkService::new();
     let link = link_service
-        .admin_link_user(&db, user_id, &matched.id, &matched.name)
+        .admin_link_user(&db, user_id, &player.id, &player.name)
         .await?;
 
-    super::discord_nick::sync_guild_nickname(&cfg, &link.discord_id, &matched.name).await;
+    super::discord_nick::sync_guild_nickname(&cfg, &link.discord_id, &player.name).await;
 
     Ok(Json(ApiResponse::new(AlbionLinkStatus::from(Some(link)))))
 }

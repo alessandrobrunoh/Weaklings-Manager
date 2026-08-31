@@ -955,15 +955,15 @@ export const it: TranslationDict = {
   'admin.discord.placeholder': 'Non impostato',
   'admin.discord.save': 'Salva',
   'admin.discord.saved': 'Impostazioni Discord salvate.',
-  'admin.autorole.title': 'Ruolo automatico membri',
+  'admin.autorole.title': 'Ruolo Gilda base',
   'admin.autorole.hint':
-    'Questo ruolo viene assegnato agli utenti umani quando entrano nel server Discord. I membri già presenti non vengono modificati.',
-  'admin.autorole.role': 'Ruolo da assegnare',
+    'Questo ruolo viene assegnato solo quando un personaggio Albion collegato risulta nella gilda configurata. Non viene assegnato al semplice ingresso nel server Discord.',
+  'admin.autorole.role': 'Ruolo Gilda base',
   'admin.autorole.roleHint':
     'I ruoli gestiti e @everyone non sono disponibili. Il bot deve inoltre avere Manage Roles e un ruolo superiore su Discord.',
   'admin.autorole.disabled': 'Disabilitato',
-  'admin.autorole.save': 'Salva AutoRole',
-  'admin.autorole.saved': 'Impostazioni AutoRole salvate.',
+  'admin.autorole.save': 'Salva Ruolo Gilda base',
+  'admin.autorole.saved': 'Impostazioni Ruolo Gilda base salvate.',
   'admin.progression.title': 'XP di season',
   'admin.progression.hint':
     "I livelli si azzerano a ogni season. Puoi allungare o accorciare le date in qualsiasi momento. Cambiare la curva ricalcola i livelli; l'XP resta.",

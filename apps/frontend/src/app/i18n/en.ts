@@ -1105,15 +1105,15 @@ export const en = {
   'admin.discord.placeholder': 'Not set',
   'admin.discord.save': 'Save',
   'admin.discord.saved': 'Discord settings saved.',
-  'admin.autorole.title': 'Automatic member role',
+  'admin.autorole.title': 'Base guild role',
   'admin.autorole.hint':
-    'This role is assigned to human members when they join the Discord guild. Existing members are not changed.',
-  'admin.autorole.role': 'Role to assign',
+    'This role is assigned only when a linked Albion character belongs to the configured guild. It is not assigned when a member simply joins Discord.',
+  'admin.autorole.role': 'Base guild role',
   'admin.autorole.roleHint':
     'Managed roles and @everyone are not available. The bot also needs Manage Roles and a higher role in Discord.',
   'admin.autorole.disabled': 'Disabled',
-  'admin.autorole.save': 'Save AutoRole',
-  'admin.autorole.saved': 'AutoRole settings saved.',
+  'admin.autorole.save': 'Save base guild role',
+  'admin.autorole.saved': 'Base guild role settings saved.',
   'admin.progression.title': 'Season XP',
   'admin.progression.hint':
     'Levels reset each season. You can lengthen or shorten the dates at any time. Changing the curve recalculates levels; XP stays.',

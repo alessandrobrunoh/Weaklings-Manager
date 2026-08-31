@@ -951,15 +951,15 @@ export const es: TranslationDict = {
   'admin.discord.placeholder': 'No configurado',
   'admin.discord.save': 'Guardar',
   'admin.discord.saved': 'Ajustes de Discord guardados.',
-  'admin.autorole.title': 'Rol automático de miembros',
+  'admin.autorole.title': 'Rol base de gremio',
   'admin.autorole.hint':
-    'Este rol se asigna a los miembros humanos cuando entran al servidor de Discord. Los miembros existentes no se modifican.',
-  'admin.autorole.role': 'Rol que asignar',
+    'Este rol se asigna solo cuando un personaje de Albion vinculado pertenece al gremio configurado. No se asigna al entrar simplemente en Discord.',
+  'admin.autorole.role': 'Rol base de gremio',
   'admin.autorole.roleHint':
     'Los roles gestionados y @everyone no están disponibles. El bot también necesita Manage Roles y un rol superior en Discord.',
   'admin.autorole.disabled': 'Desactivado',
-  'admin.autorole.save': 'Guardar AutoRole',
-  'admin.autorole.saved': 'Ajustes de AutoRole guardados.',
+  'admin.autorole.save': 'Guardar rol base de gremio',
+  'admin.autorole.saved': 'Ajustes del rol base de gremio guardados.',
   'admin.progression.title': 'XP de temporada',
   'admin.progression.hint':
     'Los niveles se reinician cada temporada. Puedes alargar o acortar las fechas en cualquier momento. Cambiar la curva recalcula niveles; el XP no se toca.',

@@ -751,7 +751,7 @@ export class SplitDetailPage {
   }
 
   protected editWeightValue(participant: SplitParticipant): string {
-    return this.editWeightInputs()[participant.user_id] ?? String(participant.weight);
+    return this.editWeightInputs()[participant.user_id] ?? this.formatWeightInput(participant.weight);
   }
 
   protected toNumber(value: number | string | null | undefined): number {
@@ -821,10 +821,12 @@ export class SplitDetailPage {
     if (list.length === 0) {
       return;
     }
-    const baseWeight = Math.floor(100 / list.length);
+    const totalCents = 10_000;
+    const baseCents = Math.floor(totalCents / list.length);
+    const remainderCents = totalCents - baseCents * list.length;
     const redistributed = list.map((participant, index) => ({
       ...participant,
-      weight: index === list.length - 1 ? 100 - baseWeight * index : baseWeight,
+      weight: (baseCents + (index < remainderCents ? 1 : 0)) / 100,
     }));
     this.editParticipants.set(redistributed);
     this.editWeightInputs.set(this.weightInputsFor(redistributed));
@@ -1121,8 +1123,15 @@ export class SplitDetailPage {
 
   private weightInputsFor(participants: SplitParticipant[]): Record<number, string> {
     return Object.fromEntries(
-      participants.map((participant) => [participant.user_id, String(participant.weight)]),
+      participants.map((participant) => [
+        participant.user_id,
+        this.formatWeightInput(participant.weight),
+      ]),
     );
+  }
+
+  private formatWeightInput(value: number | string): string {
+    return String(value).replace('.', ',');
   }
 
   private async loadIslands(): Promise<void> {

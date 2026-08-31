@@ -4,8 +4,9 @@ import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
-  AlbionGuildMember,
   AlbionLinkStatus,
+  AlbionPlayer,
+  AlbionSearchResult,
   BalanceSummary,
   BattleSummary,
   PaginatedData,
@@ -50,9 +51,6 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
   };
 }
 
-function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
-  return Array.isArray(data) ? data : (data.items ?? []);
-}
 
 /**
  * Unified Personal Profile & Preferences Workspace.
@@ -551,26 +549,35 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
     @if (linkDialogOpen()) {
       <app-dialog title="Collega il tuo Personaggio Albion" (closed)="closeLinkDialog()">
         <div class="grid gap-3">
-          <p class="text-xs" style="color: var(--color-text-secondary)">
-            Cerca il tuo nome giocatore nel roster attuale della gilda per collegarlo al tuo profilo.
+          <p id="albion-link-search-hint" class="text-xs" style="color: var(--color-text-secondary)">
+            Cerca il tuo nome giocatore in tutto Albion Online. Anche i giocatori esterni alla gilda possono collegarsi.
           </p>
 
-          <input
-            type="search"
-            class="input w-full"
-            placeholder="Cerca nome giocatore nel roster..."
-            [value]="rosterSearch()"
-            (input)="onRosterSearchInput($event)"
-            autofocus
-          />
+          <form class="flex gap-2" (submit)="searchPlayers($event)">
+            <label class="sr-only" for="albion-link-search">Nome personaggio Albion</label>
+            <input
+              id="albion-link-search"
+              name="albion-player-search"
+              type="search"
+              class="input min-w-0 flex-1"
+              placeholder="Cerca nome giocatore..."
+              [value]="playerSearch()"
+              (input)="onPlayerSearchInput($event)"
+              aria-describedby="albion-link-search-hint"
+              autofocus
+            />
+            <button type="submit" class="btn btn--primary btn--sm" [disabled]="playerSearch().trim().length < 2 || playerSearchLoading()">
+              Cerca
+            </button>
+          </form>
 
-          @if (rosterLoading()) {
+          @if (playerSearchLoading()) {
             <div class="p-6 flex justify-center">
-              <app-loading label="Caricamento roster di gilda..." />
+              <app-loading label="Ricerca giocatori Albion..." />
             </div>
-          } @else {
-            <div class="max-h-64 overflow-y-auto grid gap-1.5 pr-1">
-              @for (player of filteredRoster(); track player.id) {
+          } @else if (playerSearchDone()) {
+            <div class="max-h-64 overflow-y-auto grid gap-1.5 pr-1" aria-live="polite">
+              @for (player of playerSearchResults(); track player.id) {
                 <button
                   type="button"
                   class="flex items-center justify-between p-2.5 rounded-xl border text-left transition-colors hover:border-primary hover:bg-surface-2"
@@ -583,7 +590,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
                       {{ player.name }}
                     </p>
                     <p class="text-xs" style="color: var(--color-text-secondary)">
-                      ID: {{ player.id }}
+                      {{ player.guild_name ?? 'Nessuna gilda' }} · ID: {{ player.id }}
                     </p>
                   </div>
                   <span class="btn btn--primary btn--sm text-xs py-1 px-2.5">
@@ -592,7 +599,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
                 </button>
               } @empty {
                 <p class="text-sm text-center py-4" style="color: var(--color-text-secondary)">
-                  Nessun giocatore trovato nel roster con questo nome.
+                  Nessun giocatore trovato con questo nome.
                 </p>
               }
             </div>
@@ -654,10 +661,11 @@ export class Settings {
   // Albion Link state
   protected readonly linkDialogOpen = signal(false);
   protected readonly unlinkConfirmOpen = signal(false);
-  protected readonly rosterLoading = signal(false);
+  protected readonly playerSearchLoading = signal(false);
+  protected readonly playerSearchDone = signal(false);
   protected readonly savingLink = signal(false);
-  protected readonly rosterSearch = signal('');
-  protected readonly rosterMembers = signal<AlbionGuildMember[]>([]);
+  protected readonly playerSearch = signal('');
+  protected readonly playerSearchResults = signal<AlbionPlayer[]>([]);
 
   protected readonly tabs = computed<readonly ViewToggleOption[]>(() => [
     { id: 'overview', label: 'Panoramica & XP', icon: 'trophy' },
@@ -670,13 +678,6 @@ export class Settings {
     this.activeTab.set(id as ProfileTab);
   }
 
-  protected readonly filteredRoster = computed(() => {
-    const q = this.rosterSearch().toLowerCase().trim();
-    if (!q) return this.rosterMembers().slice(0, 30);
-    return this.rosterMembers()
-      .filter((m) => m.name.toLowerCase().includes(q))
-      .slice(0, 30);
-  });
 
   protected readonly themeOptions: ReadonlyArray<{
     value: ThemePreference;
@@ -865,34 +866,44 @@ export class Settings {
     return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
   }
 
-  protected async openLinkDialog(): Promise<void> {
+  protected openLinkDialog(): void {
     this.linkDialogOpen.set(true);
-    this.rosterSearch.set('');
-    if (this.rosterMembers().length === 0) {
-      this.rosterLoading.set(true);
-      try {
-        const roster = await firstValueFrom(
-          this.api.get<PaginatedData<AlbionGuildMember> | AlbionGuildMember[]>('api/albion/guild/roster'),
-        );
-        this.rosterMembers.set(asPaginated(roster));
-      } catch {
-        this.toasts.error('Impossibile caricare il roster di gilda');
-      } finally {
-        this.rosterLoading.set(false);
-      }
-    }
+    this.playerSearch.set('');
+    this.playerSearchResults.set([]);
+    this.playerSearchDone.set(false);
   }
 
   protected closeLinkDialog(): void {
     this.linkDialogOpen.set(false);
-    this.rosterSearch.set('');
+    this.playerSearch.set('');
+    this.playerSearchResults.set([]);
+    this.playerSearchDone.set(false);
   }
 
-  protected onRosterSearchInput(event: Event): void {
-    this.rosterSearch.set((event.target as HTMLInputElement).value);
+  protected onPlayerSearchInput(event: Event): void {
+    this.playerSearch.set((event.target as HTMLInputElement).value);
   }
 
-  protected async confirmLink(player: AlbionGuildMember): Promise<void> {
+  protected async searchPlayers(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    const q = this.playerSearch().trim();
+    if (q.length < 2 || this.playerSearchLoading()) return;
+
+    this.playerSearchLoading.set(true);
+    this.playerSearchDone.set(false);
+    try {
+      const result = await firstValueFrom(this.api.get<AlbionSearchResult>('api/albion/search', { q }));
+      this.playerSearchResults.set(result.players);
+      this.playerSearchDone.set(true);
+    } catch (error) {
+      this.playerSearchResults.set([]);
+      this.toasts.error(error instanceof Error ? error.message : 'Impossibile cercare giocatori Albion');
+    } finally {
+      this.playerSearchLoading.set(false);
+    }
+  }
+
+  protected async confirmLink(player: AlbionPlayer): Promise<void> {
     if (this.savingLink()) return;
     this.savingLink.set(true);
     try {

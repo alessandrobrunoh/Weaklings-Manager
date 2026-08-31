@@ -571,8 +571,9 @@ interface SplitParticipantDraft {
                             <input
                               class="input font-mono text-xs text-right py-0.5 px-1 w-14"
                               type="number"
-                              min="1"
+                              min="0.01"
                               max="100"
+                              step="0.01"
                               [value]="participant.weight"
                               (input)="onWeightChange(participant.user_id, $event)"
                             />
@@ -1437,9 +1438,11 @@ function redistributeWeights(participants: SplitParticipantDraft[]): SplitPartic
   if (participants.length === 0) {
     return [];
   }
-  const baseWeight = Math.floor(100 / participants.length);
+  const totalCents = 10_000;
+  const baseCents = Math.floor(totalCents / participants.length);
+  const remainderCents = totalCents - baseCents * participants.length;
   return participants.map((participant, index) => ({
     ...participant,
-    weight: index === participants.length - 1 ? 100 - baseWeight * index : baseWeight,
+    weight: (baseCents + (index < remainderCents ? 1 : 0)) / 100,
   }));
 }

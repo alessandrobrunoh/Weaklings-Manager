@@ -7,7 +7,6 @@ import { handleButton } from "./handlers/button.js";
 import { handleSelectMenu } from "./handlers/select.js";
 import { Poller, registerPoller } from "./services/poller.js";
 import { initSettingsService } from "./services/settings.js";
-import { assignAutoRole } from "./services/autorole.js";
 import { registerCommands } from "./services/registry.js";
 import { createResponseEmbed } from "./embeds/theme.js";
 
@@ -119,10 +118,6 @@ async function main(): Promise<void> {
       });
   });
 
-  // ── AutoRole ─────────────────────────────────────────────────────────────
-  client.on(Events.GuildMemberAdd, (member) => {
-    void assignAutoRole(member, settings);
-  });
 
   // ── Ready handler ────────────────────────────────────────────────────────
   client.once(Events.ClientReady, (readyClient) => {
