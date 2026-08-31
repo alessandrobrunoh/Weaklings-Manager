@@ -13,7 +13,6 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
-  AlbionCombatItem,
   BattleDetail,
   BattleLossEstimate,
   BattleSummary,
@@ -34,11 +33,13 @@ import type {
   UpdateEventBattlesRequest,
   UpdateEventRequest,
   UserProfile,
+  OpenAlbionItem,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
+import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
 import type { TranslationKey } from '../../i18n/en';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
@@ -497,7 +498,7 @@ export interface CompPartyGroup {
                     </div>
                     <select class="input w-full sm:w-auto" aria-label="Seleziona arma o armatura" [value]="selectedSpecializationKey()" (change)="selectSpecialization($event)">
                       <option value="">Nessuna spec selezionata</option>
-                      @for (item of specializationCatalog(); track item.id + ':' + item.item_type) {
+                      @for (item of specializationCatalog(); track item.id + ':' + item.type) {
                         <option [value]="specializationKey(item)">{{ item.name }}</option>
                       }
                     </select>
@@ -1774,6 +1775,7 @@ export class EventDetailPage {
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
+  private readonly albionCatalog = inject(AlbionCatalogService);
   private readonly destroyRef = inject(DestroyRef);
   private eventId = 0;
 
@@ -1798,7 +1800,7 @@ export class EventDetailPage {
   protected readonly autoFilling = signal(false);
   protected readonly dragOverSlotKey = signal<string | null>(null);
   protected readonly draggedMember = signal<EventParticipant | null>(null);
-  protected readonly specializationCatalog = signal<AlbionCombatItem[]>([]);
+  protected readonly specializationCatalog = signal<OpenAlbionItem[]>([]);
   protected readonly selectedSpecializationKey = signal('');
 
   protected readonly selectedSpecializationName = computed(() => {
@@ -2343,8 +2345,9 @@ export class EventDetailPage {
 
   protected readonly trackParticipant = (participant: EventParticipant): unknown => participant.user_id;
 
-  protected specializationKey(item: AlbionCombatItem): string {
-    return `${item.item_type === 'armor' ? 'armor' : 'weapon'}:${item.id}`;
+  protected specializationKey(item: OpenAlbionItem): string {
+    const category = item.type === 'armor' ? 'armor' : 'weapon';
+    return `${category}:${item.identifier ?? item.id}`;
   }
 
   protected participantSpecLevel(participant: EventParticipant): number {
@@ -3366,11 +3369,10 @@ export class EventDetailPage {
   private async loadSpecializationCatalog(): Promise<void> {
     if (this.specializationCatalog().length > 0) return;
     try {
-      const [weapons, armor] = await Promise.all([
-        firstValueFrom(this.api.get<PaginatedData<AlbionCombatItem>>('api/openalbion/items', { type: 'weapon', page: 1, limit: 500 })),
-        firstValueFrom(this.api.get<PaginatedData<AlbionCombatItem>>('api/openalbion/items', { type: 'armor', page: 1, limit: 500 })),
-      ]);
-      this.specializationCatalog.set([...weapons.items, ...armor.items]);
+      const catalog = await this.albionCatalog.load();
+      this.specializationCatalog.set(
+        catalog.filter((item) => item.type === 'weapon' || item.type === 'armor'),
+      );
     } catch {
       // The roster remains usable without the optional specialization selector.
     }

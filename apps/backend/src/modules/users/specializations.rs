@@ -13,7 +13,7 @@ pub struct Model {
     pub id: i64,
     /// Internal user owning this specialization.
     pub user_id: i64,
-    /// Stable frontend/catalog key, for example `weapon:42`.
+    /// Stable frontend/catalog key, for example `weapon:T8_2H_BOW`.
     pub node_key: String,
     /// Display name copied from the catalog at save time.
     pub node_name: String,
@@ -35,7 +35,7 @@ impl ActiveModelBehavior for ActiveModel {}
 /// Public specialization row returned to the frontend.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct UserSpecializationView {
-    /// Stable item key.
+    /// Stable item key, based on the manual catalog identifier.
     pub node_key: String,
     /// Item display name.
     pub node_name: String,
@@ -62,7 +62,7 @@ impl From<Model> for UserSpecializationView {
 /// One specialization to create or update.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct UserSpecializationInput {
-    /// Stable item key, such as `weapon:42` or `armor:101`.
+    /// Stable item key, such as `weapon:T8_2H_BOW` or `armor:T8_ARMOR_PLATE_SET1`.
     pub node_key: String,
     /// Current catalog display name.
     pub node_name: String,
