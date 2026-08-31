@@ -663,29 +663,32 @@ fn entries_query(filters: &EntryFilters) -> sea_orm::Select<SiphonedEntryEntity>
     q
 }
 
-/// Builds the three balance aggregate expressions (deposits, withdrawals, net).
+/// Builds the three balance aggregate expressions (current positive balance, current debt, net).
+///
+/// Deposits and withdrawals are movements of the same energy, not independent lifetime totals.
+/// Therefore the displayed totals are derived from the net balance: a positive net is the current
+/// deposited amount, while a negative net is the current withdrawn/debt amount. This prevents a
+/// deposit → withdrawal → redeposit cycle from counting the same energy twice.
 ///
 /// SQLite's `SUM` over integer-valued `numeric` rows yields an `INTEGER` column that sea-orm's
 /// `Decimal` decoder cannot read (it expects `REAL`), so the values are cast to `REAL` there.
 /// PostgreSQL keeps the exact `numeric` type — the cast is skipped to avoid precision loss.
 fn balance_aggregates(db: &DatabaseConnection) -> (String, String, String) {
+    let net = "COALESCE(SUM(amount), 0)";
+    let deposited = format!("CASE WHEN {net} > 0 THEN {net} ELSE 0 END");
+    let withdrawn = format!("CASE WHEN {net} < 0 THEN -({net}) ELSE 0 END");
+
     if db.get_database_backend() == DatabaseBackend::Sqlite {
         (
-            "CAST(COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS REAL) \
-             AS total_deposited"
-                .to_owned(),
-            "CAST(COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS REAL) \
-             AS total_withdrawn"
-                .to_owned(),
-            "CAST(COALESCE(SUM(amount), 0) AS REAL) AS net".to_owned(),
+            format!("CAST({deposited} AS REAL) AS total_deposited"),
+            format!("CAST({withdrawn} AS REAL) AS total_withdrawn"),
+            format!("CAST({net} AS REAL) AS net"),
         )
     } else {
         (
-            "COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS total_deposited"
-                .to_owned(),
-            "COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS total_withdrawn"
-                .to_owned(),
-            "COALESCE(SUM(amount), 0) AS net".to_owned(),
+            format!("{deposited} AS total_deposited"),
+            format!("{withdrawn} AS total_withdrawn"),
+            format!("{net} AS net"),
         )
     }
 }
@@ -966,7 +969,7 @@ mod tests {
     async fn list_balances_aggregates_unique_entries_per_player_case_insensitively() {
         let db = seed_db().await;
         let service = SiphonedService::new();
-        // Two deposits and one withdrawal, with mixed casing on the name. The duplicated
+        // Two ledger movements and one withdrawal, with mixed casing on the name. The duplicated
         // withdrawal mirrors overlapping Albion exports already stored before dedupe existed.
         insert_entry(&db, ts(5), "MrMaranza06", "Deposit", "13", None).await;
         insert_entry(&db, ts(4), "mrmaranza06", "Withdrawal", "-10", None).await;
@@ -995,14 +998,33 @@ mod tests {
             .expect("MrMaranza06");
         assert_eq!(
             mr.total_deposited,
-            "13".parse::<Decimal>().expect("decimal literal")
+            "3".parse::<Decimal>().expect("decimal literal")
         );
-        assert_eq!(
-            mr.total_withdrawn,
-            "10".parse::<Decimal>().expect("decimal literal")
-        );
+        assert_eq!(mr.total_withdrawn, Decimal::ZERO);
         assert_eq!(mr.net, "3".parse::<Decimal>().expect("decimal literal"));
         assert_eq!(mr.entry_count, 2);
+    }
+
+    #[tokio::test]
+    async fn list_balances_does_not_double_count_redeposited_energy() {
+        let db = seed_db().await;
+        let service = SiphonedService::new();
+        insert_entry(&db, ts(1), "CyclePlayer", "Deposit", "600", None).await;
+        insert_entry(&db, ts(2), "CyclePlayer", "Withdrawal", "-600", None).await;
+        insert_entry(&db, ts(3), "CyclePlayer", "Deposit", "600", None).await;
+
+        let balances = service
+            .list_balances(&db, None, BalanceSort::NameAsc, None)
+            .await
+            .expect("list_balances");
+        let player = balances
+            .iter()
+            .find(|balance| balance.player_name == "CyclePlayer")
+            .expect("CyclePlayer");
+
+        assert_eq!(player.total_deposited, "600".parse::<Decimal>().unwrap());
+        assert_eq!(player.total_withdrawn, Decimal::ZERO);
+        assert_eq!(player.net, "600".parse::<Decimal>().unwrap());
     }
 
     #[tokio::test]

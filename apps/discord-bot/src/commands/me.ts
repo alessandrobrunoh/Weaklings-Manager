@@ -11,6 +11,7 @@ import type {
   ProgressionMeView,
 } from '../api/types.js';
 import { BOT_COLORS, createBaseEmbed } from '../embeds/theme.js';
+import { formatSilver } from '../format.js';
 
 export const data = new SlashCommandBuilder()
   .setName('me')
@@ -74,7 +75,7 @@ export async function execute(
   if (balance) {
     embed.addFields({
       name: '💰 Guild Bank',
-      value: `• **Pending:** **${balance.pending_total.toLocaleString('en-US')}** silver (${balance.pending_count} tx)\n• **Requested:** **${balance.requested_total.toLocaleString('en-US')}** silver (${balance.requested_count} tx)`,
+      value: `• **Pending:** **${formatSilver(balance.pending_total)}** silver (${balance.pending_count} tx)\n• **Requested:** **${formatSilver(balance.requested_total)}** silver (${balance.requested_count} tx)`,
       inline: true,
     });
   }

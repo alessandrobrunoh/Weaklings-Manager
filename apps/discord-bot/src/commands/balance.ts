@@ -2,6 +2,7 @@ import { ChatInputCommandInteraction, SlashCommandBuilder, ActionRowBuilder, But
 import type { ApiClient } from '../api/client.js';
 import type { BalanceSummary } from '../api/types.js';
 import { BOT_COLORS, createBaseEmbed } from '../embeds/theme.js';
+import { formatSilver } from '../format.js';
 
 export const data = new SlashCommandBuilder()
   .setName('balance')
@@ -15,8 +16,8 @@ export async function execute(
 
   const balance = await api.get<BalanceSummary>('api/bank/balance', interaction.user.id);
 
-  const pendingFmt   = balance.pending_total.toLocaleString('en-US');
-  const requestedFmt = balance.requested_total.toLocaleString('en-US');
+  const pendingFmt = formatSilver(balance.pending_total);
+  const requestedFmt = formatSilver(balance.requested_total);
 
   const embed = createBaseEmbed({
     category: 'GUILD BANK',

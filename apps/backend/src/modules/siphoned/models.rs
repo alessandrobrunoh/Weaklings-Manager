@@ -69,13 +69,13 @@ pub struct PlayerBalance {
     /// client renders the "current" spelling.
     #[schema(example = "MrMaranza06")]
     pub player_name: String,
-    /// Total deposited (sum of all positive amounts). Always >= 0.
+    /// Current positive balance after netting deposits against withdrawals. Always >= 0.
     #[schema(value_type = String, example = "13")]
     pub total_deposited: Decimal,
-    /// Total withdrawn (sum of all negative amounts, sign-flipped). Always >= 0.
+    /// Current debt/negative balance after netting deposits against withdrawals. Always >= 0.
     #[schema(value_type = String, example = "53")]
     pub total_withdrawn: Decimal,
-    /// Net = `total_deposited - total_withdrawn`. Negative means the player is in debt.
+    /// Net ledger balance. A deposit → withdrawal → redeposit cycle counts only its current balance.
     #[schema(value_type = String, example = "-40")]
     pub net: Decimal,
     /// Total number of ledger rows contributing to this aggregate.

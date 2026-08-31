@@ -2,6 +2,7 @@ import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import type { TransactionView, WithdrawRequest } from '../api/types.js';
 import { createResponseEmbed } from '../embeds/theme.js';
+import { formatSilver } from '../format.js';
 
 export const data = new SlashCommandBuilder()
   .setName('balance-request')
@@ -20,8 +21,8 @@ export async function execute(
     interaction.user.id,
   );
 
-  const total    = txs.reduce((sum, tx) => sum + tx.amount, 0);
-  const totalFmt = total.toLocaleString('en-US');
+  const total = txs.reduce((sum, tx) => sum + Number(tx.amount), 0);
+  const totalFmt = formatSilver(total);
 
   const desc = [
     `• 💰 **Total Amount:** **${totalFmt} silver**`,

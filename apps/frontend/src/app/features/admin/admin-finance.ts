@@ -713,7 +713,7 @@ export class AdminFinance {
     return trends.map((trend, index) => {
       const centerX = leftPad + slotWidth * index + slotWidth / 2;
       const lossVal = Math.abs(trend.silver_lost || 0);
-      const regearVal = Math.abs(trend.outflow || 0);
+      const regearVal = Math.abs(trend.regear_paid || 0);
       const lossH = Math.max(lossVal > 0 ? 3 : 0, (lossVal / max) * chartHeight);
       const regearH = Math.max(regearVal > 0 ? 3 : 0, (regearVal / max) * chartHeight);
 

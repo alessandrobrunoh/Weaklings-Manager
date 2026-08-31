@@ -298,6 +298,8 @@ pub struct TrendBucket {
     pub loot_in: i64,
     /// Silver withdrawn from the bank this week.
     pub outflow: i64,
+    /// Regear credits actually withdrawn from the bank this week.
+    pub regear_paid: i64,
 }
 
 /// One entry in the unified activity feed.
@@ -894,12 +896,9 @@ fn compute_economy(raw: &RawData, overview: &ReportOverview) -> ReportEconomy {
         .filter(|r| r.status == "available" || r.status == "pending")
         .map(regear_amount)
         .sum();
-    let regear_paid: i64 = raw
-        .regears
-        .iter()
-        .filter(|r| r.status == "approved")
-        .map(regear_amount)
-        .sum();
+    // A regear is paid only after its linked bank transaction is withdrawn.
+    // `approved` means the credit was created, not that the member received it.
+    let regear_paid = outflow_regear;
 
     let our_player_count: i64 = raw.snapshots.len().max(1) as i64;
     let fame_per_player = if overview.fights > 0 {
@@ -1291,6 +1290,7 @@ fn compute_trends(raw: &RawData, fights: &[Fight], range: &DateRange) -> Vec<Tre
                     attendance: 0,
                     loot_in: 0,
                     outflow: 0,
+                    regear_paid: 0,
                 },
             )
         })
@@ -1346,6 +1346,12 @@ fn compute_trends(raw: &RawData, fights: &[Fight], range: &DateRange) -> Vec<Tre
         }
     }
 
+    let regear_tx_ids: HashSet<i64> = raw
+        .regears
+        .iter()
+        .filter_map(|regear| regear.bank_transaction_id)
+        .collect();
+
     for tx in &raw.transactions {
         if tx.status != "withdrawn" {
             continue;
@@ -1354,7 +1360,11 @@ fn compute_trends(raw: &RawData, fights: &[Fight], range: &DateRange) -> Vec<Tre
             continue;
         };
         if let Some(bucket) = buckets.get_mut(&week_start_utc(withdrawn_at)) {
-            bucket.outflow += to_i64(tx.amount);
+            let amount = to_i64(tx.amount);
+            bucket.outflow += amount;
+            if regear_tx_ids.contains(&tx.id) {
+                bucket.regear_paid += amount;
+            }
         }
     }
 
