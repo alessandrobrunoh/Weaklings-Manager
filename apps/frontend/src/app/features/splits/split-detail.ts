@@ -751,7 +751,7 @@ export class SplitDetailPage {
   }
 
   protected editWeightValue(participant: SplitParticipant): string {
-    return this.editWeightInputs()[participant.user_id] ?? String(participant.weight);
+    return this.editWeightInputs()[participant.user_id] ?? this.formatWeightInput(participant.weight);
   }
 
   protected toNumber(value: number | string | null | undefined): number {
@@ -1123,8 +1123,15 @@ export class SplitDetailPage {
 
   private weightInputsFor(participants: SplitParticipant[]): Record<number, string> {
     return Object.fromEntries(
-      participants.map((participant) => [participant.user_id, String(participant.weight)]),
+      participants.map((participant) => [
+        participant.user_id,
+        this.formatWeightInput(participant.weight),
+      ]),
     );
+  }
+
+  private formatWeightInput(value: number | string): string {
+    return String(value).replace('.', ',');
   }
 
   private async loadIslands(): Promise<void> {
