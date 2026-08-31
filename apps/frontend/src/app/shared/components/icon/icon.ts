@@ -32,7 +32,8 @@ export type IconName =
   | 'sun'
   | 'swords'
   | 'users'
-  | 'trophy';
+  | 'trophy'
+  | 'logout';
 
 /**
  * Inline SVG icon primitive for the app shell and feature cards.
@@ -155,6 +156,11 @@ export type IconName =
           <line x1="3" y1="6" x2="3.01" y2="6" />
           <line x1="3" y1="12" x2="3.01" y2="12" />
           <line x1="3" y1="18" x2="3.01" y2="18" />
+        }
+        @case ('logout') {
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+          <polyline points="16 17 21 12 16 7" />
+          <line x1="21" y1="12" x2="9" y2="12" />
         }
         @case ('menu') {
           <line x1="4" x2="20" y1="12" y2="12" />

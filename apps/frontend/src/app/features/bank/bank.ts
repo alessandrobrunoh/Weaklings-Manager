@@ -97,7 +97,7 @@ function emptyPageChange(): DataTablePageChange {
           type="button"
           class="btn btn--primary btn--sm"
           [disabled]="(balance()?.requested_count ?? 0) === 0"
-          (click)="confirmAll.set('accept')"
+          (click)="openBatchAcceptDialog()"
           [appTooltip]="'Accetta e liquida tutte le richieste pendenti'"
           tooltipPosition="bottom"
         >
@@ -196,7 +196,7 @@ function emptyPageChange(): DataTablePageChange {
                   class="btn btn--success btn--icon btn--sm"
                   [title]="t('bank.actions.accept_title')"
                   [attr.aria-label]="t('bank.actions.accept_title')"
-                  (click)="acceptSingle(row.id)"
+                  (click)="openAcceptDialog(row)"
                 >
                   <app-icon name="check" size="1rem" />
                 </button>
@@ -217,6 +217,91 @@ function emptyPageChange(): DataTablePageChange {
         </app-data-table>
       }
     </app-page-stack>
+
+    @if (confirmAcceptTransactions(); as txList) {
+      <app-dialog
+        [title]="t('bank.withdraw.confirmTitle')"
+        [subtitle]="t('bank.withdraw.confirmSubtitle')"
+        size="md"
+        (closed)="confirmAcceptTransactions.set(null)"
+      >
+        <div class="space-y-4">
+          <div
+            class="rounded-xl p-3.5 border flex items-center justify-between"
+            style="background: var(--color-surface-2); border-color: var(--color-border)"
+          >
+            <div>
+              <p class="text-xs font-semibold uppercase" style="color: var(--color-text-secondary)">
+                {{ t('bank.withdraw.totalPayout') }}
+              </p>
+              <p class="text-xs" style="color: var(--color-text-secondary)">
+                {{ txList.length }} {{ t('bank.stat.transactions') }}
+              </p>
+            </div>
+            <p class="mono text-2xl font-bold text-success">
+              {{ formatAmount(calculateTotal(txList)) }}
+            </p>
+          </div>
+
+          <div
+            class="rounded-xl border overflow-hidden"
+            style="border-color: var(--color-border)"
+          >
+            <div
+              class="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
+              style="border-color: var(--color-border); background: var(--color-surface-2); color: var(--color-text-secondary)"
+            >
+              {{ t('bank.withdraw.transactionsList') }}
+            </div>
+            <div class="max-h-60 overflow-y-auto divide-y" style="border-color: var(--color-border)">
+              @for (tx of txList; track tx.id) {
+                <div
+                  class="p-2.5 flex items-center justify-between gap-3 text-sm"
+                  style="background: var(--color-surface-1)"
+                >
+                  <div class="flex items-center gap-2 min-w-0">
+                    <app-avatar [userId]="tx.to_user_id" [username]="tx.to_username" size="sm" />
+                    <div class="min-w-0">
+                      <p class="font-medium truncate text-sm" style="color: var(--color-text)">
+                        {{ tx.to_username }}
+                      </p>
+                      <p class="text-xs" style="color: var(--color-text-secondary)">
+                        {{ formatDate(tx.created_at) }}
+                      </p>
+                    </div>
+                  </div>
+                  <span class="mono font-bold text-warning">
+                    {{ formatAmount(tx.amount) }}
+                  </span>
+                </div>
+              }
+            </div>
+          </div>
+
+          <p class="text-xs" style="color: var(--color-text-secondary)">
+            {{ t('bank.withdraw.confirmWarning') }}
+          </p>
+        </div>
+
+        <div dialogFooter class="flex justify-end gap-2">
+          <button
+            type="button"
+            class="btn btn--ghost"
+            (click)="confirmAcceptTransactions.set(null)"
+          >
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn--primary flex items-center gap-2"
+            (click)="executeAcceptTransactions(txList)"
+          >
+            <app-icon name="check" size="1rem" />
+            {{ t('bank.withdraw.confirmAction') }} ({{ txList.length }})
+          </button>
+        </div>
+      </app-dialog>
+    }
 
     @if (confirmAll(); as action) {
       <app-dialog [title]="t('common.confirm')" (closed)="confirmAll.set(null)">
@@ -261,6 +346,7 @@ export class Bank {
   protected readonly viewMode = signal<'personal' | 'guild'>('personal');
   protected readonly statusFilter = signal<TransactionStatus | ''>('');
   protected readonly confirmAll = signal<ConfirmAll | null>(null);
+  protected readonly confirmAcceptTransactions = signal<TransactionView[] | null>(null);
   protected readonly tableKey = computed(() => `${this.viewMode()}:${this.statusFilter()}`);
   protected readonly viewOptions = computed<ViewToggleOption[]>(() => [
     { id: 'personal', label: this.t('bank.view.personal') },
@@ -406,6 +492,31 @@ export class Bank {
     }
     await this.mutate('api/bank/transactions/withdraw/reject', 'bank.withdraw.reject', {
       all: true,
+    });
+  }
+
+  protected openBatchAcceptDialog(): void {
+    const requested = this.transactions().filter((t) => t.status === 'requested');
+    if (requested.length > 0) {
+      this.confirmAcceptTransactions.set(requested);
+    } else {
+      this.confirmAll.set('accept');
+    }
+  }
+
+  protected openAcceptDialog(tx: TransactionView): void {
+    this.confirmAcceptTransactions.set([tx]);
+  }
+
+  protected calculateTotal(txList: TransactionView[]): number {
+    return txList.reduce((acc, t) => acc + Number(t.amount || 0), 0);
+  }
+
+  protected async executeAcceptTransactions(txList: TransactionView[]): Promise<void> {
+    const ids = txList.map((t) => t.id);
+    this.confirmAcceptTransactions.set(null);
+    await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept', {
+      transaction_ids: ids,
     });
   }
 

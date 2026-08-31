@@ -161,7 +161,7 @@ import type { NavSection } from '../sidebar/sidebar';
               tooltipPosition="bottom"
               [attr.aria-label]="t('nav.logout')"
             >
-              <app-icon name="close" size="0.875rem" />
+              <app-icon name="logout" size="0.95rem" />
             </button>
           </div>
         } @else {

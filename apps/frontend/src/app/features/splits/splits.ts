@@ -231,7 +231,19 @@ interface SplitParticipantDraft {
           <span style="color: var(--color-text-secondary)">{{ formatDate(row.created_at) }}</span>
         </ng-template>
         <ng-template dataTableCell="actions" let-row>
-          <div class="flex justify-end gap-1" (click)="$event.stopPropagation()">
+          <div class="flex justify-end gap-1.5" (click)="$event.stopPropagation()">
+            @if (canAct() && row.status === 'pending') {
+              <button
+                type="button"
+                class="btn btn--primary btn--sm flex items-center gap-1.5"
+                [appTooltip]="'Accetta e liquida questo split'"
+                tooltipPosition="bottom"
+                (click)="openSingleAccept(row)"
+              >
+                <app-icon name="check" size="0.875rem" />
+                {{ t('splits.batch.complete') }}
+              </button>
+            }
             <button type="button" class="btn btn--outline btn--sm" (click)="openSplit(row)">
               {{ t('common.open') }}
             </button>
@@ -562,6 +574,114 @@ interface SplitParticipantDraft {
       </app-dialog>
     }
 
+    @if (showBatchConfirmDialog()) {
+      <app-dialog
+        [title]="t('splits.batch.confirmTitle')"
+        [subtitle]="t('splits.batch.confirmSubtitle')"
+        size="lg"
+        (closed)="showBatchConfirmDialog.set(false)"
+      >
+        <div class="space-y-4">
+          <div class="grid grid-cols-3 gap-3">
+            <div
+              class="rounded-xl p-3 border"
+              style="background: var(--color-surface-2); border-color: var(--color-border)"
+            >
+              <p class="text-xs" style="color: var(--color-text-secondary)">
+                {{ t('splits.batch.selectedSplits') }}
+              </p>
+              <p class="text-lg font-bold mono mt-0.5" style="color: var(--color-text)">
+                {{ selectedSplits().length }}
+              </p>
+            </div>
+            <div
+              class="rounded-xl p-3 border"
+              style="background: var(--color-surface-2); border-color: var(--color-border)"
+            >
+              <p class="text-xs" style="color: var(--color-text-secondary)">
+                {{ t('splits.batch.totalNetPayout') }}
+              </p>
+              <p class="text-lg font-bold mono mt-0.5 text-success">
+                {{ formatAmount(selectedTotalNet()) }}
+              </p>
+            </div>
+            <div
+              class="rounded-xl p-3 border"
+              style="background: var(--color-surface-2); border-color: var(--color-border)"
+            >
+              <p class="text-xs" style="color: var(--color-text-secondary)">
+                {{ t('splits.batch.totalRecipients') }}
+              </p>
+              <p class="text-lg font-bold mono mt-0.5 text-primary">
+                {{ selectedTotalParticipants() }}
+              </p>
+            </div>
+          </div>
+
+          <div
+            class="rounded-xl border overflow-hidden"
+            style="border-color: var(--color-border)"
+          >
+            <div
+              class="px-3.5 py-2.5 border-b text-xs font-semibold uppercase tracking-wider"
+              style="border-color: var(--color-border); background: var(--color-surface-2); color: var(--color-text-secondary)"
+            >
+              {{ t('splits.batch.splitsList') }}
+            </div>
+            <div class="max-h-72 overflow-y-auto divide-y" style="border-color: var(--color-border)">
+              @for (split of selectedSplits(); track split.id) {
+                <div
+                  class="p-3 flex items-center justify-between gap-3 text-sm"
+                  style="background: var(--color-surface-1)"
+                >
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                      <p class="font-semibold truncate" style="color: var(--color-text)">
+                        {{ split.note || t('splits.untitled', { id: split.id }) }}
+                      </p>
+                      @if (split.event_title) {
+                        <span class="chip chip--tonal text-xs">{{ split.event_title }}</span>
+                      }
+                    </div>
+                    <p class="text-xs mt-0.5 truncate" style="color: var(--color-text-secondary)">
+                      {{ locationLabel(split) }} · {{ split.participant_count }} {{ t('splits.participants') }}
+                    </p>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <span class="mono font-bold text-success">{{ formatAmount(netOf(split)) }}</span>
+                    <span class="block text-[11px] font-mono text-secondary">#{{ split.id }}</span>
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+
+          <p class="text-xs" style="color: var(--color-text-secondary)">
+            {{ t('splits.batch.confirmWarning') }}
+          </p>
+        </div>
+
+        <div dialogFooter class="flex justify-end gap-2">
+          <button
+            type="button"
+            class="btn btn--ghost"
+            (click)="showBatchConfirmDialog.set(false)"
+          >
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn--primary flex items-center gap-2"
+            [disabled]="batchRunning() || selectedSplits().length === 0"
+            (click)="runBatchComplete()"
+          >
+            <app-icon name="check" size="1rem" />
+            {{ batchRunning() ? t('common.loading') : t('splits.batch.acceptAndPay') }} ({{ selectedSplits().length }})
+          </button>
+        </div>
+      </app-dialog>
+    }
+
     @if (showEventSearch()) {
       <app-search-dialog
         [title]="t('splits.link_event')"
@@ -610,6 +730,7 @@ export class Splits {
 
   private readonly selectedIds = signal<ReadonlySet<number>>(new Set());
   protected readonly batchRunning = signal(false);
+  protected readonly showBatchConfirmDialog = signal(false);
   protected readonly deleteTarget = signal<SplitSummary | null>(null);
 
   protected readonly showCreateForm = signal(false);
@@ -644,6 +765,15 @@ export class Splits {
     this.splits().filter((split) => split.status === 'pending'),
   );
   protected readonly selectedCount = computed(() => this.selectedIds().size);
+  protected readonly selectedSplits = computed(() =>
+    this.splits().filter((split) => this.selectedIds().has(split.id)),
+  );
+  protected readonly selectedTotalNet = computed(() =>
+    this.selectedSplits().reduce((sum, split) => sum + this.netOf(split), 0),
+  );
+  protected readonly selectedTotalParticipants = computed(() =>
+    this.selectedSplits().reduce((sum, split) => sum + split.participant_count, 0),
+  );
   protected readonly allPendingSelected = computed(() => {
     const pending = this.pendingSplits();
     return pending.length > 0 && pending.every((split) => this.selectedIds().has(split.id));
@@ -1042,7 +1172,19 @@ export class Splits {
     );
   }
 
-  protected async completeSelected(): Promise<void> {
+  protected completeSelected(): void {
+    if (this.selectedIds().size === 0) {
+      return;
+    }
+    this.showBatchConfirmDialog.set(true);
+  }
+
+  protected openSingleAccept(row: SplitSummary): void {
+    this.selectedIds.set(new Set([row.id]));
+    this.showBatchConfirmDialog.set(true);
+  }
+
+  protected async runBatchComplete(): Promise<void> {
     const ids = [...this.selectedIds()];
     if (ids.length === 0) {
       return;
@@ -1053,6 +1195,7 @@ export class Splits {
         this.api.post<CompleteSplitsBatchResult>('api/splits/complete-batch', { split_ids: ids }),
       );
       this.selectedIds.set(new Set<number>());
+      this.showBatchConfirmDialog.set(false);
       if (result.completed.length > 0) {
         this.toasts.success(`${result.completed.length} ${this.t('splits.batch.completed')}`);
       }

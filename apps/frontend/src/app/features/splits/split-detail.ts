@@ -101,7 +101,11 @@ type DetailMode = 'view' | 'edit';
                   </button>
                 }
                 @if (detail.status === 'pending' && canAct()) {
-                  <button type="button" class="btn btn--primary" (click)="closeSplit('complete')">
+                  <button
+                    type="button"
+                    class="btn btn--primary"
+                    (click)="showCompleteConfirmDialog.set(true)"
+                  >
                     {{ t('splits.payout_complete') }}
                   </button>
                   <button
@@ -446,6 +450,96 @@ type DetailMode = 'view' | 'edit';
       }
     }
 
+    @if (showCompleteConfirmDialog()) {
+      <app-dialog
+        [title]="t('splits.detail.confirmCompleteTitle')"
+        [subtitle]="t('splits.detail.confirmCompleteSubtitle')"
+        size="md"
+        (closed)="showCompleteConfirmDialog.set(false)"
+      >
+        <div class="space-y-4">
+          @if (split(); as detail) {
+            <div
+              class="rounded-xl p-3.5 border flex items-center justify-between"
+              style="background: var(--color-surface-2); border-color: var(--color-border)"
+            >
+              <div>
+                <p class="text-xs font-semibold uppercase" style="color: var(--color-text-secondary)">
+                  {{ t('splits.net_value') }}
+                </p>
+                <p class="text-xs" style="color: var(--color-text-secondary)">
+                  {{ detail.participants.length }} {{ t('splits.participants') }}
+                </p>
+              </div>
+              <p class="mono text-2xl font-bold text-success">
+                {{ formatAmount(netOf(detail)) }}
+              </p>
+            </div>
+
+            <div
+              class="rounded-xl border overflow-hidden"
+              style="border-color: var(--color-border)"
+            >
+              <div
+                class="px-3 py-2 border-b text-xs font-semibold uppercase tracking-wider"
+                style="border-color: var(--color-border); background: var(--color-surface-2); color: var(--color-text-secondary)"
+              >
+                {{ t('splits.roster_management') }}
+              </div>
+              <div class="max-h-60 overflow-y-auto divide-y" style="border-color: var(--color-border)">
+                @for (participant of detail.participants; track participant.user_id) {
+                  <div
+                    class="p-2.5 flex items-center justify-between gap-3 text-sm"
+                    style="background: var(--color-surface-1)"
+                  >
+                    <span class="font-medium" style="color: var(--color-text)">
+                      {{ participant.username }}
+                    </span>
+                    <div class="text-right">
+                      <span class="mono font-semibold text-success">
+                        {{
+                          formatAmount(
+                            participant.share_amount ??
+                              estimatedShare(netOf(detail), participant.weight, 100)
+                          )
+                        }}
+                      </span>
+                      <span class="text-xs ml-1" style="color: var(--color-text-secondary)">
+                        ({{ participant.weight }}%)
+                      </span>
+                    </div>
+                  </div>
+                }
+              </div>
+            </div>
+
+            <p class="text-xs" style="color: var(--color-text-secondary)">
+              {{ t('splits.detail.confirmCompleteWarning') }}
+            </p>
+          }
+        </div>
+
+        <div dialogFooter class="flex justify-end gap-2">
+          <button
+            type="button"
+            class="btn btn--ghost"
+            (click)="showCompleteConfirmDialog.set(false)"
+          >
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn--primary flex items-center gap-2"
+            [disabled]="saving()"
+            (click)="executeCompleteSplit()"
+          >
+            <app-icon name="check" size="1rem" />
+            {{ saving() ? t('common.loading') : t('splits.detail.confirmCompleteAction') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
+
     @if (showDelete()) {
       <app-dialog [title]="t('common.delete')" size="sm" (closed)="showDelete.set(false)">
         <p>{{ t('splits.confirm_delete') }}</p>
@@ -504,6 +598,7 @@ export class SplitDetailPage {
   protected readonly saving = signal(false);
   protected readonly mode = signal<DetailMode>('view');
   protected readonly showDelete = signal(false);
+  protected readonly showCompleteConfirmDialog = signal(false);
   protected readonly islands = signal<SplitIsland[]>([]);
 
   protected readonly editNote = signal('');
@@ -843,6 +938,11 @@ export class SplitDetailPage {
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     }
+  }
+
+  protected async executeCompleteSplit(): Promise<void> {
+    this.showCompleteConfirmDialog.set(false);
+    await this.closeSplit('complete');
   }
 
   protected async confirmDelete(): Promise<void> {
