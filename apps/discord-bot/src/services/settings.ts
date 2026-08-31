@@ -60,9 +60,6 @@ export class SettingsService {
     return (await this.get()).discord_event_role_id;
   }
 
-  async autoRoleId(): Promise<string | null> {
-    return (await this.get()).discord_auto_role_id;
-  }
 
   async splitsForumChannelId(): Promise<string | null> {
     return (await this.get()).discord_splits_forum_channel_id;
