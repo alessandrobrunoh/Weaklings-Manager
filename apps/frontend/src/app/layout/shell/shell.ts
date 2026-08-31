@@ -34,10 +34,18 @@ import { Topbar } from '../topbar/topbar';
     <div class="flex h-screen overflow-hidden" style="background-color: var(--color-bg)">
       <!-- Desktop sidebar -->
       <aside
-        class="hidden md:flex flex-col shrink-0"
-        style="width: 260px; min-width: 260px; max-width: 260px; background-color: var(--color-surface); border-right: 1px solid var(--color-border)"
+        class="hidden md:flex flex-col shrink-0 transition-all duration-200 ease-in-out"
+        [style.width]="isSidebarCollapsed() ? '72px' : '260px'"
+        [style.min-width]="isSidebarCollapsed() ? '72px' : '260px'"
+        [style.max-width]="isSidebarCollapsed() ? '72px' : '260px'"
+        style="background-color: var(--color-surface); border-right: 1px solid var(--color-border)"
       >
-        <app-sidebar [sections]="navSections()" [ariaLabelKey]="navAriaLabelKey()" />
+        <app-sidebar
+          [sections]="navSections()"
+          [ariaLabelKey]="navAriaLabelKey()"
+          [collapsed]="isSidebarCollapsed()"
+          (toggleCollapse)="toggleSidebarCollapse()"
+        />
       </aside>
 
       <!-- Mobile drawer -->
@@ -57,6 +65,7 @@ import { Topbar } from '../topbar/topbar';
             <app-sidebar
               [sections]="navSections()"
               [ariaLabelKey]="navAriaLabelKey()"
+              [collapsed]="false"
               (navigate)="closeDrawer()"
             />
           </div>
@@ -65,7 +74,11 @@ import { Topbar } from '../topbar/topbar';
 
       <!-- Main column -->
       <div class="flex flex-1 flex-col min-w-0 overflow-hidden">
-        <app-topbar (menuToggle)="toggleDrawer()" />
+        <app-topbar
+          [isSidebarCollapsed]="isSidebarCollapsed()"
+          (menuToggle)="toggleDrawer()"
+          (collapseToggle)="toggleSidebarCollapse()"
+        />
         <main #main class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 scrollbar-thin">
           <div class="mx-auto w-full max-w-[1200px]">
             <router-outlet />
@@ -82,6 +95,7 @@ export class Shell {
   private readonly main = viewChild<ElementRef<HTMLElement>>('main');
 
   protected readonly isDrawerOpen = signal(false);
+  protected readonly isSidebarCollapsed = signal(false);
   protected readonly inAdmin = signal(isAdminUrl(this.router.url));
   protected readonly navSections = computed(() =>
     this.inAdmin() ? ADMIN_NAV_SECTIONS : APP_NAV_SECTIONS,
@@ -91,6 +105,14 @@ export class Shell {
   );
 
   constructor() {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        this.isSidebarCollapsed.set(
+          localStorage.getItem('weaklings_sidebar_collapsed') === 'true',
+        );
+      }
+    } catch {}
+
     // The router's own scroll restoration targets `window.scrollTo`, which is
     // a no-op here: the root is `h-screen overflow-hidden`, so the window
     // itself never scrolls — every page scrolls inside this `<main>`. Reset
@@ -117,5 +139,17 @@ export class Shell {
 
   protected closeDrawer(): void {
     this.isDrawerOpen.set(false);
+  }
+
+  protected toggleSidebarCollapse(): void {
+    this.isSidebarCollapsed.update((collapsed) => {
+      const next = !collapsed;
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('weaklings_sidebar_collapsed', String(next));
+        }
+      } catch {}
+      return next;
+    });
   }
 }

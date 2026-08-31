@@ -113,59 +113,59 @@
     --color-sunbeam: #ffbd2e;
     --color-sprout: #28c840;
 
-    /* Semantic Aliases for UI */
-    --color-bg: var(--color-paper);
-    --color-surface: var(--color-cream);
-    --color-surface-1: var(--color-cream);
-    --color-surface-2: var(--color-sand);
-    --color-surface-hover: var(--color-sand);
-    --color-surface-charcoal: var(--color-charcoal);
-    --color-border: var(--color-dove);
-    --color-border-strong: #b9bfcc;
+    /* Semantic Aliases for UI - Minimal, clean, refined */
+    --color-bg: #fafaf9;
+    --color-surface: #ffffff;
+    --color-surface-1: #ffffff;
+    --color-surface-2: #f5f5f4;
+    --color-surface-hover: #f0efee;
+    --color-surface-charcoal: #18181b;
+    --color-border: rgba(0, 0, 0, 0.07);
+    --color-border-strong: rgba(0, 0, 0, 0.14);
 
     /* Typography ink */
-    --color-text: var(--color-jet-ink);
-    --color-text-secondary: var(--color-fog);
-    --color-text-tertiary: var(--color-pewter);
-    --color-text-steel: var(--color-steel);
-    --color-text-disabled: var(--color-pewter);
-    --color-text-heading: var(--color-slate);
+    --color-text: #09090b;
+    --color-text-secondary: #71717a;
+    --color-text-tertiary: #a1a1aa;
+    --color-text-steel: #52525b;
+    --color-text-disabled: #d4d4d8;
+    --color-text-heading: #18181b;
 
-    /* Primary filled pill action: near-black #0a0a0a */
-    --color-primary: var(--color-jet-ink);
-    --color-primary-hover: #262626;
-    --color-primary-container: var(--color-sand);
-    --color-on-primary: var(--color-paper);
-    --color-logo-glow: rgba(10, 10, 10, 0.08);
+    /* Primary filled pill action: near-black #09090b */
+    --color-primary: #09090b;
+    --color-primary-hover: #27272a;
+    --color-primary-container: #f4f4f5;
+    --color-on-primary: #ffffff;
+    --color-logo-glow: rgba(0, 0, 0, 0.04);
 
     /* Accents & Statuses */
-    --color-accent-beta: var(--color-sand);
-    --color-accent-gold: var(--color-sunbeam);
-    --color-success: #1e7a3c;
-    --color-success-container: #e8f7ec;
-    --color-warning: #955709;
-    --color-warning-container: #fff8e6;
-    --color-error: #c0392b;
-    --color-error-container: #fef0ef;
+    --color-accent-beta: #f4f4f5;
+    --color-accent-gold: #f59e0b;
+    --color-success: #16a34a;
+    --color-success-container: rgba(22, 163, 74, 0.1);
+    --color-warning: #d97706;
+    --color-warning-container: rgba(217, 119, 6, 0.1);
+    --color-error: #dc2626;
+    --color-error-container: rgba(220, 38, 38, 0.1);
     --color-danger: var(--color-error);
-    --color-info: var(--color-jet-ink);
+    --color-info: #09090b;
 
     /* Radius Tokens */
-    --radius-sm: 3px;
-    --radius-md: 6px;
+    --radius-sm: 4px;
+    --radius-md: 8px;
     --radius-xl: 12px;
-    --radius-2xl: 16px;
+    --radius-2xl: 14px;
     --radius-full: 9999px;
-    --radius-cards: 16px;
+    --radius-cards: 12px;
     --radius-pills: 9999px;
-    --radius-inputs: 6px;
+    --radius-inputs: 8px;
     --radius-buttons: 9999px;
     --radius-smallcards: 8px;
 
-    /* Shadows & Elevation */
-    --shadow-subtle: rgba(10, 10, 10, 0.15) 0px 0px 0px 1px;
-    --shadow-xl: rgba(0, 0, 0, 0.1) 0px 20px 25px -5px, rgba(0, 0, 0, 0.1) 0px 8px 10px -6px;
-    --shadow-subtle-2: rgba(0, 0, 0, 0.06) 0px 0px 0px 1px, rgba(15, 23, 42, 0.18) 0px 18px 40px -24px;
+    /* Shadows & Elevation - Ultra subtle and clean */
+    --shadow-subtle: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+    --shadow-subtle-2: 0 4px 6px -1px rgba(0, 0, 0, 0.03);
     --shadow-1: var(--shadow-subtle);
     --shadow-2: var(--shadow-subtle-2);
     --shadow-3: var(--shadow-xl);
@@ -186,44 +186,44 @@
     color-scheme: light;
   }
 
-  /* Dark mode: tonal inversion (ink page, charcoal cards, hairline rings) */
+  /* Dark mode: minimal, sleek slate/ink, hairline borders */
   .dark {
-    --color-bg: #0a0a0a;
-    --color-surface: #151515;
-    --color-surface-1: #151515;
-    --color-surface-2: #1f1f1f;
-    --color-surface-hover: #242424;
-    --color-surface-charcoal: #111111;
-    --color-border: #2a2a2a;
-    --color-border-strong: #3d3d3d;
+    --color-bg: #09090b;
+    --color-surface: #111114;
+    --color-surface-1: #111114;
+    --color-surface-2: #18181c;
+    --color-surface-hover: #1f1f25;
+    --color-surface-charcoal: #0c0c0e;
+    --color-border: rgba(255, 255, 255, 0.08);
+    --color-border-strong: rgba(255, 255, 255, 0.16);
 
-    --color-text: #f5f4f2;
-    --color-text-secondary: #858585;
-    --color-text-tertiary: #9d9d9d;
-    --color-text-steel: #b0b0b0;
-    --color-text-disabled: #6a6a6a;
-    --color-text-heading: #e5e5e5;
+    --color-text: #f4f4f5;
+    --color-text-secondary: #a1a1aa;
+    --color-text-tertiary: #71717a;
+    --color-text-steel: #a1a1aa;
+    --color-text-disabled: #52525b;
+    --color-text-heading: #fafafa;
 
     --color-primary: #ffffff;
-    --color-primary-hover: #e5e5e5;
-    --color-primary-container: #242424;
-    --color-on-primary: #0a0a0a;
-    --color-logo-glow: rgba(255, 255, 255, 0.08);
+    --color-primary-hover: #e4e4e7;
+    --color-primary-container: #18181c;
+    --color-on-primary: #09090b;
+    --color-logo-glow: rgba(255, 255, 255, 0.06);
 
-    --color-accent-beta: #242424;
-    --color-accent-gold: #ffbd2e;
-    --color-success: #28c840;
-    --color-success-container: #16301d;
-    --color-warning: #ffbd2e;
-    --color-warning-container: #33260f;
-    --color-error: #ff5f57;
-    --color-error-container: #3a1714;
+    --color-accent-beta: #18181c;
+    --color-accent-gold: #fbbf24;
+    --color-success: #22c55e;
+    --color-success-container: rgba(34, 197, 94, 0.12);
+    --color-warning: #f59e0b;
+    --color-warning-container: rgba(245, 158, 11, 0.12);
+    --color-error: #ef4444;
+    --color-error-container: rgba(239, 68, 68, 0.12);
     --color-danger: var(--color-error);
     --color-info: #ffffff;
 
-    --shadow-subtle: rgba(255, 255, 255, 0.12) 0px 0px 0px 1px;
-    --shadow-xl: rgba(0, 0, 0, 0.4) 0px 20px 25px -5px, rgba(0, 0, 0, 0.3) 0px 8px 10px -6px;
-    --shadow-subtle-2: rgba(255, 255, 255, 0.06) 0px 0px 0px 1px, rgba(0, 0, 0, 0.5) 0px 18px 40px -24px;
+    --shadow-subtle: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+    --shadow-subtle-2: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
     --shadow-1: var(--shadow-subtle);
     --shadow-2: var(--shadow-subtle-2);
     --shadow-3: var(--shadow-xl);
@@ -1076,4 +1076,32 @@
     font-family: var(--font-wordmark);
     letter-spacing: 0.04em;
   }
+
+  /* Global micro-tooltip */
+  .app-tooltip {
+    position: fixed;
+    z-index: 10000;
+    pointer-events: none;
+    background-color: var(--color-charcoal);
+    color: var(--color-cream);
+    font-family: var(--font-universalsans);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.3;
+    padding: 5px 9px;
+    border-radius: 6px;
+    border: 1px solid var(--color-border);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    white-space: nowrap;
+    opacity: 0;
+    transform: scale(0.96);
+    transition: opacity 120ms cubic-bezier(0.16, 1, 0.3, 1), transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: transform, opacity;
+  }
+
+  .app-tooltip--visible {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
+

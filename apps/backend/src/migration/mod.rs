@@ -48,6 +48,8 @@ mod m20260829_000002_add_auto_role_setting;
 mod m20260829_000003_create_split_islands;
 mod m20260829_000004_seed_split_islands_permission;
 mod m20260829_000005_add_island_tab_id_to_splits;
+mod m20260830_000001_create_notifications;
+mod m20260830_000002_seed_notifications_broadcast_permission;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -100,6 +102,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260829_000003_create_split_islands::Migration),
             Box::new(m20260829_000004_seed_split_islands_permission::Migration),
             Box::new(m20260829_000005_add_island_tab_id_to_splits::Migration),
+            Box::new(m20260830_000001_create_notifications::Migration),
+            Box::new(m20260830_000002_seed_notifications_broadcast_permission::Migration),
         ]
     }
 }

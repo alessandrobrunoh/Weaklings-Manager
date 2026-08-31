@@ -36,6 +36,8 @@ import {
   type ViewToggleOption,
 } from '../../shared/components/view-toggle/view-toggle';
 
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+
 const PAGE_SIZE = 10;
 const BATTLE_REFRESH_INTERVAL_SECONDS = 5 * 60;
 
@@ -63,10 +65,14 @@ interface BattleScopeStats {
 @Component({
   selector: 'app-battles',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, PageStack, DataTable, DataTableCell, StatCard, ViewToggle],
+  imports: [PageHeader, PageStack, DataTable, DataTableCell, StatCard, TooltipDirective, ViewToggle],
   template: `
     <app-page-header [title]="t('battles.title')" [subtitle]="t('battles.subtitle')">
-      <span class="chip battle-list__refresh-chip">
+      <span
+        class="chip battle-list__refresh-chip"
+        [appTooltip]="'Timer per il sync automatico con AlbionBB'"
+        tooltipPosition="bottom"
+      >
         {{ t('battles.next_refresh') }} {{ refreshCountdown() }}
       </span>
       <button
@@ -74,6 +80,8 @@ interface BattleScopeStats {
         class="btn btn--outline btn--sm"
         [disabled]="loading()"
         (click)="refreshNow()"
+        [appTooltip]="'Aggiorna subito da AlbionBB'"
+        tooltipPosition="bottom"
       >
         {{ t('battles.refresh_now') }}
       </button>
@@ -81,10 +89,22 @@ interface BattleScopeStats {
         <span class="chip font-mono">
           {{ selectedBattleIds().length }} {{ t('battles.selected') }}
         </span>
-        <button type="button" class="btn btn--primary btn--sm" (click)="openSelectedGroup()">
+        <button
+          type="button"
+          class="btn btn--primary btn--sm"
+          (click)="openSelectedGroup()"
+          [appTooltip]="'Crea gruppo di battaglie combinate'"
+          tooltipPosition="bottom"
+        >
           {{ t('battles.group_selected') }}
         </button>
-        <button type="button" class="btn btn--ghost btn--sm" (click)="clearSelection()">
+        <button
+          type="button"
+          class="btn btn--ghost btn--sm"
+          (click)="clearSelection()"
+          [appTooltip]="'Deseleziona tutte le battaglie'"
+          tooltipPosition="bottom"
+        >
           {{ t('common.cancel') }}
         </button>
       }

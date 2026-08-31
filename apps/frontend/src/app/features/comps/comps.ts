@@ -45,8 +45,11 @@ import {
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
+import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { StatCard } from '../../shared/components/stat-card/stat-card';
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 
 const PAGE_SIZE = 10;
@@ -78,11 +81,33 @@ type PendingDelete =
     DataTableCell,
     Dialog,
     EquipmentGrid,
+    Icon,
+    StatCard,
+    TooltipDirective,
   ],
   template: `
     <app-page-header [title]="t('comps.title')" [subtitle]="t('comps.subtitle')">
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        [disabled]="loading() || categoriesLoading()"
+        (click)="refreshNow()"
+        [appTooltip]="'Aggiorna composizioni e build'"
+        tooltipPosition="bottom"
+      >
+        <app-icon name="sparkles" size="0.875rem" />
+        {{ t('common.refreshNow') }}
+      </button>
+
       @if (canCreateCurrent()) {
-        <button type="button" class="btn btn--primary" (click)="openCreate()">
+        <button
+          type="button"
+          class="btn btn--primary btn--sm"
+          (click)="openCreate()"
+          [appTooltip]="'Crea nuova composizione o build'"
+          tooltipPosition="bottom"
+        >
+          <app-icon name="plus" size="0.875rem" />
           {{ createButtonLabel() }}
         </button>
       }
@@ -95,6 +120,32 @@ type PendingDelete =
     </app-page-header>
 
     <app-page-stack>
+      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Comps summary">
+        <app-stat-card
+          [label]="t('comps.stat.comps')"
+          [value]="compsTotal()"
+          icon="swords"
+          tone="primary"
+        />
+        <app-stat-card
+          [label]="t('comps.stat.builds')"
+          [value]="buildsTotal()"
+          icon="shield"
+          tone="neutral"
+        />
+        <app-stat-card
+          [label]="t('comps.stat.buildCategories')"
+          [value]="buildCategories().length"
+          icon="list"
+          tone="neutral"
+        />
+        <app-stat-card
+          [label]="t('comps.stat.compCategories')"
+          [value]="compCategories().length"
+          icon="list"
+          tone="warning"
+        />
+      </section>
       @if (tab() === 'comps') {
         <app-data-table
           [columns]="compColumns()"
@@ -665,6 +716,15 @@ export class Comps {
   private async init(): Promise<void> {
     await this.loadCategories();
     await this.loadComps();
+  }
+
+  protected async refreshNow(): Promise<void> {
+    await this.loadCategories();
+    if (this.tab() === 'comps') {
+      await this.loadComps();
+    } else if (this.tab() === 'builds') {
+      await this.loadBuilds();
+    }
   }
 
   protected canCreateCurrent(): boolean {

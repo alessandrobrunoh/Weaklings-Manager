@@ -534,3 +534,53 @@ pub struct ApiResponsePaginatedWarnEscalationView {
     /// Escalation page.
     pub data: crate::pagination::PaginatedWarnEscalationView,
 }
+
+/// `OpenAPI` schema wrapper for a notification inbox row.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseNotificationView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Inbox row.
+    pub data: crate::modules::notifications::models::NotificationView,
+}
+
+/// `OpenAPI` schema wrapper for a paginated inbox.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponsePaginatedNotificationView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Inbox page.
+    pub data: crate::pagination::PaginatedNotificationView,
+}
+
+/// `OpenAPI` schema wrapper for the unread badge.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseUnreadCountView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Unread count.
+    pub data: crate::modules::notifications::models::UnreadCountView,
+}
+
+/// `OpenAPI` schema wrapper for mark-all-read.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseReadAllResult {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// How many rows flipped to read.
+    pub data: crate::modules::notifications::models::ReadAllResult,
+}
+
+/// `OpenAPI` schema wrapper for a guild broadcast.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseBroadcastResult {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Fan-out result.
+    pub data: crate::modules::notifications::models::BroadcastResult,
+}

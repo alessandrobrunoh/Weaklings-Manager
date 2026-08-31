@@ -11,9 +11,15 @@ import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { IntelService } from '../../core/services/intel.service';
 import { TranslateService } from '../../core/services/translate.service';
+import {
+  DataTable,
+  type DataTableColumn,
+} from '../../shared/components/data-table/data-table';
+import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 import type { TranslationKey } from '../../i18n/en';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
@@ -100,91 +106,146 @@ const PODIUM_SIZE = 3;
 @Component({
   selector: 'app-leaderboards',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EmptyState, Icon, Loading, PageHeader, ViewToggle],
+  imports: [
+    DataTable,
+    DataTableCell,
+    EmptyState,
+    Icon,
+    Loading,
+    PageHeader,
+    PageStack,
+    ViewToggle,
+  ],
   template: `
     <app-page-header
       [title]="t('leaderboards.title')"
       [subtitle]="t('leaderboards.subtitle')"
-      [actions]="false"
-    />
+    >
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        (click)="reloadActive()"
+      >
+        <app-icon name="sparkles" size="0.875rem" />
+        {{ t('common.refreshNow') }}
+      </button>
 
-    <!-- Segmented tab bar -->
-    <div class="mb-6">
-      <app-view-toggle [options]="tabOptions()" [active]="activeTab()" (activeChange)="selectTab($event)" />
-    </div>
+      <app-view-toggle
+        pageTabs
+        [options]="tabOptions()"
+        [active]="activeTab()"
+        (activeChange)="selectTab($event)"
+      />
+    </app-page-header>
 
-    <!-- Active panel -->
-    <section class="panel">
-      <header class="panel__header">
-        <span
-          class="panel__icon"
-          [style.backgroundColor]="activeAccentBg()"
-          [style.color]="activeAccentFg()"
-          aria-hidden="true"
-        >
-          <app-icon [name]="activeTabDef().icon" size="1.15rem" />
-        </span>
-        <div>
-          <h2 class="panel__title">{{ t(activeTabDef().labelKey) }}</h2>
-          <p class="panel__hint">{{ t(activeTabDef().hintKey) }}</p>
-        </div>
-      </header>
+    <app-page-stack>
+      <!-- Active panel -->
+      <section class="panel">
+        <header class="panel__header">
+          <span
+            class="panel__icon"
+            [style.backgroundColor]="activeAccentBg()"
+            [style.color]="activeAccentFg()"
+            aria-hidden="true"
+          >
+            <app-icon [name]="activeTabDef().icon" size="1.15rem" />
+          </span>
+          <div>
+            <h2 class="panel__title">{{ t(activeTabDef().labelKey) }}</h2>
+            <p class="panel__hint">{{ t(activeTabDef().hintKey) }}</p>
+          </div>
+        </header>
 
-      @if (activeState().isLoading) {
-        <app-loading [label]="t('common.loading')" />
-      } @else if (activeState().hasError) {
-        <div class="state state--error" role="alert">
-          <span>{{ t('common.error') }}</span>
-          <button type="button" class="link-btn" (click)="reloadActive()">
-            {{ t('common.retry') }}
-          </button>
-        </div>
-      } @else if (activeEntries().length === 0) {
-        <app-empty-state icon="trophy" [message]="t('leaderboards.empty')" />
-      } @else {
-        <!-- Podium: 2nd | 1st | 3rd, tallest pedestal in the center -->
-        <div class="podium">
-          @for (slot of podiumSlots(); track slot.rank) {
-            <div class="podium__column">
-              <article
-                class="podium__card"
-                [class.podium__card--first]="slot.rank === 1"
-                [class.podium__card--muted]="slot.entry === null"
-              >
-                <span
-                  class="podium__medal"
-                  [class.podium__medal--gold]="slot.rank === 1"
-                  [class.podium__medal--silver]="slot.rank === 2"
-                  [class.podium__medal--bronze]="slot.rank === 3"
+        @if (activeState().isLoading) {
+          <app-loading [label]="t('common.loading')" />
+        } @else if (activeState().hasError) {
+          <div class="state state--error" role="alert">
+            <span>{{ t('common.error') }}</span>
+            <button type="button" class="link-btn" (click)="reloadActive()">
+              {{ t('common.retry') }}
+            </button>
+          </div>
+        } @else if (activeEntries().length === 0) {
+          <app-empty-state icon="trophy" [message]="t('leaderboards.empty')" />
+        } @else {
+          <!-- Podium: 2nd | 1st | 3rd, tallest pedestal in the center -->
+          <div class="podium">
+            @for (slot of podiumSlots(); track slot.rank) {
+              <div class="podium__column">
+                <article
+                  class="podium__card"
+                  [class.podium__card--first]="slot.rank === 1"
+                  [class.podium__card--muted]="slot.entry === null"
                 >
-                  @if (slot.rank === 1) {
-                    <app-icon name="sparkles" size="1rem" />
+                  <span
+                    class="podium__medal"
+                    [class.podium__medal--gold]="slot.rank === 1"
+                    [class.podium__medal--silver]="slot.rank === 2"
+                    [class.podium__medal--bronze]="slot.rank === 3"
+                  >
+                    @if (slot.rank === 1) {
+                      <app-icon name="sparkles" size="1rem" />
+                    } @else {
+                      {{ slot.rank }}
+                    }
+                  </span>
+                  @if (slot.entry; as entry) {
+                    <p class="podium__name" [title]="entry.name">{{ entry.name }}</p>
+                    <p class="podium__value">{{ formatValue(entry.value) }}</p>
+                    <p class="podium__unit">{{ unitLabel() }}</p>
                   } @else {
-                    {{ slot.rank }}
+                    <p class="podium__name podium__name--muted">—</p>
+                    <p class="podium__value podium__value--muted">—</p>
+                    <p class="podium__unit">{{ unitLabel() }}</p>
                   }
-                </span>
-                @if (slot.entry; as entry) {
-                  <p class="podium__name" [title]="entry.name">{{ entry.name }}</p>
-                  <p class="podium__value">{{ formatValue(entry.value) }}</p>
-                  <p class="podium__unit">{{ unitLabel() }}</p>
-                } @else {
-                  <p class="podium__name podium__name--muted">—</p>
-                  <p class="podium__value podium__value--muted">—</p>
-                  <p class="podium__unit">{{ unitLabel() }}</p>
-                }
-              </article>
-              <div
-                class="podium__pedestal"
-                [class.podium__pedestal--first]="slot.rank === 1"
-                [class.podium__pedestal--second]="slot.rank === 2"
-                [class.podium__pedestal--third]="slot.rank === 3"
-                aria-hidden="true"
-              ></div>
-            </div>
-          }
-        </div>
+                </article>
+                <div
+                  class="podium__pedestal"
+                  [class.podium__pedestal--first]="slot.rank === 1"
+                  [class.podium__pedestal--second]="slot.rank === 2"
+                  [class.podium__pedestal--third]="slot.rank === 3"
+                  aria-hidden="true"
+                ></div>
+              </div>
+            }
+          </div>
+        }
+      </section>
+
+      @if (!activeState().isLoading && !activeState().hasError && activeEntries().length > 0) {
+        <section class="card p-5">
+          <h3 class="eyebrow mb-3">{{ t('leaderboards.rank') }} — {{ t(activeTabDef().labelKey) }}</h3>
+          <app-data-table
+            [columns]="rankingColumns"
+            [rows]="rankedRows()"
+            [trackBy]="trackRankedRow"
+            [pageSize]="10"
+            emptyIcon="trophy"
+          >
+            <ng-template dataTableCell="rank" let-row>
+              @if (row.rank === 1) {
+                <span class="chip chip--warning font-bold">🥇 #1</span>
+              } @else if (row.rank === 2) {
+                <span class="chip chip--info font-bold">🥈 #2</span>
+              } @else if (row.rank === 3) {
+                <span class="chip chip--error font-bold">🥉 #3</span>
+              } @else {
+                <span class="font-mono text-sm text-secondary">#{{ row.rank }}</span>
+              }
+            </ng-template>
+            <ng-template dataTableCell="name" let-row>
+              <span class="font-medium" style="color: var(--color-text)">{{ row.name }}</span>
+            </ng-template>
+            <ng-template dataTableCell="value" let-row>
+              <span class="font-semibold mono" style="color: var(--color-text)">
+                {{ formatValue(row.value) }}
+                <span class="text-xs font-normal" style="color: var(--color-text-secondary)">{{ unitLabel() }}</span>
+              </span>
+            </ng-template>
+          </app-data-table>
+        </section>
       }
-    </section>
+    </app-page-stack>
   `,
   styles: [
     `
@@ -548,6 +609,42 @@ export class Leaderboards {
     const lookup = new Map<number, LeaderboardEntry>(top.map((entry, index) => [index + 1, entry]));
     return [2, 1, 3].map((rank) => ({ rank, entry: lookup.get(rank) ?? null }));
   });
+
+  protected readonly rankedRows = computed(() => {
+    return this.activeEntries().map((entry, index) => ({
+      rank: index + 1,
+      name: entry.name,
+      value: entry.value,
+    }));
+  });
+
+  protected readonly rankingColumns: readonly DataTableColumn<{ rank: number; name: string; value: number }>[] = [
+    {
+      key: 'rank',
+      label: 'leaderboards.rank',
+      sortable: true,
+      accessor: (row) => row.rank,
+      comparator: (a, b) => a.rank - b.rank,
+    },
+    {
+      key: 'name',
+      label: 'leaderboards.player',
+      sortable: true,
+      searchable: true,
+      accessor: (row) => row.name,
+      comparator: (a, b) => a.name.localeCompare(b.name),
+    },
+    {
+      key: 'value',
+      label: 'leaderboards.value',
+      sortable: true,
+      accessor: (row) => row.value,
+      comparator: (a, b) => a.value - b.value,
+      align: 'right',
+    },
+  ];
+
+  protected readonly trackRankedRow = (row: { rank: number; name: string; value: number }) => `${row.rank}-${row.name}`;
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 

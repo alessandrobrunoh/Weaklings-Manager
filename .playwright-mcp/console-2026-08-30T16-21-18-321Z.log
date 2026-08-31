@@ -1,0 +1,105 @@
+[     152ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[     175ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[     199ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[     236ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[   21441ms] [INFO] %c[libdiscore] 
+font-weight: bold;
+color: purple;
+ [experiment_manager] Loaded experiments from cache @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   21509ms] [LOG] %c[ProcessUtilsElectron] 
+font-weight: bold;
+color: purple;
+ setMemoryInformation not available. @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   21672ms] [LOG] %c[default] 
+font-weight: bold;
+color: purple;
+ [BUILD INFO] Release Channel: stable, Build Number: 603738, Version Hash: 49257f8818498b803ebc3b55511ccca0da28723c @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   21675ms] [LOG] AppCrashedFatalReport: getLastCrash not supported. @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   21772ms] [INFO] %c[libdiscore] 
+font-weight: bold;
+color: purple;
+ The answer for life the universe and everything is: 42 @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   26061ms] [ERROR] Failed to load resource: the server responded with a status of 401 () @ https://discord.com/api/v9/auth/logout:0
+[   26062ms] [LOG] %c[Flux] 
+font-weight: bold;
+color: purple;
+ Dispatching LOGOUT @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   26071ms] [LOG] %c[Routing/Utils] 
+font-weight: bold;
+color: purple;
+ transitionTo - Transitioning to /login?redirect_to=%2Foauth2%2Fauthorize%3Fclient_id%3D1537086472807522375%26redirect_uri%3Dhttp%253A%252F%252Flocalhost%253A8081%252Fapi%252Fauth%252Fdiscord%252Fcallback%26response_type%3Dcode%26scope%3Didentify%2520email%26state%3DM2nH2UGbSjYCdtLsjOfevUVNuLsjAa0l @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   26072ms] [INFO] %c[Clips] 
+font-weight: bold;
+color: purple;
+ decider: clear() called — currentSessionGameKey=null currentSessionId=undefined pendingSessionGameKey=null candidates=0 @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   26073ms] [INFO] %c[Clips] 
+font-weight: bold;
+color: purple;
+ decider: processClipCandidates — sessionId=undefined candidates=0 staleCandidates=0 autoStashEnabled=false @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   26073ms] [INFO] %c[Clips] 
+font-weight: bold;
+color: purple;
+ ranked clips: {allClipsRanked: Array(0), selected: Array(0)} @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   26135ms] [ERROR] Failed to load resource: the server responded with a status of 401 () @ https://discord.com/api/v9/auth/logout:0
+[   26136ms] [LOG] %c[Flux] 
+font-weight: bold;
+color: purple;
+ Dispatching LOGOUT @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   26147ms] [LOG] %c[Routing/Utils] 
+font-weight: bold;
+color: purple;
+ transitionTo - Transitioning to /login?redirect_to=%2Foauth2%2Fauthorize%3Fclient_id%3D1537086472807522375%26redirect_uri%3Dhttp%253A%252F%252Flocalhost%253A8081%252Fapi%252Fauth%252Fdiscord%252Fcallback%26response_type%3Dcode%26scope%3Didentify%2520email%26state%3DM2nH2UGbSjYCdtLsjOfevUVNuLsjAa0l @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   26148ms] [INFO] %c[Clips] 
+font-weight: bold;
+color: purple;
+ decider: clear() called — currentSessionGameKey=null currentSessionId=undefined pendingSessionGameKey=null candidates=0 @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   26148ms] [INFO] %c[Clips] 
+font-weight: bold;
+color: purple;
+ decider: processClipCandidates — sessionId=undefined candidates=0 staleCandidates=0 autoStashEnabled=false @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   26148ms] [INFO] %c[Clips] 
+font-weight: bold;
+color: purple;
+ ranked clips: {allClipsRanked: Array(0), selected: Array(0)} @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   26208ms] HTTPResponseError: POST /auth/logout [401]
+    at https://discord.com/assets/web.e3526df05a0a7718.js:168:24993
+[   26159ms] [ERROR] Failed to load resource: the server responded with a status of 401 () @ https://discord.com/api/v9/users/@me?with_analytics_token=true:0
+[   26217ms] HTTPResponseError: POST /auth/logout [401]
+    at https://discord.com/assets/web.e3526df05a0a7718.js:168:24993
+[   26754ms] [INFO] %c[useAuthWebsocket] 
+font-weight: bold;
+color: purple;
+ [0ms] connecting to wss://remote-auth-gateway.discord.gg/?v=2 @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   27093ms] [INFO] %c[useAuthWebsocket] 
+font-weight: bold;
+color: purple;
+ [339ms] got hello, auth timeout=264699ms @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   27235ms] [INFO] %c[useAuthWebsocket] 
+font-weight: bold;
+color: purple;
+ [481ms] connected, handshaking with fingerprint: ppklIgap90NsNTNbKcJWmzS_rHaO-doNUy8jLyf_YFk @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   27393ms] [INFO] %c[useAuthWebsocket] 
+font-weight: bold;
+color: purple;
+ [639ms] computed nonce proof @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   27555ms] [INFO] %c[useAuthWebsocket] 
+font-weight: bold;
+color: purple;
+ [801ms] handshake complete awaiting remote auth. @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   48772ms] [INFO] %c[useAuthWebsocket] 
+font-weight: bold;
+color: purple;
+ [22018ms] cleaning up @ https://discord.com/assets/556707.bb1a25f3c212ce8f.js:464
+[   50278ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[   50287ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[   50313ms] [LOG] Angular hydrated 1 component(s) and 3 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[   89128ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:1002
+[   92552ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[   92571ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[   92607ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[  112319ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:1002
+[  115780ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[  115803ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[  115868ms] [LOG] Angular is running in development mode. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028
+[  115873ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/auth/me:0
+[  115892ms] [LOG] Angular hydrated 5 component(s) and 170 node(s), 0 component(s) were skipped. Learn more at https://v21.angular.dev/guide/hydration. @ http://localhost:5173/node_modules/.vite/deps/core-rdmkyoDQ.js?v=f487a37b:9028

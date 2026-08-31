@@ -4,6 +4,7 @@ export type IconName =
   | 'activity'
   | 'alert'
   | 'bank'
+  | 'bell'
   | 'calendar'
   | 'chart'
   | 'check'
@@ -14,9 +15,11 @@ export type IconName =
   | 'hammer'
   | 'info'
   | 'link'
+  | 'list'
   | 'menu'
   | 'moon'
   | 'package'
+  | 'plus'
   | 'scan'
   | 'search'
   | 'settings'
@@ -79,6 +82,10 @@ export type IconName =
           <path d="M4 18h16" />
           <path d="M3 21h18" />
         }
+        @case ('bell') {
+          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+        }
         @case ('calendar') {
           <path d="M8 2v4" />
           <path d="M16 2v4" />
@@ -125,22 +132,34 @@ export type IconName =
           <path d="M12 8h.01" />
         }
         @case ('link') {
-          <path d="M10 13a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1" />
-          <path d="M14 11a5 5 0 0 0-7.1 0l-2 2a5 5 0 0 0 7.1 7.1l1.1-1.1" />
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+        }
+        @case ('list') {
+          <line x1="8" y1="6" x2="21" y2="6" />
+          <line x1="8" y1="12" x2="21" y2="12" />
+          <line x1="8" y1="18" x2="21" y2="18" />
+          <line x1="3" y1="6" x2="3.01" y2="6" />
+          <line x1="3" y1="12" x2="3.01" y2="12" />
+          <line x1="3" y1="18" x2="3.01" y2="18" />
         }
         @case ('menu') {
-          <path d="M4 6h16" />
-          <path d="M4 12h16" />
-          <path d="M4 18h16" />
+          <line x1="4" x2="20" y1="12" y2="12" />
+          <line x1="4" x2="20" y1="6" y2="6" />
+          <line x1="4" x2="20" y1="18" y2="18" />
         }
         @case ('moon') {
-          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
+          <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
         }
         @case ('package') {
-          <path d="m12 2 8 4.5v9L12 20l-8-4.5v-9L12 2Z" />
-          <path d="M12 11 4.5 6.8" />
-          <path d="M12 11v9" />
-          <path d="m12 11 7.5-4.2" />
+          <path
+            d="m7.5 4.27 9 5.15M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"
+          />
+          <path d="m3.3 7 8.7 5 8.7-5M12 22V12" />
+        }
+        @case ('plus') {
+          <path d="M5 12h14" />
+          <path d="M12 5v14" />
         }
         @case ('scan') {
           <path d="M3 7V5a2 2 0 0 1 2-2h2" />

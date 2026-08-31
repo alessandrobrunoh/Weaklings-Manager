@@ -23,9 +23,13 @@ import {
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
+import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
+
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 const PAGE_SIZE = 10;
 const EVENT_STATUSES: readonly EventStatus[] = ['scheduled', 'live', 'stopped', 'auto_stopped'];
@@ -47,17 +51,63 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
 @Component({
   selector: 'app-events',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DataTable, DataTableCell, Dialog, PageHeader, PageStack, StatusChip],
+  imports: [DataTable, DataTableCell, Dialog, Icon, PageHeader, PageStack, StatCard, StatusChip, TooltipDirective],
   template: `
     <app-page-header [title]="t('events.title')" [subtitle]="t('events.subtitle')">
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        [disabled]="loading()"
+        (click)="refreshNow()"
+        [appTooltip]="'Aggiorna elenco eventi'"
+        tooltipPosition="bottom"
+      >
+        <app-icon name="sparkles" size="0.875rem" />
+        {{ t('common.refreshNow') }}
+      </button>
+
       @if (canManage()) {
-        <button type="button" class="btn btn--primary" (click)="openCreate()">
+        <button
+          type="button"
+          class="btn btn--primary btn--sm"
+          (click)="openCreate()"
+          [appTooltip]="'Crea un nuovo evento di gilda'"
+          tooltipPosition="bottom"
+        >
+          <app-icon name="plus" size="0.875rem" />
           {{ t('events.new') }}
         </button>
       }
     </app-page-header>
 
     <app-page-stack>
+      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Events summary">
+        <app-stat-card
+          [label]="t('events.stat.total')"
+          [value]="totalItems()"
+          icon="calendar"
+          tone="neutral"
+        />
+        <app-stat-card
+          [label]="t('events.stat.live')"
+          [value]="liveCount()"
+          icon="sparkles"
+          tone="success"
+        />
+        <app-stat-card
+          [label]="t('events.stat.scheduled')"
+          [value]="scheduledCount()"
+          icon="calendar"
+          tone="primary"
+        />
+        <app-stat-card
+          [label]="t('events.stat.cta')"
+          [value]="ctaCount()"
+          icon="alert"
+          tone="warning"
+        />
+      </section>
+
       <app-data-table
         [columns]="columns()"
         [rows]="events()"
@@ -285,6 +335,20 @@ export class Events {
   protected readonly statusFilter = signal('');
   protected readonly sortColumn = signal<string | null>(null);
   protected readonly sortOrder = signal<'asc' | 'desc' | null>(null);
+
+  protected readonly liveCount = computed(
+    () => this.events().filter((e) => e.status === 'live').length,
+  );
+  protected readonly scheduledCount = computed(
+    () => this.events().filter((e) => e.status === 'scheduled').length,
+  );
+  protected readonly ctaCount = computed(
+    () => this.events().filter((e) => e.call_to_arms).length,
+  );
+
+  protected async refreshNow(): Promise<void> {
+    await this.load();
+  }
 
   protected readonly createOpen = signal(false);
   protected readonly saving = signal(false);

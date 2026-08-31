@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -13,8 +13,12 @@ import {
   type DataTablePageChange,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { StatCard } from '../../shared/components/stat-card/stat-card';
+
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 const PAGE_SIZE = 10;
 
@@ -35,15 +39,53 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
 @Component({
   selector: 'app-users',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, PageStack, DataTable, DataTableCell],
+  imports: [PageHeader, PageStack, DataTable, DataTableCell, Icon, StatCard, TooltipDirective],
   template: `
     <app-page-header
       [title]="t('users.title')"
       [subtitle]="t('users.subtitle')"
-      [actions]="false"
-    />
+    >
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        [disabled]="loading()"
+        (click)="refreshNow()"
+        [appTooltip]="'Aggiorna elenco utenti'"
+        tooltipPosition="bottom"
+      >
+        <app-icon name="sparkles" size="0.875rem" />
+        {{ t('common.refreshNow') }}
+      </button>
+    </app-page-header>
 
     <app-page-stack>
+      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Members summary">
+        <app-stat-card
+          [label]="t('users.stat.total')"
+          [value]="totalItems()"
+          icon="users"
+          tone="neutral"
+        />
+        <app-stat-card
+          [label]="t('users.stat.admins')"
+          [value]="adminCount()"
+          icon="shield"
+          tone="danger"
+        />
+        <app-stat-card
+          [label]="t('users.stat.officers')"
+          [value]="officerCount()"
+          icon="sparkles"
+          tone="warning"
+        />
+        <app-stat-card
+          [label]="t('users.stat.members')"
+          [value]="memberCount()"
+          icon="users"
+          tone="primary"
+        />
+      </section>
+
       <app-data-table
         [columns]="columns"
         [rows]="users()"
@@ -83,6 +125,21 @@ export class Users {
   protected readonly totalItems = signal(0);
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
+
+  protected readonly adminCount = computed(
+    () => this.users().filter((u) => u.role === 'SuperAdmin' || u.role === 'Admin').length,
+  );
+  protected readonly officerCount = computed(
+    () => this.users().filter((u) => u.role === 'Officer').length,
+  );
+  protected readonly memberCount = computed(
+    () => this.users().filter((u) => u.role === 'Member').length,
+  );
+
+  protected async refreshNow(): Promise<void> {
+    await this.load();
+  }
+
   protected readonly trackById = (user: UserProfile): unknown => user.id;
 
   private readonly tablePage = signal(1);

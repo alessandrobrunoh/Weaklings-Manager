@@ -154,6 +154,10 @@ export const routes: Routes = [
             loadComponent: () =>
               import('./features/admin/admin-islands').then((m) => m.AdminIslands),
           },
+          {
+            path: 'users',
+            redirectTo: '/users',
+          },
         ],
       },
       {
@@ -167,8 +171,7 @@ export const routes: Routes = [
       },
       {
         path: 'settings',
-        loadComponent: () =>
-          import('./features/albion-settings/albion-settings').then((m) => m.AlbionSettings),
+        redirectTo: 'profile',
       },
     ],
   },

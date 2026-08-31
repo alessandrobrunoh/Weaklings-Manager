@@ -1,7 +1,28 @@
 /// <reference types="vitest" />
 import analog from '@analogjs/platform';
 import { resolve } from 'node:path';
-import { defineConfig, loadEnv } from 'vite';
+import { createLogger, defineConfig, loadEnv } from 'vite';
+
+const viteLogger = createLogger();
+const warn = viteLogger.warn.bind(viteLogger);
+const warnOnce = viteLogger.warnOnce.bind(viteLogger);
+
+function isAngularPlatformServerSourcemapWarning(message: string): boolean {
+  return (
+    message.includes('Sourcemap for') && message.includes('@angular/platform-server')
+  );
+}
+
+viteLogger.warn = (message, options) => {
+  if (!isAngularPlatformServerSourcemapWarning(message)) {
+    warn(message, options);
+  }
+};
+viteLogger.warnOnce = (message, options) => {
+  if (!isAngularPlatformServerSourcemapWarning(message)) {
+    warnOnce(message, options);
+  }
+};
 
 /**
  * Vite + Analog configuration.
@@ -24,6 +45,7 @@ export default defineConfig(({ mode }) => {
   const backendTarget = env.API_REWRITE_URL ?? `http://localhost:${env.BACKEND_PORT ?? '3000'}`;
 
   return {
+    customLogger: viteLogger,
     root: import.meta.dirname,
     publicDir: 'public',
     build: {

@@ -161,6 +161,11 @@ use utoipa::OpenApi;
         crate::modules::warns::router::revoke_warn,
         crate::modules::warns::router::list_escalations,
         crate::modules::warns::router::ack_escalation,
+        crate::modules::notifications::router::list_notifications,
+        crate::modules::notifications::router::unread_count,
+        crate::modules::notifications::router::mark_read,
+        crate::modules::notifications::router::mark_all_read,
+        crate::modules::notifications::router::broadcast,
     ),
     components(
         schemas(
@@ -409,6 +414,18 @@ use utoipa::OpenApi;
             crate::responses::ApiResponsePaginatedWarnView,
             crate::responses::ApiResponseWarnEscalationView,
             crate::responses::ApiResponsePaginatedWarnEscalationView,
+            crate::modules::notifications::models::BroadcastRequest,
+            crate::modules::notifications::models::BroadcastResult,
+            crate::modules::notifications::models::NotificationView,
+            crate::modules::notifications::models::UnreadCountView,
+            crate::modules::notifications::models::ReadAllResult,
+            crate::modules::notifications::status::NotificationKind,
+            crate::pagination::PaginatedNotificationView,
+            crate::responses::ApiResponseNotificationView,
+            crate::responses::ApiResponsePaginatedNotificationView,
+            crate::responses::ApiResponseUnreadCountView,
+            crate::responses::ApiResponseReadAllResult,
+            crate::responses::ApiResponseBroadcastResult,
         )
     ),
     tags(
@@ -435,6 +452,7 @@ use utoipa::OpenApi;
         (name = "progression", description = "Season-scoped XP and levels: members earn XP from Discord and guild actions; admins model the season dates and curve."),
         (name = "vods", description = "VOD review claims: one XP grant per normalized URL per covering season, posted in the configured Discord forum."),
         (name = "warns", description = "Disciplinary warn register: issue/revoke with audit, and an admin escalation when the active-warn count reaches the configured threshold. No auto-kick."),
+        (name = "notifications", description = "Per-member in-app inbox: list/read own notifications, unread badge, and officer broadcast fan-out. Discord DMs are delivered by a background worker."),
         (name = "admin", description = "Administrative operations: permission cache reload."),
         (name = "utils", description = "Generic, reusable backend utilities not tied to any specific domain — currently just image OCR via Mistral AI.")
     ),

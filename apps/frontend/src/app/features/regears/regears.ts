@@ -19,8 +19,10 @@ import {
   type DataTablePageChange,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { StatCard } from '../../shared/components/stat-card/stat-card';
 import {
   ViewToggle,
   type ViewToggleOption,
@@ -45,15 +47,33 @@ const PAGE_SIZE = 10;
 @Component({
   selector: 'app-regears',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, DataTable, DataTableCell, PageHeader, PageStack, ViewToggle],
+  imports: [
+    RouterLink,
+    DataTable,
+    DataTableCell,
+    Icon,
+    PageHeader,
+    PageStack,
+    StatCard,
+    ViewToggle,
+  ],
   template: `
     <app-page-header
       [title]="t('regears.title')"
       [subtitle]="t('regears.subtitle')"
-      [actions]="canManageSettings()"
     >
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        [disabled]="loading()"
+        (click)="refreshNow()"
+      >
+        <app-icon name="sparkles" size="0.875rem" />
+        {{ t('common.refreshNow') }}
+      </button>
+
       @if (canManageSettings()) {
-        <a class="btn btn--outline" routerLink="/admin/regears">{{ t('regears.settingsLink') }}</a>
+        <a class="btn btn--outline btn--sm" routerLink="/admin/regears">{{ t('regears.settingsLink') }}</a>
       }
       <app-view-toggle
         pageTabs
@@ -64,20 +84,59 @@ const PAGE_SIZE = 10;
     </app-page-header>
 
     <app-page-stack>
-      @if (tab() === 'mine') {
-        @if (summary(); as budget) {
-          <section class="card flex flex-wrap items-center gap-6 p-4 text-sm">
-            <div>
-              <span style="color: var(--color-text-secondary)">{{ t('regears.budget.event') }}:</span>
-              <strong class="ml-1">{{ budget.per_event_used }}/{{ budget.per_event_max }}</strong>
-            </div>
-            <div>
-              <span style="color: var(--color-text-secondary)">{{ t('regears.budget.month') }}:</span>
-              <strong class="ml-1">{{ budget.per_month_used }}/{{ budget.per_month_max }}</strong>
-            </div>
-          </section>
+      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Regear summary">
+        @if (tab() === 'mine') {
+          <app-stat-card
+            [label]="t('regears.budget.event')"
+            [value]="(summary()?.per_event_used ?? 0) + ' / ' + (summary()?.per_event_max ?? 0)"
+            icon="shield"
+            tone="neutral"
+          />
+          <app-stat-card
+            [label]="t('regears.budget.month')"
+            [value]="(summary()?.per_month_used ?? 0) + ' / ' + (summary()?.per_month_max ?? 0)"
+            icon="calendar"
+            tone="primary"
+          />
+          <app-stat-card
+            [label]="t('regears.status.pending')"
+            [value]="pendingMineCount()"
+            icon="alert"
+            tone="warning"
+          />
+          <app-stat-card
+            [label]="t('regears.status.approved')"
+            [value]="approvedMineCount()"
+            icon="check"
+            tone="success"
+          />
+        } @else {
+          <app-stat-card
+            [label]="t('regears.stat.pending')"
+            [value]="tab() === 'queue' ? totalItems() : pendingMineCount()"
+            icon="alert"
+            tone="warning"
+          />
+          <app-stat-card
+            [label]="t('regears.stat.approved')"
+            [value]="approvedMineCount()"
+            icon="check"
+            tone="success"
+          />
+          <app-stat-card
+            [label]="t('regears.stat.rejected')"
+            [value]="rejectedMineCount()"
+            icon="close"
+            tone="danger"
+          />
+          <app-stat-card
+            [label]="t('regears.stat.totalReimbursed')"
+            [value]="formatSilver(totalEstimatedValue())"
+            icon="bank"
+            tone="neutral"
+          />
         }
-      }
+      </section>
 
       <app-data-table
         [columns]="columns()"
@@ -140,6 +199,24 @@ export class Regears {
   protected readonly deaths = signal<RegearDeathView[]>([]);
   protected readonly totalItems = signal(0);
   protected readonly summary = signal<RegearBudgetSummary | null>(null);
+
+  protected readonly pendingMineCount = computed(
+    () => this.deaths().filter((d) => d.status === 'pending').length,
+  );
+  protected readonly approvedMineCount = computed(
+    () => this.deaths().filter((d) => d.status === 'approved').length,
+  );
+  protected readonly rejectedMineCount = computed(
+    () => this.deaths().filter((d) => d.status === 'rejected').length,
+  );
+  protected readonly totalEstimatedValue = computed(() =>
+    this.deaths().reduce((sum, d) => sum + (Number(d.auto_estimate_total) || 0), 0),
+  );
+
+  protected async refreshNow(): Promise<void> {
+    await this.load();
+  }
+
   protected readonly trackById = (death: RegearDeathView): unknown => death.id;
 
   private readonly tablePage = signal(1);

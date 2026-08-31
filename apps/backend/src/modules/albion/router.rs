@@ -7,14 +7,14 @@ use super::client::{AlbionGuild, AlbionPlayer, AlbionRegion, AlbionSearchResult}
 use super::service::{AlbionLinkService, AlbionLinkStatus, AlbionService};
 use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
-use crate::modules::auth::UserContext;
+use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedAlbionGuildMember, PaginationParams};
 use crate::responses::{
     ApiResponse, ApiResponseAlbionLinkStatus, ApiResponsePaginatedAlbionGuildMembers,
 };
 use axum::{
     Extension, Json, Router,
-    extract::Query,
+    extract::{Path, Query},
     routing::{get, post},
 };
 use serde::Deserialize;
@@ -28,6 +28,12 @@ pub fn router() -> Router {
         .route("/guilds/{id}", get(get_guild))
         .route("/link/me", get(get_link_status))
         .route("/link", post(link_player).delete(unlink_player))
+        .route(
+            "/link/users/{user_id}",
+            get(get_user_link_status)
+                .post(admin_link_user_handler)
+                .delete(admin_unlink_user_handler),
+        )
 }
 
 fn build_service(cfg: &Config) -> AlbionService {
@@ -314,5 +320,64 @@ pub async fn unlink_player(
 ) -> Result<Json<ApiResponse<()>>, AppError> {
     let link_service = AlbionLinkService::new();
     link_service.delete_link(&db, &user.id).await?;
+    Ok(Json(ApiResponse::new(())))
+}
+
+/// Retrieves the Albion player link status for a specific user.
+pub async fn get_user_link_status(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(user_id): Path<i64>,
+) -> Result<Json<ApiResponse<AlbionLinkStatus>>, AppError> {
+    if user.user_id != user_id {
+        user.require(&perms, Permission::RolesManage).await?;
+    }
+    let link_service = AlbionLinkService::new();
+    let link = link_service.get_link_for_user_id(&db, user_id).await?;
+    Ok(Json(ApiResponse::new(AlbionLinkStatus::from(link))))
+}
+
+/// Admin endpoint to link any user to an Albion player.
+pub async fn admin_link_user_handler(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Path(user_id): Path<i64>,
+    Json(body): Json<LinkPlayerRequest>,
+) -> Result<Json<ApiResponse<AlbionLinkStatus>>, AppError> {
+    user.require(&perms, Permission::RolesManage).await?;
+
+    let albion = build_service(&cfg);
+    let roster = albion.get_configured_guild_roster().await?;
+
+    let matched = roster
+        .iter()
+        .find(|member| member.id == body.albion_player_id)
+        .ok_or_else(|| {
+            AppError::Validation(
+                "Selected player is not a member of the configured guild".to_string(),
+            )
+        })?;
+
+    let link_service = AlbionLinkService::new();
+    let link = link_service
+        .admin_link_user(&db, user_id, &matched.id, &matched.name)
+        .await?;
+
+    Ok(Json(ApiResponse::new(AlbionLinkStatus::from(Some(link)))))
+}
+
+/// Admin endpoint to unlink any user from their Albion player.
+pub async fn admin_unlink_user_handler(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(user_id): Path<i64>,
+) -> Result<Json<ApiResponse<()>>, AppError> {
+    user.require(&perms, Permission::RolesManage).await?;
+    let link_service = AlbionLinkService::new();
+    link_service.admin_unlink_user(&db, user_id).await?;
     Ok(Json(ApiResponse::new(())))
 }

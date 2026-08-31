@@ -22,7 +22,10 @@ import {
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
+import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 
 type WarnsTab = 'register' | 'escalations';
@@ -56,11 +59,32 @@ function isWarnsTab(value: string): value is WarnsTab {
 @Component({
   selector: 'app-warns',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, DataTable, DataTableCell, Dialog, PageHeader, ViewToggle],
+  imports: [
+    DatePipe,
+    DataTable,
+    DataTableCell,
+    Dialog,
+    Icon,
+    PageHeader,
+    PageStack,
+    StatCard,
+    ViewToggle,
+  ],
   template: `
     <app-page-header [title]="t('warns.title')" [subtitle]="t('warns.subtitle')">
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        [disabled]="loading()"
+        (click)="refreshNow()"
+      >
+        <app-icon name="sparkles" size="0.875rem" />
+        {{ t('common.refreshNow') }}
+      </button>
+
       @if (canIssue() && tab() === 'register') {
-        <button type="button" class="btn btn--primary" (click)="openIssueForm()">
+        <button type="button" class="btn btn--primary btn--sm" (click)="openIssueForm()">
+          <app-icon name="plus" size="0.875rem" />
           {{ t('warns.issue') }}
         </button>
       }
@@ -72,103 +96,132 @@ function isWarnsTab(value: string): value is WarnsTab {
       />
     </app-page-header>
 
-    @if (tab() === 'register') {
-      <app-data-table
-        [columns]="columns()"
-        [rows]="warns()"
-        [loading]="loading()"
-        [error]="loadFailed()"
-        (retry)="load()"
-        [trackBy]="trackById"
-        [serverMode]="true"
-        [totalItems]="warnTotal()"
-        [pageSize]="20"
-        emptyIcon="alert"
-        (pageChange)="onWarnsChange($event)"
-      >
-        <ng-template dataTableCell="user" let-row>
-          <span style="font-weight: 500">{{ displayName(row.user_id, row.username) }}</span>
-        </ng-template>
-        <ng-template dataTableCell="severity" let-row>
-          <span class="chip" [class]="severityChip(row.severity)">{{
-            severityLabel(row.severity)
-          }}</span>
-        </ng-template>
-        <ng-template dataTableCell="status" let-row>
-          @if (row.revoked_at) {
-            <span class="chip">{{ t('warns.revoked') }}</span>
-          } @else {
-            <span class="chip chip--warning">{{ t('warns.active') }}</span>
-          }
-        </ng-template>
-        <ng-template dataTableCell="created_at" let-row>
-          <span style="color: var(--color-text-secondary); font-size: 0.85rem">{{
-            row.created_at | date: 'short'
-          }}</span>
-        </ng-template>
-        <ng-template dataTableCell="actions" let-row>
-          @if (canIssue() && !row.revoked_at) {
-            <button
-              type="button"
-              class="btn btn--outline btn--sm"
-              [disabled]="revokingId() === row.id"
-              (click)="askRevoke(row.id)"
-            >
-              {{ t('warns.revoke') }}
-            </button>
-          } @else {
-            <span style="color: var(--color-text-secondary)">{{ t('bank.actions.none') }}</span>
-          }
-        </ng-template>
-      </app-data-table>
-    } @else {
-      <app-data-table
-        [columns]="escalationColumns"
-        [rows]="escalations()"
-        [loading]="loading()"
-        [error]="loadFailed()"
-        (retry)="load()"
-        [trackBy]="trackEscalation"
-        [serverMode]="true"
-        [totalItems]="escalationTotal()"
-        [pageSize]="20"
-        emptyIcon="alert"
-        [emptyLabel]="'warns.escalations.empty'"
-        (pageChange)="onEscalationsChange($event)"
-      >
-        <ng-template dataTableCell="user" let-row>
-          <span style="font-weight: 500">{{ displayName(row.user_id, row.username) }}</span>
-        </ng-template>
-        <ng-template dataTableCell="opened_at" let-row>
-          <span style="color: var(--color-text-secondary); font-size: 0.85rem">{{
-            row.opened_at | date: 'short'
-          }}</span>
-        </ng-template>
-        <ng-template dataTableCell="status" let-row>
-          @if (row.acknowledged_at) {
-            <span class="chip chip--success">{{ t('warns.acked') }}</span>
-          } @else if (row.closed_reason) {
-            <span class="chip">{{ row.closed_reason }}</span>
-          } @else {
-            <span class="chip chip--warning">{{ t('common.open') }}</span>
-          }
-        </ng-template>
-        <ng-template dataTableCell="actions" let-row>
-          @if (!row.acknowledged_at && !row.closed_reason) {
-            <button
-              type="button"
-              class="btn btn--primary btn--sm"
-              [disabled]="ackingId() === row.id"
-              (click)="ack(row.id)"
-            >
-              {{ t('warns.ack') }}
-            </button>
-          } @else {
-            <span style="color: var(--color-text-secondary)">{{ t('bank.actions.none') }}</span>
-          }
-        </ng-template>
-      </app-data-table>
-    }
+    <app-page-stack>
+      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Warns summary">
+        <app-stat-card
+          [label]="t('warns.stat.active')"
+          [value]="activeWarnsCount()"
+          icon="alert"
+          tone="warning"
+        />
+        <app-stat-card
+          [label]="t('warns.stat.strikes')"
+          [value]="strikesCount()"
+          icon="alert"
+          tone="danger"
+        />
+        <app-stat-card
+          [label]="t('warns.stat.notes')"
+          [value]="notesCount()"
+          icon="list"
+          tone="neutral"
+        />
+        <app-stat-card
+          [label]="t('warns.stat.escalations')"
+          [value]="escalationTotal()"
+          icon="sparkles"
+          tone="primary"
+        />
+      </section>
+
+      @if (tab() === 'register') {
+        <app-data-table
+          [columns]="columns()"
+          [rows]="warns()"
+          [loading]="loading()"
+          [error]="loadFailed()"
+          (retry)="load()"
+          [trackBy]="trackById"
+          [serverMode]="true"
+          [totalItems]="warnTotal()"
+          [pageSize]="20"
+          emptyIcon="alert"
+          (pageChange)="onWarnsChange($event)"
+        >
+          <ng-template dataTableCell="user" let-row>
+            <span style="font-weight: 500">{{ displayName(row.user_id, row.username) }}</span>
+          </ng-template>
+          <ng-template dataTableCell="severity" let-row>
+            <span class="chip" [class]="severityChip(row.severity)">{{
+              severityLabel(row.severity)
+            }}</span>
+          </ng-template>
+          <ng-template dataTableCell="status" let-row>
+            @if (row.revoked_at) {
+              <span class="chip">{{ t('warns.revoked') }}</span>
+            } @else {
+              <span class="chip chip--warning">{{ t('warns.active') }}</span>
+            }
+          </ng-template>
+          <ng-template dataTableCell="created_at" let-row>
+            <span style="color: var(--color-text-secondary); font-size: 0.85rem">{{
+              row.created_at | date: 'short'
+            }}</span>
+          </ng-template>
+          <ng-template dataTableCell="actions" let-row>
+            @if (canIssue() && !row.revoked_at) {
+              <button
+                type="button"
+                class="btn btn--outline btn--sm"
+                [disabled]="revokingId() === row.id"
+                (click)="askRevoke(row.id)"
+              >
+                {{ t('warns.revoke') }}
+              </button>
+            } @else {
+              <span style="color: var(--color-text-secondary)">{{ t('bank.actions.none') }}</span>
+            }
+          </ng-template>
+        </app-data-table>
+      } @else {
+        <app-data-table
+          [columns]="escalationColumns"
+          [rows]="escalations()"
+          [loading]="loading()"
+          [error]="loadFailed()"
+          (retry)="load()"
+          [trackBy]="trackEscalation"
+          [serverMode]="true"
+          [totalItems]="escalationTotal()"
+          [pageSize]="20"
+          emptyIcon="alert"
+          [emptyLabel]="'warns.escalations.empty'"
+          (pageChange)="onEscalationsChange($event)"
+        >
+          <ng-template dataTableCell="user" let-row>
+            <span style="font-weight: 500">{{ displayName(row.user_id, row.username) }}</span>
+          </ng-template>
+          <ng-template dataTableCell="opened_at" let-row>
+            <span style="color: var(--color-text-secondary); font-size: 0.85rem">{{
+              row.opened_at | date: 'short'
+            }}</span>
+          </ng-template>
+          <ng-template dataTableCell="status" let-row>
+            @if (row.acknowledged_at) {
+              <span class="chip chip--success">{{ t('warns.acked') }}</span>
+            } @else if (row.closed_reason) {
+              <span class="chip">{{ row.closed_reason }}</span>
+            } @else {
+              <span class="chip chip--warning">{{ t('common.open') }}</span>
+            }
+          </ng-template>
+          <ng-template dataTableCell="actions" let-row>
+            @if (!row.acknowledged_at && !row.closed_reason) {
+              <button
+                type="button"
+                class="btn btn--primary btn--sm"
+                [disabled]="ackingId() === row.id"
+                (click)="ack(row.id)"
+              >
+                {{ t('warns.ack') }}
+              </button>
+            } @else {
+              <span style="color: var(--color-text-secondary)">{{ t('bank.actions.none') }}</span>
+            }
+          </ng-template>
+        </app-data-table>
+      }
+    </app-page-stack>
 
     @if (showIssueForm()) {
       <app-dialog [title]="t('warns.issue')" (closed)="closeIssueForm()">
@@ -276,6 +329,20 @@ export class Warns {
   protected readonly warnTotal = signal(0);
   protected readonly escalations = signal<WarnEscalationView[]>([]);
   protected readonly escalationTotal = signal(0);
+
+  protected readonly activeWarnsCount = computed(
+    () => this.warns().filter((w) => !w.revoked_at).length,
+  );
+  protected readonly strikesCount = computed(
+    () => this.warns().filter((w) => w.severity === 'strike' && !w.revoked_at).length,
+  );
+  protected readonly notesCount = computed(
+    () => this.warns().filter((w) => w.severity === 'note' && !w.revoked_at).length,
+  );
+
+  protected async refreshNow(): Promise<void> {
+    await this.load();
+  }
   protected readonly members = signal<UserProfile[]>([]);
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);

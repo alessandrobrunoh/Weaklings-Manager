@@ -86,7 +86,6 @@ export const APP_NAV_SECTIONS: NavSection[] = [
       { path: '/comps', icon: 'package', labelKey: 'nav.comps' },
       { path: '/siphoned', icon: 'activity', labelKey: 'nav.siphoned' },
       { path: '/regears', icon: 'shield', labelKey: 'nav.regears' },
-      { path: '/users', icon: 'users', labelKey: 'nav.users' },
       {
         path: '/warns',
         icon: 'alert',
@@ -111,12 +110,18 @@ export const APP_NAV_SECTIONS: NavSection[] = [
         permissions: ['audit.view'],
       },
       { path: '/profile', icon: 'users', labelKey: 'nav.profile' },
-      { path: '/settings', icon: 'settings', labelKey: 'nav.settings' },
     ],
   },
 ];
 
 export const ADMIN_PANELS: readonly AdminPanel[] = [
+  {
+    path: '/users',
+    icon: 'users',
+    labelKey: 'nav.admin.users',
+    hintKey: 'admin.hub.usersHint',
+    permissions: ['roles.manage', 'admin.settings.manage'],
+  },
   {
     path: '/admin/roles',
     icon: 'users',
@@ -185,7 +190,6 @@ export const ADMIN_ELSEWHERE_LINKS: readonly {
 }[] = [
   { path: '/regears', labelKey: 'admin.link.regear', hintKey: 'admin.link.regearHint' },
   { path: '/comps', labelKey: 'admin.link.comps', hintKey: 'admin.link.compsHint' },
-  { path: '/users', labelKey: 'admin.link.users', hintKey: 'admin.link.usersHint' },
   { path: '/audit', labelKey: 'admin.link.audit', hintKey: 'admin.link.auditHint' },
   { path: '/splits', labelKey: 'admin.link.splits', hintKey: 'admin.link.splitsHint' },
 ];

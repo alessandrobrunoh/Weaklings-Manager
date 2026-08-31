@@ -19,11 +19,13 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 interface QuickAction {
   readonly path: string;
   readonly icon: IconName;
   readonly labelKey: TranslationKey;
+  readonly desc: string;
 }
 
 type StatTone = 'primary' | 'warning' | 'success' | 'neutral';
@@ -35,26 +37,54 @@ interface DashboardStat {
   readonly tone: StatTone;
   readonly value: () => string;
   readonly hint: () => string;
+  readonly tooltip: string;
 }
 
 /**
  * Landing page of the authenticated experience.
  *
- * Aggregates a cross-module snapshot (bank, splits, events, members) so the
- * first screen is useful without duplicating the richer workflows that live
- * on each feature page. Data loads are best-effort: a failing endpoint only
- * blanks its own card.
+ * Provides a high-utility command center with real-time guild KPIs,
+ * quick action portals, live events, and recent loot splits.
  */
 @Component({
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, PageHeader, PageStack, RouterLink, StatCard, StatusChip],
+  imports: [Icon, PageHeader, PageStack, RouterLink, StatCard, StatusChip, TooltipDirective],
   template: `
-    <app-page-header [title]="welcomeText()" [subtitle]="t('app.tagline')" [actions]="false" />
+    <app-page-header [title]="welcomeText()" [subtitle]="t('app.tagline')">
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        [disabled]="loading()"
+        (click)="refreshNow()"
+        [appTooltip]="'Aggiorna dati in tempo reale'"
+        tooltipPosition="bottom"
+      >
+        <app-icon name="sparkles" size="0.875rem" />
+        {{ t('common.refreshNow') }}
+      </button>
+    </app-page-header>
 
     <app-page-stack>
-      <!-- Quick actions -->
-      <section>
+      <!-- Guild operational snapshot -->
+      <section aria-label="Guild snapshot">
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          @for (stat of stats; track stat.labelKey) {
+            <div [appTooltip]="stat.tooltip" tooltipPosition="top">
+              <app-stat-card
+                [label]="t(stat.labelKey)"
+                [value]="stat.value()"
+                [sub]="stat.hint()"
+                [icon]="stat.icon"
+                [tone]="stat.tone"
+              />
+            </div>
+          }
+        </div>
+      </section>
+
+      <!-- Quick action navigation hubs -->
+      <section aria-label="Quick actions">
         <h2 class="eyebrow mb-3">
           {{ t('dashboard.quick_actions') }}
         </h2>
@@ -62,83 +92,81 @@ interface DashboardStat {
           @for (action of actions; track action.path) {
             <a
               [routerLink]="action.path"
-              class="card flex flex-col items-start gap-2.5 p-4 no-underline transition hover:border-(--color-border-strong)"
+              class="card group flex flex-col items-start gap-2.5 p-4 no-underline transition-all hover:border-[var(--color-border-strong)] hover:shadow-sm"
               style="color: var(--color-text)"
+              [appTooltip]="action.desc"
+              tooltipPosition="top"
             >
               <span
-                class="flex h-8 w-8 items-center justify-center rounded-full"
+                class="flex h-9 w-9 items-center justify-center rounded-lg transition-transform group-hover:scale-105"
                 style="background-color: var(--color-surface-2); color: var(--color-text)"
                 aria-hidden="true"
               >
-                <app-icon [name]="action.icon" size="1rem" />
+                <app-icon [name]="action.icon" size="1.125rem" />
               </span>
-              <span class="text-xs font-medium">{{ t(action.labelKey) }}</span>
+              <div class="min-w-0 w-full">
+                <span class="text-xs font-semibold block truncate group-hover:underline">{{ t(action.labelKey) }}</span>
+                <span class="text-[11px] block truncate mt-0.5" style="color: var(--color-text-secondary)">{{ action.desc }}</span>
+              </div>
             </a>
-          }
-        </div>
-      </section>
-
-      <!-- Guild snapshot -->
-      <section>
-        <h2 class="eyebrow mb-3">
-          {{ t('dashboard.snapshot') }}
-        </h2>
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          @for (stat of stats; track stat.labelKey) {
-            <app-stat-card
-              [label]="t(stat.labelKey)"
-              [value]="stat.value()"
-              [sub]="stat.hint()"
-              [icon]="stat.icon"
-              [tone]="stat.tone"
-            />
           }
         </div>
       </section>
 
       <!-- Two-column activity panels -->
-      <section class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <section class="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <!-- Live & upcoming events -->
-        <div class="card p-6">
+        <div class="card p-5">
           <div class="mb-4 flex items-center justify-between">
-            <h2 class="eyebrow">
-              {{ t('dashboard.events.upcoming') }}
-            </h2>
+            <div class="flex items-center gap-2">
+              <span class="inline-block h-2 w-2 rounded-full" style="background-color: var(--color-success)"></span>
+              <h2 class="eyebrow">
+                {{ t('dashboard.events.upcoming') }}
+              </h2>
+            </div>
             <a
               routerLink="/events"
               class="text-xs font-medium no-underline hover:underline"
-              style="color: var(--color-text)"
+              style="color: var(--color-text-secondary)"
+              [appTooltip]="'Tutti gli eventi di gilda'"
+              tooltipPosition="left"
             >
-              {{ t('dashboard.view_all') }}
+              {{ t('dashboard.view_all') }} →
             </a>
           </div>
 
           @if (visibleEvents().length === 0) {
-            <p class="py-6 text-center text-sm" style="color: var(--color-text-secondary)">
-              {{ t('dashboard.events.empty') }}
-            </p>
+            <div class="py-8 text-center" style="color: var(--color-text-secondary)">
+              <app-icon name="calendar" size="2rem" class="opacity-40 mx-auto mb-2" />
+              <p class="text-sm">{{ t('dashboard.events.empty') }}</p>
+            </div>
           } @else {
             <ul class="flex flex-col gap-2">
               @for (event of visibleEvents(); track event.id) {
                 <li>
                   <a
                     [routerLink]="['/events', event.id]"
-                    class="flex items-center gap-3 rounded-lg p-2 no-underline transition hover:bg-(--color-surface-hover)"
-                    style="color: var(--color-text)"
+                    class="flex items-center gap-3 rounded-lg p-2.5 no-underline transition-colors hover:bg-[var(--color-surface-hover)]"
+                    style="color: var(--color-text); border: 1px solid var(--color-border)"
                   >
                     <span
-                      class="h-2 w-2 shrink-0 rounded-full"
+                      class="h-2.5 w-2.5 shrink-0 rounded-full"
                       [style.backgroundColor]="eventDotColor(event.status)"
+                      [appTooltip]="event.status"
                       aria-hidden="true"
                     ></span>
                     <div class="min-w-0 flex-1">
-                      <p class="truncate text-sm font-medium">
+                      <p class="truncate text-sm font-medium flex items-center gap-1.5">
                         @if (event.call_to_arms) {
-                          <span class="cta-star" title="{{ t('events.call_to_arms') }}">★</span>
+                          <span
+                            class="cta-star font-bold text-xs"
+                            [appTooltip]="t('events.call_to_arms')"
+                            style="color: var(--color-warning)"
+                          >★ CTA</span>
                         }
                         {{ event.title }}
                       </p>
-                      <p class="truncate text-xs" style="color: var(--color-text-secondary)">
+                      <p class="truncate text-xs mt-0.5" style="color: var(--color-text-secondary)">
                         {{ event.comp_name }} · {{ formatEventDate(event.event_date_utc) }}
                       </p>
                     </div>
@@ -151,42 +179,48 @@ interface DashboardStat {
         </div>
 
         <!-- Recent splits -->
-        <div class="card p-6">
+        <div class="card p-5">
           <div class="mb-4 flex items-center justify-between">
-            <h2 class="eyebrow">
-              {{ t('dashboard.splits.recent') }}
-            </h2>
+            <div class="flex items-center gap-2">
+              <span class="inline-block h-2 w-2 rounded-full" style="background-color: var(--color-primary)"></span>
+              <h2 class="eyebrow">
+                {{ t('dashboard.splits.recent') }}
+              </h2>
+            </div>
             <a
               routerLink="/splits"
               class="text-xs font-medium no-underline hover:underline"
-              style="color: var(--color-text)"
+              style="color: var(--color-text-secondary)"
+              [appTooltip]="'Tutte le split di bottino'"
+              tooltipPosition="left"
             >
-              {{ t('dashboard.view_all') }}
+              {{ t('dashboard.view_all') }} →
             </a>
           </div>
 
           @if (visibleSplits().length === 0) {
-            <p class="py-6 text-center text-sm" style="color: var(--color-text-secondary)">
-              {{ t('dashboard.splits.empty') }}
-            </p>
+            <div class="py-8 text-center" style="color: var(--color-text-secondary)">
+              <app-icon name="swords" size="2rem" class="opacity-40 mx-auto mb-2" />
+              <p class="text-sm">{{ t('dashboard.splits.empty') }}</p>
+            </div>
           } @else {
             <ul class="flex flex-col gap-2">
               @for (split of visibleSplits(); track split.id) {
                 <li>
                   <a
                     [routerLink]="['/splits', split.id]"
-                    class="flex items-center gap-3 rounded-lg p-2 no-underline transition hover:bg-(--color-surface-hover)"
-                    style="color: var(--color-text)"
+                    class="flex items-center gap-3 rounded-lg p-2.5 no-underline transition-colors hover:bg-[var(--color-surface-hover)]"
+                    style="color: var(--color-text); border: 1px solid var(--color-border)"
                   >
                     <div class="min-w-0 flex-1">
                       <p class="truncate text-sm font-medium">
                         {{ split.event_title ?? split.created_by_username }}
                       </p>
-                      <p class="truncate text-xs" style="color: var(--color-text-secondary)">
-                        {{ split.participant_count }} · {{ formatRelative(split.created_at) }}
+                      <p class="truncate text-xs mt-0.5" style="color: var(--color-text-secondary)">
+                        {{ split.participant_count }} partecipanti · {{ formatRelative(split.created_at) }}
                       </p>
                     </div>
-                    <span class="text-sm font-semibold tabular-nums">
+                    <span class="text-sm font-semibold tabular-nums mono" style="color: var(--color-success)">
                       {{ formatValue(split.estimated_market_value) }}
                     </span>
                     <app-status-chip [value]="split.status" />
@@ -225,12 +259,12 @@ export class Dashboard {
   });
 
   protected readonly actions: ReadonlyArray<QuickAction> = [
-    { path: '/bank', icon: 'bank', labelKey: 'nav.bank' },
-    { path: '/splits', icon: 'swords', labelKey: 'nav.splits' },
-    { path: '/events', icon: 'calendar', labelKey: 'nav.events' },
-    { path: '/battles', icon: 'shield', labelKey: 'nav.battles' },
-    { path: '/comps', icon: 'package', labelKey: 'nav.comps' },
-    { path: '/siphoned', icon: 'activity', labelKey: 'nav.siphoned' },
+    { path: '/bank', icon: 'bank', labelKey: 'nav.bank', desc: 'Saldo e prelievi' },
+    { path: '/splits', icon: 'swords', labelKey: 'nav.splits', desc: 'Divisione bottino' },
+    { path: '/events', icon: 'calendar', labelKey: 'nav.events', desc: 'Attività & CTA' },
+    { path: '/battles', icon: 'shield', labelKey: 'nav.battles', desc: 'Registro PvP' },
+    { path: '/comps', icon: 'package', labelKey: 'nav.comps', desc: 'Build & setup' },
+    { path: '/siphoned', icon: 'activity', labelKey: 'nav.siphoned', desc: 'Monitor energia' },
   ];
 
   protected readonly stats: ReadonlyArray<DashboardStat> = [
@@ -241,6 +275,7 @@ export class Dashboard {
       value: () => this.formatNumber(this.bankBalance()?.pending_total ?? null),
       hint: () =>
         this.formatCountHint(this.bankBalance()?.pending_count ?? null, 'dashboard.stat.balance'),
+      tooltip: 'Argento in attesa nel bilancio personale',
     },
     {
       labelKey: 'dashboard.stat.requested',
@@ -252,6 +287,7 @@ export class Dashboard {
           this.bankBalance()?.requested_count ?? null,
           'dashboard.stat.requested',
         ),
+      tooltip: 'Argento richiesto per il prelievo',
     },
     {
       labelKey: 'dashboard.stat.pending_splits',
@@ -259,6 +295,7 @@ export class Dashboard {
       tone: 'neutral',
       value: () => this.formatCount(this.pendingSplitCount()),
       hint: () => this.translate.t('nav.splits'),
+      tooltip: 'Divisioni di bottino in attesa di liquidazione',
     },
     {
       labelKey: 'dashboard.stat.completed_splits',
@@ -266,6 +303,7 @@ export class Dashboard {
       tone: 'success',
       value: () => this.formatCount(this.completedSplitCount()),
       hint: () => this.translate.t('nav.splits'),
+      tooltip: 'Divisioni di bottino completate con successo',
     },
     {
       labelKey: 'dashboard.stat.live_events',
@@ -273,6 +311,7 @@ export class Dashboard {
       tone: 'success',
       value: () => this.formatCount(this.liveEventCount()),
       hint: () => this.translate.t('dashboard.stat.scheduled_events'),
+      tooltip: 'Eventi e attività di gilda attualmente in corso',
     },
     {
       labelKey: 'dashboard.stat.guild_paid',
@@ -281,6 +320,7 @@ export class Dashboard {
       value: () => this.formatNumber(this.guildSummary()?.paid_total ?? null),
       hint: () =>
         this.formatCountHint(this.guildSummary()?.paid_count ?? null, 'dashboard.stat.guild_paid'),
+      tooltip: 'Totale argento liquidato complessivamente dalla gilda',
     },
   ];
 
@@ -294,8 +334,19 @@ export class Dashboard {
     this.recentSplits().slice(0, 5),
   );
 
+  protected readonly loading = signal(false);
+
   constructor() {
     void this.loadSnapshot();
+  }
+
+  protected async refreshNow(): Promise<void> {
+    this.loading.set(true);
+    try {
+      await this.loadSnapshot();
+    } finally {
+      this.loading.set(false);
+    }
   }
 
   private async loadSnapshot(): Promise<void> {

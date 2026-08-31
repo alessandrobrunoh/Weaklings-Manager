@@ -40,6 +40,8 @@ import {
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+
 const SORT_WHITELIST = new Set(['created_at', 'status', 'note']);
 
 interface SplitParticipantDraft {
@@ -70,16 +72,36 @@ interface SplitParticipantDraft {
     SearchDialog,
     StatCard,
     StatusChip,
+    TooltipDirective,
   ],
   template: `
     <app-page-header [title]="t('splits.title')" [subtitle]="t('splits.subtitle')">
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        [disabled]="loading()"
+        (click)="refreshNow()"
+        [appTooltip]="'Aggiorna elenco split'"
+        tooltipPosition="bottom"
+      >
+        <app-icon name="sparkles" size="0.875rem" />
+        {{ t('common.refreshNow') }}
+      </button>
+
       @if (canManageIslands()) {
-        <a routerLink="/admin/islands" class="btn btn--ghost">{{ t('splits.catalog.manage') }}</a>
+        <a
+          routerLink="/admin/islands"
+          class="btn btn--ghost btn--sm"
+          [appTooltip]="'Gestisci catalogo isole e chest'"
+          tooltipPosition="bottom"
+        >{{ t('splits.catalog.manage') }}</a>
       }
       <button
         type="button"
-        class="btn btn--primary flex items-center gap-2"
+        class="btn btn--primary btn--sm flex items-center gap-2"
         (click)="openCreateDialog()"
+        [appTooltip]="'Crea nuova divisione di bottino'"
+        tooltipPosition="bottom"
       >
         <app-icon name="sparkles" size="1.1rem" />
         {{ t('splits.new') }}
@@ -97,7 +119,7 @@ interface SplitParticipantDraft {
         />
         <app-stat-card
           [label]="t('splits.pending_splits')"
-          [value]="String(kpi()?.pending_count ?? 0)"
+          [value]="(kpi()?.pending_count ?? 0).toString()"
           [sub]="t('splits.kpi.pending_sub')"
           icon="alert"
           tone="warning"
@@ -110,7 +132,7 @@ interface SplitParticipantDraft {
         />
         <app-stat-card
           [label]="t('splits.participants')"
-          [value]="String(kpi()?.total_participants ?? 0)"
+          [value]="(kpi()?.total_participants ?? 0).toString()"
           [sub]="t('splits.kpi.recipients_sub')"
           icon="users"
           tone="primary"
@@ -149,21 +171,6 @@ interface SplitParticipantDraft {
           </button>
         </section>
       }
-
-      <label class="flex items-center gap-2 self-start">
-        <span class="label" style="margin-bottom: 0">{{ t('splits.island') }}</span>
-        <select
-          class="select"
-          style="width: auto"
-          [value]="islandFilter()"
-          (change)="onIslandFilterChange($event)"
-        >
-          <option value="">{{ t('common.all') }}</option>
-          @for (island of islands(); track island.id) {
-            <option [value]="island.id">{{ cityLabel(island.city) }} · {{ island.name }}</option>
-          }
-        </select>
-      </label>
 
       <app-data-table
         [columns]="columns()"
@@ -679,7 +686,15 @@ export class Splits {
           { value: 'lost', label: this.t('splits.status.lost') },
         ],
       },
-      { key: 'island', label: 'splits.island', accessor: (row) => this.locationLabel(row) },
+      {
+        key: 'island',
+        label: 'splits.island',
+        accessor: (row) => this.locationLabel(row),
+        filterOptions: this.islands().map((island) => ({
+          value: String(island.id),
+          label: `${this.cityLabel(island.city)} · ${island.name}`,
+        })),
+      },
       { key: 'event', label: 'splits.event', accessor: (row) => row.event_title ?? '' },
       { key: 'net', label: 'splits.net_value', align: 'right', accessor: (row) => this.netOf(row) },
       {
@@ -698,6 +713,10 @@ export class Splits {
     );
     return cols;
   });
+
+  protected async refreshNow(): Promise<void> {
+    await Promise.all([this.loadKpi(), this.loadIslands(), this.load()]);
+  }
 
   constructor() {
     void this.loadIslands();
@@ -784,6 +803,7 @@ export class Splits {
     this.searchQuery.set(event.search);
     const status = event.columnFilters['status'] ?? '';
     this.statusFilter.set(isSplitStatus(status) ? status : '');
+    this.islandFilter.set(event.columnFilters['island'] ?? '');
     if (event.sort && SORT_WHITELIST.has(event.sort.columnKey)) {
       this.sortKey.set(event.sort.columnKey);
       this.sortOrder.set(event.sort.direction);

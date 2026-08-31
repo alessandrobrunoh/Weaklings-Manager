@@ -25,7 +25,7 @@ import { Icon, type IconName } from '../icon/icon';
       </div>
       <div>
         <p class="mono text-2xl font-normal leading-tight tracking-tight" [style.color]="valueColor()">
-          {{ value() ?? '—' }}
+          {{ value() !== null && value() !== undefined ? value() : '—' }}
         </p>
         @if (sub()) {
           <p class="mt-1 text-xs" style="color: var(--color-text-secondary)">{{ sub() }}</p>
@@ -36,7 +36,7 @@ import { Icon, type IconName } from '../icon/icon';
 })
 export class StatCard {
   readonly label = input.required<string>();
-  readonly value = input.required<string | null>();
+  readonly value = input.required<string | number | null>();
   readonly sub = input<string>();
   readonly icon = input<IconName | undefined>(undefined);
   readonly tone = input<'default' | 'neutral' | 'success' | 'warning' | 'danger' | 'primary'>('default');

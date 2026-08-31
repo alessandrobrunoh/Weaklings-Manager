@@ -26,6 +26,7 @@ import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import type { IconName } from '../../shared/components/icon/icon';
 
 type ConfirmAll = 'accept' | 'reject';
@@ -52,74 +53,97 @@ function emptyPageChange(): DataTablePageChange {
     Dialog,
     Icon,
     StatCard,
+    TooltipDirective,
     ViewToggle,
   ],
   template: `
     <app-page-header [title]="t('bank.title')" [subtitle]="t('bank.subtitle')">
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        [disabled]="loading()"
+        (click)="refreshNow()"
+        [appTooltip]="'Aggiorna saldo e transazioni'"
+        tooltipPosition="bottom"
+      >
+        <app-icon name="sparkles" size="0.875rem" />
+        {{ t('common.refreshNow') }}
+      </button>
+
       @if (viewMode() === 'personal') {
-        <button type="button" class="btn btn--tonal" (click)="requestWithdrawal()">
+        <button
+          type="button"
+          class="btn btn--tonal btn--sm"
+          (click)="requestWithdrawal()"
+          [appTooltip]="'Richiedi il prelievo del tuo saldo'"
+          tooltipPosition="bottom"
+        >
           {{ t('bank.withdraw.request') }}
         </button>
       } @else if (canAccept()) {
-        <div class="flex gap-2">
-          <button type="button" class="btn btn--outline" (click)="confirmAll.set('reject')">
-            {{ t('bank.withdraw.reject') }}
-          </button>
-          <button type="button" class="btn btn--primary" (click)="confirmAll.set('accept')">
-            {{ t('bank.withdraw.accept') }}
-          </button>
-        </div>
+        <button
+          type="button"
+          class="btn btn--outline btn--sm"
+          [disabled]="(balance()?.requested_count ?? 0) === 0"
+          (click)="confirmAll.set('reject')"
+          [appTooltip]="'Rifiuta tutte le richieste pendenti'"
+          tooltipPosition="bottom"
+        >
+          {{ t('bank.withdraw.reject') }}
+        </button>
+        <button
+          type="button"
+          class="btn btn--primary btn--sm"
+          [disabled]="(balance()?.requested_count ?? 0) === 0"
+          (click)="confirmAll.set('accept')"
+          [appTooltip]="'Accetta e liquida tutte le richieste pendenti'"
+          tooltipPosition="bottom"
+        >
+          {{ t('bank.withdraw.accept') }}
+        </button>
+      }
+
+      @if (canAccept()) {
+        <app-view-toggle
+          pageTabs
+          [options]="viewOptions()"
+          [active]="viewMode()"
+          (activeChange)="setViewMode($event)"
+        />
       }
     </app-page-header>
 
     <app-page-stack>
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Bank summary">
         <app-stat-card
           [label]="t('bank.balance.pending')"
           [value]="formatAmount(balance()?.pending_total)"
           [sub]="(balance()?.pending_count ?? 0) + ' ' + t('common.total')"
           icon="bank"
+          tone="warning"
         />
         <app-stat-card
           [label]="t('bank.balance.requested')"
           [value]="formatAmount(balance()?.requested_total)"
           [sub]="(balance()?.requested_count ?? 0) + ' ' + t('common.total')"
           icon="bank"
+          tone="primary"
         />
-      </div>
+        <app-stat-card
+          [label]="t('bank.balance.payouts')"
+          [value]="formatAmount(totalPaidOut())"
+          icon="sparkles"
+          tone="success"
+        />
+        <app-stat-card
+          [label]="t('bank.stat.transactions')"
+          [value]="transactionTotal()"
+          icon="list"
+          tone="neutral"
+        />
+      </section>
 
-      <section>
-        <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <h2 class="text-base font-semibold" style="color: var(--color-text)">
-              {{ t('bank.transactions.title') }}
-            </h2>
-            @if (canAccept()) {
-              <app-view-toggle
-                [options]="viewOptions()"
-                [active]="viewMode()"
-                (activeChange)="setViewMode($event)"
-              />
-            }
-          </div>
-          <label class="flex items-center gap-2">
-            <span class="label" style="margin-bottom: 0">{{ t('common.status') }}</span>
-            <select
-              class="select"
-              style="width: auto"
-              [value]="statusFilter()"
-              (change)="onStatusChange($event)"
-            >
-              <option value="">{{ t('common.all') }}</option>
-              <option value="pending">{{ t('bank.balance.pending') }}</option>
-              <option value="requested">{{ t('bank.balance.requested') }}</option>
-              <option value="rejected">{{ t('bank.status.rejected') }}</option>
-              <option value="withdrawn">{{ t('bank.balance.payouts') }}</option>
-            </select>
-          </label>
-        </div>
-
-        @for (key of [tableKey()]; track key) {
+      @for (key of [tableKey()]; track key) {
         <app-data-table
           [columns]="transactionColumns()"
           [rows]="transactions()"
@@ -142,7 +166,7 @@ function emptyPageChange(): DataTablePageChange {
           </ng-template>
           <ng-template dataTableCell="amount" let-row>
             <span
-              class="font-semibold"
+              class="font-semibold mono"
               [class.text-success]="row.status === 'withdrawn'"
               [class.text-warning]="row.status === 'requested'"
               [class.text-error]="row.status === 'rejected'"
@@ -174,7 +198,7 @@ function emptyPageChange(): DataTablePageChange {
               <div class="flex justify-end gap-1">
                 <button
                   type="button"
-                  class="btn btn--success btn--icon"
+                  class="btn btn--success btn--icon btn--sm"
                   [title]="t('bank.actions.accept_title')"
                   [attr.aria-label]="t('bank.actions.accept_title')"
                   (click)="acceptSingle(row.id)"
@@ -183,7 +207,7 @@ function emptyPageChange(): DataTablePageChange {
                 </button>
                 <button
                   type="button"
-                  class="btn btn--error btn--icon"
+                  class="btn btn--error btn--icon btn--sm"
                   [title]="t('bank.actions.reject_title')"
                   [attr.aria-label]="t('bank.actions.reject_title')"
                   (click)="rejectSingle(row.id)"
@@ -196,8 +220,7 @@ function emptyPageChange(): DataTablePageChange {
             }
           </ng-template>
         </app-data-table>
-        }
-      </section>
+      }
     </app-page-stack>
 
     @if (confirmAll(); as action) {
@@ -255,6 +278,12 @@ export class Bank {
 
   private readonly tableQuery = signal<DataTablePageChange>(emptyPageChange());
 
+  protected readonly totalPaidOut = computed(() =>
+    this.transactions()
+      .filter((t) => t.status === 'withdrawn')
+      .reduce((acc, t) => acc + Number(t.amount || 0), 0),
+  );
+
   protected readonly transactionColumns = computed<DataTableColumn<TransactionView>[]>(() => {
     const baseColumns: DataTableColumn<TransactionView>[] = [
       {
@@ -262,6 +291,12 @@ export class Bank {
         label: 'common.status',
         sortable: true,
         accessor: (tx) => tx.status,
+        filterOptions: [
+          { label: this.t('bank.status.pending'), value: 'pending' },
+          { label: this.t('bank.status.requested'), value: 'requested' },
+          { label: this.t('bank.status.rejected'), value: 'rejected' },
+          { label: this.t('bank.status.withdrawn'), value: 'withdrawn' },
+        ],
       },
       {
         key: 'amount',
@@ -300,6 +335,10 @@ export class Bank {
 
     return baseColumns;
   });
+
+  protected async refreshNow(): Promise<void> {
+    await this.load();
+  }
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
@@ -419,7 +458,7 @@ export class Bank {
         params['sort'] = query.sort.columnKey;
         params['order'] = query.sort.direction;
       }
-      const status = this.statusFilter();
+      const status = (query.columnFilters['status'] as TransactionStatus) || this.statusFilter();
       if (status) {
         params['status'] = status;
       }

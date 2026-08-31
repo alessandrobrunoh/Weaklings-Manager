@@ -128,6 +128,9 @@ pub enum Permission {
     /// Claim a VOD review for XP. Member+.
     #[strum(serialize = "vod.submit")]
     VodSubmit,
+    /// Compose a guild-wide in-app announcement. Officer+ today.
+    #[strum(serialize = "notifications.broadcast")]
+    NotificationsBroadcast,
 }
 
 impl Permission {
@@ -214,7 +217,7 @@ mod tests {
 
     #[test]
     fn all_contains_every_variant() {
-        assert_eq!(Permission::all().len(), 30);
+        assert_eq!(Permission::all().len(), 31);
     }
 
     #[test]

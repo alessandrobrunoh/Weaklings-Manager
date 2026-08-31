@@ -1,5 +1,5 @@
 import { DatePipe, JsonPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
 import type { PaginatedData } from '../../core/models/api.models';
@@ -13,7 +13,10 @@ import {
   type DataTablePageChange,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { StatCard } from '../../shared/components/stat-card/stat-card';
 
 export interface AuditLog {
   id: number;
@@ -73,64 +76,111 @@ function emptyPageChange(): DataTablePageChange {
 @Component({
   selector: 'app-audit',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, DataTable, DataTableCell, DatePipe, JsonPipe],
+  imports: [
+    PageHeader,
+    PageStack,
+    DataTable,
+    DataTableCell,
+    DatePipe,
+    JsonPipe,
+    Icon,
+    StatCard,
+  ],
   template: `
     <app-page-header
       [title]="t('audit.title')"
       [subtitle]="t('audit.subtitle')"
-      [actions]="false"
-    />
-
-    <app-data-table
-      [columns]="columns"
-      [rows]="logs()"
-      [loading]="loading()"
-      [error]="loadFailed()"
-      (retry)="load()"
-      [trackBy]="trackById"
-      [serverMode]="true"
-      [totalItems]="totalItems()"
-      [pageSize]="20"
-      emptyIcon="activity"
-      (pageChange)="onTableChange($event)"
     >
-      <ng-template dataTableCell="action" let-row>
-        <span style="font-weight: 500">{{ row.action }}</span>
-      </ng-template>
-      <ng-template dataTableCell="entity" let-row>
-        @if (row.entity_type) {
-          <span class="chip" style="font-size: 0.8rem; padding: 2px 6px"
-            >{{ row.entity_type }} #{{ row.entity_id }}</span
-          >
-        } @else {
-          <span style="color: var(--color-text-secondary); font-size: 0.8rem;">-</span>
-        }
-      </ng-template>
-      <ng-template dataTableCell="user" let-row>
-        @if (row.user_id) {
-          <span class="chip chip--info" style="font-size: 0.8rem; padding: 2px 6px"
-            >User #{{ row.user_id }}</span
-          >
-        } @else {
-          <span style="color: var(--color-text-secondary); font-size: 0.8rem;">{{
-            t('audit.system')
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        [disabled]="loading()"
+        (click)="refreshNow()"
+      >
+        <app-icon name="sparkles" size="0.875rem" />
+        {{ t('common.refreshNow') }}
+      </button>
+    </app-page-header>
+
+    <app-page-stack>
+      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Audit summary">
+        <app-stat-card
+          [label]="t('audit.stat.total')"
+          [value]="totalItems()"
+          icon="activity"
+          tone="neutral"
+        />
+        <app-stat-card
+          [label]="t('audit.stat.today')"
+          [value]="todayCount()"
+          icon="calendar"
+          tone="primary"
+        />
+        <app-stat-card
+          [label]="t('audit.stat.system')"
+          [value]="systemCount()"
+          icon="shield"
+          tone="warning"
+        />
+        <app-stat-card
+          [label]="t('audit.stat.user')"
+          [value]="userCount()"
+          icon="users"
+          tone="success"
+        />
+      </section>
+
+      <app-data-table
+        [columns]="columns"
+        [rows]="logs()"
+        [loading]="loading()"
+        [error]="loadFailed()"
+        (retry)="load()"
+        [trackBy]="trackById"
+        [serverMode]="true"
+        [totalItems]="totalItems()"
+        [pageSize]="20"
+        emptyIcon="activity"
+        (pageChange)="onTableChange($event)"
+      >
+        <ng-template dataTableCell="action" let-row>
+          <span style="font-weight: 500">{{ row.action }}</span>
+        </ng-template>
+        <ng-template dataTableCell="entity" let-row>
+          @if (row.entity_type) {
+            <span class="chip" style="font-size: 0.8rem; padding: 2px 6px"
+              >{{ row.entity_type }} #{{ row.entity_id }}</span
+            >
+          } @else {
+            <span style="color: var(--color-text-secondary); font-size: 0.8rem;">-</span>
+          }
+        </ng-template>
+        <ng-template dataTableCell="user" let-row>
+          @if (row.user_id) {
+            <span class="chip chip--info" style="font-size: 0.8rem; padding: 2px 6px"
+              >User #{{ row.user_id }}</span
+            >
+          } @else {
+            <span style="color: var(--color-text-secondary); font-size: 0.8rem;">{{
+              t('audit.system')
+            }}</span>
+          }
+        </ng-template>
+        <ng-template dataTableCell="details" let-row>
+          @if (row.details) {
+            <pre
+              style="margin: 0; font-size: 0.75rem; color: var(--color-text-secondary); max-width: 300px; overflow-x: auto; white-space: pre-wrap;"
+              >{{ row.details | json }}</pre
+            >
+          }
+        </ng-template>
+        <ng-template dataTableCell="created_at" let-row>
+          <span style="color: var(--color-text-secondary); font-size: 0.85rem;">{{
+            row.created_at | date: 'short'
           }}</span>
-        }
-      </ng-template>
-      <ng-template dataTableCell="details" let-row>
-        @if (row.details) {
-          <pre
-            style="margin: 0; font-size: 0.75rem; color: var(--color-text-secondary); max-width: 300px; overflow-x: auto; white-space: pre-wrap;"
-            >{{ row.details | json }}</pre
-          >
-        }
-      </ng-template>
-      <ng-template dataTableCell="created_at" let-row>
-        <span style="color: var(--color-text-secondary); font-size: 0.85rem;">{{
-          row.created_at | date: 'short'
-        }}</span>
-      </ng-template>
-    </app-data-table>
+        </ng-template>
+      </app-data-table>
+    </app-page-stack>
   `,
 })
 export class Audit {
@@ -142,6 +192,22 @@ export class Audit {
   protected readonly totalItems = signal(0);
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
+
+  protected readonly todayCount = computed(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return this.logs().filter((l) => l.created_at.startsWith(today)).length;
+  });
+  protected readonly systemCount = computed(() =>
+    this.logs().filter((l) => !l.user_id).length,
+  );
+  protected readonly userCount = computed(() =>
+    this.logs().filter((l) => !!l.user_id).length,
+  );
+
+  protected async refreshNow(): Promise<void> {
+    await this.load();
+  }
+
   protected readonly trackById = (log: AuditLog): unknown => log.id;
 
   private readonly tableQuery = signal<DataTablePageChange>(emptyPageChange());

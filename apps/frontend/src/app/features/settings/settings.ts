@@ -1,14 +1,17 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { DatePipe, DecimalPipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
-  RegearBudgetSummary,
+  AlbionGuildMember,
   AlbionLinkStatus,
   BalanceSummary,
   BattleSummary,
   PaginatedData,
   ProgressionMeView,
+  RegearBudgetSummary,
+  Role,
   SiphonedEntryView,
   SiphonedPlayerBalance,
   TransactionView,
@@ -20,36 +23,22 @@ import { ThemeService, type ThemePreference } from '../../core/services/theme.se
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService, type Language } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
+import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { Dialog } from '../../shared/components/dialog/dialog';
+import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
+import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
+import { StatCard } from '../../shared/components/stat-card/stat-card';
+import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 
-interface ProfileMetric {
-  readonly label: string;
-  readonly value: string;
-  readonly sub?: string;
-}
+type ProfileTab = 'overview' | 'ledgers' | 'battles' | 'preferences';
 
-interface ProfileChartMetric {
-  readonly label: string;
-  readonly value: number;
-}
-
-/**
- * Empty paginated response for optional profile panels.
- *
- * The `/battles/me` endpoint intentionally returns a validation error when the user has not linked
- * an Albion character. Profile should still render money/settings in that case, so we degrade only
- * the fight panel to an empty dataset.
- *
- * @example
- * ```ts
- * const empty = emptyPaginatedBattles();
- * console.assert(empty.items.length === 0);
- * ```
- */
 function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
   return {
     items: [],
@@ -60,440 +49,568 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
   };
 }
 
+function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
+  return Array.isArray(data) ? data : (data.items ?? []);
+}
+
 /**
- * Personal performance command center.
+ * Unified Personal Profile & Preferences Workspace.
  *
- * Settings were too small for what members need day-to-day. This profile view keeps preferences,
- * but its primary purpose is to show the caller's money, siphoned-energy activity, and fight
- * history using the same backend ledgers used by the guild pages.
- *
- * @example
- * ```ts
- * { path: 'profile', loadComponent: () => import('./features/settings/settings').then(m => m.Settings) }
- * ```
+ * Integrates account identity, season XP progression, attendance and combat metrics,
+ * personal bank and siphoned energy ledgers, fight records, Albion character link,
+ * and user preferences (theme & language).
  */
 @Component({
   selector: 'app-profile',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, DecimalPipe, PageHeader, PageStack, Loading, ErrorState, DataTable],
+  imports: [
+    DatePipe,
+    DecimalPipe,
+    DataTable,
+    DataTableCell,
+    Dialog,
+    EmptyState,
+    ErrorState,
+    Icon,
+    Loading,
+    PageHeader,
+    PageStack,
+    RouterLink,
+    StatCard,
+    StatusChip,
+    TooltipDirective,
+    ViewToggle,
+  ],
   template: `
-    <app-page-header title="Profile" subtitle="Your account, economy and fight performance." />
+    <app-page-header [title]="t('nav.profile')" subtitle="Gestione account, progressione, economia e preferenze">
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        [disabled]="loading()"
+        (click)="load()"
+        [appTooltip]="'Ricarica tutti i dati del profilo'"
+        tooltipPosition="bottom"
+      >
+        <app-icon name="sparkles" size="0.875rem" />
+        {{ t('common.refreshNow') }}
+      </button>
+
+      <app-view-toggle
+        pageTabs
+        [options]="tabs()"
+        [active]="activeTab()"
+        (activeChange)="onTabChange($event)"
+      />
+    </app-page-header>
 
     @if (loading()) {
-      <app-loading [label]="t('common.loading')" />
+      <div class="p-12 flex justify-center">
+        <app-loading [label]="t('common.loading')" />
+      </div>
+    } @else if (loadFailed()) {
+      <app-error-state
+        [message]="t('common.error')"
+        [retryLabel]="t('common.retry')"
+        (retry)="load()"
+      />
     } @else {
       <app-page-stack>
-        <section class="profile__hero card p-6">
-          <div>
-            <p class="profile__eyebrow">Account</p>
-            <h1>{{ displayName() }}</h1>
-            <p>{{ profile()?.email || 'No email' }} · {{ profile()?.highest_role || 'User' }}</p>
-            @if (albionLink()?.linked) {
-              <span class="chip chip--success">Albion: {{ albionLink()?.albion_player_name }}</span>
-            } @else {
-              <span class="chip chip--warning">Albion character not linked</span>
-            }
+        <!-- Profile Identity & Hero Card -->
+        <section class="card p-6">
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-4">
+              <div
+                class="flex h-16 w-16 items-center justify-center rounded-2xl font-bold text-xl select-none"
+                style="background: var(--color-primary-soft); color: var(--color-primary); border: 1px solid var(--color-border)"
+              >
+                {{ getInitials(profile()?.username ?? 'U') }}
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h1 class="text-xl font-bold tracking-tight" style="color: var(--color-text)">
+                    {{ profile()?.username }}
+                  </h1>
+                  <span class="chip" [class]="roleChip(profile()?.highest_role)">
+                    {{ profile()?.highest_role || 'User' }}
+                  </span>
+                </div>
+                <p class="text-sm mt-0.5" style="color: var(--color-text-secondary)">
+                  {{ profile()?.email || 'Nessuna email' }} · ID #{{ profile()?.id }}
+                </p>
+              </div>
+            </div>
+
+            <!-- Albion Character Link Capsule -->
+            <div
+              class="flex items-center gap-3 rounded-xl p-3 border"
+              style="background: var(--color-surface-2); border-color: var(--color-border)"
+            >
+              <div class="flex items-center gap-2">
+                <span
+                  class="h-2.5 w-2.5 rounded-full"
+                  [style.background]="albionLink()?.linked ? 'var(--color-success)' : 'var(--color-warning)'"
+                ></span>
+                <div>
+                  <p class="text-xs uppercase tracking-wider font-semibold" style="color: var(--color-text-secondary)">
+                    Albion Online Link
+                  </p>
+                  <p class="text-sm font-semibold mono" style="color: var(--color-text)">
+                    {{ albionLink()?.linked ? albionLink()?.albion_player_name : 'Non collegato' }}
+                  </p>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-1.5 ml-2">
+                @if (albionLink()?.linked) {
+                  <button
+                    type="button"
+                    class="btn btn--outline btn--sm text-xs py-1 px-2.5"
+                    (click)="unlinkConfirmOpen.set(true)"
+                    [appTooltip]="'Scollega il tuo personaggio Albion'"
+                    tooltipPosition="top"
+                  >
+                    Scollega
+                  </button>
+                } @else {
+                  <button
+                    type="button"
+                    class="btn btn--primary btn--sm text-xs py-1 px-2.5 flex items-center gap-1"
+                    (click)="openLinkDialog()"
+                    [appTooltip]="'Cerca e collega il tuo personaggio Albion'"
+                    tooltipPosition="top"
+                  >
+                    <app-icon name="plus" size="0.75rem" />
+                    Collega
+                  </button>
+                }
+              </div>
+            </div>
           </div>
         </section>
 
-        @if (progression(); as xp) {
-          <article class="surface p-5">
-            <h2 class="profile__panel-title">{{ t('profile.xp.title') }}</h2>
-            <p class="profile__sub" style="margin-top: 0">
-              {{ t('profile.xp.season') }}:
-              {{ xp.season?.name || t('profile.xp.noSeason') }}
-            </p>
-            <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div>
-                <p class="profile__label">{{ t('profile.xp.level') }}</p>
-                <p class="profile__value">{{ xp.level }}</p>
-              </div>
-              <div>
-                <p class="profile__label">{{ t('profile.xp.xp') }}</p>
-                <p class="profile__value">{{ formatAmount(xp.xp) }}</p>
-              </div>
-              <div>
-                <p class="profile__label">{{ t('profile.xp.rank') }}</p>
-                <p class="profile__value">
-                  {{ xp.rank != null ? '#' + xp.rank : t('profile.xp.unranked') }}
-                </p>
-              </div>
-              <div>
-                <p class="profile__label">{{ t('profile.xp.lifetime') }}</p>
-                <p class="profile__value">{{ formatAmount(xp.lifetime_xp) }}</p>
-              </div>
-            </div>
-            <div class="profile__bar-row">
-              <span>{{ t('profile.xp.toNext') }}</span>
-              <div class="profile__bar">
-                <span [style.width.%]="progressionBarPercent(xp)"></span>
-              </div>
-              <strong>{{ formatAmount(xp.xp) }} / {{ formatAmount(xp.xp + xp.xp_to_next) }}</strong>
-            </div>
-            @if (showMultiplier(xp.multiplier)) {
-              <p class="mt-3 text-sm" style="color: var(--color-warning)">
-                {{ t('profile.xp.multiplier') }}: ×{{ formatMultiplier(xp.multiplier) }}
-              </p>
-            }
-          </article>
-        }
-
-        @if (loadFailed()) {
-          <app-error-state
-            [message]="t('common.error')"
-            [retryLabel]="t('common.retry')"
-            (retry)="load()"
-          />
-        } @else {
-          <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-            @for (metric of profileMetrics(); track metric.label) {
-              <article class="surface p-4">
-                <p class="profile__label">{{ metric.label }}</p>
-                <p class="profile__value">{{ metric.value }}</p>
-                @if (metric.sub) {
-                  <p class="profile__sub">{{ metric.sub }}</p>
+        <!-- TAB 1: OVERVIEW & PROGRESSION -->
+        @if (activeTab() === 'overview') {
+          <!-- Season Progression Card -->
+          @if (progression(); as xp) {
+            <article class="card p-6">
+              <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+                <div>
+                  <span class="text-xs uppercase tracking-wider font-semibold" style="color: var(--color-text-secondary)">
+                    {{ t('profile.xp.title') }}
+                  </span>
+                  <h2 class="text-lg font-bold" style="color: var(--color-text)">
+                    {{ xp.season?.name || t('profile.xp.noSeason') }}
+                  </h2>
+                </div>
+                @if (showMultiplier(xp.multiplier)) {
+                  <span class="chip chip--warning font-mono">
+                    {{ t('profile.xp.multiplier') }}: ×{{ formatMultiplier(xp.multiplier) }}
+                  </span>
                 }
-              </article>
-            }
-          </section>
+              </div>
 
-          <section class="grid gap-4 xl:grid-cols-3">
-            <article class="surface p-5">
-              <h2 class="profile__panel-title">Bank status</h2>
-              @for (row of bankChart(); track row.label) {
-                <div class="profile__bar-row">
-                  <span>{{ row.label }}</span>
-                  <div class="profile__bar">
-                    <span [style.width.%]="chartPercent(row.value, bankChart())"></span>
-                  </div>
-                  <strong>{{ formatAmount(row.value) }}</strong>
+              <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 mb-4">
+                <div class="rounded-xl p-3 border" style="background: var(--color-surface-2); border-color: var(--color-border)">
+                  <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('profile.xp.level') }}</p>
+                  <p class="text-xl font-bold mono mt-0.5" style="color: var(--color-text)">{{ xp.level }}</p>
                 </div>
-              }
-            </article>
-            <article class="surface p-5">
-              <h2 class="profile__panel-title">Siphoned energy</h2>
-              @for (row of siphonedChart(); track row.label) {
-                <div class="profile__bar-row">
-                  <span>{{ row.label }}</span>
-                  <div class="profile__bar profile__bar--energy">
-                    <span [style.width.%]="chartPercent(row.value, siphonedChart())"></span>
-                  </div>
-                  <strong>{{ formatAmount(row.value) }}</strong>
+                <div class="rounded-xl p-3 border" style="background: var(--color-surface-2); border-color: var(--color-border)">
+                  <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('profile.xp.xp') }}</p>
+                  <p class="text-xl font-bold mono mt-0.5" style="color: var(--color-primary)">{{ formatAmount(xp.xp) }}</p>
                 </div>
-              }
-            </article>
-            <article class="surface p-5">
-              <h2 class="profile__panel-title">My fights</h2>
-              @for (row of battleChart(); track row.label) {
-                <div class="profile__bar-row">
-                  <span>{{ row.label }}</span>
-                  <div class="profile__bar profile__bar--fight">
-                    <span [style.width.%]="chartPercent(row.value, battleChart())"></span>
-                  </div>
-                  <strong>{{ formatCompact(row.value) }}</strong>
+                <div class="rounded-xl p-3 border" style="background: var(--color-surface-2); border-color: var(--color-border)">
+                  <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('profile.xp.rank') }}</p>
+                  <p class="text-xl font-bold mono mt-0.5" style="color: var(--color-success)">
+                    {{ xp.rank != null ? '#' + xp.rank : t('profile.xp.unranked') }}
+                  </p>
                 </div>
-              }
-            </article>
-          </section>
+                <div class="rounded-xl p-3 border" style="background: var(--color-surface-2); border-color: var(--color-border)">
+                  <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('profile.xp.lifetime') }}</p>
+                  <p class="text-xl font-bold mono mt-0.5" style="color: var(--color-text)">{{ formatAmount(xp.lifetime_xp) }}</p>
+                </div>
+              </div>
 
-          <!-- Attendance, regear and splits: the three areas the profile used to
-           say nothing about, even though the data existed. -->
-          <section class="grid gap-4 xl:grid-cols-3">
-            <article class="surface p-5">
-              <h2 class="profile__panel-title">Attendance</h2>
+              <!-- XP Progress Bar -->
+              <div>
+                <div class="flex items-center justify-between text-xs mb-1.5" style="color: var(--color-text-secondary)">
+                  <span>{{ t('profile.xp.toNext') }}</span>
+                  <span class="mono font-semibold" style="color: var(--color-text)">
+                    {{ formatAmount(xp.xp) }} / {{ formatAmount(xp.xp + xp.xp_to_next) }}
+                  </span>
+                </div>
+                <div class="h-2 rounded-full overflow-hidden" style="background: var(--color-surface-2)">
+                  <div
+                    class="h-full rounded-full transition-all duration-300"
+                    style="background: var(--color-primary)"
+                    [style.width.%]="progressionBarPercent(xp)"
+                  ></div>
+                </div>
+              </div>
+            </article>
+          }
+
+          <!-- Activity, Regear & Loot Split Cards -->
+          <section class="grid gap-4 md:grid-cols-3">
+            <!-- Attendance -->
+            <article class="card p-5">
+              <h2 class="text-sm uppercase tracking-wider font-semibold mb-3" style="color: var(--color-text-secondary)">
+                Presenza Eventi
+              </h2>
               @if (userMetrics(); as m) {
-                <div class="profile__bar-row">
-                  <span>Signed up</span>
-                  <div class="profile__bar">
-                    <span [style.width.%]="clampPercent(m.attendance_rate)"></span>
-                  </div>
-                  <strong>{{ m.events_attended }} / {{ m.events_total }}</strong>
+                <div class="flex items-baseline justify-between mb-2">
+                  <span class="text-2xl font-bold mono" style="color: var(--color-text)">
+                    {{ m.attendance_rate | number: '1.0-0' }}%
+                  </span>
+                  <span class="text-xs" style="color: var(--color-text-secondary)">
+                    {{ m.events_attended }} / {{ m.events_total }} eventi
+                  </span>
                 </div>
-                <p class="mt-3 text-sm" style="color: var(--color-text-secondary)">
-                  {{ m.attendance_rate | number: '1.0-0' }}% of guild events.
+                <div class="h-1.5 rounded-full overflow-hidden mb-3" style="background: var(--color-surface-2)">
+                  <div
+                    class="h-full rounded-full"
+                    style="background: var(--color-primary)"
+                    [style.width.%]="clampPercent(m.attendance_rate)"
+                  ></div>
+                </div>
+                <p class="text-xs" style="color: var(--color-text-secondary)">
                   @if (m.attendance_streak > 0) {
-                    Current streak: <strong>{{ m.attendance_streak }}</strong
-                    >.
+                    Serie attuale: <strong>{{ m.attendance_streak }} consecutivi</strong>.
                   }
                 </p>
                 @if (m.next_event_title) {
-                  <p class="mt-2 text-sm" style="color: var(--color-primary)">
-                    Next: {{ m.next_event_title }}
-                    <span style="color: var(--color-text-secondary)">
-                      · {{ m.next_event_at | date: 'MMM d, HH:mm' }}
-                    </span>
-                  </p>
-                } @else {
-                  <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
-                    Not signed up for anything upcoming.
+                  <p class="mt-2 text-xs" style="color: var(--color-primary)">
+                    Prossimo: {{ m.next_event_title }}
                   </p>
                 }
               }
             </article>
 
-            <article class="surface p-5">
-              <h2 class="profile__panel-title">Regear</h2>
+            <!-- Regear -->
+            <article class="card p-5">
+              <h2 class="text-sm uppercase tracking-wider font-semibold mb-3" style="color: var(--color-text-secondary)">
+                Regear Mensile
+              </h2>
               @if (userMetrics(); as m) {
-                <div class="profile__bar-row">
-                  <span>Monthly cap</span>
-                  <div class="profile__bar profile__bar--fight">
-                    <span [style.width.%]="regearCapPercent()"></span>
-                  </div>
-                  <strong
-                    >{{ budget()?.per_month_used ?? 0 }} /
-                    {{ budget()?.per_month_max ?? 0 }}</strong
-                  >
+                <div class="flex items-baseline justify-between mb-2">
+                  <span class="text-2xl font-bold mono" style="color: var(--color-text)">
+                    {{ budget()?.per_month_used ?? 0 }} / {{ budget()?.per_month_max ?? 0 }}
+                  </span>
+                  <span class="text-xs" style="color: var(--color-text-secondary)">
+                    Cap mensile
+                  </span>
                 </div>
-                <dl class="mt-3 grid grid-cols-2 gap-y-1.5 text-sm">
-                  <dt style="color: var(--color-text-secondary)">Claimed</dt>
-                  <dd class="text-right">{{ m.regears_claimed }}</dd>
-                  <dt style="color: var(--color-text-secondary)">Awaiting decision</dt>
-                  <dd
-                    class="text-right"
-                    [style.color]="m.regears_pending > 0 ? 'var(--color-warning)' : null"
-                  >
-                    {{ m.regears_pending }}
-                  </dd>
-                  <dt style="color: var(--color-text-secondary)">Approved</dt>
-                  <dd class="text-right" style="color: var(--color-success)">
-                    {{ m.regears_approved }}
-                  </dd>
-                  <dt style="color: var(--color-text-secondary)">Reimbursed</dt>
-                  <dd class="text-right">{{ formatAmount(m.regear_silver) }}</dd>
-                </dl>
+                <div class="h-1.5 rounded-full overflow-hidden mb-3" style="background: var(--color-surface-2)">
+                  <div
+                    class="h-full rounded-full"
+                    style="background: var(--color-warning)"
+                    [style.width.%]="regearCapPercent()"
+                  ></div>
+                </div>
+                <div class="grid grid-cols-2 gap-1 text-xs" style="color: var(--color-text-secondary)">
+                  <span>Approvati: <strong>{{ m.regears_approved }}</strong></span>
+                  <span>In attesa: <strong>{{ m.regears_pending }}</strong></span>
+                  <span class="col-span-2 mt-1">Rimborsato: <strong style="color: var(--color-success)">{{ formatAmount(m.regear_silver) }}</strong></span>
+                </div>
               }
             </article>
 
-            <article class="surface p-5">
-              <h2 class="profile__panel-title">Loot splits</h2>
+            <!-- Loot Splits -->
+            <article class="card p-5">
+              <h2 class="text-sm uppercase tracking-wider font-semibold mb-3" style="color: var(--color-text-secondary)">
+                Loot Splits
+              </h2>
               @if (userMetrics(); as m) {
-                <dl class="grid grid-cols-2 gap-y-1.5 text-sm">
-                  <dt style="color: var(--color-text-secondary)">Splits joined</dt>
-                  <dd class="text-right">{{ m.splits_joined }}</dd>
-                  <dt style="color: var(--color-text-secondary)">Total earned</dt>
-                  <dd class="text-right" style="color: var(--color-success)">
+                <div class="mb-2">
+                  <p class="text-xs" style="color: var(--color-text-secondary)">Guadagno Totale</p>
+                  <p class="text-2xl font-bold mono" style="color: var(--color-success)">
                     {{ formatAmount(m.split_earnings) }}
-                  </dd>
-                  <dt style="color: var(--color-text-secondary)">Average per split</dt>
-                  <dd class="text-right">{{ formatAmount(averageSplitShare()) }}</dd>
-                </dl>
-                <div class="profile__bar-row mt-4">
-                  <span>Kills / deaths</span>
-                  <div class="profile__bar profile__bar--fight">
-                    <span [style.width.%]="killShare()"></span>
-                  </div>
-                  <strong>{{ m.kills }} / {{ m.deaths }}</strong>
+                  </p>
                 </div>
-                <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
-                  {{ m.battles_fought }} battles · {{ formatCompact(m.kill_fame) }} kill fame
-                </p>
+                <div class="grid grid-cols-2 gap-1 text-xs mt-3 pt-3 border-t" style="border-color: var(--color-border); color: var(--color-text-secondary)">
+                  <span>Partecipazioni: <strong>{{ m.splits_joined }}</strong></span>
+                  <span>Media split: <strong>{{ formatAmount(averageSplitShare()) }}</strong></span>
+                  <span class="col-span-2 mt-1">K/D: <strong>{{ m.kills }}K / {{ m.deaths }}D</strong> ({{ formatCompact(m.kill_fame) }} fame)</span>
+                </div>
               }
             </article>
           </section>
+        }
 
-          <section class="grid gap-4 xl:grid-cols-2">
-            <article class="surface overflow-hidden">
-              <header class="profile__section-header"><h2>Recent bank ledger</h2></header>
+        <!-- TAB 2: LEDGERS & ECONOMY -->
+        @if (activeTab() === 'ledgers') {
+          <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Economy snapshot">
+            <app-stat-card
+              label="Argento in Attesa"
+              [value]="formatAmount(balance()?.pending_total ?? 0)"
+              icon="bank"
+              tone="primary"
+            />
+            <app-stat-card
+              label="Argento Richiesto"
+              [value]="formatAmount(balance()?.requested_total ?? 0)"
+              icon="bank"
+              tone="warning"
+            />
+            <app-stat-card
+              label="Argento Liquidato"
+              [value]="formatAmount(withdrawnTotal())"
+              icon="bank"
+              tone="success"
+            />
+            <app-stat-card
+              label="Energia Sifonata Netta"
+              [value]="formatAmount(siphonedBalance()?.net ?? 0)"
+              icon="activity"
+              tone="neutral"
+            />
+          </section>
+
+          <section class="grid gap-4 lg:grid-cols-2">
+            <!-- Bank Transactions Table -->
+            <div class="card p-0 overflow-hidden">
+              <div class="p-4 border-b" style="border-color: var(--color-border)">
+                <h2 class="text-base font-semibold" style="color: var(--color-text)">
+                  Transazioni Personali Banca
+                </h2>
+              </div>
               <app-data-table
                 [columns]="transactionColumns"
                 [rows]="transactions()"
                 [trackBy]="trackTransaction"
-                [pageSize]="8"
+                [pageSize]="10"
               >
-                <ng-template dataTableCell="amount" let-row>{{
-                  formatAmount(row.amount)
-                }}</ng-template>
-                <ng-template dataTableCell="created_at" let-row>{{
-                  formatDate(row.created_at)
-                }}</ng-template>
+                <ng-template dataTableCell="status" let-row>
+                  <app-status-chip [value]="row.status" />
+                </ng-template>
+                <ng-template dataTableCell="amount" let-row>
+                  <span class="mono font-semibold" style="color: var(--color-success)">
+                    {{ formatAmount(row.amount) }}
+                  </span>
+                </ng-template>
+                <ng-template dataTableCell="created_at" let-row>
+                  <span class="text-xs" style="color: var(--color-text-secondary)">
+                    {{ formatDate(row.created_at) }}
+                  </span>
+                </ng-template>
               </app-data-table>
-            </article>
-            <article class="surface overflow-hidden">
-              <header class="profile__section-header"><h2>Recent siphoned ledger</h2></header>
+            </div>
+
+            <!-- Siphoned Energy Table -->
+            <div class="card p-0 overflow-hidden">
+              <div class="p-4 border-b" style="border-color: var(--color-border)">
+                <h2 class="text-base font-semibold" style="color: var(--color-text)">
+                  Movimenti Energia Sifonata
+                </h2>
+              </div>
               <app-data-table
                 [columns]="siphonedColumns"
                 [rows]="siphonedEntries()"
                 [trackBy]="trackSiphonedEntry"
-                [pageSize]="8"
+                [pageSize]="10"
               >
-                <ng-template dataTableCell="amount" let-row>{{
-                  formatAmount(row.amount)
-                }}</ng-template>
-                <ng-template dataTableCell="occurred_at" let-row>{{
-                  formatDate(row.occurred_at)
-                }}</ng-template>
+                <ng-template dataTableCell="amount" let-row>
+                  <span class="mono font-semibold" [style.color]="row.amount >= 0 ? 'var(--color-success)' : 'var(--color-error)'">
+                    {{ formatAmount(row.amount) }}
+                  </span>
+                </ng-template>
+                <ng-template dataTableCell="occurred_at" let-row>
+                  <span class="text-xs" style="color: var(--color-text-secondary)">
+                    {{ formatDate(row.occurred_at) }}
+                  </span>
+                </ng-template>
               </app-data-table>
-            </article>
+            </div>
           </section>
+        }
 
-          <article class="surface overflow-hidden">
-            <header class="profile__section-header"><h2>My recent fights</h2></header>
+        <!-- TAB 3: BATTLES & COMBAT -->
+        @if (activeTab() === 'battles') {
+          <div class="card p-0 overflow-hidden">
+            <div class="p-4 border-b flex items-center justify-between" style="border-color: var(--color-border)">
+              <h2 class="text-base font-semibold" style="color: var(--color-text)">
+                Le mie battaglie recenti
+              </h2>
+              <span class="chip font-mono text-xs">{{ battles().length }} registrate</span>
+            </div>
             <app-data-table
               [columns]="battleColumns"
               [rows]="battles()"
               [trackBy]="trackBattle"
-              [pageSize]="8"
+              [pageSize]="10"
             >
-              <ng-template dataTableCell="start_time" let-row>{{
-                formatDate(row.start_time)
-              }}</ng-template>
-              <ng-template dataTableCell="total_fame" let-row>{{
-                formatCompact(row.total_fame)
-              }}</ng-template>
+              <ng-template dataTableCell="battle_id" let-row>
+                <a
+                  [routerLink]="['/battles', row.battle_id]"
+                  class="btn btn--tonal btn--sm text-xs py-1 px-2 mono"
+                  [appTooltip]="'Apri dettagli battaglia #' + row.battle_id"
+                  tooltipPosition="top"
+                >
+                  #{{ row.battle_id }}
+                </a>
+              </ng-template>
+              <ng-template dataTableCell="start_time" let-row>
+                <span class="text-xs" style="color: var(--color-text-secondary)">
+                  {{ formatDate(row.start_time) }}
+                </span>
+              </ng-template>
+              <ng-template dataTableCell="total_fame" let-row>
+                <span class="mono font-semibold" style="color: var(--color-warning)">
+                  {{ formatCompact(row.total_fame) }}
+                </span>
+              </ng-template>
             </app-data-table>
-          </article>
+          </div>
         }
 
-        <section class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <section class="card p-6">
-            <h2 class="profile__panel-title">Appearance</h2>
-            <fieldset class="profile__option-list">
-              @for (option of themeOptions; track option.value) {
-                <label
-                  class="profile__option"
-                  [class.profile__option--active]="theme.preference() === option.value"
-                >
-                  <input
-                    type="radio"
-                    name="theme"
-                    [checked]="theme.preference() === option.value"
-                    (change)="onThemeChange(option.value)"
-                  />
-                  <span>{{ t(option.labelKey) }}</span>
-                </label>
-              }
-            </fieldset>
+        <!-- TAB 4: PREFERENCES & SETTINGS -->
+        @if (activeTab() === 'preferences') {
+          <section class="grid gap-6 md:grid-cols-2">
+            <!-- Theme Preference -->
+            <section class="card p-6">
+              <div class="flex items-center gap-2 mb-4">
+                <app-icon name="sparkles" size="1.25rem" style="color: var(--color-primary)" />
+                <h2 class="text-base font-semibold" style="color: var(--color-text)">
+                  Tema e Aspetto
+                </h2>
+              </div>
+              <div class="grid gap-3">
+                @for (option of themeOptions; track option.value) {
+                  <button
+                    type="button"
+                    class="flex items-center justify-between p-4 rounded-xl border text-left transition-all"
+                    [style.border-color]="theme.preference() === option.value ? 'var(--color-primary)' : 'var(--color-border)'"
+                    [style.background]="theme.preference() === option.value ? 'var(--color-primary-soft)' : 'var(--color-surface-1)'"
+                    (click)="onThemeChange(option.value)"
+                  >
+                    <div class="flex items-center gap-3">
+                      <span class="h-3 w-3 rounded-full border flex items-center justify-center"
+                        [style.border-color]="theme.preference() === option.value ? 'var(--color-primary)' : 'var(--color-border-strong)'"
+                        [style.background]="theme.preference() === option.value ? 'var(--color-primary)' : 'transparent'"
+                      ></span>
+                      <span class="font-medium text-sm" style="color: var(--color-text)">
+                        {{ t(option.labelKey) }}
+                      </span>
+                    </div>
+                  </button>
+                }
+              </div>
+            </section>
+
+            <!-- Language Preference -->
+            <section class="card p-6">
+              <div class="flex items-center gap-2 mb-4">
+                <app-icon name="users" size="1.25rem" style="color: var(--color-primary)" />
+                <h2 class="text-base font-semibold" style="color: var(--color-text)">
+                  Lingua interfaccia
+                </h2>
+              </div>
+              <div class="grid gap-3">
+                @for (lang of translate.supportedLanguages; track lang) {
+                  <button
+                    type="button"
+                    class="flex items-center justify-between p-4 rounded-xl border text-left transition-all"
+                    [style.border-color]="translate.language() === lang ? 'var(--color-primary)' : 'var(--color-border)'"
+                    [style.background]="translate.language() === lang ? 'var(--color-primary-soft)' : 'var(--color-surface-1)'"
+                    (click)="onLanguageChange(lang)"
+                  >
+                    <div class="flex items-center gap-3">
+                      <span class="h-3 w-3 rounded-full border flex items-center justify-center"
+                        [style.border-color]="translate.language() === lang ? 'var(--color-primary)' : 'var(--color-border-strong)'"
+                        [style.background]="translate.language() === lang ? 'var(--color-primary)' : 'transparent'"
+                      ></span>
+                      <span class="font-medium text-sm" style="color: var(--color-text)">
+                        {{ translate.languageLabels[lang] }}
+                      </span>
+                    </div>
+                  </button>
+                }
+              </div>
+            </section>
           </section>
-          <section class="card p-6">
-            <h2 class="profile__panel-title">Language</h2>
-            <fieldset class="profile__option-list">
-              @for (lang of translate.supportedLanguages; track lang) {
-                <label
-                  class="profile__option"
-                  [class.profile__option--active]="translate.language() === lang"
-                >
-                  <input
-                    type="radio"
-                    name="language"
-                    [checked]="translate.language() === lang"
-                    (change)="onLanguageChange(lang)"
-                  />
-                  <span>{{ translate.languageLabels[lang] }}</span>
-                </label>
-              }
-            </fieldset>
-          </section>
-        </section>
+        }
       </app-page-stack>
     }
-  `,
-  styles: `
-    @layer components {
-      .profile__hero h1 {
-        color: var(--color-text);
-        font-family: var(--font-universalsansdisplay);
-        font-size: clamp(1.75rem, 4vw, 2.5rem);
-        font-weight: 400;
-        letter-spacing: -0.025em;
-        line-height: 1.1;
-      }
-      .profile__hero p {
-        color: var(--color-text-secondary);
-        font-family: var(--font-universalsans);
-        margin-top: 0.25rem;
-      }
-      .profile__eyebrow,
-      .profile__label {
-        color: var(--color-text-secondary);
-        font-family: var(--font-universalsans);
-        font-size: 0.6875rem;
-        font-weight: 500;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-      }
-      .profile__value {
-        color: var(--color-text);
-        font-family: var(--font-geistmono);
-        font-size: clamp(1.2rem, 2vw, 1.5rem);
-        font-weight: 400;
-        letter-spacing: -0.01em;
-      }
-      .profile__sub {
-        color: var(--color-text-secondary);
-        font-size: 0.75rem;
-        margin-top: 0.25rem;
-      }
-      .profile__panel-title {
-        color: var(--color-text);
-        font-family: var(--font-universalsans);
-        font-size: 0.875rem;
-        font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        margin-bottom: 1rem;
-      }
-      .profile__bar-row {
-        align-items: center;
-        display: grid;
-        gap: 0.75rem;
-        grid-template-columns: minmax(7rem, 1fr) minmax(8rem, 2fr) auto;
-        margin-top: 0.75rem;
-      }
-      .profile__bar {
-        background: var(--color-surface-2);
-        border-radius: var(--radius-full);
-        height: 0.5rem;
-        overflow: hidden;
-      }
-      .profile__bar span {
-        background: var(--color-primary);
-        border-radius: inherit;
-        display: block;
-        height: 100%;
-        min-width: 0.25rem;
-      }
-      .profile__bar--energy span {
-        background: var(--color-warning);
-      }
-      .profile__bar--fight span {
-        background: var(--color-success);
-      }
-      .profile__section-header {
-        border-bottom: 1px solid var(--color-border);
-        padding: 1rem;
-      }
-      .profile__section-header h2 {
-        color: var(--color-text);
-        font-weight: 600;
-      }
-      .profile__option-list {
-        border: 0;
-        display: grid;
-        gap: 0.5rem;
-        margin: 0;
-        padding: 0;
-      }
-      .profile__option {
-        align-items: center;
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-inputs);
-        color: var(--color-text);
-        cursor: pointer;
-        display: flex;
-        gap: 0.75rem;
-        padding: 0.75rem;
-        transition:
-          border-color 150ms ease,
-          background-color 150ms ease;
-      }
-      .profile__option:hover {
-        background: var(--color-surface-hover);
-        border-color: var(--color-border-strong);
-      }
-      .profile__option--active {
-        background: var(--color-surface-2);
-        border-color: var(--color-text);
-      }
+
+    <!-- Link Albion Character Dialog -->
+    @if (linkDialogOpen()) {
+      <app-dialog title="Collega il tuo Personaggio Albion" (closed)="closeLinkDialog()">
+        <div class="grid gap-3">
+          <p class="text-xs" style="color: var(--color-text-secondary)">
+            Cerca il tuo nome giocatore nel roster attuale della gilda per collegarlo al tuo profilo.
+          </p>
+
+          <input
+            type="search"
+            class="input w-full"
+            placeholder="Cerca nome giocatore nel roster..."
+            [value]="rosterSearch()"
+            (input)="onRosterSearchInput($event)"
+            autofocus
+          />
+
+          @if (rosterLoading()) {
+            <div class="p-6 flex justify-center">
+              <app-loading label="Caricamento roster di gilda..." />
+            </div>
+          } @else {
+            <div class="max-h-64 overflow-y-auto grid gap-1.5 pr-1">
+              @for (player of filteredRoster(); track player.id) {
+                <button
+                  type="button"
+                  class="flex items-center justify-between p-2.5 rounded-xl border text-left transition-colors hover:border-primary hover:bg-surface-2"
+                  style="border-color: var(--color-border); background: var(--color-surface-1)"
+                  (click)="confirmLink(player)"
+                  [disabled]="savingLink()"
+                >
+                  <div>
+                    <p class="text-sm font-semibold mono" style="color: var(--color-text)">
+                      {{ player.name }}
+                    </p>
+                    <p class="text-xs" style="color: var(--color-text-secondary)">
+                      ID: {{ player.id }}
+                    </p>
+                  </div>
+                  <span class="btn btn--primary btn--sm text-xs py-1 px-2.5">
+                    Collega
+                  </span>
+                </button>
+              } @empty {
+                <p class="text-sm text-center py-4" style="color: var(--color-text-secondary)">
+                  Nessun giocatore trovato nel roster con questo nome.
+                </p>
+              }
+            </div>
+          }
+        </div>
+
+        <div dialogFooter class="flex justify-end gap-2">
+          <button type="button" class="btn btn--ghost btn--sm" (click)="closeLinkDialog()">
+            {{ t('common.cancel') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
+
+    <!-- Unlink Confirmation Dialog -->
+    @if (unlinkConfirmOpen()) {
+      <app-dialog title="Scollega Personaggio Albion" (closed)="unlinkConfirmOpen.set(false)">
+        <p class="text-sm" style="color: var(--color-text-secondary)">
+          Sei sicuro di voler scollegare il tuo personaggio <strong>{{ albionLink()?.albion_player_name }}</strong>?
+        </p>
+        <div dialogFooter class="flex justify-end gap-2">
+          <button type="button" class="btn btn--ghost btn--sm" (click)="unlinkConfirmOpen.set(false)">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn--outline btn--sm text-red-400 border-red-500/30 hover:bg-red-500/10"
+            (click)="confirmUnlink()"
+            [disabled]="savingLink()"
+          >
+            Conferma Scollegamento
+          </button>
+        </div>
+      </app-dialog>
     }
   `,
 })
@@ -504,6 +621,7 @@ export class Settings {
   protected readonly translate = inject(TranslateService);
   private readonly toasts = inject(ToastService);
 
+  protected readonly activeTab = signal<ProfileTab>('overview');
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
   protected readonly balance = signal<BalanceSummary | null>(null);
@@ -513,11 +631,45 @@ export class Settings {
   protected readonly battles = signal<BattleSummary[]>([]);
   protected readonly albionLink = signal<AlbionLinkStatus | null>(null);
   protected readonly userMetrics = signal<UserMetrics | null>(null);
-  /** Regear cap usage, for the monthly progress bar. */
   protected readonly budget = signal<RegearBudgetSummary | null>(null);
-  /** Season XP snapshot; null when the endpoint failed so the rest of the profile still renders. */
   protected readonly progression = signal<ProgressionMeView | null>(null);
   protected readonly profile = this.auth.profile;
+
+  // Albion Link state
+  protected readonly linkDialogOpen = signal(false);
+  protected readonly unlinkConfirmOpen = signal(false);
+  protected readonly rosterLoading = signal(false);
+  protected readonly savingLink = signal(false);
+  protected readonly rosterSearch = signal('');
+  protected readonly rosterMembers = signal<AlbionGuildMember[]>([]);
+
+  protected readonly tabs = computed<readonly ViewToggleOption[]>(() => [
+    { id: 'overview', label: 'Panoramica & XP', icon: 'trophy' },
+    { id: 'ledgers', label: 'Libro Mastro & Banca', icon: 'bank' },
+    { id: 'battles', label: 'Combattimenti', icon: 'shield' },
+    { id: 'preferences', label: 'Preferenze & Tema', icon: 'sparkles' },
+  ]);
+
+  protected onTabChange(id: string): void {
+    this.activeTab.set(id as ProfileTab);
+  }
+
+  protected readonly filteredRoster = computed(() => {
+    const q = this.rosterSearch().toLowerCase().trim();
+    if (!q) return this.rosterMembers().slice(0, 30);
+    return this.rosterMembers()
+      .filter((m) => m.name.toLowerCase().includes(q))
+      .slice(0, 30);
+  });
+
+  protected readonly themeOptions: ReadonlyArray<{
+    value: ThemePreference;
+    labelKey: TranslationKey;
+  }> = [
+    { value: 'light', labelKey: 'theme.light' },
+    { value: 'dark', labelKey: 'theme.dark' },
+    { value: 'system', labelKey: 'theme.system' },
+  ];
 
   protected readonly transactionColumns: readonly DataTableColumn<TransactionView>[] = [
     {
@@ -550,6 +702,7 @@ export class Settings {
       comparator: (a, b) => a.created_at.localeCompare(b.created_at),
     },
   ];
+
   protected readonly siphonedColumns: readonly DataTableColumn<SiphonedEntryView>[] = [
     {
       key: 'occurred_at',
@@ -574,6 +727,7 @@ export class Settings {
       align: 'right',
     },
   ];
+
   protected readonly battleColumns: readonly DataTableColumn<BattleSummary>[] = [
     {
       key: 'battle_id',
@@ -615,138 +769,35 @@ export class Settings {
     },
   ];
 
-  /** Clamps a percentage into the 0-100 a progress bar can render. */
-  protected clampPercent(value: number): number {
-    return Math.min(100, Math.max(0, Math.round(value)));
-  }
-
-  /** How much of the monthly regear allowance is spent. */
-  protected regearCapPercent(): number {
-    const budget = this.budget();
-    if (!budget || budget.per_month_max <= 0) {
-      return 0;
-    }
-    return this.clampPercent((budget.per_month_used / budget.per_month_max) * 100);
-  }
-
-  /** Mean payout per split joined; zero when the member has joined none. */
-  protected averageSplitShare(): number {
-    const m = this.userMetrics();
-    if (!m || m.splits_joined <= 0) {
-      return 0;
-    }
-    return Math.round(m.split_earnings / m.splits_joined);
-  }
-
-  /** Kills as a share of kills plus deaths, for the ratio bar. */
-  protected killShare(): number {
-    const m = this.userMetrics();
-    const total = (m?.kills ?? 0) + (m?.deaths ?? 0);
-    return total === 0 ? 0 : this.clampPercent(((m?.kills ?? 0) / total) * 100);
-  }
-
-  protected readonly profileMetrics = computed<ProfileMetric[]>(() => {
-    const balance = this.balance();
-    const siphoned = this.siphonedBalance();
-    const battleRows = this.battles();
-    const userMetrics = this.userMetrics();
-
-    return [
-      {
-        label: 'Pending silver',
-        value: this.formatAmount(balance?.pending_total ?? 0),
-        sub: `${balance?.pending_count ?? 0} rows`,
-      },
-      {
-        label: 'Requested silver',
-        value: this.formatAmount(balance?.requested_total ?? 0),
-        sub: `${balance?.requested_count ?? 0} rows`,
-      },
-      {
-        label: 'Total earned',
-        value: this.formatAmount(this.withdrawnTotal()),
-        sub: `${this.withdrawnCount()} tx paid out`,
-      },
-      {
-        label: 'Siphoned net',
-        value: this.formatAmount(siphoned?.net ?? 0),
-        sub: `${siphoned?.entry_count ?? 0} entries`,
-      },
-      { label: 'Siphoned withdrawn', value: this.formatAmount(siphoned?.total_withdrawn ?? 0) },
-      { label: 'Tracked fights', value: String(battleRows.length) },
-      {
-        label: 'Fight fame',
-        value: this.formatCompact(battleRows.reduce((sum, battle) => sum + battle.total_fame, 0)),
-      },
-      {
-        label: 'Events attended',
-        value: String(userMetrics?.events_attended ?? 0),
-      },
-      {
-        label: 'Most played build',
-        value: userMetrics?.most_played_build || 'N/A',
-      },
-      {
-        label: 'Total estimated loss',
-        value: this.formatAmount(userMetrics?.total_estimated_loss ?? 0),
-      },
-      {
-        label: 'Top estimated loss',
-        value: this.formatAmount(userMetrics?.top_estimated_loss ?? 0),
-      },
-    ];
-  });
-  protected readonly bankChart = computed<ProfileChartMetric[]>(() => [
-    { label: 'Pending', value: Number(this.balance()?.pending_total ?? 0) },
-    { label: 'Requested', value: Number(this.balance()?.requested_total ?? 0) },
-  ]);
-  protected readonly siphonedChart = computed<ProfileChartMetric[]>(() => [
-    { label: 'Deposited', value: Number(this.siphonedBalance()?.total_deposited ?? 0) },
-    { label: 'Withdrawn', value: Number(this.siphonedBalance()?.total_withdrawn ?? 0) },
-    { label: 'Debt', value: Math.abs(Math.min(0, Number(this.siphonedBalance()?.net ?? 0))) },
-  ]);
-  protected readonly battleChart = computed<ProfileChartMetric[]>(() => [
-    { label: 'Battles', value: this.battles().length },
-    { label: 'Kills', value: this.battles().reduce((sum, battle) => sum + battle.total_kills, 0) },
-    { label: 'Fame', value: this.battles().reduce((sum, battle) => sum + battle.total_fame, 0) },
-  ]);
-
   protected readonly trackTransaction = (row: TransactionView): unknown => row.id;
   protected readonly trackSiphonedEntry = (row: SiphonedEntryView): unknown => row.id;
   protected readonly trackBattle = (row: BattleSummary): unknown => row.battle_id;
   protected t = (key: TranslationKey) => this.translate.t(key);
 
-  protected readonly themeOptions: ReadonlyArray<{
-    value: ThemePreference;
-    labelKey: TranslationKey;
-  }> = [
-    { value: 'light', labelKey: 'theme.light' },
-    { value: 'dark', labelKey: 'theme.dark' },
-    { value: 'system', labelKey: 'theme.system' },
-  ];
-
   constructor() {
     void this.load();
   }
 
-  protected displayName(): string {
-    return this.profile()?.username ?? 'Profile';
+  protected getInitials(username: string): string {
+    if (!username) return '?';
+    return username.slice(0, 2).toUpperCase();
+  }
+
+  protected roleChip(role?: Role | string): string {
+    if (role === 'SuperAdmin') return 'chip chip--error';
+    if (role === 'Admin') return 'chip chip--warning';
+    if (role === 'Officer') return 'chip chip--success';
+    return 'chip';
   }
 
   protected formatAmount(value: number | string): string {
     return new Intl.NumberFormat().format(Number(value ?? 0));
   }
 
-  /** Sum of every `withdrawn` transaction — the silver the bank actually paid out to this member. */
   protected withdrawnTotal(): number {
     return this.transactions()
       .filter((tx) => tx.status === 'withdrawn')
       .reduce((sum, tx) => sum + Number(tx.amount), 0);
-  }
-
-  /** Number of `withdrawn` transactions on the member's ledger. */
-  protected withdrawnCount(): number {
-    return this.transactions().filter((tx) => tx.status === 'withdrawn').length;
   }
 
   protected formatCompact(value: number): string {
@@ -759,10 +810,20 @@ export class Settings {
     return new Date(value).toLocaleString();
   }
 
-  protected chartPercent(value: number, rows: readonly ProfileChartMetric[]): number {
-    const maxValue = Math.max(...rows.map((row) => row.value), 0);
-    if (maxValue <= 0) return 0;
-    return Math.max(4, Math.round((value / maxValue) * 100));
+  protected clampPercent(value: number): number {
+    return Math.min(100, Math.max(0, Math.round(value)));
+  }
+
+  protected regearCapPercent(): number {
+    const budget = this.budget();
+    if (!budget || budget.per_month_max <= 0) return 0;
+    return this.clampPercent((budget.per_month_used / budget.per_month_max) * 100);
+  }
+
+  protected averageSplitShare(): number {
+    const m = this.userMetrics();
+    if (!m || m.splits_joined <= 0) return 0;
+    return Math.round(m.split_earnings / m.splits_joined);
   }
 
   protected onThemeChange(value: ThemePreference): void {
@@ -777,26 +838,84 @@ export class Settings {
     this.toasts.success(this.translate.languageLabels[value]);
   }
 
-  /** XP bar fill: current / (current + remaining). Full when already at cap. */
   protected progressionBarPercent(xp: ProgressionMeView): number {
     const total = xp.xp + xp.xp_to_next;
-    if (total <= 0) {
-      return xp.xp > 0 ? 100 : 0;
-    }
+    if (total <= 0) return xp.xp > 0 ? 100 : 0;
     return this.clampPercent((xp.xp / total) * 100);
   }
 
-  /** Hide the multiplier chip when the account is running at the default 1×. */
   protected showMultiplier(value: string | number): boolean {
     return Math.abs(Number(value) - 1) > 1e-9;
   }
 
   protected formatMultiplier(value: string | number): string {
     const n = Number(value);
-    if (!Number.isFinite(n)) {
-      return String(value);
-    }
+    if (!Number.isFinite(n)) return String(value);
     return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+
+  protected async openLinkDialog(): Promise<void> {
+    this.linkDialogOpen.set(true);
+    this.rosterSearch.set('');
+    if (this.rosterMembers().length === 0) {
+      this.rosterLoading.set(true);
+      try {
+        const roster = await firstValueFrom(
+          this.api.get<PaginatedData<AlbionGuildMember> | AlbionGuildMember[]>('api/albion/guild/roster'),
+        );
+        this.rosterMembers.set(asPaginated(roster));
+      } catch {
+        this.toasts.error('Impossibile caricare il roster di gilda');
+      } finally {
+        this.rosterLoading.set(false);
+      }
+    }
+  }
+
+  protected closeLinkDialog(): void {
+    this.linkDialogOpen.set(false);
+    this.rosterSearch.set('');
+  }
+
+  protected onRosterSearchInput(event: Event): void {
+    this.rosterSearch.set((event.target as HTMLInputElement).value);
+  }
+
+  protected async confirmLink(player: AlbionGuildMember): Promise<void> {
+    if (this.savingLink()) return;
+    this.savingLink.set(true);
+    try {
+      const linkStatus = await firstValueFrom(
+        this.api.post<AlbionLinkStatus>('api/albion/link', {
+          albion_player_id: player.id,
+          albion_player_name: player.name,
+        }),
+      );
+      this.albionLink.set(linkStatus);
+      this.closeLinkDialog();
+      this.toasts.success(`Personaggio ${player.name} collegato con successo!`);
+      await this.load();
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : 'Errore durante il collegamento');
+    } finally {
+      this.savingLink.set(false);
+    }
+  }
+
+  protected async confirmUnlink(): Promise<void> {
+    if (this.savingLink()) return;
+    this.savingLink.set(true);
+    try {
+      await firstValueFrom(this.api.delete<void>('api/albion/link'));
+      this.albionLink.set(null);
+      this.unlinkConfirmOpen.set(false);
+      this.toasts.success('Personaggio scollegato con successo');
+      await this.load();
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : 'Errore durante lo scollegamento');
+    } finally {
+      this.savingLink.set(false);
+    }
   }
 
   protected async load(): Promise<void> {
@@ -817,8 +936,6 @@ export class Settings {
             this.api.get<PaginatedData<BattleSummary>>('api/battles/me', { page: 1, limit: 50 }),
           ).catch(() => emptyPaginatedBattles()),
           firstValueFrom(this.api.get<UserMetrics>('api/users/me/metrics')).catch(() => null),
-          // Members without `regear.view` simply see no cap bar, rather than
-          // the whole profile failing on a permission they do not need.
           firstValueFrom(this.api.get<RegearBudgetSummary>('api/regear/me/summary')).catch(
             () => null,
           ),

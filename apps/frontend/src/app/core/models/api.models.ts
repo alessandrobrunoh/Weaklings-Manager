@@ -65,7 +65,8 @@ export type PermissionKey =
   | 'progression.adjust'
   | 'warns.view'
   | 'warns.issue'
-  | 'vod.submit';
+  | 'vod.submit'
+  | 'notifications.broadcast';
 
 export interface DiscordUserProfile {
   id: string;
@@ -1429,6 +1430,54 @@ export interface CreateWarnRequest {
   severity: WarnSeverity;
   multiplier?: number;
   multiplier_expires_at?: string;
+}
+
+/* -------------------------- Notifications --------------------------- */
+
+/** Kind of in-app notification. */
+export type NotificationKind =
+  | 'broadcast'
+  | 'regear_accepted'
+  | 'regear_rejected'
+  | 'bank_withdraw_accepted'
+  | 'bank_withdraw_rejected'
+  | 'warn_issued'
+  | 'event_created'
+  | 'event_reminder_1h';
+
+/** One inbox row as seen by the recipient. */
+export interface NotificationView {
+  id: number;
+  kind: NotificationKind;
+  title: string;
+  body: string;
+  link_path: string | null;
+  source_type: string;
+  source_id: number;
+  read_at: string | null;
+  created_at: string;
+}
+
+/** Unread badge payload. */
+export interface UnreadCountView {
+  count: number;
+}
+
+/** Result of mark-all-read. */
+export interface ReadAllResult {
+  updated: number;
+}
+
+/** Result of a guild-wide broadcast. */
+export interface BroadcastResult {
+  id: number;
+  recipient_count: number;
+}
+
+/** Body for `POST /notifications/broadcast`. */
+export interface BroadcastRequest {
+  title: string;
+  body: string;
 }
 
 /** One admin-facing kick/handle reminder when the warn threshold is hit. */

@@ -22,8 +22,10 @@ import {
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
+import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 
 type SiphonedTab = 'balances' | 'entries' | 'batches';
@@ -59,18 +61,39 @@ function emptyPageChange(): DataTablePageChange {
 @Component({
   selector: 'app-siphoned',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, PageStack, DataTable, DataTableCell, Dialog, ViewToggle],
+  imports: [
+    DataTable,
+    DataTableCell,
+    Dialog,
+    Icon,
+    PageHeader,
+    PageStack,
+    StatCard,
+    ViewToggle,
+  ],
   template: `
     <app-page-header [title]="t('siphoned.title')" [subtitle]="t('siphoned.subtitle')">
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        [disabled]="loading()"
+        (click)="refreshNow()"
+      >
+        <app-icon name="sparkles" size="0.875rem" />
+        {{ t('common.refreshNow') }}
+      </button>
+
       @if (canIngest()) {
-        <button type="button" class="btn btn--primary" (click)="openIngestForm()">
-          {{ t('siphoned.ingest') }}
-        </button>
         @if (tab() === 'entries') {
-          <button type="button" class="btn btn--tonal" (click)="openEntryForm()">
+          <button type="button" class="btn btn--tonal btn--sm" (click)="openEntryForm()">
+            <app-icon name="plus" size="0.875rem" />
             {{ t('siphoned.addEntry') }}
           </button>
         }
+        <button type="button" class="btn btn--primary btn--sm" (click)="openIngestForm()">
+          <app-icon name="sparkles" size="0.875rem" />
+          {{ t('siphoned.ingest') }}
+        </button>
       }
       <app-view-toggle
         pageTabs
@@ -81,14 +104,32 @@ function emptyPageChange(): DataTablePageChange {
     </app-page-header>
 
     <app-page-stack>
-      <section>
-        <p class="eyebrow">{{ t('siphoned.weeklyEyebrow') }}</p>
-        <p class="mono mt-2 text-2xl font-normal" style="color: var(--color-text)">
-          {{ t('siphoned.lastUpdated') }}: {{ lastUpdatedLabel() }}
-        </p>
-        <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
-          {{ t('siphoned.weeklyHint') }}
-        </p>
+      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Siphoned summary">
+        <app-stat-card
+          [label]="t('siphoned.stat.deposited')"
+          [value]="formatAmount(totalDeposited())"
+          icon="bank"
+          tone="success"
+        />
+        <app-stat-card
+          [label]="t('siphoned.stat.withdrawn')"
+          [value]="formatAmount(totalWithdrawn())"
+          icon="bank"
+          tone="warning"
+        />
+        <app-stat-card
+          [label]="t('siphoned.stat.net')"
+          [value]="formatAmount(netTotal())"
+          [sub]="t('siphoned.lastUpdated') + ': ' + lastUpdatedLabel()"
+          icon="chart"
+          [tone]="netTotal() >= 0 ? 'success' : 'danger'"
+        />
+        <app-stat-card
+          [label]="t('siphoned.stat.entries')"
+          [value]="tab() === 'balances' ? balanceTotal() : tab() === 'entries' ? entryTotal() : batches().length"
+          icon="list"
+          tone="neutral"
+        />
       </section>
 
       @if (tab() === 'balances') {
@@ -325,6 +366,20 @@ export class Siphoned {
   protected readonly entryTotal = signal(0);
   protected readonly batches = signal<SiphonedBatchSummary[]>([]);
   protected readonly lastUpdatedAt = signal<string | null>(null);
+
+  protected readonly totalDeposited = computed(() =>
+    this.balances().reduce((sum, b) => sum + this.toNumber(b.total_deposited || 0), 0),
+  );
+  protected readonly totalWithdrawn = computed(() =>
+    this.balances().reduce((sum, b) => sum + this.toNumber(b.total_withdrawn || 0), 0),
+  );
+  protected readonly netTotal = computed(() =>
+    this.balances().reduce((sum, b) => sum + this.toNumber(b.net || 0), 0),
+  );
+
+  protected async refreshNow(): Promise<void> {
+    await Promise.all([this.refreshLastUpdated(), this.load()]);
+  }
   protected readonly editingEntryId = signal<number | null>(null);
   protected readonly entryDraft = signal<EntryDraft>(emptyEntryDraft());
   protected readonly confirm = signal<ConfirmTarget | null>(null);

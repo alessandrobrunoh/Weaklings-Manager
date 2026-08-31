@@ -15,8 +15,9 @@ import { TranslateService } from '../../../core/services/translate.service';
 import type { TranslationKey } from '../../../i18n/en';
 import { EmptyState } from '../empty-state/empty-state';
 import { ErrorState } from '../error-state/error-state';
-import { type IconName } from '../icon/icon';
+import { Icon, type IconName } from '../icon/icon';
 import { Loading } from '../loading/loading';
+import { TooltipDirective } from '../../directives/tooltip.directive';
 import { DataTableCell } from './data-table-cell';
 export type {
   DataTableColumn,
@@ -35,46 +36,10 @@ import type {
 const DEFAULT_PAGE_SIZE = 10;
 const DEFAULT_PAGE_SIZES: readonly number[] = [10, 25, 50, 100];
 
-/**
- * Generic, reusable data table with built-in pagination, search, per-column
- * filters and column sorting.
- *
- * Operates in two modes:
- * - **Client mode** (default): pass the full dataset via `rows`. The component
- *   handles slicing, sorting and filtering in memory.
- * - **Server mode**: set `serverMode = true` and provide `totalItems`. The
- *   component becomes stateless for data, emitting `pageChange` whenever the
- *   user moves the page, types a search, picks a filter or sorts a column.
- *
- * The component is intentionally presentational: it never owns data fetching,
- * so it can be reused across the battles, events, bank, siphoned and users
- * features without coupling to their respective API services.
- *
- * @example
- * ```html
- * <app-data-table
- *   [columns]="columns"
- *   [rows]="users()"
- *   [trackBy]="trackById"
- * />
- * ```
- *
- * @example Server-side pagination
- * ```html
- * <app-data-table
- *   [columns]="columns"
- *   [rows]="users()"
- *   [serverMode]="true"
- *   [totalItems]="totalItems()"
- *   [loading]="isLoading()"
- *   (pageChange)="loadPage($event)"
- * />
- * ```
- */
 @Component({
   selector: 'app-data-table',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EmptyState, ErrorState, Loading, NgTemplateOutlet],
+  imports: [EmptyState, ErrorState, Icon, Loading, NgTemplateOutlet, TooltipDirective],
   templateUrl: './data-table.html',
   styleUrl: './data-table.css',
 })

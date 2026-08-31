@@ -1,132 +1,149 @@
-@if (loading()) {
-  <app-loading [label]="t('common.loading')" />
-} @else if (error()) {
-  <app-error-state
-    [message]="t('common.error')"
-    [retryLabel]="t('common.retry')"
-    (retry)="retry.emit()"
-  />
-} @else {
-  @if (showToolbar()) {
-    <div class="data-table__toolbar">
-      @if (!hideSearch()) {
-        <div class="data-table__search">
-          <input
-            type="search"
-            class="input"
-            [placeholder]="t('common.search')"
-            [value]="search()"
-            (input)="onSearchInput($event)"
-          />
-        </div>
-      }
-      @if (hasColumnFilters()) {
-        <div class="data-table__filters">
-          @for (column of columns(); track column.key) {
-            @if (column.filterOptions && column.filterOptions.length > 0) {
-              <select
-                class="select"
-                [value]="columnFilterValue(column.key)"
-                (change)="onColumnFilter(column.key, $event)"
-              >
-                <option value="">{{ t(column.label) }}: {{ t('common.all') }}</option>
-                @for (option of column.filterOptions; track option.value) {
-                  <option [value]="option.value">{{ option.label }}</option>
-                }
-              </select>
-            }
-          }
-        </div>
-      }
+<div class="data-table-card card">
+  @if (loading()) {
+    <div class="data-table__state-container">
+      <app-loading [label]="t('common.loading')" />
     </div>
-  }
-
-  @if (processedRows().length === 0) {
-    <app-empty-state [message]="t(emptyLabel())" [icon]="emptyIcon()" />
+  } @else if (error()) {
+    <div class="data-table__state-container">
+      <app-error-state
+        [message]="t('common.error')"
+        [retryLabel]="t('common.retry')"
+        (retry)="retry.emit()"
+      />
+    </div>
   } @else {
-    <div class="data-table__scroll">
-      <table class="table">
-        <thead>
-          <tr>
+    @if (showToolbar()) {
+      <div class="data-table__toolbar">
+        @if (!hideSearch()) {
+          <div class="data-table__search-wrapper">
+            <app-icon name="search" size="0.875rem" class="data-table__search-icon" />
+            <input
+              type="search"
+              class="data-table__search-input"
+              [placeholder]="t('common.search')"
+              [value]="search()"
+              (input)="onSearchInput($event)"
+            />
+          </div>
+        }
+        @if (hasColumnFilters()) {
+          <div class="data-table__filters">
             @for (column of columns(); track column.key) {
-              <th
-                [class.data-table__th]="column.sortable"
-                [class]="columnAlign(column)"
-                (click)="toggleSort(column)"
-              >
-                <span class="data-table__th-label">
-                  {{ t(column.label) }}
-                  @if (sortIndicator(column.key)) {
-                    <span class="data-table__sort-indicator">{{ sortIndicator(column.key) }}</span>
+              @if (column.filterOptions && column.filterOptions.length > 0) {
+                <select
+                  class="select select--sm"
+                  [value]="columnFilterValue(column.key)"
+                  (change)="onColumnFilter(column.key, $event)"
+                >
+                  <option value="">{{ t(column.label) }}: {{ t('common.all') }}</option>
+                  @for (option of column.filterOptions; track option.value) {
+                    <option [value]="option.value">{{ option.label }}</option>
                   }
-                </span>
-              </th>
+                </select>
+              }
             }
-          </tr>
-        </thead>
-        <tbody>
-          @for (row of processedRows(); track trackBy()(row)) {
-            <tr
-              [class.data-table__row--clickable]="rowClickable()"
-              [attr.tabindex]="rowClickable() ? 0 : null"
-              (click)="onRowClick(row)"
-              (keydown)="onRowKeydown($event, row)"
-            >
+          </div>
+        }
+      </div>
+    }
+
+    @if (processedRows().length === 0) {
+      <div class="data-table__state-container">
+        <app-empty-state [message]="t(emptyLabel())" [icon]="emptyIcon()" />
+      </div>
+    } @else {
+      <div class="data-table__table-wrapper">
+        <table class="table data-table__table">
+          <thead>
+            <tr>
               @for (column of columns(); track column.key) {
-                <td [class]="columnAlign(column)">
-                  @let directive = cellTemplates().get(column.key);
-                  @if (directive) {
-                    <ng-container
-                      [ngTemplateOutlet]="directive.templateRef"
-                      [ngTemplateOutletContext]="{ $implicit: row, row: row }"
-                    />
-                  } @else {
-                    {{ renderCell(row, column) }}
-                  }
-                </td>
+                <th
+                  [class.data-table__th--sortable]="column.sortable"
+                  [class]="columnAlign(column)"
+                  (click)="toggleSort(column)"
+                  [appTooltip]="column.sortable ? (column.label ? t(column.label) : '') : null"
+                  tooltipPosition="top"
+                >
+                  <span class="data-table__th-label">
+                    {{ t(column.label) }}
+                    @if (sortIndicator(column.key)) {
+                      <span class="data-table__sort-indicator">{{ sortIndicator(column.key) }}</span>
+                    }
+                  </span>
+                </th>
               }
             </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-
-    <footer class="data-table__footer">
-      <p class="data-table__page-info">
-        {{ t('common.page') }} {{ page() }} {{ t('common.of') }} {{ totalPages() }}
-        · {{ visibleTotal() }} {{ t('battles.total_results') }}
-      </p>
-      <div class="data-table__controls">
-        @if (!hidePageSize()) {
-          <select
-            class="select data-table__page-size"
-            [value]="currentPageSize()"
-            (change)="onPageSize($event)"
-          >
-            @for (size of pageSizeOptions(); track size) {
-              <option [value]="size">{{ size }} / {{ t('common.page') }}</option>
+          </thead>
+          <tbody>
+            @for (row of processedRows(); track trackBy()(row)) {
+              <tr
+                [class.data-table__row--clickable]="rowClickable()"
+                [attr.tabindex]="rowClickable() ? 0 : null"
+                (click)="onRowClick(row)"
+                (keydown)="onRowKeydown($event, row)"
+              >
+                @for (column of columns(); track column.key) {
+                  <td [class]="columnAlign(column)">
+                    @let directive = cellTemplates().get(column.key);
+                    @if (directive) {
+                      <ng-container
+                        [ngTemplateOutlet]="directive.templateRef"
+                        [ngTemplateOutletContext]="{ $implicit: row, row: row }"
+                      />
+                    } @else {
+                      {{ renderCell(row, column) }}
+                    }
+                  </td>
+                }
+              </tr>
             }
-          </select>
-        }
-        <div class="data-table__pager">
-          <button
-            type="button"
-            class="btn btn--outline"
-            [disabled]="page() <= 1"
-            (click)="prevPage()"
-          >
-            {{ t('common.prev') }}
-          </button>
-          <button
-            type="button"
-            class="btn btn--outline"
-            [disabled]="page() >= totalPages()"
-            (click)="nextPage()"
-          >
-            {{ t('common.next') }}
-          </button>
-        </div>
+          </tbody>
+        </table>
       </div>
-    </footer>
+
+      <footer class="data-table__footer">
+        <p class="data-table__page-info">
+          {{ t('common.page') }} <span class="font-medium text-white">{{ page() }}</span> {{ t('common.of') }} {{ totalPages() }}
+          · <span class="font-medium text-white">{{ visibleTotal() }}</span> {{ t('battles.total_results') }}
+        </p>
+        <div class="data-table__controls">
+          @if (!hidePageSize()) {
+            <select
+              class="select select--sm data-table__page-size"
+              [value]="currentPageSize()"
+              (change)="onPageSize($event)"
+              [appTooltip]="'Elementi per pagina'"
+              tooltipPosition="top"
+            >
+              @for (size of pageSizeOptions(); track size) {
+                <option [value]="size">{{ size }} / {{ t('common.page') }}</option>
+              }
+            </select>
+          }
+          <div class="data-table__pager">
+            <button
+              type="button"
+              class="btn btn--outline btn--sm"
+              [disabled]="page() <= 1"
+              (click)="prevPage()"
+              [appTooltip]="page() > 1 ? t('common.prev') : null"
+              tooltipPosition="top"
+            >
+              {{ t('common.prev') }}
+            </button>
+            <button
+              type="button"
+              class="btn btn--outline btn--sm"
+              [disabled]="page() >= totalPages()"
+              (click)="nextPage()"
+              [appTooltip]="page() < totalPages() ? t('common.next') : null"
+              tooltipPosition="top"
+            >
+              {{ t('common.next') }}
+            </button>
+          </div>
+        </div>
+      </footer>
+    }
   }
-}
+</div>
