@@ -3,6 +3,7 @@ import { firstValueFrom } from 'rxjs';
 
 import type { OpenAlbionItem } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
+import { normalizeAlbionEquipmentName } from '../data/albion-equipment-catalog';
 
 @Injectable({ providedIn: 'root' })
 export class AlbionCatalogService {
@@ -17,8 +18,14 @@ export class AlbionCatalogService {
     if (!this.loading) {
       this.loading = firstValueFrom(this.api.get<OpenAlbionItem[]>('api/openalbion/catalog'))
         .then((items) => {
-          this.items.set(items);
-          return items;
+          const normalizedItems = items.map((item) => ({
+            ...item,
+            name: item.identifier
+              ? normalizeAlbionEquipmentName(item.identifier, item.name)
+              : item.name,
+          }));
+          this.items.set(normalizedItems);
+          return normalizedItems;
         })
         .finally(() => {
           this.loading = null;
