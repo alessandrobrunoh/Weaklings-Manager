@@ -71,6 +71,9 @@ function emptyPageChange(): DataTablePageChange {
     StatCard,
     ViewToggle,
   ],
+  styles: `
+    .siphoned-permission-note { margin: 0; padding: 0.75rem 0.875rem; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text-secondary); font-size: 0.75rem; line-height: 1.5; }
+  `,
   template: `
     <app-page-header [title]="t('siphoned.title')" [subtitle]="t('siphoned.subtitle')">
       <button
@@ -84,12 +87,10 @@ function emptyPageChange(): DataTablePageChange {
       </button>
 
       @if (canIngest()) {
-        @if (tab() === 'entries') {
-          <button type="button" class="btn btn--tonal btn--sm" (click)="openEntryForm()">
-            <app-icon name="plus" size="0.875rem" />
-            {{ t('siphoned.addEntry') }}
-          </button>
-        }
+        <button type="button" class="btn btn--tonal btn--sm" (click)="openEntryForm()">
+          <app-icon name="plus" size="0.875rem" />
+          {{ t('siphoned.addEntry') }}
+        </button>
         <button type="button" class="btn btn--primary btn--sm" (click)="openIngestForm()">
           <app-icon name="sparkles" size="0.875rem" />
           {{ t('siphoned.ingest') }}
@@ -104,6 +105,9 @@ function emptyPageChange(): DataTablePageChange {
     </app-page-header>
 
     <app-page-stack>
+      @if (!canIngest()) {
+        <p class="siphoned-permission-note" role="status">{{ t('siphoned.missingManagePermission') }}</p>
+      }
       <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Siphoned summary">
         <app-stat-card
           [label]="t('siphoned.stat.deposited')"
@@ -540,6 +544,11 @@ export class Siphoned {
   }
 
   protected openEntryForm(): void {
+    if (this.tab() !== 'entries') {
+      this.tab.set('entries');
+      this.entryQuery.set(emptyPageChange());
+      void this.load();
+    }
     this.resetEntryDraft();
     this.showEntryForm.set(true);
   }

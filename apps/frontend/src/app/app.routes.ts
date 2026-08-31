@@ -137,6 +137,12 @@ export const routes: Routes = [
             loadComponent: () => import('./features/admin/admin-hub').then((m) => m.AdminHub),
           },
           {
+            path: 'finance',
+            canActivate: [permissionGuardTo('/admin', 'bank.view_others')],
+            loadComponent: () =>
+              import('./features/admin/admin-finance').then((m) => m.AdminFinance),
+          },
+          {
             path: 'roles',
             canActivate: [permissionGuardTo('/admin', 'roles.manage')],
             loadComponent: () => import('./features/admin/admin-roles').then((m) => m.AdminRoles),

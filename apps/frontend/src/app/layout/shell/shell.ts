@@ -33,6 +33,11 @@ import { Topbar } from '../topbar/topbar';
   host: {
     '(document:keydown.escape)': 'closeDrawer()',
   },
+  styles: `
+    .workspace-main { padding: 1rem; }
+    @media (min-width: 40rem) { .workspace-main { padding: 1.25rem; } }
+    @media (min-width: 64rem) { .workspace-main { padding: 1.5rem; } }
+  `,
   template: `
     <div class="flex h-dvh overflow-hidden" style="background-color: var(--color-bg)">
       <!-- Desktop sidebar -->
@@ -82,7 +87,7 @@ import { Topbar } from '../topbar/topbar';
           (menuToggle)="toggleDrawer()"
           (collapseToggle)="toggleSidebarCollapse()"
         />
-        <main #main class="flex-1 overflow-y-auto overscroll-contain p-3 sm:p-4 scrollbar-thin">
+        <main #main class="workspace-main flex-1 overflow-y-auto overscroll-contain scrollbar-thin">
           <div class="w-full min-w-0">
             <router-outlet />
           </div>

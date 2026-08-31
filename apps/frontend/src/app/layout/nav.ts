@@ -37,6 +37,7 @@ export const ADMIN_ACCESS_PERMISSIONS = [
   'progression.settings.manage',
   'regear.settings.manage',
   'splits.islands.manage',
+  'bank.view_others',
 ] as const;
 
 /**
@@ -126,6 +127,13 @@ export const ADMIN_PANELS: readonly AdminPanel[] = [
     icon: 'bank',
     labelKey: 'nav.bank',
     hintKey: 'bank.subtitle',
+    permissions: ['bank.view_others'],
+  },
+  {
+    path: '/admin/finance',
+    icon: 'chart',
+    labelKey: 'nav.admin.finance',
+    hintKey: 'admin.hub.financeHint',
     permissions: ['bank.view_others'],
   },
   {

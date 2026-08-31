@@ -1,11 +1,10 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  DestroyRef,
+
   inject,
   input,
   output,
-  signal,
 } from '@angular/core';
 import { Router } from '@angular/router';
 
@@ -25,8 +24,8 @@ import type { NavSection } from '../sidebar/sidebar';
 /**
  * Top application bar.
  *
- * Contains the menu toggle (mobile), desktop collapse toggle, live UTC clock,
- * language picker, theme toggle, notification bell, and user profile capsule.
+ * Contains only workspace navigation and personal utility controls. Page titles
+ * belong to the contextual page header below, not to this global toolbar.
  */
 @Component({
   selector: 'app-topbar',
@@ -44,15 +43,10 @@ import type { NavSection } from '../sidebar/sidebar';
   `,
   template: `
     <header
-      class="flex h-12 items-center justify-between gap-3 px-3 sm:px-5 transition-colors"
+      class="flex h-10 items-center justify-between gap-2 px-3 sm:px-4 transition-colors"
       style="background-color: var(--color-surface); border-bottom: 1px solid var(--color-border)"
     >
-      <div class="flex min-w-0 items-center gap-2">
-        <div class="workspace-header hidden min-w-0 md:inline-flex" aria-label="Weaklings Manager workspace">
-          <span class="workspace-header__mark" aria-hidden="true"></span>
-          <span class="truncate">Weaklings</span>
-          <span class="workspace-header__meta hidden lg:inline">Guild operations</span>
-        </div>
+      <div class="flex min-w-0 items-center gap-1.5">
         <!-- Mobile menu toggle -->
         <button
           type="button"
@@ -76,23 +70,13 @@ import type { NavSection } from '../sidebar/sidebar';
         >
           <app-icon [name]="isSidebarCollapsed() ? 'chevron-right' : 'chevron-left'" size="0.95rem" />
         </button>
+        <span class="hidden min-w-0 truncate text-xs font-medium md:block" style="color: var(--color-text-secondary)">
+          Guild operations
+        </span>
       </div>
 
-      <!-- Center / Right controls -->
-      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-        <!-- Albion Server UTC Clock -->
-        <div
-          class="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs mono"
-          style="background-color: var(--color-surface-2); border: 1px solid var(--color-border); color: var(--color-text-secondary)"
-          [appTooltip]="'Albion Online Server Time (UTC)'"
-          tooltipPosition="bottom"
-        >
-          <span class="inline-block h-1.5 w-1.5 rounded-full animate-pulse" style="background-color: var(--color-success)"></span>
-          <span>{{ utcTime() }}</span>
-        </div>
-
-        <!-- Language picker -->
-        <div class="relative hidden sm:flex items-center">
+      <div class="flex shrink-0 items-center gap-1">
+        <div class="relative hidden items-center lg:flex">
           <select
             class="select select--sm w-auto cursor-pointer font-medium"
             [value]="translate.language()"
@@ -124,26 +108,7 @@ import type { NavSection } from '../sidebar/sidebar';
 
         <!-- User profile capsule -->
         @if (auth.profile(); as profile) {
-          <div
-            class="flex items-center gap-2 pl-2 sm:pl-3 shrink-0"
-            style="border-left: 1px solid var(--color-border)"
-          >
-            <div
-              class="hidden sm:flex flex-col items-end leading-none whitespace-nowrap cursor-default"
-              [appTooltip]="profile.username + ' · ' + profile.highest_role"
-              tooltipPosition="bottom"
-            >
-              <span class="text-xs font-medium" style="color: var(--color-text)">
-                {{ profile.username }}
-              </span>
-              <span
-                class="eyebrow text-[10px] mt-0.5"
-                style="color: var(--color-text-secondary)"
-              >
-                {{ profile.highest_role }}
-              </span>
-            </div>
-
+          <div class="flex shrink-0 items-center gap-1">
             <app-avatar
               [userId]="profile.id"
               [avatar]="profile.avatar"
@@ -206,28 +171,11 @@ export class Topbar {
   protected readonly translate = inject(TranslateService);
   protected readonly toasts = inject(ToastService);
   private readonly router = inject(Router);
-  private readonly destroyRef = inject(DestroyRef);
 
   readonly menuToggle = output<void>();
   readonly collapseToggle = output<void>();
   readonly isSidebarCollapsed = input<boolean>(false);
 
-  protected readonly utcTime = signal(this.getUtcTimeString());
-
-  constructor() {
-    if (typeof window !== 'undefined') {
-      const timer = setInterval(() => {
-        this.utcTime.set(this.getUtcTimeString());
-      }, 1000);
-      this.destroyRef.onDestroy(() => clearInterval(timer));
-    }
-  }
-
-  private getUtcTimeString(): string {
-    const d = new Date();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`;
-  }
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 

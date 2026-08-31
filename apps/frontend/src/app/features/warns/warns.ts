@@ -70,6 +70,9 @@ function isWarnsTab(value: string): value is WarnsTab {
     StatCard,
     ViewToggle,
   ],
+  styles: `
+    .warns-permission-note { margin: 0; padding: 0.75rem 0.875rem; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text-secondary); font-size: 0.75rem; line-height: 1.5; }
+  `,
   template: `
     <app-page-header [title]="t('warns.title')" [subtitle]="t('warns.subtitle')">
       <button
@@ -97,6 +100,9 @@ function isWarnsTab(value: string): value is WarnsTab {
     </app-page-header>
 
     <app-page-stack>
+      @if (!canIssue()) {
+        <p class="warns-permission-note" role="status">{{ t('warns.missingManagePermission') }}</p>
+      }
       <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Warns summary">
         <app-stat-card
           [label]="t('warns.stat.active')"

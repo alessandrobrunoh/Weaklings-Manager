@@ -4,8 +4,6 @@ import { firstValueFrom } from 'rxjs';
 
 import type {
   BalanceSummary,
-  BankAnalyticsSummary,
-  GuildReport,
   PaginatedData,
   TransactionStatus,
   TransactionView,
@@ -27,11 +25,11 @@ import { Dialog } from '../../shared/components/dialog/dialog';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { StatCard } from '../../shared/components/stat-card/stat-card';
+
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
-type BankViewMode = 'personal' | 'guild' | 'finance';
+type BankViewMode = 'personal' | 'guild';
 
 export interface BankTableRow {
   id: number;
@@ -66,34 +64,19 @@ function emptyPageChange(): DataTablePageChange {
     DataTableCell,
     Dialog,
     Icon,
-    StatCard,
     TooltipDirective,
     ViewToggle,
   ],
   styles: `
-    .finance-overview { display: grid; gap: 1rem; }
-    .finance-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
-    .finance-heading h2 { margin: 0; color: var(--color-text); font-size: 0.875rem; font-weight: 510; letter-spacing: -0.012em; }
-    .finance-heading p { margin: 0; color: var(--color-text-tertiary); font-size: 0.75rem; }
-    .finance-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--color-border); border-radius: 8px; overflow: hidden; background: var(--color-surface); }
-    .finance-metric { min-inline-size: 0; padding: 0.875rem 1rem; border-inline-end: 1px solid var(--color-border); }
-    .finance-metric:last-child { border-inline-end: 0; }
-    .finance-metric__label { margin: 0; color: var(--color-text-tertiary); font-size: 0.6875rem; font-weight: 510; letter-spacing: 0.035em; text-transform: uppercase; }
-    .finance-metric__value { margin: 0.5rem 0 0; color: var(--color-text); font-family: var(--font-mono); font-size: 1.25rem; letter-spacing: -0.02em; }
-    .finance-metric__detail { margin: 0.25rem 0 0; color: var(--color-text-tertiary); font-size: 0.6875rem; }
-    .finance-panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
-    .finance-panel { min-inline-size: 0; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); }
-    .finance-panel__header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.75rem 0.875rem; border-block-end: 1px solid var(--color-border); }
-    .finance-panel__title { margin: 0; color: var(--color-text-secondary); font-size: 0.75rem; font-weight: 510; }
-    .finance-list { margin: 0; padding: 0; list-style: none; }
-    .finance-list__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.75rem; padding: 0.625rem 0.875rem; border-block-end: 1px solid var(--color-border); }
-    .finance-list__row:last-child { border-block-end: 0; }
-    .finance-list__label { overflow: hidden; color: var(--color-text-secondary); font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
-    .finance-list__meta { display: block; margin-block-start: 0.125rem; color: var(--color-text-tertiary); font-size: 0.6875rem; }
-    .finance-list__amount { color: var(--color-text); font-family: var(--font-mono); font-size: 0.75rem; }
-    .finance-note { margin: 0; padding: 0.75rem 0.875rem; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text-tertiary); font-size: 0.75rem; line-height: 1.5; }
-    @media (max-width: 72rem) { .finance-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .finance-metric:nth-child(2) { border-inline-end: 0; } .finance-metric:nth-child(-n + 2) { border-block-end: 1px solid var(--color-border); } .finance-panels { grid-template-columns: 1fr; } }
-    @media (max-width: 40rem) { .finance-metrics { grid-template-columns: 1fr; } .finance-metric, .finance-metric:nth-child(2) { border-inline-end: 0; border-block-end: 1px solid var(--color-border); } .finance-metric:last-child { border-block-end: 0; } }
+    .ledger-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-block: 1px solid var(--color-border); }
+    .ledger-summary__item { min-inline-size: 0; padding: 0.625rem 0; }
+    .ledger-summary__item + .ledger-summary__item { padding-inline-start: 1rem; border-inline-start: 1px solid var(--color-border); }
+    .ledger-summary__label { margin: 0; color: var(--color-text-tertiary); font-size: 0.6875rem; font-weight: 510; letter-spacing: 0.035em; text-transform: uppercase; }
+    .ledger-summary__value { margin: 0.25rem 0 0; color: var(--color-text); font-family: var(--font-mono); font-size: 1.125rem; letter-spacing: -0.02em; }
+    .ledger-summary__detail { margin: 0.125rem 0 0; color: var(--color-text-tertiary); font-size: 0.6875rem; }
+    .queue-context { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block-end: 0.75rem; border-block-end: 1px solid var(--color-border); }
+    .queue-context__title { margin: 0; color: var(--color-text); font-size: 0.875rem; font-weight: 510; }
+    .queue-context__description { margin: 0.125rem 0 0; color: var(--color-text-tertiary); font-size: 0.75rem; }
   `,
   template: `
     <app-page-header [title]="t('bank.title')" [subtitle]="t('bank.subtitle')">
@@ -121,7 +104,7 @@ function emptyPageChange(): DataTablePageChange {
         </button>
       }
 
-      @if (canAccept() || canViewFinance()) {
+      @if (canAccept()) {
         <app-view-toggle
           pageTabs
           [options]="viewOptions()"
@@ -132,122 +115,29 @@ function emptyPageChange(): DataTablePageChange {
     </app-page-header>
 
     <app-page-stack>
-      @if (viewMode() === 'finance') {
-        <section class="finance-overview" [attr.aria-label]="t('bank.finance.ariaLabel')">
-          <div class="finance-heading">
-            <div>
-              <h2>{{ t('bank.finance.heading') }}</h2>
-              <p>{{ t('bank.finance.description') }}</p>
-            </div>
-            @if (financeLoading()) {
-              <span class="chip chip--neutral">{{ t('bank.finance.loading') }}</span>
-            }
+
+      @if (viewMode() === 'personal') {
+        <section class="ledger-summary" [attr.aria-label]="t('bank.personalSummary')">
+          <div class="ledger-summary__item">
+            <p class="ledger-summary__label">{{ t('bank.balance.pending') }}</p>
+            <p class="ledger-summary__value">{{ formatAmount(balance()?.pending_total) }}</p>
+            <p class="ledger-summary__detail">{{ t('bank.creditsAvailable', { count: balance()?.pending_count ?? 0 }) }}</p>
           </div>
-
-          @if (financeSummary(); as summary) {
-            <div class="finance-metrics">
-              <div class="finance-metric">
-                <p class="finance-metric__label">{{ t('bank.finance.openLiability') }}</p>
-                <p class="finance-metric__value">{{ formatAmount(summary.outstanding_total) }}</p>
-                <p class="finance-metric__detail">{{ t('bank.finance.creditsOwed', { count: summary.outstanding_count }) }}</p>
-              </div>
-              <div class="finance-metric">
-                <p class="finance-metric__label">{{ t('bank.finance.awaitingApproval') }}</p>
-                <p class="finance-metric__value">{{ formatAmount(summary.requested_total) }}</p>
-                <p class="finance-metric__detail">{{ t('bank.finance.requestedWithdrawals', { count: summary.requested_count }) }}</p>
-              </div>
-              <div class="finance-metric">
-                <p class="finance-metric__label">{{ t('bank.finance.paidOut') }}</p>
-                <p class="finance-metric__value">{{ formatAmount(summary.paid_out_total) }}</p>
-                <p class="finance-metric__detail">{{ t('bank.finance.settledPayouts', { count: summary.paid_out_count }) }}</p>
-              </div>
-              <div class="finance-metric">
-                <p class="finance-metric__label">{{ t('bank.finance.donatedBack') }}</p>
-                <p class="finance-metric__value">{{ formatAmount(summary.donated_total) }}</p>
-                <p class="finance-metric__detail">{{ t('bank.finance.memberDonations', { count: summary.donated_count }) }}</p>
-              </div>
-            </div>
-
-            <div class="finance-panels">
-              <section class="finance-panel" aria-labelledby="finance-type-heading">
-                <header class="finance-panel__header">
-                  <h3 id="finance-type-heading" class="finance-panel__title">{{ t('bank.finance.creditsBySource') }}</h3>
-                </header>
-                <ul class="finance-list">
-                  @for (line of summary.transaction_types; track line.label) {
-                    <li class="finance-list__row">
-                      <span class="finance-list__label">{{ line.label }}<span class="finance-list__meta">{{ line.transaction_count }} ledger entries</span></span>
-                      <span class="finance-list__amount">{{ formatAmount(line.total_amount) }}</span>
-                    </li>
-                  }
-                </ul>
-              </section>
-
-              <section class="finance-panel" aria-labelledby="finance-destination-heading">
-                <header class="finance-panel__header">
-                  <h3 id="finance-destination-heading" class="finance-panel__title">{{ t('bank.finance.fundDestinations') }}</h3>
-                </header>
-                <ul class="finance-list">
-                  @for (line of summary.destinations.slice(0, 6); track line.label) {
-                    <li class="finance-list__row">
-                      <span class="finance-list__label">{{ line.label }}<span class="finance-list__meta">{{ line.transaction_count }} entries</span></span>
-                      <span class="finance-list__amount">{{ formatAmount(line.total_amount) }}</span>
-                    </li>
-                  }
-                </ul>
-              </section>
-
-              <section class="finance-panel" aria-labelledby="finance-period-heading">
-                <header class="finance-panel__header">
-                  <h3 id="finance-period-heading" class="finance-panel__title">{{ t('bank.finance.lastThirtyDays') }}</h3>
-                </header>
-                @if (financeReport(); as report) {
-                  <ul class="finance-list">
-                    <li class="finance-list__row"><span class="finance-list__label">{{ t('bank.finance.lootCreated') }}</span><span class="finance-list__amount">{{ formatAmount(report.economy.loot_in) }}</span></li>
-                    <li class="finance-list__row"><span class="finance-list__label">{{ t('bank.finance.memberOutflow') }}</span><span class="finance-list__amount">{{ formatAmount(report.economy.outflow_total) }}</span></li>
-                    <li class="finance-list__row"><span class="finance-list__label">{{ t('bank.finance.regearPaid') }}</span><span class="finance-list__amount">{{ formatAmount(report.economy.regear_paid) }}</span></li>
-                    <li class="finance-list__row"><span class="finance-list__label">{{ t('bank.finance.siphonedNet') }}<span class="finance-list__meta">{{ t('bank.finance.siphonedDetail') }}</span></span><span class="finance-list__amount">{{ formatAmount(report.economy.siphoned_net) }}</span></li>
-                  </ul>
-                } @else {
-                  <p class="finance-note">{{ t('bank.finance.reportPermission') }}</p>
-                }
-              </section>
-            </div>
-
-            <p class="finance-note">{{ t('bank.finance.ledgerNote') }}</p>
-          } @else if (!financeLoading()) {
-            <p class="finance-note">{{ t('bank.finance.unavailable') }}</p>
-          }
+          <div class="ledger-summary__item">
+            <p class="ledger-summary__label">{{ t('bank.balance.requested') }}</p>
+            <p class="ledger-summary__value">{{ formatAmount(balance()?.requested_total) }}</p>
+            <p class="ledger-summary__detail">{{ t('bank.withdrawalsInReview', { count: balance()?.requested_count ?? 0 }) }}</p>
+          </div>
         </section>
       } @else {
-      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Bank summary">
-        <app-stat-card
-          [label]="t('bank.balance.pending')"
-          [value]="formatAmount(balance()?.pending_total)"
-          [sub]="(balance()?.pending_count ?? 0) + ' ' + t('common.total')"
-          icon="bank"
-          tone="warning"
-        />
-        <app-stat-card
-          [label]="t('bank.balance.requested')"
-          [value]="formatAmount(balance()?.requested_total)"
-          [sub]="(balance()?.requested_count ?? 0) + ' ' + t('common.total')"
-          icon="bank"
-          tone="primary"
-        />
-        <app-stat-card
-          [label]="t('bank.balance.payouts')"
-          [value]="formatAmount(totalPaidOut())"
-          icon="sparkles"
-          tone="success"
-        />
-        <app-stat-card
-          [label]="t('bank.stat.transactions')"
-          [value]="transactionTotal()"
-          icon="list"
-          tone="neutral"
-        />
-      </section>
+        <section class="queue-context" [attr.aria-label]="t('bank.queue.ariaLabel')">
+          <div>
+            <h2 class="queue-context__title">{{ t('bank.queue.heading') }}</h2>
+            <p class="queue-context__description">{{ t('bank.queue.description') }}</p>
+          </div>
+          <span class="chip chip--neutral">{{ t('bank.queue.entryCount', { count: transactionTotal() }) }}</span>
+        </section>
+      }
 
       @for (key of [tableKey()]; track key) {
         <app-data-table
@@ -307,24 +197,13 @@ function emptyPageChange(): DataTablePageChange {
           </ng-template>
           <ng-template dataTableCell="actions" let-row>
             @if (row.status === 'requested' && canAccept()) {
-              <div class="flex justify-end gap-1" (click)="$event.stopPropagation()">
+              <div class="flex justify-end" (click)="$event.stopPropagation()">
                 <button
                   type="button"
-                  class="btn btn--success btn--icon btn--sm"
-                  [title]="t('bank.actions.accept_title')"
-                  [attr.aria-label]="t('bank.actions.accept_title')"
+                  class="btn btn--outline btn--sm"
                   (click)="openPlayerReview(row)"
                 >
-                  <app-icon name="check" size="1rem" />
-                </button>
-                <button
-                  type="button"
-                  class="btn btn--error btn--icon btn--sm"
-                  [title]="t('bank.actions.reject_title')"
-                  [attr.aria-label]="t('bank.actions.reject_title')"
-                  (click)="openPlayerReview(row)"
-                >
-                  <app-icon name="close" size="1rem" />
+                  {{ t('bank.actions.review') }}
                 </button>
               </div>
             } @else {
@@ -332,7 +211,6 @@ function emptyPageChange(): DataTablePageChange {
             }
           </ng-template>
         </app-data-table>
-      }
       }
     </app-page-stack>
 
@@ -485,9 +363,6 @@ export class Bank {
   protected readonly loading = signal(false);
   protected readonly transactionsLoadFailed = signal(false);
   protected readonly viewMode = signal<BankViewMode>('personal');
-  protected readonly financeSummary = signal<BankAnalyticsSummary | null>(null);
-  protected readonly financeReport = signal<GuildReport | null>(null);
-  protected readonly financeLoading = signal(false);
   protected readonly statusFilter = signal<TransactionStatus | ''>('');
 
   protected readonly reviewingPlayer = signal<BankTableRow | null>(null);
@@ -517,20 +392,13 @@ export class Bank {
     if (this.canAccept()) {
       options.push({ id: 'guild', label: this.t('bank.view.guild') });
     }
-    if (this.canViewFinance()) {
-      options.push({ id: 'finance', label: this.t('bank.view.finance') });
-    }
+
     return options;
   });
   protected readonly trackRow = (row: BankTableRow): unknown => `${row.to_user_id}-${row.status}-${row.id}`;
 
   private readonly tableQuery = signal<DataTablePageChange>(emptyPageChange());
 
-  protected readonly totalPaidOut = computed(() =>
-    this.transactions()
-      .filter((t) => t.status === 'withdrawn')
-      .reduce((acc, t) => acc + Number(t.amount || 0), 0),
-  );
 
   protected readonly displayedRows = computed<BankTableRow[]>(() => {
     const raw = this.transactions();
@@ -644,10 +512,6 @@ export class Bank {
   });
 
   protected async refreshNow(): Promise<void> {
-    if (this.viewMode() === 'finance') {
-      await this.loadFinance();
-      return;
-    }
     await this.load();
   }
 
@@ -688,20 +552,13 @@ export class Bank {
     return this.auth.hasPermission('bank.withdraw.accept');
   }
 
-  protected canViewFinance(): boolean {
-    return this.auth.hasPermission('bank.view_others');
-  }
 
   protected setViewMode(next: string): void {
-    if (next !== 'personal' && next !== 'guild' && next !== 'finance') return;
+    if (next !== 'personal' && next !== 'guild') return;
     if (this.viewMode() === next) return;
     this.viewMode.set(next);
     this.statusFilter.set(next === 'guild' ? 'requested' : '');
     this.tableQuery.set(emptyPageChange());
-    if (next === 'finance') {
-      void this.loadFinance();
-      return;
-    }
     void this.loadTransactions();
   }
 
@@ -777,11 +634,9 @@ export class Bank {
     });
   }
 
-
   protected async requestWithdrawal(): Promise<void> {
     await this.mutate('api/bank/transactions/withdraw', 'bank.withdraw.request', { all: true });
   }
-
 
   protected async acceptSingle(id: number): Promise<void> {
     await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept', {
@@ -799,24 +654,6 @@ export class Bank {
     await Promise.all([this.loadBalance(), this.loadTransactions()]);
   }
 
-  private async loadFinance(): Promise<void> {
-    if (!this.canViewFinance()) {
-      return;
-    }
-    this.financeLoading.set(true);
-    const [bankResult, reportResult] = await Promise.allSettled([
-      firstValueFrom(this.api.get<BankAnalyticsSummary>('api/bank/admin/summary')),
-      firstValueFrom(this.api.get<GuildReport>('api/intel/report')),
-    ]);
-    if (bankResult.status === 'fulfilled') {
-      this.financeSummary.set(bankResult.value);
-    } else {
-      this.financeSummary.set(null);
-      this.toasts.error(this.t('common.error'));
-    }
-    this.financeReport.set(reportResult.status === 'fulfilled' ? reportResult.value : null);
-    this.financeLoading.set(false);
-  }
 
   private async loadBalance(): Promise<void> {
     try {
