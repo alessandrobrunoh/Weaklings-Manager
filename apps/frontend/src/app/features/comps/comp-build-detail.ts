@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 
 import { validateBuildName } from '../../shared/validation/build-validation';
@@ -12,6 +13,7 @@ import type {
   BuildLoadout,
   BuildRole,
   BuildSlot,
+  BuildPerformanceView,
   OpenAlbionItem,
   OpenAlbionItemAbilities,
   UpdateBuildRequest,
@@ -27,6 +29,10 @@ import type { AbilitySlotView } from '../../shared/data/albion-abilities';
 import { AlbionAbilitiesService } from '../../shared/services/albion-abilities.service';
 import { AbilityBar } from '../../shared/components/ability-bar/ability-bar';
 import type { AbilityChoiceChange } from '../../shared/components/ability-bar/ability-bar';
+import { VersionSwitcher } from '../../shared/components/version-switcher/version-switcher';
+import { VersionDiffList } from '../../shared/components/version-diff-list/version-diff-list';
+import { abilityNameLookup, diffBuildVersions } from './version-diff';
+import type { VersionDiffEntry } from './version-diff';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -104,6 +110,8 @@ const ITEM_TIERS = [
     Loading,
     EquipmentGrid,
     AbilityBar,
+    VersionSwitcher,
+    VersionDiffList,
     Dialog,
   ],
   template: `
@@ -116,8 +124,23 @@ const ITEM_TIERS = [
           roleLabel(current.role) + ' · ' + (current.category_name || t('comps.noCategory'))
         "
       >
-        <div class="flex flex-wrap gap-2">
+        <div pageActions class="flex flex-wrap items-center gap-2">
           <a class="btn btn--ghost" routerLink="/comps">← {{ t('comps.title') }}</a>
+          <app-version-switcher
+            [versions]="current.versions ?? []"
+            [currentId]="current.id"
+            [canManage]="canManage()"
+            [busy]="saving()"
+            [label]="t('comps.version')"
+            [createLabel]="t('comps.newVersion')"
+            (select)="openVersion($event)"
+            (create)="createVersion()"
+          />
+          @if ((current.versions ?? []).length > 1) {
+            <button type="button" class="btn btn--outline" (click)="openCompare()">
+              {{ t('comps.compare') }}
+            </button>
+          }
           @if (canManage() && mode() === 'view') {
             <button
               type="button"
@@ -316,7 +339,119 @@ const ITEM_TIERS = [
             }
           </section>
         }
+        <section class="card grid gap-3 p-5" [attr.aria-label]="t('comps.performance')">
+          <header class="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 class="text-lg font-semibold" style="color: var(--color-text)">
+              {{ t('comps.performance') }} · v{{ current.version }}
+            </h2>
+            <span class="chip">
+              {{ t('comps.signups') }}
+              {{ (performance()?.signups_as_primary ?? 0) + (performance()?.signups_as_secondary ?? 0) }}
+            </span>
+          </header>
+
+          @if (performance(); as report) {
+            @if (report.stats; as stats) {
+              <dl class="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                <div>
+                  <dt class="label">{{ t('comps.winrate') }}</dt>
+                  <dd class="text-lg font-semibold" style="color: var(--color-text)">
+                    {{ winRate(stats.wins, stats.losses) }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="label">K / D</dt>
+                  <dd class="text-lg font-semibold" style="color: var(--color-text)">
+                    {{ stats.kills }} / {{ stats.deaths }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="label">{{ t('comps.matchedPlayers') }}</dt>
+                  <dd class="text-lg font-semibold" style="color: var(--color-text)">
+                    {{ stats.matched_players }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="label">Battles</dt>
+                  <dd class="text-lg font-semibold" style="color: var(--color-text)">
+                    {{ stats.battles }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="label">Kill fame</dt>
+                  <dd class="text-lg font-semibold" style="color: var(--color-text)">
+                    {{ stats.kill_fame }}
+                  </dd>
+                </div>
+              </dl>
+              @if (report.players_without_an_albion_link > 0) {
+                <p class="text-sm" style="color: var(--color-text-secondary)">
+                  {{ t('comps.unlinkedPlayers') }}: {{ report.players_without_an_albion_link }}
+                </p>
+              }
+            } @else {
+              <p class="text-sm" style="color: var(--color-text-secondary)">
+                {{ t('comps.noBattleData') }}
+              </p>
+            }
+          }
+        </section>
       </app-page-stack>
+
+      @if (comparing()) {
+        <app-dialog [title]="t('comps.compare')" size="lg" (closed)="closeCompare()">
+          <div class="grid gap-4">
+            <label>
+              <span class="label">{{ t('comps.compareWith') }}</span>
+              <select
+                class="select"
+                [value]="compareWithId()"
+                (change)="onCompareTargetChange($event)"
+              >
+                @for (entry of current.versions ?? []; track entry.id) {
+                  @if (entry.id !== current.id) {
+                    <option [value]="entry.id">v{{ entry.version }}</option>
+                  }
+                }
+              </select>
+            </label>
+
+            @if (compareWith(); as other) {
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div class="card p-4">
+                  <h3 class="text-sm font-semibold" style="color: var(--color-text)">
+                    v{{ other.version }} — {{ t('comps.performance') }}
+                  </h3>
+                  <p class="text-sm" style="color: var(--color-text-secondary)">
+                    {{ performanceSummary(comparePerformance()) }}
+                  </p>
+                </div>
+                <div class="card p-4">
+                  <h3 class="text-sm font-semibold" style="color: var(--color-text)">
+                    v{{ current.version }} — {{ t('comps.performance') }}
+                  </h3>
+                  <p class="text-sm" style="color: var(--color-text-secondary)">
+                    {{ performanceSummary(performance()) }}
+                  </p>
+                </div>
+              </div>
+
+              <app-version-diff-list
+                [entries]="compareDiff()"
+                [emptyLabel]="t('comps.noDifferences')"
+                [addedLabel]="t('comps.added')"
+                [removedLabel]="t('comps.removed')"
+                [changedLabel]="t('comps.changed')"
+              />
+            }
+          </div>
+          <div dialogFooter>
+            <button type="button" class="btn btn--ghost" (click)="closeCompare()">
+              {{ t('common.close') }}
+            </button>
+          </div>
+        </app-dialog>
+      }
 
       @if (pendingDelete(); as pending) {
         <app-dialog [title]="t('common.confirm')" size="sm" (closed)="closeDelete()">
@@ -343,7 +478,7 @@ const ITEM_TIERS = [
       <app-error-state
         [message]="t('common.error')"
         [retryLabel]="t('common.retry')"
-        (retry)="load(buildId)"
+        (retry)="load(buildId())"
       />
     } @else if (!loading()) {
       <app-empty-state [message]="t('comps.buildNotFound')" icon="package" />
@@ -402,15 +537,41 @@ export class CompBuildDetailPage {
   protected readonly canManage = computed(() => this.auth.hasPermission('comps.builds.manage'));
   /** The bundled ability catalog, loaded once and keyed by tier-stripped base identifier. */
   protected readonly abilityCatalog = signal<Record<string, OpenAlbionItemAbilities>>({});
+  protected readonly performance = signal<BuildPerformanceView | null>(null);
+  protected readonly comparing = signal(false);
+  protected readonly compareWithId = signal('');
+  protected readonly compareWith = signal<BuildDetail | null>(null);
+  protected readonly comparePerformance = signal<BuildPerformanceView | null>(null);
+  protected readonly compareDiff = computed<VersionDiffEntry[]>(() => {
+    const current = this.build();
+    const other = this.compareWith();
+    return current && other
+      ? diffBuildVersions(other, current, abilityNameLookup(this.abilityCatalog()))
+      : [];
+  });
   protected readonly mainItems = computed<BuildItemSlot[]>(() => this.itemsFor('main'));
   protected readonly swapItems = computed<BuildItemSlot[]>(() => this.itemsFor('swap'));
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
-  protected readonly buildId = Number(this.route.snapshot.paramMap.get('buildId'));
+  /**
+   * The build row on screen.
+   *
+   * Switching versions navigates within the same route, so Angular reuses this component and the
+   * snapshot never changes — the id has to come from the live `paramMap` instead.
+   */
+  protected readonly buildId = signal(Number(this.route.snapshot.paramMap.get('buildId')));
 
   constructor() {
-    void this.load(this.buildId);
+    this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const id = Number(params.get('buildId'));
+      if (id === this.buildId() && this.build()) {
+        return;
+      }
+      this.buildId.set(id);
+      this.mode.set('view');
+      void this.load(id);
+    });
     // Static application data; one fetch serves every build page in the session.
     void this.albionAbilities
       .load()
@@ -476,7 +637,7 @@ export class CompBuildDetailPage {
   protected cancelEdit(): void {
     this.mode.set('view');
     this.cancelSlotEdit();
-    void this.load(this.buildId);
+    void this.load(this.buildId());
   }
 
   protected onEditNameChange(event: Event): void {
@@ -635,7 +796,7 @@ export class CompBuildDetailPage {
       await firstValueFrom(this.api.patch<BuildDetail>(`api/comps/builds/${build.id}`, request));
       this.mode.set('view');
       this.cancelSlotEdit();
-      await this.load(this.buildId);
+      await this.load(this.buildId());
       this.toasts.success(this.t('common.save'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -734,6 +895,101 @@ export class CompBuildDetailPage {
     }
   }
 
+  /**
+   * Formats a win rate, or a dash when there is nothing to divide.
+   *
+   * A version with battles but no decided outcome must not read as 0%.
+   */
+  protected winRate(wins: number, losses: number): string {
+    const decided = wins + losses;
+    return decided === 0 ? '—' : `${Math.round((wins / decided) * 100)}%`;
+  }
+
+  /** A one-line performance summary, saying "no data" rather than implying a 0% win rate. */
+  protected performanceSummary(report: BuildPerformanceView | null): string {
+    const stats = report?.stats;
+    if (!stats) {
+      return this.t('comps.noBattleData');
+    }
+    return `${this.winRate(stats.wins, stats.losses)} · ${stats.kills}/${stats.deaths} · ${stats.battles} battles · ${stats.matched_players} players`;
+  }
+
+  protected openCompare(): void {
+    const versions = this.build()?.versions ?? [];
+    const other = versions.find((entry) => entry.id !== this.build()?.id);
+    this.comparing.set(true);
+    if (other) {
+      this.compareWithId.set(String(other.id));
+      void this.loadComparison(other.id);
+    }
+  }
+
+  protected closeCompare(): void {
+    this.comparing.set(false);
+    this.compareWith.set(null);
+    this.comparePerformance.set(null);
+  }
+
+  protected onCompareTargetChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.compareWithId.set(value);
+    void this.loadComparison(Number(value));
+  }
+
+  private async loadComparison(buildId: number): Promise<void> {
+    try {
+      const [detail, performance] = await Promise.all([
+        firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${buildId}`)),
+        firstValueFrom(
+          this.api.get<BuildPerformanceView>(`api/comps/builds/${buildId}/performance`),
+        ).catch(() => null),
+      ]);
+      this.compareWith.set(detail);
+      this.comparePerformance.set(performance);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    }
+  }
+
+  protected async openVersion(buildId: number): Promise<void> {
+    if (buildId === this.build()?.id) {
+      return;
+    }
+    await this.router.navigate(['/comps', 'builds', buildId]);
+  }
+
+  protected async createVersion(): Promise<void> {
+    const build = this.build();
+    if (!build) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      const created = await firstValueFrom(
+        this.api.post<BuildDetail>(`api/comps/builds/${build.id}/versions`, {}),
+      );
+      this.toasts.success(this.t('comps.versionCreated'));
+      await this.router.navigate(['/comps', 'builds', created.id]);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  /** Performance is per version, so it reloads whenever the page shows a different build row. */
+  private async loadPerformance(buildId: number): Promise<void> {
+    try {
+      this.performance.set(
+        await firstValueFrom(
+          this.api.get<BuildPerformanceView>(`api/comps/builds/${buildId}/performance`),
+        ),
+      );
+    } catch {
+      this.performance.set(null);
+    }
+  }
+
   private async runItemSearch(): Promise<void> {
     const slot = this.editing()?.slot;
     if (!slot) {
@@ -771,6 +1027,7 @@ export class CompBuildDetailPage {
       ]);
       this.build.set(build);
       this.buildCategories.set(categories);
+      void this.loadPerformance(buildId);
     } catch (error) {
       this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

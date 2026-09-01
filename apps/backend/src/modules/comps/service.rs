@@ -28,7 +28,7 @@ use super::entities::{
 };
 use super::models::{
     AddCompBuildRequest, BuildCategoryView, BuildDetail, BuildFilters, BuildItemSpells,
-    BuildItemView, BuildSummary,
+    BuildItemView, BuildSummary, BuildVersionRef,
     CompBuildView, CompCategoryView, CompDetail, CompFilters, CompSummary,
     CreateBuildCategoryRequest, CreateBuildRequest, CreateCompCategoryRequest, CreateCompRequest,
     UpdateBuildCategoryRequest, UpdateBuildRequest, UpdateCompBuildQuantityRequest,
@@ -150,6 +150,48 @@ fn validate_ability_choice(
 /// Resolves a user's display name by id, returning `"Unknown"` if the user no longer exists.
 async fn username_of(db: &DatabaseConnection, user_id: i64) -> Result<String, AppError> {
     crate::modules::users::display_name::resolve_by_id(db, user_id).await
+}
+
+/// Every build sharing one `(name, category)` identity, oldest version first.
+///
+/// The group *is* the identity pair — there is no separate group id — so the lookup uses the same
+/// trimmed, case-insensitive comparison as the uniqueness check, and a row whose name differs only
+/// in case still belongs to its group.
+async fn build_version_group(
+    db: &DatabaseConnection,
+    name: &str,
+    category_id: i64,
+) -> Result<Vec<build::Model>, AppError> {
+    let key = identity_key(name);
+    let mut group: Vec<build::Model> = build::Entity::find()
+        .filter(BuildColumn::CategoryId.eq(category_id))
+        .all(db)
+        .await?
+        .into_iter()
+        .filter(|candidate| identity_key(&candidate.name) == key)
+        .collect();
+    group.sort_by_key(|candidate| candidate.version);
+    Ok(group)
+}
+
+/// Every comp sharing one `(name, category)` identity, oldest version first.
+///
+/// See [`build_version_group`]; comps follow the same rule, and `parent_id` is independent of it.
+async fn comp_version_group(
+    db: &DatabaseConnection,
+    name: &str,
+    category_id: i64,
+) -> Result<Vec<comp::Model>, AppError> {
+    let key = identity_key(name);
+    let mut group: Vec<comp::Model> = comp::Entity::find()
+        .filter(CompColumn::CategoryId.eq(category_id))
+        .all(db)
+        .await?
+        .into_iter()
+        .filter(|candidate| identity_key(&candidate.name) == key)
+        .collect();
+    group.sort_by_key(|candidate| candidate.version);
+    Ok(group)
 }
 
 /// Clears ability choices that the item now in the slot does not offer.
@@ -370,6 +412,93 @@ impl CompService {
         })
     }
 
+    /// Creates the next version of a comp: a copy carrying every build entry and quantity.
+    ///
+    /// `parent_id` comes along, so a version of a variant stays a variant of the same parent —
+    /// `parent_id` says "derived from a different comp" while `version` says "the same comp,
+    /// revised", and the two are independent.
+    ///
+    /// Entries point at specific *build versions*, not build groups, so a comp version keeps
+    /// running the builds it was authored against until someone changes it.
+    pub async fn create_comp_version(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+        creator_id: i64,
+    ) -> Result<CompDetail, AppError> {
+        let source = comp::Entity::find_by_id(id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Comp {id} not found")))?;
+
+        const ATTEMPTS: u8 = 5;
+        for attempt in 1..=ATTEMPTS {
+            let next_version = comp_version_group(db, &source.name, source.category_id)
+                .await?
+                .iter()
+                .map(|sibling| sibling.version)
+                .max()
+                .unwrap_or(0)
+                + 1;
+
+            match self
+                .insert_comp_version(db, &source, creator_id, next_version)
+                .await
+            {
+                Ok(detail) => return Ok(detail),
+                Err(AppError::Database(_)) if attempt < ATTEMPTS => continue,
+                Err(error) => return Err(error),
+            }
+        }
+
+        Err(AppError::Conflict(
+            "Could not assign a version number — another version was being created at the same \
+             time. Try again."
+                .to_string(),
+        ))
+    }
+
+    /// Inserts one comp version copy and its build entries in a single transaction.
+    async fn insert_comp_version(
+        &self,
+        db: &DatabaseConnection,
+        source: &comp::Model,
+        creator_id: i64,
+        version: i32,
+    ) -> Result<CompDetail, AppError> {
+        let txn = db.begin().await?;
+
+        let copy = comp::ActiveModel {
+            name: Set(source.name.clone()),
+            description: Set(source.description.clone()),
+            category_id: Set(source.category_id),
+            version: Set(version),
+            created_by: Set(creator_id),
+            parent_id: Set(source.parent_id),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await?;
+
+        let entries = comp_build::Entity::find()
+            .filter(CompBuildColumn::CompId.eq(source.id))
+            .all(&txn)
+            .await?;
+        for entry in entries {
+            comp_build::ActiveModel {
+                comp_id: Set(copy.id),
+                build_id: Set(entry.build_id),
+                quantity: Set(entry.quantity),
+                ..Default::default()
+            }
+            .insert(&txn)
+            .await?;
+        }
+
+        txn.commit().await?;
+        self.get_comp(db, copy.id).await
+    }
+
     /// Deletes a comp category. Fails with [`AppError::Conflict`] if comps reference it.
     pub async fn delete_comp_category(
         &self,
@@ -459,11 +588,20 @@ impl CompService {
         // frontend always gets a usable render.albiononline.com URL.
         self.resolve_missing_icons(&mut item_views).await?;
 
+        let versions = build_version_group(db, &build.name, build.category_id)
+            .await?
+            .iter()
+            .map(|sibling| BuildVersionRef {
+                id: sibling.id,
+                version: sibling.version,
+            })
+            .collect();
         let summary = self.to_build_summary(db, build).await?;
 
         Ok(BuildDetail {
             summary,
             items: item_views,
+            versions,
         })
     }
 
@@ -614,6 +752,68 @@ impl CompService {
         Ok(())
     }
 
+    /// Refuses a group rename onto an identity another build group already holds.
+    ///
+    /// Every version of the build being renamed is excluded, since they are moving together.
+    async fn ensure_group_identity_free(
+        &self,
+        db: &DatabaseConnection,
+        build: &build::Model,
+        name: &str,
+        category_id: i64,
+    ) -> Result<(), AppError> {
+        let moving: std::collections::HashSet<i64> =
+            build_version_group(db, &build.name, build.category_id)
+                .await?
+                .iter()
+                .map(|sibling| sibling.id)
+                .collect();
+        let key = identity_key(name);
+        let taken = build::Entity::find()
+            .filter(BuildColumn::CategoryId.eq(category_id))
+            .all(db)
+            .await?
+            .into_iter()
+            .any(|candidate| !moving.contains(&candidate.id) && identity_key(&candidate.name) == key);
+        if taken {
+            return Err(AppError::Conflict(format!(
+                "A build named {:?} already exists in this category",
+                name.trim()
+            )));
+        }
+        Ok(())
+    }
+
+    /// Refuses a comp group rename onto an identity another comp group already holds.
+    async fn ensure_comp_group_identity_free(
+        &self,
+        db: &DatabaseConnection,
+        comp: &comp::Model,
+        name: &str,
+        category_id: i64,
+    ) -> Result<(), AppError> {
+        let moving: std::collections::HashSet<i64> =
+            comp_version_group(db, &comp.name, comp.category_id)
+                .await?
+                .iter()
+                .map(|sibling| sibling.id)
+                .collect();
+        let key = identity_key(name);
+        let taken = comp::Entity::find()
+            .filter(CompColumn::CategoryId.eq(category_id))
+            .all(db)
+            .await?
+            .into_iter()
+            .any(|candidate| !moving.contains(&candidate.id) && identity_key(&candidate.name) == key);
+        if taken {
+            return Err(AppError::Conflict(format!(
+                "A composition named {:?} already exists in this category",
+                name.trim()
+            )));
+        }
+        Ok(())
+    }
+
     /// Refuses a comp identity — the `(name, category)` pair — that another comp already holds.
     ///
     /// See [`CompService::ensure_build_identity_free`]; the rules are identical.
@@ -748,29 +948,157 @@ impl CompService {
             let _ = category_id; // used above for validation
         }
 
-        let target_name = req.name.as_deref().unwrap_or(&build.name).to_string();
+        let target_name = req.name.as_deref().unwrap_or(&build.name).trim().to_string();
         let target_category = req.category_id.unwrap_or(build.category_id);
-        self.ensure_build_identity_free(db, &target_name, target_category, Some(build.id))
-            .await?;
-
-        let mut active: build::ActiveModel = build.into();
-        if let Some(name) = req.name {
-            active.name = Set(name.trim().to_string());
+        let identity_changed =
+            identity_key(&target_name) != identity_key(&build.name) || target_category != build.category_id;
+        if identity_changed {
+            self.ensure_group_identity_free(db, &build, &target_name, target_category)
+                .await?;
         }
+
+        let group = build_version_group(db, &build.name, build.category_id).await?;
+        let txn = db.begin().await?;
+
+        // Name and category are the group's identity, so a rename moves every version at once —
+        // otherwise one version would split off into an identity of its own.
+        if identity_changed {
+            for sibling in &group {
+                let mut moving: build::ActiveModel = sibling.clone().into();
+                moving.name = Set(target_name.clone());
+                moving.category_id = Set(target_category);
+                moving.updated_at = Set(now());
+                moving.update(&txn).await?;
+            }
+        }
+
+        let current = build::Entity::find_by_id(build.id)
+            .one(&txn)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Build {id} not found")))?;
+        let mut active: build::ActiveModel = current.into();
         if let Some(description) = req.description {
             active.description = Set(Some(description));
         }
         if let Some(role) = req.role {
             active.role = Set(role.to_string());
         }
-        if let Some(category_id) = req.category_id {
-            active.category_id = Set(category_id);
-        }
         active.updated_at = Set(now());
-
-        let updated = active.update(db).await?;
+        let updated = active.update(&txn).await?;
+        txn.commit().await?;
 
         self.to_build_detail(db, updated).await
+    }
+
+    /// Creates the next version of a build: a full copy that can be edited on its own.
+    ///
+    /// The copy carries both loadouts and every ability choice, because a version that silently
+    /// dropped the swap would be worse than no version at all. Name and category are inherited —
+    /// they are the group's identity, and every version shares them.
+    ///
+    /// The new number is `max(version) + 1` within the group. Two concurrent requests would both
+    /// compute the same number, so the `(name, category_id, version)` unique index is what actually
+    /// decides; the loser retries rather than failing the officer's click.
+    pub async fn create_build_version(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+        creator_id: i64,
+    ) -> Result<BuildDetail, AppError> {
+        let source = build::Entity::find_by_id(id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Build {id} not found")))?;
+
+        const ATTEMPTS: u8 = 5;
+        for attempt in 1..=ATTEMPTS {
+            let next_version = build_version_group(db, &source.name, source.category_id)
+                .await?
+                .iter()
+                .map(|sibling| sibling.version)
+                .max()
+                .unwrap_or(0)
+                + 1;
+
+            match self
+                .insert_build_version(db, &source, creator_id, next_version)
+                .await
+            {
+                Ok(detail) => return Ok(detail),
+                // Another request claimed this number first; recompute and try again.
+                Err(AppError::Database(_)) if attempt < ATTEMPTS => continue,
+                Err(error) => return Err(error),
+            }
+        }
+
+        Err(AppError::Conflict(
+            "Could not assign a version number — another version was being created at the same \
+             time. Try again."
+                .to_string(),
+        ))
+    }
+
+    /// Inserts one version copy in a single transaction, items and abilities included.
+    async fn insert_build_version(
+        &self,
+        db: &DatabaseConnection,
+        source: &build::Model,
+        creator_id: i64,
+        version: i32,
+    ) -> Result<BuildDetail, AppError> {
+        let txn = db.begin().await?;
+
+        let copy = build::ActiveModel {
+            name: Set(source.name.clone()),
+            description: Set(source.description.clone()),
+            role: Set(source.role.clone()),
+            category_id: Set(source.category_id),
+            version: Set(version),
+            created_by: Set(creator_id),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await?;
+
+        let items = build_item::Entity::find()
+            .filter(BuildItemColumn::BuildId.eq(source.id))
+            .all(&txn)
+            .await?;
+
+        for item in items {
+            let copied_item = build_item::ActiveModel {
+                build_id: Set(copy.id),
+                loadout: Set(item.loadout.clone()),
+                slot: Set(item.slot.clone()),
+                openalbion_item_type: Set(item.openalbion_item_type.clone()),
+                openalbion_item_id: Set(item.openalbion_item_id),
+                openalbion_item_name: Set(item.openalbion_item_name.clone()),
+                openalbion_item_icon: Set(item.openalbion_item_icon.clone()),
+                openalbion_item_tier: Set(item.openalbion_item_tier.clone()),
+                ..Default::default()
+            }
+            .insert(&txn)
+            .await?;
+
+            let chosen = build_item_spell::Entity::find()
+                .filter(BuildItemSpellColumn::BuildItemId.eq(item.id))
+                .all(&txn)
+                .await?;
+            for spell in chosen {
+                build_item_spell::ActiveModel {
+                    build_item_id: Set(copied_item.id),
+                    kind: Set(spell.kind),
+                    slot_index: Set(spell.slot_index),
+                    spell_id: Set(spell.spell_id),
+                    ..Default::default()
+                }
+                .insert(&txn)
+                .await?;
+            }
+        }
+
+        txn.commit().await?;
+        self.get_build(db, copy.id).await
     }
 
     /// Deletes a build. Fails with [`AppError::Conflict`] if any comp references it.
@@ -979,11 +1307,20 @@ impl CompService {
             });
         }
 
+        let versions = comp_version_group(db, &comp.name, comp.category_id)
+            .await?
+            .iter()
+            .map(|sibling| BuildVersionRef {
+                id: sibling.id,
+                version: sibling.version,
+            })
+            .collect();
         let summary = self.to_comp_summary(db, comp).await?;
 
         Ok(CompDetail {
             summary,
             builds: views,
+            versions,
         })
     }
 
@@ -1158,20 +1495,34 @@ impl CompService {
             }
         }
 
-        let target_name = req.name.as_deref().unwrap_or(&comp.name).to_string();
+        let target_name = req.name.as_deref().unwrap_or(&comp.name).trim().to_string();
         let target_category = req.category_id.unwrap_or(comp.category_id);
-        self.ensure_comp_identity_free(db, &target_name, target_category, Some(comp.id))
-            .await?;
+        let identity_changed = identity_key(&target_name) != identity_key(&comp.name)
+            || target_category != comp.category_id;
+        if identity_changed {
+            self.ensure_comp_group_identity_free(db, &comp, &target_name, target_category)
+                .await?;
 
-        let mut active: comp::ActiveModel = comp.into();
-        if let Some(name) = req.name {
-            active.name = Set(name.trim().to_string());
+            // Name and category identify the group, so every version moves together.
+            let group = comp_version_group(db, &comp.name, comp.category_id).await?;
+            let txn = db.begin().await?;
+            for sibling in &group {
+                let mut moving: comp::ActiveModel = sibling.clone().into();
+                moving.name = Set(target_name.clone());
+                moving.category_id = Set(target_category);
+                moving.updated_at = Set(now());
+                moving.update(&txn).await?;
+            }
+            txn.commit().await?;
         }
+
+        let comp = comp::Entity::find_by_id(id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Comp {id} not found")))?;
+        let mut active: comp::ActiveModel = comp.into();
         if let Some(description) = req.description {
             active.description = Set(Some(description));
-        }
-        if let Some(category_id) = req.category_id {
-            active.category_id = Set(category_id);
         }
         if let Some(parent_id) = req.parent_id {
             active.parent_id = Set(Some(parent_id));
@@ -1911,6 +2262,625 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, AppError::NotFound(_)), "got {error:?}");
+    }
+
+    async fn fully_equipped_build(db: &DatabaseConnection) -> (CompService, i64) {
+        let (service, build_id) = seed_build(db).await;
+        for loadout in [BuildLoadout::Main, BuildLoadout::Swap] {
+            service
+                .upsert_build_item(db, build_id, loadout, BuildSlot::Weapon, broadsword())
+                .await
+                .expect("weapon should be stored");
+        }
+        service
+            .set_build_item_spells(
+                db,
+                build_id,
+                BuildLoadout::Main,
+                BuildSlot::Weapon,
+                spells(&[("1", "HEROICSTRIKE2")], &[("1", "PASSIVE_BLEEDCHANCE")]),
+            )
+            .await
+            .expect("main abilities should be stored");
+        service
+            .set_build_item_spells(
+                db,
+                build_id,
+                BuildLoadout::Swap,
+                BuildSlot::Weapon,
+                spells(&[("1", "CLEAVE")], &[]),
+            )
+            .await
+            .expect("swap abilities should be stored");
+        (service, build_id)
+    }
+
+    #[tokio::test]
+    async fn a_new_version_copies_every_item_field_in_both_loadouts() {
+        let db = seed_db().await;
+        let (service, build_id) = fully_equipped_build(&db).await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+
+        let copy = service
+            .create_build_version(&db, build_id, user)
+            .await
+            .expect("a version should be creatable");
+
+        for loadout in [BuildLoadout::Main, BuildLoadout::Swap] {
+            let source = build_item::Entity::find()
+                .filter(BuildItemColumn::BuildId.eq(build_id))
+                .filter(BuildItemColumn::Loadout.eq(loadout.to_string()))
+                .one(&db)
+                .await
+                .unwrap()
+                .expect("the source item should exist");
+            let copied = build_item::Entity::find()
+                .filter(BuildItemColumn::BuildId.eq(copy.summary.id))
+                .filter(BuildItemColumn::Loadout.eq(loadout.to_string()))
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap_or_else(|| panic!("the {loadout} item should have been copied"));
+
+            // Destructured field by field on purpose: adding a column to `build_items` without
+            // teaching the copy about it must fail to compile here rather than silently drop data.
+            let build_item::Model {
+                id: _,
+                build_id: _,
+                created_at: _,
+                loadout: copied_loadout,
+                slot: copied_slot,
+                openalbion_item_type: copied_type,
+                openalbion_item_id: copied_item_id,
+                openalbion_item_name: copied_name,
+                openalbion_item_icon: copied_icon,
+                openalbion_item_tier: copied_tier,
+            } = copied;
+            assert_eq!(copied_loadout, source.loadout);
+            assert_eq!(copied_slot, source.slot);
+            assert_eq!(copied_type, source.openalbion_item_type);
+            assert_eq!(copied_item_id, source.openalbion_item_id);
+            assert_eq!(copied_name, source.openalbion_item_name);
+            assert_eq!(copied_icon, source.openalbion_item_icon);
+            assert_eq!(copied_tier, source.openalbion_item_tier);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_new_version_copies_the_ability_choices_of_each_loadout() {
+        let db = seed_db().await;
+        let (service, build_id) = fully_equipped_build(&db).await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+
+        let copy = service
+            .create_build_version(&db, build_id, user)
+            .await
+            .unwrap();
+
+        let main = spells_on(&copy, BuildLoadout::Main, BuildSlot::Weapon);
+        assert_eq!(main.active.get("1").map(String::as_str), Some("HEROICSTRIKE2"));
+        assert_eq!(
+            main.passive.get("1").map(String::as_str),
+            Some("PASSIVE_BLEEDCHANCE")
+        );
+        assert_eq!(
+            spells_on(&copy, BuildLoadout::Swap, BuildSlot::Weapon)
+                .active
+                .get("1")
+                .map(String::as_str),
+            Some("CLEAVE"),
+            "the swap's own abilities must survive the copy"
+        );
+    }
+
+    #[tokio::test]
+    async fn versions_are_numbered_contiguously_within_their_group() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+
+        let second = service
+            .create_build_version(&db, build_id, user)
+            .await
+            .unwrap();
+        let third = service
+            .create_build_version(&db, second.summary.id, user)
+            .await
+            .unwrap();
+
+        assert_eq!(second.summary.version, 2);
+        assert_eq!(third.summary.version, 3);
+    }
+
+    #[tokio::test]
+    async fn version_numbering_does_not_leak_across_groups() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let crystal = insert_build_category(&db, "Crystal").await;
+        let kite = insert_build_category(&db, "Kite").await;
+        let service = CompService::new();
+
+        let crystal_build = service
+            .create_build(&db, user, build_request("Pole Hammer", crystal))
+            .await
+            .unwrap();
+        service
+            .create_build_version(&db, crystal_build.summary.id, user)
+            .await
+            .unwrap();
+        service
+            .create_build_version(&db, crystal_build.summary.id, user)
+            .await
+            .unwrap();
+
+        let kite_build = service
+            .create_build(&db, user, build_request("Pole Hammer", kite))
+            .await
+            .unwrap();
+        let kite_second = service
+            .create_build_version(&db, kite_build.summary.id, user)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            kite_second.summary.version, 2,
+            "another category's versions must not push this group's numbering along"
+        );
+    }
+
+    #[tokio::test]
+    async fn editing_one_version_leaves_the_others_untouched() {
+        let db = seed_db().await;
+        let (service, build_id) = fully_equipped_build(&db).await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let second = service
+            .create_build_version(&db, build_id, user)
+            .await
+            .unwrap();
+
+        service
+            .set_build_item_spells(
+                &db,
+                second.summary.id,
+                BuildLoadout::Main,
+                BuildSlot::Weapon,
+                spells(&[("1", "CLEAVE")], &[]),
+            )
+            .await
+            .unwrap();
+        service
+            .upsert_build_item(
+                &db,
+                second.summary.id,
+                BuildLoadout::Main,
+                BuildSlot::Head,
+                broadsword(),
+            )
+            .await
+            .unwrap();
+
+        let original = service.get_build(&db, build_id).await.unwrap();
+        assert_eq!(
+            spells_on(&original, BuildLoadout::Main, BuildSlot::Weapon)
+                .active
+                .get("1")
+                .map(String::as_str),
+            Some("HEROICSTRIKE2"),
+            "v1's abilities must not follow v2's edit"
+        );
+        assert!(
+            !original.items.iter().any(|item| item.slot == BuildSlot::Head),
+            "v1 must not gain the item added to v2"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_build_detail_lists_every_version_in_its_group() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let second = service
+            .create_build_version(&db, build_id, user)
+            .await
+            .unwrap();
+
+        let detail = service.get_build(&db, build_id).await.unwrap();
+        assert_eq!(
+            detail
+                .versions
+                .iter()
+                .map(|entry| (entry.id, entry.version))
+                .collect::<Vec<_>>(),
+            vec![(build_id, 1), (second.summary.id, 2)],
+            "the switcher needs every sibling, in version order"
+        );
+    }
+
+    #[tokio::test]
+    async fn deleting_a_version_leaves_its_siblings_intact() {
+        let db = seed_db().await;
+        let (service, build_id) = fully_equipped_build(&db).await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let second = service
+            .create_build_version(&db, build_id, user)
+            .await
+            .unwrap();
+
+        service.delete_build(&db, second.summary.id).await.unwrap();
+
+        let original = service
+            .get_build(&db, build_id)
+            .await
+            .expect("v1 must survive v2's deletion");
+        assert_eq!(original.items.len(), 2, "v1 keeps both loadouts");
+        assert_eq!(original.versions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn deleting_the_only_version_removes_the_build() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+
+        service.delete_build(&db, build_id).await.unwrap();
+
+        assert!(service.get_build(&db, build_id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn renaming_moves_every_version_in_the_group() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let second = service
+            .create_build_version(&db, build_id, user)
+            .await
+            .unwrap();
+
+        service
+            .update_build(
+                &db,
+                second.summary.id,
+                UpdateBuildRequest {
+                    name: Some("Great Axe".to_string()),
+                    description: None,
+                    role: None,
+                    category_id: None,
+                },
+            )
+            .await
+            .expect("a rename should succeed");
+
+        let original = service.get_build(&db, build_id).await.unwrap();
+        assert_eq!(
+            original.summary.name, "Great Axe",
+            "a rename identifies the whole group, so every version moves together"
+        );
+        assert_eq!(original.summary.version, 1, "versions keep their numbers");
+    }
+
+    #[tokio::test]
+    async fn renaming_a_group_onto_a_taken_identity_is_refused() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let crystal = insert_build_category(&db, "Crystal").await;
+        let service = CompService::new();
+
+        let hammer = service
+            .create_build(&db, user, build_request("Pole Hammer", crystal))
+            .await
+            .unwrap();
+        service
+            .create_build_version(&db, hammer.summary.id, user)
+            .await
+            .unwrap();
+        service
+            .create_build(&db, user, build_request("Great Axe", crystal))
+            .await
+            .unwrap();
+
+        expect_conflict(
+            service
+                .update_build(
+                    &db,
+                    hammer.summary.id,
+                    UpdateBuildRequest {
+                        name: Some("Great Axe".to_string()),
+                        description: None,
+                        role: None,
+                        category_id: None,
+                    },
+                )
+                .await
+                .unwrap_err(),
+        );
+
+        let unchanged = service.get_build(&db, hammer.summary.id).await.unwrap();
+        assert_eq!(unchanged.summary.name, "Pole Hammer");
+        assert_eq!(unchanged.versions.len(), 2, "no version was left half-renamed");
+    }
+
+    #[tokio::test]
+    async fn a_version_a_comp_uses_cannot_be_deleted() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let second = service
+            .create_build_version(&db, build_id, user)
+            .await
+            .unwrap();
+        let zvz = insert_comp_category(&db, "ZvZ").await;
+        let comp = service
+            .create_comp(&db, user, comp_request("Standard", zvz))
+            .await
+            .unwrap();
+        service
+            .add_comp_build(
+                &db,
+                comp.summary.id,
+                AddCompBuildRequest {
+                    build_id: second.summary.id,
+                    quantity: 1,
+                },
+            )
+            .await
+            .unwrap();
+
+        expect_conflict(service.delete_build(&db, second.summary.id).await.unwrap_err());
+        service
+            .delete_build(&db, build_id)
+            .await
+            .expect("the unreferenced version is still deletable");
+    }
+
+    #[tokio::test]
+    async fn a_comp_version_copies_every_build_entry_with_its_quantity() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let crystal = insert_build_category(&db, "Crystal").await;
+        let zvz = insert_comp_category(&db, "ZvZ").await;
+        let service = CompService::new();
+        let hammer = service
+            .create_build(&db, user, build_request("Pole Hammer", crystal))
+            .await
+            .unwrap();
+        let axe = service
+            .create_build(&db, user, build_request("Great Axe", crystal))
+            .await
+            .unwrap();
+        let comp = service
+            .create_comp(&db, user, comp_request("Standard", zvz))
+            .await
+            .unwrap();
+        for (build, quantity) in [(&hammer, 5), (&axe, 3)] {
+            service
+                .add_comp_build(
+                    &db,
+                    comp.summary.id,
+                    AddCompBuildRequest {
+                        build_id: build.summary.id,
+                        quantity,
+                    },
+                )
+                .await
+                .unwrap();
+        }
+
+        let copy = service
+            .create_comp_version(&db, comp.summary.id, user)
+            .await
+            .expect("a comp version should be creatable");
+
+        let mut copied: Vec<(i64, i32)> = copy
+            .builds
+            .iter()
+            .map(|entry| (entry.build_id, entry.quantity))
+            .collect();
+        copied.sort();
+        let mut expected = vec![(hammer.summary.id, 5), (axe.summary.id, 3)];
+        expected.sort();
+        assert_eq!(copied, expected);
+        assert_eq!(copy.summary.version, 2);
+    }
+
+    #[tokio::test]
+    async fn a_comp_version_keeps_the_parent_it_was_derived_from() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let zvz = insert_comp_category(&db, "ZvZ").await;
+        let service = CompService::new();
+        let parent = service
+            .create_comp(&db, user, comp_request("Standard", zvz))
+            .await
+            .unwrap();
+        let variant = service
+            .create_comp(
+                &db,
+                user,
+                CreateCompRequest {
+                    parent_id: Some(parent.summary.id),
+                    ..comp_request("Bomb", zvz)
+                },
+            )
+            .await
+            .unwrap();
+
+        let copy = service
+            .create_comp_version(&db, variant.summary.id, user)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            copy.summary.parent_id,
+            Some(parent.summary.id),
+            "a version of a variant is still a variant of the same parent"
+        );
+    }
+
+    #[tokio::test]
+    async fn editing_one_comp_version_leaves_the_others_untouched() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let crystal = insert_build_category(&db, "Crystal").await;
+        let zvz = insert_comp_category(&db, "ZvZ").await;
+        let service = CompService::new();
+        let hammer = service
+            .create_build(&db, user, build_request("Pole Hammer", crystal))
+            .await
+            .unwrap();
+        let comp = service
+            .create_comp(&db, user, comp_request("Standard", zvz))
+            .await
+            .unwrap();
+        service
+            .add_comp_build(
+                &db,
+                comp.summary.id,
+                AddCompBuildRequest {
+                    build_id: hammer.summary.id,
+                    quantity: 5,
+                },
+            )
+            .await
+            .unwrap();
+        let second = service
+            .create_comp_version(&db, comp.summary.id, user)
+            .await
+            .unwrap();
+
+        service
+            .update_comp_build_quantity(
+                &db,
+                second.summary.id,
+                hammer.summary.id,
+                UpdateCompBuildQuantityRequest { quantity: 9 },
+            )
+            .await
+            .unwrap();
+
+        let original = service.get_comp(&db, comp.summary.id).await.unwrap();
+        assert_eq!(
+            original.builds[0].quantity, 5,
+            "v1's quantities must not follow v2's edit"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_comp_detail_lists_every_version_in_its_group() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let zvz = insert_comp_category(&db, "ZvZ").await;
+        let service = CompService::new();
+        let comp = service
+            .create_comp(&db, user, comp_request("Standard", zvz))
+            .await
+            .unwrap();
+        let second = service
+            .create_comp_version(&db, comp.summary.id, user)
+            .await
+            .unwrap();
+
+        let detail = service.get_comp(&db, comp.summary.id).await.unwrap();
+        assert_eq!(
+            detail
+                .versions
+                .iter()
+                .map(|entry| (entry.id, entry.version))
+                .collect::<Vec<_>>(),
+            vec![(comp.summary.id, 1), (second.summary.id, 2)]
+        );
+    }
+
+    #[tokio::test]
+    async fn renaming_moves_every_comp_version_in_the_group() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let zvz = insert_comp_category(&db, "ZvZ").await;
+        let service = CompService::new();
+        let comp = service
+            .create_comp(&db, user, comp_request("Standard", zvz))
+            .await
+            .unwrap();
+        let second = service
+            .create_comp_version(&db, comp.summary.id, user)
+            .await
+            .unwrap();
+
+        service
+            .update_comp(
+                &db,
+                second.summary.id,
+                UpdateCompRequest {
+                    name: Some("Bomb".to_string()),
+                    description: None,
+                    category_id: None,
+                    parent_id: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            service.get_comp(&db, comp.summary.id).await.unwrap().summary.name,
+            "Bomb"
+        );
+    }
+
+    #[tokio::test]
+    async fn deleting_a_comp_version_leaves_its_siblings_intact() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let zvz = insert_comp_category(&db, "ZvZ").await;
+        let service = CompService::new();
+        let comp = service
+            .create_comp(&db, user, comp_request("Standard", zvz))
+            .await
+            .unwrap();
+        let second = service
+            .create_comp_version(&db, comp.summary.id, user)
+            .await
+            .unwrap();
+
+        service.delete_comp(&db, second.summary.id).await.unwrap();
+
+        let original = service
+            .get_comp(&db, comp.summary.id)
+            .await
+            .expect("v1 must survive v2's deletion");
+        assert_eq!(original.versions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn deleting_the_only_comp_version_removes_the_comp() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let zvz = insert_comp_category(&db, "ZvZ").await;
+        let service = CompService::new();
+        let comp = service
+            .create_comp(&db, user, comp_request("Standard", zvz))
+            .await
+            .unwrap();
+
+        service.delete_comp(&db, comp.summary.id).await.unwrap();
+
+        assert!(service.get_comp(&db, comp.summary.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_build_created_before_versioning_reads_back_as_version_one() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let category = insert_build_category(&db, "Crystal").await;
+        // `insert_build` writes the row without naming `version`, exactly as a row written before
+        // the column existed reads back through the migration's default.
+        let legacy = insert_build(&db, "Pole Hammer", "dps", category, user).await;
+        let legacy_comp = insert_comp(&db, "Standard", insert_comp_category(&db, "ZvZ").await, user).await;
+        let service = CompService::new();
+
+        assert_eq!(service.get_build(&db, legacy).await.unwrap().summary.version, 1);
+        assert_eq!(
+            service.get_comp(&db, legacy_comp).await.unwrap().summary.version,
+            1
+        );
     }
 
     #[tokio::test]

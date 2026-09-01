@@ -218,8 +218,14 @@ mod tests {
             .expect_err("a duplicate identity must stop the migration");
 
         let message = error.to_string();
-        assert!(message.contains("#1"), "should name the first row: {message}");
-        assert!(message.contains("#2"), "should name the second row: {message}");
+        assert!(
+            message.contains("#1"),
+            "should name the first row: {message}"
+        );
+        assert!(
+            message.contains("#2"),
+            "should name the second row: {message}"
+        );
         assert!(
             message.contains("Pole Hammer"),
             "should name the clashing build: {message}"

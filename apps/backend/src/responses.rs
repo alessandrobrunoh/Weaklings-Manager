@@ -165,6 +165,16 @@ pub struct ApiResponsePaginatedOpenAlbionItems {
     pub data: crate::pagination::PaginatedOpenAlbionItem,
 }
 
+/// `OpenAPI` schema wrapper for one build version's battle performance.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseBuildPerformance {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Performance data payload.
+    pub data: crate::modules::events::models::BuildPerformanceView,
+}
+
 /// `OpenAPI` schema wrapper for the bundled Albion ability catalog.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseOpenAlbionAbilities {

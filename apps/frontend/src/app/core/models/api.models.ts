@@ -770,8 +770,47 @@ export interface BuildSummary {
   item_count: number;
 }
 
+/** One sibling version of a build or comp, for the version switcher. */
+export interface VersionRef {
+  id: number;
+  version: number;
+}
+
 export interface BuildDetail extends BuildSummary {
   items: BuildItemSlot[];
+  /** Every version sharing this build's `(name, category)` identity, in version order. */
+  versions?: VersionRef[];
+}
+
+/** Battle numbers attributed to the players who actually ran one build version. */
+export interface BuildBattleStats {
+  events: number;
+  battles: number;
+  /** Signed-up players found by name in a battle snapshot — the real sample size. */
+  matched_players: number;
+  wins: number;
+  losses: number;
+  kills: number;
+  deaths: number;
+  kill_fame: number;
+  death_fame: number;
+}
+
+/**
+ * How one build version has performed.
+ *
+ * `stats` is `null` — not zeroed — when the version has no battle data, so "never used" stays
+ * distinguishable from "lost every time".
+ */
+export interface BuildPerformanceView {
+  build_id: number;
+  build_name: string;
+  version: number;
+  signups_as_primary: number;
+  signups_as_secondary: number;
+  /** Signed-up members with no linked Albion account; excluded from `stats`. */
+  players_without_an_albion_link: number;
+  stats: BuildBattleStats | null;
 }
 
 export interface CompBuildEntry {
@@ -797,6 +836,8 @@ export interface CompSummary {
 
 export interface CompDetail extends CompSummary {
   builds: CompBuildEntry[];
+  /** Every version sharing this comp's `(name, category)` identity, in version order. */
+  versions?: VersionRef[];
 }
 
 export interface CompFilters {
@@ -1406,6 +1447,7 @@ export interface GuildSettingsView {
   discord_event_role_id: string | null;
   discord_auto_role_id: string | null;
   discord_splits_forum_channel_id: string | null;
+  discord_event_voice_category_id: string | null;
 }
 
 /**

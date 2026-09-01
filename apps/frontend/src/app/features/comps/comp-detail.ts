@@ -1,11 +1,13 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 
 import { validateBuildName } from '../../shared/validation/build-validation';
 
 import type {
   BuildDetail,
+  OpenAlbionItemAbilities,
   BuildRole,
   BuildSummary,
   CompCategoryView,
@@ -29,6 +31,14 @@ import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
+import { VersionSwitcher } from '../../shared/components/version-switcher/version-switcher';
+import { VersionDiffList } from '../../shared/components/version-diff-list/version-diff-list';
+import { diffCompVersions } from './version-diff';
+import type { VersionDiffEntry } from './version-diff';
+import { AbilityBar } from '../../shared/components/ability-bar/ability-bar';
+import { abilityKeyForItem, abilitySlotsFor } from '../../shared/data/albion-abilities';
+import type { AbilitySlotView } from '../../shared/data/albion-abilities';
+import { AlbionAbilitiesService } from '../../shared/services/albion-abilities.service';
 
 const ROLES: BuildRole[] = ['healer', 'support', 'dps', 'tank', 'battle_mount', 'brawler'];
 
@@ -56,7 +66,19 @@ const ROLE_LABELS: Record<BuildRole, string> = {
 @Component({
   selector: 'app-comp-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, PageHeader, PageStack, EmptyState, ErrorState, Loading, Dialog, StatCard],
+  imports: [
+    RouterLink,
+    PageHeader,
+    PageStack,
+    EmptyState,
+    ErrorState,
+    Loading,
+    Dialog,
+    StatCard,
+    VersionSwitcher,
+    VersionDiffList,
+    AbilityBar,
+  ],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
@@ -65,12 +87,27 @@ const ROLE_LABELS: Record<BuildRole, string> = {
         [title]="current.name"
         [subtitle]="current.category_name || t('comps.noCategory')"
       >
-        <div class="flex flex-wrap gap-2">
+        <div pageActions class="flex flex-wrap items-center gap-2">
           <a class="btn btn--ghost" routerLink="/comps">← {{ t('comps.title') }}</a>
+          <app-version-switcher
+            [versions]="current.versions ?? []"
+            [currentId]="current.id"
+            [canManage]="canManage()"
+            [busy]="saving()"
+            [label]="t('comps.version')"
+            [createLabel]="t('comps.newVersion')"
+            (select)="openVersion($event)"
+            (create)="createVersion()"
+          />
           @if (parentComp(); as parent) {
             <a class="btn btn--outline" [routerLink]="['/comps', parent.id]">
               ↑ {{ parent.name }}
             </a>
+          }
+          @if ((current.versions ?? []).length > 1) {
+            <button type="button" class="btn btn--outline" (click)="openCompare()">
+              {{ t('comps.compare') }}
+            </button>
           }
           @if (canManage() && mode() === 'view') {
             <button
@@ -337,6 +374,21 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                       }
                     }
                   </div>
+
+                  @if (abilityRowsFor(entry.build_id); as rows) {
+                    @if (rows.length > 0) {
+                      <div class="mt-2 grid gap-2">
+                        @for (row of rows; track row.slot) {
+                          <div class="grid gap-1 sm:grid-cols-[9rem_1fr] sm:items-center">
+                            <span class="text-xs" style="color: var(--color-text-secondary)">
+                              {{ row.itemName }}
+                            </span>
+                            <app-ability-bar [slots]="row.slots" [emptyLabel]="t('comps.noAbility')" />
+                          </div>
+                        }
+                      </div>
+                    }
+                  }
                 </li>
               }
             </ul>
@@ -445,6 +497,61 @@ const ROLE_LABELS: Record<BuildRole, string> = {
         }
       </app-page-stack>
 
+      @if (comparing()) {
+        <app-dialog [title]="t('comps.compare')" size="lg" (closed)="closeCompare()">
+          <div class="grid gap-4">
+            <label>
+              <span class="label">{{ t('comps.compareWith') }}</span>
+              <select
+                class="select"
+                [value]="compareWithId()"
+                (change)="onCompareTargetChange($event)"
+              >
+                @for (entry of current.versions ?? []; track entry.id) {
+                  @if (entry.id !== current.id) {
+                    <option [value]="entry.id">v{{ entry.version }}</option>
+                  }
+                }
+              </select>
+            </label>
+
+            @if (compareWith(); as other) {
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div class="card p-4">
+                  <h3 class="text-sm font-semibold" style="color: var(--color-text)">
+                    v{{ other.version }} — {{ t('comps.performance') }}
+                  </h3>
+                  <p class="text-sm" style="color: var(--color-text-secondary)">
+                    {{ performanceSummary(comparePerformance()) }}
+                  </p>
+                </div>
+                <div class="card p-4">
+                  <h3 class="text-sm font-semibold" style="color: var(--color-text)">
+                    v{{ current.version }} — {{ t('comps.performance') }}
+                  </h3>
+                  <p class="text-sm" style="color: var(--color-text-secondary)">
+                    {{ performanceSummary(performance()) }}
+                  </p>
+                </div>
+              </div>
+
+              <app-version-diff-list
+                [entries]="compareDiff()"
+                [emptyLabel]="t('comps.noDifferences')"
+                [addedLabel]="t('comps.added')"
+                [removedLabel]="t('comps.removed')"
+                [changedLabel]="t('comps.changed')"
+              />
+            }
+          </div>
+          <div dialogFooter>
+            <button type="button" class="btn btn--ghost" (click)="closeCompare()">
+              {{ t('common.close') }}
+            </button>
+          </div>
+        </app-dialog>
+      }
+
       @if (pendingDelete()) {
         <app-dialog [title]="t('common.confirm')" size="sm" (closed)="closeDelete()">
           <p>{{ t('comps.delete.confirm') }}</p>
@@ -468,7 +575,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
       <app-error-state
         [message]="t('common.error')"
         [retryLabel]="t('common.retry')"
-        (retry)="load(compId)"
+        (retry)="load(compId())"
       />
     } @else if (!loading()) {
       <app-empty-state [message]="t('comps.notFound')" icon="package" />
@@ -479,6 +586,7 @@ export class CompDetailPage {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private readonly toasts = inject(ToastService);
+  private readonly albionAbilities = inject(AlbionAbilitiesService);
   private readonly translate = inject(TranslateService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -493,6 +601,16 @@ export class CompDetailPage {
   protected readonly buildOptions = signal<BuildSummary[]>([]);
   protected readonly compSummaries = signal<CompSummary[]>([]);
   private readonly buildDetails = signal<ReadonlyMap<number, BuildDetail>>(new Map());
+  private readonly abilityCatalog = signal<Record<string, OpenAlbionItemAbilities>>({});
+  protected readonly comparing = signal(false);
+  protected readonly compareWithId = signal('');
+  protected readonly compareWith = signal<CompDetail | null>(null);
+  protected readonly comparePerformance = signal<CompPerformanceView | null>(null);
+  protected readonly compareDiff = computed<VersionDiffEntry[]>(() => {
+    const current = this.comp();
+    const other = this.compareWith();
+    return current && other ? diffCompVersions(other, current) : [];
+  });
   protected readonly buildDetailsLoading = signal(false);
 
   protected readonly mode = signal<'view' | 'edit'>('view');
@@ -551,10 +669,135 @@ export class CompDetailPage {
     };
   });
 
-  protected readonly compId = Number(this.route.snapshot.paramMap.get('compId'));
+  /**
+   * The comp row on screen.
+   *
+   * Switching versions navigates within the same route, so Angular reuses this component and the
+   * snapshot never changes — the id has to come from the live `paramMap` instead.
+   */
+  protected readonly compId = signal(Number(this.route.snapshot.paramMap.get('compId')));
 
   constructor() {
-    void this.load(this.compId);
+    this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const id = Number(params.get('compId'));
+      if (id === this.compId() && this.comp()) {
+        return;
+      }
+      this.compId.set(id);
+      this.mode.set('view');
+      void this.load(id);
+    });
+    // Static application data; one fetch serves every comp page in the session.
+    void this.albionAbilities
+      .load()
+      .then((abilities) => this.abilityCatalog.set(abilities))
+      .catch(() => this.abilityCatalog.set({}));
+  }
+
+  /**
+   * The read-only ability bars for one build in the comp.
+   *
+   * Only the main loadout is shown here — the comp view answers "what do I slot", and the swap has
+   * its own bars on the build page. A build with no chosen abilities produces no rows at all.
+   */
+  protected abilityRowsFor(
+    buildId: number,
+  ): { slot: string; itemName: string; slots: AbilitySlotView[] }[] {
+    const detail = this.buildDetails().get(buildId);
+    const catalog = this.abilityCatalog();
+    if (!detail) {
+      return [];
+    }
+    return detail.items.flatMap((item) => {
+      if ((item.loadout ?? 'main') !== 'main') {
+        return [];
+      }
+      const key = abilityKeyForItem(item);
+      const slots = abilitySlotsFor(item.slot, key ? catalog[key] : undefined, item.spells).filter(
+        (view) => view.selected !== null,
+      );
+      return slots.length === 0
+        ? []
+        : [{ slot: item.slot, itemName: item.openalbion_item_name, slots }];
+    });
+  }
+
+  protected openCompare(): void {
+    const versions = this.comp()?.versions ?? [];
+    const other = versions.find((entry) => entry.id !== this.comp()?.id);
+    this.comparing.set(true);
+    if (other) {
+      this.compareWithId.set(String(other.id));
+      void this.loadComparison(other.id);
+    }
+  }
+
+  protected closeCompare(): void {
+    this.comparing.set(false);
+    this.compareWith.set(null);
+    this.comparePerformance.set(null);
+  }
+
+  protected onCompareTargetChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.compareWithId.set(value);
+    void this.loadComparison(Number(value));
+  }
+
+  /**
+   * A one-line performance summary, saying "no data" rather than implying a 0% win rate.
+   *
+   * A version with battles but none decided must not read as a loss either, hence the dash.
+   */
+  protected performanceSummary(report: CompPerformanceView | null): string {
+    const stats = report?.stats;
+    if (!stats || stats.total_battles === 0) {
+      return this.t('comps.noBattleData');
+    }
+    const decided = stats.wins + stats.losses;
+    const rate = decided === 0 ? '—' : `${Math.round((stats.wins / decided) * 100)}%`;
+    return `${rate} · ${stats.total_kills}/${stats.total_deaths} · ${stats.total_battles} battles`;
+  }
+
+  private async loadComparison(compId: number): Promise<void> {
+    try {
+      const [detail, performance] = await Promise.all([
+        firstValueFrom(this.api.get<CompDetail>(`api/comps/${compId}`)),
+        firstValueFrom(
+          this.api.get<CompPerformanceView>(`api/comps/${compId}/performance`),
+        ).catch(() => null),
+      ]);
+      this.compareWith.set(detail);
+      this.comparePerformance.set(performance);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    }
+  }
+
+  protected async openVersion(compId: number): Promise<void> {
+    if (compId === this.comp()?.id) {
+      return;
+    }
+    await this.router.navigate(['/comps', compId]);
+  }
+
+  protected async createVersion(): Promise<void> {
+    const comp = this.comp();
+    if (!comp) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      const created = await firstValueFrom(
+        this.api.post<CompDetail>(`api/comps/${comp.id}/versions`, {}),
+      );
+      this.toasts.success(this.t('comps.versionCreated'));
+      await this.router.navigate(['/comps', created.id]);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
   }
 
   protected roleLabel(role: BuildRole): string {
@@ -578,7 +821,7 @@ export class CompDetailPage {
     this.mode.set('view');
     this.addingBuild.set(false);
     this.cancelEditBuild();
-    void this.load(this.compId);
+    void this.load(this.compId());
   }
 
   protected toggleAddBuild(): void {
@@ -669,7 +912,7 @@ export class CompDetailPage {
       this.mode.set('view');
       this.addingBuild.set(false);
       this.cancelEditBuild();
-      await this.load(this.compId);
+      await this.load(this.compId());
       this.toasts.success(this.t('common.save'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

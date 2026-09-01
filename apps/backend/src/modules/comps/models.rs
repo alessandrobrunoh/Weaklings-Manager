@@ -81,6 +81,18 @@ pub struct BuildItemSpells {
     pub passive: std::collections::BTreeMap<String, String>,
 }
 
+/// One sibling version of a build, for the version switcher.
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+#[schema(example = json!({ "id": 12, "version": 2 }))]
+pub struct BuildVersionRef {
+    /// The build row for this version. Comps reference a specific version, not the group.
+    #[schema(example = 12)]
+    pub id: i64,
+    /// Version number within the `(name, category)` group. Starts at 1.
+    #[schema(example = 2)]
+    pub version: i32,
+}
+
 /// A build's summary, as shown in list views.
 #[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct BuildSummary {
@@ -121,6 +133,10 @@ pub struct BuildDetail {
     pub summary: BuildSummary,
     /// The list of items in the build.
     pub items: Vec<BuildItemView>,
+    /// Every version sharing this build's `(name, category)` identity, in version order —
+    /// including this one, so the switcher can render the whole group from one response.
+    #[serde(default)]
+    pub versions: Vec<BuildVersionRef>,
 }
 
 /// A comp build view model within a comp.
@@ -180,6 +196,10 @@ pub struct CompDetail {
     pub summary: CompSummary,
     /// The list of builds in the comp.
     pub builds: Vec<CompBuildView>,
+    /// Every version sharing this comp's `(name, category)` identity, in version order —
+    /// including this one, so the switcher can render the whole group from one response.
+    #[serde(default)]
+    pub versions: Vec<BuildVersionRef>,
 }
 
 /// Request body to create a build category.

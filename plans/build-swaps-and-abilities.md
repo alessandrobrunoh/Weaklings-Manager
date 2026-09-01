@@ -1,7 +1,7 @@
 # Plan: Build Identity, Versioning, Swaps and Ability Selection
 
 **Branch**: feat/build-swaps-and-abilities
-**Status**: Active — slices 1-6 implemented and green; 7-11 not started. Nothing committed.
+**Status**: All 11 slices implemented and green. Nothing committed — awaiting review.
 
 ## Goal
 
@@ -245,7 +245,7 @@ Read `AGENTS.md`, `apps/frontend/AGENTS.md` and `PRODUCT.md` before writing slic
 **RED**: service test with the same base identifier in both loadouts and different spells in each — the case a naive `build_id + slot` lookup gets wrong.
 **Done when**: all criteria met, human approves commit.
 
-### Slice 7: An officer creates v2 of a build and edits it without touching v1
+### Slice 7 ✅ DONE: An officer creates v2 of a build and edits it without touching v1
 
 **Value**: The variant workflow the request is really about — try a change without losing the version people already run.
 **Path**: Build page → "New version" → `POST /api/comps/builds/{id}/versions` → deep copy of the row, `build_items` (both loadouts) and `build_item_spells`, with `version = max(version) + 1` in the group → redirect to the new version → version switcher on the page.
@@ -266,7 +266,7 @@ Read `AGENTS.md`, `apps/frontend/AGENTS.md` and `PRODUCT.md` before writing slic
 **REFACTOR**: assess whether `cloneComp()`'s existing frontend logic and this share a path.
 **Done when**: all criteria met, human approves commit.
 
-### Slice 8: Each build version shows its own statistics
+### Slice 8 ✅ DONE: Each build version shows its own statistics
 
 **Value**: "v2 wins more than v1" is the reason to version anything.
 **Path**: `GET /api/comps/builds/{id}/performance` → `event_signups` where `primary_build_id` or `secondary_build_id` is this version → those events' `guild_battle_snapshots` → `players_json`, matched to signed-up users via the existing Albion account link → aggregated K/D, fame and win rate.
@@ -282,7 +282,7 @@ Read `AGENTS.md`, `apps/frontend/AGENTS.md` and `PRODUCT.md` before writing slic
 **KILL MUTANTS**: expect survivors on the primary/secondary OR condition and on the empty-vs-zero branch.
 **Done when**: all criteria met, human approves commit.
 
-### Slice 9: An officer creates a comp version and reads its statistics
+### Slice 9 ✅ DONE: An officer creates a comp version and reads its statistics
 
 **Value**: Comp versions are what actually get compared after a fight night.
 **Path**: Comp page → "New version" → `POST /api/comps/{id}/versions` → copy the comp row and its `comp_builds` entries → version switcher → the **existing** `GET /api/comps/{id}/performance`, which needs no change because a version is its own `comps` row.
@@ -296,7 +296,7 @@ Read `AGENTS.md`, `apps/frontend/AGENTS.md` and `PRODUCT.md` before writing slic
 **GREEN**: `POST /{id}/versions` for comps, reusing the build version helper's shape.
 **Done when**: all criteria met, human approves commit.
 
-### Slice 10: Versions can be compared side by side
+### Slice 10 ✅ DONE: Versions can be compared side by side
 
 **Value**: The comparison is the decision-making moment; a switcher alone makes officers hold two pages open.
 **Path**: Version switcher → "Compare" → two versions' `/performance` results in one table, plus a diff of what changed between them.
@@ -308,7 +308,7 @@ Read `AGENTS.md`, `apps/frontend/AGENTS.md` and `PRODUCT.md` before writing slic
 **RED**: frontend test that a version with no events renders "no data" and not "0%"; diff test over an added build, a removed build and a changed quantity.
 **Done when**: all criteria met, human approves commit.
 
-### Slice 11: The comp detail page shows each build's abilities without navigating away
+### Slice 11 ✅ DONE: The comp detail page shows each build's abilities without navigating away
 
 **Value**: The audience is the member reading the comp before a fight, not the officer authoring it.
 **Acceptance criteria**:
@@ -326,6 +326,40 @@ Before each PR:
 2. Refactoring assessment — run `refactoring` skill
 3. `cargo check` + `cargo test` (backend), `npx tsc --noEmit` + `npx vitest run` (frontend)
 4. AXE pass on any changed screen, per `apps/frontend/AGENTS.md`
+
+## Known Gaps
+
+Everything in **Acceptance Criteria** is implemented and covered by a test, with these exceptions —
+recorded rather than quietly skipped:
+
+1. **No AXE run.** `apps/frontend/AGENTS.md` requires an AXE pass and the quality gate lists one,
+   but the repo has no axe-core dependency and no a11y harness — there is nothing to run. The new
+   components were written to the rule instead (the key badge and the diff's change column carry
+   meaning in text, not colour; the switcher marks the current version with `aria-current`; the diff
+   table scrolls in its own container), and those properties are asserted in the component specs.
+   Installing `@axe-core/playwright` or `vitest-axe` is a separate, unscoped decision.
+2. **Duplicate names surface as a toast, not an inline field error.** Slice 1's path said "inline
+   field error"; the codebase has no inline field-error pattern anywhere, and every other form in
+   `comps.ts` reports failures through `toasts.error`. The 409's message is specific ("A build named
+   \"Pole Hammer\" already exists in this category") and reaches the toast unchanged. Matching the
+   existing convention beat introducing a one-off pattern; revisit if the app grows a general one.
+3. ~~The app was never launched.~~ **Resolved.** Run against the real Postgres and driven through
+   Playwright. Three defects only a running instance could show, all fixed:
+   - **Pre-existing:** the action row on both comps detail pages was wrapped in a bare `<div>`, which
+     `app-page-header`'s `ng-content select="button, a, [pageActions], [headerActions]"` never
+     matched. "← Compositions", Edit, Clone and Delete had never rendered on those two pages. Fixed
+     with a `pageActions` attribute.
+   - The version diff printed internal spell ids (`Q1:IRONBREAKER`) instead of names. Now resolved
+     through the ability catalog, falling back to the id for an unknown spell.
+   - `diffCompVersions` keyed entries by build name, so a comp fielding two versions of the same
+     build group — the normal way to trial a change — silently lost one of the two lines. Now keyed
+     by name *and* version, with a regression test.
+4. **MUTATE was run as a documented manual review for Slice 1 only.** Later slices were written with
+   mutation in mind — boundary tests at the slot-count limits, both directions of the self-exclusion
+   in the rename check, a copy test that fails to compile if a column is added — but no per-slice
+   review was written up.
+5. **Slice 11's "does not change `compositionStats`" is argued, not tested.** The ability strip is
+   additive and reads `buildDetails()`, which `compositionStats` already consumed; no test pins it.
 
 ## Resolved Decisions
 

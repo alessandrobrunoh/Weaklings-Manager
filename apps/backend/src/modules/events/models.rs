@@ -66,6 +66,75 @@ pub struct OpponentPerformanceView {
     /// Kill fame scored by the opponent in these matchups.
     pub opponent_kill_fame: i64,
 }
+/// Battle numbers attributed to the players who actually ran one build version.
+///
+/// These are per-player figures pulled out of the stored battle snapshots, not event totals, so two
+/// builds in the same fight get different numbers.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[schema(example = json!({
+    "events": 12,
+    "battles": 31,
+    "matched_players": 96,
+    "wins": 19,
+    "losses": 12,
+    "kills": 214,
+    "deaths": 88,
+    "kill_fame": 41_200_000,
+    "death_fame": 9_100_000
+}))]
+pub struct BuildBattleStats {
+    /// Events this build version was signed up for that produced at least one battle.
+    pub events: i64,
+    /// Battles across those events.
+    pub battles: i64,
+    /// Signed-up players found by name in a battle snapshot. The sample size behind every other
+    /// number here.
+    pub matched_players: i64,
+    /// Battles the guild won, of those the build appeared in.
+    pub wins: i64,
+    /// Battles the guild lost, of those the build appeared in.
+    pub losses: i64,
+    /// Kills by the players running this build.
+    pub kills: i64,
+    /// Deaths of the players running this build.
+    pub deaths: i64,
+    /// Kill fame earned by the players running this build.
+    pub kill_fame: i64,
+    /// Death fame given away by the players running this build.
+    pub death_fame: i64,
+}
+
+/// How one build version has performed, with the coverage caveats stated rather than hidden.
+///
+/// `stats` is `None` — not a row of zeros — when the version has no battle data, so "never used"
+/// stays distinguishable from "used and lost every time".
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[schema(example = json!({
+    "build_id": 12,
+    "build_name": "Pole Hammer",
+    "version": 2,
+    "signups_as_primary": 84,
+    "signups_as_secondary": 12,
+    "players_without_an_albion_link": 7,
+    "stats": null
+}))]
+pub struct BuildPerformanceView {
+    /// The build version these numbers describe.
+    pub build_id: i64,
+    /// The build's name, shared by every version in its group.
+    pub build_name: String,
+    /// Version number within the `(name, category)` group.
+    pub version: i32,
+    /// Sign-ups that named this build as the primary.
+    pub signups_as_primary: i64,
+    /// Sign-ups that named this build as the secondary.
+    pub signups_as_secondary: i64,
+    /// Signed-up players with no linked Albion account. They cannot be found in a battle snapshot,
+    /// so they are excluded from `stats` — surfaced here so a thin sample is visibly thin.
+    pub players_without_an_albion_link: i64,
+    /// `None` when no battle data exists for this version.
+    pub stats: Option<BuildBattleStats>,
+}
 
 /// Historical performance of a comp across linked event sessions.
 #[derive(Debug, Serialize, Clone, ToSchema)]
@@ -149,6 +218,8 @@ pub struct EventView {
     pub stopped_at: Option<String>,
     /// Hard deadline (RFC3339) after which the session auto-stops.
     pub auto_stop_deadline: Option<String>,
+    /// Discord voice channel created for this live event, if any.
+    pub discord_voice_channel_id: Option<String>,
     /// Linker status: `pending` | `in_progress` | `completed` | `failed`.
     pub link_status: String,
     /// Number of AlbionBB fetch attempts performed by the linker.
@@ -309,6 +380,13 @@ pub struct CreateEventRequest {
     /// Island tab for the correlated split. Required when `create_split` is true.
     #[schema(example = 10)]
     pub island_tab_id: Option<i64>,
+}
+
+/// Discord voice channel created by the bot for a live event.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct SetEventVoiceChannelRequest {
+    /// Discord channel snowflake.
+    pub channel_id: String,
 }
 
 /// Request body to update an existing event.
