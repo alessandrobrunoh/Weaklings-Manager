@@ -369,7 +369,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
                 <!-- Activity Timeline -->
                 <section class="card p-5 lg:col-span-2">
                   <h2 class="eyebrow mb-3">{{ t('intel.tab.timeline') }}</h2>
-                  <div class="divide-y divide-[var(--color-border)]">
+                  <div class="divide-y divide-(--color-border)">
                     @for (entry of r.timeline; track entry.at + entry.title) {
                       <div class="flex items-baseline gap-3 py-2.5">
                         <span class="mono shrink-0 text-xs" style="color: var(--color-text-secondary)">
