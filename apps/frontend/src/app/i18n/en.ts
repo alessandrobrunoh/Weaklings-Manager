@@ -422,7 +422,7 @@ export const en = {
   'events.detail.unassigned': 'Unassigned members',
   'events.detail.no_build_items': 'No items configured for this build yet.',
   'events.detail.view_loadout': 'View loadout',
-  'events.detail.view_parties': 'Party view (5-man)',
+  'events.detail.view_parties': 'Party view (20-man)',
   'events.detail.view_roles': 'Role matrix',
   'events.detail.view_table': 'Table view',
   'events.detail.party_num': 'Party {number}',
