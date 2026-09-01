@@ -1754,6 +1754,7 @@ mod tests {
             event_id: None,
             island_tab_id: None,
             created_at: ts("2026-08-01T00:00:00Z"),
+            updated_at: ts("2026-08-01T00:00:00Z"),
             finalized_at: Some(ts("2026-08-19T00:00:00Z")),
         });
         // Pending split: ignored regardless of date.
@@ -1770,6 +1771,7 @@ mod tests {
             event_id: None,
             island_tab_id: None,
             created_at: ts("2026-08-19T00:00:00Z"),
+            updated_at: ts("2026-08-19T00:00:00Z"),
             finalized_at: None,
         });
         // Withdrawn transaction: counted.
@@ -1783,6 +1785,7 @@ mod tests {
             r#type: "split_credit".to_string(),
             split_id: Some(1),
             created_at: ts("2026-08-18T00:00:00Z"),
+            updated_at: ts("2026-08-18T00:00:00Z"),
             requested_at: Some(ts("2026-08-18T00:00:00Z")),
             withdrawn_at: Some(ts("2026-08-19T00:00:00Z")),
         });
@@ -1797,6 +1800,7 @@ mod tests {
             r#type: "split_credit".to_string(),
             split_id: None,
             created_at: ts("2026-08-18T00:00:00Z"),
+            updated_at: ts("2026-08-18T00:00:00Z"),
             requested_at: Some(ts("2026-08-18T00:00:00Z")),
             withdrawn_at: None,
         });

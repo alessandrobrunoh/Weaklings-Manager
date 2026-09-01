@@ -9,7 +9,9 @@ use axum::{
     extract::{Path, Query},
     routing::{get, patch, post, put},
 };
+use serde::Deserialize;
 use std::str::FromStr;
+use utoipa::IntoParams;
 
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
@@ -21,12 +23,33 @@ use crate::responses::{
 };
 
 use super::models::{
-    AddCompBuildRequest, BuildFilters, CompFilters, CreateBuildCategoryRequest, CreateBuildRequest,
+    AddCompBuildRequest, BuildFilters, BuildItemSpells, CompFilters, CreateBuildCategoryRequest, CreateBuildRequest,
     CreateCompCategoryRequest, CreateCompRequest, UpdateBuildCategoryRequest, UpdateBuildRequest,
     UpdateCompBuildQuantityRequest, UpdateCompCategoryRequest, UpdateCompRequest,
     UpsertBuildItemRequest,
 };
 use super::service::CompService;
+
+/// Selects which loadout of a build an item operation targets.
+///
+/// Omitting the parameter means the main loadout, so clients written before swaps existed keep
+/// working unchanged.
+#[derive(Debug, Clone, Default, Deserialize, IntoParams)]
+pub struct BuildItemLoadoutQuery {
+    /// `main` (the default) or `swap`.
+    pub loadout: Option<String>,
+}
+
+impl BuildItemLoadoutQuery {
+    /// Resolves the requested loadout, rejecting a value the enum does not know.
+    fn resolve(&self) -> Result<crate::modules::comps::status::BuildLoadout, AppError> {
+        match self.loadout.as_deref() {
+            None => Ok(crate::modules::comps::status::BuildLoadout::default()),
+            Some(raw) => crate::modules::comps::status::BuildLoadout::from_str(raw)
+                .map_err(AppError::Validation),
+        }
+    }
+}
 
 /// Router query parameters for listing builds, combining pagination and filtering.
 #[derive(serde::Deserialize, utoipa::IntoParams)]
@@ -101,6 +124,7 @@ pub fn router() -> Router {
             "/builds/{id}/items/{slot}",
             put(upsert_build_item).delete(remove_build_item),
         )
+        .route("/builds/{id}/items/{slot}/spells", put(set_build_item_spells))
         // Comps
         .route("/", get(list_comps).post(create_comp))
         .route(
@@ -538,7 +562,8 @@ async fn delete_build(
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Build ID"),
-        ("slot" = crate::modules::comps::status::BuildSlot, Path, description = "Equipment slot")
+        ("slot" = crate::modules::comps::status::BuildSlot, Path, description = "Equipment slot"),
+        BuildItemLoadoutQuery
     ),
     request_body(content = UpsertBuildItemRequest, description = "Item details"),
     responses(
@@ -553,14 +578,16 @@ async fn upsert_build_item(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Path((id, slot)): Path<(i64, String)>,
+    Query(loadout): Query<BuildItemLoadoutQuery>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<UpsertBuildItemRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
     user.require(&perms, Permission::CompsBuildsManage).await?;
     let slot = crate::modules::comps::status::BuildSlot::from_str(&slot)
         .map_err(|e| AppError::Validation(e))?;
+    let loadout = loadout.resolve()?;
     let service = CompService::new();
-    let build = service.upsert_build_item(&db, id, slot, req).await?;
+    let build = service.upsert_build_item(&db, id, loadout, slot, req).await?;
     Ok(Json(ApiResponse::new(build)))
 }
 
@@ -576,7 +603,8 @@ async fn upsert_build_item(
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Build ID"),
-        ("slot" = crate::modules::comps::status::BuildSlot, Path, description = "Equipment slot")
+        ("slot" = crate::modules::comps::status::BuildSlot, Path, description = "Equipment slot"),
+        BuildItemLoadoutQuery
     ),
     responses(
         (status = 204, description = "Build item removed successfully"),
@@ -588,14 +616,62 @@ async fn remove_build_item(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Path((id, slot)): Path<(i64, String)>,
+    Query(loadout): Query<BuildItemLoadoutQuery>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<StatusCode, AppError> {
     user.require(&perms, Permission::CompsBuildsManage).await?;
     let slot = crate::modules::comps::status::BuildSlot::from_str(&slot)
         .map_err(|e| AppError::Validation(e))?;
+    let loadout = loadout.resolve()?;
     let service = CompService::new();
-    service.remove_build_item(&db, id, slot).await?;
+    service.remove_build_item(&db, id, loadout, slot).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Replaces the abilities chosen on one equipped item.
+///
+/// Requires `comps.builds.manage` permission.
+#[utoipa::path(
+    put,
+    path = "/api/comps/builds/{id}/items/{slot}/spells",
+    tag = "comps",
+    summary = "Set the abilities on a build item",
+    description = "Replaces every ability chosen on the item in this slot. A slot the body omits is \
+                   cleared, so the result is atomic. Each choice is validated against what the \
+                   equipped item actually offers — see `GET /api/openalbion/abilities`. Requires \
+                   `comps.builds.manage` permission.",
+    security(("session_cookie" = [])),
+    params(
+        ("id" = i64, Path, description = "Build ID"),
+        ("slot" = crate::modules::comps::status::BuildSlot, Path, description = "Equipment slot"),
+        BuildItemLoadoutQuery
+    ),
+    request_body = BuildItemSpells,
+    responses(
+        (status = 200, description = "Abilities saved", body = ApiResponseBuildDetail),
+        (status = 400, description = "An ability the item does not offer", body = ProblemDetails),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks comps.builds.manage permission", body = ProblemDetails),
+        (status = 404, description = "The slot holds no item", body = ProblemDetails)
+    )
+)]
+async fn set_build_item_spells(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Path((id, slot)): Path<(i64, String)>,
+    Query(loadout): Query<BuildItemLoadoutQuery>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Json(req): Json<BuildItemSpells>,
+) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
+    user.require(&perms, Permission::CompsBuildsManage).await?;
+    let slot = crate::modules::comps::status::BuildSlot::from_str(&slot)
+        .map_err(|e| AppError::Validation(e))?;
+    let loadout = loadout.resolve()?;
+    let service = CompService::new();
+    let build = service
+        .set_build_item_spells(&db, id, loadout, slot, req)
+        .await?;
+    Ok(Json(ApiResponse::new(build)))
 }
 
 // ===== Comps =====

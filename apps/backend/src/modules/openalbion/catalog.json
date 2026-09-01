@@ -111,7 +111,7 @@
   },
   {
     "id": 411119720200251226,
-    "name": "Cryptcandle",
+    "name": "Timelocked Grimoire",
     "tier": "1",
     "item_power": null,
     "type": "accessory",
@@ -151,7 +151,7 @@
   },
   {
     "id": 1031333323471592491,
-    "name": "Leering Cane",
+    "name": "Cryptcandle",
     "tier": "1",
     "item_power": null,
     "type": "accessory",
@@ -161,7 +161,7 @@
   },
   {
     "id": 1101117949790024862,
-    "name": "Muisak",
+    "name": "Leering Cane",
     "tier": "1",
     "item_power": null,
     "type": "accessory",
@@ -171,7 +171,7 @@
   },
   {
     "id": 942380965108575294,
-    "name": "Sacred Scepter",
+    "name": "Blueflame Torch",
     "tier": "1",
     "item_power": null,
     "type": "accessory",
@@ -271,7 +271,7 @@
   },
   {
     "id": 928809409678549471,
-    "name": "Smuggler's Cape",
+    "name": "Smuggler Cape",
     "tier": "1",
     "item_power": null,
     "type": "accessory",
@@ -381,7 +381,7 @@
   },
   {
     "id": 1149640749014287115,
-    "name": "Guardian Helmet",
+    "name": "Knight Helmet",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -391,7 +391,7 @@
   },
   {
     "id": 330399449402087504,
-    "name": "Guardian Armor",
+    "name": "Knight Armor",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -401,7 +401,7 @@
   },
   {
     "id": 5886662364945820,
-    "name": "Guardian Boots",
+    "name": "Knight Boots",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -411,7 +411,7 @@
   },
   {
     "id": 207955200222013340,
-    "name": "Knight Helmet",
+    "name": "Guardian Helmet",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -421,7 +421,7 @@
   },
   {
     "id": 227008273843895948,
-    "name": "Knight Armor",
+    "name": "Guardian Armor",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -431,7 +431,7 @@
   },
   {
     "id": 277770006497230880,
-    "name": "Knight Boots",
+    "name": "Guardian Boots",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -1161,7 +1161,7 @@
   },
   {
     "id": 1112777306243280741,
-    "name": "Harvester's Cap",
+    "name": "Harvester Cap",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -1171,7 +1171,7 @@
   },
   {
     "id": 569111418033306590,
-    "name": "Harvester's Garb",
+    "name": "Harvester Garb",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -1181,7 +1181,7 @@
   },
   {
     "id": 287229951786539373,
-    "name": "Harvester's Workboots",
+    "name": "Harvester Workboots",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -1201,7 +1201,7 @@
   },
   {
     "id": 899908137985174218,
-    "name": "Skinner's Cap",
+    "name": "Skinner Cap",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -1211,7 +1211,7 @@
   },
   {
     "id": 537460748532164861,
-    "name": "Skinner's Garb",
+    "name": "Skinner Garb",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -1221,7 +1221,7 @@
   },
   {
     "id": 225477389517881513,
-    "name": "Skinner's Workboots",
+    "name": "Skinner Workboots",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -1241,7 +1241,7 @@
   },
   {
     "id": 677818541794521068,
-    "name": "Miner's Cap",
+    "name": "Miner Cap",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -1251,7 +1251,7 @@
   },
   {
     "id": 477304634818935652,
-    "name": "Miner's Garb",
+    "name": "Miner Garb",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -1261,7 +1261,7 @@
   },
   {
     "id": 1054244119763865232,
-    "name": "Miner's Workboots",
+    "name": "Miner Workboots",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -1281,7 +1281,7 @@
   },
   {
     "id": 677968299919576894,
-    "name": "Quarrier's Cap",
+    "name": "Quarrier Cap",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -1291,7 +1291,7 @@
   },
   {
     "id": 1062409261147672435,
-    "name": "Quarrier's Garb",
+    "name": "Quarrier Garb",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -1301,7 +1301,7 @@
   },
   {
     "id": 254934466377394213,
-    "name": "Quarrier's Workboots",
+    "name": "Quarrier Workboots",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -1321,7 +1321,7 @@
   },
   {
     "id": 917609211547352816,
-    "name": "Lumberjack's Cap",
+    "name": "Lumberjack Cap",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -1331,7 +1331,7 @@
   },
   {
     "id": 1017452546232176985,
-    "name": "Lumberjack's Garb",
+    "name": "Lumberjack Garb",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -1341,7 +1341,7 @@
   },
   {
     "id": 645346559979051561,
-    "name": "Lumberjack's Workboots",
+    "name": "Lumberjack Workboots",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -1361,7 +1361,7 @@
   },
   {
     "id": 208683802497222107,
-    "name": "Fisherman's Cap",
+    "name": "Fisherman Cap",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -1371,7 +1371,7 @@
   },
   {
     "id": 1034503239551317481,
-    "name": "Fisherman's Garb",
+    "name": "Fisherman Garb",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -1381,7 +1381,7 @@
   },
   {
     "id": 79233630259938616,
-    "name": "Fisherman's Workboots",
+    "name": "Fisherman Workboots",
     "tier": "1",
     "item_power": null,
     "type": "armor",
@@ -2391,7 +2391,7 @@
   },
   {
     "id": 169068699772366023,
-    "name": "Black Monk Stave",
+    "name": "Black Monk Staff",
     "tier": "1",
     "item_power": null,
     "type": "weapon",
@@ -2761,7 +2761,7 @@
   },
   {
     "id": 349120472529355410,
-    "name": "Pork Pie",
+    "name": "Chicken Pie",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2771,7 +2771,7 @@
   },
   {
     "id": 188557128379046285,
-    "name": "Avalonian Pork Pie",
+    "name": "Upland Coldeye Pie",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2791,7 +2791,7 @@
   },
   {
     "id": 237229983196277634,
-    "name": "Avalonian Chicken Omelette",
+    "name": "Lowriver Crab Omelette",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2811,7 +2811,7 @@
   },
   {
     "id": 888888947162363094,
-    "name": "Beef Stew",
+    "name": "Goat Stew",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2821,7 +2821,7 @@
   },
   {
     "id": 846720947120113624,
-    "name": "Avalonian Beef Stew",
+    "name": "Greenriver Eel Stew",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2831,7 +2831,7 @@
   },
   {
     "id": 441347103579666771,
-    "name": "Avalonian Beef Stew",
+    "name": "Avalonian Goat Stew",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2841,7 +2841,7 @@
   },
   {
     "id": 231157233463720442,
-    "name": "Goose Sandwich",
+    "name": "Goat Sandwich",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2851,7 +2851,7 @@
   },
   {
     "id": 659391315730153337,
-    "name": "Avalonian Goose Sandwich",
+    "name": "Stonestream Lurcher Sandwich",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2861,7 +2861,7 @@
   },
   {
     "id": 840859003996662249,
-    "name": "Avalonian Goose Sandwich",
+    "name": "Avalonian Goat Sandwich",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2871,7 +2871,7 @@
   },
   {
     "id": 656678900089298605,
-    "name": "Pork Roast",
+    "name": "Roast Chicken",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2881,7 +2881,7 @@
   },
   {
     "id": 892144336274347077,
-    "name": "Avalonian Pork Roast",
+    "name": "Roasted Whitefog Snapper",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2891,7 +2891,7 @@
   },
   {
     "id": 1070064874130228907,
-    "name": "Healing Potion",
+    "name": "Minor Healing Potion",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2901,7 +2901,7 @@
   },
   {
     "id": 534521921764723523,
-    "name": "Energy Potion",
+    "name": "Minor Energy Potion",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2911,7 +2911,7 @@
   },
   {
     "id": 203713792217625988,
-    "name": "Revive Potion",
+    "name": "Minor Gigantify Potion",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2921,7 +2921,7 @@
   },
   {
     "id": 324051809538366242,
-    "name": "Resistance Potion",
+    "name": "Minor Resistance Potion",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2931,7 +2931,7 @@
   },
   {
     "id": 933995715907912606,
-    "name": "Sticky Potion",
+    "name": "Minor Sticky Potion",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2941,7 +2941,7 @@
   },
   {
     "id": 362093920835716838,
-    "name": "Calming Potion",
+    "name": "Minor Calming Potion",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2951,7 +2951,7 @@
   },
   {
     "id": 30589296925859716,
-    "name": "Cleansing Potion",
+    "name": "Minor Cleansing Potion",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2961,7 +2961,7 @@
   },
   {
     "id": 611523255270943945,
-    "name": "Acid Potion",
+    "name": "Minor Acid Potion",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2971,7 +2971,7 @@
   },
   {
     "id": 243374450725860249,
-    "name": "Berserk Potion",
+    "name": "Minor Berserk Potion",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2981,7 +2981,7 @@
   },
   {
     "id": 1001062820396998641,
-    "name": "Hellfire Potion",
+    "name": "Minor Hellfire Potion",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -2991,7 +2991,7 @@
   },
   {
     "id": 197704309400098970,
-    "name": "Gathering Potion",
+    "name": "Minor Gathering Potion",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -3001,7 +3001,7 @@
   },
   {
     "id": 435279020985744105,
-    "name": "Tornado in a Bottle",
+    "name": "Minor Tornado in a Bottle",
     "tier": "1",
     "item_power": null,
     "type": "consumable",
@@ -3491,7 +3491,7 @@
   },
   {
     "id": 670390463042401732,
-    "name": "Cryptcandle",
+    "name": "Timelocked Grimoire",
     "tier": "2",
     "item_power": null,
     "type": "accessory",
@@ -3531,7 +3531,7 @@
   },
   {
     "id": 1008886250008550151,
-    "name": "Leering Cane",
+    "name": "Cryptcandle",
     "tier": "2",
     "item_power": null,
     "type": "accessory",
@@ -3541,7 +3541,7 @@
   },
   {
     "id": 50053415343004584,
-    "name": "Muisak",
+    "name": "Leering Cane",
     "tier": "2",
     "item_power": null,
     "type": "accessory",
@@ -3551,7 +3551,7 @@
   },
   {
     "id": 488276636966304884,
-    "name": "Sacred Scepter",
+    "name": "Blueflame Torch",
     "tier": "2",
     "item_power": null,
     "type": "accessory",
@@ -3651,7 +3651,7 @@
   },
   {
     "id": 1059815542053684063,
-    "name": "Smuggler's Cape",
+    "name": "Smuggler Cape",
     "tier": "2",
     "item_power": null,
     "type": "accessory",
@@ -3761,7 +3761,7 @@
   },
   {
     "id": 570897227101208700,
-    "name": "Guardian Helmet",
+    "name": "Knight Helmet",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -3771,7 +3771,7 @@
   },
   {
     "id": 537487504578227093,
-    "name": "Guardian Armor",
+    "name": "Knight Armor",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -3781,7 +3781,7 @@
   },
   {
     "id": 276630221479158804,
-    "name": "Guardian Boots",
+    "name": "Knight Boots",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -3791,7 +3791,7 @@
   },
   {
     "id": 700387549253885135,
-    "name": "Knight Helmet",
+    "name": "Guardian Helmet",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -3801,7 +3801,7 @@
   },
   {
     "id": 725684978747393967,
-    "name": "Knight Armor",
+    "name": "Guardian Armor",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -3811,7 +3811,7 @@
   },
   {
     "id": 456423035748466907,
-    "name": "Knight Boots",
+    "name": "Guardian Boots",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -4541,7 +4541,7 @@
   },
   {
     "id": 1092362346425452864,
-    "name": "Harvester's Cap",
+    "name": "Harvester Cap",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -4551,7 +4551,7 @@
   },
   {
     "id": 890357717026998307,
-    "name": "Harvester's Garb",
+    "name": "Harvester Garb",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -4561,7 +4561,7 @@
   },
   {
     "id": 929260751287133195,
-    "name": "Harvester's Workboots",
+    "name": "Harvester Workboots",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -4581,7 +4581,7 @@
   },
   {
     "id": 719092557557423827,
-    "name": "Skinner's Cap",
+    "name": "Skinner Cap",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -4591,7 +4591,7 @@
   },
   {
     "id": 988921151864773206,
-    "name": "Skinner's Garb",
+    "name": "Skinner Garb",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -4601,7 +4601,7 @@
   },
   {
     "id": 1000131448607746127,
-    "name": "Skinner's Workboots",
+    "name": "Skinner Workboots",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -4621,7 +4621,7 @@
   },
   {
     "id": 129260750262598261,
-    "name": "Miner's Cap",
+    "name": "Miner Cap",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -4631,7 +4631,7 @@
   },
   {
     "id": 89365123166349014,
-    "name": "Miner's Garb",
+    "name": "Miner Garb",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -4641,7 +4641,7 @@
   },
   {
     "id": 1110869814751898167,
-    "name": "Miner's Workboots",
+    "name": "Miner Workboots",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -4661,7 +4661,7 @@
   },
   {
     "id": 134704663281342017,
-    "name": "Quarrier's Cap",
+    "name": "Quarrier Cap",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -4671,7 +4671,7 @@
   },
   {
     "id": 481292143746988081,
-    "name": "Quarrier's Garb",
+    "name": "Quarrier Garb",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -4681,7 +4681,7 @@
   },
   {
     "id": 185486501062044609,
-    "name": "Quarrier's Workboots",
+    "name": "Quarrier Workboots",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -4701,7 +4701,7 @@
   },
   {
     "id": 583729724197565795,
-    "name": "Lumberjack's Cap",
+    "name": "Lumberjack Cap",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -4711,7 +4711,7 @@
   },
   {
     "id": 503367986432132405,
-    "name": "Lumberjack's Garb",
+    "name": "Lumberjack Garb",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -4721,7 +4721,7 @@
   },
   {
     "id": 92666202961557674,
-    "name": "Lumberjack's Workboots",
+    "name": "Lumberjack Workboots",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -4741,7 +4741,7 @@
   },
   {
     "id": 67775860364178866,
-    "name": "Fisherman's Cap",
+    "name": "Fisherman Cap",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -4751,7 +4751,7 @@
   },
   {
     "id": 531852567030097287,
-    "name": "Fisherman's Garb",
+    "name": "Fisherman Garb",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -4761,7 +4761,7 @@
   },
   {
     "id": 683581549594586637,
-    "name": "Fisherman's Workboots",
+    "name": "Fisherman Workboots",
     "tier": "2",
     "item_power": null,
     "type": "armor",
@@ -5771,7 +5771,7 @@
   },
   {
     "id": 646300587243659296,
-    "name": "Black Monk Stave",
+    "name": "Black Monk Staff",
     "tier": "2",
     "item_power": null,
     "type": "weapon",
@@ -6141,7 +6141,7 @@
   },
   {
     "id": 489607035253861695,
-    "name": "Pork Pie",
+    "name": "Chicken Pie",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6151,7 +6151,7 @@
   },
   {
     "id": 1129801687327287467,
-    "name": "Avalonian Pork Pie",
+    "name": "Upland Coldeye Pie",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6171,7 +6171,7 @@
   },
   {
     "id": 345617326716047973,
-    "name": "Avalonian Chicken Omelette",
+    "name": "Lowriver Crab Omelette",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6191,7 +6191,7 @@
   },
   {
     "id": 1004957522653141212,
-    "name": "Beef Stew",
+    "name": "Goat Stew",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6201,7 +6201,7 @@
   },
   {
     "id": 502945631692499768,
-    "name": "Avalonian Beef Stew",
+    "name": "Greenriver Eel Stew",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6211,7 +6211,7 @@
   },
   {
     "id": 1138188003715245922,
-    "name": "Avalonian Beef Stew",
+    "name": "Avalonian Goat Stew",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6221,7 +6221,7 @@
   },
   {
     "id": 855196639991736925,
-    "name": "Goose Sandwich",
+    "name": "Goat Sandwich",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6231,7 +6231,7 @@
   },
   {
     "id": 638683169718288053,
-    "name": "Avalonian Goose Sandwich",
+    "name": "Stonestream Lurcher Sandwich",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6241,7 +6241,7 @@
   },
   {
     "id": 829146323857559754,
-    "name": "Avalonian Goose Sandwich",
+    "name": "Avalonian Goat Sandwich",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6251,7 +6251,7 @@
   },
   {
     "id": 904284220061220518,
-    "name": "Pork Roast",
+    "name": "Roast Chicken",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6261,7 +6261,7 @@
   },
   {
     "id": 1151305168863878964,
-    "name": "Avalonian Pork Roast",
+    "name": "Roasted Whitefog Snapper",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6271,7 +6271,7 @@
   },
   {
     "id": 1039492325835410556,
-    "name": "Healing Potion",
+    "name": "Minor Healing Potion",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6281,7 +6281,7 @@
   },
   {
     "id": 931902609347888935,
-    "name": "Energy Potion",
+    "name": "Minor Energy Potion",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6291,7 +6291,7 @@
   },
   {
     "id": 1112536938390850040,
-    "name": "Revive Potion",
+    "name": "Minor Gigantify Potion",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6301,7 +6301,7 @@
   },
   {
     "id": 204867186923262012,
-    "name": "Resistance Potion",
+    "name": "Minor Resistance Potion",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6311,7 +6311,7 @@
   },
   {
     "id": 310895932279054405,
-    "name": "Sticky Potion",
+    "name": "Minor Sticky Potion",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6321,7 +6321,7 @@
   },
   {
     "id": 85799050969053817,
-    "name": "Calming Potion",
+    "name": "Minor Calming Potion",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6331,7 +6331,7 @@
   },
   {
     "id": 96423423851030599,
-    "name": "Cleansing Potion",
+    "name": "Minor Cleansing Potion",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6341,7 +6341,7 @@
   },
   {
     "id": 709268605583060213,
-    "name": "Acid Potion",
+    "name": "Minor Acid Potion",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6351,7 +6351,7 @@
   },
   {
     "id": 621893534221619256,
-    "name": "Berserk Potion",
+    "name": "Minor Berserk Potion",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6361,7 +6361,7 @@
   },
   {
     "id": 252214512011014743,
-    "name": "Hellfire Potion",
+    "name": "Minor Hellfire Potion",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6371,7 +6371,7 @@
   },
   {
     "id": 393350511659784507,
-    "name": "Gathering Potion",
+    "name": "Minor Gathering Potion",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6381,7 +6381,7 @@
   },
   {
     "id": 479887077413515465,
-    "name": "Tornado in a Bottle",
+    "name": "Minor Tornado in a Bottle",
     "tier": "2",
     "item_power": null,
     "type": "consumable",
@@ -6871,7 +6871,7 @@
   },
   {
     "id": 1011821500642304403,
-    "name": "Cryptcandle",
+    "name": "Timelocked Grimoire",
     "tier": "3",
     "item_power": null,
     "type": "accessory",
@@ -6911,7 +6911,7 @@
   },
   {
     "id": 457122609435137821,
-    "name": "Leering Cane",
+    "name": "Cryptcandle",
     "tier": "3",
     "item_power": null,
     "type": "accessory",
@@ -6921,7 +6921,7 @@
   },
   {
     "id": 459394293908507485,
-    "name": "Muisak",
+    "name": "Leering Cane",
     "tier": "3",
     "item_power": null,
     "type": "accessory",
@@ -6931,7 +6931,7 @@
   },
   {
     "id": 780040348109873142,
-    "name": "Sacred Scepter",
+    "name": "Blueflame Torch",
     "tier": "3",
     "item_power": null,
     "type": "accessory",
@@ -7031,7 +7031,7 @@
   },
   {
     "id": 489463803317036910,
-    "name": "Smuggler's Cape",
+    "name": "Smuggler Cape",
     "tier": "3",
     "item_power": null,
     "type": "accessory",
@@ -7141,7 +7141,7 @@
   },
   {
     "id": 1063676364717764402,
-    "name": "Guardian Helmet",
+    "name": "Knight Helmet",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -7151,7 +7151,7 @@
   },
   {
     "id": 818531341996919992,
-    "name": "Guardian Armor",
+    "name": "Knight Armor",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -7161,7 +7161,7 @@
   },
   {
     "id": 953275196671234507,
-    "name": "Guardian Boots",
+    "name": "Knight Boots",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -7171,7 +7171,7 @@
   },
   {
     "id": 881800979493732877,
-    "name": "Knight Helmet",
+    "name": "Guardian Helmet",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -7181,7 +7181,7 @@
   },
   {
     "id": 1119370246545888503,
-    "name": "Knight Armor",
+    "name": "Guardian Armor",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -7191,7 +7191,7 @@
   },
   {
     "id": 73348551419719691,
-    "name": "Knight Boots",
+    "name": "Guardian Boots",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -7921,7 +7921,7 @@
   },
   {
     "id": 528372929794807450,
-    "name": "Harvester's Cap",
+    "name": "Harvester Cap",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -7931,7 +7931,7 @@
   },
   {
     "id": 476150636396854473,
-    "name": "Harvester's Garb",
+    "name": "Harvester Garb",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -7941,7 +7941,7 @@
   },
   {
     "id": 1147039621058933866,
-    "name": "Harvester's Workboots",
+    "name": "Harvester Workboots",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -7961,7 +7961,7 @@
   },
   {
     "id": 660810755831508899,
-    "name": "Skinner's Cap",
+    "name": "Skinner Cap",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -7971,7 +7971,7 @@
   },
   {
     "id": 643499900973124976,
-    "name": "Skinner's Garb",
+    "name": "Skinner Garb",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -7981,7 +7981,7 @@
   },
   {
     "id": 342606181294421979,
-    "name": "Skinner's Workboots",
+    "name": "Skinner Workboots",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -8001,7 +8001,7 @@
   },
   {
     "id": 345369396704067537,
-    "name": "Miner's Cap",
+    "name": "Miner Cap",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -8011,7 +8011,7 @@
   },
   {
     "id": 671228838731011609,
-    "name": "Miner's Garb",
+    "name": "Miner Garb",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -8021,7 +8021,7 @@
   },
   {
     "id": 775893279198262430,
-    "name": "Miner's Workboots",
+    "name": "Miner Workboots",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -8041,7 +8041,7 @@
   },
   {
     "id": 859662576283865995,
-    "name": "Quarrier's Cap",
+    "name": "Quarrier Cap",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -8051,7 +8051,7 @@
   },
   {
     "id": 675421062368364337,
-    "name": "Quarrier's Garb",
+    "name": "Quarrier Garb",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -8061,7 +8061,7 @@
   },
   {
     "id": 426685082005533301,
-    "name": "Quarrier's Workboots",
+    "name": "Quarrier Workboots",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -8081,7 +8081,7 @@
   },
   {
     "id": 111479582269617765,
-    "name": "Lumberjack's Cap",
+    "name": "Lumberjack Cap",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -8091,7 +8091,7 @@
   },
   {
     "id": 606122408730177940,
-    "name": "Lumberjack's Garb",
+    "name": "Lumberjack Garb",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -8101,7 +8101,7 @@
   },
   {
     "id": 350107215078163677,
-    "name": "Lumberjack's Workboots",
+    "name": "Lumberjack Workboots",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -8121,7 +8121,7 @@
   },
   {
     "id": 408968426936785476,
-    "name": "Fisherman's Cap",
+    "name": "Fisherman Cap",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -8131,7 +8131,7 @@
   },
   {
     "id": 399348620733378807,
-    "name": "Fisherman's Garb",
+    "name": "Fisherman Garb",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -8141,7 +8141,7 @@
   },
   {
     "id": 19804895303876797,
-    "name": "Fisherman's Workboots",
+    "name": "Fisherman Workboots",
     "tier": "3",
     "item_power": null,
     "type": "armor",
@@ -9151,7 +9151,7 @@
   },
   {
     "id": 60613475709488771,
-    "name": "Black Monk Stave",
+    "name": "Black Monk Staff",
     "tier": "3",
     "item_power": null,
     "type": "weapon",
@@ -9521,7 +9521,7 @@
   },
   {
     "id": 970230457455349729,
-    "name": "Pork Pie",
+    "name": "Chicken Pie",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9531,7 +9531,7 @@
   },
   {
     "id": 642161025151008537,
-    "name": "Avalonian Pork Pie",
+    "name": "Upland Coldeye Pie",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9551,7 +9551,7 @@
   },
   {
     "id": 519755138323703796,
-    "name": "Avalonian Chicken Omelette",
+    "name": "Lowriver Crab Omelette",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9571,7 +9571,7 @@
   },
   {
     "id": 59975853079752937,
-    "name": "Beef Stew",
+    "name": "Goat Stew",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9581,7 +9581,7 @@
   },
   {
     "id": 619100954125964447,
-    "name": "Avalonian Beef Stew",
+    "name": "Greenriver Eel Stew",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9591,7 +9591,7 @@
   },
   {
     "id": 605455481557451505,
-    "name": "Avalonian Beef Stew",
+    "name": "Avalonian Goat Stew",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9601,7 +9601,7 @@
   },
   {
     "id": 590914939581286529,
-    "name": "Goose Sandwich",
+    "name": "Goat Sandwich",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9611,7 +9611,7 @@
   },
   {
     "id": 66857848923977356,
-    "name": "Avalonian Goose Sandwich",
+    "name": "Stonestream Lurcher Sandwich",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9621,7 +9621,7 @@
   },
   {
     "id": 984834281271049657,
-    "name": "Avalonian Goose Sandwich",
+    "name": "Avalonian Goat Sandwich",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9631,7 +9631,7 @@
   },
   {
     "id": 428046685733865008,
-    "name": "Pork Roast",
+    "name": "Roast Chicken",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9641,7 +9641,7 @@
   },
   {
     "id": 498375700749626161,
-    "name": "Avalonian Pork Roast",
+    "name": "Roasted Whitefog Snapper",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9671,7 +9671,7 @@
   },
   {
     "id": 318061319261460519,
-    "name": "Revive Potion",
+    "name": "Minor Gigantify Potion",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9681,7 +9681,7 @@
   },
   {
     "id": 642818108271818393,
-    "name": "Resistance Potion",
+    "name": "Minor Resistance Potion",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9691,7 +9691,7 @@
   },
   {
     "id": 770387144044076182,
-    "name": "Sticky Potion",
+    "name": "Minor Sticky Potion",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9701,7 +9701,7 @@
   },
   {
     "id": 1027714596768775411,
-    "name": "Calming Potion",
+    "name": "Minor Calming Potion",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9711,7 +9711,7 @@
   },
   {
     "id": 171931239637829176,
-    "name": "Cleansing Potion",
+    "name": "Minor Cleansing Potion",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9721,7 +9721,7 @@
   },
   {
     "id": 776318194310816434,
-    "name": "Acid Potion",
+    "name": "Minor Acid Potion",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9731,7 +9731,7 @@
   },
   {
     "id": 280234724058981865,
-    "name": "Berserk Potion",
+    "name": "Minor Berserk Potion",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9741,7 +9741,7 @@
   },
   {
     "id": 788581477146054881,
-    "name": "Hellfire Potion",
+    "name": "Minor Hellfire Potion",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9751,7 +9751,7 @@
   },
   {
     "id": 760863570189244462,
-    "name": "Gathering Potion",
+    "name": "Minor Gathering Potion",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -9761,7 +9761,7 @@
   },
   {
     "id": 849440832705202452,
-    "name": "Tornado in a Bottle",
+    "name": "Minor Tornado in a Bottle",
     "tier": "3",
     "item_power": null,
     "type": "consumable",
@@ -10251,7 +10251,7 @@
   },
   {
     "id": 315778678728810265,
-    "name": "Cryptcandle",
+    "name": "Timelocked Grimoire",
     "tier": "4",
     "item_power": null,
     "type": "accessory",
@@ -10291,7 +10291,7 @@
   },
   {
     "id": 424134793435941239,
-    "name": "Leering Cane",
+    "name": "Cryptcandle",
     "tier": "4",
     "item_power": null,
     "type": "accessory",
@@ -10301,7 +10301,7 @@
   },
   {
     "id": 915377215013351909,
-    "name": "Muisak",
+    "name": "Leering Cane",
     "tier": "4",
     "item_power": null,
     "type": "accessory",
@@ -10311,7 +10311,7 @@
   },
   {
     "id": 376855833768367795,
-    "name": "Sacred Scepter",
+    "name": "Blueflame Torch",
     "tier": "4",
     "item_power": null,
     "type": "accessory",
@@ -10411,7 +10411,7 @@
   },
   {
     "id": 236884611558009543,
-    "name": "Smuggler's Cape",
+    "name": "Smuggler Cape",
     "tier": "4",
     "item_power": null,
     "type": "accessory",
@@ -10521,7 +10521,7 @@
   },
   {
     "id": 282283837354111851,
-    "name": "Guardian Helmet",
+    "name": "Knight Helmet",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -10531,7 +10531,7 @@
   },
   {
     "id": 190816198965286948,
-    "name": "Guardian Armor",
+    "name": "Knight Armor",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -10541,7 +10541,7 @@
   },
   {
     "id": 1131064262013488336,
-    "name": "Guardian Boots",
+    "name": "Knight Boots",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -10551,7 +10551,7 @@
   },
   {
     "id": 245755165871294016,
-    "name": "Knight Helmet",
+    "name": "Guardian Helmet",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -10561,7 +10561,7 @@
   },
   {
     "id": 697721950696078689,
-    "name": "Knight Armor",
+    "name": "Guardian Armor",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -10571,7 +10571,7 @@
   },
   {
     "id": 664670620879039036,
-    "name": "Knight Boots",
+    "name": "Guardian Boots",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -11301,7 +11301,7 @@
   },
   {
     "id": 84731127694108534,
-    "name": "Harvester's Cap",
+    "name": "Harvester Cap",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -11311,7 +11311,7 @@
   },
   {
     "id": 871948622783734938,
-    "name": "Harvester's Garb",
+    "name": "Harvester Garb",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -11321,7 +11321,7 @@
   },
   {
     "id": 409138380395468806,
-    "name": "Harvester's Workboots",
+    "name": "Harvester Workboots",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -11341,7 +11341,7 @@
   },
   {
     "id": 529525797781576901,
-    "name": "Skinner's Cap",
+    "name": "Skinner Cap",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -11351,7 +11351,7 @@
   },
   {
     "id": 787042226030949128,
-    "name": "Skinner's Garb",
+    "name": "Skinner Garb",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -11361,7 +11361,7 @@
   },
   {
     "id": 314821875198343676,
-    "name": "Skinner's Workboots",
+    "name": "Skinner Workboots",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -11381,7 +11381,7 @@
   },
   {
     "id": 1125457103247272612,
-    "name": "Miner's Cap",
+    "name": "Miner Cap",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -11391,7 +11391,7 @@
   },
   {
     "id": 882063904030549407,
-    "name": "Miner's Garb",
+    "name": "Miner Garb",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -11401,7 +11401,7 @@
   },
   {
     "id": 72048091125741361,
-    "name": "Miner's Workboots",
+    "name": "Miner Workboots",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -11421,7 +11421,7 @@
   },
   {
     "id": 349632718806878355,
-    "name": "Quarrier's Cap",
+    "name": "Quarrier Cap",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -11431,7 +11431,7 @@
   },
   {
     "id": 535223449915849843,
-    "name": "Quarrier's Garb",
+    "name": "Quarrier Garb",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -11441,7 +11441,7 @@
   },
   {
     "id": 1039392864588010528,
-    "name": "Quarrier's Workboots",
+    "name": "Quarrier Workboots",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -11461,7 +11461,7 @@
   },
   {
     "id": 75150344026747933,
-    "name": "Lumberjack's Cap",
+    "name": "Lumberjack Cap",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -11471,7 +11471,7 @@
   },
   {
     "id": 1135270381331967346,
-    "name": "Lumberjack's Garb",
+    "name": "Lumberjack Garb",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -11481,7 +11481,7 @@
   },
   {
     "id": 184327190089794899,
-    "name": "Lumberjack's Workboots",
+    "name": "Lumberjack Workboots",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -11501,7 +11501,7 @@
   },
   {
     "id": 630978688327761350,
-    "name": "Fisherman's Cap",
+    "name": "Fisherman Cap",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -11511,7 +11511,7 @@
   },
   {
     "id": 146820508214690242,
-    "name": "Fisherman's Garb",
+    "name": "Fisherman Garb",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -11521,7 +11521,7 @@
   },
   {
     "id": 81436413613649487,
-    "name": "Fisherman's Workboots",
+    "name": "Fisherman Workboots",
     "tier": "4",
     "item_power": null,
     "type": "armor",
@@ -12531,7 +12531,7 @@
   },
   {
     "id": 1028585853226700872,
-    "name": "Black Monk Stave",
+    "name": "Black Monk Staff",
     "tier": "4",
     "item_power": null,
     "type": "weapon",
@@ -12901,7 +12901,7 @@
   },
   {
     "id": 352520447199550231,
-    "name": "Pork Pie",
+    "name": "Goose Pie",
     "tier": "4",
     "item_power": null,
     "type": "consumable",
@@ -12911,7 +12911,7 @@
   },
   {
     "id": 864859525656586989,
-    "name": "Avalonian Pork Pie",
+    "name": "Mountain Blindeye Pie",
     "tier": "4",
     "item_power": null,
     "type": "consumable",
@@ -12921,7 +12921,7 @@
   },
   {
     "id": 494979737758431072,
-    "name": "Chicken Omelette",
+    "name": "Goose Omelette",
     "tier": "4",
     "item_power": null,
     "type": "consumable",
@@ -12931,7 +12931,7 @@
   },
   {
     "id": 555686996949785425,
-    "name": "Avalonian Chicken Omelette",
+    "name": "Drybrook Crab Omelette",
     "tier": "4",
     "item_power": null,
     "type": "consumable",
@@ -12941,7 +12941,7 @@
   },
   {
     "id": 274570819889069981,
-    "name": "Avalonian Chicken Omelette",
+    "name": "Avalonian Goose Omelette",
     "tier": "4",
     "item_power": null,
     "type": "consumable",
@@ -12951,7 +12951,7 @@
   },
   {
     "id": 256123092928991770,
-    "name": "Beef Stew",
+    "name": "Goat Stew",
     "tier": "4",
     "item_power": null,
     "type": "consumable",
@@ -12961,7 +12961,7 @@
   },
   {
     "id": 1015247479092135251,
-    "name": "Avalonian Beef Stew",
+    "name": "Greenriver Eel Stew",
     "tier": "4",
     "item_power": null,
     "type": "consumable",
@@ -12971,7 +12971,7 @@
   },
   {
     "id": 604352973177029060,
-    "name": "Avalonian Beef Stew",
+    "name": "Avalonian Goat Stew",
     "tier": "4",
     "item_power": null,
     "type": "consumable",
@@ -12981,7 +12981,7 @@
   },
   {
     "id": 305646780168446392,
-    "name": "Goose Sandwich",
+    "name": "Goat Sandwich",
     "tier": "4",
     "item_power": null,
     "type": "consumable",
@@ -12991,7 +12991,7 @@
   },
   {
     "id": 1013994215341935492,
-    "name": "Avalonian Goose Sandwich",
+    "name": "Stonestream Lurcher Sandwich",
     "tier": "4",
     "item_power": null,
     "type": "consumable",
@@ -13001,7 +13001,7 @@
   },
   {
     "id": 634920066532623150,
-    "name": "Avalonian Goose Sandwich",
+    "name": "Avalonian Goat Sandwich",
     "tier": "4",
     "item_power": null,
     "type": "consumable",
@@ -13011,7 +13011,7 @@
   },
   {
     "id": 509117537794821905,
-    "name": "Pork Roast",
+    "name": "Roast Goose",
     "tier": "4",
     "item_power": null,
     "type": "consumable",
@@ -13021,7 +13021,7 @@
   },
   {
     "id": 440432481749247406,
-    "name": "Avalonian Pork Roast",
+    "name": "Roasted Clearhaze Snapper",
     "tier": "4",
     "item_power": null,
     "type": "consumable",
@@ -13051,7 +13051,7 @@
   },
   {
     "id": 1044785421385958131,
-    "name": "Revive Potion",
+    "name": "Gigantify Potion",
     "tier": "4",
     "item_power": null,
     "type": "consumable",
@@ -13111,7 +13111,7 @@
   },
   {
     "id": 581606737477246843,
-    "name": "Berserk Potion",
+    "name": "Minor Berserk Potion",
     "tier": "4",
     "item_power": null,
     "type": "consumable",
@@ -13121,7 +13121,7 @@
   },
   {
     "id": 920519294883746144,
-    "name": "Hellfire Potion",
+    "name": "Minor Hellfire Potion",
     "tier": "4",
     "item_power": null,
     "type": "consumable",
@@ -13131,7 +13131,7 @@
   },
   {
     "id": 323874209013997451,
-    "name": "Gathering Potion",
+    "name": "Minor Gathering Potion",
     "tier": "4",
     "item_power": null,
     "type": "consumable",
@@ -13141,7 +13141,7 @@
   },
   {
     "id": 58929161018785860,
-    "name": "Tornado in a Bottle",
+    "name": "Minor Tornado in a Bottle",
     "tier": "4",
     "item_power": null,
     "type": "consumable",
@@ -13631,7 +13631,7 @@
   },
   {
     "id": 738543667270957738,
-    "name": "Cryptcandle",
+    "name": "Timelocked Grimoire",
     "tier": "5",
     "item_power": null,
     "type": "accessory",
@@ -13671,7 +13671,7 @@
   },
   {
     "id": 609510688815119121,
-    "name": "Leering Cane",
+    "name": "Cryptcandle",
     "tier": "5",
     "item_power": null,
     "type": "accessory",
@@ -13681,7 +13681,7 @@
   },
   {
     "id": 431851056951626871,
-    "name": "Muisak",
+    "name": "Leering Cane",
     "tier": "5",
     "item_power": null,
     "type": "accessory",
@@ -13691,7 +13691,7 @@
   },
   {
     "id": 431567537329668904,
-    "name": "Sacred Scepter",
+    "name": "Blueflame Torch",
     "tier": "5",
     "item_power": null,
     "type": "accessory",
@@ -13791,7 +13791,7 @@
   },
   {
     "id": 734474280382302067,
-    "name": "Smuggler's Cape",
+    "name": "Smuggler Cape",
     "tier": "5",
     "item_power": null,
     "type": "accessory",
@@ -13901,7 +13901,7 @@
   },
   {
     "id": 586000697023422939,
-    "name": "Guardian Helmet",
+    "name": "Knight Helmet",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -13911,7 +13911,7 @@
   },
   {
     "id": 1017028454083221506,
-    "name": "Guardian Armor",
+    "name": "Knight Armor",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -13921,7 +13921,7 @@
   },
   {
     "id": 688749241383324766,
-    "name": "Guardian Boots",
+    "name": "Knight Boots",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -13931,7 +13931,7 @@
   },
   {
     "id": 389626601650290673,
-    "name": "Knight Helmet",
+    "name": "Guardian Helmet",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -13941,7 +13941,7 @@
   },
   {
     "id": 278068081716580879,
-    "name": "Knight Armor",
+    "name": "Guardian Armor",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -13951,7 +13951,7 @@
   },
   {
     "id": 1094033265804567296,
-    "name": "Knight Boots",
+    "name": "Guardian Boots",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -14681,7 +14681,7 @@
   },
   {
     "id": 723205784902079733,
-    "name": "Harvester's Cap",
+    "name": "Harvester Cap",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -14691,7 +14691,7 @@
   },
   {
     "id": 692155300325341904,
-    "name": "Harvester's Garb",
+    "name": "Harvester Garb",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -14701,7 +14701,7 @@
   },
   {
     "id": 1002429554132288697,
-    "name": "Harvester's Workboots",
+    "name": "Harvester Workboots",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -14721,7 +14721,7 @@
   },
   {
     "id": 216090367169845444,
-    "name": "Skinner's Cap",
+    "name": "Skinner Cap",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -14731,7 +14731,7 @@
   },
   {
     "id": 541183765218273141,
-    "name": "Skinner's Garb",
+    "name": "Skinner Garb",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -14741,7 +14741,7 @@
   },
   {
     "id": 73237798281339177,
-    "name": "Skinner's Workboots",
+    "name": "Skinner Workboots",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -14761,7 +14761,7 @@
   },
   {
     "id": 132763088857456214,
-    "name": "Miner's Cap",
+    "name": "Miner Cap",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -14771,7 +14771,7 @@
   },
   {
     "id": 671215727105613753,
-    "name": "Miner's Garb",
+    "name": "Miner Garb",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -14781,7 +14781,7 @@
   },
   {
     "id": 298029981614177701,
-    "name": "Miner's Workboots",
+    "name": "Miner Workboots",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -14801,7 +14801,7 @@
   },
   {
     "id": 53638261005136116,
-    "name": "Quarrier's Cap",
+    "name": "Quarrier Cap",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -14811,7 +14811,7 @@
   },
   {
     "id": 965530106191503185,
-    "name": "Quarrier's Garb",
+    "name": "Quarrier Garb",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -14821,7 +14821,7 @@
   },
   {
     "id": 1116490892714497138,
-    "name": "Quarrier's Workboots",
+    "name": "Quarrier Workboots",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -14841,7 +14841,7 @@
   },
   {
     "id": 374684870832566577,
-    "name": "Lumberjack's Cap",
+    "name": "Lumberjack Cap",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -14851,7 +14851,7 @@
   },
   {
     "id": 568651295899509121,
-    "name": "Lumberjack's Garb",
+    "name": "Lumberjack Garb",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -14861,7 +14861,7 @@
   },
   {
     "id": 710649045447610297,
-    "name": "Lumberjack's Workboots",
+    "name": "Lumberjack Workboots",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -14881,7 +14881,7 @@
   },
   {
     "id": 553963057615121219,
-    "name": "Fisherman's Cap",
+    "name": "Fisherman Cap",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -14891,7 +14891,7 @@
   },
   {
     "id": 598013241498949530,
-    "name": "Fisherman's Garb",
+    "name": "Fisherman Garb",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -14901,7 +14901,7 @@
   },
   {
     "id": 522735779505577807,
-    "name": "Fisherman's Workboots",
+    "name": "Fisherman Workboots",
     "tier": "5",
     "item_power": null,
     "type": "armor",
@@ -15911,7 +15911,7 @@
   },
   {
     "id": 111941794071808526,
-    "name": "Black Monk Stave",
+    "name": "Black Monk Staff",
     "tier": "5",
     "item_power": null,
     "type": "weapon",
@@ -16281,7 +16281,7 @@
   },
   {
     "id": 775378376095542870,
-    "name": "Pork Pie",
+    "name": "Goose Pie",
     "tier": "5",
     "item_power": null,
     "type": "consumable",
@@ -16291,7 +16291,7 @@
   },
   {
     "id": 861538774721056968,
-    "name": "Avalonian Pork Pie",
+    "name": "Mountain Blindeye Pie",
     "tier": "5",
     "item_power": null,
     "type": "consumable",
@@ -16301,7 +16301,7 @@
   },
   {
     "id": 864038452507169956,
-    "name": "Chicken Omelette",
+    "name": "Goose Omelette",
     "tier": "5",
     "item_power": null,
     "type": "consumable",
@@ -16311,7 +16311,7 @@
   },
   {
     "id": 670614415669377737,
-    "name": "Avalonian Chicken Omelette",
+    "name": "Drybrook Crab Omelette",
     "tier": "5",
     "item_power": null,
     "type": "consumable",
@@ -16321,7 +16321,7 @@
   },
   {
     "id": 17752762180776098,
-    "name": "Avalonian Chicken Omelette",
+    "name": "Avalonian Goose Omelette",
     "tier": "5",
     "item_power": null,
     "type": "consumable",
@@ -16331,7 +16331,7 @@
   },
   {
     "id": 340741734345497800,
-    "name": "Beef Stew",
+    "name": "Mutton Stew",
     "tier": "5",
     "item_power": null,
     "type": "consumable",
@@ -16341,7 +16341,7 @@
   },
   {
     "id": 829383444106470868,
-    "name": "Avalonian Beef Stew",
+    "name": "Redspring Eel Stew",
     "tier": "5",
     "item_power": null,
     "type": "consumable",
@@ -16351,7 +16351,7 @@
   },
   {
     "id": 1057898156478895624,
-    "name": "Avalonian Beef Stew",
+    "name": "Avalonian Mutton Stew",
     "tier": "5",
     "item_power": null,
     "type": "consumable",
@@ -16361,7 +16361,7 @@
   },
   {
     "id": 557921207118497520,
-    "name": "Goose Sandwich",
+    "name": "Mutton Sandwich",
     "tier": "5",
     "item_power": null,
     "type": "consumable",
@@ -16371,7 +16371,7 @@
   },
   {
     "id": 1041275160644310921,
-    "name": "Avalonian Goose Sandwich",
+    "name": "Rushwater Lurcher Sandwich",
     "tier": "5",
     "item_power": null,
     "type": "consumable",
@@ -16381,7 +16381,7 @@
   },
   {
     "id": 313096061766165558,
-    "name": "Avalonian Goose Sandwich",
+    "name": "Avalonian Mutton Sandwich",
     "tier": "5",
     "item_power": null,
     "type": "consumable",
@@ -16391,7 +16391,7 @@
   },
   {
     "id": 879955084769606394,
-    "name": "Pork Roast",
+    "name": "Roast Goose",
     "tier": "5",
     "item_power": null,
     "type": "consumable",
@@ -16401,7 +16401,7 @@
   },
   {
     "id": 867987594021214685,
-    "name": "Avalonian Pork Roast",
+    "name": "Roasted Clearhaze Snapper",
     "tier": "5",
     "item_power": null,
     "type": "consumable",
@@ -16411,7 +16411,7 @@
   },
   {
     "id": 555507613629393228,
-    "name": "Healing Potion",
+    "name": "Major Healing Potion",
     "tier": "5",
     "item_power": null,
     "type": "consumable",
@@ -16421,7 +16421,7 @@
   },
   {
     "id": 653737212597883614,
-    "name": "Energy Potion",
+    "name": "Major Energy Potion",
     "tier": "5",
     "item_power": null,
     "type": "consumable",
@@ -16431,7 +16431,7 @@
   },
   {
     "id": 867213886612371145,
-    "name": "Revive Potion",
+    "name": "Gigantify Potion",
     "tier": "5",
     "item_power": null,
     "type": "consumable",
@@ -17011,7 +17011,7 @@
   },
   {
     "id": 110135303254583980,
-    "name": "Cryptcandle",
+    "name": "Timelocked Grimoire",
     "tier": "6",
     "item_power": null,
     "type": "accessory",
@@ -17051,7 +17051,7 @@
   },
   {
     "id": 847115148612282643,
-    "name": "Leering Cane",
+    "name": "Cryptcandle",
     "tier": "6",
     "item_power": null,
     "type": "accessory",
@@ -17061,7 +17061,7 @@
   },
   {
     "id": 936883271326349329,
-    "name": "Muisak",
+    "name": "Leering Cane",
     "tier": "6",
     "item_power": null,
     "type": "accessory",
@@ -17071,7 +17071,7 @@
   },
   {
     "id": 751003603254508475,
-    "name": "Sacred Scepter",
+    "name": "Blueflame Torch",
     "tier": "6",
     "item_power": null,
     "type": "accessory",
@@ -17171,7 +17171,7 @@
   },
   {
     "id": 744853918133438955,
-    "name": "Smuggler's Cape",
+    "name": "Smuggler Cape",
     "tier": "6",
     "item_power": null,
     "type": "accessory",
@@ -17281,7 +17281,7 @@
   },
   {
     "id": 287508909582891171,
-    "name": "Guardian Helmet",
+    "name": "Knight Helmet",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -17291,7 +17291,7 @@
   },
   {
     "id": 1117077219421238150,
-    "name": "Guardian Armor",
+    "name": "Knight Armor",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -17301,7 +17301,7 @@
   },
   {
     "id": 998949786756155547,
-    "name": "Guardian Boots",
+    "name": "Knight Boots",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -17311,7 +17311,7 @@
   },
   {
     "id": 517751314231983418,
-    "name": "Knight Helmet",
+    "name": "Guardian Helmet",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -17321,7 +17321,7 @@
   },
   {
     "id": 940912702371847327,
-    "name": "Knight Armor",
+    "name": "Guardian Armor",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -17331,7 +17331,7 @@
   },
   {
     "id": 633771531270682770,
-    "name": "Knight Boots",
+    "name": "Guardian Boots",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -18061,7 +18061,7 @@
   },
   {
     "id": 710795662692735103,
-    "name": "Harvester's Cap",
+    "name": "Harvester Cap",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -18071,7 +18071,7 @@
   },
   {
     "id": 123142343840708192,
-    "name": "Harvester's Garb",
+    "name": "Harvester Garb",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -18081,7 +18081,7 @@
   },
   {
     "id": 1096167202011628904,
-    "name": "Harvester's Workboots",
+    "name": "Harvester Workboots",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -18101,7 +18101,7 @@
   },
   {
     "id": 225140887079216842,
-    "name": "Skinner's Cap",
+    "name": "Skinner Cap",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -18111,7 +18111,7 @@
   },
   {
     "id": 727467777951922984,
-    "name": "Skinner's Garb",
+    "name": "Skinner Garb",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -18121,7 +18121,7 @@
   },
   {
     "id": 1090296613379363981,
-    "name": "Skinner's Workboots",
+    "name": "Skinner Workboots",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -18141,7 +18141,7 @@
   },
   {
     "id": 517992410189408599,
-    "name": "Miner's Cap",
+    "name": "Miner Cap",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -18151,7 +18151,7 @@
   },
   {
     "id": 844428187292268480,
-    "name": "Miner's Garb",
+    "name": "Miner Garb",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -18161,7 +18161,7 @@
   },
   {
     "id": 442794158352138793,
-    "name": "Miner's Workboots",
+    "name": "Miner Workboots",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -18181,7 +18181,7 @@
   },
   {
     "id": 766340159080027726,
-    "name": "Quarrier's Cap",
+    "name": "Quarrier Cap",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -18191,7 +18191,7 @@
   },
   {
     "id": 317248381957768316,
-    "name": "Quarrier's Garb",
+    "name": "Quarrier Garb",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -18201,7 +18201,7 @@
   },
   {
     "id": 932535970677001696,
-    "name": "Quarrier's Workboots",
+    "name": "Quarrier Workboots",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -18221,7 +18221,7 @@
   },
   {
     "id": 754123304594229857,
-    "name": "Lumberjack's Cap",
+    "name": "Lumberjack Cap",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -18231,7 +18231,7 @@
   },
   {
     "id": 1131534720116299474,
-    "name": "Lumberjack's Garb",
+    "name": "Lumberjack Garb",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -18241,7 +18241,7 @@
   },
   {
     "id": 710881142844503239,
-    "name": "Lumberjack's Workboots",
+    "name": "Lumberjack Workboots",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -18261,7 +18261,7 @@
   },
   {
     "id": 882317826551481670,
-    "name": "Fisherman's Cap",
+    "name": "Fisherman Cap",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -18271,7 +18271,7 @@
   },
   {
     "id": 665334985308093058,
-    "name": "Fisherman's Garb",
+    "name": "Fisherman Garb",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -18281,7 +18281,7 @@
   },
   {
     "id": 395064662644775557,
-    "name": "Fisherman's Workboots",
+    "name": "Fisherman Workboots",
     "tier": "6",
     "item_power": null,
     "type": "armor",
@@ -19291,7 +19291,7 @@
   },
   {
     "id": 984249193706183375,
-    "name": "Black Monk Stave",
+    "name": "Black Monk Staff",
     "tier": "6",
     "item_power": null,
     "type": "weapon",
@@ -19671,7 +19671,7 @@
   },
   {
     "id": 650883173082626106,
-    "name": "Avalonian Pork Pie",
+    "name": "Frostpeak Deadeye Pie",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19681,7 +19681,7 @@
   },
   {
     "id": 126959791595818892,
-    "name": "Chicken Omelette",
+    "name": "Pork Omelette",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19691,7 +19691,7 @@
   },
   {
     "id": 927876405200586132,
-    "name": "Avalonian Chicken Omelette",
+    "name": "Dusthole Crab Omelette",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19701,7 +19701,7 @@
   },
   {
     "id": 724053869581748895,
-    "name": "Avalonian Chicken Omelette",
+    "name": "Avalonian Pork Omelette",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19711,7 +19711,7 @@
   },
   {
     "id": 660165864021316959,
-    "name": "Beef Stew",
+    "name": "Mutton Stew",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19721,7 +19721,7 @@
   },
   {
     "id": 374198278699692944,
-    "name": "Avalonian Beef Stew",
+    "name": "Redspring Eel Stew",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19731,7 +19731,7 @@
   },
   {
     "id": 62294569291989046,
-    "name": "Avalonian Beef Stew",
+    "name": "Avalonian Mutton Stew",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19741,7 +19741,7 @@
   },
   {
     "id": 26454621778442611,
-    "name": "Goose Sandwich",
+    "name": "Mutton Sandwich",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19751,7 +19751,7 @@
   },
   {
     "id": 503956355110788894,
-    "name": "Avalonian Goose Sandwich",
+    "name": "Rushwater Lurcher Sandwich",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19761,7 +19761,7 @@
   },
   {
     "id": 437661150126033932,
-    "name": "Avalonian Goose Sandwich",
+    "name": "Avalonian Mutton Sandwich",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19771,7 +19771,7 @@
   },
   {
     "id": 383330415564413445,
-    "name": "Pork Roast",
+    "name": "Roast Pork",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19781,7 +19781,7 @@
   },
   {
     "id": 1100179337650496980,
-    "name": "Avalonian Pork Roast",
+    "name": "Roasted Puremist Snapper",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19791,7 +19791,7 @@
   },
   {
     "id": 422028443310853114,
-    "name": "Healing Potion",
+    "name": "Major Healing Potion",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19801,7 +19801,7 @@
   },
   {
     "id": 306168495827566720,
-    "name": "Energy Potion",
+    "name": "Major Energy Potion",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19811,7 +19811,7 @@
   },
   {
     "id": 108691651483719702,
-    "name": "Revive Potion",
+    "name": "Major Gigantify Potion",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19821,7 +19821,7 @@
   },
   {
     "id": 751293879168514291,
-    "name": "Resistance Potion",
+    "name": "Major Resistance Potion",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19831,7 +19831,7 @@
   },
   {
     "id": 264490501606942581,
-    "name": "Sticky Potion",
+    "name": "Major Sticky Potion",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19841,7 +19841,7 @@
   },
   {
     "id": 257947604401381867,
-    "name": "Calming Potion",
+    "name": "Major Calming Potion",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19851,7 +19851,7 @@
   },
   {
     "id": 964212819646275756,
-    "name": "Cleansing Potion",
+    "name": "Major Cleansing Potion",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -19861,7 +19861,7 @@
   },
   {
     "id": 379470208869211608,
-    "name": "Acid Potion",
+    "name": "Major Acid Potion",
     "tier": "6",
     "item_power": null,
     "type": "consumable",
@@ -20391,7 +20391,7 @@
   },
   {
     "id": 229951646713928690,
-    "name": "Cryptcandle",
+    "name": "Timelocked Grimoire",
     "tier": "7",
     "item_power": null,
     "type": "accessory",
@@ -20431,7 +20431,7 @@
   },
   {
     "id": 483325346763992839,
-    "name": "Leering Cane",
+    "name": "Cryptcandle",
     "tier": "7",
     "item_power": null,
     "type": "accessory",
@@ -20441,7 +20441,7 @@
   },
   {
     "id": 346700957802578963,
-    "name": "Muisak",
+    "name": "Leering Cane",
     "tier": "7",
     "item_power": null,
     "type": "accessory",
@@ -20451,7 +20451,7 @@
   },
   {
     "id": 90556376039307898,
-    "name": "Sacred Scepter",
+    "name": "Blueflame Torch",
     "tier": "7",
     "item_power": null,
     "type": "accessory",
@@ -20551,7 +20551,7 @@
   },
   {
     "id": 793829095866333818,
-    "name": "Smuggler's Cape",
+    "name": "Smuggler Cape",
     "tier": "7",
     "item_power": null,
     "type": "accessory",
@@ -20661,7 +20661,7 @@
   },
   {
     "id": 372313195710970709,
-    "name": "Guardian Helmet",
+    "name": "Knight Helmet",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -20671,7 +20671,7 @@
   },
   {
     "id": 1044933265037416381,
-    "name": "Guardian Armor",
+    "name": "Knight Armor",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -20681,7 +20681,7 @@
   },
   {
     "id": 610558886223836861,
-    "name": "Guardian Boots",
+    "name": "Knight Boots",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -20691,7 +20691,7 @@
   },
   {
     "id": 472912147184004176,
-    "name": "Knight Helmet",
+    "name": "Guardian Helmet",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -20701,7 +20701,7 @@
   },
   {
     "id": 37940020893307967,
-    "name": "Knight Armor",
+    "name": "Guardian Armor",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -20711,7 +20711,7 @@
   },
   {
     "id": 353612299637753729,
-    "name": "Knight Boots",
+    "name": "Guardian Boots",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -21441,7 +21441,7 @@
   },
   {
     "id": 720732858951945187,
-    "name": "Harvester's Cap",
+    "name": "Harvester Cap",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -21451,7 +21451,7 @@
   },
   {
     "id": 1018684713439250464,
-    "name": "Harvester's Garb",
+    "name": "Harvester Garb",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -21461,7 +21461,7 @@
   },
   {
     "id": 33816096867002287,
-    "name": "Harvester's Workboots",
+    "name": "Harvester Workboots",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -21481,7 +21481,7 @@
   },
   {
     "id": 486129263822087028,
-    "name": "Skinner's Cap",
+    "name": "Skinner Cap",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -21491,7 +21491,7 @@
   },
   {
     "id": 1065608076900492145,
-    "name": "Skinner's Garb",
+    "name": "Skinner Garb",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -21501,7 +21501,7 @@
   },
   {
     "id": 15947476550372501,
-    "name": "Skinner's Workboots",
+    "name": "Skinner Workboots",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -21521,7 +21521,7 @@
   },
   {
     "id": 1094689049963932084,
-    "name": "Miner's Cap",
+    "name": "Miner Cap",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -21531,7 +21531,7 @@
   },
   {
     "id": 1050630492793101519,
-    "name": "Miner's Garb",
+    "name": "Miner Garb",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -21541,7 +21541,7 @@
   },
   {
     "id": 786856666225091668,
-    "name": "Miner's Workboots",
+    "name": "Miner Workboots",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -21561,7 +21561,7 @@
   },
   {
     "id": 132558763879358478,
-    "name": "Quarrier's Cap",
+    "name": "Quarrier Cap",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -21571,7 +21571,7 @@
   },
   {
     "id": 1044259708730605018,
-    "name": "Quarrier's Garb",
+    "name": "Quarrier Garb",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -21581,7 +21581,7 @@
   },
   {
     "id": 700063611411345412,
-    "name": "Quarrier's Workboots",
+    "name": "Quarrier Workboots",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -21601,7 +21601,7 @@
   },
   {
     "id": 225045241762486449,
-    "name": "Lumberjack's Cap",
+    "name": "Lumberjack Cap",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -21611,7 +21611,7 @@
   },
   {
     "id": 365631393638577876,
-    "name": "Lumberjack's Garb",
+    "name": "Lumberjack Garb",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -21621,7 +21621,7 @@
   },
   {
     "id": 257394811457297021,
-    "name": "Lumberjack's Workboots",
+    "name": "Lumberjack Workboots",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -21641,7 +21641,7 @@
   },
   {
     "id": 378123417470308067,
-    "name": "Fisherman's Cap",
+    "name": "Fisherman Cap",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -21651,7 +21651,7 @@
   },
   {
     "id": 732935240079882691,
-    "name": "Fisherman's Garb",
+    "name": "Fisherman Garb",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -21661,7 +21661,7 @@
   },
   {
     "id": 375619419304466477,
-    "name": "Fisherman's Workboots",
+    "name": "Fisherman Workboots",
     "tier": "7",
     "item_power": null,
     "type": "armor",
@@ -22671,7 +22671,7 @@
   },
   {
     "id": 962156247775803188,
-    "name": "Black Monk Stave",
+    "name": "Black Monk Staff",
     "tier": "7",
     "item_power": null,
     "type": "weapon",
@@ -23051,7 +23051,7 @@
   },
   {
     "id": 761995230357221997,
-    "name": "Avalonian Pork Pie",
+    "name": "Frostpeak Deadeye Pie",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23061,7 +23061,7 @@
   },
   {
     "id": 860628911238684634,
-    "name": "Chicken Omelette",
+    "name": "Pork Omelette",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23071,7 +23071,7 @@
   },
   {
     "id": 1047020338752365214,
-    "name": "Avalonian Chicken Omelette",
+    "name": "Dusthole Crab Omelette",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23081,7 +23081,7 @@
   },
   {
     "id": 288169031833247142,
-    "name": "Avalonian Chicken Omelette",
+    "name": "Avalonian Pork Omelette",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23101,7 +23101,7 @@
   },
   {
     "id": 893922329600257675,
-    "name": "Avalonian Beef Stew",
+    "name": "Deadwater Eel Stew",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23121,7 +23121,7 @@
   },
   {
     "id": 834954471325873171,
-    "name": "Goose Sandwich",
+    "name": "Beef Sandwich",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23131,7 +23131,7 @@
   },
   {
     "id": 463657915593217442,
-    "name": "Avalonian Goose Sandwich",
+    "name": "Thunderfall Lurcher Sandwich",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23141,7 +23141,7 @@
   },
   {
     "id": 1054839398295806508,
-    "name": "Avalonian Goose Sandwich",
+    "name": "Avalonian Beef Sandwich",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23151,7 +23151,7 @@
   },
   {
     "id": 398477426692478840,
-    "name": "Pork Roast",
+    "name": "Roast Pork",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23161,7 +23161,7 @@
   },
   {
     "id": 1040715834967966939,
-    "name": "Avalonian Pork Roast",
+    "name": "Roasted Puremist Snapper",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23171,7 +23171,7 @@
   },
   {
     "id": 774980606848882043,
-    "name": "Healing Potion",
+    "name": "Major Healing Potion",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23181,7 +23181,7 @@
   },
   {
     "id": 153797741984301447,
-    "name": "Energy Potion",
+    "name": "Major Energy Potion",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23191,7 +23191,7 @@
   },
   {
     "id": 659601234535520297,
-    "name": "Revive Potion",
+    "name": "Major Gigantify Potion",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23201,7 +23201,7 @@
   },
   {
     "id": 457942241371074577,
-    "name": "Resistance Potion",
+    "name": "Major Resistance Potion",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23211,7 +23211,7 @@
   },
   {
     "id": 1061940700988895210,
-    "name": "Sticky Potion",
+    "name": "Major Sticky Potion",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23221,7 +23221,7 @@
   },
   {
     "id": 14675523338510781,
-    "name": "Calming Potion",
+    "name": "Major Calming Potion",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23231,7 +23231,7 @@
   },
   {
     "id": 622052295321399268,
-    "name": "Cleansing Potion",
+    "name": "Major Cleansing Potion",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23241,7 +23241,7 @@
   },
   {
     "id": 208486473098122194,
-    "name": "Acid Potion",
+    "name": "Major Acid Potion",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23251,7 +23251,7 @@
   },
   {
     "id": 471521232236027813,
-    "name": "Berserk Potion",
+    "name": "Major Berserk Potion",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23261,7 +23261,7 @@
   },
   {
     "id": 652454776296873769,
-    "name": "Hellfire Potion",
+    "name": "Major Hellfire Potion",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23271,7 +23271,7 @@
   },
   {
     "id": 150862603311372497,
-    "name": "Gathering Potion",
+    "name": "Major Gathering Potion",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23281,7 +23281,7 @@
   },
   {
     "id": 95682417702991480,
-    "name": "Tornado in a Bottle",
+    "name": "Major Tornado in a Bottle",
     "tier": "7",
     "item_power": null,
     "type": "consumable",
@@ -23771,7 +23771,7 @@
   },
   {
     "id": 118535481722030999,
-    "name": "Cryptcandle",
+    "name": "Timelocked Grimoire",
     "tier": "8",
     "item_power": null,
     "type": "accessory",
@@ -23811,7 +23811,7 @@
   },
   {
     "id": 449708229253461343,
-    "name": "Leering Cane",
+    "name": "Cryptcandle",
     "tier": "8",
     "item_power": null,
     "type": "accessory",
@@ -23821,7 +23821,7 @@
   },
   {
     "id": 157152435314925510,
-    "name": "Muisak",
+    "name": "Leering Cane",
     "tier": "8",
     "item_power": null,
     "type": "accessory",
@@ -23831,7 +23831,7 @@
   },
   {
     "id": 750906068169574816,
-    "name": "Sacred Scepter",
+    "name": "Blueflame Torch",
     "tier": "8",
     "item_power": null,
     "type": "accessory",
@@ -23931,7 +23931,7 @@
   },
   {
     "id": 664361366109849199,
-    "name": "Smuggler's Cape",
+    "name": "Smuggler Cape",
     "tier": "8",
     "item_power": null,
     "type": "accessory",
@@ -24041,7 +24041,7 @@
   },
   {
     "id": 1029669178179515581,
-    "name": "Guardian Helmet",
+    "name": "Knight Helmet",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24051,7 +24051,7 @@
   },
   {
     "id": 346941541481696491,
-    "name": "Guardian Armor",
+    "name": "Knight Armor",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24061,7 +24061,7 @@
   },
   {
     "id": 941064809926813729,
-    "name": "Guardian Boots",
+    "name": "Knight Boots",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24071,7 +24071,7 @@
   },
   {
     "id": 985621915860971799,
-    "name": "Knight Helmet",
+    "name": "Guardian Helmet",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24081,7 +24081,7 @@
   },
   {
     "id": 847258127084695103,
-    "name": "Knight Armor",
+    "name": "Guardian Armor",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24091,7 +24091,7 @@
   },
   {
     "id": 741735224059761559,
-    "name": "Knight Boots",
+    "name": "Guardian Boots",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24821,7 +24821,7 @@
   },
   {
     "id": 214605819528790790,
-    "name": "Harvester's Cap",
+    "name": "Harvester Cap",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24831,7 +24831,7 @@
   },
   {
     "id": 783260356829238503,
-    "name": "Harvester's Garb",
+    "name": "Harvester Garb",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24841,7 +24841,7 @@
   },
   {
     "id": 54492584416076423,
-    "name": "Harvester's Workboots",
+    "name": "Harvester Workboots",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24861,7 +24861,7 @@
   },
   {
     "id": 884064980514760908,
-    "name": "Skinner's Cap",
+    "name": "Skinner Cap",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24871,7 +24871,7 @@
   },
   {
     "id": 459498744238117950,
-    "name": "Skinner's Garb",
+    "name": "Skinner Garb",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24881,7 +24881,7 @@
   },
   {
     "id": 902130696301791244,
-    "name": "Skinner's Workboots",
+    "name": "Skinner Workboots",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24901,7 +24901,7 @@
   },
   {
     "id": 613919705191930952,
-    "name": "Miner's Cap",
+    "name": "Miner Cap",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24911,7 +24911,7 @@
   },
   {
     "id": 958687787938214336,
-    "name": "Miner's Garb",
+    "name": "Miner Garb",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24921,7 +24921,7 @@
   },
   {
     "id": 539579082067788990,
-    "name": "Miner's Workboots",
+    "name": "Miner Workboots",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24941,7 +24941,7 @@
   },
   {
     "id": 658103113135568356,
-    "name": "Quarrier's Cap",
+    "name": "Quarrier Cap",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24951,7 +24951,7 @@
   },
   {
     "id": 91303482005844056,
-    "name": "Quarrier's Garb",
+    "name": "Quarrier Garb",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24961,7 +24961,7 @@
   },
   {
     "id": 967333148621155104,
-    "name": "Quarrier's Workboots",
+    "name": "Quarrier Workboots",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24981,7 +24981,7 @@
   },
   {
     "id": 421625970585453366,
-    "name": "Lumberjack's Cap",
+    "name": "Lumberjack Cap",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -24991,7 +24991,7 @@
   },
   {
     "id": 1093752522191616591,
-    "name": "Lumberjack's Garb",
+    "name": "Lumberjack Garb",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -25001,7 +25001,7 @@
   },
   {
     "id": 1099702166270073686,
-    "name": "Lumberjack's Workboots",
+    "name": "Lumberjack Workboots",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -25021,7 +25021,7 @@
   },
   {
     "id": 634533511834839442,
-    "name": "Fisherman's Cap",
+    "name": "Fisherman Cap",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -25031,7 +25031,7 @@
   },
   {
     "id": 989536127293577511,
-    "name": "Fisherman's Garb",
+    "name": "Fisherman Garb",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -25041,7 +25041,7 @@
   },
   {
     "id": 604657178248208437,
-    "name": "Fisherman's Workboots",
+    "name": "Fisherman Workboots",
     "tier": "8",
     "item_power": null,
     "type": "armor",
@@ -26051,7 +26051,7 @@
   },
   {
     "id": 66377112941976743,
-    "name": "Black Monk Stave",
+    "name": "Black Monk Staff",
     "tier": "8",
     "item_power": null,
     "type": "weapon",
@@ -26431,7 +26431,7 @@
   },
   {
     "id": 447946905815515222,
-    "name": "Avalonian Pork Pie",
+    "name": "Frostpeak Deadeye Pie",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26441,7 +26441,7 @@
   },
   {
     "id": 72790589684453168,
-    "name": "Chicken Omelette",
+    "name": "Pork Omelette",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26451,7 +26451,7 @@
   },
   {
     "id": 816761090901469561,
-    "name": "Avalonian Chicken Omelette",
+    "name": "Dusthole Crab Omelette",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26461,7 +26461,7 @@
   },
   {
     "id": 747377502602744793,
-    "name": "Avalonian Chicken Omelette",
+    "name": "Avalonian Pork Omelette",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26481,7 +26481,7 @@
   },
   {
     "id": 240610410425693164,
-    "name": "Avalonian Beef Stew",
+    "name": "Deadwater Eel Stew",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26501,7 +26501,7 @@
   },
   {
     "id": 1108666361082039548,
-    "name": "Goose Sandwich",
+    "name": "Beef Sandwich",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26511,7 +26511,7 @@
   },
   {
     "id": 201731508136627577,
-    "name": "Avalonian Goose Sandwich",
+    "name": "Thunderfall Lurcher Sandwich",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26521,7 +26521,7 @@
   },
   {
     "id": 206675431402944728,
-    "name": "Avalonian Goose Sandwich",
+    "name": "Avalonian Beef Sandwich",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26531,7 +26531,7 @@
   },
   {
     "id": 130948585811259219,
-    "name": "Pork Roast",
+    "name": "Roast Pork",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26541,7 +26541,7 @@
   },
   {
     "id": 995602084132917890,
-    "name": "Avalonian Pork Roast",
+    "name": "Roasted Puremist Snapper",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26551,7 +26551,7 @@
   },
   {
     "id": 579137157806836915,
-    "name": "Healing Potion",
+    "name": "Major Healing Potion",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26561,7 +26561,7 @@
   },
   {
     "id": 179737036173875784,
-    "name": "Energy Potion",
+    "name": "Major Energy Potion",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26571,7 +26571,7 @@
   },
   {
     "id": 885493044830809381,
-    "name": "Revive Potion",
+    "name": "Major Gigantify Potion",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26581,7 +26581,7 @@
   },
   {
     "id": 827313849292995507,
-    "name": "Resistance Potion",
+    "name": "Major Resistance Potion",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26591,7 +26591,7 @@
   },
   {
     "id": 703813433184161829,
-    "name": "Sticky Potion",
+    "name": "Major Sticky Potion",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26601,7 +26601,7 @@
   },
   {
     "id": 1043244431081302619,
-    "name": "Calming Potion",
+    "name": "Major Calming Potion",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26611,7 +26611,7 @@
   },
   {
     "id": 887336529662452354,
-    "name": "Cleansing Potion",
+    "name": "Major Cleansing Potion",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26621,7 +26621,7 @@
   },
   {
     "id": 742814778146104142,
-    "name": "Acid Potion",
+    "name": "Major Acid Potion",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26631,7 +26631,7 @@
   },
   {
     "id": 783885175646912074,
-    "name": "Berserk Potion",
+    "name": "Major Berserk Potion",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26641,7 +26641,7 @@
   },
   {
     "id": 730068477777728694,
-    "name": "Hellfire Potion",
+    "name": "Major Hellfire Potion",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26651,7 +26651,7 @@
   },
   {
     "id": 1040726100845006432,
-    "name": "Gathering Potion",
+    "name": "Major Gathering Potion",
     "tier": "8",
     "item_power": null,
     "type": "consumable",
@@ -26661,7 +26661,7 @@
   },
   {
     "id": 821173401335328958,
-    "name": "Tornado in a Bottle",
+    "name": "Major Tornado in a Bottle",
     "tier": "8",
     "item_power": null,
     "type": "consumable",

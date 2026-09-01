@@ -2,7 +2,7 @@ import { Message, ThreadAutoArchiveDuration } from "discord.js";
 import type { EventView } from "../api/types.js";
 import {
   buildEventEmbed,
-  buildEventManageActionRow,
+  buildEventThreadActionRow,
 } from "../embeds/event.embed.js";
 
 export type EventAnnouncementThread = Awaited<
@@ -79,9 +79,9 @@ export async function sendEventSignupMessage(
 ): Promise<boolean> {
   try {
     await thread.send({
-      content: "✅ **Join / Change Build** to sign up or swap builds — 🚪 **Leave Event** to drop out.",
+      content: "Use the controls below to manage participation or operate the event.",
       embeds: [buildEventEmbed(event)],
-      components: [buildEventManageActionRow(event.id)],
+      components: [buildEventThreadActionRow(event)],
     });
     console.log(
       `[${sourceLabel}] Published signup message in thread for event #${event.id}`,

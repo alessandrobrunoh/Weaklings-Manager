@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::status::{BuildRole, BuildSlot};
+use super::status::{BuildLoadout, BuildRole, BuildSlot};
 
 /// A build category view model.
 #[derive(Debug, Serialize, Clone, ToSchema)]
@@ -43,6 +43,11 @@ pub struct CompCategoryView {
 /// A build item view model.
 #[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct BuildItemView {
+    /// Which loadout this item belongs to: the main set or the swap.
+    pub loadout: BuildLoadout,
+    /// The abilities chosen on this item. Empty for slots that offer none.
+    #[serde(default)]
+    pub spells: BuildItemSpells,
     /// The equipment slot of this item.
     pub slot: BuildSlot,
     /// The OpenAlbion item type.
@@ -56,6 +61,24 @@ pub struct BuildItemView {
     pub openalbion_item_icon: Option<String>,
     /// The OpenAlbion item tier.
     pub openalbion_item_tier: Option<String>,
+}
+
+/// The abilities chosen on one equipped item, keyed by 1-based slot index.
+///
+/// Active slot 1/2/3 are the player's Q/W/E on a weapon; an armor piece has a single active slot,
+/// bound to D (head), R (chest) or F (shoes). A slot the officer has not filled is simply absent.
+#[derive(Debug, Serialize, Deserialize, Clone, Default, ToSchema)]
+#[schema(example = json!({
+    "active": { "1": "HEROICSTRIKE2", "3": "MIGHTYBLOW" },
+    "passive": { "1": "PASSIVE_BLEEDCHANCE" }
+}))]
+pub struct BuildItemSpells {
+    /// Chosen active abilities, by slot index.
+    #[serde(default)]
+    pub active: std::collections::BTreeMap<String, String>,
+    /// Chosen passive abilities, by slot index.
+    #[serde(default)]
+    pub passive: std::collections::BTreeMap<String, String>,
 }
 
 /// A build's summary, as shown in list views.
@@ -76,6 +99,9 @@ pub struct BuildSummary {
     /// The category ID this build belongs to.
     #[schema(example = 3)]
     pub category_id: i64,
+    /// The version of this build within its `(name, category)` group. Starts at 1.
+    #[schema(example = 1)]
+    pub version: i32,
     /// The category name (if available).
     pub category_name: Option<String>,
     /// The username of the user who created the build.
@@ -127,6 +153,9 @@ pub struct CompSummary {
     /// The category ID this comp belongs to.
     #[schema(example = 2)]
     pub category_id: i64,
+    /// The version of this comp within its `(name, category)` group. Starts at 1.
+    #[schema(example = 1)]
+    pub version: i32,
     /// The category name (if available).
     pub category_name: Option<String>,
     /// The username of the user who created the comp.

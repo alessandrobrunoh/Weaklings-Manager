@@ -9,6 +9,7 @@ use axum::{
 use crate::config::Config;
 use crate::errors::AppError;
 use crate::errors::ProblemDetails;
+use crate::modules::audit::service::AuditService;
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedData, PaginationParams};
 use crate::responses::{
@@ -45,6 +46,7 @@ pub fn router() -> Router {
             "/{id}/participants/{user_id}",
             put(set_participant).delete(remove_participant),
         )
+        .route("/{id}/remind", post(remind_event))
         .route("/{id}/start", post(start_event))
         .route("/{id}/stop", post(stop_event))
         .route(
@@ -442,6 +444,47 @@ async fn remove_participant(
         .cancel_participation(&db, id, target_user_id)
         .await?;
     Ok(Json(ApiResponse::new(detail)))
+}
+
+/// Authorizes a manual Discord reminder for a scheduled event.
+///
+/// Requires `events.manage` permission. Discord delivery remains the bot's responsibility.
+#[utoipa::path(
+    post,
+    path = "/api/events/{id}/remind",
+    tag = "events",
+    summary = "Prepare a manual event reminder",
+    description = "Validates that the caller can manage events and that the event is still scheduled, then records the reminder request for the Discord bot.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    responses(
+        (status = 200, description = "Reminder authorized", body = ApiResponseEventView),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails),
+        (status = 409, description = "Event is not scheduled", body = ProblemDetails)
+    )
+)]
+async fn remind_event(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<EventView>>, AppError> {
+    user.require(&perms, Permission::EventsManage).await?;
+    let event = EventService::new().prepare_event_reminder(&db, id).await?;
+
+    let _ = AuditService::log(
+        &db,
+        "EVENT_REMINDER_REQUESTED",
+        Some("EVENT"),
+        Some(id),
+        Some(user.user_id),
+        Some(serde_json::json!({ "event_date_utc": event.event_date_utc })),
+    )
+    .await;
+
+    Ok(Json(ApiResponse::new(event)))
 }
 
 /// Starts an event session (status -> live).

@@ -9,6 +9,7 @@ use utoipa::ToSchema;
 
 use super::city::SplitIslandCity;
 use super::status::SplitStatus;
+use crate::modules::bank::status::TransactionStatus;
 
 /// A participant's weight-based share within a split.
 #[derive(Debug, Serialize, Clone, ToSchema)]
@@ -27,6 +28,8 @@ pub struct SplitParticipantView {
     /// The computed share amount. Populated once the split is completed.
     #[schema(value_type = Option<String>, example = "16.66")]
     pub share_amount: Option<Decimal>,
+    /// Current lifecycle status of the split credit transaction. `None` before completion.
+    pub credit_status: Option<TransactionStatus>,
 }
 
 /// Guild-wide split totals for the list-page KPI cards.

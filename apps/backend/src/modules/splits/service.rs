@@ -372,21 +372,32 @@ impl SplitService {
 
         let total_weight: Decimal = participants.iter().map(|p| p.weight).sum();
         let net_value = split.net_value;
+        let is_completed = parse_status(&split)? == SplitStatus::Completed;
 
         // Once completed, the authoritative share amounts are whatever was actually written to
         // the transactions table at completion time (which applies remainder-correction so the
         // sum is exact) — read those back rather than recomputing, to avoid the two diverging.
-        let generated_amounts: std::collections::HashMap<i64, Decimal> = if net_value.is_some() {
-            crate::modules::bank::entities::Entity::find()
-                .filter(crate::modules::bank::entities::Column::SplitId.eq(split.id))
-                .all(db)
-                .await?
-                .into_iter()
-                .map(|tx| (tx.to_user_id, tx.amount))
-                .collect()
-        } else {
-            std::collections::HashMap::new()
-        };
+        let generated_credits: std::collections::HashMap<i64, (Decimal, TransactionStatus)> =
+            if is_completed {
+                let transactions = crate::modules::bank::entities::Entity::find()
+                    .filter(crate::modules::bank::entities::Column::SplitId.eq(split.id))
+                    .all(db)
+                    .await?;
+                let mut credits = std::collections::HashMap::with_capacity(transactions.len());
+                for transaction in transactions {
+                    let status =
+                        TransactionStatus::from_str(&transaction.status).map_err(|_| {
+                            AppError::Internal(format!(
+                                "Unknown transaction status: {}",
+                                transaction.status
+                            ))
+                        })?;
+                    credits.insert(transaction.to_user_id, (transaction.amount, status));
+                }
+                credits
+            } else {
+                std::collections::HashMap::new()
+            };
 
         let participant_ids: Vec<i64> = participants.iter().map(|p| p.user_id).collect();
         let names =
@@ -398,7 +409,8 @@ impl SplitService {
                 .get(&p.user_id)
                 .cloned()
                 .unwrap_or_else(|| "Unknown".to_string());
-            let share_amount = generated_amounts.get(&p.user_id).copied().or_else(|| {
+            let credit = generated_credits.get(&p.user_id);
+            let share_amount = credit.map(|(amount, _)| *amount).or_else(|| {
                 net_value.map(|net| {
                     if total_weight == Decimal::ZERO {
                         Decimal::ZERO
@@ -413,6 +425,7 @@ impl SplitService {
                 username,
                 weight: p.weight,
                 share_amount,
+                credit_status: credit.map(|(_, status)| *status),
             });
         }
 
@@ -1836,12 +1849,23 @@ mod tests {
             )
             .await
             .unwrap();
+        assert!(
+            split
+                .participants
+                .iter()
+                .all(|participant| participant.credit_status.is_none())
+        );
 
         let completed = service
             .complete_split(&db, split.summary.id, admin)
             .await
             .unwrap();
         assert_eq!(completed.summary.status, SplitStatus::Completed);
+        assert!(
+            completed.participants.iter().all(|participant| {
+                participant.credit_status == Some(TransactionStatus::Pending)
+            })
+        );
 
         let total: Decimal = completed
             .participants

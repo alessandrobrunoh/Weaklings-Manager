@@ -183,3 +183,73 @@ pub struct OpenAlbionWeaponFilters {
     pub subcategory_id: Option<i64>,
     pub tier: Option<i64>,
 }
+
+/// One selectable ability on an equipped item.
+///
+/// `cooldown` and `energy` come straight from the game dump and are strings there — kept as strings
+/// so a value the dump expresses oddly is shown rather than silently dropped by a failed parse.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(example = json!({
+    "id": "HEROICSTRIKE2",
+    "name": "Heroic Strike",
+    "cooldown": "3",
+    "energy": "2"
+}))]
+pub struct OpenAlbionAbility {
+    /// Albion's internal spell id. Also the key for the icon:
+    /// `https://render.albiononline.com/v1/spell/{id}.png`.
+    #[schema(example = "HEROICSTRIKE2")]
+    pub id: String,
+    /// The player-facing spell name.
+    #[schema(example = "Heroic Strike")]
+    pub name: String,
+    /// Recast delay in seconds, when the spell declares one.
+    #[serde(default)]
+    pub cooldown: Option<String>,
+    /// Energy cost, when the spell declares one.
+    #[serde(default)]
+    pub energy: Option<String>,
+}
+
+/// Every ability an item family offers, grouped by the slot that can hold it.
+///
+/// Keyed in the bundled dataset by the tier-stripped base identifier (`MAIN_SWORD`), because all
+/// eight tiers of one item offer the same spells.
+///
+/// `active` and `passive` map a slot index (as a string, `"1"`, `"2"`, `"3"`) to the choices that
+/// slot accepts. Active slot 1/2/3 are the player's Q/W/E on a weapon; armor pieces have a single
+/// active slot bound to D (head), R (chest) or F (shoes). An item with zero slots of a kind — an
+/// off-hand, a cape — carries an empty map, and the UI shows no picker for it.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(example = json!({
+    "label": "Broadsword",
+    "slot_type": "mainhand",
+    "two_handed": false,
+    "active_slots": 3,
+    "passive_slots": 1,
+    "active": { "1": [ { "id": "HEROICSTRIKE2", "name": "Heroic Strike" } ] },
+    "passive": { "1": [ { "id": "PASSIVE_BLEEDCHANCE", "name": "Deep Cuts" } ] }
+}))]
+pub struct OpenAlbionItemAbilities {
+    /// The item family's player-facing name, matching the catalog.
+    #[schema(example = "Broadsword")]
+    pub label: String,
+    /// Albion's slot type for the item, e.g. `"mainhand"`, `"armor"`, `"head"`.
+    #[serde(default)]
+    pub slot_type: Option<String>,
+    /// Whether the weapon occupies the off-hand as well.
+    #[serde(default)]
+    pub two_handed: bool,
+    /// How many active abilities the item can slot.
+    #[schema(example = 3)]
+    pub active_slots: i32,
+    /// How many passive abilities the item can slot.
+    #[schema(example = 1)]
+    pub passive_slots: i32,
+    /// Active choices per slot index.
+    #[serde(default)]
+    pub active: std::collections::BTreeMap<String, Vec<OpenAlbionAbility>>,
+    /// Passive choices per slot index.
+    #[serde(default)]
+    pub passive: std::collections::BTreeMap<String, Vec<OpenAlbionAbility>>,
+}

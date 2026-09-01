@@ -5,18 +5,21 @@
 //! officer accepts and pays them out — becoming the recorded payer via `from_user_id`).
 //! Request/response types live in `models.rs`; the status enum lives in `status.rs`.
 
-use std::{collections::HashMap, str::FromStr};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+};
 
 use sea_orm::prelude::Decimal;
 use sea_orm::sea_query::{Expr, Func};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    JoinType, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
-    TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, ConnectionTrait,
+    DatabaseConnection, EntityTrait, JoinType, PaginatorTrait, QueryFilter, QueryOrder,
+    QuerySelect, RelationTrait, TransactionTrait,
 };
 
 use crate::errors::AppError;
-use crate::modules::splits::entities::split::Entity as SplitEntity;
+use crate::modules::splits::entities::split::{Column as SplitColumn, Entity as SplitEntity};
 use crate::modules::splits::status::SplitStatus;
 use crate::modules::users::entities::{Column as UserColumn, Entity as UserEntity};
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
@@ -51,6 +54,28 @@ fn requestable_status_condition() -> Condition {
     Condition::any()
         .add(Column::Status.eq(TransactionStatus::Pending.to_string()))
         .add(Column::Status.eq(TransactionStatus::Rejected.to_string()))
+}
+
+async fn touch_linked_splits<C>(db: &C, transactions: &[Model]) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let split_ids: Vec<i64> = transactions
+        .iter()
+        .filter_map(|transaction| transaction.split_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    if split_ids.is_empty() {
+        return Ok(());
+    }
+
+    SplitEntity::update_many()
+        .col_expr(SplitColumn::UpdatedAt, Expr::value(chrono::Utc::now()))
+        .filter(SplitColumn::Id.is_in(split_ids))
+        .exec(db)
+        .await?;
+    Ok(())
 }
 
 pub(crate) async fn to_views_with_usernames(
@@ -313,6 +338,7 @@ impl BankService {
             .one(&txn)
             .await?
             .ok_or_else(|| AppError::Internal("donated transaction disappeared".to_string()))?;
+        touch_linked_splits(&txn, std::slice::from_ref(&updated_model)).await?;
         txn.commit().await?;
 
         crate::modules::audit::service::AuditService::log(
@@ -498,6 +524,7 @@ impl BankService {
             updated_models.push(updated);
         }
 
+        touch_linked_splits(&txn, &updated_models).await?;
         txn.commit().await?;
 
         for updated in &updated_models {
@@ -507,7 +534,10 @@ impl BankService {
                 Some("TRANSACTION"),
                 Some(updated.id),
                 Some(user_id),
-                Some(serde_json::json!({ "status": "requested" })),
+                Some(serde_json::json!({
+                    "status": "requested",
+                    "split_id": updated.split_id
+                })),
             )
             .await;
         }
@@ -579,6 +609,7 @@ impl BankService {
             updated_models.push(updated);
         }
 
+        touch_linked_splits(&txn, &updated_models).await?;
         txn.commit().await?;
 
         for updated in &updated_models {
@@ -591,7 +622,8 @@ impl BankService {
                 Some(serde_json::json!({
                     "status": "withdrawn",
                     "from_user_id": officer_user_id,
-                    "target_user_id": updated.to_user_id
+                    "target_user_id": updated.to_user_id,
+                    "split_id": updated.split_id
                 })),
             )
             .await?;
@@ -683,6 +715,7 @@ impl BankService {
             updated_models.push(updated);
         }
 
+        touch_linked_splits(&txn, &updated_models).await?;
         txn.commit().await?;
 
         for updated in &updated_models {
@@ -695,7 +728,8 @@ impl BankService {
                 Some(serde_json::json!({
                     "status": "rejected",
                     "from_user_id": officer_user_id,
-                    "target_user_id": updated.to_user_id
+                    "target_user_id": updated.to_user_id,
+                    "split_id": updated.split_id
                 })),
             )
             .await?;
@@ -790,13 +824,23 @@ mod tests {
         amount: &str,
         status: TransactionStatus,
     ) -> i64 {
+        insert_split_transaction(db, to_user_id, amount, status, None).await
+    }
+
+    async fn insert_split_transaction(
+        db: &DatabaseConnection,
+        to_user_id: i64,
+        amount: &str,
+        status: TransactionStatus,
+        split_id: Option<i64>,
+    ) -> i64 {
         let active = ActiveModel {
             from_user_id: Set(None),
             to_user_id: Set(to_user_id),
             amount: Set(amount.parse().unwrap()),
             status: Set(status.to_string()),
             r#type: Set(TYPE_SPLIT_CREDIT.to_string()),
-            split_id: Set(None),
+            split_id: Set(split_id),
             ..Default::default()
         };
         active
@@ -804,6 +848,151 @@ mod tests {
             .await
             .expect("Failed to insert transaction")
             .id
+    }
+
+    async fn insert_completed_split(
+        db: &DatabaseConnection,
+        created_by: i64,
+        updated_at: chrono::DateTime<chrono::Utc>,
+    ) -> i64 {
+        use crate::modules::splits::entities::split::ActiveModel as SplitActiveModel;
+
+        SplitActiveModel {
+            created_by: Set(created_by),
+            status: Set(SplitStatus::Completed.to_string()),
+            estimated_market_value: Set("10.00".parse().unwrap()),
+            fee: Set(Decimal::ZERO),
+            repair_value: Set(Decimal::ZERO),
+            bags_value: Set(Decimal::ZERO),
+            net_value: Set(Some("10.00".parse().unwrap())),
+            created_at: Set(updated_at.into()),
+            finalized_at: Set(Some(updated_at.into())),
+            updated_at: Set(updated_at.into()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("Failed to insert split")
+        .id
+    }
+
+    async fn assert_split_was_touched(
+        db: &DatabaseConnection,
+        split_id: i64,
+        previous_updated_at: chrono::DateTime<chrono::Utc>,
+    ) {
+        let split = SplitEntity::find_by_id(split_id)
+            .one(db)
+            .await
+            .expect("Failed to load split")
+            .expect("Split missing");
+        assert!(split.updated_at.timestamp_micros() > previous_updated_at.timestamp_micros());
+    }
+
+    #[tokio::test]
+    async fn split_transaction_mutations_touch_splits_and_link_audits() {
+        use crate::modules::audit::entities::{Column as AuditColumn, Entity as AuditEntity};
+
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let officer = insert_user(&db, "officer", "officer@example.com").await;
+        let old = chrono::Utc::now() - chrono::Duration::days(1);
+        let withdrawal_split = insert_completed_split(&db, officer, old).await;
+        let donation_split = insert_completed_split(&db, officer, old).await;
+        let withdrawal_tx = insert_split_transaction(
+            &db,
+            alice,
+            "10.00",
+            TransactionStatus::Pending,
+            Some(withdrawal_split),
+        )
+        .await;
+        let second_withdrawal_tx = insert_split_transaction(
+            &db,
+            alice,
+            "5.00",
+            TransactionStatus::Pending,
+            Some(withdrawal_split),
+        )
+        .await;
+        let donation_tx = insert_split_transaction(
+            &db,
+            alice,
+            "3.00",
+            TransactionStatus::Pending,
+            Some(donation_split),
+        )
+        .await;
+        let service = BankService::new();
+
+        service
+            .request_withdrawal(
+                &db,
+                alice,
+                &WithdrawRequest {
+                    transaction_ids: Some(vec![withdrawal_tx, second_withdrawal_tx]),
+                    all: None,
+                },
+            )
+            .await
+            .expect("Failed to request withdrawal");
+        assert_split_was_touched(&db, withdrawal_split, old).await;
+
+        service
+            .reject_withdrawal(
+                &db,
+                officer,
+                &RejectWithdrawalRequest {
+                    user_id: None,
+                    transaction_ids: Some(vec![withdrawal_tx]),
+                    all: None,
+                },
+            )
+            .await
+            .expect("Failed to reject withdrawal");
+        service
+            .request_withdrawal(
+                &db,
+                alice,
+                &WithdrawRequest {
+                    transaction_ids: Some(vec![withdrawal_tx]),
+                    all: None,
+                },
+            )
+            .await
+            .expect("Failed to request withdrawal again");
+        service
+            .accept_withdrawal(
+                &db,
+                officer,
+                &AcceptWithdrawalRequest {
+                    user_id: None,
+                    transaction_ids: Some(vec![withdrawal_tx]),
+                    all: None,
+                },
+            )
+            .await
+            .expect("Failed to accept withdrawal");
+        service
+            .donate_split_share(&db, donation_split, alice)
+            .await
+            .expect("Failed to donate split share");
+        assert_split_was_touched(&db, donation_split, old).await;
+
+        let audits = AuditEntity::find()
+            .filter(AuditColumn::EntityId.is_in([withdrawal_tx, second_withdrawal_tx, donation_tx]))
+            .all(&db)
+            .await
+            .expect("Failed to load audits");
+        assert_eq!(audits.len(), 6);
+        assert!(audits.iter().all(|audit| {
+            audit.split_id
+                == if audit.entity_id == Some(donation_tx) {
+                    Some(donation_split)
+                } else {
+                    Some(withdrawal_split)
+                }
+        }));
     }
 
     #[tokio::test]

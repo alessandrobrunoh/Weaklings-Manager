@@ -1138,6 +1138,28 @@ impl EventService {
 
     // --- Session lifecycle -------------------------------------------------
 
+    /// Returns a scheduled event after validating that a manual Discord reminder is still valid.
+    pub async fn prepare_event_reminder(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+    ) -> Result<EventView, AppError> {
+        let model = event::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
+
+        if model.status != "scheduled" {
+            return Err(AppError::Conflict(format!(
+                "Event {id} cannot be reminded (status={})",
+                model.status
+            )));
+        }
+
+        self.to_event_view(db, model).await
+    }
+
     /// Marks an event as live, recording `started_at = now` and computing the
     /// `auto_stop_deadline = now + MAX_SESSION_DURATION` (3 hours).
     ///
@@ -1873,6 +1895,44 @@ mod tests {
         );
         assert!(normalize_discord_role_ids(vec!["not-a-role".to_string()]).is_err());
         assert!(normalize_discord_role_ids(vec!["123".to_string()]).is_err());
+    }
+
+    #[tokio::test]
+    async fn prepare_reminder_only_accepts_scheduled_events() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "reminder-admin", "reminder-admin@example.com").await;
+        let cat = create_comp_category(&db, "Reminder ZvZ").await;
+        let comp_id = create_comp(&db, "Reminder Comp", cat, None, vec![]).await;
+        let service = EventService::new();
+        let event = service
+            .create_event(
+                &db,
+                admin,
+                CreateEventRequest {
+                    title: "Reminder Event".to_string(),
+                    description: None,
+                    call_to_arms: false,
+                    regear: false,
+                    comp_id,
+                    event_date_utc: "2026-09-01T20:00:00Z".to_string(),
+                    discord_role_ids: vec!["111111111111111111".to_string()],
+                    create_split: false,
+                    island_tab_id: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        let reminder = service.prepare_event_reminder(&db, event.id).await.unwrap();
+        assert_eq!(reminder.id, event.id);
+        assert_eq!(reminder.discord_role_ids, event.discord_role_ids);
+
+        service.start_event(&db, event.id).await.unwrap();
+        let error = service
+            .prepare_event_reminder(&db, event.id)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::Conflict(_)));
     }
 
     #[tokio::test]

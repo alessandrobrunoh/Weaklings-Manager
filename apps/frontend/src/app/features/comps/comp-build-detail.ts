@@ -8,12 +8,25 @@ import type {
   BuildCategoryView,
   BuildDetail,
   BuildItemSlot,
+  BuildItemSpells,
+  BuildLoadout,
   BuildRole,
   BuildSlot,
   OpenAlbionItem,
+  OpenAlbionItemAbilities,
   UpdateBuildRequest,
 } from '../../core/models/api.models';
 import { filterAlbionEquipmentCatalog } from '../../shared/data/albion-equipment-catalog';
+import { SLOT_ORDER, itemsForLoadout } from './build-loadouts';
+import {
+  abilityKeyForItem,
+  abilitySlotsFor,
+  withAbilityChoice,
+} from '../../shared/data/albion-abilities';
+import type { AbilitySlotView } from '../../shared/data/albion-abilities';
+import { AlbionAbilitiesService } from '../../shared/services/albion-abilities.service';
+import { AbilityBar } from '../../shared/components/ability-bar/ability-bar';
+import type { AbilityChoiceChange } from '../../shared/components/ability-bar/ability-bar';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -27,23 +40,6 @@ import { AlbionCatalogService } from '../../shared/services/albion-catalog.servi
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-
-/**
- * Sorted slot order used for rendering the equipment grid consistently
- * across the detail page and the create form on the parent comps page.
- */
-const SLOT_ORDER: BuildSlot[] = [
-  'weapon',
-  'off_hand',
-  'head',
-  'armor',
-  'shoes',
-  'cape',
-  'bag',
-  'potion',
-  'food',
-  'mount',
-];
 
 const SLOT_LABELS: Record<BuildSlot, string> = {
   weapon: 'Weapon',
@@ -107,6 +103,7 @@ const ITEM_TIERS = [
     ErrorState,
     Loading,
     EquipmentGrid,
+    AbilityBar,
     Dialog,
   ],
   template: `
@@ -198,33 +195,127 @@ const ITEM_TIERS = [
           </form>
         }
 
-        <section class="card grid gap-4 p-5" [attr.aria-label]="t('comps.equipment')">
+        <section class="card grid gap-4 p-5" [attr.aria-label]="t('comps.mainLoadout')">
           <header class="flex items-center justify-between gap-3">
             <h2 class="text-lg font-semibold" style="color: var(--color-text)">
-              {{ t('comps.equipment') }} ({{ itemsBySlot().length }}/{{ SLOT_ORDER.length }})
+              {{ t('comps.mainLoadout') }} ({{ mainItems().length }}/{{ SLOT_ORDER.length }})
             </h2>
             <span class="chip">{{ current.item_count }} {{ t('comps.items') }}</span>
           </header>
 
           <app-equipment-grid
-            [items]="itemsBySlot()"
+            [items]="mainItems()"
             [canManage]="canManage() && mode() === 'edit'"
-            [editingSlot]="editingSlot()"
+            [editingSlot]="editingSlotFor('main')"
             [draftTier]="draftTier()"
             [draftSearch]="draftSearch()"
             [draftItemId]="draftItemId()"
             [searchResults]="searchResults()"
             [searchLoading]="searchLoading()"
             [tiers]="ITEM_TIERS"
-            (slotToggle)="onSlotToggle($event)"
+            (slotToggle)="onSlotToggle('main', $event)"
             (tierChange)="onDraftTierChangeValue($event)"
             (searchChange)="onDraftSearchChangeValue($event)"
             (itemSelect)="onDraftItemChangeValue($event)"
-            (saveSlot)="saveSlot($event)"
+            (saveSlot)="saveSlot('main', $event)"
             (cancelEdit)="cancelSlotEdit()"
-            (removeItem)="askRemoveItem($event)"
+            (removeItem)="askRemoveItem('main', $event)"
           />
+
+          @if (abilityRows('main'); as rows) {
+            @if (rows.length > 0) {
+              <div class="grid gap-3 border-t pt-4" style="border-color: var(--color-border)">
+                <div class="grid gap-1">
+                  <h3 class="text-sm font-semibold" style="color: var(--color-text)">
+                    {{ t('comps.abilities') }}
+                  </h3>
+                  <p class="text-sm" style="color: var(--color-text-secondary)">
+                    {{ t('comps.abilitiesHint') }}
+                  </p>
+                </div>
+                @for (row of rows; track row.slot) {
+                  <div class="grid gap-2 sm:grid-cols-[10rem_1fr] sm:items-center">
+                    <span class="text-sm font-medium" style="color: var(--color-text-secondary)">
+                      {{ row.itemName }}
+                    </span>
+                    <app-ability-bar
+                      [slots]="row.slots"
+                      [canManage]="canManage() && mode() === 'edit'"
+                      [emptyLabel]="t('comps.noAbility')"
+                      (choiceChange)="onAbilityChange('main', row.slot, $event)"
+                    />
+                  </div>
+                }
+              </div>
+            }
+          }
         </section>
+
+        @if (swapItems().length > 0 || (canManage() && mode() === 'edit')) {
+          <section class="card grid gap-4 p-5" [attr.aria-label]="t('comps.swapLoadout')">
+            <header class="flex items-center justify-between gap-3">
+              <div class="grid gap-1">
+                <h2 class="text-lg font-semibold" style="color: var(--color-text)">
+                  {{ t('comps.swapLoadout') }} ({{ swapItems().length }}/{{ SLOT_ORDER.length }})
+                </h2>
+                <p class="text-sm" style="color: var(--color-text-secondary)">
+                  {{ t('comps.swapHint') }}
+                </p>
+              </div>
+            </header>
+
+            @if (swapItems().length === 0 && mode() !== 'edit') {
+              <p class="text-sm" style="color: var(--color-text-secondary)">
+                {{ t('comps.noSwap') }}
+              </p>
+            } @else {
+              <app-equipment-grid
+                [items]="swapItems()"
+                [canManage]="canManage() && mode() === 'edit'"
+                [editingSlot]="editingSlotFor('swap')"
+                [draftTier]="draftTier()"
+                [draftSearch]="draftSearch()"
+                [draftItemId]="draftItemId()"
+                [searchResults]="searchResults()"
+                [searchLoading]="searchLoading()"
+                [tiers]="ITEM_TIERS"
+                (slotToggle)="onSlotToggle('swap', $event)"
+                (tierChange)="onDraftTierChangeValue($event)"
+                (searchChange)="onDraftSearchChangeValue($event)"
+                (itemSelect)="onDraftItemChangeValue($event)"
+                (saveSlot)="saveSlot('swap', $event)"
+                (cancelEdit)="cancelSlotEdit()"
+                (removeItem)="askRemoveItem('swap', $event)"
+              />
+
+              @if (abilityRows('swap'); as rows) {
+                @if (rows.length > 0) {
+                  <div class="grid gap-3 border-t pt-4" style="border-color: var(--color-border)">
+                    <h3 class="text-sm font-semibold" style="color: var(--color-text)">
+                      {{ t('comps.abilities') }}
+                    </h3>
+                    @for (row of rows; track row.slot) {
+                      <div class="grid gap-2 sm:grid-cols-[10rem_1fr] sm:items-center">
+                        <span
+                          class="text-sm font-medium"
+                          style="color: var(--color-text-secondary)"
+                        >
+                          {{ row.itemName }}
+                        </span>
+                        <app-ability-bar
+                          [slots]="row.slots"
+                          [canManage]="canManage() && mode() === 'edit'"
+                          [emptyLabel]="t('comps.noAbility')"
+                          (choiceChange)="onAbilityChange('swap', row.slot, $event)"
+                        />
+                      </div>
+                    }
+                  </div>
+                }
+              }
+            }
+          </section>
+        }
       </app-page-stack>
 
       @if (pendingDelete(); as pending) {
@@ -267,6 +358,7 @@ export class CompBuildDetailPage {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly albionCatalog = inject(AlbionCatalogService);
+  private readonly albionAbilities = inject(AlbionAbilitiesService);
 
   protected readonly SLOT_ORDER = SLOT_ORDER;
   protected readonly ITEM_TIERS = ITEM_TIERS;
@@ -287,14 +379,15 @@ export class CompBuildDetailPage {
 
   protected readonly mode = signal<'view' | 'edit'>('view');
   protected readonly pendingDelete = signal<
-    { kind: 'build' } | { kind: 'slot'; slot: BuildSlot } | null
+    { kind: 'build' } | { kind: 'slot'; loadout: BuildLoadout; slot: BuildSlot } | null
   >(null);
   protected readonly editName = signal('');
   protected readonly editDescription = signal('');
   protected readonly editCategoryId = signal('');
   protected readonly editRole = signal('');
 
-  protected readonly editingSlot = signal<BuildSlot | null>(null);
+  /** The slot whose picker is open, together with the loadout it belongs to. */
+  protected readonly editing = signal<{ loadout: BuildLoadout; slot: BuildSlot } | null>(null);
   protected readonly draftTier = signal('T8');
   protected readonly draftSearch = signal('');
   protected readonly draftItemId = signal('');
@@ -307,10 +400,10 @@ export class CompBuildDetailPage {
   protected readonly t = (key: TranslationKey) => this.translate.t(key);
 
   protected readonly canManage = computed(() => this.auth.hasPermission('comps.builds.manage'));
-  protected readonly itemsBySlot = computed<BuildItemSlot[]>(() => {
-    const build = this.build();
-    return build ? [...build.items].sort(sortBySlotOrder) : [];
-  });
+  /** The bundled ability catalog, loaded once and keyed by tier-stripped base identifier. */
+  protected readonly abilityCatalog = signal<Record<string, OpenAlbionItemAbilities>>({});
+  protected readonly mainItems = computed<BuildItemSlot[]>(() => this.itemsFor('main'));
+  protected readonly swapItems = computed<BuildItemSlot[]>(() => this.itemsFor('swap'));
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -318,6 +411,11 @@ export class CompBuildDetailPage {
 
   constructor() {
     void this.load(this.buildId);
+    // Static application data; one fetch serves every build page in the session.
+    void this.albionAbilities
+      .load()
+      .then((abilities) => this.abilityCatalog.set(abilities))
+      .catch(() => this.abilityCatalog.set({}));
   }
 
   protected roleLabel(role: BuildRole): string {
@@ -335,16 +433,32 @@ export class CompBuildDetailPage {
    * pre-fill the draft from the existing persisted item so officers can
    * tweak tier without re-searching from scratch.
    */
-  protected onSlotToggle(slot: BuildSlot): void {
-    if (this.editingSlot() === slot) {
+  protected onSlotToggle(loadout: BuildLoadout, slot: BuildSlot): void {
+    const editing = this.editing();
+    if (editing?.loadout === loadout && editing.slot === slot) {
       this.cancelSlotEdit();
       return;
     }
-    this.startSlotEdit(slot);
+    this.startSlotEdit(loadout, slot);
   }
 
-  protected itemForSlot(slot: BuildSlot): BuildItemSlot | null {
-    return this.itemsBySlot().find((item) => item.slot === slot) ?? null;
+  /**
+   * Items of one loadout, in canonical slot order.
+   *
+   * Items stored before swaps existed carry no `loadout`, so they read as `'main'`.
+   */
+  private itemsFor(loadout: BuildLoadout): BuildItemSlot[] {
+    return itemsForLoadout(this.build()?.items ?? [], loadout);
+  }
+
+  /** The open slot, but only for the grid that owns it, so one picker is open at a time. */
+  protected editingSlotFor(loadout: BuildLoadout): BuildSlot | null {
+    const editing = this.editing();
+    return editing?.loadout === loadout ? editing.slot : null;
+  }
+
+  protected itemForSlot(loadout: BuildLoadout, slot: BuildSlot): BuildItemSlot | null {
+    return this.itemsFor(loadout).find((item) => item.slot === slot) ?? null;
   }
 
   protected enterEdit(): void {
@@ -381,9 +495,9 @@ export class CompBuildDetailPage {
     this.editRole.set((event.target as HTMLSelectElement).value);
   }
 
-  protected startSlotEdit(slot: BuildSlot): void {
-    const current = this.itemForSlot(slot);
-    this.editingSlot.set(slot);
+  protected startSlotEdit(loadout: BuildLoadout, slot: BuildSlot): void {
+    const current = this.itemForSlot(loadout, slot);
+    this.editing.set({ loadout, slot });
     this.draftTier.set(current?.openalbion_item_tier ?? 'T8');
     this.draftSearch.set(current?.openalbion_item_name ?? '');
     this.draftItemId.set(current ? String(current.openalbion_item_id) : '');
@@ -397,7 +511,7 @@ export class CompBuildDetailPage {
   }
 
   protected cancelSlotEdit(): void {
-    this.editingSlot.set(null);
+    this.editing.set(null);
     this.draftSearch.set('');
     this.draftItemId.set('');
     this.searchResults.set([]);
@@ -428,7 +542,7 @@ export class CompBuildDetailPage {
     }
   }
 
-  protected async saveSlot(slot: BuildSlot): Promise<void> {
+  protected async saveSlot(loadout: BuildLoadout, slot: BuildSlot): Promise<void> {
     const build = this.build();
     if (!build || !this.draftItemId()) {
       return;
@@ -436,7 +550,7 @@ export class CompBuildDetailPage {
     this.saving.set(true);
     try {
       const updated = await firstValueFrom(
-        this.api.put<BuildDetail>(`api/comps/builds/${build.id}/items/${slot}`, {
+        this.api.put<BuildDetail>(`api/comps/builds/${build.id}/items/${slot}?loadout=${loadout}`, {
           openalbion_item_type: this.draftItemType(),
           openalbion_item_id: Number(this.draftItemId()),
           openalbion_item_name: this.draftItemName(),
@@ -454,11 +568,11 @@ export class CompBuildDetailPage {
     }
   }
 
-  protected askRemoveItem(slot: BuildSlot): void {
-    this.pendingDelete.set({ kind: 'slot', slot });
+  protected askRemoveItem(loadout: BuildLoadout, slot: BuildSlot): void {
+    this.pendingDelete.set({ kind: 'slot', loadout, slot });
   }
 
-  protected async removeItem(slot: BuildSlot): Promise<void> {
+  protected async removeItem(loadout: BuildLoadout, slot: BuildSlot): Promise<void> {
     const build = this.build();
     if (!build) {
       return;
@@ -466,7 +580,9 @@ export class CompBuildDetailPage {
     this.saving.set(true);
     try {
       const updated = await firstValueFrom(
-        this.api.delete<BuildDetail>(`api/comps/builds/${build.id}/items/${slot}`),
+        this.api.delete<BuildDetail>(
+          `api/comps/builds/${build.id}/items/${slot}?loadout=${loadout}`,
+        ),
       );
       this.build.set(updated ?? null);
       this.pendingDelete.set(null);
@@ -542,7 +658,7 @@ export class CompBuildDetailPage {
       return;
     }
     if (pending.kind === 'slot') {
-      await this.removeItem(pending.slot);
+      await this.removeItem(pending.loadout, pending.slot);
       return;
     }
     await this.deleteBuild();
@@ -566,8 +682,60 @@ export class CompBuildDetailPage {
     }
   }
 
+  /**
+   * One ability bar per equipped item that actually offers abilities.
+   *
+   * Items with nothing to choose — off-hands, capes, bags, consumables, mounts — produce no row, so
+   * the block stays as short as the build is.
+   */
+  protected abilityRows(
+    loadout: BuildLoadout,
+  ): { slot: BuildSlot; itemName: string; slots: AbilitySlotView[] }[] {
+    const catalog = this.abilityCatalog();
+    return this.itemsFor(loadout).flatMap((item) => {
+      const key = abilityKeyForItem(item);
+      const slots = abilitySlotsFor(item.slot, key ? catalog[key] : undefined, item.spells);
+      return slots.length === 0
+        ? []
+        : [{ slot: item.slot, itemName: item.openalbion_item_name, slots }];
+    });
+  }
+
+  protected async onAbilityChange(
+    loadout: BuildLoadout,
+    slot: BuildSlot,
+    change: AbilityChoiceChange,
+  ): Promise<void> {
+    const build = this.build();
+    const item = this.itemForSlot(loadout, slot);
+    if (!build || !item) {
+      return;
+    }
+
+    const next: BuildItemSpells = withAbilityChoice(
+      item.spells,
+      change.kind,
+      change.index,
+      change.spellId,
+    );
+    this.saving.set(true);
+    try {
+      const updated = await firstValueFrom(
+        this.api.put<BuildDetail>(
+          `api/comps/builds/${build.id}/items/${slot}/spells?loadout=${loadout}`,
+          next,
+        ),
+      );
+      this.build.set(updated);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
   private async runItemSearch(): Promise<void> {
-    const slot = this.editingSlot();
+    const slot = this.editing()?.slot;
     if (!slot) {
       this.searchResults.set([]);
       return;
@@ -612,9 +780,3 @@ export class CompBuildDetailPage {
   }
 }
 
-/** Compares two build items by their canonical slot order for stable rendering. */
-function sortBySlotOrder(left: BuildItemSlot, right: BuildItemSlot): number {
-  const leftIndex = SLOT_ORDER.indexOf(left.slot);
-  const rightIndex = SLOT_ORDER.indexOf(right.slot);
-  return leftIndex - rightIndex;
-}

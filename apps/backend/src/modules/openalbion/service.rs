@@ -5,11 +5,12 @@
 //! the third-party OpenAlbion API.
 
 use super::catalog::{
-    OpenAlbionCategory, OpenAlbionItem, OpenAlbionItemType, OpenAlbionWeapon,
-    OpenAlbionWeaponFilters, OpenAlbionWeaponStats,
+    OpenAlbionCategory, OpenAlbionItem, OpenAlbionItemAbilities, OpenAlbionItemType,
+    OpenAlbionWeapon, OpenAlbionWeaponFilters, OpenAlbionWeaponStats,
 };
 use crate::errors::AppError;
 use crate::pagination::{PaginatedData, PaginationParams};
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 /// Service exposing the local Albion equipment catalog.
@@ -125,6 +126,74 @@ fn catalog_items() -> &'static [OpenAlbionItem] {
         }
         items
     })
+}
+
+/// The bundled ability catalog, keyed by tier-stripped base identifier (`MAIN_SWORD`).
+///
+/// Regenerate with `python3 scripts/generate_albion_abilities.py` after an Albion patch. Like the
+/// item catalog, this is bundled rather than fetched so the app has no runtime dependency on a
+/// third-party service.
+pub fn ability_catalog() -> &'static HashMap<String, OpenAlbionItemAbilities> {
+    static ABILITIES: OnceLock<HashMap<String, OpenAlbionItemAbilities>> = OnceLock::new();
+    ABILITIES.get_or_init(|| {
+        serde_json::from_str(include_str!("abilities.json"))
+            .expect("bundled Albion ability catalog must be valid JSON")
+    })
+}
+
+/// Strips the tier prefix and enchantment suffix from a catalog identifier.
+///
+/// `T8_MAIN_SWORD@2` becomes `MAIN_SWORD`, which is how both the ability catalog and the frontend's
+/// `albionSpecializationIdentifier()` key an item family.
+#[must_use]
+pub fn base_identifier(identifier: &str) -> String {
+    let trimmed = identifier.trim().to_ascii_uppercase();
+    let without_tier = trimmed
+        .split_once('_')
+        .filter(|(prefix, _)| {
+            prefix.len() == 2
+                && prefix.starts_with('T')
+                && prefix[1..].chars().all(|c| c.is_ascii_digit())
+        })
+        .map_or(trimmed.as_str(), |(_, rest)| rest);
+    without_tier
+        .split_once('@')
+        .map_or(without_tier, |(base, _)| base)
+        .to_string()
+}
+
+/// Recovers the base identifier of an item a build has stored.
+///
+/// `build_items` keeps the catalog's numeric id and the rendered icon URL, not the identifier
+/// itself, so this looks the id up in the bundled catalog and falls back to the identifier embedded
+/// in the icon URL for rows written before the catalog id was stable. Returns `None` when neither
+/// resolves, which the caller treats as "this item offers no abilities".
+#[must_use]
+pub fn base_identifier_for_stored_item(item_id: i64, icon: Option<&str>) -> Option<String> {
+    static BY_ID: OnceLock<HashMap<i64, String>> = OnceLock::new();
+    let by_id = BY_ID.get_or_init(|| {
+        catalog_items()
+            .iter()
+            .filter_map(|item| {
+                item.identifier
+                    .as_deref()
+                    .map(|identifier| (item.id, base_identifier(identifier)))
+            })
+            .collect()
+    });
+
+    if let Some(base) = by_id.get(&item_id) {
+        return Some(base.clone());
+    }
+
+    // `https://render.albiononline.com/v1/item/T8_MAIN_SWORD.png?quality=1&size=64`
+    let icon = icon?;
+    let file = icon.rsplit('/').next()?;
+    let stem = file.split(['.', '?']).next()?;
+    if stem.is_empty() {
+        return None;
+    }
+    Some(base_identifier(stem))
 }
 
 fn filter_items<T>(items: &mut Vec<T>, tier: Option<i64>, query: Option<&str>)
@@ -263,7 +332,7 @@ fn normalize_name(identifier: &str, fallback: &str) -> String {
         "2H_QUARTERSTAFF" => Some("Quarterstaff"),
         "2H_IRONCLADEDSTAFF" => Some("Iron-clad Staff"),
         "2H_DOUBLEBLADEDSTAFF" => Some("Double Bladed Staff"),
-        "2H_COMBATSTAFF_MORGANA" => Some("Black Monk Stave"),
+        "2H_COMBATSTAFF_MORGANA" => Some("Black Monk Staff"),
         "2H_TWINSCYTHE_HELL" => Some("Soulscythe"),
         "2H_ROCKSTAFF_KEEPER" => Some("Staff of Balance"),
         "2H_QUARTERSTAFF_AVALON" => Some("Grailseeker"),
@@ -341,4 +410,100 @@ fn render_icon_url(identifier: &str) -> String {
         "https://render.albiononline.com/v1/item/{}.png?quality=1&size=64",
         urlencoding::encode(identifier.trim())
     )
+}
+
+#[cfg(test)]
+mod ability_catalog_tests {
+    use super::*;
+
+    #[test]
+    fn every_catalog_weapon_and_armor_has_an_ability_entry() {
+        let abilities = ability_catalog();
+        let mut missing: Vec<String> = catalog_items()
+            .iter()
+            .filter(|item| matches!(item.item_type.as_deref(), Some("weapon") | Some("armor")))
+            .filter_map(|item| item.identifier.as_deref())
+            .map(base_identifier)
+            .filter(|base| !abilities.contains_key(base))
+            .collect();
+        missing.sort();
+        missing.dedup();
+
+        assert!(
+            missing.is_empty(),
+            "regenerate abilities.json — no ability entry for: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn no_ability_claims_a_slot_the_item_does_not_have() {
+        for (base, entry) in ability_catalog() {
+            for (kind, groups, declared) in [
+                ("active", &entry.active, entry.active_slots),
+                ("passive", &entry.passive, entry.passive_slots),
+            ] {
+                for index in groups.keys() {
+                    let index: i32 = index
+                        .parse()
+                        .unwrap_or_else(|_| panic!("{base}: {kind} slot key {index:?} is not a number"));
+                    assert!(
+                        index >= 1 && index <= declared,
+                        "{base}: a {kind} ability sits in slot {index} but the item declares \
+                         {declared} {kind} slot(s)"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_ability_carries_a_player_facing_name() {
+        for (base, entry) in ability_catalog() {
+            for choices in entry.active.values().chain(entry.passive.values()) {
+                for ability in choices {
+                    assert!(!ability.id.trim().is_empty(), "{base}: an ability has no id");
+                    assert!(
+                        !ability.name.trim().is_empty(),
+                        "{base}: ability {} has no name — check its @namelocatag",
+                        ability.id
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_item_with_no_slots_of_a_kind_offers_no_choices_of_that_kind() {
+        for (base, entry) in ability_catalog() {
+            if entry.active_slots == 0 {
+                assert!(entry.active.is_empty(), "{base}: no active slots but active choices exist");
+            }
+            if entry.passive_slots == 0 {
+                assert!(
+                    entry.passive.is_empty(),
+                    "{base}: no passive slots but passive choices exist"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_weapon_and_armor_shapes_match_the_game() {
+        let abilities = ability_catalog();
+
+        let sword = abilities.get("MAIN_SWORD").expect("MAIN_SWORD must be present");
+        assert_eq!(sword.active_slots, 3, "a weapon fills Q, W and E");
+        assert_eq!(sword.passive_slots, 1);
+        assert!(
+            sword.active["1"].iter().any(|ability| ability.id == "HEROICSTRIKE2"),
+            "Heroic Strike is a Broadsword Q"
+        );
+
+        let chest = abilities
+            .get("ARMOR_PLATE_SET1")
+            .expect("ARMOR_PLATE_SET1 must be present");
+        assert_eq!(chest.active_slots, 1, "chest armor has one active, bound to R");
+        assert_eq!(chest.passive_slots, 2, "chest armor has two passive slots");
+        assert_eq!(chest.passive.len(), 2, "both passive slots offer choices");
+    }
 }

@@ -708,7 +708,46 @@ export interface LinkedEvent {
   regear: boolean;
 }
 
+/** Which loadout of a build an item belongs to: the main set, or the single swap. */
+export type BuildLoadout = 'main' | 'swap';
+
+/** One selectable ability on an equipped item. */
+export interface OpenAlbionAbility {
+  /** Albion's internal spell id; also the icon key. */
+  id: string;
+  name: string;
+  cooldown?: string | null;
+  energy?: string | null;
+}
+
+/**
+ * Every ability an item family offers, keyed in the catalog by tier-stripped base identifier.
+ *
+ * `active` and `passive` map a 1-based slot index to the choices that slot accepts. Active slots
+ * 1/2/3 are the player's Q/W/E on a weapon; armor pieces have one active slot, bound to D (head),
+ * R (chest) or F (shoes). An item with zero slots of a kind carries an empty map.
+ */
+export interface OpenAlbionItemAbilities {
+  label: string;
+  slot_type: string | null;
+  two_handed: boolean;
+  active_slots: number;
+  passive_slots: number;
+  active: Record<string, OpenAlbionAbility[]>;
+  passive: Record<string, OpenAlbionAbility[]>;
+}
+
+/** The abilities chosen on one equipped item, keyed by 1-based slot index. */
+export interface BuildItemSpells {
+  active: Record<string, string>;
+  passive: Record<string, string>;
+}
+
 export interface BuildItemSlot {
+  /** Defaults to `'main'` for items saved before swaps existed. */
+  loadout: BuildLoadout;
+  /** Chosen abilities. Absent on items saved before ability selection existed. */
+  spells?: BuildItemSpells;
   slot: BuildSlot;
   openalbion_item_type: string;
   openalbion_item_id: number;
@@ -723,6 +762,8 @@ export interface BuildSummary {
   description: string | null;
   role: BuildRole;
   category_id: number;
+  /** Version within the `(name, category)` group. Starts at 1. */
+  version: number;
   category_name: string | null;
   created_by_username: string;
   updated_at: string;
@@ -744,6 +785,8 @@ export interface CompSummary {
   name: string;
   description: string | null;
   category_id: number;
+  /** Version within the `(name, category)` group. Starts at 1. */
+  version: number;
   category_name: string | null;
   created_by_username: string;
   created_at: string;

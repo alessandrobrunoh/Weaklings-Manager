@@ -938,6 +938,8 @@ export class Comps {
       return;
     }
     const item: BuildItemSlot = {
+      // The create form only builds the main set; the swap is filled in on the build page.
+      loadout: 'main',
       slot,
       openalbion_item_type: itemType,
       openalbion_item_id: itemId,

@@ -35,6 +35,26 @@ export function buildEventAnnouncementContent(event: EventView): string {
   ].join("\n");
 }
 
+export interface EventReminderMessage {
+  content: string;
+  allowedMentions: { parse: []; roles?: string[] };
+}
+
+/** Builds the manual pre-event reminder without enabling broad Discord mention parsing. */
+export function buildEventReminderMessage(event: EventView): EventReminderMessage {
+  const timestamp = Math.floor(new Date(event.event_date_utc).getTime() / 1000);
+  const roleIds = [...new Set(event.discord_role_ids ?? [])];
+  const roleMentions = roleIds.map((roleId) => `<@&${roleId}>`).join(" ");
+  const prefix = roleMentions ? `${roleMentions} ` : "";
+
+  return {
+    content: `🔔 ${prefix}Reminder: **${event.title}** starts <t:${timestamp}:R>. Use **Join / Change Build** to sign up!`,
+    allowedMentions: roleIds.length > 0
+      ? { parse: [], roles: roleIds }
+      : { parse: [] },
+  };
+}
+
 // Status colors
 const STATUS_COLOR: Record<string, number> = {
   scheduled: BOT_COLORS.BRAND,
@@ -231,4 +251,45 @@ export function buildEventManageActionRow(
   );
 
   return row;
+}
+
+/** Builds the shared five-button control row shown inside an event announcement thread. */
+export function buildEventThreadActionRow(
+  event: EventView,
+): ActionRowBuilder<ButtonBuilder> {
+  const isScheduled = event.status === "scheduled";
+  const isLive = event.status === "live";
+
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`event:join:${event.id}`)
+      .setLabel("Join / Change Build")
+      .setEmoji("✅")
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(!isScheduled),
+    new ButtonBuilder()
+      .setCustomId(`event:leave:${event.id}`)
+      .setLabel("Leave")
+      .setEmoji("🚪")
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(!isScheduled),
+    new ButtonBuilder()
+      .setCustomId(`event:ping:${event.id}`)
+      .setLabel("Ping")
+      .setEmoji("🔔")
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(!isScheduled),
+    new ButtonBuilder()
+      .setCustomId(`event:start:${event.id}`)
+      .setLabel("Start")
+      .setEmoji("▶️")
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(!isScheduled),
+    new ButtonBuilder()
+      .setCustomId(`event:stop:${event.id}`)
+      .setLabel("Stop")
+      .setEmoji("⏹️")
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!isLive),
+  );
 }
