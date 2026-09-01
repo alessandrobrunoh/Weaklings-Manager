@@ -21,7 +21,8 @@ use std::collections::HashSet;
 
 use super::models::{
     CreateEventRequest, EventDetailView, EventFilters, EventView, ParticipateEventRequest,
-    SetParticipantRequest, UpdateEventBattlesRequest, UpdateEventRequest,
+    SetEventVoiceChannelRequest, SetParticipantRequest, UpdateEventBattlesRequest,
+    UpdateEventRequest,
 };
 use super::service::{BattleLinkingContext, EventService};
 use crate::modules::admin::models::DiscordRoleView;
@@ -47,6 +48,10 @@ pub fn router() -> Router {
             put(set_participant).delete(remove_participant),
         )
         .route("/{id}/remind", post(remind_event))
+        .route(
+            "/{id}/discord-voice-channel",
+            put(set_event_voice_channel).delete(clear_event_voice_channel),
+        )
         .route("/{id}/start", post(start_event))
         .route("/{id}/stop", post(stop_event))
         .route(
@@ -484,6 +489,89 @@ async fn remind_event(
     )
     .await;
 
+    Ok(Json(ApiResponse::new(event)))
+}
+
+/// Associates the Discord voice channel created by the bot with a live event.
+///
+/// Requires `events.manage` permission.
+#[utoipa::path(
+    put,
+    path = "/api/events/{id}/discord-voice-channel",
+    tag = "events",
+    summary = "Bind a Discord voice channel to a live event",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    request_body = SetEventVoiceChannelRequest,
+    responses(
+        (status = 200, description = "Voice channel bound", body = ApiResponseEventView),
+        (status = 400, description = "Invalid Discord channel ID", body = ProblemDetails),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails),
+        (status = 409, description = "Event is not live or has another voice channel", body = ProblemDetails)
+    )
+)]
+async fn set_event_voice_channel(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+    Json(req): Json<SetEventVoiceChannelRequest>,
+) -> Result<Json<ApiResponse<EventView>>, AppError> {
+    user.require(&perms, Permission::EventsManage).await?;
+    let event = EventService::new()
+        .bind_event_voice_channel(&db, id, &req.channel_id)
+        .await?;
+    let _ = AuditService::log(
+        &db,
+        "EVENT_VOICE_CHANNEL_BOUND",
+        Some("EVENT"),
+        Some(id),
+        Some(user.user_id),
+        Some(serde_json::json!({ "channel_id": event.discord_voice_channel_id })),
+    )
+    .await;
+    Ok(Json(ApiResponse::new(event)))
+}
+
+/// Clears the persisted Discord voice channel after a stopped event's cleanup.
+///
+/// Requires `events.manage` permission.
+#[utoipa::path(
+    delete,
+    path = "/api/events/{id}/discord-voice-channel",
+    tag = "events",
+    summary = "Clear a stopped event's Discord voice channel binding",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    responses(
+        (status = 200, description = "Voice channel binding cleared", body = ApiResponseEventView),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails),
+        (status = 409, description = "Event is not stopped", body = ProblemDetails)
+    )
+)]
+async fn clear_event_voice_channel(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<EventView>>, AppError> {
+    user.require(&perms, Permission::EventsManage).await?;
+    let event = EventService::new()
+        .clear_event_voice_channel(&db, id)
+        .await?;
+    let _ = AuditService::log(
+        &db,
+        "EVENT_VOICE_CHANNEL_CLEARED",
+        Some("EVENT"),
+        Some(id),
+        Some(user.user_id),
+        None,
+    )
+    .await;
     Ok(Json(ApiResponse::new(event)))
 }
 

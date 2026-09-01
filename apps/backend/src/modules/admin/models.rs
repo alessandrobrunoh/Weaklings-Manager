@@ -104,6 +104,8 @@ pub struct GuildSettingsView {
     pub discord_auto_role_id: Option<String>,
     /// Forum Channel where the bot creates one thread per loot split.
     pub discord_splits_forum_channel_id: Option<String>,
+    /// Category where the bot creates live event voice channels.
+    pub discord_event_voice_category_id: Option<String>,
 }
 
 impl GuildSettingsView {
@@ -119,6 +121,7 @@ impl GuildSettingsView {
             discord_event_role_id: model.discord_event_role_id,
             discord_auto_role_id: model.discord_auto_role_id,
             discord_splits_forum_channel_id: model.discord_splits_forum_channel_id,
+            discord_event_voice_category_id: model.discord_event_voice_category_id,
         }
     }
 }
@@ -159,7 +162,7 @@ pub struct UpdateAutoRoleRequest {
 /// true `Option<Option<String>>` would need to tell "absent" and "present but null" apart, and the
 /// admin settings form always sends every field anyway (either a ~19-digit Discord snowflake or
 /// empty), so there is no real case where a client needs `null` specifically.
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
 pub struct UpdateGuildSettingsRequest {
     /// New value. Omit to leave unchanged; send `""` to clear.
     pub discord_events_channel_id: Option<String>,
@@ -175,4 +178,6 @@ pub struct UpdateGuildSettingsRequest {
     pub discord_event_role_id: Option<String>,
     /// New value. Omit to leave unchanged; send `""` to clear.
     pub discord_splits_forum_channel_id: Option<String>,
+    /// New value. Omit to leave unchanged; send `""` to clear.
+    pub discord_event_voice_category_id: Option<String>,
 }

@@ -25,6 +25,7 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
   discord_event_role_id: '',
   discord_auto_role_id: '',
   discord_splits_forum_channel_id: '',
+  discord_event_voice_category_id: '',
 };
 
 /**
@@ -98,6 +99,22 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
               />
               <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
                 {{ t('admin.discord.splitsForumChannelHint') }}
+              </span>
+            </label>
+            <label>
+              <span class="label">{{ t('admin.discord.eventVoiceCategory') }}</span>
+              <input
+                class="input mono"
+                type="text"
+                name="discord-event-voice-category-id"
+                inputmode="numeric"
+                [placeholder]="t('admin.discord.placeholder')"
+                [value]="guildSettingsDraft().discord_event_voice_category_id"
+                [attr.aria-describedby]="'discord-event-voice-category-hint'"
+                (input)="updateDraftField('discord_event_voice_category_id', $event)"
+              />
+              <span id="discord-event-voice-category-hint" class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                {{ t('admin.discord.eventVoiceCategoryHint') }}
               </span>
             </label>
             <label>
@@ -255,6 +272,7 @@ export class AdminDiscord {
         discord_transaction_spam_channel_id: draft.discord_transaction_spam_channel_id.trim(),
         discord_event_role_id: draft.discord_event_role_id.trim(),
         discord_splits_forum_channel_id: draft.discord_splits_forum_channel_id.trim(),
+        discord_event_voice_category_id: draft.discord_event_voice_category_id.trim(),
       };
       const updated = await firstValueFrom(
         this.api.put<GuildSettingsView>('api/admin/settings', body),
@@ -329,5 +347,6 @@ function toDraft(settings: GuildSettingsView): Record<keyof GuildSettingsView, s
     discord_event_role_id: settings.discord_event_role_id ?? '',
     discord_auto_role_id: settings.discord_auto_role_id ?? '',
     discord_splits_forum_channel_id: settings.discord_splits_forum_channel_id ?? '',
+    discord_event_voice_category_id: settings.discord_event_voice_category_id ?? '',
   };
 }

@@ -13,10 +13,12 @@ import {
   buildEventEmbed,
   buildEventReminderMessage,
   buildEventSummaryEmbed,
+  buildEventThreadActionRow,
 } from "../embeds/event.embed.js";
 import { buildBattleListEmbed } from "../embeds/battle.embed.js";
 import { createResponseEmbed } from '../embeds/theme.js';
 import { formatSilver } from '../format.js';
+import { startDiscordEvent, stopDiscordEvent } from "../services/event-lifecycle.js";
 
 const GUILD_NAME = process.env["GUILD_NAME"] ?? "";
 
@@ -291,17 +293,28 @@ async function handleEventButton(
     const eventId = Number(eventIdStr);
 
     await interaction.deferReply({ flags: ["Ephemeral"] });
-    const event = await api.post<EventDetailView>(
-      `api/events/${eventId}/start`,
-      {},
+    if (!Number.isSafeInteger(eventId) || eventId <= 0) {
+      throw new Error("Invalid event ID.");
+    }
+    if (!interaction.channel?.isThread()) {
+      throw new Error("Events can only be started from their announcement thread.");
+    }
+
+    const result = await startDiscordEvent(
+      interaction.client,
+      api,
       interaction.user.id,
+      eventId,
+      interaction.channel,
     );
-    const embed = buildEventEmbed(event);
-    await interaction.message.edit({ embeds: [embed] });
+    await interaction.message.edit({
+      embeds: [buildEventEmbed(result.event)],
+      components: [buildEventThreadActionRow(result.event)],
+    });
     const successEmbed = createResponseEmbed(
       "success",
       "Event Live",
-      `Event **#${eventId}** is now **LIVE**! 🟢`,
+      `Event **#${eventId}** is now **LIVE** in <#${result.voiceChannelId}>.`,
       "GUILD EVENT",
     );
     await interaction.editReply({ embeds: [successEmbed] });
@@ -313,19 +326,25 @@ async function handleEventButton(
     const eventId = Number(eventIdStr);
 
     await interaction.deferReply({ flags: ["Ephemeral"] });
-    const event = await api.post<EventDetailView>(
-      `api/events/${eventId}/stop`,
-      {},
+    if (!Number.isSafeInteger(eventId) || eventId <= 0) {
+      throw new Error("Invalid event ID.");
+    }
+    const result = await stopDiscordEvent(
+      interaction.client,
+      api,
       interaction.user.id,
+      eventId,
     );
-    const embed = buildEventEmbed(event);
-    await interaction.message.edit({ embeds: [embed] });
-    const warnEmbed = createResponseEmbed(
-      "warning",
-      "Event Stopped",
-      `Event **#${eventId}** has been stopped. ⏹️`,
-      "GUILD EVENT",
-    );
+    await interaction.message.edit({
+      embeds: [buildEventEmbed(result.event)],
+      components: [buildEventThreadActionRow(result.event)],
+    });
+    const message = result.voiceChannelOccupied
+      ? `Event **#${eventId}** stopped. Its voice channel is still occupied, so it was kept.`
+      : result.voiceChannelDeleted
+        ? `Event **#${eventId}** stopped and its empty voice channel was deleted.`
+        : `Event **#${eventId}** has been stopped. ⏹️`;
+    const warnEmbed = createResponseEmbed("warning", "Event Stopped", message, "GUILD EVENT");
     await interaction.editReply({ embeds: [warnEmbed] });
     return;
   }

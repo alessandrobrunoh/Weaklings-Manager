@@ -63,6 +63,8 @@ mod m20260831_000010_add_fee_to_splits;
 mod m20260901_000001_add_version_and_identity_uniqueness;
 mod m20260901_000002_add_loadout_to_build_items;
 mod m20260901_000003_create_build_item_spells;
+mod m20260901_000004_add_event_voice_category;
+mod m20260901_000005_add_event_voice_channel;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -130,6 +132,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260901_000001_add_version_and_identity_uniqueness::Migration),
             Box::new(m20260901_000002_add_loadout_to_build_items::Migration),
             Box::new(m20260901_000003_create_build_item_spells::Migration),
+            Box::new(m20260901_000004_add_event_voice_category::Migration),
+            Box::new(m20260901_000005_add_event_voice_channel::Migration),
         ]
     }
 }

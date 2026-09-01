@@ -1709,6 +1709,7 @@ mod tests {
             started_at: None,
             stopped_at: None,
             auto_stop_deadline: None,
+            discord_voice_channel_id: None,
             link_status: "completed".to_string(),
             link_attempts: 1,
             link_last_error: None,
