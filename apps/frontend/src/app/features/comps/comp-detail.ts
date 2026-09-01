@@ -960,7 +960,6 @@ export class CompDetailPage {
           build_id: entry.build_id,
           quantity: entry.quantity,
         })),
-        parent_id: comp.id,
       };
       const created = await firstValueFrom(this.api.post<CompDetail>('api/comps', request));
       this.toasts.success('Composition cloned');
@@ -1055,13 +1054,8 @@ export class CompDetailPage {
     }
     this.saving.set(true);
     try {
-      const updated = await firstValueFrom(
-        this.api.delete<CompDetail>(`api/comps/${comp.id}/builds/${buildId}`),
-      );
-      this.comp.set(updated ?? null);
-      if (updated) {
-        void this.loadBuildDetails(updated);
-      }
+      await firstValueFrom(this.api.delete(`api/comps/${comp.id}/builds/${buildId}`));
+      await this.load(this.compId());
       this.toasts.success('Build removed');
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

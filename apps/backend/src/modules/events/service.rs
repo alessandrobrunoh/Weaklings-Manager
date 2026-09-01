@@ -976,22 +976,6 @@ impl EventService {
         Ok(())
     }
 
-    /// Helper to get total capacity of a composition.
-    pub async fn get_comp_capacity(
-        &self,
-        db: &DatabaseConnection,
-        comp_id: i64,
-    ) -> Result<i64, AppError> {
-        let builds = comp_build::Entity::find()
-            .filter(comp_build::Column::CompId.eq(comp_id))
-            .all(db)
-            .await
-            .map_err(AppError::Database)?;
-
-        let capacity: i64 = builds.iter().map(|b| i64::from(b.quantity)).sum();
-        Ok(capacity)
-    }
-
     /// Resolves the active composition (base or variant) for a given target size.
     pub async fn resolve_active_comp(
         &self,
@@ -1018,35 +1002,84 @@ impl EventService {
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Base comp {base_comp_id} not found")))?;
 
-        // Fetch variants
-        let variants = comp::Entity::find()
-            .filter(comp::Column::ParentId.eq(base_comp_id))
+        // Build a complete capacity index up front, then traverse only descendants reachable from
+        // the event's base comp. This supports arbitrary expansion depth without treating an
+        // unrelated comp as an eligible tier.
+        let capacities: HashMap<i64, i64> = comp_build::Entity::find()
+            .all(db)
+            .await
+            .map_err(AppError::Database)?
+            .into_iter()
+            .fold(HashMap::new(), |mut totals, entry| {
+                *totals.entry(entry.comp_id).or_default() += i64::from(entry.quantity);
+                totals
+            });
+        let all_comps = comp::Entity::find()
             .all(db)
             .await
             .map_err(AppError::Database)?;
-
-        let mut comps = vec![base_comp];
-        comps.extend(variants);
-
-        let mut comps_with_capacity = Vec::new();
-        for c in comps {
-            let capacity = self.get_comp_capacity(db, c.id).await?;
-            comps_with_capacity.push((c, capacity));
+        let mut children_by_parent = HashMap::<i64, Vec<comp::Model>>::new();
+        for candidate in all_comps {
+            if let Some(parent_id) = candidate.parent_id {
+                children_by_parent
+                    .entry(parent_id)
+                    .or_default()
+                    .push(candidate);
+            }
         }
 
-        // Sort by capacity ascending
-        comps_with_capacity.sort_by_key(|(_, cap)| *cap);
+        let base_capacity = capacities.get(&base_comp.id).copied().unwrap_or_default();
+        let mut reachable = vec![(base_comp, base_capacity)];
+        let mut pending = vec![(base_comp_id, base_capacity)];
+        let mut visited = HashSet::from([base_comp_id]);
 
-        // Find first comp with capacity >= target_size
-        let active = comps_with_capacity
+        while let Some((parent_id, parent_capacity)) = pending.pop() {
+            for child in children_by_parent.remove(&parent_id).unwrap_or_default() {
+                if !visited.insert(child.id) {
+                    tracing::warn!(
+                        base_comp_id,
+                        parent_id,
+                        child_id = child.id,
+                        "skipping cyclic comp expansion relationship"
+                    );
+                    continue;
+                }
+
+                let child_capacity = capacities.get(&child.id).copied().unwrap_or_default();
+                if child_capacity <= parent_capacity {
+                    tracing::warn!(
+                        base_comp_id,
+                        parent_id,
+                        child_id = child.id,
+                        parent_capacity,
+                        child_capacity,
+                        "skipping non-growing comp expansion relationship"
+                    );
+                    continue;
+                }
+
+                pending.push((child.id, child_capacity));
+                reachable.push((child, child_capacity));
+            }
+        }
+
+        reachable.sort_by_key(|(candidate, capacity)| (*capacity, candidate.id));
+        let target_size = target_size as i64;
+        if let Some((active_comp, capacity)) = reachable
+            .iter()
+            .find(|(_, capacity)| *capacity + extra_roster_slots as i64 >= target_size)
+        {
+            return Ok((active_comp.clone(), *capacity));
+        }
+
+        // A configured chain may not yet have a tier large enough. Keep its largest valid tier
+        // active so the roster remains readable; concrete build-slot validation still prevents
+        // overfilling individual required builds.
+        let (active_comp, capacity) = reachable
             .into_iter()
-            .find(|(_, cap)| *cap + extra_roster_slots as i64 >= target_size as i64);
-
-        if let Some((active_comp, capacity)) = active {
-            Ok((active_comp, capacity))
-        } else {
-            Err(AppError::Validation("The composition is full".to_string()))
-        }
+            .max_by_key(|(candidate, capacity)| (*capacity, candidate.id))
+            .expect("the base comp always provides one reachable comp");
+        Ok((active_comp, capacity))
     }
 
     /// Helper to convert event::Model to EventView.
@@ -2812,6 +2845,104 @@ mod tests {
                 .await,
             Err(AppError::Validation(message)) if message.contains("already full")
         ));
+    }
+
+    #[tokio::test]
+    async fn resolves_the_smallest_sufficient_comp_across_an_expansion_chain() {
+        let db = seed_db().await;
+        let _author = insert_user(&db, "author", "author@example.com").await;
+        let build_category = create_build_category(&db, "Roster builds").await;
+        let build_id = create_build(&db, "Main Tank", build_category).await;
+        let comp_category = create_comp_category(&db, "Roster comps").await;
+        let base = create_comp(&db, "10-man", comp_category, None, vec![(build_id, 10)]).await;
+        let expansion = create_comp(
+            &db,
+            "15-man",
+            comp_category,
+            Some(base),
+            vec![(build_id, 15)],
+        )
+        .await;
+        let final_expansion = create_comp(
+            &db,
+            "20-man",
+            comp_category,
+            Some(expansion),
+            vec![(build_id, 20)],
+        )
+        .await;
+        let service = EventService::new();
+
+        for (target_size, expected_id, expected_capacity) in [
+            (10, base, 10),
+            (11, expansion, 15),
+            (16, final_expansion, 20),
+            (21, final_expansion, 20),
+        ] {
+            let (active, capacity) = service
+                .resolve_active_comp(&db, base, target_size)
+                .await
+                .expect("the chain should always resolve to the smallest sufficient comp or its final tier");
+            assert_eq!(
+                active.id, expected_id,
+                "wrong comp for {target_size} concrete signups"
+            );
+            assert_eq!(capacity, expected_capacity);
+        }
+    }
+
+    #[tokio::test]
+    async fn ignores_legacy_non_growing_or_cyclic_expansion_links() {
+        let db = seed_db().await;
+        let _author = insert_user(&db, "author", "author@example.com").await;
+        let build_category = create_build_category(&db, "Roster builds").await;
+        let build_id = create_build(&db, "Main Tank", build_category).await;
+        let comp_category = create_comp_category(&db, "Roster comps").await;
+        let base = create_comp(&db, "10-man", comp_category, None, vec![(build_id, 10)]).await;
+        let invalid_child = create_comp(
+            &db,
+            "5-man legacy",
+            comp_category,
+            Some(base),
+            vec![(build_id, 5)],
+        )
+        .await;
+        let hidden_grandchild = create_comp(
+            &db,
+            "20-man behind invalid link",
+            comp_category,
+            Some(invalid_child),
+            vec![(build_id, 20)],
+        )
+        .await;
+        let cyclic_child = create_comp(
+            &db,
+            "15-man legacy",
+            comp_category,
+            Some(base),
+            vec![(build_id, 15)],
+        )
+        .await;
+        let base_model = comp::Entity::find_by_id(base)
+            .one(&db)
+            .await
+            .expect("base should load")
+            .expect("base should exist");
+        let mut base_active: comp::ActiveModel = base_model.into();
+        base_active.parent_id = Set(Some(cyclic_child));
+        base_active
+            .update(&db)
+            .await
+            .expect("legacy cycle should be seeded");
+
+        let (active, capacity) = EventService::new()
+            .resolve_active_comp(&db, base, 16)
+            .await
+            .expect("a cyclic legacy chain must not loop or fail resolution");
+
+        assert_eq!(active.id, cyclic_child);
+        assert_eq!(capacity, 15);
+        assert_ne!(active.id, hidden_grandchild);
     }
 
     #[tokio::test]

@@ -639,10 +639,15 @@ type PendingDelete =
               </select>
             </label>
 
+            @if (draftParentCompId()) {
+              <p class="text-sm" style="color: var(--color-text-secondary)">
+                {{ t('comps.expansionHint') }}
+              </p>
+            }
             <section class="surface grid gap-3 p-4" [attr.aria-label]="t('comps.builds')">
               <header>
                 <h3 class="text-sm font-semibold" style="color: var(--color-text)">
-                  {{ t('comps.builds') }}
+                  {{ draftParentCompId() ? t('comps.expansionAdditions') : t('comps.builds') }}
                 </h3>
               </header>
               <div class="grid gap-3 sm:grid-cols-[1fr_7rem_auto]">

@@ -1,7 +1,7 @@
 # Plan: Fill Discord e catena di espansione delle comp
 
 **Branch**: `feat/event-fill-and-comp-expansion-chain`
-**Status**: Proposed — awaiting approval
+**Status**: Active
 
 ## Goal
 
@@ -12,7 +12,7 @@ Chi si iscrive dal messaggio Discord dell’evento può sempre scegliere `Fill` 
 1. `Fill` è un **ruolo virtuale permanente**, sempre la prima scelta nel flusso Discord, con capacità illimitata e senza build obbligatoria.
 2. `parent_id` mantiene la direzione relazionale standard: la comp più piccola è il padre/base e la comp più capiente è il figlio/espansione. Esempio: `10 (base) → 15 (figlia) → 20 (figlia della 15)`.
 3. Una comp di espansione contiene una **snapshot completa**: eredita tutte le build e quantità del padre al momento della creazione e riceve solo le build/quantità aggiuntive inserite dall’officer. Perciò la 15 resta leggibile ed utilizzabile anche se in seguito la 10 viene modificata.
-4. L’evento salva la comp base. La `active_comp` è una risoluzione dinamica basata sul numero totale di iscritti: sceglie la comp discendente con la capacità minima sufficiente; oltre l’ultima capacità nota conserva l’ultima comp attiva e gli ulteriori iscritti possono comunque usare `Fill`.
+4. L’evento salva la comp base. La `active_comp` è una risoluzione dinamica basata sul numero di assegnazioni con build concreta: sceglie la comp discendente con la capacità minima sufficiente. I partecipanti `Fill` restano nel roster ma non consumano slot e non provocano l’espansione; oltre l’ultima capacità nota conserva l’ultima comp attiva e gli ulteriori partecipanti possono comunque usare `Fill`.
 5. Le comp già presenti non vengono convertite automaticamente in delta o alterate. Il resolver è difensivo: segue solo discendenti con capacità strettamente maggiore e interrompe cicli/dati incoerenti, così dati legacy non cambiano significato né bloccano l’evento.
 6. È vietato creare o aggiornare una relazione che formi un ciclo; le nuove comp collegate devono aumentare la capacità rispetto al padre immediato.
 7. I ruoli extra per-evento già esistenti restano disponibili come build precise; non sostituiscono il ruolo virtuale `Fill`.
@@ -23,7 +23,7 @@ Chi si iscrive dal messaggio Discord dell’evento può sempre scegliere `Fill` 
 - [ ] Se un membro seleziona `Fill`, l’iscrizione viene salvata senza una build primaria, il roster/embed si aggiorna e la UI mostra `Fill` invece di un ID build fittizio.
 - [ ] `Fill` non richiede una build placeholder nel catalogo e non consuma né limita la capacità della comp.
 - [ ] Una comp creata come espansione include automaticamente le build e le quantità della comp padre, quindi l’officer deve aggiungere solo l’incremento necessario.
-- [ ] Per una catena `10 → 15 → 20`, con 1–10 iscritti l’evento espone la 10, con 11–15 la 15 e con 16–20 la 20; il comportamento continua per qualunque profondità.
+- [ ] Per una catena `10 → 15 → 20`, con 1–10 assegnazioni a build concrete l’evento espone la 10, con 11–15 la 15 e con 16–20 la 20; il comportamento continua per qualunque profondità e le iscrizioni `Fill` non ne modificano la soglia.
 - [ ] Il bot offre le build della comp prevista per la prossima iscrizione, non soltanto quelle della comp attiva prima del click. Un undicesimo membro può quindi scegliere una build aggiunta nella comp da 15.
 - [ ] Dati legacy con relazioni non crescenti o cicliche non provocano loop né selezioni errate; un tentativo di creare un ciclo o un’espansione non più capiente riceve un errore di validazione chiaro.
 - [ ] `/comps` visualizza tutte le radici e tutti i discendenti a profondità arbitraria, con indentazione a scaletta, capacità totale e incremento rispetto al padre.
@@ -37,7 +37,7 @@ Chi si iscrive dal messaggio Discord dell’evento può sempre scegliere `Fill` 
 
 - `ParticipateEventRequest.primary_build_id: Option<i64>`: `null` significa `Fill`; un ID significa una build primaria precisa.
 - `EventParticipantView.primary_build_id: Option<i64>` e `primary_build_name: "Fill"` per la scelta virtuale.
-- Event analytics e qualsiasi read path che parte dalla build primaria ignorano partecipazioni `Fill` per le statistiche specifiche della build, ma le contano nel roster e nella capacità dell’evento.
+- Event analytics e qualsiasi read path che parte dalla build primaria ignorano partecipazioni `Fill` per le statistiche specifiche della build, ma le contano nel roster. La capacità della comp e la relativa espansione considerano soltanto assegnazioni con build primaria concreta.
 - Il bot invia un valore menu esplicito `fill`, che esegue il POST con `{ "primary_build_id": null }`; le altre opzioni mantengono il flusso ruolo → build.
 
 ### Expansion comp snapshot
@@ -63,7 +63,7 @@ Aggiungere un endpoint letto dal bot, ad esempio:
 GET /api/events/{id}/signup-options
 ```
 
-Esso calcola la dimensione **dopo** l’eventuale nuova iscrizione dell’utente chiamante (la dimensione invariata se è già iscritto), risolve la comp adeguata e restituisce:
+Esso calcola il numero di assegnazioni con build concrete **dopo** l’eventuale nuova iscrizione dell’utente chiamante (numero invariato se è già iscritto), risolve la comp adeguata e restituisce:
 
 - il riferimento e la capacità della comp prevista;
 - l’insieme delle build della sua snapshot;
@@ -126,7 +126,7 @@ Ogni slice segue **RED → GREEN → manual MUTATE review → KILL MUTANTS → R
 
 - La creazione di una figlia parte dalle build del padre e salva una snapshot con le aggiunte.
 - La capacità di ogni nuova figlia è strettamente maggiore di quella del padre; self-parent e cicli diretti/indiretti vengono rifiutati.
-- La risoluzione copre almeno tre livelli e sceglie il minimo sufficiente; oltre l’ultimo livello mantiene il più capiente.
+- La risoluzione copre almeno tre livelli e sceglie il minimo sufficiente in base alle sole assegnazioni con build concrete; oltre l’ultimo livello mantiene il più capiente.
 - Una catena legacy incoerente viene saltata in sicurezza e non modifica righe esistenti.
 - La UI di creazione chiarisce che la comp è un’espansione e mostra le build ereditate rispetto alle sole aggiunte.
 

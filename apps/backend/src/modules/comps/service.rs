@@ -3,7 +3,7 @@
 //! Provides CRUD operations for build categories, comp categories, builds (with per-slot
 //! items sourced from OpenAlbion), and comps (compositions that group builds with a quantity).
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
 
 use sea_orm::prelude::DateTimeWithTimeZone;
@@ -1407,70 +1407,106 @@ impl CompService {
         ))
     }
 
-    /// Creates a new comp with its initial set of builds, validating the category and all
-    /// build references exist, and that every quantity is positive.
+    /// Creates a comp. When a parent is supplied, `builds` contains only the additions to the
+    /// parent's snapshot; the persisted child contains the complete merged snapshot.
     pub async fn create_comp(
         &self,
         db: &DatabaseConnection,
         creator_id: i64,
         req: CreateCompRequest,
     ) -> Result<CompDetail, AppError> {
-        // Validate category exists.
-        let category_exists = comp_category::Entity::find_by_id(req.category_id)
+        let CreateCompRequest {
+            name,
+            description,
+            category_id,
+            builds,
+            parent_id,
+        } = req;
+
+        let category_exists = comp_category::Entity::find_by_id(category_id)
             .one(db)
             .await?
             .is_some();
         if !category_exists {
             return Err(AppError::NotFound(format!(
-                "Comp category {} not found",
-                req.category_id
+                "Comp category {category_id} not found"
             )));
         }
-
-        // Validate quantities.
-        if req.builds.iter().any(|b| b.quantity < 1) {
+        if builds.iter().any(|build| build.quantity < 1) {
             return Err(AppError::Validation("quantity must be >= 1".to_string()));
         }
-
-        self.ensure_comp_identity_free(db, &req.name, req.category_id, None)
+        self.ensure_comp_identity_free(db, &name, category_id, None)
             .await?;
 
-        let txn = db.begin().await?;
-
-        let active = comp::ActiveModel {
-            name: Set(req.name.trim().to_string()),
-            description: Set(req.description),
-            category_id: Set(req.category_id),
-            created_by: Set(creator_id),
-            parent_id: Set(req.parent_id),
-            ..Default::default()
+        let mut snapshot = BTreeMap::<i64, i32>::new();
+        let parent_capacity = if let Some(parent_id) = parent_id {
+            let parent = comp::Entity::find_by_id(parent_id)
+                .one(db)
+                .await?
+                .ok_or_else(|| AppError::NotFound(format!("Parent comp {parent_id} not found")))?;
+            let parent_builds = comp_build::Entity::find()
+                .filter(CompBuildColumn::CompId.eq(parent.id))
+                .all(db)
+                .await?;
+            for parent_build in parent_builds {
+                snapshot.insert(parent_build.build_id, parent_build.quantity);
+            }
+            snapshot.values().map(|quantity| i64::from(*quantity)).sum()
+        } else {
+            0
         };
-        let inserted = active.insert(&txn).await?;
 
-        for b in &req.builds {
-            // Validate build exists.
-            let exists = build::Entity::find_by_id(b.build_id)
-                .one(&txn)
+        for addition in builds {
+            let build_exists = build::Entity::find_by_id(addition.build_id)
+                .one(db)
                 .await?
                 .is_some();
-            if !exists {
+            if !build_exists {
                 return Err(AppError::NotFound(format!(
                     "Build {} not found",
-                    b.build_id
+                    addition.build_id
                 )));
             }
+            let quantity = snapshot.entry(addition.build_id).or_default();
+            *quantity = quantity.checked_add(addition.quantity).ok_or_else(|| {
+                AppError::Validation(format!(
+                    "quantity for build {} exceeds the supported limit",
+                    addition.build_id
+                ))
+            })?;
+        }
 
-            let active = comp_build::ActiveModel {
+        let total_capacity: i64 = snapshot.values().map(|quantity| i64::from(*quantity)).sum();
+        if parent_id.is_some() && total_capacity <= parent_capacity {
+            return Err(AppError::Validation(
+                "an expansion comp must have a capacity greater than its parent".to_string(),
+            ));
+        }
+
+        let txn = db.begin().await?;
+        let inserted = comp::ActiveModel {
+            name: Set(name.trim().to_string()),
+            description: Set(description),
+            category_id: Set(category_id),
+            created_by: Set(creator_id),
+            parent_id: Set(parent_id),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await?;
+
+        for (build_id, quantity) in snapshot {
+            comp_build::ActiveModel {
                 comp_id: Set(inserted.id),
-                build_id: Set(b.build_id),
-                quantity: Set(b.quantity),
+                build_id: Set(build_id),
+                quantity: Set(quantity),
                 ..Default::default()
-            };
-            active.insert(&txn).await?;
+            }
+            .insert(&txn)
+            .await?;
         }
 
         txn.commit().await?;
-
         self.to_comp_detail(db, inserted).await
     }
 
@@ -1538,6 +1574,7 @@ impl CompService {
             active.description = Set(Some(description));
         }
         if let Some(parent_id) = req.parent_id {
+            self.validate_expansion_parent(db, id, parent_id).await?;
             active.parent_id = Set(Some(parent_id));
         }
         active.updated_at = Set(now());
@@ -1545,6 +1582,71 @@ impl CompService {
         let updated = active.update(db).await?;
 
         self.to_comp_detail(db, updated).await
+    }
+
+    /// Returns the total number of concrete slots in a comp snapshot.
+    async fn get_comp_capacity(
+        &self,
+        db: &DatabaseConnection,
+        comp_id: i64,
+    ) -> Result<i64, AppError> {
+        Ok(comp_build::Entity::find()
+            .filter(CompBuildColumn::CompId.eq(comp_id))
+            .all(db)
+            .await?
+            .iter()
+            .map(|build| i64::from(build.quantity))
+            .sum())
+    }
+
+    /// Verifies that assigning `parent_id` keeps the chain acyclic and strictly increasing.
+    async fn validate_expansion_parent(
+        &self,
+        db: &DatabaseConnection,
+        comp_id: i64,
+        parent_id: i64,
+    ) -> Result<(), AppError> {
+        if parent_id == comp_id {
+            return Err(AppError::Validation(
+                "a comp cannot be its own parent".to_string(),
+            ));
+        }
+
+        let parent = comp::Entity::find_by_id(parent_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Parent comp {parent_id} not found")))?;
+        let child_capacity = self.get_comp_capacity(db, comp_id).await?;
+        let parent_capacity = self.get_comp_capacity(db, parent.id).await?;
+        if child_capacity <= parent_capacity {
+            return Err(AppError::Validation(
+                "an expansion comp must have a capacity greater than its parent".to_string(),
+            ));
+        }
+
+        let mut current_id = parent_id;
+        let mut visited = HashSet::new();
+        loop {
+            if !visited.insert(current_id) {
+                return Err(AppError::Validation(
+                    "the parent comp chain contains a cycle".to_string(),
+                ));
+            }
+            if current_id == comp_id {
+                return Err(AppError::Validation(
+                    "a comp cannot be assigned beneath one of its descendants".to_string(),
+                ));
+            }
+
+            let current = comp::Entity::find_by_id(current_id)
+                .one(db)
+                .await?
+                .ok_or_else(|| AppError::NotFound(format!("Parent comp {current_id} not found")))?;
+            let Some(next_parent_id) = current.parent_id else {
+                return Ok(());
+            };
+            current_id = next_parent_id;
+        }
     }
 
     /// Deletes a comp. Cascades to `comp_builds` via FK.
@@ -2682,6 +2784,166 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_expansion_comp_inherits_its_parent_snapshot_and_merges_additions() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let build_category = insert_build_category(&db, "ZvZ builds").await;
+        let comp_category = insert_comp_category(&db, "ZvZ comps").await;
+        let service = CompService::new();
+        let tank = service
+            .create_build(&db, user, build_request("Tank", build_category))
+            .await
+            .expect("tank build should be created");
+        let healer = service
+            .create_build(&db, user, build_request("Healer", build_category))
+            .await
+            .expect("healer build should be created");
+        let dps = service
+            .create_build(&db, user, build_request("DPS", build_category))
+            .await
+            .expect("dps build should be created");
+
+        let base = service
+            .create_comp(
+                &db,
+                user,
+                CreateCompRequest {
+                    name: "10-man".to_string(),
+                    description: None,
+                    category_id: comp_category,
+                    builds: vec![
+                        AddCompBuildRequest {
+                            build_id: tank.summary.id,
+                            quantity: 2,
+                        },
+                        AddCompBuildRequest {
+                            build_id: healer.summary.id,
+                            quantity: 8,
+                        },
+                    ],
+                    parent_id: None,
+                },
+            )
+            .await
+            .expect("base comp should be created");
+
+        let expansion = service
+            .create_comp(
+                &db,
+                user,
+                CreateCompRequest {
+                    name: "15-man".to_string(),
+                    description: None,
+                    category_id: comp_category,
+                    builds: vec![
+                        AddCompBuildRequest {
+                            build_id: tank.summary.id,
+                            quantity: 1,
+                        },
+                        AddCompBuildRequest {
+                            build_id: dps.summary.id,
+                            quantity: 4,
+                        },
+                    ],
+                    parent_id: Some(base.summary.id),
+                },
+            )
+            .await
+            .expect("a larger expansion should be created");
+
+        let mut snapshot: Vec<(i64, i32)> = expansion
+            .builds
+            .iter()
+            .map(|entry| (entry.build_id, entry.quantity))
+            .collect();
+        snapshot.sort_unstable();
+        let mut expected = vec![
+            (tank.summary.id, 3),
+            (healer.summary.id, 8),
+            (dps.summary.id, 4),
+        ];
+        expected.sort_unstable();
+
+        assert_eq!(snapshot, expected);
+        assert_eq!(expansion.summary.total_quantity, 15);
+    }
+
+    #[tokio::test]
+    async fn an_expansion_cannot_keep_or_reduce_its_parent_capacity() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let build_category = insert_build_category(&db, "ZvZ builds").await;
+        let comp_category = insert_comp_category(&db, "ZvZ comps").await;
+        let service = CompService::new();
+        let build = service
+            .create_build(&db, user, build_request("Tank", build_category))
+            .await
+            .expect("build should be created");
+        let base = service
+            .create_comp(
+                &db,
+                user,
+                CreateCompRequest {
+                    name: "10-man".to_string(),
+                    description: None,
+                    category_id: comp_category,
+                    builds: vec![AddCompBuildRequest {
+                        build_id: build.summary.id,
+                        quantity: 10,
+                    }],
+                    parent_id: None,
+                },
+            )
+            .await
+            .expect("base comp should be created");
+
+        assert!(matches!(
+            service
+                .create_comp(
+                    &db,
+                    user,
+                    CreateCompRequest {
+                        name: "Not an expansion".to_string(),
+                        description: None,
+                        category_id: comp_category,
+                        builds: Vec::new(),
+                        parent_id: Some(base.summary.id),
+                    },
+                )
+                .await,
+            Err(AppError::Validation(message)) if message.contains("greater")
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_comp_cannot_be_its_own_parent() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let comp_category = insert_comp_category(&db, "ZvZ comps").await;
+        let service = CompService::new();
+        let comp = service
+            .create_comp(&db, user, comp_request("10-man", comp_category))
+            .await
+            .expect("comp should be created");
+
+        assert!(matches!(
+            service
+                .update_comp(
+                    &db,
+                    comp.summary.id,
+                    UpdateCompRequest {
+                        name: None,
+                        description: None,
+                        category_id: None,
+                        parent_id: Some(comp.summary.id),
+                    },
+                )
+                .await,
+            Err(AppError::Validation(message)) if message.contains("own parent")
+        ));
+    }
+
+    #[tokio::test]
     async fn a_comp_version_copies_every_build_entry_with_its_quantity() {
         let db = seed_db().await;
         let user = insert_user(&db, "admin", "admin@example.com").await;
@@ -2735,8 +2997,13 @@ mod tests {
     async fn a_comp_version_keeps_the_parent_it_was_derived_from() {
         let db = seed_db().await;
         let user = insert_user(&db, "admin", "admin@example.com").await;
+        let build_category = insert_build_category(&db, "Crystal").await;
         let zvz = insert_comp_category(&db, "ZvZ").await;
         let service = CompService::new();
+        let build = service
+            .create_build(&db, user, build_request("Pole Hammer", build_category))
+            .await
+            .unwrap();
         let parent = service
             .create_comp(&db, user, comp_request("Standard", zvz))
             .await
@@ -2746,6 +3013,10 @@ mod tests {
                 &db,
                 user,
                 CreateCompRequest {
+                    builds: vec![AddCompBuildRequest {
+                        build_id: build.summary.id,
+                        quantity: 1,
+                    }],
                     parent_id: Some(parent.summary.id),
                     ..comp_request("Bomb", zvz)
                 },

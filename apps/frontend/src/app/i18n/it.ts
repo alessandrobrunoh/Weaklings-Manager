@@ -591,6 +591,8 @@ export const it: TranslationDict = {
   'comps.createVariantFor': 'Crea variante per',
   'comps.createVariantTooltip': 'Crea una variante figlia per questa composizione',
   'comps.derivedFrom': 'Derivata da',
+  'comps.expansionAdditions': 'Build e quantità aggiuntive',
+  'comps.expansionHint': 'Le build della comp padre vengono ereditate automaticamente. Aggiungi qui solo nuove build o quantità aggiuntive.',
   'comps.expandAll': 'Espandi tutto',
   'comps.collapseAll': 'Comprimi tutto',
   'comps.noCompsMatch': 'Nessuna composizione corrisponde ai criteri di ricerca o filtro.',
