@@ -1,13 +1,12 @@
 import { ButtonInteraction } from "discord.js";
 import type { ApiClient } from "../api/client.js";
 import type {
-  BuildRole,
   EventDetailView,
   EventParticipant,
+  EventSignupOptionsView,
   PaginatedData,
   EventView,
   BattleSummary,
-  CompDetail,
 } from "../api/types.js";
 import {
   buildEventEmbed,
@@ -19,7 +18,7 @@ import { buildBattleListEmbed } from "../embeds/battle.embed.js";
 import { createResponseEmbed } from '../embeds/theme.js';
 import { formatSilver } from '../format.js';
 import { startDiscordEvent, stopDiscordEvent } from "../services/event-lifecycle.js";
-import { buildSignupRoleOptions } from "../services/event-signup.js";
+import { buildSignupRoleOptions, signupRoles } from "../services/event-signup.js";
 
 const GUILD_NAME = process.env["GUILD_NAME"] ?? "";
 
@@ -150,55 +149,24 @@ async function handleEventButton(
 
     await interaction.deferReply({ flags: ["Ephemeral"] });
 
-    let event;
+    let signupOptions;
     try {
-      event = await api.get<EventDetailView>(
-        `api/events/${eventId}`,
+      signupOptions = await api.get<EventSignupOptionsView>(
+        `api/events/${eventId}/signup-options`,
         interaction.user.id,
       );
     } catch (err) {
       const errEmbed = createResponseEmbed(
         "error",
         "Fetch Error",
-        "Failed to fetch event details.",
+        "Failed to fetch event signup options.",
         "GUILD EVENT",
       );
       await interaction.editReply({ embeds: [errEmbed] });
       return;
     }
 
-    if (!event.active_comp_id) {
-      const errEmbed = createResponseEmbed(
-        "error",
-        "No Active Comp",
-        "This event has no active composition assigned.",
-        "GUILD EVENT",
-      );
-      await interaction.editReply({ embeds: [errEmbed] });
-      return;
-    }
-
-    let comp;
-    try {
-      comp = await api.get<CompDetail>(
-        `api/comps/${event.active_comp_id}`,
-        interaction.user.id,
-      );
-    } catch (err) {
-      const errEmbed = createResponseEmbed(
-        "error",
-        "Fetch Error",
-        "Failed to fetch composition details.",
-        "GUILD EVENT",
-      );
-      await interaction.editReply({ embeds: [errEmbed] });
-      return;
-    }
-
-    // Find all unique roles required by the composition
-    const availableRoles = [
-      ...new Set<string>(comp.builds.map((b: any) => b.build.role)),
-    ] as BuildRole[];
+    const availableRoles = signupRoles(signupOptions.builds);
 
     const {
       ActionRowBuilder,
@@ -225,13 +193,10 @@ async function handleEventButton(
       InstanceType<typeof StringSelectMenuBuilder>
     >().addComponents(selectMenu);
 
-    const isParticipant = event.participants?.some(
-      (p: EventParticipant) => p.discord_id === interaction.user.id,
-    );
     const infoEmbed = createResponseEmbed(
       "info",
       "Select Role",
-      isParticipant
+      signupOptions.is_already_registered
         ? `🎯 You're already signed up — pick a role to change your build for event **#${eventId}**:`
         : `🎯 Choose your role for event **#${eventId}**:`,
       "GUILD EVENT",

@@ -1167,12 +1167,54 @@ export interface CompPartyGroup {
               @if (detail.fights.length > 0) {
                 <section class="space-y-2" aria-label="Canonical fights">
                   @for (fight of detail.fights; track fight.id) {
-                    <article class="card flex flex-wrap items-center justify-between gap-3 p-3">
-                      <div>
-                        <p class="font-medium">Fight #{{ fight.id }} · {{ fight.battle_ids.length }} segments</p>
-                        <p class="text-xs text-[var(--color-text-secondary)]">{{ formatDate(fight.started_at) }} · {{ fight.grouping_method }} @if (fight.needs_review) { · review needed }</p>
+                    @let metrics = fightMetrics(fight, detail.battles);
+                    <article class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+                      <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <h3 class="font-medium">Fight #{{ fight.id }}</h3>
+                          <p class="text-xs text-[var(--color-text-secondary)]">{{ formatDate(fight.started_at) }} · {{ fight.grouping_method }} @if (fight.needs_review) { · review needed }</p>
+                        </div>
+                        <button type="button" class="btn btn--primary btn--sm" (click)="openFight(fight)">Open Fight</button>
                       </div>
-                      <button type="button" class="btn btn--primary btn--sm" (click)="openFight(fight)">Open Fight</button>
+
+                      <div class="grid grid-cols-2 gap-3 pt-3 mt-3 border-t border-[var(--color-border)] sm:grid-cols-3 xl:grid-cols-6">
+                        <div class="surface p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                          <p class="event-detail__label">{{ t('battles.outcome') }}</p>
+                          <span
+                            class="chip mt-1 font-mono text-[0.6875rem]"
+                            [class.chip--success]="metrics.outcome === 'victory'"
+                            [class.chip--error]="metrics.outcome === 'defeat'"
+                          >
+                            {{ fightOutcomeLabel(metrics.outcome) }}
+                          </span>
+                        </div>
+                        <div class="surface p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                          <p class="event-detail__label">{{ t('battles.segments') }}</p>
+                          <p class="event-detail__value-sm mt-1">{{ metrics.segments }}</p>
+                        </div>
+                        <div class="surface p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                          <p class="event-detail__label">Confidence</p>
+                          <p class="event-detail__value-sm mt-1">{{ formatPercent(fight.grouping_confidence) }}</p>
+                        </div>
+                        @if (metrics.players !== null) {
+                          <div class="surface p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                            <p class="event-detail__label">{{ t('battles.players') }}</p>
+                            <p class="event-detail__value-sm mt-1">{{ formatNumber(metrics.players) }}</p>
+                          </div>
+                        }
+                        @if (metrics.kills !== null) {
+                          <div class="surface p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                            <p class="event-detail__label">{{ t('battles.kills') }}</p>
+                            <p class="event-detail__value-sm mt-1 text-[var(--color-success)]">{{ formatNumber(metrics.kills) }}</p>
+                          </div>
+                        }
+                        @if (metrics.fame !== null) {
+                          <div class="surface p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                            <p class="event-detail__label">{{ t('battles.kill_fame') }}</p>
+                            <p class="event-detail__value-sm mt-1 text-[var(--color-success)]">{{ formatCompact(metrics.fame) }}</p>
+                          </div>
+                        }
+                      </div>
                     </article>
                   }
                 </section>
@@ -3463,11 +3505,51 @@ export class EventDetailPage {
     void this.router.navigate(['/battles/group'], { queryParams: { ids: ids.join(',') } });
   }
 
-  protected formatDate(iso: string): string {
-    return new Date(iso).toLocaleString();
+  protected formatDate(value: string): string {
+    return new Date(value).toLocaleString();
   }
 
-  protected formatNumber(value: number | string): string {
+  protected fightMetrics(fight: EventFight, battles: readonly EventBattleSummary[]): FightKpis {
+    const linkedBattles = battles.filter((battle) => fight.battle_ids.includes(battle.albionbb_battle_id));
+    const playerCounts = linkedBattles
+      .map((battle) => battle.battle_total_players)
+      .filter((players): players is number => players !== null);
+    const hasLinkedBattles = linkedBattles.length > 0;
+    const outcomes = linkedBattles.map((battle) => battle.is_win);
+
+    return {
+      outcome:
+        fight.outcome?.outcome ??
+        (outcomes.length === 0
+          ? 'unknown'
+          : outcomes.every(Boolean)
+            ? 'victory'
+            : outcomes.every((outcome) => !outcome)
+              ? 'defeat'
+              : 'draw'),
+      segments: fight.segment_count ?? fight.battle_ids.length,
+      players:
+        fight.total_players ??
+        fight.stats?.total_players ??
+        (playerCounts.length > 0 ? Math.max(...playerCounts) : null),
+      kills:
+        fight.total_kills ??
+        fight.stats?.total_kills ??
+        (hasLinkedBattles ? linkedBattles.reduce((total, battle) => total + battle.guild_kills, 0) : null),
+      fame:
+        fight.total_fame ??
+        fight.stats?.total_fame ??
+        fight.stats?.total_kill_fame ??
+        fight.stats?.kill_fame ??
+        (hasLinkedBattles ? linkedBattles.reduce((total, battle) => total + battle.guild_kill_fame, 0) : null),
+    };
+  }
+
+  protected fightOutcomeLabel(outcome: FightKpis['outcome']): string {
+    return outcome.toUpperCase();
+  }
+
+  protected formatNumber(value: number): string {
     return new Intl.NumberFormat().format(Number(value ?? 0));
   }
 
@@ -3664,6 +3746,14 @@ export class EventDetailPage {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     }
   }
+}
+
+interface FightKpis {
+  readonly outcome: 'victory' | 'defeat' | 'draw' | 'unknown';
+  readonly segments: number;
+  readonly players: number | null;
+  readonly kills: number | null;
+  readonly fame: number | null;
 }
 
 function emptyLossEstimate(): BattleLossEstimate {

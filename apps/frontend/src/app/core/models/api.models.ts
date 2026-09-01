@@ -427,6 +427,13 @@ export interface EventFight {
   needs_review: boolean;
   /** Raw AlbionBB Battle IDs, in their persisted Fight sequence. */
   battle_ids: string[];
+  /** Optional canonical aggregates when included by the event-detail endpoint. */
+  outcome?: FightOutcomeView;
+  stats?: FightAggregateStats;
+  segment_count?: number;
+  total_players?: number;
+  total_kills?: number;
+  total_fame?: number;
 }
 
 /** Optional aggregate metrics exposed by the canonical fight detail endpoint. */
@@ -442,6 +449,29 @@ export interface FightAggregateStats {
   kill_fame?: number;
   kill_death_ratio?: number;
   win_rate?: number;
+}
+
+export interface FightOutcomeView {
+  outcome: 'victory' | 'defeat' | 'draw' | 'unknown';
+  evidence_count: number;
+  method: string;
+}
+
+/** Aggregate row returned by the canonical, guild-wide fight list. */
+export interface FightListItem {
+  id: number;
+  event_id: number | null;
+  event_title: string | null;
+  started_at: string;
+  ended_at: string | null;
+  grouping_method: string;
+  grouping_confidence: number;
+  needs_review: boolean;
+  segment_count: number;
+  total_players: number;
+  total_kills: number;
+  total_fame: number;
+  outcome: FightOutcomeView;
 }
 
 export interface FightSegmentSummary {

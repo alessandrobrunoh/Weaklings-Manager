@@ -258,6 +258,22 @@ export interface EventDetailView extends EventView {
   participants: EventParticipant[];
 }
 
+export interface EventSignupBuildOption {
+  build_id: number;
+  name: string;
+  role: BuildRole;
+  quantity: number;
+}
+
+/** Server-authoritative comp tier and builds for the requesting member's next concrete signup. */
+export interface EventSignupOptionsView {
+  active_comp_id: number;
+  active_comp_name: string;
+  active_comp_capacity: number;
+  is_already_registered: boolean;
+  builds: EventSignupBuildOption[];
+}
+
 export interface CreateEventRequest {
   title: string;
   description?: string;
