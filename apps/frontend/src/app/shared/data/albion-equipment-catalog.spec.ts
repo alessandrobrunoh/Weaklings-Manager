@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { OpenAlbionItem } from '../../core/models/api.models';
 import {
   deduplicateAlbionCombatCatalog,
+  filterAlbionEquipmentCatalog,
   normalizeAlbionEquipmentName,
 } from './albion-equipment-catalog';
 
@@ -32,6 +33,17 @@ describe('Albion equipment catalog names', () => {
     expect(normalizeAlbionEquipmentName('T8_POTION_HEAL')).toBe('Healing Potion');
     expect(normalizeAlbionEquipmentName('T8_ARMOR_PLATE_SET1')).toBe('Soldier Armor');
     expect(normalizeAlbionEquipmentName('T8_UNKNOWN_THING', 'Friendly Name')).toBe('Friendly Name');
+  });
+
+  it('finds tiered catalog identifiers in their matching equipment slot', () => {
+    const kingmaker = {
+      ...item('2H_CLAYMORE_AVALON', 'T8'),
+      name: 'Kingmaker',
+    };
+
+    expect(filterAlbionEquipmentCatalog([kingmaker], 'Kingmaker', 'weapon', 'T8')).toEqual([
+      kingmaker,
+    ]);
   });
 
   it('keeps one specialization node per weapon family across all tiers', () => {
