@@ -65,6 +65,10 @@ export class SettingsService {
     return (await this.get()).discord_event_role_id;
   }
 
+  /** Returns the category where live event voice channels are created. */
+  async eventVoiceCategoryId(): Promise<string | null> {
+    return (await this.get()).discord_event_voice_category_id;
+  }
 
   async splitsForumChannelId(): Promise<string | null> {
     return (await this.get()).discord_splits_forum_channel_id;

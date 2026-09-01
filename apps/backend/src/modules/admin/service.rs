@@ -71,6 +71,9 @@ impl AdminService {
         if let Some(value) = &req.discord_splits_forum_channel_id {
             active.discord_splits_forum_channel_id = Set(normalize(value));
         }
+        if let Some(value) = &req.discord_event_voice_category_id {
+            active.discord_event_voice_category_id = Set(normalize_discord_snowflake(value)?);
+        }
         active.updated_at = Set(chrono::Utc::now().into());
         active.updated_by_user_id = Set(Some(editor_user_id));
         let updated = active.update(db).await.map_err(AppError::Database)?;
@@ -89,6 +92,7 @@ impl AdminService {
                 "discord_transaction_spam_channel_id": req.discord_transaction_spam_channel_id,
                 "discord_event_role_id": req.discord_event_role_id,
                 "discord_splits_forum_channel_id": req.discord_splits_forum_channel_id,
+                "discord_event_voice_category_id": req.discord_event_voice_category_id,
             })),
         )
         .await;
@@ -456,6 +460,23 @@ fn normalize(value: &str) -> Option<String> {
     }
 }
 
+/// Validates a Discord snowflake while retaining the standard empty-string-means-clear convention.
+fn normalize_discord_snowflake(value: &str) -> Result<Option<String>, AppError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if !trimmed.chars().all(|character| character.is_ascii_digit())
+        || !(17..=20).contains(&trimmed.len())
+    {
+        return Err(AppError::Validation(
+            "discord_event_voice_category_id must be a Discord snowflake (17-20 digits)"
+                .to_string(),
+        ));
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
 /// Loads the singleton settings row, raising `Internal` if it is missing (it is seeded by the
 /// migration so this should only happen on a corrupted DB).
 async fn load_settings(db: &DatabaseConnection) -> Result<Model, AppError> {
@@ -596,6 +617,57 @@ mod tests {
         );
         assert_eq!(parse_discord_role_id(Some("  ")).unwrap(), None);
         assert_eq!(parse_discord_role_id(Some("")).unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn guild_settings_round_trip_event_voice_category_id() {
+        let db = seed_db().await;
+        let saved = AdminService::update_guild_settings(
+            &db,
+            1,
+            &UpdateGuildSettingsRequest {
+                discord_event_voice_category_id: Some(" 123456789012345678 ".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("save category");
+        assert_eq!(
+            saved.discord_event_voice_category_id.as_deref(),
+            Some("123456789012345678")
+        );
+        assert_eq!(
+            AdminService::get_guild_settings(&db)
+                .await
+                .expect("load category")
+                .discord_event_voice_category_id
+                .as_deref(),
+            Some("123456789012345678")
+        );
+
+        let cleared = AdminService::update_guild_settings(
+            &db,
+            1,
+            &UpdateGuildSettingsRequest {
+                discord_event_voice_category_id: Some("   ".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("clear category");
+        assert_eq!(cleared.discord_event_voice_category_id, None);
+
+        let error = AdminService::update_guild_settings(
+            &db,
+            1,
+            &UpdateGuildSettingsRequest {
+                discord_event_voice_category_id: Some("invalid-category".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("invalid snowflake must be rejected");
+        assert!(matches!(error, AppError::Validation(_)));
     }
 
     #[tokio::test]

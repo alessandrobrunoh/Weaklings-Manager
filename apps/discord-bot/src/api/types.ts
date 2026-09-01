@@ -237,6 +237,7 @@ export interface EventView {
   started_at: string | null;
   stopped_at: string | null;
   auto_stop_deadline: string | null;
+  discord_voice_channel_id: string | null;
   link_status: string;
 }
 
@@ -358,6 +359,7 @@ export interface GuildSettingsView {
   discord_event_role_id: string | null;
   discord_auto_role_id: string | null;
   discord_splits_forum_channel_id: string | null;
+  discord_event_voice_category_id: string | null;
 }
 
 /* -------------------------- Progression ----------------------------- */

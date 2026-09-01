@@ -1,9 +1,7 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
-import type { EventDetailView } from '../api/types.js';
-import { buildEventEmbed } from '../embeds/event.embed.js';
 import { createResponseEmbed } from '../embeds/theme.js';
-import { getSettingsService } from '../services/settings.js';
+import { stopDiscordEvent } from '../services/event-lifecycle.js';
 
 export const data = new SlashCommandBuilder()
   .setName('event-stop')
@@ -20,38 +18,18 @@ export async function execute(
 
   const eventId = interaction.options.getInteger('event_id', true);
 
-  const event = await api.post<EventDetailView>(
-    `api/events/${eventId}/stop`,
-    {},
+  const result = await stopDiscordEvent(
+    interaction.client,
+    api,
     interaction.user.id,
+    eventId,
   );
+  const message = result.voiceChannelOccupied
+    ? `Event **#${eventId}** stopped. Its voice channel is still occupied, so it was kept.`
+    : result.voiceChannelDeleted
+      ? `Event **#${eventId}** stopped and its empty voice channel was deleted.`
+      : `Event **#${eventId}** has been stopped. ⏹️`;
+  const noticeEmbed = createResponseEmbed('warning', 'Event Stopped', message, 'GUILD EVENT');
 
-  const embed = buildEventEmbed(event);
-  const noticeEmbed = createResponseEmbed(
-    'warning',
-    'Event Stopped',
-    `Event **#${eventId}** has been stopped. ⏹️`,
-    'GUILD EVENT',
-  );
-
-  await interaction.editReply({
-    embeds: [noticeEmbed, embed],
-  });
-
-  // Public notice in the events channel, mirroring /event-start's "now LIVE"
-  // ping — without this, an event's end was invisible outside this ephemeral
-  // reply, even though its start was announced to everyone.
-  try {
-    const eventsChannelId = await getSettingsService().eventsChannelId();
-    if (eventsChannelId) {
-      const channel = await interaction.client.channels.fetch(eventsChannelId);
-      if (channel?.isTextBased() && !channel.isDMBased() && 'send' in channel) {
-        await channel.send({
-          content: `⏹️ The event **${event.title}** has been stopped.`,
-        });
-      }
-    }
-  } catch (err) {
-    console.error('Failed to post event-stopped notice', err);
-  }
+  await interaction.editReply({ embeds: [noticeEmbed] });
 }

@@ -40,6 +40,11 @@ export interface EventReminderMessage {
   allowedMentions: { parse: []; roles?: string[] };
 }
 
+export interface EventStartMessage {
+  content: string;
+  allowedMentions: { parse: []; users: string[] };
+}
+
 /** Builds the manual pre-event reminder without enabling broad Discord mention parsing. */
 export function buildEventReminderMessage(event: EventView): EventReminderMessage {
   const timestamp = Math.floor(new Date(event.event_date_utc).getTime() / 1000);
@@ -52,6 +57,30 @@ export function buildEventReminderMessage(event: EventView): EventReminderMessag
     allowedMentions: roleIds.length > 0
       ? { parse: [], roles: roleIds }
       : { parse: [] },
+  };
+}
+
+/** Builds the live-event notice without allowing arbitrary user or role mentions. */
+export function buildEventStartMessage(
+  event: EventView,
+  participants: Array<{ discord_id: string | null; username: string }>,
+  voiceChannelId: string,
+): EventStartMessage {
+  const linkedUserIds = [...new Set(
+    participants.flatMap((participant) => participant.discord_id ? [participant.discord_id] : []),
+  )];
+  const unlinkedNames = participants
+    .filter((participant) => !participant.discord_id)
+    .map((participant) => participant.username);
+  const linkedMentions = linkedUserIds.map((userId) => `<@${userId}>`).join(" ");
+  const recipientLine = linkedMentions || "No linked Discord participants yet.";
+  const unlinkedLine = unlinkedNames.length > 0
+    ? `\nNot linked on Discord: ${unlinkedNames.join(", ")}.`
+    : "";
+
+  return {
+    content: `🚨 ${recipientLine}\n**${event.title}** is now **LIVE** — join <#${voiceChannelId}>.${unlinkedLine}`,
+    allowedMentions: { parse: [], users: linkedUserIds },
   };
 }
 

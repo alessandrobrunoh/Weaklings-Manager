@@ -544,6 +544,7 @@ impl EventService {
             call_to_arms: model.call_to_arms,
             discord_role_ids,
             regear: model.regear,
+            discord_voice_channel_id: model.discord_voice_channel_id,
             comp_id: model.comp_id,
             comp_name: comp.name,
             created_by: model.created_by,
@@ -1328,6 +1329,79 @@ impl EventService {
         }
 
         self.to_event_view(db, model).await
+    }
+
+    /// Persists the Discord voice channel created for a live event.
+    pub async fn bind_event_voice_channel(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+        channel_id: &str,
+    ) -> Result<EventView, AppError> {
+        let channel_id = channel_id.trim();
+        if !channel_id
+            .chars()
+            .all(|character| character.is_ascii_digit())
+            || !(17..=20).contains(&channel_id.len())
+        {
+            return Err(AppError::Validation(
+                "channel_id must be a Discord snowflake (17-20 digits)".to_string(),
+            ));
+        }
+
+        let model = event::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
+        if model.status != "live" {
+            return Err(AppError::Conflict(format!(
+                "Event {id} is not live (status={})",
+                model.status
+            )));
+        }
+        if let Some(existing_channel_id) = &model.discord_voice_channel_id {
+            if existing_channel_id == channel_id {
+                return self.to_event_view(db, model).await;
+            }
+            return Err(AppError::Conflict(format!(
+                "Event {id} already has Discord voice channel {existing_channel_id}"
+            )));
+        }
+
+        let mut active: event::ActiveModel = model.into();
+        active.discord_voice_channel_id = Set(Some(channel_id.to_string()));
+        active.updated_at = Set(Utc::now().into());
+        let updated = active.update(db).await.map_err(AppError::Database)?;
+        self.to_event_view(db, updated).await
+    }
+
+    /// Clears the stored Discord voice channel after a stopped event has been cleaned up.
+    pub async fn clear_event_voice_channel(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+    ) -> Result<EventView, AppError> {
+        let model = event::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
+        if model.status != "stopped" && model.status != "auto_stopped" {
+            return Err(AppError::Conflict(format!(
+                "Event {id} is not stopped (status={})",
+                model.status
+            )));
+        }
+        if model.discord_voice_channel_id.is_none() {
+            return self.to_event_view(db, model).await;
+        }
+
+        let mut active: event::ActiveModel = model.into();
+        active.discord_voice_channel_id = Set(None);
+        active.updated_at = Set(Utc::now().into());
+        let updated = active.update(db).await.map_err(AppError::Database)?;
+        self.to_event_view(db, updated).await
     }
 
     /// Marks an event as live, recording `started_at = now` and computing the
@@ -2402,6 +2476,83 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, AppError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn bind_event_voice_channel_requires_live_event_and_never_overwrites() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "voice-admin", "voice-admin@example.com").await;
+        let cat = create_comp_category(&db, "Voice ZvZ").await;
+        let comp_id = create_comp(&db, "Voice Comp", cat, None, vec![]).await;
+        let service = EventService::new();
+        let event = service
+            .create_event(
+                &db,
+                admin,
+                CreateEventRequest {
+                    title: "Voice Event".to_string(),
+                    description: None,
+                    call_to_arms: false,
+                    regear: false,
+                    comp_id,
+                    event_date_utc: "2026-09-01T20:00:00Z".to_string(),
+                    discord_role_ids: vec![],
+                    create_split: false,
+                    island_tab_id: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            service
+                .bind_event_voice_channel(&db, event.id, "111111111111111111")
+                .await,
+            Err(AppError::Conflict(_))
+        ));
+
+        service.start_event(&db, event.id).await.unwrap();
+        let bound = service
+            .bind_event_voice_channel(&db, event.id, "111111111111111111")
+            .await
+            .unwrap();
+        assert_eq!(
+            bound.discord_voice_channel_id.as_deref(),
+            Some("111111111111111111")
+        );
+        assert_eq!(
+            service
+                .bind_event_voice_channel(&db, event.id, "111111111111111111")
+                .await
+                .unwrap()
+                .discord_voice_channel_id
+                .as_deref(),
+            Some("111111111111111111")
+        );
+        assert!(matches!(
+            service
+                .bind_event_voice_channel(&db, event.id, "222222222222222222")
+                .await,
+            Err(AppError::Conflict(_))
+        ));
+
+        service.stop_event(&db, event.id, false).await.unwrap();
+        assert_eq!(
+            service
+                .clear_event_voice_channel(&db, event.id)
+                .await
+                .unwrap()
+                .discord_voice_channel_id,
+            None
+        );
+        assert_eq!(
+            service
+                .clear_event_voice_channel(&db, event.id)
+                .await
+                .unwrap()
+                .discord_voice_channel_id,
+            None
+        );
     }
 
     #[tokio::test]

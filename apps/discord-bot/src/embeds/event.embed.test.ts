@@ -3,6 +3,7 @@ import test from "node:test";
 import type { EventView } from "../api/types.js";
 import {
   buildEventReminderMessage,
+  buildEventStartMessage,
   buildEventThreadActionRow,
 } from "./event.embed.js";
 
@@ -26,6 +27,7 @@ function event(overrides: Partial<EventView> = {}): EventView {
     stopped_at: null,
     auto_stop_deadline: null,
     link_status: "pending",
+    discord_voice_channel_id: null,
     ...overrides,
   };
 }
@@ -77,6 +79,26 @@ test("reminder uses stable per-event role mentions and a relative event timestam
   assert.deepEqual(message.allowedMentions, {
     parse: [],
     roles: ["111111111111111111", "222222222222222222"],
+  });
+});
+
+test("start notice mentions linked participants and its voice channel without generic parsing", () => {
+  const message = buildEventStartMessage(
+    event(),
+    [
+      { discord_id: "333333333333333333", username: "Linked" },
+      { discord_id: null, username: "Unlinked" },
+      { discord_id: "333333333333333333", username: "Duplicate" },
+    ],
+    "444444444444444444",
+  );
+
+  assert.match(message.content, /<@333333333333333333>/);
+  assert.match(message.content, /Unlinked/);
+  assert.match(message.content, /<#444444444444444444>/);
+  assert.deepEqual(message.allowedMentions, {
+    parse: [],
+    users: ["333333333333333333"],
   });
 });
 

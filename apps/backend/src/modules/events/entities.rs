@@ -46,6 +46,8 @@ pub mod event {
         pub link_last_error: Option<String>,
         /// The timestamp when battle linking completed.
         pub link_battles_completed_at: Option<DateTimeWithTimeZone>,
+        /// Discord voice channel created for the live event, if any.
+        pub discord_voice_channel_id: Option<String>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]

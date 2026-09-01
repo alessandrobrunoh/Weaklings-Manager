@@ -1,7 +1,7 @@
 # Plan: Controlli Discord nel thread evento
 
 **Branch**: `feat/event-discord-thread-controls`
-**Status**: Active — Slice 1 implemented; mutation tooling unavailable; awaiting checkpoint approval
+**Status**: Implementation complete — all four slices delivered; global backend verification remains blocked by unrelated in-progress `comps` and event-service test errors; mutation tooling unavailable
 
 ## Goal
 
