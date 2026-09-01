@@ -9,6 +9,7 @@ import { GUILD_NAME } from "../embeds/theme.js";
 import { config } from "../config.js";
 import type { SettingsService } from "./settings.js";
 import {
+  buildEventThreadName,
   createEventAnnouncementThread,
   sendEventSignupMessage,
 } from "./event-announcement-thread.js";
@@ -20,6 +21,8 @@ interface PollerState {
   lastEventId: number;
   lastBattleId: number;
   pinged1hEvents: number[];
+  /** Discord discussion thread keyed by event ID, used for event follow-ups. */
+  eventThreadIds: Record<string, string>;
   splitCursor: string | null;
 }
 
@@ -28,6 +31,7 @@ function createDefaultState(): PollerState {
     lastEventId: 0,
     lastBattleId: 0,
     pinged1hEvents: [],
+    eventThreadIds: {},
     splitCursor: null,
   };
 }
@@ -88,6 +92,7 @@ function loadState(stateDirectory: string): PollerState {
       lastEventId: parsedState.lastEventId ?? 0,
       lastBattleId: parsedState.lastBattleId ?? 0,
       pinged1hEvents: parsedState.pinged1hEvents ?? [],
+      eventThreadIds: parsedState.eventThreadIds ?? {},
       splitCursor: parsedState.splitCursor ?? null,
     };
   } catch (error) {
@@ -173,8 +178,10 @@ export class Poller {
     }
     this.polling = true;
     try {
+      // Event announcements must complete before checking reminders so a newly
+      // created event already has its discussion thread recorded.
+      await this.checkNewEvents();
       await Promise.allSettled([
-        this.checkNewEvents(),
         this.checkNewBattles(),
         this.checkUpcomingEvents(),
         this.checkSplitSync(),
@@ -220,18 +227,25 @@ export class Poller {
         return;
       }
 
-      const eventsChannelId = await this.settings.eventsChannelId();
-      if (!eventsChannelId) {
-        console.warn(
-          "[Poller] Cannot announce events: no Discord events channel is configured",
-        );
-        return;
-      }
-      const channel = await this.getTextChannel(eventsChannelId);
-      if (!channel) return;
+      const [eventsChannelId, callToArmsChannelId] = await Promise.all([
+        this.settings.eventsChannelId(),
+        this.settings.callToArmsChannelId(),
+      ]);
 
       for (const event of newEvents) {
-        const roleIds = event.discord_role_ids ?? [];
+        const channelId = event.call_to_arms ? callToArmsChannelId : eventsChannelId;
+        if (!channelId) {
+          console.warn(
+            `[Poller] Cannot announce event #${event.id}: no ${event.call_to_arms ? "Call to Arms" : "events"} channel is configured`,
+          );
+          return;
+        }
+        const channel = await this.getTextChannel(channelId);
+        if (!channel) {
+          return;
+        }
+
+        const roleIds = event.discord_role_ids ?? []
         const announcementMessage = await channel.send({
           content: buildEventAnnouncementContent(event),
           allowedMentions: roleIds.length > 0
@@ -244,12 +258,15 @@ export class Poller {
           "Poller",
         );
         if (thread) {
+          this.state.eventThreadIds[String(event.id)] = thread.id;
           await sendEventSignupMessage(thread, event, "Poller");
         }
 
         this.state.lastEventId = event.id;
         saveState(this.stateDirectory, this.state);
-        console.log(`[Poller] Announced event #${event.id}: ${event.title}`);
+        console.log(
+          `[Poller] Announced ${event.call_to_arms ? "Call to Arms" : "event"} #${event.id}: ${event.title}`,
+        );
       }
     } catch (err) {
       console.error("[Poller] Failed to check events:", err);
@@ -286,11 +303,8 @@ export class Poller {
     }
   }
 
-  /** Checks for scheduled events starting in <= 1 hour and pings the role. */
+  /** Checks for scheduled events starting in <= 1 hour and notifies their discussion thread. */
   private async checkUpcomingEvents(): Promise<void> {
-    const eventRoleId = await this.settings.eventRoleId();
-    if (!eventRoleId) return;
-
     try {
       const result = await this.api.get<PaginatedData<EventView>>(
         "api/events",
@@ -315,23 +329,46 @@ export class Poller {
 
       if (upcomingEvents.length === 0) return;
 
-      const channel = await this.getTextChannel(await this.settings.eventsChannelId());
-      if (!channel) return;
-
       for (const event of upcomingEvents) {
-        await channel.send({
-          content: `🚨 <@&${eventRoleId}> The event **${event.title}** starts in less than 1 hour! Get ready!`,
-          allowedMentions: { roles: [eventRoleId] },
+        const threadId = this.state.eventThreadIds[String(event.id)];
+        let thread = threadId ? await this.client.channels.fetch(threadId) : null;
+
+        // Events announced before thread IDs were persisted can still be recovered
+        // while their discussion thread is active.
+        if (!thread?.isThread()) {
+          const eventsChannel = await this.getTextChannel(await this.settings.eventsChannelId());
+          const activeThreads = eventsChannel ? await eventsChannel.threads.fetchActive() : null;
+          thread = activeThreads?.threads.find(
+            (candidate) => candidate.name === buildEventThreadName(event.title),
+          ) ?? null;
+        }
+        if (!thread?.isThread()) {
+          console.warn(
+            `[Poller] Cannot send 1h warning for event #${event.id}: no active announcement thread was found`,
+          );
+          continue;
+        }
+
+        this.state.eventThreadIds[String(event.id)] = thread.id;
+        const roleIds = event.discord_role_ids ?? [];
+        const roleMentions = roleIds.map((roleId) => `<@&${roleId}>`).join(" ");
+        await thread.send({
+          content: `🚨 ${roleMentions} The event **${event.title}** starts in less than 1 hour! Get ready!`,
+          allowedMentions: roleIds.length > 0 ? { roles: roleIds } : { parse: [] },
         });
 
         this.state.pinged1hEvents.push(event.id);
         saveState(this.stateDirectory, this.state);
-        console.log(`[Poller] Pinged 1h warning for event #${event.id}`);
+        console.log(`[Poller] Posted 1h warning in the thread for event #${event.id}`);
       }
 
       // Cleanup old pinged events (keep last 50)
       if (this.state.pinged1hEvents.length > 50) {
         this.state.pinged1hEvents = this.state.pinged1hEvents.slice(-50);
+        const retainedEventIds = new Set(this.state.pinged1hEvents.map(String));
+        this.state.eventThreadIds = Object.fromEntries(
+          Object.entries(this.state.eventThreadIds).filter(([eventId]) => retainedEventIds.has(eventId)),
+        );
         saveState(this.stateDirectory, this.state);
       }
     } catch (err) {

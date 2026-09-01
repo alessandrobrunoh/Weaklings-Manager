@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { validateBuildName } from '../../shared/validation/build-validation';
 
 import type {
+  BuildDetail,
   BuildRole,
   BuildSummary,
   CompCategoryView,
@@ -27,6 +28,7 @@ import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { StatCard } from '../../shared/components/stat-card/stat-card';
 
 const ROLES: BuildRole[] = ['healer', 'support', 'dps', 'tank', 'battle_mount', 'brawler'];
 
@@ -54,7 +56,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
 @Component({
   selector: 'app-comp-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, PageHeader, PageStack, EmptyState, ErrorState, Loading, Dialog],
+  imports: [RouterLink, PageHeader, PageStack, EmptyState, ErrorState, Loading, Dialog, StatCard],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
@@ -155,6 +157,70 @@ const ROLE_LABELS: Record<BuildRole, string> = {
           </form>
         }
 
+        <section class="grid gap-4" aria-label="Composition overview">
+          <header class="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 class="text-lg font-semibold" style="color: var(--color-text)">
+                Composition overview
+              </h2>
+              <p class="text-sm" style="color: var(--color-text-secondary)">
+                Role balance and equipment coverage for this composition.
+              </p>
+            </div>
+            @if (compositionStats().weaponNames.length > 0) {
+              <span class="text-xs" style="color: var(--color-text-secondary)">
+                {{ compositionStats().weaponNames.join(' · ') }}
+              </span>
+            }
+          </header>
+
+          <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+            <app-stat-card
+              label="Builds"
+              [value]="current.builds.length"
+              [sub]="current.builds.length === 1 ? 'distinct build' : 'distinct builds'"
+              icon="package"
+              tone="primary"
+            />
+            <app-stat-card
+              label="Roster size"
+              [value]="current.total_quantity"
+              sub="total player slots"
+              icon="users"
+              tone="neutral"
+            />
+            <app-stat-card
+              label="Roles"
+              [value]="compositionStats().roleCount"
+              [sub]="compositionStats().roleSummary"
+              icon="shield"
+              tone="primary"
+            />
+            <app-stat-card
+              label="Weapon types"
+              [value]="buildDetailsLoading() ? null : compositionStats().weaponCount"
+              [sub]="buildDetailsLoading() ? 'loading loadouts…' : compositionStats().weaponSummary"
+              icon="swords"
+              tone="warning"
+            />
+            <app-stat-card
+              label="Builds ready"
+              [value]="buildDetailsLoading() ? null : compositionStats().equippedBuildCount"
+              [sub]="buildDetailsLoading() ? 'loading loadouts…' : compositionStats().equipmentCoverage"
+              icon="check"
+              tone="success"
+            />
+          </div>
+
+          @if (compositionStats().roleDistribution.length > 0) {
+            <div class="surface flex flex-wrap gap-2 p-3" aria-label="Role distribution">
+              @for (role of compositionStats().roleDistribution; track role.role) {
+                <span class="chip">{{ roleLabel(role.role) }} · {{ role.quantity }}</span>
+              }
+            </div>
+          }
+        </section>
+
         <section class="card grid gap-4 p-5" [attr.aria-label]="t('comps.builds')">
           <header class="flex items-center justify-between gap-3">
             <h2 class="text-lg font-semibold" style="color: var(--color-text)">
@@ -217,6 +283,15 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                     </span>
                   </div>
                   <div class="flex items-center gap-2">
+                    @if (canManage()) {
+                      <a
+                        class="btn btn--outline btn--sm"
+                        [routerLink]="['/comps', 'builds', entry.build_id]"
+                        [attr.aria-label]="'Edit build ' + entry.build.name"
+                      >
+                        Edit build
+                      </a>
+                    }
                     @if (mode() === 'edit' && editingBuildId() === entry.build_id) {
                       <input
                         class="input"
@@ -417,6 +492,8 @@ export class CompDetailPage {
   protected readonly compCategories = signal<CompCategoryView[]>([]);
   protected readonly buildOptions = signal<BuildSummary[]>([]);
   protected readonly compSummaries = signal<CompSummary[]>([]);
+  private readonly buildDetails = signal<ReadonlyMap<number, BuildDetail>>(new Map());
+  protected readonly buildDetailsLoading = signal(false);
 
   protected readonly mode = signal<'view' | 'edit'>('view');
   protected readonly pendingDelete = signal(false);
@@ -438,6 +515,41 @@ export class CompDetailPage {
   protected readonly availableParents = computed(() =>
     this.compSummaries().filter((sibling) => sibling.id !== this.comp()?.id),
   );
+  protected readonly compositionStats = computed(() => {
+    const comp = this.comp();
+    const roleQuantities = new Map<BuildRole, number>();
+    const weaponNames = new Set<string>();
+    let equippedBuildCount = 0;
+
+    for (const entry of comp?.builds ?? []) {
+      roleQuantities.set(
+        entry.build.role,
+        (roleQuantities.get(entry.build.role) ?? 0) + entry.quantity,
+      );
+      const weapon = this.buildDetails().get(entry.build_id)?.items.find((item) => item.slot === 'weapon');
+      if (weapon) {
+        equippedBuildCount += 1;
+        weaponNames.add(weapon.openalbion_item_name);
+      }
+    }
+
+    const roleDistribution = ROLES.filter((role) => roleQuantities.has(role)).map((role) => ({
+      role,
+      quantity: roleQuantities.get(role) ?? 0,
+    }));
+    return {
+      roleCount: roleQuantities.size,
+      roleDistribution,
+      roleSummary:
+        roleDistribution.map(({ role, quantity }) => `${ROLE_LABELS[role]} ${quantity}`).join(' · ') ||
+        'no roles assigned',
+      weaponCount: weaponNames.size,
+      weaponNames: [...weaponNames].sort((left, right) => left.localeCompare(right)),
+      weaponSummary: weaponNames.size === 1 ? 'unique weapon' : 'unique weapons',
+      equippedBuildCount,
+      equipmentCoverage: `${equippedBuildCount}/${comp?.builds.length ?? 0} builds have a weapon`,
+    };
+  });
 
   protected readonly compId = Number(this.route.snapshot.paramMap.get('compId'));
 
@@ -634,6 +746,7 @@ export class CompDetailPage {
         }),
       );
       this.comp.set(updated);
+      void this.loadBuildDetails(updated);
       this.toggleAddBuild();
       this.toasts.success('Build added');
     } catch (error) {
@@ -656,6 +769,7 @@ export class CompDetailPage {
         }),
       );
       this.comp.set(updated);
+      void this.loadBuildDetails(updated);
       this.cancelEditBuild();
       this.toasts.success('Quantity updated');
     } catch (error) {
@@ -676,6 +790,9 @@ export class CompDetailPage {
         this.api.delete<CompDetail>(`api/comps/${comp.id}/builds/${buildId}`),
       );
       this.comp.set(updated ?? null);
+      if (updated) {
+        void this.loadBuildDetails(updated);
+      }
       this.toasts.success('Build removed');
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -738,6 +855,29 @@ export class CompDetailPage {
     this.compSummaries.set(summaries.items);
   }
 
+  /** Loads the equipment required to calculate weapon and readiness statistics. */
+  private async loadBuildDetails(comp: CompDetail): Promise<void> {
+    this.buildDetailsLoading.set(true);
+    try {
+      const details = await Promise.all(
+        comp.builds.map((entry) =>
+          firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${entry.build_id}`)).catch(
+            () => null,
+          ),
+        ),
+      );
+      this.buildDetails.set(
+        new Map(
+          details
+            .filter((detail): detail is BuildDetail => detail !== null)
+            .map((detail) => [detail.id, detail]),
+        ),
+      );
+    } finally {
+      this.buildDetailsLoading.set(false);
+    }
+  }
+
   protected async load(compId: number): Promise<void> {
     if (!Number.isFinite(compId) || compId <= 0) {
       this.loading.set(false);
@@ -754,6 +894,7 @@ export class CompDetailPage {
       ]);
       this.comp.set(comp);
       this.performance.set(performance);
+      void this.loadBuildDetails(comp);
       if (comp.parent_id) {
         const parent = await firstValueFrom(
           this.api.get<CompSummary>(`api/comps/${comp.parent_id}`),

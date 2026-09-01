@@ -46,15 +46,11 @@ export const data = new SlashCommandBuilder()
  * *twice* — once immediately in whatever channel the command happened to be
  * run from, and again ~`POLL_INTERVAL_MS` later by the poller, which treats
  * any event with `id > lastEventId` as new regardless of how it was created.
- * A call-to-arms event added a *third* announcement on top, from the
- * backend's own direct-to-Discord CTA post (`EventService::announce_call_to_arms`,
- * fired by the same `POST /api/events` this command calls) — three messages,
- * up to three different channels, three separate signup threads for the
- * same event.
  *
  * The poller is the only path that also covers events created from the web
- * app, so it stays the single source of truth for the events-channel
- * announcement + signup thread. This command just asks it to run right away
+ * app, so it stays the single source of truth for the announcement + signup
+ * thread. It selects the Call to Arms channel for CTA events and the standard
+ * events channel for every other event. This command just asks it to run right away
  * (`pollNow`) instead of waiting for the next tick, so the announcement still
  * appears promptly.
  */
@@ -100,9 +96,9 @@ export async function execute(
   const noticeEmbed = createResponseEmbed(
     "success",
     "Guild Event Created",
-    `Event **#${event.id}** is now scheduled. It will be announced in the events channel` +
-      (callToArms ? " and the call-to-arms channel " : " ") +
-      "shortly.",
+    `Event **#${event.id}** is now scheduled. It will be announced in the ${
+      callToArms ? "Call to Arms" : "events"
+    } channel shortly, with its signup thread.`, 
     "GUILD EVENT",
   );
   await interaction.editReply({ embeds: [noticeEmbed] });
