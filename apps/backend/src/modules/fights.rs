@@ -25,7 +25,9 @@ use crate::modules::battles::models::{
     BattleGuildSummary, BattleLossEstimate, BattlePlayer, GuildLossEstimate, PlayerLossEstimate,
 };
 use crate::modules::comps::entities::{build, comp};
-use crate::modules::events::entities::{event, event_participation, fight, fight_battle};
+use crate::modules::events::entities::{
+    event, event_battle, event_participation, fight, fight_battle,
+};
 use crate::modules::users::entities as user;
 use crate::modules::{
     audit::service::AuditService,
@@ -55,6 +57,27 @@ pub struct FightSegmentSummary {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct FightOutcomeView {
+    /// Deterministic Fight-level outcome derived from persisted segment evidence.
+    pub outcome: FightOutcome,
+    /// Number of persisted source records used to establish the outcome.
+    pub evidence_count: i64,
+    /// How the outcome was resolved. Values include `unanimous_segment_outcomes`,
+    /// `mixed_segment_outcomes`, and `incomplete_or_conflicting_segment_evidence`.
+    pub method: String,
+}
+
+/// A canonical Fight's outcome from the configured guild's perspective.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FightOutcome {
+    Victory,
+    Defeat,
+    Draw,
+    Unknown,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct FightListItem {
     /// Canonical Fight database ID.
     pub id: i64,
@@ -71,6 +94,8 @@ pub struct FightListItem {
     pub needs_review: bool,
     /// Number of persisted `fight_battles` segments.
     pub segment_count: i64,
+    /// Deterministic outcome from persisted segment evidence.
+    pub outcome: FightOutcomeView,
 }
 
 /// Paginated canonical-fight summaries.
@@ -104,6 +129,8 @@ pub struct FightDetailView {
     pub grouping_method: String,
     pub grouping_confidence: f64,
     pub needs_review: bool,
+    /// Deterministic outcome from persisted segment evidence.
+    pub outcome: FightOutcomeView,
     /// Technical AlbionBB battle IDs that make up this fight, in sequence.
     pub battle_ids: Vec<i64>,
     /// Number of battle segments linked to this fight, including segments not yet persisted.
@@ -324,6 +351,7 @@ impl FightListQuery {
 async fn list_fights(
     _user: UserContext,
     Extension(db): Extension<DatabaseConnection>,
+    Extension(config): Extension<Config>,
     Query(query): Query<FightListQuery>,
 ) -> Result<Json<ApiResponse<PaginatedFightList>>, AppError> {
     let pagination = query.pagination();
@@ -335,7 +363,10 @@ async fn list_fights(
         .paginate(&db, limit);
     let total_items = paginator.num_items().await.map_err(AppError::Database)?;
     let total_pages = paginator.num_pages().await.map_err(AppError::Database)?;
-    let fights = paginator.fetch_page(page).await.map_err(AppError::Database)?;
+    let fights = paginator
+        .fetch_page(page)
+        .await
+        .map_err(AppError::Database)?;
 
     let fight_ids = fights.iter().map(|model| model.id).collect::<Vec<_>>();
     let segments = if fight_ids.is_empty() {
@@ -348,9 +379,32 @@ async fn list_fights(
             .map_err(AppError::Database)?
     };
     let mut segment_counts = HashMap::<i64, i64>::new();
+    let mut segments_by_fight = HashMap::<i64, Vec<fight_battle::Model>>::new();
     for segment in segments {
         *segment_counts.entry(segment.fight_id).or_default() += 1;
+        segments_by_fight
+            .entry(segment.fight_id)
+            .or_default()
+            .push(segment);
     }
+    let battle_ids = segments_by_fight
+        .values()
+        .flatten()
+        .map(|segment| segment.battle_id)
+        .collect::<Vec<_>>();
+    let snapshots = if battle_ids.is_empty() {
+        Vec::new()
+    } else {
+        GuildBattleSnapshotEntity::find()
+            .filter(GuildBattleSnapshotColumn::BattleId.is_in(battle_ids.clone()))
+            .all(&db)
+            .await
+            .map_err(AppError::Database)?
+    };
+    let snapshots_by_battle = snapshots
+        .into_iter()
+        .map(|snapshot| (snapshot.battle_id, snapshot))
+        .collect::<HashMap<_, _>>();
 
     let event_ids = fights
         .iter()
@@ -360,7 +414,7 @@ async fn list_fights(
         HashMap::new()
     } else {
         event::Entity::find()
-            .filter(event::Column::Id.is_in(event_ids))
+            .filter(event::Column::Id.is_in(event_ids.clone()))
             .all(&db)
             .await
             .map_err(AppError::Database)?
@@ -368,29 +422,166 @@ async fn list_fights(
             .map(|model| (model.id, model.title))
             .collect()
     };
+    let event_outcomes_by_segment = load_event_outcomes(&db, &event_ids, &battle_ids).await?;
 
     let items = fights
         .into_iter()
-        .map(|model| FightListItem {
-            id: model.id,
-            event_id: model.event_id,
-            event_title: model
-                .event_id
-                .and_then(|event_id| event_titles.get(&event_id).cloned()),
-            started_at: model.started_at.to_rfc3339(),
-            ended_at: model.ended_at.map(|time| time.to_rfc3339()),
-            grouping_method: model.grouping_method,
-            grouping_confidence: model.grouping_confidence,
-            needs_review: model.needs_review,
-            segment_count: segment_counts.get(&model.id).copied().unwrap_or_default(),
+        .map(|model| -> Result<FightListItem, AppError> {
+            Ok(FightListItem {
+                id: model.id,
+                event_id: model.event_id,
+                event_title: model
+                    .event_id
+                    .and_then(|event_id| event_titles.get(&event_id).cloned()),
+                started_at: model.started_at.to_rfc3339(),
+                ended_at: model.ended_at.map(|time| time.to_rfc3339()),
+                grouping_method: model.grouping_method,
+                grouping_confidence: model.grouping_confidence,
+                needs_review: model.needs_review,
+                segment_count: segment_counts.get(&model.id).copied().unwrap_or_default(),
+                outcome: resolve_fight_outcome(
+                    segments_by_fight
+                        .get(&model.id)
+                        .map_or(&[][..], Vec::as_slice),
+                    &snapshots_by_battle,
+                    model.event_id,
+                    &event_outcomes_by_segment,
+                    &config,
+                )?,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
     let paginated = PaginatedData::new(items, total_items, total_pages, page + 1, limit);
 
     Ok(Json(ApiResponse::new(PaginatedFightList::from(paginated))))
 }
 
-/// Request to merge fights into `target_fight_id`.
+async fn load_event_outcomes(
+    db: &DatabaseConnection,
+    event_ids: &[i64],
+    battle_ids: &[i64],
+) -> Result<HashMap<(i64, i64), Vec<bool>>, AppError> {
+    if event_ids.is_empty() || battle_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = event_battle::Entity::find()
+        .filter(event_battle::Column::EventId.is_in(event_ids.to_vec()))
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+    let battle_ids = battle_ids.iter().copied().collect::<HashSet<_>>();
+    let mut outcomes = HashMap::<(i64, i64), Vec<bool>>::new();
+    for row in rows {
+        let Ok(battle_id) = row.albionbb_battle_id.parse::<i64>() else {
+            continue;
+        };
+        if battle_ids.contains(&battle_id) {
+            outcomes
+                .entry((row.event_id, battle_id))
+                .or_default()
+                .push(row.is_win);
+        }
+    }
+    Ok(outcomes)
+}
+
+/// Resolves the canonical Fight outcome without choosing one segment over another.
+/// Each inner vector contains all persisted boolean outcomes for a single segment.
+fn resolve_persisted_segment_outcomes(segment_evidence: &[Vec<bool>]) -> FightOutcomeView {
+    let evidence_count = segment_evidence
+        .iter()
+        .map(|outcomes| i64::try_from(outcomes.len()).unwrap_or(i64::MAX))
+        .sum();
+    if segment_evidence.is_empty() {
+        return FightOutcomeView {
+            outcome: FightOutcome::Unknown,
+            evidence_count,
+            method: "no_segments".to_string(),
+        };
+    }
+
+    let mut resolved_segments = Vec::with_capacity(segment_evidence.len());
+    for outcomes in segment_evidence {
+        let Some(&first) = outcomes.first() else {
+            return FightOutcomeView {
+                outcome: FightOutcome::Unknown,
+                evidence_count,
+                method: "incomplete_or_conflicting_segment_evidence".to_string(),
+            };
+        };
+        if outcomes.iter().any(|outcome| *outcome != first) {
+            return FightOutcomeView {
+                outcome: FightOutcome::Unknown,
+                evidence_count,
+                method: "incomplete_or_conflicting_segment_evidence".to_string(),
+            };
+        }
+        resolved_segments.push(first);
+    }
+
+    let outcome = if resolved_segments.iter().all(|outcome| *outcome) {
+        FightOutcome::Victory
+    } else if resolved_segments.iter().all(|outcome| !*outcome) {
+        FightOutcome::Defeat
+    } else {
+        FightOutcome::Draw
+    };
+    FightOutcomeView {
+        outcome,
+        evidence_count,
+        method: match outcome {
+            FightOutcome::Draw => "mixed_segment_outcomes",
+            FightOutcome::Victory | FightOutcome::Defeat => "unanimous_segment_outcomes",
+            FightOutcome::Unknown => unreachable!("unknown is returned above"),
+        }
+        .to_string(),
+    }
+}
+
+fn resolve_fight_outcome(
+    fight_battles: &[fight_battle::Model],
+    snapshots_by_battle: &HashMap<i64, crate::modules::battles::entities::Model>,
+    event_id: Option<i64>,
+    event_outcomes_by_segment: &HashMap<(i64, i64), Vec<bool>>,
+    config: &Config,
+) -> Result<FightOutcomeView, AppError> {
+    let friendly_guild_ids = config
+        .albion_allied_guild_ids()
+        .into_iter()
+        .chain(std::iter::once(config.albion_guild_id.clone()))
+        .collect::<HashSet<_>>();
+    let friendly_guild_names = config
+        .albion_allied_guild_names()
+        .into_iter()
+        .map(|name| name.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+    let mut segment_evidence = Vec::with_capacity(fight_battles.len());
+
+    for segment in fight_battles {
+        let mut outcomes = Vec::new();
+        if let Some(snapshot) = snapshots_by_battle.get(&segment.battle_id) {
+            let guilds: Vec<BattleGuildSummary> =
+                parse_snapshot(&snapshot.guilds_json, "guild", snapshot.battle_id)?;
+            outcomes.extend(guilds.into_iter().filter_map(|guild| {
+                (friendly_guild_ids.contains(&guild.id)
+                    || friendly_guild_names.contains(&guild.name.to_ascii_lowercase()))
+                .then_some(guild.winner)
+            }));
+        }
+        if let Some(event_id) = event_id {
+            if let Some(event_outcomes) =
+                event_outcomes_by_segment.get(&(event_id, segment.battle_id))
+            {
+                outcomes.extend(event_outcomes.iter().copied());
+            }
+        }
+        segment_evidence.push(outcomes);
+    }
+
+    Ok(resolve_persisted_segment_outcomes(&segment_evidence))
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct MergeFightsRequest {
     /// Fight which remains after the merge. It must also be included in `fight_ids`.
@@ -1297,6 +1488,18 @@ async fn get_fight(
         .into_iter()
         .map(|snapshot| (snapshot.battle_id, snapshot))
         .collect::<HashMap<_, _>>();
+    let outcome = resolve_fight_outcome(
+        &fight_battles,
+        &snapshots_by_battle,
+        model.event_id,
+        &load_event_outcomes(
+            &db,
+            &model.event_id.into_iter().collect::<Vec<_>>(),
+            &battle_ids,
+        )
+        .await?,
+        &config,
+    )?;
     let analytics = build_fight_analytics(&fight_battles, &snapshots_by_battle)?;
     let mut observed_friendly_players = observed_friendly_players(&snapshots_by_battle, &config)?;
     let planned_comp = fight_planned_comp(&db, model.event_id).await?;
@@ -1317,6 +1520,7 @@ async fn get_fight(
         grouping_method: model.grouping_method,
         grouping_confidence: model.grouping_confidence,
         needs_review: model.needs_review,
+        outcome,
         battle_ids,
         segment_count: i64::try_from(fight_battles.len()).unwrap_or(i64::MAX),
         total_players: analytics.total_players,
@@ -1509,7 +1713,7 @@ async fn fight_participant_analytics(
                 .map(|id| (id, participant.user_id))
         })
         .collect::<HashMap<_, _>>();
-    for player in observed_players {
+    for player in observed_players.iter_mut() {
         player.user_id = user_ids_by_albion.get(&player.albion_player_id).copied();
     }
     let planned_participants = i64::try_from(planned.len()).unwrap_or(i64::MAX);
@@ -1864,7 +2068,7 @@ mod tests {
 
     #[test]
     fn manual_metadata_is_applied_consistently() {
-        let mut model = fight::ActiveModel::default();
+        let mut model = <fight::ActiveModel as Default>::default();
         set_manual_fight_metadata(&mut model);
 
         assert_eq!(
@@ -1873,6 +2077,47 @@ mod tests {
         );
         assert_eq!(model.grouping_confidence, Set(MANUAL_GROUPING_CONFIDENCE));
         assert_eq!(model.needs_review, Set(MANUAL_NEEDS_REVIEW));
+    }
+
+    #[test]
+    fn unanimous_persisted_segment_outcomes_resolve_to_victory() {
+        let outcome = resolve_persisted_segment_outcomes(&[vec![true, true], vec![true]]);
+
+        assert_eq!(outcome.outcome, FightOutcome::Victory);
+        assert_eq!(outcome.evidence_count, 3);
+        assert_eq!(outcome.method, "unanimous_segment_outcomes");
+    }
+
+    #[test]
+    fn mixed_fully_evidenced_segments_resolve_to_draw() {
+        let outcome = resolve_persisted_segment_outcomes(&[vec![true], vec![false]]);
+
+        assert_eq!(outcome.outcome, FightOutcome::Draw);
+        assert_eq!(outcome.evidence_count, 2);
+        assert_eq!(outcome.method, "mixed_segment_outcomes");
+    }
+
+    #[test]
+    fn missing_or_conflicting_segment_evidence_is_unknown() {
+        let missing = resolve_persisted_segment_outcomes(&[vec![true], vec![]]);
+        let conflicting = resolve_persisted_segment_outcomes(&[vec![true, false]]);
+
+        assert_eq!(missing.outcome, FightOutcome::Unknown);
+        assert_eq!(conflicting.outcome, FightOutcome::Unknown);
+        assert_eq!(missing.method, "incomplete_or_conflicting_segment_evidence");
+        assert_eq!(
+            conflicting.method,
+            "incomplete_or_conflicting_segment_evidence"
+        );
+    }
+
+    #[test]
+    fn no_segments_has_no_outcome_evidence() {
+        let outcome = resolve_persisted_segment_outcomes(&[]);
+
+        assert_eq!(outcome.outcome, FightOutcome::Unknown);
+        assert_eq!(outcome.evidence_count, 0);
+        assert_eq!(outcome.method, "no_segments");
     }
 }
 
