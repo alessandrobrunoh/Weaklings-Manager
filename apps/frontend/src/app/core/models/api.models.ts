@@ -476,7 +476,7 @@ export interface PlannedFightParticipant {
   user_id: number;
   username: string;
   albion_player_id: string | null;
-  primary_build_id: number;
+  primary_build_id: number | null;
   primary_build_name: string | null;
   secondary_build_id: number | null;
   secondary_build_name: string | null;
@@ -542,7 +542,8 @@ export interface EventParticipant {
   user_id: number;
   username: string;
   discord_id: string | null;
-  primary_build_id: number;
+  /** `null` identifies the virtual, unlimited Fill role. */
+  primary_build_id: number | null;
   primary_build_name: string;
   secondary_build_id: number | null;
   secondary_build_name: string | null;
@@ -602,7 +603,8 @@ export interface UpdateEventBattlesRequest {
 }
 
 export interface ParticipateEventRequest {
-  primary_build_id: number;
+  /** `null` selects the virtual, unlimited Fill role. */
+  primary_build_id: number | null;
   secondary_build_id?: number;
 }
 

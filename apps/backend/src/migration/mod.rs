@@ -68,6 +68,7 @@ mod m20260901_000005_add_event_voice_channel;
 mod m20260901_000006_create_fights;
 mod m20260901_000007_create_event_roster_roles;
 mod m20260901_000008_seed_fights_permissions;
+mod m20260901_000009_allow_fill_event_participations;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -140,6 +141,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260901_000006_create_fights::Migration),
             Box::new(m20260901_000007_create_event_roster_roles::Migration),
             Box::new(m20260901_000008_seed_fights_permissions::Migration),
+            Box::new(m20260901_000009_allow_fill_event_participations::Migration),
         ]
     }
 }

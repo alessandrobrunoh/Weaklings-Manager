@@ -95,7 +95,7 @@ impl<'a> RegearExtractor<'a> {
             .filter(event_participation::Column::EventId.eq(event_id))
             .all(self.db)
             .await?;
-        let signup_by_user: HashMap<i64, i64> = participations
+        let signup_by_user: HashMap<i64, Option<i64>> = participations
             .iter()
             .map(|signup| (signup.user_id, signup.primary_build_id))
             .collect();
@@ -119,7 +119,9 @@ impl<'a> RegearExtractor<'a> {
                 }
 
                 let user_id = self.resolve_user_id(&kill.victim_name).await?;
-                let primary_build_id = user_id.and_then(|id| signup_by_user.get(&id).copied());
+                let primary_build_id = user_id
+                    .and_then(|id| signup_by_user.get(&id).copied())
+                    .flatten();
 
                 let equipment = read_victim_equipment(&kill.raw);
                 let loadout_json =

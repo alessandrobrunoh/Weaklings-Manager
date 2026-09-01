@@ -242,10 +242,10 @@ pub struct EventParticipantView {
     /// particular) tell "this is me" apart from every other participant without a numeric
     /// `user_id` neither side already has in hand.
     pub discord_id: Option<String>,
-    /// The primary build ID chosen by the participant.
+    /// The primary build ID chosen by the participant, or `None` for the unlimited `Fill` role.
     #[schema(example = 5)]
-    pub primary_build_id: i64,
-    /// The name of the primary build.
+    pub primary_build_id: Option<i64>,
+    /// The name of the primary build, or `Fill` for the virtual assignment.
     pub primary_build_name: String,
     /// The optional secondary build ID.
     #[schema(example = 7)]
@@ -468,8 +468,9 @@ pub struct UpdateEventRequest {
     "secondary_build_id": 7
 }))]
 pub struct ParticipateEventRequest {
-    /// The primary build ID chosen (must have a slot in the active comp or an extra roster role).
-    pub primary_build_id: i64,
+    /// The primary build ID chosen (must have a slot in the active comp or an extra roster role),
+    /// or `None` for the unlimited virtual `Fill` role.
+    pub primary_build_id: Option<i64>,
     /// The optional backup/secondary build ID (must be in the active comp or extra roster roles).
     pub secondary_build_id: Option<i64>,
 }
@@ -486,8 +487,9 @@ pub struct ParticipateEventRequest {
     "secondary_build_id": 7
 }))]
 pub struct SetParticipantRequest {
-    /// The primary build ID to assign (must have a slot in the active comp or an extra roster role).
-    pub primary_build_id: i64,
+    /// The primary build ID to assign (must have a slot in the active comp or an extra roster
+    /// role), or `None` for the unlimited virtual `Fill` role.
+    pub primary_build_id: Option<i64>,
     /// The optional backup/secondary build ID to assign (must be in the active comp or extra roster roles).
     pub secondary_build_id: Option<i64>,
 }

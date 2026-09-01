@@ -287,8 +287,11 @@ impl UserService {
 
         let events_attended = participations.len() as i64;
         let mut build_counts = HashMap::new();
-        for p in &participations {
-            *build_counts.entry(p.primary_build_id).or_insert(0) += 1;
+        for build_id in participations
+            .iter()
+            .filter_map(|participation| participation.primary_build_id)
+        {
+            *build_counts.entry(build_id).or_insert(0) += 1;
         }
         let most_played_build_id = build_counts
             .into_iter()

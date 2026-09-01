@@ -245,7 +245,7 @@ export interface EventParticipant {
   user_id: number;
   username: string;
   discord_id: string | null;
-  primary_build_id: number;
+  primary_build_id: number | null;
   primary_build_name: string;
   secondary_build_id: number | null;
   secondary_build_name: string | null;
@@ -269,7 +269,7 @@ export interface CreateEventRequest {
 }
 
 export interface ParticipateEventRequest {
-  primary_build_id: number;
+  primary_build_id: number | null;
   secondary_build_id?: number;
 }
 

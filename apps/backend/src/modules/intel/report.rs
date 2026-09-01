@@ -765,7 +765,10 @@ fn compute_operations(raw: &RawData, _range: &DateRange) -> ReportOperations {
         }
     }
     for p in &raw.participations {
-        if let Some(role) = role_by_build.get(&p.primary_build_id) {
+        if let Some(role) = p
+            .primary_build_id
+            .and_then(|build_id| role_by_build.get(&build_id))
+        {
             *role_fill.entry((*role).to_string()).or_insert(0) += 1;
         }
     }
@@ -1719,7 +1722,7 @@ mod tests {
             id: 1,
             event_id: 1,
             user_id: 42,
-            primary_build_id: 1,
+            primary_build_id: Some(1),
             secondary_build_id: None,
             created_at: ts("2026-08-01T00:00:00Z"),
             updated_at: ts("2026-08-01T00:00:00Z"),

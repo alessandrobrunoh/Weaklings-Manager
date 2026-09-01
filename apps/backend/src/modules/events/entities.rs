@@ -223,8 +223,8 @@ pub mod event_participation {
         pub event_id: i64,
         /// The user participating in the event.
         pub user_id: i64,
-        /// The primary build chosen by the participant.
-        pub primary_build_id: i64,
+        /// The primary build chosen by the participant, or `None` for the virtual `Fill` role.
+        pub primary_build_id: Option<i64>,
         /// The optional secondary build chosen by the participant.
         pub secondary_build_id: Option<i64>,
         /// The timestamp when the participant signed up.

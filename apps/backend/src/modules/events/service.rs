@@ -1243,11 +1243,15 @@ impl EventService {
             .count(db)
             .await
             .map_err(AppError::Database)? as usize;
+        let concrete_participation_count = participations
+            .iter()
+            .filter(|participation| participation.primary_build_id.is_some())
+            .count();
         let (active_comp, active_capacity) = self
             .resolve_active_comp_with_extra_slots(
                 db,
                 event_model.comp_id,
-                participations.len(),
+                concrete_participation_count,
                 extra_roster_slots,
             )
             .await?;
@@ -1286,13 +1290,18 @@ impl EventService {
                 .ok_or_else(|| AppError::NotFound(format!("User {} not found", p.user_id)))?;
             let username = crate::modules::users::display_name::resolve(db, &user).await?;
 
-            let primary_build = build::Entity::find_by_id(p.primary_build_id)
-                .one(db)
-                .await
-                .map_err(AppError::Database)?
-                .ok_or_else(|| {
-                    AppError::NotFound(format!("Build {} not found", p.primary_build_id))
-                })?;
+            let primary_build_name = if let Some(primary_build_id) = p.primary_build_id {
+                build::Entity::find_by_id(primary_build_id)
+                    .one(db)
+                    .await
+                    .map_err(AppError::Database)?
+                    .ok_or_else(|| {
+                        AppError::NotFound(format!("Build {primary_build_id} not found"))
+                    })?
+                    .name
+            } else {
+                "Fill".to_string()
+            };
 
             let secondary_build_name = if let Some(sec_id) = p.secondary_build_id {
                 let sec_build = build::Entity::find_by_id(sec_id)
@@ -1310,7 +1319,7 @@ impl EventService {
                 username,
                 discord_id: user.discord_id.clone(),
                 primary_build_id: p.primary_build_id,
-                primary_build_name: primary_build.name,
+                primary_build_name,
                 secondary_build_id: p.secondary_build_id,
                 secondary_build_name,
                 specializations: specializations_by_user
@@ -1463,7 +1472,7 @@ impl EventService {
 
         let signups_as_primary = signups
             .iter()
-            .filter(|signup| signup.primary_build_id == build_id)
+            .filter(|signup| signup.primary_build_id == Some(build_id))
             .count() as i64;
         let signups_as_secondary = signups
             .iter()
@@ -2370,7 +2379,7 @@ impl EventService {
         db: &DatabaseConnection,
         event_id: i64,
         user_id: i64,
-        primary_build_id: i64,
+        primary_build_id: Option<i64>,
         secondary_build_id: Option<i64>,
     ) -> Result<EventDetailView, AppError> {
         // Validate event exists
@@ -2380,16 +2389,19 @@ impl EventService {
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
 
-        // Validate builds exist in DB
-        let primary_exists = build::Entity::find_by_id(primary_build_id)
-            .count(db)
-            .await
-            .map_err(AppError::Database)?
-            > 0;
-        if !primary_exists {
-            return Err(AppError::NotFound(format!(
-                "Primary build {primary_build_id} not found"
-            )));
+        // A missing primary build is the virtual, unlimited Fill role. Concrete build IDs remain
+        // validated exactly as before.
+        if let Some(primary_build_id) = primary_build_id {
+            let primary_exists = build::Entity::find_by_id(primary_build_id)
+                .count(db)
+                .await
+                .map_err(AppError::Database)?
+                > 0;
+            if !primary_exists {
+                return Err(AppError::NotFound(format!(
+                    "Primary build {primary_build_id} not found"
+                )));
+            }
         }
 
         if let Some(sec_id) = secondary_build_id {
@@ -2415,12 +2427,17 @@ impl EventService {
         let existing = current_participations.iter().find(|p| p.user_id == user_id);
         let is_new = existing.is_none();
 
-        // Calculate target size
-        let target_size = if existing.is_some() {
-            current_participations.len()
-        } else {
-            current_participations.len() + 1
-        };
+        // Only concrete build assignments occupy composition capacity. Replacing a concrete
+        // assignment with Fill releases a slot; replacing Fill with a build claims one.
+        let concrete_participation_count = current_participations
+            .iter()
+            .filter(|participation| participation.primary_build_id.is_some())
+            .count();
+        let existing_consumes_slot =
+            existing.is_some_and(|participation| participation.primary_build_id.is_some());
+        let target_size = concrete_participation_count
+            .saturating_sub(usize::from(existing_consumes_slot))
+            + usize::from(primary_build_id.is_some());
 
         let extra_roster_roles = event_roster_role::Entity::find()
             .filter(event_roster_role::Column::EventId.eq(event_id))
@@ -2442,24 +2459,39 @@ impl EventService {
             )
             .await?;
 
-        // Fetch comp builds for active comp to validate build selections
+        // Fetch comp builds for active comp to validate build selections.
         let active_comp_builds = comp_build::Entity::find()
             .filter(comp_build::Column::CompId.eq(active_comp.id))
             .all(db)
             .await
             .map_err(AppError::Database)?;
 
-        let comp_primary_slots = active_comp_builds
-            .iter()
-            .find(|cb| cb.build_id == primary_build_id)
-            .map_or(0, |comp_build| comp_build.quantity as usize);
-        let extra_primary_slots = usize::from(extra_roster_build_ids.contains(&primary_build_id));
-        let primary_slot_limit = comp_primary_slots + extra_primary_slots;
-        if primary_slot_limit == 0 {
-            return Err(AppError::Validation(format!(
-                "Primary build {primary_build_id} is not allowed in comp {} or its extra roster roles",
-                active_comp.name
-            )));
+        // Fill does not consume a build slot. A concrete primary build remains constrained by the
+        // resolved comp and event-specific extra roster roles.
+        if let Some(primary_build_id) = primary_build_id {
+            let comp_primary_slots = active_comp_builds
+                .iter()
+                .find(|cb| cb.build_id == primary_build_id)
+                .map_or(0, |comp_build| comp_build.quantity as usize);
+            let extra_primary_slots =
+                usize::from(extra_roster_build_ids.contains(&primary_build_id));
+            let primary_slot_limit = comp_primary_slots + extra_primary_slots;
+            if primary_slot_limit == 0 {
+                return Err(AppError::Validation(format!(
+                    "Primary build {primary_build_id} is not allowed in comp {} or its extra roster roles",
+                    active_comp.name
+                )));
+            }
+
+            let taken_count = current_participations
+                .iter()
+                .filter(|p| p.user_id != user_id && p.primary_build_id == Some(primary_build_id))
+                .count();
+            if taken_count >= primary_slot_limit {
+                return Err(AppError::Validation(format!(
+                    "The primary role for build '{primary_build_id}' is already full (limit: {primary_slot_limit})"
+                )));
+            }
         }
 
         // Secondary builds do not consume a primary slot, but must be available from either source.
@@ -2471,16 +2503,6 @@ impl EventService {
                     active_comp.name
                 )));
             }
-        }
-
-        let taken_count = current_participations
-            .iter()
-            .filter(|p| p.user_id != user_id && p.primary_build_id == primary_build_id)
-            .count();
-        if taken_count >= primary_slot_limit {
-            return Err(AppError::Validation(format!(
-                "The primary role for build '{primary_build_id}' is already full (limit: {primary_slot_limit})"
-            )));
         }
 
         // Save or update
@@ -2718,7 +2740,7 @@ mod tests {
         event_participation::ActiveModel {
             event_id: Set(event_id),
             user_id: Set(user_id),
-            primary_build_id: Set(build_id),
+            primary_build_id: Set(Some(build_id)),
             secondary_build_id: Set(None),
             ..Default::default()
         }
@@ -2774,22 +2796,123 @@ mod tests {
                 &db,
                 event_id,
                 first_user,
-                comp_build_id,
+                Some(comp_build_id),
                 Some(extra_build_id),
             )
             .await
             .expect("comp build and extra secondary should be allowed");
         service
-            .apply_participation(&db, event_id, second_user, extra_build_id, None)
+            .apply_participation(&db, event_id, second_user, Some(extra_build_id), None)
             .await
             .expect("one extra primary slot should be allowed beyond comp capacity");
 
         assert!(matches!(
             service
-                .apply_participation(&db, event_id, third_user, extra_build_id, None)
+                .apply_participation(&db, event_id, third_user, Some(extra_build_id), None)
                 .await,
             Err(AppError::Validation(message)) if message.contains("already full")
         ));
+    }
+
+    #[tokio::test]
+    async fn fill_participation_is_unlimited_and_does_not_consume_a_build_slot() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let member = insert_user(&db, "member", "member@example.com").await;
+        let build_category = create_build_category(&db, "Roster builds").await;
+        let build_id = create_build(&db, "Main Tank", build_category).await;
+        let comp_category = create_comp_category(&db, "Roster comps").await;
+        let comp_id = create_comp(
+            &db,
+            "One-slot comp",
+            comp_category,
+            None,
+            vec![(build_id, 1)],
+        )
+        .await;
+        let event_id = event::ActiveModel {
+            title: Set("Fill event".to_string()),
+            comp_id: Set(comp_id),
+            created_by: Set(author),
+            event_date_utc: Set(ts()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("event should be created")
+        .id;
+
+        let detail = EventService::new()
+            .participate(
+                &db,
+                event_id,
+                member,
+                ParticipateEventRequest {
+                    primary_build_id: None,
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .expect("Fill should be accepted without a build");
+
+        assert_eq!(detail.participants.len(), 1);
+        assert_eq!(detail.participants[0].primary_build_id, None);
+        assert_eq!(detail.participants[0].primary_build_name, "Fill");
+
+        let regular_member = insert_user(&db, "regular", "regular@example.com").await;
+        EventService::new()
+            .participate(
+                &db,
+                event_id,
+                regular_member,
+                ParticipateEventRequest {
+                    primary_build_id: Some(build_id),
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .expect("Fill must not consume the one available build slot");
+
+        assert!(matches!(
+            EventService::new()
+                .participate(
+                    &db,
+                    event_id,
+                    member,
+                    ParticipateEventRequest {
+                        primary_build_id: Some(build_id),
+                        secondary_build_id: None,
+                    },
+                )
+                .await,
+            Err(AppError::Validation(message)) if message.contains("full")
+        ));
+
+        EventService::new()
+            .participate(
+                &db,
+                event_id,
+                regular_member,
+                ParticipateEventRequest {
+                    primary_build_id: None,
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .expect("changing a build assignment to Fill should release its slot");
+        let detail = EventService::new()
+            .participate(
+                &db,
+                event_id,
+                member,
+                ParticipateEventRequest {
+                    primary_build_id: Some(build_id),
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .expect("changing Fill to a build should claim an available slot");
+        assert_eq!(detail.participants.len(), 2);
     }
 
     #[tokio::test]
@@ -3271,7 +3394,7 @@ mod tests {
         event_participation::ActiveModel {
             event_id: Set(event),
             user_id: Set(alice),
-            primary_build_id: Set(hammer),
+            primary_build_id: Set(Some(hammer)),
             secondary_build_id: Set(Some(axe)),
             ..Default::default()
         }
@@ -3675,7 +3798,7 @@ mod tests {
                 event.id,
                 player1,
                 ParticipateEventRequest {
-                    primary_build_id: b1,
+                    primary_build_id: Some(b1),
                     secondary_build_id: None,
                 },
             )
@@ -3694,7 +3817,7 @@ mod tests {
                 event.id,
                 player2,
                 ParticipateEventRequest {
-                    primary_build_id: b2,
+                    primary_build_id: Some(b2),
                     secondary_build_id: Some(b1),
                 },
             )
@@ -3713,7 +3836,7 @@ mod tests {
                 event.id,
                 player3,
                 ParticipateEventRequest {
-                    primary_build_id: b1,
+                    primary_build_id: Some(b1),
                     secondary_build_id: None,
                 },
             )
@@ -3764,7 +3887,7 @@ mod tests {
                 event.id,
                 player1,
                 ParticipateEventRequest {
-                    primary_build_id: b1,
+                    primary_build_id: Some(b1),
                     secondary_build_id: None,
                 },
             )
@@ -3779,7 +3902,7 @@ mod tests {
                 event.id,
                 player2,
                 ParticipateEventRequest {
-                    primary_build_id: b1,
+                    primary_build_id: Some(b1),
                     secondary_build_id: None,
                 },
             )
@@ -3795,7 +3918,7 @@ mod tests {
                 event.id,
                 player2,
                 ParticipateEventRequest {
-                    primary_build_id: b2,
+                    primary_build_id: Some(b2),
                     secondary_build_id: Some(b1),
                 },
             )
@@ -3866,7 +3989,7 @@ mod tests {
             .unwrap();
 
         let req = ParticipateEventRequest {
-            primary_build_id: b1,
+            primary_build_id: Some(b1),
             secondary_build_id: None,
         };
         service
@@ -3919,7 +4042,7 @@ mod tests {
                 event.id,
                 player,
                 ParticipateEventRequest {
-                    primary_build_id: b1,
+                    primary_build_id: Some(b1),
                     secondary_build_id: None,
                 },
             )
