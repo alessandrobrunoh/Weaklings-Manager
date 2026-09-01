@@ -283,6 +283,15 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                     </span>
                   </div>
                   <div class="flex items-center gap-2">
+                    @if (canManage()) {
+                      <a
+                        class="btn btn--outline btn--sm"
+                        [routerLink]="['/comps', 'builds', entry.build_id]"
+                        [attr.aria-label]="'Edit build ' + entry.build.name"
+                      >
+                        Edit build
+                      </a>
+                    }
                     @if (mode() === 'edit' && editingBuildId() === entry.build_id) {
                       <input
                         class="input"

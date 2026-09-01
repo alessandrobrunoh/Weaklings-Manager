@@ -56,6 +56,11 @@ export class SettingsService {
     return (await this.get()).discord_battles_channel_id;
   }
 
+  /** Returns the dedicated channel for urgent Call to Arms event announcements. */
+  async callToArmsChannelId(): Promise<string | null> {
+    return (await this.get()).discord_battles_cta_channel_id;
+  }
+
   async eventRoleId(): Promise<string | null> {
     return (await this.get()).discord_event_role_id;
   }

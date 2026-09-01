@@ -3,7 +3,6 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
-use reqwest::Client;
 use sea_orm::sea_query::{Expr, Func};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
@@ -18,7 +17,7 @@ use super::models::{
     EventDetailView, EventParticipantView, EventSplitStats, EventView, OpponentPerformanceView,
     ParticipateEventRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
-use crate::config::Config;
+
 use crate::errors::AppError;
 use crate::modules::albionbb::client::{
     AlbionBbBattleSummary, AlbionBbBattlesFilters, AlbionBbGuild,
@@ -77,83 +76,6 @@ async fn load_event_discord_role_ids(
         .into_iter()
         .map(|role| role.discord_role_id)
         .collect())
-}
-
-/// Formats event announcements for Discord without depending on interactive components.
-///
-/// This keeps backend-created call-to-arms messages visually aligned with bot-created events while
-/// allowing Discord to localize the timestamp per user. The function performs no I/O and emits
-/// only the explicitly selected role mentions, so an empty selection cannot ping a role.
-///
-/// # Example
-/// ```ignore
-/// let content = build_event_announcement_content(&event_view);
-/// assert!(content.contains("<@&123>"));
-/// ```
-fn build_event_announcement_content(event_view: &EventView) -> String {
-    let scheduled_at = format_event_timestamp(&event_view.event_date_utc);
-    let description = event_view
-        .description
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("*No description provided.*");
-    let role_mentions = event_view
-        .discord_role_ids
-        .iter()
-        .map(|role_id| format!("<@&{role_id}>"))
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    format!(
-        "📌 {} - {}\n\n{}\n\n|| {} ||\n\n---",
-        event_view.title, scheduled_at, description, role_mentions
-    )
-}
-
-/// Converts a stored RFC3339 date into Discord's compact localized timestamp tokens.
-///
-/// Invalid timestamps are returned as-is because announcements are best-effort side effects: a
-/// formatting issue should not block event creation or hide the original stored value from officers.
-///
-/// # Example
-/// ```ignore
-/// assert_eq!(format_event_timestamp("2026-08-15T20:00:00Z"), "<t:1786824000:t> | <t:1786824000:d>");
-/// ```
-fn format_event_timestamp(event_date_utc: &str) -> String {
-    match DateTime::parse_from_rfc3339(event_date_utc) {
-        Ok(date) => {
-            let timestamp = date.timestamp();
-            format!("<t:{timestamp}:t> | <t:{timestamp}:d>")
-        }
-        Err(_) => event_date_utc.to_string(),
-    }
-}
-
-/// Compact Discord thread title that stays within Discord's API constraints.
-///
-/// Discord rejects thread names above 100 UTF-8 characters, so this helper trims by `char`
-/// boundaries instead of byte offsets. It performs no I/O and is safe to use before best-effort
-/// Discord side effects.
-///
-/// # Example
-/// ```ignore
-/// let name = build_event_thread_name("ZvZ Castle Fight");
-/// assert_eq!(name, "Event: ZvZ Castle Fight");
-/// ```
-fn build_event_thread_name(event_title: &str) -> String {
-    const MAX_THREAD_NAME_CHARS: usize = 100;
-
-    let fallback_title = "Call to Arms";
-    let trimmed_title = event_title.trim();
-    let title = if trimmed_title.is_empty() {
-        fallback_title
-    } else {
-        trimmed_title
-    };
-    let thread_name = format!("Event: {title}");
-
-    thread_name.chars().take(MAX_THREAD_NAME_CHARS).collect()
 }
 
 /// Incremental accumulator for opponent analytics.
@@ -1121,10 +1043,6 @@ impl EventService {
             }
         }
 
-        if req.call_to_arms {
-            self.announce_call_to_arms(db, &event_view).await;
-        }
-
         let _ = AuditService::log(
             db,
             "EVENT_CREATED",
@@ -1148,124 +1066,6 @@ impl EventService {
         .await;
 
         Ok(event_view)
-    }
-
-    /// Posts an urgent call-to-arms announcement to the dedicated Discord channel.
-    ///
-    /// Fires only when the operator configured `DISCORD_BATTLES_CTA_CHANNEL_ID` together with
-    /// `DISCORD_BOT_TOKEN`; otherwise the event is still created normally. Best-effort by design:
-    /// a Discord outage must never roll back event creation, so failures are only logged.
-    async fn announce_call_to_arms(&self, db: &DatabaseConnection, event_view: &EventView) {
-        let Ok(cfg) = Config::try_from_env() else {
-            return;
-        };
-        let Some(token) = cfg.discord_bot_token else {
-            return;
-        };
-
-        // Moved off env vars into `guild_settings` so an admin can change these without a
-        // redeploy — the bot token itself stays a deployment secret above.
-        let Ok(settings) =
-            crate::modules::admin::service::AdminService::get_guild_settings(db).await
-        else {
-            return;
-        };
-        let Some(channel_id) = settings.discord_battles_cta_channel_id else {
-            return;
-        };
-
-        let message = build_event_announcement_content(event_view);
-        let allowed_mentions = if event_view.discord_role_ids.is_empty() {
-            serde_json::json!({ "parse": [] })
-        } else {
-            serde_json::json!({ "roles": event_view.discord_role_ids })
-        };
-
-        let payload = serde_json::json!({
-            "content": message,
-            "allowed_mentions": allowed_mentions
-        });
-
-        let Some(message_response) =
-            AuditService::send_discord_payload(&channel_id, &token, payload).await
-        else {
-            return;
-        };
-        let Some(message_id) = message_response.get("id").and_then(|value| value.as_str()) else {
-            tracing::warn!(
-                event_id = event_view.id,
-                "Discord CTA message response did not include an id"
-            );
-            return;
-        };
-
-        self.create_call_to_arms_thread(&channel_id, &token, message_id, event_view)
-            .await;
-    }
-
-    /// Creates a Discord thread attached to the CTA announcement message.
-    ///
-    /// Thread creation is intentionally best-effort because Discord permissions can differ between
-    /// channels: event creation remains successful, while failures are logged with Discord's body to
-    /// make missing `Create Public Threads` or `Send Messages in Threads` permissions actionable.
-    ///
-    /// # Example
-    /// ```ignore
-    /// service.create_call_to_arms_thread("123", "bot-token", "456", &event_view).await;
-    /// ```
-    async fn create_call_to_arms_thread(
-        &self,
-        channel_id: &str,
-        token: &str,
-        message_id: &str,
-        event_view: &EventView,
-    ) {
-        let client = Client::new();
-        let url = format!(
-            "https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}/threads"
-        );
-        let payload = serde_json::json!({
-            "name": build_event_thread_name(&event_view.title),
-            "auto_archive_duration": 1440
-        });
-
-        match client
-            .post(url)
-            .header("Authorization", format!("Bot {token}"))
-            .json(&payload)
-            .send()
-            .await
-        {
-            Ok(response) if response.status().is_success() => {
-                tracing::info!(
-                    event_id = event_view.id,
-                    message_id = message_id,
-                    "Discord CTA thread created"
-                );
-            }
-            Ok(response) => {
-                let status = response.status();
-                let body = match response.text().await {
-                    Ok(text) => text,
-                    Err(e) => e.to_string(),
-                };
-                tracing::warn!(
-                    event_id = event_view.id,
-                    message_id = message_id,
-                    status = %status,
-                    body = %body,
-                    "Failed to create Discord CTA thread"
-                );
-            }
-            Err(e) => {
-                tracing::warn!(
-                    event_id = event_view.id,
-                    message_id = message_id,
-                    error = %e,
-                    "Error creating Discord CTA thread"
-                );
-            }
-        }
     }
 
     /// Updates an existing event.

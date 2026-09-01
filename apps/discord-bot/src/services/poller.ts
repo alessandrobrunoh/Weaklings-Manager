@@ -227,18 +227,25 @@ export class Poller {
         return;
       }
 
-      const eventsChannelId = await this.settings.eventsChannelId();
-      if (!eventsChannelId) {
-        console.warn(
-          "[Poller] Cannot announce events: no Discord events channel is configured",
-        );
-        return;
-      }
-      const channel = await this.getTextChannel(eventsChannelId);
-      if (!channel) return;
+      const [eventsChannelId, callToArmsChannelId] = await Promise.all([
+        this.settings.eventsChannelId(),
+        this.settings.callToArmsChannelId(),
+      ]);
 
       for (const event of newEvents) {
-        const roleIds = event.discord_role_ids ?? [];
+        const channelId = event.call_to_arms ? callToArmsChannelId : eventsChannelId;
+        if (!channelId) {
+          console.warn(
+            `[Poller] Cannot announce event #${event.id}: no ${event.call_to_arms ? "Call to Arms" : "events"} channel is configured`,
+          );
+          return;
+        }
+        const channel = await this.getTextChannel(channelId);
+        if (!channel) {
+          return;
+        }
+
+        const roleIds = event.discord_role_ids ?? []
         const announcementMessage = await channel.send({
           content: buildEventAnnouncementContent(event),
           allowedMentions: roleIds.length > 0
@@ -257,7 +264,9 @@ export class Poller {
 
         this.state.lastEventId = event.id;
         saveState(this.stateDirectory, this.state);
-        console.log(`[Poller] Announced event #${event.id}: ${event.title}`);
+        console.log(
+          `[Poller] Announced ${event.call_to_arms ? "Call to Arms" : "event"} #${event.id}: ${event.title}`,
+        );
       }
     } catch (err) {
       console.error("[Poller] Failed to check events:", err);
