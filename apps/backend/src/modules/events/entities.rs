@@ -22,6 +22,8 @@ pub mod event {
         pub regear: bool,
         /// The composition associated with the event.
         pub comp_id: i64,
+        /// Optional signup threshold that advances to the next comp expansion without blocking signups.
+        pub player_cap: Option<i64>,
         /// The user who created the event.
         pub created_by: i64,
         /// The timestamp when the event will start (UTC).

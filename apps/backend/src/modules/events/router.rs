@@ -322,15 +322,28 @@ async fn roster_live(
             "websocket origin is not allowed".to_string(),
         ));
     }
-    Ok(websocket.on_upgrade(move |socket| roster_socket(socket, hub, id)))
+    Ok(websocket.on_upgrade(move |socket| roster_socket(socket, hub, db, id)))
 }
 
-async fn roster_socket(mut socket: WebSocket, hub: RosterHub, event_id: i64) {
+async fn roster_socket(
+    mut socket: WebSocket,
+    hub: RosterHub,
+    db: sea_orm::DatabaseConnection,
+    event_id: i64,
+) {
     let mut receiver = hub.subscribe();
+    let roster_version = match super::entities::event::Entity::find_by_id(event_id)
+        .one(&db)
+        .await
+    {
+        Ok(Some(event)) => event.roster_version,
+        Ok(None) | Err(_) => return,
+    };
+    let mut latest_roster_version = roster_version;
     let ready = RosterNotification {
         message_type: "ready",
         event_id,
-        roster_version: 0,
+        roster_version,
         change_kind: None,
         changed_seat_keys: None,
     };
@@ -338,8 +351,11 @@ async fn roster_socket(mut socket: WebSocket, hub: RosterHub, event_id: i64) {
         return;
     }
     loop {
-        match receiver.recv().await {
+        tokio::select! {
+            incoming = socket.recv() => { if incoming.is_none() { return; } }
+            received = receiver.recv() => match received {
             Ok(notification) if notification.event_id == event_id => {
+                latest_roster_version = notification.roster_version;
                 if send_roster_notification(&mut socket, &notification)
                     .await
                     .is_err()
@@ -352,7 +368,7 @@ async fn roster_socket(mut socket: WebSocket, hub: RosterHub, event_id: i64) {
                 let resync = RosterNotification {
                     message_type: "resync_required",
                     event_id,
-                    roster_version: 0,
+                    roster_version: latest_roster_version,
                     change_kind: None,
                     changed_seat_keys: None,
                 };
@@ -364,6 +380,7 @@ async fn roster_socket(mut socket: WebSocket, hub: RosterHub, event_id: i64) {
                 }
             }
             Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+            }
         }
     }
 }
@@ -634,11 +651,15 @@ async fn delete_event(
 async fn participate(
     user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(hub): Extension<RosterHub>,
     Path(id): Path<i64>,
     Json(req): Json<ParticipateEventRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     let service = EventService::new();
-    let detail = service.participate(&db, id, user.user_id, req).await?;
+    let (detail, version) = service
+        .participate_with_roster_version(&db, id, user.user_id, req)
+        .await?;
+    hub.publish(id, version, "participation_changed", Vec::new());
     Ok(Json(ApiResponse::new(detail)))
 }
 
@@ -664,10 +685,23 @@ async fn participate(
 async fn cancel_participation(
     user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(hub): Extension<RosterHub>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     let service = EventService::new();
-    let detail = service.cancel_participation(&db, id, user.user_id).await?;
+    let (detail, version, seat_key) = service.cancel_participation(&db, id, user.user_id).await?;
+    tracing::info!(
+        event_id = id,
+        roster_version = version,
+        actor_id = user.user_id,
+        "participation cancelled"
+    );
+    hub.publish(
+        id,
+        version,
+        "participant_left",
+        seat_key.into_iter().collect(),
+    );
     Ok(Json(ApiResponse::new(detail)))
 }
 
@@ -739,14 +773,16 @@ async fn set_participant(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(hub): Extension<RosterHub>,
     Path((id, target_user_id)): Path<(i64, i64)>,
     Json(req): Json<SetParticipantRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
     let service = EventService::new();
-    let detail = service
-        .set_participant(&db, id, target_user_id, req)
+    let (detail, version) = service
+        .set_participant_with_roster_version(&db, id, target_user_id, req)
         .await?;
+    hub.publish(id, version, "participation_changed", Vec::new());
     Ok(Json(ApiResponse::new(detail)))
 }
 
@@ -776,13 +812,27 @@ async fn remove_participant(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(hub): Extension<RosterHub>,
     Path((id, target_user_id)): Path<(i64, i64)>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
     let service = EventService::new();
-    let detail = service
+    let (detail, version, seat_key) = service
         .cancel_participation(&db, id, target_user_id)
         .await?;
+    tracing::info!(
+        event_id = id,
+        roster_version = version,
+        actor_id = user.user_id,
+        target_user_id,
+        "participant removed"
+    );
+    hub.publish(
+        id,
+        version,
+        "participant_removed",
+        seat_key.into_iter().collect(),
+    );
     Ok(Json(ApiResponse::new(detail)))
 }
 

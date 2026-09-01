@@ -37,6 +37,10 @@ The platform is a **monorepo** with three deployable components:
 - **Battle analytics per event/comp**: win rate, kills/deaths, kill fame, top opponents, and linked loot-split stats.
 - **Call-to-arms**: announce events to a configured Discord channel with a role ping.
 
+### Realtime Event Roster
+- A live roster room lets event organisers assign, move, clear, swap, or auto-fill persistent composition seats without overwriting a member's build preferences.
+- Members see the complete composition and their own prominent briefing — party, seat, role, assigned build/version, equipment, and selected abilities — updated through an authenticated WebSocket invalidation channel.
+
 ### Battles & Live Albion Data
 - Paginated battle list for the configured guild (via [AlbionBB](https://albionbb.com/)) with player/kill timeline detail.
 - **Loss estimates** enriched from the Albion Data Project.
@@ -229,7 +233,13 @@ npm install
 npm start   # dev server on http://localhost:4200
 ```
 
-The Angular dev server proxies `/api` and `/scalar` to `http://localhost:3000` via [`proxy.conf.json`](apps/frontend/proxy.conf.json).
+The frontend development server must forward `/api` requests and WebSocket upgrades to `http://localhost:3000`. When using a custom proxy, enable WebSocket upgrade forwarding for `/api/events/:id/roster/live` as well as normal HTTP forwarding.
+
+### Realtime roster deployment requirements
+
+The live roster notification hub is deliberately **in process**. Deploy the backend with **exactly one replica** until a shared pub/sub transport is introduced; multiple backend replicas would split WebSocket subscribers across independent hubs.
+
+If an ingress or reverse proxy terminates TLS in front of the stack, preserve the `Upgrade` and `Connection` headers and use an HTTP/1.1 upstream for `GET /api/events/{id}/roster/live`. The browser reuses its authenticated session cookie; do not add tokens to the WebSocket URL. Set `FRONTEND_URL` to the exact public origin (scheme, host, and port if applicable), because it is checked during the WebSocket handshake.
 
 **Discord Bot**
 

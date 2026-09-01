@@ -54,3 +54,28 @@ impl Default for RosterHub {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::RosterHub;
+
+    #[tokio::test]
+    async fn notifications_keep_the_event_id_for_subscriber_filtering() {
+        let hub = RosterHub::new();
+        let mut first = hub.subscribe();
+        let mut second = hub.subscribe();
+        hub.publish(10, 2, "assigned", vec!["build:4:1".to_string()]);
+        hub.publish(20, 3, "cleared", vec!["build:5:1".to_string()]);
+
+        let first_events = [
+            first.recv().await.unwrap().event_id,
+            first.recv().await.unwrap().event_id,
+        ];
+        let second_events = [
+            second.recv().await.unwrap().event_id,
+            second.recv().await.unwrap().event_id,
+        ];
+        assert_eq!(first_events, [10, 20]);
+        assert_eq!(second_events, [10, 20]);
+    }
+}

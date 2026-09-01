@@ -350,6 +350,8 @@ export interface EventView {
   call_to_arms: boolean;
   discord_role_ids: string[];
   regear: boolean;
+  /** Optional threshold that advances the comp expansion without blocking signups. */
+  player_cap?: number | null;
   comp_id: number;
   comp_name: string;
   created_by: number;
@@ -611,24 +613,27 @@ export interface EventParticipant {
 export interface EventRosterParticipant {
   user_id: number;
   username: string;
+  discord_id: string | null;
   primary_build_id: number | null;
   primary_build_name: string;
   secondary_build_id: number | null;
   secondary_build_name: string | null;
+  specializations: Record<string, number>;
 }
 
 /** A concrete composition seat in the authoritative event roster. */
 export interface EventRosterSeat {
+  key: string;
   party_number: number;
   position: number;
   build_id: number;
   build_name: string;
   build_version: number;
-  role: BuildRole;
+  role: string;
   participant: EventRosterParticipant | null;
 }
 
-/** A registered participant not occupying a concrete composition seat. */
+/** A registered participant not occupying a concrete roster seat. */
 export interface EventRosterBenchParticipant extends EventRosterParticipant {}
 
 /** Authoritative roster snapshot returned by the roster endpoints. */
@@ -643,24 +648,18 @@ export interface EventRosterView {
 /** Assign a registered participant to a concrete roster seat. */
 export interface AssignRosterSeatRequest {
   user_id: number;
-  party_number: number;
-  position: number;
   expected_roster_version: number;
 }
 
 /** Remove the participant from a concrete roster seat. */
 export interface ClearRosterSeatRequest {
-  party_number: number;
-  position: number;
   expected_roster_version: number;
 }
 
 /** Exchange the participants assigned to two concrete roster seats. */
 export interface SwapRosterSeatsRequest {
-  source_party_number: number;
-  source_position: number;
-  target_party_number: number;
-  target_position: number;
+  source_seat_key: string;
+  target_seat_key: string;
   expected_roster_version: number;
 }
 
@@ -679,6 +678,8 @@ export interface RosterRealtimeChangedMessage {
   type: 'roster_changed';
   event_id: number;
   roster_version: number;
+  change_kind?: string;
+  changed_seat_keys?: string[];
 }
 
 export interface RosterRealtimeResyncRequiredMessage {
@@ -724,6 +725,8 @@ export interface CreateEventRequest {
   call_to_arms?: boolean;
   regear?: boolean;
   comp_id: number;
+  /** Optional planning threshold; reaching it advances to the next comp expansion. */
+  player_cap?: number;
   event_date_utc: string;
   /** Discord role IDs to mention in the event announcement. */
   discord_role_ids?: string[];

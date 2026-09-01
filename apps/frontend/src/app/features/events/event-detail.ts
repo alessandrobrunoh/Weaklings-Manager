@@ -41,7 +41,7 @@ import type {
   UserProfile,
   OpenAlbionItem,
 } from '../../core/models/api.models';
-import { ApiService } from '../../core/services/api.service';
+import { ApiError, ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { RealtimeRosterService } from '../../core/services/realtime-roster.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -405,7 +405,7 @@ interface EventRosterParty {
         @switch (tab()) {
           <!-- ================= TAB 1: ROSTER & COMPOSITION BUILDER ================= -->
           @case ('roster') {
-            @if (rosterSnapshot(); as roster) {
+            @if (rosterSnapshotState() === 'ready' && rosterSnapshot(); as roster) {
               <div class="space-y-4">
                 <p class="event-detail__roster-live" aria-live="polite" aria-atomic="true">
                   {{ rosterAnnouncement() }}
@@ -480,10 +480,52 @@ interface EventRosterParty {
                       <h2 id="party-roster-heading">Party roster</h2>
                       <p>Assegnazioni confermate dal server.</p>
                     </div>
-                    <span class="chip text-xs"
-                      >{{ rosterFilledSeats() }}/{{ rosterSeatCount() }} posti</span
-                    >
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="chip text-xs"
+                        >{{ rosterFilledSeats() }}/{{ rosterSeatCount() }} posti</span
+                      >
+                      @if (canManageParticipants()) {
+                        <button
+                          type="button"
+                          class="btn btn--tonal btn--sm"
+                          [disabled]="rosterCommandSaving() || roster.bench.length === 0"
+                          (click)="autoFillServerRoster()"
+                        >
+                          Compila automaticamente
+                        </button>
+                      }
+                    </div>
                   </div>
+
+                  @if (rosterSwapSource(); as source) {
+                    <div class="event-detail__roster-command-notice">
+                      <span
+                        >Scambio: seleziona il posto di destinazione per
+                        {{ source.participant?.username }}.</span
+                      >
+                      <button
+                        type="button"
+                        class="btn btn--ghost btn--sm"
+                        (click)="cancelRosterCommandMode()"
+                      >
+                        Annulla
+                      </button>
+                    </div>
+                  } @else if (rosterAssignTarget(); as target) {
+                    <div class="event-detail__roster-command-notice">
+                      <span
+                        >Assegna un membro della bench a Party {{ target.party_number }}, posizione
+                        {{ target.position }}.</span
+                      >
+                      <button
+                        type="button"
+                        class="btn btn--ghost btn--sm"
+                        (click)="cancelRosterCommandMode()"
+                      >
+                        Annulla
+                      </button>
+                    </div>
+                  }
 
                   <div class="grid gap-4 lg:grid-cols-2">
                     @for (party of rosterParties(); track party.partyNumber) {
@@ -529,17 +571,60 @@ interface EventRosterParty {
                                   }}
                                 </p>
                               </div>
-                              @if (seat.participant; as participant) {
-                                <span
-                                  class="text-right text-xs font-medium text-[var(--color-text)]"
-                                  >{{ participant.username }}</span
-                                >
-                              } @else {
-                                <span
-                                  class="text-right text-xs italic text-[var(--color-text-secondary)]"
-                                  >Posto libero</span
-                                >
-                              }
+                              <div class="flex items-center gap-2">
+                                @if (seat.participant; as participant) {
+                                  <span
+                                    class="text-right text-xs font-medium text-[var(--color-text)]"
+                                    >{{ participant.username }}</span
+                                  >
+                                } @else {
+                                  <span
+                                    class="text-right text-xs italic text-[var(--color-text-secondary)]"
+                                    >Posto libero</span
+                                  >
+                                }
+
+                                @if (canManageParticipants() && rosterSeatKey(seat)) {
+                                  @if (rosterSwapSource(); as source) {
+                                    @if (source.key !== rosterSeatKey(seat)) {
+                                      <button
+                                        type="button"
+                                        class="btn btn--outline btn--sm"
+                                        [disabled]="rosterCommandSaving()"
+                                        (click)="swapServerRosterSeats(seat)"
+                                      >
+                                        Scambia qui
+                                      </button>
+                                    }
+                                  } @else if (seat.participant) {
+                                    <button
+                                      type="button"
+                                      class="btn btn--ghost btn--sm"
+                                      [disabled]="rosterCommandSaving()"
+                                      (click)="beginRosterSwap(seat)"
+                                    >
+                                      Scambia
+                                    </button>
+                                    <button
+                                      type="button"
+                                      class="btn btn--ghost btn--sm"
+                                      [disabled]="rosterCommandSaving()"
+                                      (click)="clearServerRosterSeat(seat)"
+                                    >
+                                      Libera
+                                    </button>
+                                  } @else {
+                                    <button
+                                      type="button"
+                                      class="btn btn--outline btn--sm"
+                                      [disabled]="rosterCommandSaving()"
+                                      (click)="selectRosterAssignTarget(seat)"
+                                    >
+                                      Assegna
+                                    </button>
+                                  }
+                                }
+                              </div>
                             </li>
                           }
                         </ol>
@@ -566,6 +651,16 @@ interface EventRosterParty {
                       <li class="chip text-xs">
                         {{ member.username
                         }}{{ member.primary_build_name ? ' · ' + member.primary_build_name : '' }}
+                        @if (canManageParticipants() && rosterAssignTarget()) {
+                          <button
+                            type="button"
+                            class="ml-1 underline"
+                            [disabled]="rosterCommandSaving()"
+                            (click)="assignBenchMemberToServerSeat(member.user_id)"
+                          >
+                            Assegna
+                          </button>
+                        }
                       </li>
                     } @empty {
                       <li class="text-xs text-[var(--color-text-secondary)]">
@@ -575,7 +670,43 @@ interface EventRosterParty {
                   </ul>
                 </section>
               </div>
-            } @else {
+            } @else if (rosterSnapshotState() === 'loading') {
+              <section
+                class="card p-4 rounded-xl border border-[var(--color-border)]"
+                aria-live="polite"
+                aria-labelledby="roster-loading-heading"
+              >
+                <h2
+                  id="roster-loading-heading"
+                  class="text-sm font-semibold text-[var(--color-text)]"
+                >
+                  Caricamento roster
+                </h2>
+                <p class="mt-1 text-xs text-[var(--color-text-secondary)]">
+                  Attendi le assegnazioni confermate dal server prima di gestire i posti.
+                </p>
+                <div class="mt-3">
+                  <app-loading [label]="t('common.loading')" />
+                </div>
+              </section>
+            } @else if (rosterSnapshotState() === 'error') {
+              <section
+                class="card p-4 rounded-xl border border-[var(--color-border)]"
+                aria-labelledby="roster-unavailable-heading"
+              >
+                <h2
+                  id="roster-unavailable-heading"
+                  class="text-sm font-semibold text-[var(--color-text)]"
+                >
+                  Roster non disponibile
+                </h2>
+                <p class="mt-1 text-xs text-[var(--color-text-secondary)]">
+                  {{ rosterSnapshotError() }} Le modifiche ai posti sono temporaneamente
+                  disabilitate.
+                </p>
+              </section>
+            } @else if (legacyRosterFallbackEnabled()) {
+              <!-- Legacy roster UI is intentionally unreachable: it mutates participant preferences. -->
               <!-- Roster Control Bar -->
               <section class="card p-4 mb-4 rounded-xl border border-[var(--color-border)]">
                 <div class="flex flex-wrap items-center justify-between gap-4">
@@ -2058,8 +2189,8 @@ interface EventRosterParty {
       <app-empty-state [message]="t('common.empty')" icon="calendar" />
     }
 
-    <!-- Quick Assign Modal for a Slot -->
-    @if (quickAssignSlot(); as targetSlot) {
+    <!-- Legacy quick assignment is unavailable once the server roster is authoritative. -->
+    @if (activeLegacyQuickAssignSlot(); as targetSlot) {
       <div
         class="modal-backdrop"
         (click)="closeQuickAssign()"
@@ -2301,7 +2432,7 @@ interface EventRosterParty {
       />
     }
 
-    @if (showMemberSearch()) {
+    @if (!rosterSnapshot() && showMemberSearch()) {
       <app-search-dialog
         [title]="t('events.detail.add_participant')"
         [options]="memberSearchOptions()"
@@ -2314,7 +2445,7 @@ interface EventRosterParty {
     }
 
     <!-- Assign builds dialog for manually added member -->
-    @if (draftMember(); as member) {
+    @if (!rosterSnapshot() && draftMember(); as member) {
       <div class="modal-backdrop" (click)="closeMemberForm()" (keydown.escape)="closeMemberForm()">
         <div
           #assignBuildsPanel
@@ -2391,7 +2522,7 @@ interface EventRosterParty {
     }
 
     <!-- Confirmation Dialog -->
-    @if (pendingConfirm(); as confirm) {
+    @if (visiblePendingConfirm(); as confirm) {
       <app-dialog [title]="confirmTitle(confirm)" size="sm" (closed)="cancelConfirm()">
         <p>{{ confirmMessage(confirm) }}</p>
         <div dialogFooter>
@@ -2742,8 +2873,19 @@ export class EventDetailPage {
   protected readonly memberError = signal<string | null>(null);
 
   protected readonly rosterSnapshot = signal<EventRosterView | null>(null);
-  protected readonly rosterSnapshotLoading = signal(false);
+  protected readonly rosterSnapshotState = signal<'loading' | 'ready' | 'error'>('loading');
+  protected readonly rosterSnapshotError = signal('');
   protected readonly rosterAnnouncement = signal('');
+  protected readonly rosterCommandSaving = signal(false);
+  protected readonly rosterSwapSource = signal<EventRosterSeat | null>(null);
+  protected readonly rosterAssignTarget = signal<EventRosterSeat | null>(null);
+  protected readonly activeLegacyQuickAssignSlot = computed(() =>
+    this.rosterSnapshot() === null ? this.quickAssignSlot() : null,
+  );
+  protected readonly visiblePendingConfirm = computed(() => {
+    const confirm = this.pendingConfirm();
+    return this.rosterSnapshot() !== null && this.isLegacyRosterConfirm(confirm) ? null : confirm;
+  });
 
   protected readonly slotAssignments = signal<Map<string, number | null>>(new Map());
   protected readonly slotSavingKey = signal<string | null>(null);
@@ -3255,6 +3397,13 @@ export class EventDetailPage {
     this.route.paramMap.subscribe((params) => {
       const id = params.get('eventId');
       if (id) {
+        this.realtimeRoster.close();
+        this.rosterSnapshot.set(null);
+        this.rosterSnapshotState.set('loading');
+        this.rosterSnapshotError.set('');
+        this.clearLegacyRosterInteractionState();
+        this.rosterSwapSource.set(null);
+        this.rosterAssignTarget.set(null);
         this.eventId = Number(id);
         this.showEditForm.set(false);
         this.showJoinForm.set(false);
@@ -3363,7 +3512,9 @@ export class EventDetailPage {
   }
 
   protected rosterSeatRoleLabel(seat: EventRosterSeat): string {
-    return this.roleLabelName(seat.role);
+    return ROLE_ORDER.includes(seat.role as BuildRole)
+      ? this.roleLabelName(seat.role as BuildRole)
+      : seat.role;
   }
 
   protected rosterSeatBuildName(seat: EventRosterSeat): string {
@@ -3394,6 +3545,131 @@ export class EventDetailPage {
 
   protected rosterPartyFilledSeats(party: EventRosterParty): number {
     return party.seats.filter((seat) => seat.participant !== null).length;
+  }
+
+  protected rosterSeatKey(seat: EventRosterSeat): string {
+    return seat.key;
+  }
+
+  protected beginRosterSwap(seat: EventRosterSeat): void {
+    if (seat.participant === null) return;
+    this.rosterAssignTarget.set(null);
+    this.rosterSwapSource.set(seat);
+  }
+
+  protected selectRosterAssignTarget(seat: EventRosterSeat): void {
+    if (seat.participant !== null) return;
+    this.rosterSwapSource.set(null);
+    this.rosterAssignTarget.set(seat);
+  }
+
+  protected legacyRosterFallbackEnabled(): boolean {
+    return false;
+  }
+
+  protected cancelRosterCommandMode(): void {
+    this.rosterSwapSource.set(null);
+    this.rosterAssignTarget.set(null);
+  }
+
+  private isLegacyRosterConfirm(confirm: PendingConfirm | null): boolean {
+    return confirm?.kind === 'clear-all' || confirm?.kind === 'remove-participant';
+  }
+
+  private clearLegacyRosterInteractionState(): void {
+    this.quickAssignSlot.set(null);
+    this.swapSourceSlot.set(null);
+    this.dragOverSlotKey.set(null);
+    this.draggedMember.set(null);
+    this.pendingAddSlotBuildId.set(null);
+    this.showMemberSearch.set(false);
+    this.closeMemberForm();
+    if (this.isLegacyRosterConfirm(this.pendingConfirm())) {
+      this.pendingConfirm.set(null);
+    }
+  }
+
+  protected async assignBenchMemberToServerSeat(userId: number): Promise<void> {
+    const target = this.rosterAssignTarget();
+    const roster = this.rosterSnapshot();
+    if (!target || !roster) return;
+
+    await this.runServerRosterCommand('Membro assegnato al posto.', () =>
+      firstValueFrom(
+        this.api.put<EventRosterView>(
+          `api/events/${this.eventId}/roster/seats/${encodeURIComponent(target.key)}`,
+          { user_id: userId, expected_roster_version: roster.roster_version },
+        ),
+      ),
+    );
+  }
+
+  protected async clearServerRosterSeat(seat: EventRosterSeat): Promise<void> {
+    const roster = this.rosterSnapshot();
+    const key = this.rosterSeatKey(seat);
+    if (!roster) return;
+
+    await this.runServerRosterCommand('Posto liberato.', () =>
+      firstValueFrom(
+        this.api.delete<EventRosterView>(
+          `api/events/${this.eventId}/roster/seats/${encodeURIComponent(key)}`,
+          { expected_roster_version: roster.roster_version },
+        ),
+      ),
+    );
+  }
+
+  protected async swapServerRosterSeats(target: EventRosterSeat): Promise<void> {
+    const source = this.rosterSwapSource();
+    const roster = this.rosterSnapshot();
+    const targetKey = this.rosterSeatKey(target);
+    if (!source || !roster || source.key === targetKey) return;
+
+    await this.runServerRosterCommand('Posti scambiati.', () =>
+      firstValueFrom(
+        this.api.post<EventRosterView>(`api/events/${this.eventId}/roster/swaps`, {
+          source_seat_key: source.key,
+          target_seat_key: targetKey,
+          expected_roster_version: roster.roster_version,
+        }),
+      ),
+    );
+  }
+
+  protected async autoFillServerRoster(): Promise<void> {
+    const roster = this.rosterSnapshot();
+    if (!roster) return;
+
+    await this.runServerRosterCommand('Roster compilato automaticamente.', () =>
+      firstValueFrom(
+        this.api.post<EventRosterView>(`api/events/${this.eventId}/roster/auto-fill`, {
+          expected_roster_version: roster.roster_version,
+        }),
+      ),
+    );
+  }
+
+  private async runServerRosterCommand(
+    successMessage: string,
+    command: () => Promise<EventRosterView | void>,
+  ): Promise<void> {
+    this.rosterCommandSaving.set(true);
+    try {
+      await command();
+      this.cancelRosterCommandMode();
+      await this.loadRosterSnapshot();
+      this.toasts.success(successMessage);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        this.cancelRosterCommandMode();
+        await this.loadRosterSnapshot();
+        this.toasts.error('Il roster è stato aggiornato da un altro ufficiale. Riprova.');
+        return;
+      }
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.rosterCommandSaving.set(false);
+    }
   }
 
   protected slotAssignment(slot: CompSlotRow): number | null {
@@ -3432,6 +3708,7 @@ export class EventDetailPage {
   }
 
   protected openQuickAssign(slot: CompSlotRow): void {
+    if (this.rosterSnapshot() !== null) return;
     this.quickAssignSlot.set(slot);
   }
 
@@ -3440,12 +3717,14 @@ export class EventDetailPage {
   }
 
   protected openMemberSearchFromSlot(slot: CompSlotRow): void {
+    if (this.rosterSnapshot() !== null) return;
     this.pendingAddSlotBuildId.set(slot.buildId);
     this.closeQuickAssign();
     this.openMemberSearch();
   }
 
   protected startSwapFromSlot(slot: CompSlotRow): void {
+    if (this.rosterSnapshot() !== null) return;
     this.swapSourceSlot.set(slot);
   }
 
@@ -3457,6 +3736,7 @@ export class EventDetailPage {
    * Click-to-Swap or Click-to-Move handler.
    */
   protected async handleSlotClick(targetSlot: CompSlotRow): Promise<void> {
+    if (this.rosterSnapshot() !== null) return;
     const sourceSlot = this.swapSourceSlot();
     if (!sourceSlot || sourceSlot.key === targetSlot.key) {
       this.swapSourceSlot.set(null);
@@ -3511,6 +3791,7 @@ export class EventDetailPage {
    * Assigns a specific member to a slot.
    */
   protected async assignMemberToSlot(slot: CompSlotRow, userId: number): Promise<void> {
+    if (this.rosterSnapshot() !== null) return;
     const detail = this.event();
     if (!detail) return;
     this.closeQuickAssign();
@@ -3537,16 +3818,19 @@ export class EventDetailPage {
    * Drag and drop handlers for comp slots and bench
    */
   protected onBenchMemberDragStart(event: DragEvent, member: EventParticipant): void {
+    if (this.rosterSnapshot() !== null) return;
     this.draggedMember.set(member);
     event.dataTransfer?.setData('text/plain', String(member.user_id));
   }
 
   protected onSlotDragOver(event: DragEvent, slot: CompSlotRow): void {
+    if (this.rosterSnapshot() !== null) return;
     event.preventDefault();
     this.dragOverSlotKey.set(slot.key);
   }
 
   protected onSlotDragLeave(slot: CompSlotRow): void {
+    if (this.rosterSnapshot() !== null) return;
     if (this.dragOverSlotKey() === slot.key) {
       this.dragOverSlotKey.set(null);
     }
@@ -3554,6 +3838,7 @@ export class EventDetailPage {
 
   protected async onSlotDrop(event: DragEvent, slot: CompSlotRow): Promise<void> {
     event.preventDefault();
+    if (this.rosterSnapshot() !== null) return;
     this.dragOverSlotKey.set(null);
     const member = this.draggedMember();
     this.draggedMember.set(null);
@@ -3566,6 +3851,10 @@ export class EventDetailPage {
    * Auto-assigns registered participants to vacant comp slots matching their Primary / Secondary builds.
    */
   protected async autoFillRoster(): Promise<void> {
+    if (this.rosterSnapshot() !== null) {
+      await this.autoFillServerRoster();
+      return;
+    }
     const detail = this.event();
     if (!detail) return;
 
@@ -3668,10 +3957,12 @@ export class EventDetailPage {
   }
 
   protected requestClearAll(): void {
+    if (this.rosterSnapshot() !== null) return;
     this.pendingConfirm.set({ kind: 'clear-all' });
   }
 
   protected async clearSlot(slot: CompSlotRow): Promise<void> {
+    if (this.rosterSnapshot() !== null) return;
     const userId = this.slotAssignment(slot);
     if (userId === null) return;
     const participant = this.slotParticipant(slot);
@@ -3686,6 +3977,7 @@ export class EventDetailPage {
   }
 
   private async performClearSlot(slotKey?: string, userId?: number): Promise<void> {
+    if (this.rosterSnapshot() !== null) return;
     const detail = this.event();
     if (!detail || !userId) return;
     if (slotKey) this.slotRemovingKey.set(slotKey);
@@ -3708,6 +4000,7 @@ export class EventDetailPage {
   }
 
   protected async performClearAll(): Promise<void> {
+    if (this.rosterSnapshot() !== null) return;
     const detail = this.event();
     if (!detail) return;
     const requests = detail.participants.map((p) =>
@@ -3810,6 +4103,7 @@ export class EventDetailPage {
   }
 
   protected onMemberSelected(option: SearchDialogOption): void {
+    if (this.rosterSnapshot() !== null) return;
     this.draftMember.set(option);
     const preselectedBuildId = this.pendingAddSlotBuildId();
     this.draftMemberPrimaryBuildId.set(
@@ -3842,6 +4136,7 @@ export class EventDetailPage {
 
   protected async onAddMemberSubmit(submit: SubmitEvent): Promise<void> {
     submit.preventDefault();
+    if (this.rosterSnapshot() !== null) return;
     const detail = this.event();
     const member = this.draftMember();
     if (!detail || !member) return;
@@ -4470,12 +4765,15 @@ export class EventDetailPage {
   }
 
   private async loadRosterSnapshot(): Promise<void> {
-    this.rosterSnapshotLoading.set(true);
+    this.rosterSnapshotState.set('loading');
+    this.rosterSnapshotError.set('');
     try {
       const roster = await firstValueFrom(
         this.api.get<EventRosterView>(`api/events/${this.eventId}/roster`),
       );
       this.rosterSnapshot.set(roster);
+      this.rosterSnapshotState.set('ready');
+      this.clearLegacyRosterInteractionState();
       await this.preloadRosterBuildDetails(roster.seats.map((seat) => seat.build_id));
       const ownSeat = this.ownRosterSeat();
       this.rosterAnnouncement.set(
@@ -4485,11 +4783,13 @@ export class EventDetailPage {
             ? 'Roster aggiornato. Sei in bench, senza un posto assegnato.'
             : 'Roster aggiornato.',
       );
-    } catch {
+    } catch (error) {
       this.rosterSnapshot.set(null);
+      this.rosterSnapshotState.set('error');
+      this.rosterSnapshotError.set(
+        error instanceof Error ? error.message : 'Impossibile caricare il roster.',
+      );
       this.rosterAnnouncement.set('');
-    } finally {
-      this.rosterSnapshotLoading.set(false);
     }
   }
 

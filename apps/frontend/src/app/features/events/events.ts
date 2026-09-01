@@ -198,7 +198,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
             ></textarea>
           </label>
 
-          <div class="grid gap-4 sm:grid-cols-2">
+          <div class="grid gap-4 sm:grid-cols-3">
             <label>
               <span class="label">{{ t('events.detail.comp') }}</span>
               <select
@@ -212,6 +212,25 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
                   <option [value]="comp.id">{{ comp.name }}</option>
                 }
               </select>
+            </label>
+
+            <label>
+              <span class="label">{{ t('events.create.playerCap') }}</span>
+              <input
+                id="event-player-cap"
+                name="player_cap"
+                class="input"
+                type="number"
+                min="1"
+                step="1"
+                inputmode="numeric"
+                [value]="draftPlayerCap()"
+                aria-describedby="event-player-cap-hint"
+                (input)="onPlayerCapChange($event)"
+              />
+              <span id="event-player-cap-hint" class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                {{ t('events.create.playerCapHint') }}
+              </span>
             </label>
 
             <label>
@@ -424,6 +443,7 @@ export class Events {
   protected readonly draftTitle = signal('');
   protected readonly draftDescription = signal('');
   protected readonly draftCompId = signal('');
+  protected readonly draftPlayerCap = signal('');
   protected readonly draftScheduledAt = signal(defaultScheduledAt());
   protected readonly minScheduledAt = minScheduledAt();
   protected readonly draftCallToArms = signal(false);
@@ -583,6 +603,11 @@ export class Events {
     this.compError.set(null);
   }
 
+  protected onPlayerCapChange(event: Event): void {
+    this.draftPlayerCap.set((event.target as HTMLInputElement).value);
+    this.compError.set(null);
+  }
+
   protected onCreateSplitChange(event: Event): void {
     this.draftCreateSplit.set((event.target as HTMLInputElement).checked);
   }
@@ -624,6 +649,8 @@ export class Events {
 
     const title = this.draftTitle().trim();
     const compId = Number(this.draftCompId());
+    const playerCapText = this.draftPlayerCap().trim();
+    const playerCap = playerCapText ? Number(playerCapText) : undefined;
 
     if (!title) {
       this.toasts.error(this.t('validation.required'));
@@ -631,6 +658,13 @@ export class Events {
     }
     if (compId <= 0) {
       this.compError.set(this.t('events.create.comp_required'));
+      return;
+    }
+    if (
+      playerCap !== undefined &&
+      (!Number.isSafeInteger(playerCap) || playerCap <= 0)
+    ) {
+      this.compError.set(this.t('events.create.playerCapInvalid'));
       return;
     }
     if (this.draftCreateSplit() && !this.draftTabId()) {
@@ -647,6 +681,7 @@ export class Events {
     const request: CreateEventRequest = {
       title,
       comp_id: compId,
+      player_cap: playerCap,
       event_date_utc: scheduledAt.toISOString(),
       call_to_arms: this.draftCallToArms(),
       regear: this.draftRegear(),
@@ -702,6 +737,7 @@ export class Events {
     this.draftTitle.set('');
     this.draftDescription.set('');
     this.draftCompId.set('');
+    this.draftPlayerCap.set('');
     this.draftScheduledAt.set(defaultScheduledAt());
     this.draftCallToArms.set(false);
     this.draftRegear.set(false);

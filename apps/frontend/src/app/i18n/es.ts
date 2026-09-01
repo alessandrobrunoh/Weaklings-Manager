@@ -295,6 +295,10 @@ export const es: TranslationDict = {
   'events.regear': 'Regear',
   'events.new': 'Nuevo evento',
   'events.create.comp_required': 'La composición es obligatoria.',
+  'events.create.playerCap': 'Límite de jugadores',
+  'events.create.playerCapHint':
+    'Umbral de planificación opcional. Al alcanzarlo, el evento avanza automáticamente a la siguiente expansión de la comp y nunca bloquea inscripciones.',
+  'events.create.playerCapInvalid': 'El límite debe ser un número entero mayor que cero.',
   'events.discordRoles.label': 'Roles de Discord a mencionar',
   'events.discordRoles.hint': 'Selecciona uno o más roles para el anuncio del evento.',
   'events.discordRoles.search': 'Buscar roles',

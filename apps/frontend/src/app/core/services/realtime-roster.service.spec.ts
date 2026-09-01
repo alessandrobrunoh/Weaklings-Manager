@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { RosterRealtimeMessage } from '../models/api.models';
 import { API_BASE_URL } from '../tokens/api-base.token';
 import { RealtimeRosterService } from './realtime-roster.service';
 
@@ -62,18 +63,43 @@ describe('RealtimeRosterService', () => {
     service.destroy();
   });
 
-  it('publishes older roster versions so the page can apply its own stale-message policy', () => {
+  it('preserves valid change metadata and leaves stale-version handling to the page', () => {
     const service = createService();
-    const versions: number[] = [];
-    service.messages.subscribe((message) => versions.push(message.roster_version));
+    const received: RosterRealtimeMessage[] = [];
+    service.messages.subscribe((message) => received.push(message));
 
     service.connect(42);
     const socket = MockWebSocket.instances[0];
     socket.open();
-    socket.message(JSON.stringify({ type: 'roster_changed', event_id: 42, roster_version: 8 }));
-    socket.message(JSON.stringify({ type: 'roster_changed', event_id: 42, roster_version: 3 }));
+    socket.message(
+      JSON.stringify({
+        type: 'roster_changed',
+        event_id: 42,
+        roster_version: 8,
+        change_kind: 'assigned',
+        changed_seat_keys: ['1:1'],
+      }),
+    );
+    socket.message(
+      JSON.stringify({
+        type: 'roster_changed',
+        event_id: 42,
+        roster_version: 3,
+        change_kind: 12,
+        changed_seat_keys: ['1:2', 3],
+      }),
+    );
 
-    expect(versions).toEqual([8, 3]);
+    expect(received).toEqual([
+      {
+        type: 'roster_changed',
+        event_id: 42,
+        roster_version: 8,
+        change_kind: 'assigned',
+        changed_seat_keys: ['1:1'],
+      },
+      { type: 'roster_changed', event_id: 42, roster_version: 3 },
+    ]);
     service.destroy();
   });
 

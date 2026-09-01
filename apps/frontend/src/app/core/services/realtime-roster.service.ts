@@ -239,7 +239,19 @@ function parseRosterRealtimeMessage(data: unknown): RosterRealtimeMessage | null
   if (!isNonNegativeSafeInteger(eventId) || !isNonNegativeSafeInteger(rosterVersion)) {
     return null;
   }
-  return { type: parsed['type'], event_id: eventId, roster_version: rosterVersion };
+  if (parsed['type'] !== 'roster_changed') {
+    return { type: parsed['type'], event_id: eventId, roster_version: rosterVersion };
+  }
+
+  const changeKind = parsed['change_kind'];
+  const changedSeatKeys = parsed['changed_seat_keys'];
+  return {
+    type: 'roster_changed',
+    event_id: eventId,
+    roster_version: rosterVersion,
+    ...(typeof changeKind === 'string' ? { change_kind: changeKind } : {}),
+    ...(isStringArray(changedSeatKeys) ? { changed_seat_keys: changedSeatKeys } : {}),
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -252,4 +264,8 @@ function isRosterMessageType(value: unknown): value is RosterRealtimeMessage['ty
 
 function isNonNegativeSafeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 }

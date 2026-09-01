@@ -23,6 +23,7 @@ interface EventDetailRosterAccess {
 
 function seat(partyNumber: number, position: number, userId: number | null): EventRosterSeat {
   return {
+    key: `${partyNumber}:${position}`,
     party_number: partyNumber,
     position,
     build_id: position,
@@ -35,6 +36,8 @@ function seat(partyNumber: number, position: number, userId: number | null): Eve
         : {
             user_id: userId,
             username: `Member ${userId}`,
+            discord_id: null,
+            specializations: {},
             primary_build_id: position,
             primary_build_name: `Build ${position}`,
             secondary_build_id: null,

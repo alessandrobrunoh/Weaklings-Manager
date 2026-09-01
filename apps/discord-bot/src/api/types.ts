@@ -226,6 +226,8 @@ export interface EventView {
   call_to_arms: boolean;
   discord_role_ids: string[];
   regear: boolean;
+  /** Optional planning threshold that advances comp expansions without blocking signups. */
+  player_cap?: number | null;
   comp_id: number;
   comp_name: string;
   created_by: number;
@@ -251,10 +253,18 @@ export interface EventParticipant {
   secondary_build_name: string | null;
 }
 
+export interface EventCompBuild {
+  build_id: number;
+  name: string;
+  quantity: number;
+}
+
 export interface EventDetailView extends EventView {
   active_comp_id: number;
   active_comp_name: string;
   active_comp_capacity: number;
+  /** Full active comp snapshot so the Discord message can render empty slots. */
+  comp_builds?: EventCompBuild[];
   participants: EventParticipant[];
 }
 
@@ -280,6 +290,7 @@ export interface CreateEventRequest {
   call_to_arms?: boolean;
   regear?: boolean;
   comp_id: number;
+  player_cap?: number;
   event_date_utc: string;
   discord_role_ids?: string[];
 }

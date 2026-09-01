@@ -5,8 +5,8 @@ use std::str::FromStr;
 
 use sea_orm::sea_query::{Expr, Func};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, Set, TransactionTrait,
 };
 
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
@@ -18,7 +18,7 @@ use super::entities::{
 use super::models::{
     AssignRosterSeatRequest, BattlePerformanceStats, BuildBattleStats, BuildPerformanceView,
     CompPerformanceView, CreateEventRequest, CreateEventRosterRoleRequest, EventBattleView,
-    EventDetailView, EventFightView, EventParticipantView, EventRosterRoleView,
+    EventCompBuildView, EventDetailView, EventFightView, EventParticipantView, EventRosterRoleView,
     EventRosterSeatView, EventRosterView, EventSignupBuildView, EventSignupOptionsView,
     EventSplitStats, EventView, OpponentPerformanceView, ParticipateEventRequest,
     RosterVersionRequest, SwapRosterSeatsRequest, UpdateEventBattlesRequest, UpdateEventRequest,
@@ -53,6 +53,17 @@ const MAX_SESSION_DURATION: ChronoDuration = ChronoDuration::hours(3);
 /// Grace period after a session is stopped during which the linker keeps
 /// re-fetching AlbionBB to absorb the upstream's slow ingestion (~30 minutes).
 const LINK_GRACE_PERIOD: ChronoDuration = ChronoDuration::minutes(45);
+
+/// Returns the comp capacity to resolve for a roster of this size.
+///
+/// A configured player cap is a planning threshold, not a hard maximum: once
+/// reached, resolve the next available expansion so signups are never blocked.
+fn comp_resolution_target(participant_count: usize, player_cap: Option<i64>) -> usize {
+    let cap_reached = player_cap
+        .and_then(|cap| usize::try_from(cap).ok())
+        .is_some_and(|cap| participant_count >= cap);
+    participant_count.saturating_add(usize::from(cap_reached))
+}
 
 fn normalize_discord_role_ids(role_ids: Vec<String>) -> Result<Vec<String>, AppError> {
     let mut normalized = Vec::with_capacity(role_ids.len());
@@ -997,9 +1008,9 @@ impl EventService {
         })
     }
 
-    async fn canonical_roster_seats(
+    async fn canonical_roster_seats<C: ConnectionTrait>(
         &self,
-        db: &DatabaseConnection,
+        db: &C,
         comp_id: i64,
     ) -> Result<Vec<EventRosterSeatView>, AppError> {
         let mut rows = comp_build::Entity::find()
@@ -1030,27 +1041,6 @@ impl EventService {
             }
         }
         Ok(seats)
-    }
-
-    async fn validate_roster_seat(
-        &self,
-        db: &DatabaseConnection,
-        event_id: i64,
-        seat_key: &str,
-    ) -> Result<(), AppError> {
-        if self
-            .get_roster(db, event_id)
-            .await?
-            .seats
-            .iter()
-            .any(|seat| seat.key == seat_key)
-        {
-            Ok(())
-        } else {
-            Err(AppError::Validation(format!(
-                "invalid roster seat key: {seat_key}"
-            )))
-        }
     }
 
     async fn advance_roster_version(
@@ -1084,20 +1074,47 @@ impl EventService {
         request: AssignRosterSeatRequest,
         actor_id: i64,
     ) -> Result<i64, AppError> {
-        self.validate_roster_seat(db, event_id, seat_key).await?;
-        if event_participation::Entity::find()
-            .filter(event_participation::Column::EventId.eq(event_id))
-            .filter(event_participation::Column::UserId.eq(request.user_id))
-            .one(db)
+        let txn = db.begin().await.map_err(AppError::Database)?;
+        let event_model = event::Entity::find_by_id(event_id)
+            .one(&txn)
             .await
             .map_err(AppError::Database)?
-            .is_none()
+            .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+        let participations = event_participation::Entity::find()
+            .filter(event_participation::Column::EventId.eq(event_id))
+            .all(&txn)
+            .await
+            .map_err(AppError::Database)?;
+        if !participations
+            .iter()
+            .any(|entry| entry.user_id == request.user_id)
         {
             return Err(AppError::Validation(
                 "user is not participating in this event".to_string(),
             ));
         }
-        let txn = db.begin().await.map_err(AppError::Database)?;
+        let extra_slots = event_roster_role::Entity::find()
+            .filter(event_roster_role::Column::EventId.eq(event_id))
+            .count(&txn)
+            .await
+            .map_err(AppError::Database)? as usize;
+        let concrete = participations
+            .iter()
+            .filter(|entry| entry.primary_build_id.is_some())
+            .count();
+        let (active_comp, _) = self
+            .resolve_active_comp_with_extra_slots(&txn, event_model.comp_id, concrete, extra_slots)
+            .await?;
+        if !self
+            .canonical_roster_seats(&txn, active_comp.id)
+            .await?
+            .iter()
+            .any(|seat| seat.key == seat_key)
+        {
+            return Err(AppError::Validation(format!(
+                "invalid roster seat key: {seat_key}"
+            )));
+        }
         let version = self
             .advance_roster_version(&txn, event_id, request.expected_roster_version)
             .await?;
@@ -1142,8 +1159,39 @@ impl EventService {
         seat_key: &str,
         request: RosterVersionRequest,
     ) -> Result<i64, AppError> {
-        self.validate_roster_seat(db, event_id, seat_key).await?;
         let txn = db.begin().await.map_err(AppError::Database)?;
+        let event_model = event::Entity::find_by_id(event_id)
+            .one(&txn)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+        let participations = event_participation::Entity::find()
+            .filter(event_participation::Column::EventId.eq(event_id))
+            .all(&txn)
+            .await
+            .map_err(AppError::Database)?;
+        let extra_slots = event_roster_role::Entity::find()
+            .filter(event_roster_role::Column::EventId.eq(event_id))
+            .count(&txn)
+            .await
+            .map_err(AppError::Database)? as usize;
+        let concrete = participations
+            .iter()
+            .filter(|entry| entry.primary_build_id.is_some())
+            .count();
+        let (active_comp, _) = self
+            .resolve_active_comp_with_extra_slots(&txn, event_model.comp_id, concrete, extra_slots)
+            .await?;
+        if !self
+            .canonical_roster_seats(&txn, active_comp.id)
+            .await?
+            .iter()
+            .any(|seat| seat.key == seat_key)
+        {
+            return Err(AppError::Validation(format!(
+                "invalid roster seat key: {seat_key}"
+            )));
+        }
         let version = self
             .advance_roster_version(&txn, event_id, request.expected_roster_version)
             .await?;
@@ -1175,11 +1223,35 @@ impl EventService {
                 "source and target roster seats must differ".to_string(),
             ));
         }
-        self.validate_roster_seat(db, event_id, &request.source_seat_key)
-            .await?;
-        self.validate_roster_seat(db, event_id, &request.target_seat_key)
-            .await?;
         let txn = db.begin().await.map_err(AppError::Database)?;
+        let event_model = event::Entity::find_by_id(event_id)
+            .one(&txn)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+        let participations = event_participation::Entity::find()
+            .filter(event_participation::Column::EventId.eq(event_id))
+            .all(&txn)
+            .await
+            .map_err(AppError::Database)?;
+        let extra_slots = event_roster_role::Entity::find()
+            .filter(event_roster_role::Column::EventId.eq(event_id))
+            .count(&txn)
+            .await
+            .map_err(AppError::Database)? as usize;
+        let concrete = participations
+            .iter()
+            .filter(|entry| entry.primary_build_id.is_some())
+            .count();
+        let (active_comp, _) = self
+            .resolve_active_comp_with_extra_slots(&txn, event_model.comp_id, concrete, extra_slots)
+            .await?;
+        let seats = self.canonical_roster_seats(&txn, active_comp.id).await?;
+        if !seats.iter().any(|seat| seat.key == request.source_seat_key)
+            || !seats.iter().any(|seat| seat.key == request.target_seat_key)
+        {
+            return Err(AppError::Validation("invalid roster seat key".to_string()));
+        }
         let version = self
             .advance_roster_version(&txn, event_id, request.expected_roster_version)
             .await?;
@@ -1231,18 +1303,57 @@ impl EventService {
         request: RosterVersionRequest,
         actor_id: i64,
     ) -> Result<(i64, Vec<String>), AppError> {
-        let roster = self.get_roster(db, event_id).await?;
-        let mut available: Vec<_> = roster
-            .seats
-            .into_iter()
-            .filter(|seat| seat.participant.is_none())
-            .collect();
         let txn = db.begin().await.map_err(AppError::Database)?;
+        let event_model = event::Entity::find_by_id(event_id)
+            .one(&txn)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+        let participations = event_participation::Entity::find()
+            .filter(event_participation::Column::EventId.eq(event_id))
+            .order_by_asc(event_participation::Column::CreatedAt)
+            .all(&txn)
+            .await
+            .map_err(AppError::Database)?;
+        let extra_slots = event_roster_role::Entity::find()
+            .filter(event_roster_role::Column::EventId.eq(event_id))
+            .count(&txn)
+            .await
+            .map_err(AppError::Database)? as usize;
+        let concrete = participations
+            .iter()
+            .filter(|entry| entry.primary_build_id.is_some())
+            .count();
+        let (active_comp, _) = self
+            .resolve_active_comp_with_extra_slots(&txn, event_model.comp_id, concrete, extra_slots)
+            .await?;
+        let assignments = event_roster_assignment::Entity::find()
+            .filter(event_roster_assignment::Column::EventId.eq(event_id))
+            .all(&txn)
+            .await
+            .map_err(AppError::Database)?;
+        let assigned_users: HashSet<_> = assignments
+            .iter()
+            .map(|assignment| assignment.user_id)
+            .collect();
+        let assigned_seats: HashSet<_> = assignments
+            .iter()
+            .map(|assignment| assignment.seat_key.as_str())
+            .collect();
+        let mut available: Vec<_> = self
+            .canonical_roster_seats(&txn, active_comp.id)
+            .await?
+            .into_iter()
+            .filter(|seat| !assigned_seats.contains(seat.key.as_str()))
+            .collect();
         let version = self
             .advance_roster_version(&txn, event_id, request.expected_roster_version)
             .await?;
         let mut changed = Vec::new();
-        for participant in roster.bench {
+        for participant in participations
+            .into_iter()
+            .filter(|participant| !assigned_users.contains(&participant.user_id))
+        {
             let index = available
                 .iter()
                 .position(|seat| Some(seat.build_id) == participant.primary_build_id)
@@ -1359,9 +1470,9 @@ impl EventService {
     }
 
     /// Resolves the active composition (base or variant) for a given target size.
-    pub async fn resolve_active_comp(
+    pub async fn resolve_active_comp<C: ConnectionTrait>(
         &self,
-        db: &DatabaseConnection,
+        db: &C,
         base_comp_id: i64,
         target_size: usize,
     ) -> Result<(comp::Model, i64), AppError> {
@@ -1370,9 +1481,9 @@ impl EventService {
     }
 
     /// Resolves the active composition while accounting for fixed-capacity extra roster roles.
-    async fn resolve_active_comp_with_extra_slots(
+    async fn resolve_active_comp_with_extra_slots<C: ConnectionTrait>(
         &self,
-        db: &DatabaseConnection,
+        db: &C,
         base_comp_id: i64,
         target_size: usize,
         extra_roster_slots: usize,
@@ -1492,12 +1603,10 @@ impl EventService {
         let is_already_registered = participations
             .iter()
             .any(|participation| participation.user_id == user_id);
-        let concrete_assignment_count = participations
-            .iter()
-            .filter(|participation| participation.primary_build_id.is_some())
-            .count();
-        let prospective_concrete_assignment_count =
-            concrete_assignment_count + usize::from(!is_already_registered);
+        let prospective_participant_count =
+            participations.len() + usize::from(!is_already_registered);
+        let prospective_target =
+            comp_resolution_target(prospective_participant_count, event.player_cap);
 
         let extra_roster_roles = event_roster_role::Entity::find()
             .filter(event_roster_role::Column::EventId.eq(event_id))
@@ -1508,7 +1617,7 @@ impl EventService {
             .resolve_active_comp_with_extra_slots(
                 db,
                 event.comp_id,
-                prospective_concrete_assignment_count,
+                prospective_target,
                 extra_roster_roles.len(),
             )
             .await?;
@@ -1590,6 +1699,7 @@ impl EventService {
             discord_voice_channel_id: model.discord_voice_channel_id,
             comp_id: model.comp_id,
             comp_name: comp.name,
+            player_cap: model.player_cap,
             created_by: model.created_by,
             created_by_username,
             event_date_utc: model.event_date_utc.to_rfc3339(),
@@ -1758,18 +1868,32 @@ impl EventService {
             .count(db)
             .await
             .map_err(AppError::Database)? as usize;
-        let concrete_participation_count = participations
-            .iter()
-            .filter(|participation| participation.primary_build_id.is_some())
-            .count();
         let (active_comp, active_capacity) = self
             .resolve_active_comp_with_extra_slots(
                 db,
                 event_model.comp_id,
-                concrete_participation_count,
+                comp_resolution_target(participations.len(), event_model.player_cap),
                 extra_roster_slots,
             )
             .await?;
+        let active_comp_builds = comp_build::Entity::find()
+            .filter(comp_build::Column::CompId.eq(active_comp.id))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let mut comp_builds = Vec::with_capacity(active_comp_builds.len());
+        for entry in active_comp_builds {
+            let build = build::Entity::find_by_id(entry.build_id)
+                .one(db)
+                .await
+                .map_err(AppError::Database)?
+                .ok_or_else(|| AppError::NotFound(format!("Build {} not found", entry.build_id)))?;
+            comp_builds.push(EventCompBuildView {
+                build_id: entry.build_id,
+                name: build.name,
+                quantity: entry.quantity,
+            });
+        }
 
         let participant_user_ids: Vec<i64> = participations.iter().map(|p| p.user_id).collect();
         let specialization_rows = if participant_user_ids.is_empty() {
@@ -1883,12 +2007,41 @@ impl EventService {
             splits.push(split_service.to_summary(db, split).await?);
         }
 
+        let comp_builds = comp_build::Entity::find()
+            .filter(comp_build::Column::CompId.eq(active_comp.id))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let mut comp_builds = comp_builds
+            .into_iter()
+            .map(|entry| async move {
+                let build = build::Entity::find_by_id(entry.build_id)
+                    .one(db)
+                    .await
+                    .map_err(AppError::Database)?
+                    .ok_or_else(|| {
+                        AppError::NotFound(format!("Build {} not found", entry.build_id))
+                    })?;
+                Ok::<EventCompBuildView, AppError>(EventCompBuildView {
+                    build_id: entry.build_id,
+                    name: build.name,
+                    quantity: entry.quantity,
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut comp_build_views = Vec::with_capacity(comp_builds.len());
+        for future in comp_builds.drain(..) {
+            comp_build_views.push(future.await?);
+        }
+        comp_build_views.sort_by_key(|entry| entry.build_id);
+
         Ok(EventDetailView {
             event: event_view,
             active_comp_id: active_comp.id,
             active_comp_name: active_comp.name,
             active_comp_capacity: active_capacity,
             roster_roles,
+            comp_builds: comp_build_views,
             participants: participant_views,
             fights,
             battles,
@@ -2211,6 +2364,13 @@ impl EventService {
         req: CreateEventRequest,
     ) -> Result<EventView, AppError> {
         let discord_role_ids = normalize_discord_role_ids(req.discord_role_ids)?;
+        if let Some(player_cap) = req.player_cap
+            && player_cap <= 0
+        {
+            return Err(AppError::Validation(
+                "player_cap must be greater than zero when provided".to_string(),
+            ));
+        }
 
         // Validate comp exists
         let comp_exists = comp::Entity::find_by_id(req.comp_id)
@@ -2248,6 +2408,7 @@ impl EventService {
             call_to_arms: Set(req.call_to_arms),
             regear: Set(req.regear),
             comp_id: Set(req.comp_id),
+            player_cap: Set(req.player_cap),
             created_by: Set(creator_id),
             event_date_utc: Set(parsed_date.into()),
             ..Default::default()
@@ -2846,6 +3007,19 @@ impl EventService {
         user_id: i64,
         req: ParticipateEventRequest,
     ) -> Result<EventDetailView, AppError> {
+        self.participate_with_roster_version(db, event_id, user_id, req)
+            .await
+            .map(|(detail, _)| detail)
+    }
+
+    /// Registers a user and returns the post-commit roster revision for realtime delivery.
+    pub async fn participate_with_roster_version(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+        user_id: i64,
+        req: ParticipateEventRequest,
+    ) -> Result<(EventDetailView, i64), AppError> {
         self.apply_participation(
             db,
             event_id,
@@ -2865,6 +3039,19 @@ impl EventService {
         target_user_id: i64,
         req: super::models::SetParticipantRequest,
     ) -> Result<EventDetailView, AppError> {
+        self.set_participant_with_roster_version(db, event_id, target_user_id, req)
+            .await
+            .map(|(detail, _)| detail)
+    }
+
+    /// Sets participation and returns the post-commit roster revision for realtime delivery.
+    pub async fn set_participant_with_roster_version(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+        target_user_id: i64,
+        req: super::models::SetParticipantRequest,
+    ) -> Result<(EventDetailView, i64), AppError> {
         // Make sure the target user exists so we fail fast with a 404 instead
         // of leaving an orphan participation row behind.
         let user_exists = crate::modules::users::entities::Entity::find_by_id(target_user_id)
@@ -2896,7 +3083,7 @@ impl EventService {
         user_id: i64,
         primary_build_id: Option<i64>,
         secondary_build_id: Option<i64>,
-    ) -> Result<EventDetailView, AppError> {
+    ) -> Result<(EventDetailView, i64), AppError> {
         // Validate event exists
         let event_model = event::Entity::find_by_id(event_id)
             .one(db)
@@ -2942,17 +3129,13 @@ impl EventService {
         let existing = current_participations.iter().find(|p| p.user_id == user_id);
         let is_new = existing.is_none();
 
-        // Only concrete build assignments occupy composition capacity. Replacing a concrete
-        // assignment with Fill releases a slot; replacing Fill with a build claims one.
-        let concrete_participation_count = current_participations
-            .iter()
-            .filter(|participation| participation.primary_build_id.is_some())
-            .count();
-        let existing_consumes_slot =
-            existing.is_some_and(|participation| participation.primary_build_id.is_some());
-        let target_size = concrete_participation_count
-            .saturating_sub(usize::from(existing_consumes_slot))
-            + usize::from(primary_build_id.is_some());
+        // Fill does not claim a particular build slot, but every participant represents a player
+        // who may require the next comp expansion. Updating an existing signup keeps the roster
+        // size unchanged; a new signup grows it by one.
+        let target_size = comp_resolution_target(
+            current_participations.len() + usize::from(is_new),
+            event_model.player_cap,
+        );
 
         let extra_roster_roles = event_roster_role::Entity::find()
             .filter(event_roster_role::Column::EventId.eq(event_id))
@@ -3020,23 +3203,42 @@ impl EventService {
             }
         }
 
-        // Save or update
+        // Persist the participation and its roster invalidation atomically.
+        let txn = db.begin().await.map_err(AppError::Database)?;
         if let Some(p) = existing {
             let mut active: event_participation::ActiveModel = p.clone().into();
             active.primary_build_id = Set(primary_build_id);
             active.secondary_build_id = Set(secondary_build_id);
             active.updated_at = Set(chrono::Utc::now().into());
-            active.update(db).await.map_err(AppError::Database)?;
+            active.update(&txn).await.map_err(AppError::Database)?;
         } else {
-            let active = event_participation::ActiveModel {
+            event_participation::ActiveModel {
                 event_id: Set(event_id),
                 user_id: Set(user_id),
                 primary_build_id: Set(primary_build_id),
                 secondary_build_id: Set(secondary_build_id),
                 ..Default::default()
-            };
-            active.insert(db).await.map_err(AppError::Database)?;
+            }
+            .insert(&txn)
+            .await
+            .map_err(AppError::Database)?;
         }
+        event::Entity::update_many()
+            .col_expr(
+                event::Column::RosterVersion,
+                Expr::col(event::Column::RosterVersion).add(1),
+            )
+            .filter(event::Column::Id.eq(event_id))
+            .exec(&txn)
+            .await
+            .map_err(AppError::Database)?;
+        let roster_version = event::Entity::find_by_id(event_id)
+            .one(&txn)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?
+            .roster_version;
+        txn.commit().await.map_err(AppError::Database)?;
 
         if is_new {
             try_award_event_xp(
@@ -3049,7 +3251,7 @@ impl EventService {
             .await;
         }
 
-        self.get_event_detail(db, event_id).await
+        Ok((self.get_event_detail(db, event_id).await?, roster_version))
     }
 
     /// Cancels user participation.
@@ -3058,21 +3260,52 @@ impl EventService {
         db: &DatabaseConnection,
         event_id: i64,
         user_id: i64,
-    ) -> Result<EventDetailView, AppError> {
+    ) -> Result<(EventDetailView, i64, Option<String>), AppError> {
+        let txn = db.begin().await.map_err(AppError::Database)?;
+        let assignment = event_roster_assignment::Entity::find()
+            .filter(event_roster_assignment::Column::EventId.eq(event_id))
+            .filter(event_roster_assignment::Column::UserId.eq(user_id))
+            .one(&txn)
+            .await
+            .map_err(AppError::Database)?;
+        event_roster_assignment::Entity::delete_many()
+            .filter(event_roster_assignment::Column::EventId.eq(event_id))
+            .filter(event_roster_assignment::Column::UserId.eq(user_id))
+            .exec(&txn)
+            .await
+            .map_err(AppError::Database)?;
         let deleted = event_participation::Entity::delete_many()
             .filter(event_participation::Column::EventId.eq(event_id))
             .filter(event_participation::Column::UserId.eq(user_id))
-            .exec(db)
+            .exec(&txn)
             .await
             .map_err(AppError::Database)?;
-
         if deleted.rows_affected == 0 {
             return Err(AppError::NotFound(format!(
                 "User {user_id} is not registered for event {event_id}"
             )));
         }
-
-        self.get_event_detail(db, event_id).await
+        event::Entity::update_many()
+            .col_expr(
+                event::Column::RosterVersion,
+                Expr::col(event::Column::RosterVersion).add(1),
+            )
+            .filter(event::Column::Id.eq(event_id))
+            .exec(&txn)
+            .await
+            .map_err(AppError::Database)?;
+        let roster_version = event::Entity::find_by_id(event_id)
+            .one(&txn)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?
+            .roster_version;
+        txn.commit().await.map_err(AppError::Database)?;
+        Ok((
+            self.get_event_detail(db, event_id).await?,
+            roster_version,
+            assignment.map(|row| row.seat_key),
+        ))
     }
 }
 
@@ -3542,6 +3775,9 @@ mod tests {
         assert_eq!(detail.participants.len(), 1);
         assert_eq!(detail.participants[0].primary_build_id, None);
         assert_eq!(detail.participants[0].primary_build_name, "Fill");
+        assert_eq!(detail.comp_builds.len(), 1);
+        assert_eq!(detail.comp_builds[0].build_id, build_id);
+        assert_eq!(detail.comp_builds[0].quantity, 1);
 
         let regular_member = insert_user(&db, "regular", "regular@example.com").await;
         EventService::new()
@@ -3651,6 +3887,12 @@ mod tests {
             .await
             .expect("first Fill should be accepted");
         assert_eq!(first_detail.active_comp_id, base);
+
+        let signup_options = service
+            .get_event_signup_options(&db, event_id, concrete_member)
+            .await
+            .expect("the next member should see the expansion comp before choosing a build");
+        assert_eq!(signup_options.active_comp_id, expansion);
 
         let second_detail = service
             .participate(
@@ -4176,6 +4418,90 @@ mod tests {
         assert_eq!(performance.signups_as_primary, 0);
     }
 
+    #[tokio::test]
+    async fn cancelling_participation_removes_assignment_before_rejoin() {
+        let db = seed_db().await;
+        let user_id = insert_user(&db, "roster-user", "roster-user@example.com").await;
+        let build_category = create_build_category(&db, "roster-builds").await;
+        let build_id = create_build(&db, "roster-build", build_category).await;
+        let comp_category = create_comp_category(&db, "roster-comps").await;
+        let comp_id =
+            create_comp(&db, "roster-comp", comp_category, None, vec![(build_id, 1)]).await;
+        let event_id = event::ActiveModel {
+            title: Set("Roster event".to_string()),
+            comp_id: Set(comp_id),
+            created_by: Set(user_id),
+            event_date_utc: Set(ts()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert event")
+        .id;
+        let service = EventService::new();
+        let (_, joined_version) = service
+            .participate_with_roster_version(
+                &db,
+                event_id,
+                user_id,
+                ParticipateEventRequest {
+                    primary_build_id: Some(build_id),
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .expect("joining should invalidate the roster");
+        assert_eq!(joined_version, 1);
+        service
+            .assign_roster_seat(
+                &db,
+                event_id,
+                &format!("build:{build_id}:1"),
+                AssignRosterSeatRequest {
+                    user_id,
+                    expected_roster_version: joined_version,
+                },
+                user_id,
+            )
+            .await
+            .expect("assignment should succeed");
+        let (_, roster_version, seat_key) = service
+            .cancel_participation(&db, event_id, user_id)
+            .await
+            .expect("cancellation should succeed");
+        assert_eq!(roster_version, 3);
+        assert_eq!(seat_key, Some(format!("build:{build_id}:1")));
+        assert!(
+            event_roster_assignment::Entity::find()
+                .filter(event_roster_assignment::Column::EventId.eq(event_id))
+                .filter(event_roster_assignment::Column::UserId.eq(user_id))
+                .one(&db)
+                .await
+                .expect("assignment lookup should succeed")
+                .is_none()
+        );
+
+        let (_, rejoined_version) = service
+            .participate_with_roster_version(
+                &db,
+                event_id,
+                user_id,
+                ParticipateEventRequest {
+                    primary_build_id: Some(build_id),
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .expect("rejoining should invalidate the roster");
+        assert_eq!(rejoined_version, 4);
+        let roster = service
+            .get_roster(&db, event_id)
+            .await
+            .expect("roster should load after rejoin");
+        assert!(roster.seats.iter().all(|seat| seat.participant.is_none()));
+        assert_eq!(roster.bench.len(), 1);
+    }
+
     async fn insert_user(db: &DatabaseConnection, username: &str, email: &str) -> i64 {
         let user = UserActiveModel {
             username: Set(username.to_string()),
@@ -4296,6 +4622,14 @@ mod tests {
     }
 
     #[test]
+    fn player_cap_advances_to_the_next_expansion_without_becoming_a_hard_limit() {
+        assert_eq!(comp_resolution_target(9, Some(10)), 9);
+        assert_eq!(comp_resolution_target(10, Some(10)), 11);
+        assert_eq!(comp_resolution_target(15, Some(10)), 16);
+        assert_eq!(comp_resolution_target(10, None), 10);
+    }
+
+    #[test]
     fn normalize_discord_role_ids_deduplicates_and_rejects_invalid_ids() {
         assert_eq!(
             normalize_discord_role_ids(vec![
@@ -4330,6 +4664,7 @@ mod tests {
                     call_to_arms: false,
                     regear: false,
                     comp_id,
+                    player_cap: None,
                     event_date_utc: "2026-09-01T20:00:00Z".to_string(),
                     discord_role_ids: vec!["111111111111111111".to_string()],
                     create_split: false,
@@ -4368,6 +4703,7 @@ mod tests {
                     call_to_arms: false,
                     regear: false,
                     comp_id,
+                    player_cap: None,
                     event_date_utc: "2026-09-01T20:00:00Z".to_string(),
                     discord_role_ids: vec![],
                     create_split: false,
@@ -4444,6 +4780,7 @@ mod tests {
                     call_to_arms: false,
                     regear: false,
                     comp_id,
+                    player_cap: None,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     discord_role_ids: vec![],
                     create_split: true,
@@ -4483,6 +4820,7 @@ mod tests {
                     call_to_arms: false,
                     regear: false,
                     comp_id,
+                    player_cap: None,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     discord_role_ids: vec![],
                     create_split: true,
@@ -4549,6 +4887,7 @@ mod tests {
                     call_to_arms: false,
                     regear: false,
                     comp_id: base_comp,
+                    player_cap: None,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     discord_role_ids: vec![],
                     create_split: false,
@@ -4638,6 +4977,7 @@ mod tests {
                     call_to_arms: false,
                     regear: false,
                     comp_id,
+                    player_cap: None,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     discord_role_ids: vec![],
                     create_split: false,
@@ -4746,6 +5086,7 @@ mod tests {
                     call_to_arms: false,
                     regear: false,
                     comp_id,
+                    player_cap: None,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     discord_role_ids: vec![],
                     create_split: false,
@@ -4795,6 +5136,7 @@ mod tests {
                     call_to_arms: false,
                     regear: false,
                     comp_id,
+                    player_cap: None,
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     discord_role_ids: vec![],
                     create_split: false,
@@ -4844,6 +5186,7 @@ mod tests {
                     call_to_arms: false,
                     regear: false,
                     comp_id,
+                    player_cap: None,
                     event_date_utc: "2026-07-21T20:00:00Z".to_string(),
                     discord_role_ids: vec![],
                     create_split: false,
@@ -4862,6 +5205,7 @@ mod tests {
                     call_to_arms: false,
                     regear: false,
                     comp_id,
+                    player_cap: None,
                     event_date_utc: "2026-07-22T20:00:00Z".to_string(),
                     discord_role_ids: vec![],
                     create_split: false,
