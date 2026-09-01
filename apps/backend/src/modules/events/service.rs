@@ -13,9 +13,10 @@ use chrono::{DateTime, Duration as ChronoDuration, Utc};
 
 use super::entities::{event, event_battle, event_discord_role, event_participation};
 use super::models::{
-    BattlePerformanceStats, CompPerformanceView, CreateEventRequest, EventBattleView,
-    EventDetailView, EventParticipantView, EventSplitStats, EventView, OpponentPerformanceView,
-    ParticipateEventRequest, UpdateEventBattlesRequest, UpdateEventRequest,
+    BattlePerformanceStats, BuildBattleStats, BuildPerformanceView, CompPerformanceView,
+    CreateEventRequest, EventBattleView, EventDetailView, EventParticipantView, EventSplitStats,
+    EventView, OpponentPerformanceView, ParticipateEventRequest, UpdateEventBattlesRequest,
+    UpdateEventRequest,
 };
 
 use crate::errors::AppError;
@@ -878,6 +879,175 @@ impl EventService {
         })
     }
 
+    /// How one build version has performed, attributed to the players who actually ran it.
+    ///
+    /// The chain is: sign-ups naming this build version, then the battles of those events, then the
+    /// stored battle snapshot's per-player rows, matched to the signed-up members through their
+    /// linked Albion character name. That is deliberately narrower than "the events this build was
+    /// in were won 62% of the time" — an event-level number is a property of the event, and would
+    /// give every build in one fight the same score.
+    ///
+    /// Two coverage limits are reported rather than hidden: members with no linked Albion account
+    /// cannot be matched at all, and `matched_players` is the real sample size behind the totals.
+    pub async fn get_build_performance(
+        &self,
+        db: &DatabaseConnection,
+        build_id: i64,
+    ) -> Result<BuildPerformanceView, AppError> {
+        use crate::modules::albion::entities::albion_link;
+        use crate::modules::battles::entities as battle_snapshot;
+        use crate::modules::comps::entities::build;
+
+        let build_model = build::Entity::find_by_id(build_id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Build {build_id} not found")))?;
+
+        let signups = event_participation::Entity::find()
+            .filter(
+                event_participation::Column::PrimaryBuildId
+                    .eq(build_id)
+                    .or(event_participation::Column::SecondaryBuildId.eq(build_id)),
+            )
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+
+        let signups_as_primary = signups
+            .iter()
+            .filter(|signup| signup.primary_build_id == build_id)
+            .count() as i64;
+        let signups_as_secondary = signups
+            .iter()
+            .filter(|signup| signup.secondary_build_id == Some(build_id))
+            .count() as i64;
+
+        let view = |players_without_an_albion_link, stats| BuildPerformanceView {
+            build_id,
+            build_name: build_model.name.clone(),
+            version: build_model.version,
+            signups_as_primary,
+            signups_as_secondary,
+            players_without_an_albion_link,
+            stats,
+        };
+
+        if signups.is_empty() {
+            return Ok(view(0, None));
+        }
+
+        // The battle payload names players but does not carry their Albion id, so the join key is
+        // the linked character name. Same two hops as `intel`: link -> discord id -> user id.
+        let user_ids: HashSet<i64> = signups.iter().map(|signup| signup.user_id).collect();
+        let discord_by_user: HashMap<i64, String> = crate::modules::users::entities::Entity::find()
+            .filter(crate::modules::users::entities::Column::Id.is_in(user_ids.iter().copied()))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?
+            .into_iter()
+            .filter_map(|user| user.discord_id.map(|discord| (user.id, discord)))
+            .collect();
+        let links = albion_link::Entity::find()
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let name_by_discord: HashMap<String, String> = links
+            .into_iter()
+            .map(|link| (link.discord_id, link.albion_player_name.to_lowercase()))
+            .collect();
+
+        let mut expected_names: HashSet<String> = HashSet::new();
+        for user_id in &user_ids {
+            if let Some(name) = discord_by_user
+                .get(user_id)
+                .and_then(|discord| name_by_discord.get(discord))
+            {
+                expected_names.insert(name.clone());
+            }
+        }
+        let players_without_an_albion_link = (user_ids.len() - expected_names.len()) as i64;
+
+        let event_ids: Vec<i64> = signups.iter().map(|signup| signup.event_id).collect();
+        let battles = event_battle::Entity::find()
+            .filter(event_battle::Column::EventId.is_in(event_ids))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+
+        if battles.is_empty() || expected_names.is_empty() {
+            return Ok(view(players_without_an_albion_link, None));
+        }
+
+        let snapshot_ids: Vec<i64> = battles
+            .iter()
+            .filter_map(|battle| battle.albionbb_battle_id.parse::<i64>().ok())
+            .collect();
+        let snapshots = battle_snapshot::Entity::find()
+            .filter(battle_snapshot::Column::BattleId.is_in(snapshot_ids))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+
+        let mut stats = BuildBattleStats {
+            events: 0,
+            battles: 0,
+            matched_players: 0,
+            wins: 0,
+            losses: 0,
+            kills: 0,
+            deaths: 0,
+            kill_fame: 0,
+            death_fame: 0,
+        };
+        let mut counted_events: HashSet<i64> = HashSet::new();
+        let outcome_by_battle: HashMap<i64, (i64, bool)> = battles
+            .iter()
+            .filter_map(|battle| {
+                battle
+                    .albionbb_battle_id
+                    .parse::<i64>()
+                    .ok()
+                    .map(|id| (id, (battle.event_id, battle.is_win)))
+            })
+            .collect();
+
+        for snapshot in &snapshots {
+            let players: Vec<crate::modules::battles::models::BattlePlayer> =
+                serde_json::from_str(&snapshot.players_json).unwrap_or_default();
+            let ours: Vec<_> = players
+                .iter()
+                .filter(|player| expected_names.contains(&player.name.to_lowercase()))
+                .collect();
+            if ours.is_empty() {
+                continue;
+            }
+
+            stats.battles += 1;
+            stats.matched_players += ours.len() as i64;
+            for player in ours {
+                stats.kills += player.kills;
+                stats.deaths += player.deaths;
+                stats.kill_fame += player.kill_fame;
+                stats.death_fame += player.death_fame;
+            }
+            if let Some((event_id, is_win)) = outcome_by_battle.get(&snapshot.battle_id) {
+                counted_events.insert(*event_id);
+                if *is_win {
+                    stats.wins += 1;
+                } else {
+                    stats.losses += 1;
+                }
+            }
+        }
+
+        stats.events = counted_events.len() as i64;
+        if stats.battles == 0 {
+            return Ok(view(players_without_an_albion_link, None));
+        }
+        Ok(view(players_without_an_albion_link, Some(stats)))
+    }
+
     /// Clears friendly guilds from persisted opponent fields before producing analytics.
     fn apply_read_context_to_battles(
         battle_rows: Vec<event_battle::Model>,
@@ -1137,6 +1307,28 @@ impl EventService {
     }
 
     // --- Session lifecycle -------------------------------------------------
+
+    /// Returns a scheduled event after validating that a manual Discord reminder is still valid.
+    pub async fn prepare_event_reminder(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+    ) -> Result<EventView, AppError> {
+        let model = event::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
+
+        if model.status != "scheduled" {
+            return Err(AppError::Conflict(format!(
+                "Event {id} cannot be reminded (status={})",
+                model.status
+            )));
+        }
+
+        self.to_event_view(db, model).await
+    }
 
     /// Marks an event as live, recording `started_at = now` and computing the
     /// `auto_stop_deadline = now + MAX_SESSION_DURATION` (3 hours).
@@ -1740,6 +1932,305 @@ mod tests {
         db
     }
 
+    /// A fixed timestamp; the values are irrelevant to these assertions.
+    fn ts() -> sea_orm::prelude::DateTimeWithTimeZone {
+        chrono::Utc::now().into()
+    }
+
+    /// Seeds a member with a linked Albion character, so battle rows can be matched to them.
+    async fn insert_linked_member(
+        db: &DatabaseConnection,
+        username: &str,
+        albion_name: &str,
+    ) -> i64 {
+        let user = UserActiveModel {
+            username: Set(username.to_string()),
+            email: Set(format!("{username}@example.com")),
+            role: Set("User".to_string()),
+            discord_id: Set(Some(format!("discord-{username}"))),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert member")
+        .id;
+
+        crate::modules::albion::entities::albion_link::ActiveModel {
+            discord_id: Set(format!("discord-{username}")),
+            albion_player_id: Set(format!("albion-{username}")),
+            albion_player_name: Set(albion_name.to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to link the member");
+        user
+    }
+
+    /// Seeds an event, a battle and the snapshot that battle's per-player rows come from.
+    #[allow(clippy::too_many_arguments)]
+    async fn insert_battle_with_players(
+        db: &DatabaseConnection,
+        event_id: i64,
+        battle_id: i64,
+        is_win: bool,
+        players: &[(&str, i64, i64)],
+    ) {
+        event_battle::ActiveModel {
+            event_id: Set(event_id),
+            albionbb_battle_id: Set(battle_id.to_string()),
+            battle_started_at: Set(ts()),
+            guild_players_count: Set(players.len() as i32),
+            fetched_at: Set(ts()),
+            guild_kills: Set(players.iter().map(|(_, kills, _)| kills).sum()),
+            guild_deaths: Set(players.iter().map(|(_, _, deaths)| deaths).sum()),
+            guild_kill_fame: Set(0),
+            is_win: Set(is_win),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert the battle");
+
+        let players_json = serde_json::to_string(
+            &players
+                .iter()
+                .map(|(name, kills, deaths)| {
+                    serde_json::json!({
+                        "id": *name,
+                        "name": *name,
+                        "guild_id": "g",
+                        "guild_name": "Weaklings",
+                        "kills": kills,
+                        "deaths": deaths,
+                        "kill_fame": kills * 1000,
+                        "death_fame": deaths * 500,
+                        "item_power": 1300.0
+                    })
+                })
+                .collect::<Vec<_>>(),
+        )
+        .expect("failed to serialize the players");
+
+        crate::modules::battles::entities::ActiveModel {
+            battle_id: Set(battle_id),
+            start_time: Set(ts()),
+            end_time: Set(None),
+            total_players: Set(players.len() as i64),
+            total_kills: Set(players.iter().map(|(_, kills, _)| kills).sum()),
+            total_fame: Set(0),
+            guilds_json: Set("[]".to_string()),
+            players_json: Set(players_json),
+            kills_json: Set("[]".to_string()),
+            losses_json: Set("[]".to_string()),
+            fetched_at: Set(ts()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert the battle snapshot");
+    }
+
+    /// A minimal event owned by `creator`, enough to hang sign-ups and battles off.
+    async fn insert_event(db: &DatabaseConnection, title: &str, creator: i64) -> i64 {
+        let comp_category = create_comp_category(db, &format!("cat-{title}")).await;
+        let comp_id = create_comp(db, title, comp_category, None, Vec::new()).await;
+        event::ActiveModel {
+            title: Set(title.to_string()),
+            comp_id: Set(comp_id),
+            created_by: Set(creator),
+            event_date_utc: Set(ts()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert the event")
+        .id
+    }
+
+    async fn sign_up(db: &DatabaseConnection, event_id: i64, user_id: i64, build_id: i64) {
+        event_participation::ActiveModel {
+            event_id: Set(event_id),
+            user_id: Set(user_id),
+            primary_build_id: Set(build_id),
+            secondary_build_id: Set(None),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to sign the member up");
+    }
+
+    #[tokio::test]
+    async fn build_performance_separates_two_versions_of_the_same_build() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let category = create_build_category(&db, "Crystal").await;
+        let v1 = create_build(&db, "Pole Hammer", category).await;
+        let v2 = BuildActiveModel {
+            name: Set("Pole Hammer".to_string()),
+            role: Set("dps".to_string()),
+            category_id: Set(category),
+            version: Set(2),
+            created_by: Set(author),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert v2")
+        .id;
+
+        let alice = insert_linked_member(&db, "alice", "Alice").await;
+        let bob = insert_linked_member(&db, "bob", "Bob").await;
+        let first = insert_event(&db, "Night one", author).await;
+        let second = insert_event(&db, "Night two", author).await;
+        sign_up(&db, first, alice, v1).await;
+        sign_up(&db, second, bob, v2).await;
+        insert_battle_with_players(&db, first, 1001, true, &[("Alice", 7, 1)]).await;
+        insert_battle_with_players(&db, second, 1002, false, &[("Bob", 2, 3)]).await;
+
+        let service = EventService::new();
+        let first_stats = service
+            .get_build_performance(&db, v1)
+            .await
+            .unwrap()
+            .stats
+            .expect("v1 has battle data");
+        let second_stats = service
+            .get_build_performance(&db, v2)
+            .await
+            .unwrap()
+            .stats
+            .expect("v2 has battle data");
+
+        assert_eq!((first_stats.kills, first_stats.deaths), (7, 1));
+        assert_eq!((second_stats.kills, second_stats.deaths), (2, 3));
+        assert_eq!((first_stats.wins, first_stats.losses), (1, 0));
+        assert_eq!((second_stats.wins, second_stats.losses), (0, 1));
+    }
+
+    #[tokio::test]
+    async fn build_performance_counts_only_the_players_who_ran_that_build() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let category = create_build_category(&db, "Crystal").await;
+        let hammer = create_build(&db, "Pole Hammer", category).await;
+        let axe = create_build(&db, "Great Axe", category).await;
+
+        let alice = insert_linked_member(&db, "alice", "Alice").await;
+        let bob = insert_linked_member(&db, "bob", "Bob").await;
+        let event = insert_event(&db, "One fight", author).await;
+        sign_up(&db, event, alice, hammer).await;
+        sign_up(&db, event, bob, axe).await;
+        // Both fought in the same battle, so an event-level metric would score them identically.
+        insert_battle_with_players(&db, event, 2001, true, &[("Alice", 9, 0), ("Bob", 1, 2)]).await;
+
+        let service = EventService::new();
+        let hammer_stats = service
+            .get_build_performance(&db, hammer)
+            .await
+            .unwrap()
+            .stats
+            .unwrap();
+        let axe_stats = service
+            .get_build_performance(&db, axe)
+            .await
+            .unwrap()
+            .stats
+            .unwrap();
+
+        assert_eq!((hammer_stats.kills, hammer_stats.deaths), (9, 0));
+        assert_eq!((axe_stats.kills, axe_stats.deaths), (1, 2));
+        assert_eq!(hammer_stats.matched_players, 1);
+    }
+
+    #[tokio::test]
+    async fn build_performance_reports_the_members_it_could_not_match() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let category = create_build_category(&db, "Crystal").await;
+        let hammer = create_build(&db, "Pole Hammer", category).await;
+
+        let alice = insert_linked_member(&db, "alice", "Alice").await;
+        let unlinked = insert_user(&db, "carol", "carol@example.com").await;
+        let event = insert_event(&db, "One fight", author).await;
+        sign_up(&db, event, alice, hammer).await;
+        sign_up(&db, event, unlinked, hammer).await;
+        insert_battle_with_players(&db, event, 3001, true, &[("Alice", 4, 0), ("Carol", 6, 0)])
+            .await;
+
+        let performance = EventService::new()
+            .get_build_performance(&db, hammer)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            performance.players_without_an_albion_link, 1,
+            "a member with no Albion link cannot be matched and must be reported"
+        );
+        let stats = performance.stats.unwrap();
+        assert_eq!(
+            stats.kills, 4,
+            "the unlinked member's kills are not attributable, so they are excluded"
+        );
+        assert_eq!(stats.matched_players, 1);
+    }
+
+    #[tokio::test]
+    async fn build_performance_distinguishes_never_used_from_lost_every_time() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let category = create_build_category(&db, "Crystal").await;
+        let unused = create_build(&db, "Pole Hammer", category).await;
+        let lost = create_build(&db, "Great Axe", category).await;
+
+        let alice = insert_linked_member(&db, "alice", "Alice").await;
+        let event = insert_event(&db, "A loss", author).await;
+        sign_up(&db, event, alice, lost).await;
+        insert_battle_with_players(&db, event, 4001, false, &[("Alice", 0, 1)]).await;
+
+        let service = EventService::new();
+        let never_used = service.get_build_performance(&db, unused).await.unwrap();
+        let lost_stats = service.get_build_performance(&db, lost).await.unwrap();
+
+        assert!(
+            never_used.stats.is_none(),
+            "a build nobody ran must not read as a 0% win rate"
+        );
+        assert_eq!(never_used.signups_as_primary, 0);
+        assert_eq!(lost_stats.stats.unwrap().losses, 1);
+    }
+
+    #[tokio::test]
+    async fn build_performance_counts_secondary_sign_ups_too() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let category = create_build_category(&db, "Crystal").await;
+        let hammer = create_build(&db, "Pole Hammer", category).await;
+        let axe = create_build(&db, "Great Axe", category).await;
+
+        let alice = insert_linked_member(&db, "alice", "Alice").await;
+        let event = insert_event(&db, "One fight", author).await;
+        event_participation::ActiveModel {
+            event_id: Set(event),
+            user_id: Set(alice),
+            primary_build_id: Set(hammer),
+            secondary_build_id: Set(Some(axe)),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let performance = EventService::new()
+            .get_build_performance(&db, axe)
+            .await
+            .unwrap();
+
+        assert_eq!(performance.signups_as_secondary, 1);
+        assert_eq!(performance.signups_as_primary, 0);
+    }
+
     async fn insert_user(db: &DatabaseConnection, username: &str, email: &str) -> i64 {
         let user = UserActiveModel {
             username: Set(username.to_string()),
@@ -1873,6 +2364,44 @@ mod tests {
         );
         assert!(normalize_discord_role_ids(vec!["not-a-role".to_string()]).is_err());
         assert!(normalize_discord_role_ids(vec!["123".to_string()]).is_err());
+    }
+
+    #[tokio::test]
+    async fn prepare_reminder_only_accepts_scheduled_events() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "reminder-admin", "reminder-admin@example.com").await;
+        let cat = create_comp_category(&db, "Reminder ZvZ").await;
+        let comp_id = create_comp(&db, "Reminder Comp", cat, None, vec![]).await;
+        let service = EventService::new();
+        let event = service
+            .create_event(
+                &db,
+                admin,
+                CreateEventRequest {
+                    title: "Reminder Event".to_string(),
+                    description: None,
+                    call_to_arms: false,
+                    regear: false,
+                    comp_id,
+                    event_date_utc: "2026-09-01T20:00:00Z".to_string(),
+                    discord_role_ids: vec!["111111111111111111".to_string()],
+                    create_split: false,
+                    island_tab_id: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        let reminder = service.prepare_event_reminder(&db, event.id).await.unwrap();
+        assert_eq!(reminder.id, event.id);
+        assert_eq!(reminder.discord_role_ids, event.discord_role_ids);
+
+        service.start_event(&db, event.id).await.unwrap();
+        let error = service
+            .prepare_event_reminder(&db, event.id)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::Conflict(_)));
     }
 
     #[tokio::test]

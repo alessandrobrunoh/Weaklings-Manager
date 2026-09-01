@@ -2,7 +2,13 @@ import { writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Client, TextChannel } from "discord.js";
 import type { ApiClient } from "../api/client.js";
-import type { PaginatedData, EventView, BattleSummary, SplitSyncBatch } from "../api/types.js";
+import type {
+  PaginatedData,
+  EventView,
+  BattleSummary,
+  SplitDiscoveryBatch,
+  SplitDiscordSync,
+} from "../api/types.js";
 import { buildEventAnnouncementContent } from "../embeds/event.embed.js";
 import { buildBattleEmbed } from "../embeds/battle.embed.js";
 import { GUILD_NAME } from "../embeds/theme.js";
@@ -23,7 +29,9 @@ interface PollerState {
   pinged1hEvents: number[];
   /** Discord discussion thread keyed by event ID, used for event follow-ups. */
   eventThreadIds: Record<string, string>;
-  splitCursor: string | null;
+  /** Stable cursor over split (updated_at, id), persisted only after successful Forum sync. */
+  splitUpdatedAt: string | null;
+  splitAfterId: number | null;
 }
 
 function createDefaultState(): PollerState {
@@ -32,7 +40,8 @@ function createDefaultState(): PollerState {
     lastBattleId: 0,
     pinged1hEvents: [],
     eventThreadIds: {},
-    splitCursor: null,
+    splitUpdatedAt: null,
+    splitAfterId: null,
   };
 }
 
@@ -93,7 +102,8 @@ function loadState(stateDirectory: string): PollerState {
       lastBattleId: parsedState.lastBattleId ?? 0,
       pinged1hEvents: parsedState.pinged1hEvents ?? [],
       eventThreadIds: parsedState.eventThreadIds ?? {},
-      splitCursor: parsedState.splitCursor ?? null,
+      splitUpdatedAt: parsedState.splitUpdatedAt ?? null,
+      splitAfterId: parsedState.splitAfterId ?? null,
     };
   } catch (error) {
     console.warn(
@@ -274,32 +284,43 @@ export class Poller {
   }
 
   /**
-   * Synchronizes split forum posts from the backend-owned incremental contract.
-   * The cursor advances only after every item in the batch has been handed to the adapter.
+   * Synchronizes split Forum posts from the backend-owned incremental contract.
+   * The `(updated_at, id)` cursor advances after each successfully maintained Discord post.
    */
   private async checkSplitSync(): Promise<void> {
-    const forumChannelId = await this.settings.splitsForumChannelId();
-    if (!forumChannelId) return;
-
     try {
-      const params: Record<string, string | number> = { limit: 50 };
-      if (this.state.splitCursor) params.cursor = this.state.splitCursor;
-      const batch = await this.api.get<SplitSyncBatch>(
-        "api/bot/splits/sync",
-        undefined,
-        params,
-      );
+      const forumChannelId = await this.settings.splitsForumChannelId();
+      if (!forumChannelId) return;
+
       const adapter = new SplitForumAdapter(this.client, this.api, forumChannelId);
-      for (const item of batch.items) {
-        if (!await adapter.sync(item)) return;
-      }
-      if (batch.next_cursor && batch.next_cursor !== this.state.splitCursor) {
-        this.state.splitCursor = batch.next_cursor;
-        saveState(this.stateDirectory, this.state);
+      let hasMore = true;
+      while (hasMore) {
+        const params: Record<string, string | number> = { limit: 50 };
+        if (this.state.splitUpdatedAt) {
+          params.updated_after = this.state.splitUpdatedAt;
+          if (this.state.splitAfterId !== null) params.after_id = this.state.splitAfterId;
+        }
+
+        const batch = await this.api.get<SplitDiscoveryBatch>(
+          "api/splits/discord-sync",
+          undefined,
+          params,
+        );
+        for (const split of batch.items) {
+          const item = await this.api.get<SplitDiscordSync>(
+            `api/splits/${split.id}/discord-sync`,
+          );
+          if (!await adapter.sync(item)) return;
+
+          this.state.splitUpdatedAt = split.updated_at ?? split.created_at;
+          this.state.splitAfterId = split.id;
+          saveState(this.stateDirectory, this.state);
+        }
+        hasMore = batch.has_more;
       }
     } catch (err) {
       // A split sync failure is isolated from event/battle announcements and retried next tick.
-      console.error("[Poller] Failed to sync split forum posts:", err);
+      console.error("[Poller] Failed to sync split Forum posts:", err);
     }
   }
 

@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 
 import { validateBuildName } from '../../shared/validation/build-validation';
@@ -8,12 +9,30 @@ import type {
   BuildCategoryView,
   BuildDetail,
   BuildItemSlot,
+  BuildItemSpells,
+  BuildLoadout,
   BuildRole,
   BuildSlot,
+  BuildPerformanceView,
   OpenAlbionItem,
+  OpenAlbionItemAbilities,
   UpdateBuildRequest,
 } from '../../core/models/api.models';
 import { filterAlbionEquipmentCatalog } from '../../shared/data/albion-equipment-catalog';
+import { SLOT_ORDER, itemsForLoadout } from './build-loadouts';
+import {
+  abilityKeyForItem,
+  abilitySlotsFor,
+  withAbilityChoice,
+} from '../../shared/data/albion-abilities';
+import type { AbilitySlotView } from '../../shared/data/albion-abilities';
+import { AlbionAbilitiesService } from '../../shared/services/albion-abilities.service';
+import { AbilityBar } from '../../shared/components/ability-bar/ability-bar';
+import type { AbilityChoiceChange } from '../../shared/components/ability-bar/ability-bar';
+import { VersionSwitcher } from '../../shared/components/version-switcher/version-switcher';
+import { VersionDiffList } from '../../shared/components/version-diff-list/version-diff-list';
+import { abilityNameLookup, diffBuildVersions } from './version-diff';
+import type { VersionDiffEntry } from './version-diff';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -27,23 +46,6 @@ import { AlbionCatalogService } from '../../shared/services/albion-catalog.servi
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-
-/**
- * Sorted slot order used for rendering the equipment grid consistently
- * across the detail page and the create form on the parent comps page.
- */
-const SLOT_ORDER: BuildSlot[] = [
-  'weapon',
-  'off_hand',
-  'head',
-  'armor',
-  'shoes',
-  'cape',
-  'bag',
-  'potion',
-  'food',
-  'mount',
-];
 
 const SLOT_LABELS: Record<BuildSlot, string> = {
   weapon: 'Weapon',
@@ -107,6 +109,9 @@ const ITEM_TIERS = [
     ErrorState,
     Loading,
     EquipmentGrid,
+    AbilityBar,
+    VersionSwitcher,
+    VersionDiffList,
     Dialog,
   ],
   template: `
@@ -119,8 +124,23 @@ const ITEM_TIERS = [
           roleLabel(current.role) + ' · ' + (current.category_name || t('comps.noCategory'))
         "
       >
-        <div class="flex flex-wrap gap-2">
+        <div pageActions class="flex flex-wrap items-center gap-2">
           <a class="btn btn--ghost" routerLink="/comps">← {{ t('comps.title') }}</a>
+          <app-version-switcher
+            [versions]="current.versions ?? []"
+            [currentId]="current.id"
+            [canManage]="canManage()"
+            [busy]="saving()"
+            [label]="t('comps.version')"
+            [createLabel]="t('comps.newVersion')"
+            (select)="openVersion($event)"
+            (create)="createVersion()"
+          />
+          @if ((current.versions ?? []).length > 1) {
+            <button type="button" class="btn btn--outline" (click)="openCompare()">
+              {{ t('comps.compare') }}
+            </button>
+          }
           @if (canManage() && mode() === 'view') {
             <button
               type="button"
@@ -198,34 +218,240 @@ const ITEM_TIERS = [
           </form>
         }
 
-        <section class="card grid gap-4 p-5" [attr.aria-label]="t('comps.equipment')">
+        <section class="card grid gap-4 p-5" [attr.aria-label]="t('comps.mainLoadout')">
           <header class="flex items-center justify-between gap-3">
             <h2 class="text-lg font-semibold" style="color: var(--color-text)">
-              {{ t('comps.equipment') }} ({{ itemsBySlot().length }}/{{ SLOT_ORDER.length }})
+              {{ t('comps.mainLoadout') }} ({{ mainItems().length }}/{{ SLOT_ORDER.length }})
             </h2>
             <span class="chip">{{ current.item_count }} {{ t('comps.items') }}</span>
           </header>
 
           <app-equipment-grid
-            [items]="itemsBySlot()"
+            [items]="mainItems()"
             [canManage]="canManage() && mode() === 'edit'"
-            [editingSlot]="editingSlot()"
+            [editingSlot]="editingSlotFor('main')"
             [draftTier]="draftTier()"
             [draftSearch]="draftSearch()"
             [draftItemId]="draftItemId()"
             [searchResults]="searchResults()"
             [searchLoading]="searchLoading()"
             [tiers]="ITEM_TIERS"
-            (slotToggle)="onSlotToggle($event)"
+            (slotToggle)="onSlotToggle('main', $event)"
             (tierChange)="onDraftTierChangeValue($event)"
             (searchChange)="onDraftSearchChangeValue($event)"
             (itemSelect)="onDraftItemChangeValue($event)"
-            (saveSlot)="saveSlot($event)"
+            (saveSlot)="saveSlot('main', $event)"
             (cancelEdit)="cancelSlotEdit()"
-            (removeItem)="askRemoveItem($event)"
+            (removeItem)="askRemoveItem('main', $event)"
           />
+
+          @if (abilityRows('main'); as rows) {
+            @if (rows.length > 0) {
+              <div class="grid gap-3 border-t pt-4" style="border-color: var(--color-border)">
+                <div class="grid gap-1">
+                  <h3 class="text-sm font-semibold" style="color: var(--color-text)">
+                    {{ t('comps.abilities') }}
+                  </h3>
+                  <p class="text-sm" style="color: var(--color-text-secondary)">
+                    {{ t('comps.abilitiesHint') }}
+                  </p>
+                </div>
+                @for (row of rows; track row.slot) {
+                  <div class="grid gap-2 sm:grid-cols-[10rem_1fr] sm:items-center">
+                    <span class="text-sm font-medium" style="color: var(--color-text-secondary)">
+                      {{ row.itemName }}
+                    </span>
+                    <app-ability-bar
+                      [slots]="row.slots"
+                      [canManage]="canManage() && mode() === 'edit'"
+                      [emptyLabel]="t('comps.noAbility')"
+                      (choiceChange)="onAbilityChange('main', row.slot, $event)"
+                    />
+                  </div>
+                }
+              </div>
+            }
+          }
+        </section>
+
+        @if (swapItems().length > 0 || (canManage() && mode() === 'edit')) {
+          <section class="card grid gap-4 p-5" [attr.aria-label]="t('comps.swapLoadout')">
+            <header class="flex items-center justify-between gap-3">
+              <div class="grid gap-1">
+                <h2 class="text-lg font-semibold" style="color: var(--color-text)">
+                  {{ t('comps.swapLoadout') }} ({{ swapItems().length }}/{{ SLOT_ORDER.length }})
+                </h2>
+                <p class="text-sm" style="color: var(--color-text-secondary)">
+                  {{ t('comps.swapHint') }}
+                </p>
+              </div>
+            </header>
+
+            @if (swapItems().length === 0 && mode() !== 'edit') {
+              <p class="text-sm" style="color: var(--color-text-secondary)">
+                {{ t('comps.noSwap') }}
+              </p>
+            } @else {
+              <app-equipment-grid
+                [items]="swapItems()"
+                [canManage]="canManage() && mode() === 'edit'"
+                [editingSlot]="editingSlotFor('swap')"
+                [draftTier]="draftTier()"
+                [draftSearch]="draftSearch()"
+                [draftItemId]="draftItemId()"
+                [searchResults]="searchResults()"
+                [searchLoading]="searchLoading()"
+                [tiers]="ITEM_TIERS"
+                (slotToggle)="onSlotToggle('swap', $event)"
+                (tierChange)="onDraftTierChangeValue($event)"
+                (searchChange)="onDraftSearchChangeValue($event)"
+                (itemSelect)="onDraftItemChangeValue($event)"
+                (saveSlot)="saveSlot('swap', $event)"
+                (cancelEdit)="cancelSlotEdit()"
+                (removeItem)="askRemoveItem('swap', $event)"
+              />
+
+              @if (abilityRows('swap'); as rows) {
+                @if (rows.length > 0) {
+                  <div class="grid gap-3 border-t pt-4" style="border-color: var(--color-border)">
+                    <h3 class="text-sm font-semibold" style="color: var(--color-text)">
+                      {{ t('comps.abilities') }}
+                    </h3>
+                    @for (row of rows; track row.slot) {
+                      <div class="grid gap-2 sm:grid-cols-[10rem_1fr] sm:items-center">
+                        <span
+                          class="text-sm font-medium"
+                          style="color: var(--color-text-secondary)"
+                        >
+                          {{ row.itemName }}
+                        </span>
+                        <app-ability-bar
+                          [slots]="row.slots"
+                          [canManage]="canManage() && mode() === 'edit'"
+                          [emptyLabel]="t('comps.noAbility')"
+                          (choiceChange)="onAbilityChange('swap', row.slot, $event)"
+                        />
+                      </div>
+                    }
+                  </div>
+                }
+              }
+            }
+          </section>
+        }
+        <section class="card grid gap-3 p-5" [attr.aria-label]="t('comps.performance')">
+          <header class="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 class="text-lg font-semibold" style="color: var(--color-text)">
+              {{ t('comps.performance') }} · v{{ current.version }}
+            </h2>
+            <span class="chip">
+              {{ t('comps.signups') }}
+              {{ (performance()?.signups_as_primary ?? 0) + (performance()?.signups_as_secondary ?? 0) }}
+            </span>
+          </header>
+
+          @if (performance(); as report) {
+            @if (report.stats; as stats) {
+              <dl class="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                <div>
+                  <dt class="label">{{ t('comps.winrate') }}</dt>
+                  <dd class="text-lg font-semibold" style="color: var(--color-text)">
+                    {{ winRate(stats.wins, stats.losses) }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="label">K / D</dt>
+                  <dd class="text-lg font-semibold" style="color: var(--color-text)">
+                    {{ stats.kills }} / {{ stats.deaths }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="label">{{ t('comps.matchedPlayers') }}</dt>
+                  <dd class="text-lg font-semibold" style="color: var(--color-text)">
+                    {{ stats.matched_players }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="label">Battles</dt>
+                  <dd class="text-lg font-semibold" style="color: var(--color-text)">
+                    {{ stats.battles }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="label">Kill fame</dt>
+                  <dd class="text-lg font-semibold" style="color: var(--color-text)">
+                    {{ stats.kill_fame }}
+                  </dd>
+                </div>
+              </dl>
+              @if (report.players_without_an_albion_link > 0) {
+                <p class="text-sm" style="color: var(--color-text-secondary)">
+                  {{ t('comps.unlinkedPlayers') }}: {{ report.players_without_an_albion_link }}
+                </p>
+              }
+            } @else {
+              <p class="text-sm" style="color: var(--color-text-secondary)">
+                {{ t('comps.noBattleData') }}
+              </p>
+            }
+          }
         </section>
       </app-page-stack>
+
+      @if (comparing()) {
+        <app-dialog [title]="t('comps.compare')" size="lg" (closed)="closeCompare()">
+          <div class="grid gap-4">
+            <label>
+              <span class="label">{{ t('comps.compareWith') }}</span>
+              <select
+                class="select"
+                [value]="compareWithId()"
+                (change)="onCompareTargetChange($event)"
+              >
+                @for (entry of current.versions ?? []; track entry.id) {
+                  @if (entry.id !== current.id) {
+                    <option [value]="entry.id">v{{ entry.version }}</option>
+                  }
+                }
+              </select>
+            </label>
+
+            @if (compareWith(); as other) {
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div class="card p-4">
+                  <h3 class="text-sm font-semibold" style="color: var(--color-text)">
+                    v{{ other.version }} — {{ t('comps.performance') }}
+                  </h3>
+                  <p class="text-sm" style="color: var(--color-text-secondary)">
+                    {{ performanceSummary(comparePerformance()) }}
+                  </p>
+                </div>
+                <div class="card p-4">
+                  <h3 class="text-sm font-semibold" style="color: var(--color-text)">
+                    v{{ current.version }} — {{ t('comps.performance') }}
+                  </h3>
+                  <p class="text-sm" style="color: var(--color-text-secondary)">
+                    {{ performanceSummary(performance()) }}
+                  </p>
+                </div>
+              </div>
+
+              <app-version-diff-list
+                [entries]="compareDiff()"
+                [emptyLabel]="t('comps.noDifferences')"
+                [addedLabel]="t('comps.added')"
+                [removedLabel]="t('comps.removed')"
+                [changedLabel]="t('comps.changed')"
+              />
+            }
+          </div>
+          <div dialogFooter>
+            <button type="button" class="btn btn--ghost" (click)="closeCompare()">
+              {{ t('common.close') }}
+            </button>
+          </div>
+        </app-dialog>
+      }
 
       @if (pendingDelete(); as pending) {
         <app-dialog [title]="t('common.confirm')" size="sm" (closed)="closeDelete()">
@@ -252,7 +478,7 @@ const ITEM_TIERS = [
       <app-error-state
         [message]="t('common.error')"
         [retryLabel]="t('common.retry')"
-        (retry)="load(buildId)"
+        (retry)="load(buildId())"
       />
     } @else if (!loading()) {
       <app-empty-state [message]="t('comps.buildNotFound')" icon="package" />
@@ -267,6 +493,7 @@ export class CompBuildDetailPage {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly albionCatalog = inject(AlbionCatalogService);
+  private readonly albionAbilities = inject(AlbionAbilitiesService);
 
   protected readonly SLOT_ORDER = SLOT_ORDER;
   protected readonly ITEM_TIERS = ITEM_TIERS;
@@ -287,14 +514,15 @@ export class CompBuildDetailPage {
 
   protected readonly mode = signal<'view' | 'edit'>('view');
   protected readonly pendingDelete = signal<
-    { kind: 'build' } | { kind: 'slot'; slot: BuildSlot } | null
+    { kind: 'build' } | { kind: 'slot'; loadout: BuildLoadout; slot: BuildSlot } | null
   >(null);
   protected readonly editName = signal('');
   protected readonly editDescription = signal('');
   protected readonly editCategoryId = signal('');
   protected readonly editRole = signal('');
 
-  protected readonly editingSlot = signal<BuildSlot | null>(null);
+  /** The slot whose picker is open, together with the loadout it belongs to. */
+  protected readonly editing = signal<{ loadout: BuildLoadout; slot: BuildSlot } | null>(null);
   protected readonly draftTier = signal('T8');
   protected readonly draftSearch = signal('');
   protected readonly draftItemId = signal('');
@@ -307,17 +535,48 @@ export class CompBuildDetailPage {
   protected readonly t = (key: TranslationKey) => this.translate.t(key);
 
   protected readonly canManage = computed(() => this.auth.hasPermission('comps.builds.manage'));
-  protected readonly itemsBySlot = computed<BuildItemSlot[]>(() => {
-    const build = this.build();
-    return build ? [...build.items].sort(sortBySlotOrder) : [];
+  /** The bundled ability catalog, loaded once and keyed by tier-stripped base identifier. */
+  protected readonly abilityCatalog = signal<Record<string, OpenAlbionItemAbilities>>({});
+  protected readonly performance = signal<BuildPerformanceView | null>(null);
+  protected readonly comparing = signal(false);
+  protected readonly compareWithId = signal('');
+  protected readonly compareWith = signal<BuildDetail | null>(null);
+  protected readonly comparePerformance = signal<BuildPerformanceView | null>(null);
+  protected readonly compareDiff = computed<VersionDiffEntry[]>(() => {
+    const current = this.build();
+    const other = this.compareWith();
+    return current && other
+      ? diffBuildVersions(other, current, abilityNameLookup(this.abilityCatalog()))
+      : [];
   });
+  protected readonly mainItems = computed<BuildItemSlot[]>(() => this.itemsFor('main'));
+  protected readonly swapItems = computed<BuildItemSlot[]>(() => this.itemsFor('swap'));
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
-  protected readonly buildId = Number(this.route.snapshot.paramMap.get('buildId'));
+  /**
+   * The build row on screen.
+   *
+   * Switching versions navigates within the same route, so Angular reuses this component and the
+   * snapshot never changes — the id has to come from the live `paramMap` instead.
+   */
+  protected readonly buildId = signal(Number(this.route.snapshot.paramMap.get('buildId')));
 
   constructor() {
-    void this.load(this.buildId);
+    this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const id = Number(params.get('buildId'));
+      if (id === this.buildId() && this.build()) {
+        return;
+      }
+      this.buildId.set(id);
+      this.mode.set('view');
+      void this.load(id);
+    });
+    // Static application data; one fetch serves every build page in the session.
+    void this.albionAbilities
+      .load()
+      .then((abilities) => this.abilityCatalog.set(abilities))
+      .catch(() => this.abilityCatalog.set({}));
   }
 
   protected roleLabel(role: BuildRole): string {
@@ -335,16 +594,32 @@ export class CompBuildDetailPage {
    * pre-fill the draft from the existing persisted item so officers can
    * tweak tier without re-searching from scratch.
    */
-  protected onSlotToggle(slot: BuildSlot): void {
-    if (this.editingSlot() === slot) {
+  protected onSlotToggle(loadout: BuildLoadout, slot: BuildSlot): void {
+    const editing = this.editing();
+    if (editing?.loadout === loadout && editing.slot === slot) {
       this.cancelSlotEdit();
       return;
     }
-    this.startSlotEdit(slot);
+    this.startSlotEdit(loadout, slot);
   }
 
-  protected itemForSlot(slot: BuildSlot): BuildItemSlot | null {
-    return this.itemsBySlot().find((item) => item.slot === slot) ?? null;
+  /**
+   * Items of one loadout, in canonical slot order.
+   *
+   * Items stored before swaps existed carry no `loadout`, so they read as `'main'`.
+   */
+  private itemsFor(loadout: BuildLoadout): BuildItemSlot[] {
+    return itemsForLoadout(this.build()?.items ?? [], loadout);
+  }
+
+  /** The open slot, but only for the grid that owns it, so one picker is open at a time. */
+  protected editingSlotFor(loadout: BuildLoadout): BuildSlot | null {
+    const editing = this.editing();
+    return editing?.loadout === loadout ? editing.slot : null;
+  }
+
+  protected itemForSlot(loadout: BuildLoadout, slot: BuildSlot): BuildItemSlot | null {
+    return this.itemsFor(loadout).find((item) => item.slot === slot) ?? null;
   }
 
   protected enterEdit(): void {
@@ -362,7 +637,7 @@ export class CompBuildDetailPage {
   protected cancelEdit(): void {
     this.mode.set('view');
     this.cancelSlotEdit();
-    void this.load(this.buildId);
+    void this.load(this.buildId());
   }
 
   protected onEditNameChange(event: Event): void {
@@ -381,9 +656,9 @@ export class CompBuildDetailPage {
     this.editRole.set((event.target as HTMLSelectElement).value);
   }
 
-  protected startSlotEdit(slot: BuildSlot): void {
-    const current = this.itemForSlot(slot);
-    this.editingSlot.set(slot);
+  protected startSlotEdit(loadout: BuildLoadout, slot: BuildSlot): void {
+    const current = this.itemForSlot(loadout, slot);
+    this.editing.set({ loadout, slot });
     this.draftTier.set(current?.openalbion_item_tier ?? 'T8');
     this.draftSearch.set(current?.openalbion_item_name ?? '');
     this.draftItemId.set(current ? String(current.openalbion_item_id) : '');
@@ -397,7 +672,7 @@ export class CompBuildDetailPage {
   }
 
   protected cancelSlotEdit(): void {
-    this.editingSlot.set(null);
+    this.editing.set(null);
     this.draftSearch.set('');
     this.draftItemId.set('');
     this.searchResults.set([]);
@@ -428,7 +703,7 @@ export class CompBuildDetailPage {
     }
   }
 
-  protected async saveSlot(slot: BuildSlot): Promise<void> {
+  protected async saveSlot(loadout: BuildLoadout, slot: BuildSlot): Promise<void> {
     const build = this.build();
     if (!build || !this.draftItemId()) {
       return;
@@ -436,7 +711,7 @@ export class CompBuildDetailPage {
     this.saving.set(true);
     try {
       const updated = await firstValueFrom(
-        this.api.put<BuildDetail>(`api/comps/builds/${build.id}/items/${slot}`, {
+        this.api.put<BuildDetail>(`api/comps/builds/${build.id}/items/${slot}?loadout=${loadout}`, {
           openalbion_item_type: this.draftItemType(),
           openalbion_item_id: Number(this.draftItemId()),
           openalbion_item_name: this.draftItemName(),
@@ -454,11 +729,11 @@ export class CompBuildDetailPage {
     }
   }
 
-  protected askRemoveItem(slot: BuildSlot): void {
-    this.pendingDelete.set({ kind: 'slot', slot });
+  protected askRemoveItem(loadout: BuildLoadout, slot: BuildSlot): void {
+    this.pendingDelete.set({ kind: 'slot', loadout, slot });
   }
 
-  protected async removeItem(slot: BuildSlot): Promise<void> {
+  protected async removeItem(loadout: BuildLoadout, slot: BuildSlot): Promise<void> {
     const build = this.build();
     if (!build) {
       return;
@@ -466,7 +741,9 @@ export class CompBuildDetailPage {
     this.saving.set(true);
     try {
       const updated = await firstValueFrom(
-        this.api.delete<BuildDetail>(`api/comps/builds/${build.id}/items/${slot}`),
+        this.api.delete<BuildDetail>(
+          `api/comps/builds/${build.id}/items/${slot}?loadout=${loadout}`,
+        ),
       );
       this.build.set(updated ?? null);
       this.pendingDelete.set(null);
@@ -519,7 +796,7 @@ export class CompBuildDetailPage {
       await firstValueFrom(this.api.patch<BuildDetail>(`api/comps/builds/${build.id}`, request));
       this.mode.set('view');
       this.cancelSlotEdit();
-      await this.load(this.buildId);
+      await this.load(this.buildId());
       this.toasts.success(this.t('common.save'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -542,7 +819,7 @@ export class CompBuildDetailPage {
       return;
     }
     if (pending.kind === 'slot') {
-      await this.removeItem(pending.slot);
+      await this.removeItem(pending.loadout, pending.slot);
       return;
     }
     await this.deleteBuild();
@@ -566,8 +843,155 @@ export class CompBuildDetailPage {
     }
   }
 
+  /**
+   * One ability bar per equipped item that actually offers abilities.
+   *
+   * Items with nothing to choose — off-hands, capes, bags, consumables, mounts — produce no row, so
+   * the block stays as short as the build is.
+   */
+  protected abilityRows(
+    loadout: BuildLoadout,
+  ): { slot: BuildSlot; itemName: string; slots: AbilitySlotView[] }[] {
+    const catalog = this.abilityCatalog();
+    return this.itemsFor(loadout).flatMap((item) => {
+      const key = abilityKeyForItem(item);
+      const slots = abilitySlotsFor(item.slot, key ? catalog[key] : undefined, item.spells);
+      return slots.length === 0
+        ? []
+        : [{ slot: item.slot, itemName: item.openalbion_item_name, slots }];
+    });
+  }
+
+  protected async onAbilityChange(
+    loadout: BuildLoadout,
+    slot: BuildSlot,
+    change: AbilityChoiceChange,
+  ): Promise<void> {
+    const build = this.build();
+    const item = this.itemForSlot(loadout, slot);
+    if (!build || !item) {
+      return;
+    }
+
+    const next: BuildItemSpells = withAbilityChoice(
+      item.spells,
+      change.kind,
+      change.index,
+      change.spellId,
+    );
+    this.saving.set(true);
+    try {
+      const updated = await firstValueFrom(
+        this.api.put<BuildDetail>(
+          `api/comps/builds/${build.id}/items/${slot}/spells?loadout=${loadout}`,
+          next,
+        ),
+      );
+      this.build.set(updated);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  /**
+   * Formats a win rate, or a dash when there is nothing to divide.
+   *
+   * A version with battles but no decided outcome must not read as 0%.
+   */
+  protected winRate(wins: number, losses: number): string {
+    const decided = wins + losses;
+    return decided === 0 ? '—' : `${Math.round((wins / decided) * 100)}%`;
+  }
+
+  /** A one-line performance summary, saying "no data" rather than implying a 0% win rate. */
+  protected performanceSummary(report: BuildPerformanceView | null): string {
+    const stats = report?.stats;
+    if (!stats) {
+      return this.t('comps.noBattleData');
+    }
+    return `${this.winRate(stats.wins, stats.losses)} · ${stats.kills}/${stats.deaths} · ${stats.battles} battles · ${stats.matched_players} players`;
+  }
+
+  protected openCompare(): void {
+    const versions = this.build()?.versions ?? [];
+    const other = versions.find((entry) => entry.id !== this.build()?.id);
+    this.comparing.set(true);
+    if (other) {
+      this.compareWithId.set(String(other.id));
+      void this.loadComparison(other.id);
+    }
+  }
+
+  protected closeCompare(): void {
+    this.comparing.set(false);
+    this.compareWith.set(null);
+    this.comparePerformance.set(null);
+  }
+
+  protected onCompareTargetChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.compareWithId.set(value);
+    void this.loadComparison(Number(value));
+  }
+
+  private async loadComparison(buildId: number): Promise<void> {
+    try {
+      const [detail, performance] = await Promise.all([
+        firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${buildId}`)),
+        firstValueFrom(
+          this.api.get<BuildPerformanceView>(`api/comps/builds/${buildId}/performance`),
+        ).catch(() => null),
+      ]);
+      this.compareWith.set(detail);
+      this.comparePerformance.set(performance);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    }
+  }
+
+  protected async openVersion(buildId: number): Promise<void> {
+    if (buildId === this.build()?.id) {
+      return;
+    }
+    await this.router.navigate(['/comps', 'builds', buildId]);
+  }
+
+  protected async createVersion(): Promise<void> {
+    const build = this.build();
+    if (!build) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      const created = await firstValueFrom(
+        this.api.post<BuildDetail>(`api/comps/builds/${build.id}/versions`, {}),
+      );
+      this.toasts.success(this.t('comps.versionCreated'));
+      await this.router.navigate(['/comps', 'builds', created.id]);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  /** Performance is per version, so it reloads whenever the page shows a different build row. */
+  private async loadPerformance(buildId: number): Promise<void> {
+    try {
+      this.performance.set(
+        await firstValueFrom(
+          this.api.get<BuildPerformanceView>(`api/comps/builds/${buildId}/performance`),
+        ),
+      );
+    } catch {
+      this.performance.set(null);
+    }
+  }
+
   private async runItemSearch(): Promise<void> {
-    const slot = this.editingSlot();
+    const slot = this.editing()?.slot;
     if (!slot) {
       this.searchResults.set([]);
       return;
@@ -603,6 +1027,7 @@ export class CompBuildDetailPage {
       ]);
       this.build.set(build);
       this.buildCategories.set(categories);
+      void this.loadPerformance(buildId);
     } catch (error) {
       this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -612,9 +1037,3 @@ export class CompBuildDetailPage {
   }
 }
 
-/** Compares two build items by their canonical slot order for stable rendering. */
-function sortBySlotOrder(left: BuildItemSlot, right: BuildItemSlot): number {
-  const leftIndex = SLOT_ORDER.indexOf(left.slot);
-  const rightIndex = SLOT_ORDER.indexOf(right.slot);
-  return leftIndex - rightIndex;
-}

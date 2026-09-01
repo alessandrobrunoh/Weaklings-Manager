@@ -1,6 +1,7 @@
 //! Sea-ORM entities for the comps module tables.
 //!
-//! Six tables: build_categories, comp_categories, builds, build_items, comps, comp_builds.
+//! Seven tables: build_categories, comp_categories, builds, build_items, build_item_spells,
+//! comps, comp_builds.
 
 pub mod build_category {
     use sea_orm::entity::prelude::*;
@@ -84,6 +85,8 @@ pub mod build {
         pub role: String,
         /// The category this build belongs to.
         pub category_id: i64,
+        /// The version of this build within its `(name, category_id)` group. Starts at 1.
+        pub version: i32,
         /// The user who created this build.
         pub created_by: i64,
         /// The timestamp when the build was created.
@@ -142,6 +145,8 @@ pub mod build_item {
         pub id: i64,
         /// The build this item belongs to.
         pub build_id: i64,
+        /// Which loadout this item belongs to: the main set or the swap.
+        pub loadout: String,
         /// The equipment slot of this item.
         pub slot: String,
         /// The OpenAlbion item type.
@@ -183,6 +188,53 @@ pub mod build_item {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+pub mod build_item_spell {
+    use sea_orm::entity::prelude::*;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
+    #[sea_orm(table_name = "build_item_spells")]
+    pub struct Model {
+        /// The unique primary key of the ability choice.
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        /// The equipped item this ability is slotted on.
+        pub build_item_id: i64,
+        /// `active` or `passive`.
+        pub kind: String,
+        /// 1-based slot index within its kind. Active 1/2/3 are Q/W/E on a weapon.
+        pub slot_index: i32,
+        /// Albion's internal spell id, e.g. `HEROICSTRIKE2`.
+        pub spell_id: String,
+        /// The timestamp when the ability was chosen.
+        pub created_at: DateTimeWithTimeZone,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter)]
+    pub enum Relation {
+        BuildItem,
+    }
+
+    impl RelationTrait for Relation {
+        fn def(&self) -> RelationDef {
+            match self {
+                Self::BuildItem => Entity::belongs_to(super::build_item::Entity)
+                    .from(Column::BuildItemId)
+                    .to(super::build_item::Column::Id)
+                    .into(),
+            }
+        }
+    }
+
+    impl Related<super::build_item::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::BuildItem.def()
+        }
+    }
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 pub mod comp {
     use sea_orm::entity::prelude::*;
     use serde::{Deserialize, Serialize};
@@ -199,6 +251,8 @@ pub mod comp {
         pub description: Option<String>,
         /// The category this comp belongs to.
         pub category_id: i64,
+        /// The version of this comp within its `(name, category_id)` group. Starts at 1.
+        pub version: i32,
         /// The user who created this comp.
         pub created_by: i64,
         /// The timestamp when the comp was created.

@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::status::{BuildRole, BuildSlot};
+use super::status::{BuildLoadout, BuildRole, BuildSlot};
 
 /// A build category view model.
 #[derive(Debug, Serialize, Clone, ToSchema)]
@@ -43,6 +43,11 @@ pub struct CompCategoryView {
 /// A build item view model.
 #[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct BuildItemView {
+    /// Which loadout this item belongs to: the main set or the swap.
+    pub loadout: BuildLoadout,
+    /// The abilities chosen on this item. Empty for slots that offer none.
+    #[serde(default)]
+    pub spells: BuildItemSpells,
     /// The equipment slot of this item.
     pub slot: BuildSlot,
     /// The OpenAlbion item type.
@@ -56,6 +61,36 @@ pub struct BuildItemView {
     pub openalbion_item_icon: Option<String>,
     /// The OpenAlbion item tier.
     pub openalbion_item_tier: Option<String>,
+}
+
+/// The abilities chosen on one equipped item, keyed by 1-based slot index.
+///
+/// Active slot 1/2/3 are the player's Q/W/E on a weapon; an armor piece has a single active slot,
+/// bound to D (head), R (chest) or F (shoes). A slot the officer has not filled is simply absent.
+#[derive(Debug, Serialize, Deserialize, Clone, Default, ToSchema)]
+#[schema(example = json!({
+    "active": { "1": "HEROICSTRIKE2", "3": "MIGHTYBLOW" },
+    "passive": { "1": "PASSIVE_BLEEDCHANCE" }
+}))]
+pub struct BuildItemSpells {
+    /// Chosen active abilities, by slot index.
+    #[serde(default)]
+    pub active: std::collections::BTreeMap<String, String>,
+    /// Chosen passive abilities, by slot index.
+    #[serde(default)]
+    pub passive: std::collections::BTreeMap<String, String>,
+}
+
+/// One sibling version of a build, for the version switcher.
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+#[schema(example = json!({ "id": 12, "version": 2 }))]
+pub struct BuildVersionRef {
+    /// The build row for this version. Comps reference a specific version, not the group.
+    #[schema(example = 12)]
+    pub id: i64,
+    /// Version number within the `(name, category)` group. Starts at 1.
+    #[schema(example = 2)]
+    pub version: i32,
 }
 
 /// A build's summary, as shown in list views.
@@ -76,6 +111,9 @@ pub struct BuildSummary {
     /// The category ID this build belongs to.
     #[schema(example = 3)]
     pub category_id: i64,
+    /// The version of this build within its `(name, category)` group. Starts at 1.
+    #[schema(example = 1)]
+    pub version: i32,
     /// The category name (if available).
     pub category_name: Option<String>,
     /// The username of the user who created the build.
@@ -95,6 +133,10 @@ pub struct BuildDetail {
     pub summary: BuildSummary,
     /// The list of items in the build.
     pub items: Vec<BuildItemView>,
+    /// Every version sharing this build's `(name, category)` identity, in version order —
+    /// including this one, so the switcher can render the whole group from one response.
+    #[serde(default)]
+    pub versions: Vec<BuildVersionRef>,
 }
 
 /// A comp build view model within a comp.
@@ -127,6 +169,9 @@ pub struct CompSummary {
     /// The category ID this comp belongs to.
     #[schema(example = 2)]
     pub category_id: i64,
+    /// The version of this comp within its `(name, category)` group. Starts at 1.
+    #[schema(example = 1)]
+    pub version: i32,
     /// The category name (if available).
     pub category_name: Option<String>,
     /// The username of the user who created the comp.
@@ -151,6 +196,10 @@ pub struct CompDetail {
     pub summary: CompSummary,
     /// The list of builds in the comp.
     pub builds: Vec<CompBuildView>,
+    /// Every version sharing this comp's `(name, category)` identity, in version order —
+    /// including this one, so the switcher can render the whole group from one response.
+    #[serde(default)]
+    pub versions: Vec<BuildVersionRef>,
 }
 
 /// Request body to create a build category.

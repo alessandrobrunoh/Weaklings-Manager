@@ -91,7 +91,7 @@ impl MigrationTrait for Migration {
 }
 
 #[derive(DeriveIden)]
-enum BuildItems {
+pub enum BuildItems {
     Table,
     Id,
     BuildId,

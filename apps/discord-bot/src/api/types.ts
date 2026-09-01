@@ -107,14 +107,18 @@ export interface UserProfile {
 
 /* ------------------------------ Bank -------------------------------- */
 
-export type TransactionStatus = 'pending' | 'requested' | 'withdrawn';
+export type TransactionStatus = 'pending' | 'requested' | 'rejected' | 'withdrawn' | 'donated';
 
 export interface TransactionView {
   id: number;
   to_user_id: number;
+  to_username: string;
+  to_label: string;
+  to_guild_bank: boolean;
   amount: number;
-  reason: string | null;
   status: TransactionStatus;
+  type: string;
+  split_id: number | null;
   from_user_id: number | null;
   from_label: string;
   created_at: string;
@@ -138,7 +142,7 @@ export interface WithdrawRequest {
 /* ----------------------------- Splits ------------------------------- */
 
 export type SplitStatus = 'pending' | 'completed' | 'not_completed' | 'lost';
-export type SplitParticipantCreditStatus = 'pending' | 'requested' | 'withdrawn';
+export type SplitParticipantCreditStatus = TransactionStatus;
 
 /** Detail returned by the bot split-sync endpoint. Financial values are authoritative backend data. */
 export interface SplitParticipant {
@@ -155,6 +159,7 @@ export interface SplitDetail {
   created_by_username: string;
   status: SplitStatus;
   estimated_market_value: number;
+  fee: number;
   repair_value: number;
   bags_value: number;
   net_value: number | null;
@@ -174,45 +179,40 @@ export interface SplitDetail {
   participants: SplitParticipant[];
 }
 
-export interface SplitDiscordSyncState {
+export interface SplitDiscoveryBatch {
+  items: SplitDetail[];
+  next_updated_at: string | null;
+  next_id: number | null;
+  has_more: boolean;
+}
+
+export interface SplitAuditLog {
+  id: number;
+  action: string;
+  entity_type: string | null;
+  entity_id: number | null;
+  split_id: number | null;
+  user_id: number | null;
+  details: unknown;
+  created_at: string;
+}
+
+export interface SplitDiscordSync {
   split_id: number;
+  detail: SplitDetail;
+  transactions: TransactionView[];
+  audit: SplitAuditLog[];
+  next_audit_cursor: number;
+  next_transaction_cursor: number;
   thread_id: string | null;
   summary_message_id: string | null;
-  summary_version: string | null;
-  log_cursor: string | null;
-}
-
-/** A log is eligible only when the backend has explicitly associated it with this split. */
-export interface SplitSyncLog {
-  id: string;
-  occurred_at: string;
-  kind: string;
-  message: string;
-}
-
-/** Contract for GET /api/bot/splits/sync. The backend owns selection and ordering. */
-export interface SplitSyncItem {
-  split: SplitDetail;
-  sync: SplitDiscordSyncState;
-  logs_available: boolean;
-}
-
-export interface SplitSyncBatch {
-  items: SplitSyncItem[];
-  next_cursor: string | null;
-}
-
-/** Contract for GET /api/bot/splits/{id}/logs, filtered by explicit split_id server-side. */
-export interface SplitLogBatch {
-  items: SplitSyncLog[];
-  next_cursor: string | null;
 }
 
 export interface UpdateSplitDiscordSyncState {
-  thread_id: string;
-  summary_message_id: string;
-  summary_version: string;
-  log_cursor?: string | null;
+  thread_id?: string;
+  summary_message_id?: string;
+  last_audit_id?: number;
+  last_transaction_id?: number;
 }
 
 /* ----------------------------- Events ------------------------------- */

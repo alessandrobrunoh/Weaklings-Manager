@@ -31,6 +31,8 @@ function creditStatus(status: SplitParticipantCreditStatus | null | undefined): 
   switch (status) {
     case "withdrawn": return "paid/withdrawn";
     case "requested": return "requested";
+    case "rejected": return "request rejected";
+    case "donated": return "donated to Guild Bank";
     case "pending": return "credit pending";
     default: return "—";
   }
@@ -47,19 +49,16 @@ export function buildSplitSummary(split: SplitDetail): SplitSummaryPayload {
     `**Split #${split.id}**`,
     `**Event:** ${safeText(split.event_title)}${split.event_id === null ? "" : ` (\#${split.event_id})`}`,
     `**Note:** ${safeText(split.note)}`,
-    `**Loot:** estimated ${formatSilver(split.estimated_market_value)} silver · repair ${formatSilver(split.repair_value)} · bags ${formatSilver(split.bags_value)} · net ${formatSilver(split.net_value)}`,
+    `**Loot:** estimated ${formatSilver(split.estimated_market_value)} silver · fee ${formatSilver(split.fee)}% · repair ${formatSilver(split.repair_value)} · bags ${formatSilver(split.bags_value)} · net ${formatSilver(split.net_value)}`,
     `**Location:** ${safeText(split.island_city)} / ${safeText(split.island_name)} / ${safeText(split.island_tab_name)}`,
     `**Status:** ${safeText(split.status)} · **Created by:** ${safeText(split.created_by_username)} · **Date:** ${safeText(split.created_at)}`,
     "",
-    "```text",
-    "Player | Value | Status",
-    "-------|-------|-------",
+    "**Player | Value | Status**",
   ];
 
   for (const participant of split.participants) {
-    lines.push(`${participantLabel(participant, mentions)} | ${formatSilver(participant.share_amount)} | ${creditStatus(participant.credit_status)}`);
+    lines.push(`• ${participantLabel(participant, mentions)} | ${formatSilver(participant.share_amount)} | ${creditStatus(participant.credit_status)}`);
   }
-  lines.push("```");
 
   return {
     content: lines.join("\n").slice(0, MAX_MESSAGE_LENGTH),

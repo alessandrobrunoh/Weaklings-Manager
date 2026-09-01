@@ -66,6 +66,50 @@ impl FromStr for BuildRole {
     }
 }
 
+/// Which loadout of a build an item belongs to.
+///
+/// A build has one main loadout and at most one swap — the alternative weapon, off-hand or armor a
+/// player carries for a specific matchup. Stored in the database as its lowercase string form (see
+/// [`FromStr`]/[`fmt::Display`]), since `build_items.loadout` is a plain string rather than a
+/// native DB enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BuildLoadout {
+    /// The loadout the player starts the fight in.
+    #[default]
+    Main,
+    /// The single alternative loadout carried for a specific matchup.
+    Swap,
+}
+
+impl BuildLoadout {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Main => "main",
+            Self::Swap => "swap",
+        }
+    }
+}
+
+impl fmt::Display for BuildLoadout {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for BuildLoadout {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "main" => Ok(Self::Main),
+            "swap" => Ok(Self::Swap),
+            other => Err(format!("unknown build loadout: {other}")),
+        }
+    }
+}
+
 /// The equipment slot of a build item.
 ///
 /// Stored in the database as its lowercase/snake_case string form (see [`FromStr`]/

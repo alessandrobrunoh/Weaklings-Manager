@@ -11,6 +11,7 @@ import type {
 } from "../api/types.js";
 import {
   buildEventEmbed,
+  buildEventReminderMessage,
   buildEventSummaryEmbed,
 } from "../embeds/event.embed.js";
 import { buildBattleListEmbed } from "../embeds/battle.embed.js";
@@ -253,6 +254,35 @@ async function handleEventButton(
       embeds: [infoEmbed],
       components: [row],
     });
+    return;
+  }
+
+  if (action === "ping") {
+    const [eventIdStr] = rest;
+    const eventId = Number(eventIdStr);
+
+    await interaction.deferReply({ flags: ["Ephemeral"] });
+    if (!Number.isSafeInteger(eventId) || eventId <= 0) {
+      throw new Error("Invalid event ID.");
+    }
+    if (!interaction.channel?.isThread()) {
+      throw new Error("Event reminders can only be sent from the event thread.");
+    }
+
+    const event = await api.post<EventView>(
+      `api/events/${eventId}/remind`,
+      {},
+      interaction.user.id,
+    );
+    await interaction.channel.send(buildEventReminderMessage(event));
+
+    const successEmbed = createResponseEmbed(
+      "success",
+      "Reminder Sent",
+      `The reminder for event **#${eventId}** was posted in this thread.`,
+      "GUILD EVENT",
+    );
+    await interaction.editReply({ embeds: [successEmbed] });
     return;
   }
 

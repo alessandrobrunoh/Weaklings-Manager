@@ -2183,6 +2183,8 @@ export class BattleDetailPage {
       if (!type?.trim()) continue;
 
       items.push({
+        // A killboard loadout is what the player was wearing, so it maps to the main set.
+        loadout: 'main',
         slot,
         openalbion_item_type: slot,
         openalbion_item_id: 0,
