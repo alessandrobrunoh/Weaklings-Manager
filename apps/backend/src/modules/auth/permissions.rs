@@ -46,6 +46,9 @@ pub enum Permission {
     /// Create / edit participants / close out a loot split. Officer-or-above today.
     #[strum(serialize = "splits.manage")]
     SplitsManage,
+    /// Manually merge, split, or move canonical Fight segments. Officer-or-above.
+    #[strum(serialize = "fights.manage")]
+    FightsManage,
     /// Create, rename, and delete the island/tab catalog used when locating a split. Admin-only.
     #[strum(serialize = "splits.islands.manage")]
     SplitsIslandsManage,

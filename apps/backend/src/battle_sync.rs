@@ -51,6 +51,7 @@ async fn run_cycle(
 ) -> Result<(), crate::errors::AppError> {
     let page = battles
         .list_guild_battles(
+            db,
             None,
             &PaginationParams {
                 page: Some(1),

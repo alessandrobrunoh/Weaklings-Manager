@@ -39,6 +39,19 @@ pub struct BattleGuildSummary {
     pub average_item_power: f64,
 }
 
+/// Canonical Fight metadata attached to a battle list item when it has been mapped.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct BattleFightMetadata {
+    /// Canonical Fight database ID.
+    pub fight_id: i64,
+    /// How the Fight's battle segments were grouped.
+    pub grouping_method: String,
+    /// Whether an officer should review the grouping.
+    pub needs_review: bool,
+    /// This battle's position within the canonical Fight.
+    pub sequence_number: i32,
+}
+
 /// A battle summary for list views.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct BattleSummary {
@@ -56,6 +69,9 @@ pub struct BattleSummary {
     pub total_fame: i64,
     /// Per-guild breakdown (includes opponents).
     pub guilds: Vec<BattleGuildSummary>,
+    /// Canonical Fight metadata, when this battle has been mapped to a Fight.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fight: Option<BattleFightMetadata>,
 }
 
 /// A player in a battle.
@@ -239,6 +255,7 @@ impl From<&AlbionBbBattleSummary> for BattleSummary {
             total_kills: s.total_kills,
             total_fame: s.total_fame,
             guilds,
+            fight: None,
         }
     }
 }
