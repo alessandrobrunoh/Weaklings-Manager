@@ -910,7 +910,13 @@ function deterministicItemId(identifier: string): number {
 }
 
 function normalizeSearchText(value: string): string {
-  return value.trim().replace(/_/g, ' ').toLowerCase();
+  return value
+    .trim()
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    // Rotcaller Staff is commonly searched as “Rootcaller”. Keep the canonical in-game name
+    // in the catalog while making the picker tolerant of this spelling variant.
+    .replace(/rootcaller/g, 'rotcaller');
 }
 
 function belongsToSlot(fileName: string, slot: BuildSlot): boolean {

@@ -2071,6 +2071,9 @@ export class EventDetailPage {
     }
 
     for (const participant of detail.participants) {
+      if (participant.primary_build_id === null) {
+        continue;
+      }
       const entry = index.get(participant.primary_build_id);
       const role = entry?.build.role ?? 'dps';
       ensureGroup(role).participants.push(participant);
@@ -2153,11 +2156,15 @@ export class EventDetailPage {
 
     const byBuild = new Map<number, EventParticipant[]>();
     for (const participant of detail.participants) {
-      const bucket = byBuild.get(participant.primary_build_id);
+      const buildId = participant.primary_build_id;
+      if (buildId === null) {
+        continue;
+      }
+      const bucket = byBuild.get(buildId);
       if (bucket) {
         bucket.push(participant);
       } else {
-        byBuild.set(participant.primary_build_id, [participant]);
+        byBuild.set(buildId, [participant]);
       }
     }
     for (const slot of slots) {

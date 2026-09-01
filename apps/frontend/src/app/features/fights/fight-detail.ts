@@ -145,8 +145,10 @@ interface FightStat {
             <div class="grid gap-4 xl:grid-cols-2">
               @if (detail.guilds?.length) { <ng-container [ngTemplateOutlet]="guildTable" [ngTemplateOutletContext]="{ $implicit: detail.guilds }" /> }
               @if (detail.players?.length) { <ng-container [ngTemplateOutlet]="playerTable" [ngTemplateOutletContext]="{ $implicit: detail.players }" /> }
-              @if (detail.estimated_losses?.guilds?.length) { <ng-container [ngTemplateOutlet]="guildLossTable" [ngTemplateOutletContext]="{ $implicit: detail.estimated_losses.guilds }" /> }
-              @if (detail.estimated_losses?.players?.length) { <ng-container [ngTemplateOutlet]="playerLossTable" [ngTemplateOutletContext]="{ $implicit: detail.estimated_losses.players }" /> }
+              @if (detail.estimated_losses; as losses) {
+                @if (losses.guilds.length) { <ng-container [ngTemplateOutlet]="guildLossTable" [ngTemplateOutletContext]="{ $implicit: losses.guilds }" /> }
+                @if (losses.players.length) { <ng-container [ngTemplateOutlet]="playerLossTable" [ngTemplateOutletContext]="{ $implicit: losses.players }" /> }
+              }
             </div>
           </section>
         }

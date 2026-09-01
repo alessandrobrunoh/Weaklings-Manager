@@ -19,17 +19,9 @@ import { buildBattleListEmbed } from "../embeds/battle.embed.js";
 import { createResponseEmbed } from '../embeds/theme.js';
 import { formatSilver } from '../format.js';
 import { startDiscordEvent, stopDiscordEvent } from "../services/event-lifecycle.js";
+import { buildSignupRoleOptions } from "../services/event-signup.js";
 
 const GUILD_NAME = process.env["GUILD_NAME"] ?? "";
-
-const BUILD_ROLE_LABELS: Record<BuildRole, string> = {
-  healer: "🛡️ Healer",
-  tank: "🪓 Tank",
-  dps: "⚔️ DPS",
-  support: "✨ Support",
-  battle_mount: "🐴 Battle Mount",
-  brawler: "🥊 Brawler",
-};
 
 /**
  * Handles all button interactions.
@@ -208,17 +200,6 @@ async function handleEventButton(
       ...new Set<string>(comp.builds.map((b: any) => b.build.role)),
     ] as BuildRole[];
 
-    if (availableRoles.length === 0) {
-      const warnEmbed = createResponseEmbed(
-        "warning",
-        "No Roles Available",
-        `The active comp (**${comp.name}**) does not require any builds.`,
-        "GUILD EVENT",
-      );
-      await interaction.editReply({ embeds: [warnEmbed] });
-      return;
-    }
-
     const {
       ActionRowBuilder,
       StringSelectMenuBuilder,
@@ -229,11 +210,15 @@ async function handleEventButton(
       .setCustomId(`event:join_role:${eventId}:${interaction.message.id}`)
       .setPlaceholder("Select your Role")
       .addOptions(
-        availableRoles.map((role) =>
-          new StringSelectMenuOptionBuilder()
-            .setLabel(BUILD_ROLE_LABELS[role] ?? role)
-            .setValue(role),
-        ),
+        buildSignupRoleOptions(availableRoles).map((option) => {
+          const menuOption = new StringSelectMenuOptionBuilder()
+            .setLabel(option.label)
+            .setValue(option.value);
+          if (option.description) {
+            menuOption.setDescription(option.description);
+          }
+          return menuOption;
+        }),
       );
 
     const row = new ActionRowBuilder<

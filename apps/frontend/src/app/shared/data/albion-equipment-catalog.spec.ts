@@ -46,6 +46,17 @@ describe('Albion equipment catalog names', () => {
     ]);
   });
 
+  it('finds Rotcaller Staff when searched as Rootcaller', () => {
+    const rotcaller = {
+      ...item('MAIN_CURSEDSTAFF_CRYSTAL', 'T8'),
+      name: 'Rotcaller Staff',
+    };
+
+    expect(filterAlbionEquipmentCatalog([rotcaller], 'Rootcaller', 'weapon', 'T8')).toEqual([
+      rotcaller,
+    ]);
+  });
+
   it('keeps one specialization node per weapon family across all tiers', () => {
     const catalog = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8'].flatMap((tier) => [
       item('MAIN_CURSEDSTAFF', tier),

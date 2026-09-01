@@ -200,7 +200,8 @@ pub struct PlannedFightParticipantView {
     pub username: String,
     /// Linked Albion character ID used for observation matching, if the user has linked one.
     pub albion_player_id: Option<String>,
-    pub primary_build_id: i64,
+    /// `None` when the participant selected the virtual Fill role.
+    pub primary_build_id: Option<i64>,
     pub primary_build_name: Option<String>,
     pub secondary_build_id: Option<i64>,
     pub secondary_build_name: Option<String>,
@@ -1200,7 +1201,7 @@ async fn get_fight_trends(
     };
     let build_ids = participations
         .iter()
-        .flat_map(|row| [Some(row.primary_build_id), row.secondary_build_id])
+        .flat_map(|row| [row.primary_build_id, row.secondary_build_id])
         .collect::<Vec<_>>();
     let builds = if build_ids.is_empty() {
         Vec::new()
@@ -1378,9 +1379,9 @@ fn build_fight_trend_period(
             if let Some(participations) = participations_by_event.get(&event_id) {
                 for participation in participations {
                     planned_participant_assignments += 1;
-                    *primary_builds
-                        .entry(participation.primary_build_id)
-                        .or_default() += 1;
+                    if let Some(build_id) = participation.primary_build_id {
+                        *primary_builds.entry(build_id).or_default() += 1;
+                    }
                     if let Some(build_id) = participation.secondary_build_id {
                         *secondary_builds.entry(build_id).or_default() += 1;
                     }
@@ -1648,7 +1649,7 @@ async fn fight_participant_analytics(
         .collect::<Vec<_>>();
     let build_ids = participations
         .iter()
-        .flat_map(|row| [Some(row.primary_build_id), row.secondary_build_id])
+        .flat_map(|row| [row.primary_build_id, row.secondary_build_id])
         .collect::<Vec<_>>();
     let users = user::Entity::find()
         .filter(user::Column::Id.is_in(user_ids))
@@ -1695,7 +1696,9 @@ async fn fight_participant_analytics(
             username: user.map_or_else(|| "Unknown user".to_string(), |user| user.username.clone()),
             albion_player_id,
             primary_build_id: participation.primary_build_id,
-            primary_build_name: build_names.get(&participation.primary_build_id).cloned(),
+            primary_build_name: participation
+                .primary_build_id
+                .and_then(|build_id| build_names.get(&build_id).cloned()),
             secondary_build_id: participation.secondary_build_id,
             secondary_build_name: participation
                 .secondary_build_id
@@ -2084,6 +2087,15 @@ mod tests {
         let outcome = resolve_persisted_segment_outcomes(&[vec![true, true], vec![true]]);
 
         assert_eq!(outcome.outcome, FightOutcome::Victory);
+        assert_eq!(outcome.evidence_count, 3);
+        assert_eq!(outcome.method, "unanimous_segment_outcomes");
+    }
+
+    #[test]
+    fn unanimous_persisted_segment_outcomes_resolve_to_defeat() {
+        let outcome = resolve_persisted_segment_outcomes(&[vec![false], vec![false, false]]);
+
+        assert_eq!(outcome.outcome, FightOutcome::Defeat);
         assert_eq!(outcome.evidence_count, 3);
         assert_eq!(outcome.method, "unanimous_segment_outcomes");
     }

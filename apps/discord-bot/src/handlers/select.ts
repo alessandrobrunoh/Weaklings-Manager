@@ -2,6 +2,7 @@ import { StringSelectMenuInteraction } from "discord.js";
 import type { ApiClient } from "../api/client.js";
 import type { BuildRole } from "../api/types.js";
 import { createResponseEmbed } from "../embeds/theme.js";
+import { FILL_SIGNUP_VALUE, type SignupRoleValue } from "../services/event-signup.js";
 
 export async function handleSelectMenu(
   interaction: StringSelectMenuInteraction,
@@ -14,7 +15,7 @@ export async function handleSelectMenu(
     if (ns === "event" && action === "join_role") {
       const eventId = Number(rest[0]);
       const messageId = rest[1];
-      const role = interaction.values[0] as BuildRole;
+      const role = interaction.values[0] as SignupRoleValue;
 
       await interaction.deferUpdate();
 
@@ -37,6 +38,39 @@ export async function handleSelectMenu(
           "GUILD EVENT",
         );
         await interaction.editReply({ embeds: [errEmbed], components: [] });
+        return;
+      }
+
+      if (role === FILL_SIGNUP_VALUE) {
+        await api.post(
+          `api/events/${eventId}/participate`,
+          { primary_build_id: null },
+          interaction.user.id,
+        );
+
+        if (messageId && interaction.channel) {
+          try {
+            const { buildEventEmbed } = await import("../embeds/event.embed.js");
+            const updatedEvent = await api.get<any>(
+              `api/events/${eventId}`,
+              interaction.user.id,
+            );
+            const originalMsg = await interaction.channel.messages.fetch(messageId);
+            if (originalMsg) {
+              await originalMsg.edit({ embeds: [buildEventEmbed(updatedEvent)] });
+            }
+          } catch (error) {
+            console.error("Failed to update original message on Fill signup", error);
+          }
+        }
+
+        const successEmbed = createResponseEmbed(
+          "success",
+          "Signed Up For Event",
+          `You have successfully signed up for event **#${eventId}** as **Fill**.`,
+          "GUILD EVENT",
+        );
+        await interaction.editReply({ embeds: [successEmbed], components: [] });
         return;
       }
 
