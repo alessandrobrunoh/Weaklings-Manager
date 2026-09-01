@@ -1054,13 +1054,8 @@ export class CompDetailPage {
     }
     this.saving.set(true);
     try {
-      const updated = await firstValueFrom(
-        this.api.delete<CompDetail>(`api/comps/${comp.id}/builds/${buildId}`),
-      );
-      this.comp.set(updated ?? null);
-      if (updated) {
-        void this.loadBuildDetails(updated);
-      }
+      await firstValueFrom(this.api.delete(`api/comps/${comp.id}/builds/${buildId}`));
+      await this.load(this.compId());
       this.toasts.success('Build removed');
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
