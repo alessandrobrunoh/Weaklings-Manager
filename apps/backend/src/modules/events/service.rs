@@ -1771,16 +1771,9 @@ impl EventService {
             ],
             event::Column::EventDateUtc,
         )?;
-        let order = match filters
-            .order
-            .as_deref()
-            .map(str::trim)
-            .map(str::to_ascii_lowercase)
-            .as_deref()
-        {
-            Some("desc") => SortOrder::Desc,
-            _ => SortOrder::Asc,
-        };
+        // Event lists are chronological by default, with the newest event first.
+        // An explicit `order=asc` still lets the calendar view browse forward from the oldest.
+        let order = SortOrder::from_query(filters.order.as_deref());
         let query = match order {
             SortOrder::Asc => query.order_by_asc(sort_column),
             SortOrder::Desc => query.order_by_desc(sort_column),
@@ -3181,9 +3174,34 @@ impl EventService {
                 )));
             }
 
+            // A signup is a reservation until an officer assigns that player to a
+            // concrete seat. Once assigned, the seat is authoritative: if the
+            // officer moves the player from X to Y, X must become available again.
+            let assignments = event_roster_assignment::Entity::find()
+                .filter(event_roster_assignment::Column::EventId.eq(event_id))
+                .all(db)
+                .await
+                .map_err(AppError::Database)?;
+            let assigned_build_by_user: HashMap<i64, i64> = assignments
+                .into_iter()
+                .filter_map(|assignment| {
+                    let mut parts = assignment.seat_key.split(':');
+                    (parts.next() == Some("build"))
+                        .then(|| parts.next()?.parse::<i64>().ok())
+                        .flatten()
+                        .map(|build_id| (assignment.user_id, build_id))
+                })
+                .collect();
             let taken_count = current_participations
                 .iter()
-                .filter(|p| p.user_id != user_id && p.primary_build_id == Some(primary_build_id))
+                .filter(|p| p.user_id != user_id)
+                .filter(|p| {
+                    assigned_build_by_user
+                        .get(&p.user_id)
+                        .copied()
+                        .or(p.primary_build_id)
+                        == Some(primary_build_id)
+                })
                 .count();
             if taken_count >= primary_slot_limit {
                 return Err(AppError::Validation(format!(

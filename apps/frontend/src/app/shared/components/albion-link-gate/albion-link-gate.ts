@@ -2,10 +2,10 @@ import { ChangeDetectionStrategy, Component, inject, output, signal } from '@ang
 import { firstValueFrom } from 'rxjs';
 
 import type {
-  AlbionGuildMember,
   AlbionLinkRequest,
   AlbionLinkStatus,
-  PaginatedData,
+  AlbionPlayer,
+  AlbionSearchResult,
 } from '../../../core/models/api.models';
 import { ApiService } from '../../../core/services/api.service';
 import { ToastService } from '../../../core/services/toast.service';
@@ -73,17 +73,22 @@ import { WeaklingsLogo } from '../weaklings-logo/weaklings-logo';
 
           @if (searching()) {
             <app-loading />
-          } @else if (roster().length > 0) {
+          } @else if (players().length > 0) {
             <div class="grid max-h-80 gap-2 overflow-y-auto pr-1 scrollbar-thin sm:grid-cols-2">
-              @for (member of roster(); track member.id) {
+              @for (player of players(); track player.id) {
                 <button
                   type="button"
                   class="surface flex items-center justify-between gap-3 p-3 text-left"
-                  (click)="link(member)"
+                  (click)="link(player)"
                 >
-                  <span class="font-medium" style="color: var(--color-text)">{{
-                    member.name
-                  }}</span>
+                  <span class="min-w-0">
+                    <span class="block truncate font-medium" style="color: var(--color-text)">{{
+                      player.name
+                    }}</span>
+                    <span class="eyebrow">
+                      {{ player.guild_name ?? t('albionSettings.lookup.noGuild') }}
+                    </span>
+                  </span>
                   <app-icon name="chevron-right" size="1rem" />
                 </button>
               }
@@ -109,7 +114,7 @@ export class AlbionLinkGate {
   readonly linked = output<AlbionLinkStatus>();
 
   protected readonly status = signal<AlbionLinkStatus | null>(null);
-  protected readonly roster = signal<AlbionGuildMember[]>([]);
+  protected readonly players = signal<AlbionPlayer[]>([]);
   protected readonly loadingStatus = signal(false);
   protected readonly searching = signal(false);
   protected readonly searched = signal(false);
@@ -138,13 +143,10 @@ export class AlbionLinkGate {
 
     this.searching.set(true);
     try {
-      const rosterPage = await firstValueFrom(
-        this.api.get<PaginatedData<AlbionGuildMember>>('api/albion/guild/roster', {
-          q: query,
-          limit: 50,
-        }),
+      const result = await firstValueFrom(
+        this.api.get<AlbionSearchResult>('api/albion/search', { q: query }),
       );
-      this.roster.set(rosterPage.items);
+      this.players.set(result.players);
       this.searched.set(true);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -153,10 +155,10 @@ export class AlbionLinkGate {
     }
   }
 
-  protected async link(member: AlbionGuildMember): Promise<void> {
+  protected async link(player: AlbionPlayer): Promise<void> {
     const request: AlbionLinkRequest = {
-      albion_player_id: member.id,
-      albion_player_name: member.name,
+      albion_player_id: player.id,
+      albion_player_name: player.name,
     };
 
     try {
@@ -165,9 +167,9 @@ export class AlbionLinkGate {
       );
       this.status.set(linkStatus);
       this.linked.emit(linkStatus);
-      this.roster.set([]);
+      this.players.set([]);
       this.query.set('');
-      this.toasts.success(this.translate.t('albion.linked', { name: member.name }));
+      this.toasts.success(this.translate.t('albion.linked', { name: player.name }));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     }

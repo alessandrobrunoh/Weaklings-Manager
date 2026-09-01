@@ -419,8 +419,9 @@ export class Events {
   protected readonly totalItems = signal(0);
   protected readonly search = signal('');
   protected readonly statusFilter = signal('');
-  protected readonly sortColumn = signal<string | null>(null);
-  protected readonly sortOrder = signal<'asc' | 'desc' | null>(null);
+  // Keep the initial table view aligned with the API's newest-first default.
+  protected readonly sortColumn = signal<string | null>('date');
+  protected readonly sortOrder = signal<'asc' | 'desc' | null>('desc');
 
   protected readonly liveCount = computed(
     () => this.events().filter((e) => e.status === 'live').length,
