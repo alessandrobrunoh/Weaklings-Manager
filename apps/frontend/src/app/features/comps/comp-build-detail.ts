@@ -183,7 +183,7 @@ const ITEM_TIERS = [
                   (change)="onEditCategoryChange($event)"
                 >
                   <option value="">{{ t('comps.noCategory') }}</option>
-                  @for (category of buildCategories(); track category.id) {
+                  @for (category of editCategoryOptions(); track category.id) {
                     <option [value]="category.id">{{ category.name }}</option>
                   }
                 </select>
@@ -511,6 +511,21 @@ export class CompBuildDetailPage {
   protected readonly saving = signal(false);
   protected readonly build = signal<BuildDetail | null>(null);
   protected readonly buildCategories = signal<BuildCategoryView[]>([]);
+  // Preserve the selected category in the native select even if the category list is incomplete.
+  protected readonly editCategoryOptions = computed(() => {
+    const current = this.build();
+    const categories = this.buildCategories();
+    if (!current || categories.some((category) => category.id === current.category_id)) {
+      return categories;
+    }
+    return [
+      {
+        id: current.category_id,
+        name: current.category_name ?? this.t('comps.noCategory'),
+      },
+      ...categories,
+    ];
+  });
 
   protected readonly mode = signal<'view' | 'edit'>('view');
   protected readonly pendingDelete = signal<

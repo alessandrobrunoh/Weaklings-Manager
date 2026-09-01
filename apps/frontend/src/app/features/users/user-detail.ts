@@ -102,7 +102,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
         <a
           class="btn btn--ghost btn--sm flex items-center gap-1.5"
           routerLink="/users"
-          [appTooltip]="'Torna all\\'elenco utenti'"
+          [appTooltip]="t('users.detail.back')"
           tooltipPosition="bottom"
         >
           <app-icon name="chevron-left" size="0.875rem" />
@@ -114,7 +114,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
             type="button"
             class="btn btn--outline btn--sm flex items-center gap-1.5"
             (click)="toggleEditing()"
-            [appTooltip]="'Modifica livello o XP della stagione'"
+            [appTooltip]="t('users.adjust.open')"
             tooltipPosition="bottom"
           >
             <app-icon name="sparkles" size="0.875rem" />

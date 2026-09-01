@@ -91,7 +91,7 @@ interface SplitParticipantDraft {
         class="btn btn--outline btn--sm"
         [disabled]="loading()"
         (click)="refreshNow()"
-        [appTooltip]="'Aggiorna elenco split'"
+        [appTooltip]="t('common.refreshNow')"
         tooltipPosition="bottom"
       >
         <app-icon name="sparkles" size="0.875rem" />
@@ -102,7 +102,7 @@ interface SplitParticipantDraft {
         <a
           routerLink="/admin/islands"
           class="btn btn--ghost btn--sm"
-          [appTooltip]="'Gestisci catalogo isole e chest'"
+          [appTooltip]="t('splits.catalog.manage')"
           tooltipPosition="bottom"
         >{{ t('splits.catalog.manage') }}</a>
       }
@@ -110,10 +110,11 @@ interface SplitParticipantDraft {
         type="button"
         class="btn btn--primary btn--sm flex items-center gap-1.5"
         (click)="openCreateDialog()"
-        [appTooltip]="'Crea nuova divisione di bottino'"
+        [appTooltip]="t('splits.new')"
         tooltipPosition="bottom"
       >
-        + {{ t('splits.new') }}
+        <app-icon name="plus" size="0.875rem" />
+        {{ t('splits.new') }}
       </button>
     </app-page-header>
 

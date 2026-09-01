@@ -88,7 +88,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
         class="btn btn--outline btn--sm"
         [disabled]="loading()"
         (click)="load()"
-        [appTooltip]="'Ricarica tutti i dati del profilo'"
+        [appTooltip]="t('common.refreshNow')"
         tooltipPosition="bottom"
       >
         <app-icon name="sparkles" size="0.875rem" />

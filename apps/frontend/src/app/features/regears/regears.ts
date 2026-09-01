@@ -27,6 +27,7 @@ import {
   ViewToggle,
   type ViewToggleOption,
 } from '../../shared/components/view-toggle/view-toggle';
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 /** Tab toggle inside the Regears page. Settings live on `/admin/regears`. */
 type RegearTab = 'mine' | 'queue' | 'history';
@@ -55,6 +56,7 @@ const PAGE_SIZE = 10;
     PageHeader,
     PageStack,
     StatCard,
+    TooltipDirective,
     ViewToggle,
   ],
   template: `
@@ -67,13 +69,20 @@ const PAGE_SIZE = 10;
         class="btn btn--outline btn--sm"
         [disabled]="loading()"
         (click)="refreshNow()"
+        [appTooltip]="t('common.refreshNow')"
+        tooltipPosition="bottom"
       >
         <app-icon name="sparkles" size="0.875rem" />
         {{ t('common.refreshNow') }}
       </button>
 
       @if (canManageSettings()) {
-        <a class="btn btn--outline btn--sm" routerLink="/admin/regears">{{ t('regears.settingsLink') }}</a>
+        <a
+          class="btn btn--outline btn--sm"
+          routerLink="/admin/regears"
+          [appTooltip]="t('regears.settingsLink')"
+          tooltipPosition="bottom"
+        >{{ t('regears.settingsLink') }}</a>
       }
       <app-view-toggle
         pageTabs

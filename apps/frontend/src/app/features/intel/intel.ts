@@ -97,7 +97,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
         class="btn btn--outline btn--sm"
         [disabled]="loading()"
         (click)="load()"
-        [appTooltip]="'Aggiorna dati di intelligence e report'"
+        [appTooltip]="t('common.refreshNow')"
         tooltipPosition="bottom"
       >
         <app-icon name="sparkles" size="0.875rem" />

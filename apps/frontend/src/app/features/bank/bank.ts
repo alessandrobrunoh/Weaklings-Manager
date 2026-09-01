@@ -96,7 +96,8 @@ function emptyPageChange(): DataTablePageChange {
         <button
           type="button"
           class="btn btn--tonal btn--sm"
-          (click)="requestWithdrawal()"
+          [disabled]="(balance()?.pending_total ?? 0) <= 0"
+          (click)="confirmWithdrawalOpen.set(true)"
           [appTooltip]="t('bank.requestTooltip')"
           tooltipPosition="bottom"
         >
@@ -213,6 +214,33 @@ function emptyPageChange(): DataTablePageChange {
         </app-data-table>
       }
     </app-page-stack>
+
+    @if (confirmWithdrawalOpen()) {
+      <app-dialog
+        [title]="t('bank.withdraw.request')"
+        [subtitle]="'Confermi la richiesta di prelievo del tuo saldo?'"
+        icon="bank"
+        size="sm"
+        (closed)="confirmWithdrawalOpen.set(false)"
+      >
+        <div class="space-y-3">
+          <p class="text-sm" style="color: var(--color-text)">
+            Stai per richiedere il prelievo di <span class="font-mono font-bold text-success">{{ formatAmount(balance()?.pending_total) }}</span> argento.
+          </p>
+          <p class="text-xs" style="color: var(--color-text-secondary)">
+            Un Officer autorizzato completerà il trasferimento dei fondi in-game.
+          </p>
+        </div>
+        <div dialogFooter class="flex justify-end gap-2">
+          <button type="button" class="btn btn--ghost btn--sm" (click)="confirmWithdrawalOpen.set(false)">
+            {{ t('common.cancel') }}
+          </button>
+          <button type="button" class="btn btn--primary btn--sm" (click)="executeWithdrawal()">
+            {{ t('common.confirm') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
 
     @if (reviewingPlayer(); as row) {
       <app-dialog
@@ -367,6 +395,7 @@ export class Bank {
 
   protected readonly reviewingPlayer = signal<BankTableRow | null>(null);
   protected readonly selectedTxIds = signal<ReadonlySet<number>>(new Set<number>());
+  protected readonly confirmWithdrawalOpen = signal(false);
 
   protected readonly selectedTxCount = computed(() => this.selectedTxIds().size);
   protected readonly selectedTxTotal = computed(() => {
@@ -635,6 +664,11 @@ export class Bank {
   }
 
   protected async requestWithdrawal(): Promise<void> {
+    this.confirmWithdrawalOpen.set(true);
+  }
+
+  protected async executeWithdrawal(): Promise<void> {
+    this.confirmWithdrawalOpen.set(false);
     await this.mutate('api/bank/transactions/withdraw', 'bank.withdraw.request', { all: true });
   }
 
@@ -716,7 +750,8 @@ export class Bank {
 
   protected formatAmount(value: number | string | null | undefined): string {
     const numeric = Number(value ?? 0);
-    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(
+    const lang = this.translate.language() === 'it' ? 'it-IT' : this.translate.language() === 'es' ? 'es-ES' : 'en-US';
+    return new Intl.NumberFormat(lang, { maximumFractionDigits: 0 }).format(
       Number.isFinite(numeric) ? numeric : 0,
     );
   }

@@ -223,7 +223,7 @@ mod tests {
 
     #[test]
     fn all_contains_every_variant() {
-        assert_eq!(Permission::all().len(), 32);
+        assert_eq!(Permission::all().len(), Permission::VARIANTS.len());
     }
 
     #[test]

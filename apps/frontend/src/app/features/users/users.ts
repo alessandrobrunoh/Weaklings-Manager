@@ -51,7 +51,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         class="btn btn--outline btn--sm"
         [disabled]="loading()"
         (click)="refreshNow()"
-        [appTooltip]="'Aggiorna elenco utenti'"
+        [appTooltip]="t('common.refreshNow')"
         tooltipPosition="bottom"
       >
         <app-icon name="sparkles" size="0.875rem" />
@@ -64,26 +64,30 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         <app-stat-card
           [label]="t('users.stat.total')"
           [value]="totalItems()"
+          [sub]="t('common.totalResults')"
           icon="users"
-          tone="neutral"
+          tone="primary"
         />
         <app-stat-card
           [label]="t('users.stat.admins')"
           [value]="adminCount()"
+          [sub]="'Pagina corrente'"
           icon="shield"
           tone="danger"
         />
         <app-stat-card
           [label]="t('users.stat.officers')"
           [value]="officerCount()"
+          [sub]="'Pagina corrente'"
           icon="sparkles"
           tone="warning"
         />
         <app-stat-card
           [label]="t('users.stat.members')"
           [value]="memberCount()"
+          [sub]="'Pagina corrente'"
           icon="users"
-          tone="primary"
+          tone="neutral"
         />
       </section>
 

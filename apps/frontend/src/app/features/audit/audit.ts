@@ -17,6 +17,7 @@ import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 export interface AuditLog {
   id: number;
@@ -85,6 +86,7 @@ function emptyPageChange(): DataTablePageChange {
     JsonPipe,
     Icon,
     StatCard,
+    TooltipDirective,
   ],
   template: `
     <app-page-header
@@ -96,6 +98,8 @@ function emptyPageChange(): DataTablePageChange {
         class="btn btn--outline btn--sm"
         [disabled]="loading()"
         (click)="refreshNow()"
+        [appTooltip]="t('common.refreshNow')"
+        tooltipPosition="bottom"
       >
         <app-icon name="sparkles" size="0.875rem" />
         {{ t('common.refreshNow') }}
@@ -107,24 +111,28 @@ function emptyPageChange(): DataTablePageChange {
         <app-stat-card
           [label]="t('audit.stat.total')"
           [value]="totalItems()"
+          [sub]="t('common.totalResults')"
           icon="activity"
-          tone="neutral"
+          tone="primary"
         />
         <app-stat-card
           [label]="t('audit.stat.today')"
           [value]="todayCount()"
+          [sub]="'Pagina corrente'"
           icon="calendar"
-          tone="primary"
+          tone="neutral"
         />
         <app-stat-card
           [label]="t('audit.stat.system')"
           [value]="systemCount()"
+          [sub]="'Pagina corrente'"
           icon="shield"
           tone="warning"
         />
         <app-stat-card
           [label]="t('audit.stat.user')"
           [value]="userCount()"
+          [sub]="'Pagina corrente'"
           icon="users"
           tone="success"
         />

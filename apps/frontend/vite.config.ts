@@ -65,6 +65,9 @@ export default defineConfig(({ mode }) => {
         },
         nitro: {
           preset: 'node-server',
+          experimental: {
+            websocket: true,
+          },
         },
       }),
     ],

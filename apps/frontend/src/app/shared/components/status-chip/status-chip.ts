@@ -17,7 +17,7 @@ type ChipTone = 'neutral' | 'success' | 'warning' | 'error' | 'info';
 @Component({
   selector: 'app-status-chip',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<span class="chip" [class]="'chip chip--' + tone()">{{ display() }}</span>`,
+  template: `<span class="chip" [class]="'chip--' + tone()"><span class="status-dot"></span>{{ display() }}</span>`,
 })
 export class StatusChip {
   readonly value = input.required<string>();
@@ -57,5 +57,11 @@ export class StatusChip {
     () => this.toneOverride() ?? StatusChip.TONES[this.value()] ?? 'neutral',
   );
 
-  protected readonly display = computed(() => this.value().replace(/_/g, ' '));
+  protected readonly display = computed(() => {
+    const raw = this.value();
+    if (!raw) return '';
+    return raw
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  });
 }

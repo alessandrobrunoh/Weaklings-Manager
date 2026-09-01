@@ -21,8 +21,10 @@
     "@angular/platform-server": "^21.2.0",
     "@angular/router": "^21.2.0",
     "@angular/ssr": "^21.2.17",
+    "crossws": "^0.4.12",
     "rxjs": "~7.8.0",
-    "tslib": "^2.3.0"
+    "tslib": "^2.3.0",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@analogjs/platform": "^2.7.0",
@@ -33,6 +35,7 @@
     "@angular/compiler-cli": "^21.2.0",
     "@tailwindcss/postcss": "^4.1.12",
     "@types/node": "^20.17.19",
+    "@types/ws": "^8.18.1",
     "cross-env": "^10.1.0",
     "jsdom": "^28.0.0",
     "postcss": "^8.5.3",

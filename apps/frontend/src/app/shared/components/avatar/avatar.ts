@@ -125,7 +125,7 @@ export class Avatar {
   /** Accessibility label for avatar image and container. */
   protected readonly ariaLabel = computed(() => {
     const name = this.username()?.trim();
-    return name ? `${name}'s avatar` : 'User avatar';
+    return name ? `${name}` : 'User';
   });
 
   /** CSS classes applied to the inner avatar container. */
@@ -150,8 +150,9 @@ export class Avatar {
   /** Custom dimension inline styles if custom CSS length passed to size. */
   protected readonly customStyles = computed(() => {
     const s = this.size();
-    const base =
-      'background-color: var(--color-surface-2); color: var(--color-text); border-color: var(--color-border);';
+    const name = this.username()?.trim() || '';
+    const baseBg = name ? hashAvatarBg(name) : 'var(--color-surface-2)';
+    const base = `background-color: ${baseBg}; color: var(--color-text); border-color: var(--color-border);`;
     if (/^\d+(\.\d+)?(px|rem|em|%|vh|vw)$/.test(s)) {
       return `${base} width: ${s}; height: ${s};`;
     }
@@ -162,4 +163,14 @@ export class Avatar {
   protected onImageError(): void {
     this.failedUrl.set(this.avatarUrl());
   }
+}
+
+function hashAvatarBg(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hues = [215, 150, 35, 345, 270, 180];
+  const hue = hues[Math.abs(hash) % hues.length];
+  return `hsl(${hue}, 30%, 20%)`;
 }

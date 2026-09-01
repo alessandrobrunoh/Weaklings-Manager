@@ -48,6 +48,7 @@ export const es: TranslationDict = {
   'common.view': 'Ver',
   'common.clear': 'Borrar',
   'common.clearFilters': 'Borrar filtros',
+  'common.totalResults': 'Resultados totales',
 
   'nav.dashboard': 'Panel',
   'nav.season': 'Resumen de Temporada',
@@ -84,13 +85,19 @@ export const es: TranslationDict = {
   'nav.section.system': 'Sistema',
   'nav.section.admin': 'Administración',
   'nav.collapse': 'Contraer',
+  'nav.expand': 'Expandir',
   'nav.aria.primary': 'Principal',
   'nav.aria.admin': 'Administración',
+
+  // Table
+  'table.itemsPerPage': 'Elementos por página',
 
   'theme.light': 'Claro',
   'theme.dark': 'Oscuro',
   'theme.system': 'Sistema',
   'theme.toggle': 'Cambiar tema',
+  'theme.toggleDark': 'Activar tema oscuro',
+  'theme.toggleLight': 'Activar tema claro',
 
   'language.label': 'Idioma',
 

@@ -108,7 +108,7 @@ type PendingDelete =
         class="btn btn--outline btn--sm"
         [disabled]="loading() || categoriesLoading()"
         (click)="refreshNow()"
-        [appTooltip]="'Aggiorna composizioni e build'"
+        [appTooltip]="t('common.refreshNow')"
         tooltipPosition="bottom"
       >
         <app-icon name="sparkles" size="0.875rem" />
@@ -120,7 +120,7 @@ type PendingDelete =
           type="button"
           class="btn btn--primary btn--sm"
           (click)="openCreate()"
-          [appTooltip]="'Crea nuova composizione o build'"
+          [appTooltip]="createButtonLabel()"
           tooltipPosition="bottom"
         >
           <app-icon name="plus" size="0.875rem" />
