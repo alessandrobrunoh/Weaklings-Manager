@@ -55,14 +55,15 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import {
+  buildCompForest,
+  filterCompForest,
+  flattenCompForest,
+  type CompTreeNode,
+} from './comp-tree';
 
 const PAGE_SIZE = 10;
 const OPTIONS_LIMIT = 500;
-
-export interface CompTreeItem {
-  comp: CompSummary;
-  children: CompSummary[];
-}
 
 export type CompFilterType = 'all' | 'parents' | 'variants';
 
@@ -258,7 +259,7 @@ type PendingDelete =
               [retryLabel]="t('common.retry')"
               (retry)="loadComps()"
             />
-          } @else if (filteredCompTree().length === 0) {
+          } @else if (visibleCompRows().length === 0) {
             <app-empty-state
               icon="package"
               [message]="comps().length === 0 ? t('common.empty') : t('comps.noCompsMatch')"
@@ -276,19 +277,21 @@ type PendingDelete =
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-[var(--color-border)]">
-                  @for (item of filteredCompTree(); track item.comp.id) {
+                  @for (item of visibleCompRows(); track item.comp.id) {
                     <tr
                       class="hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors"
                       (click)="openComp(item.comp)"
                     >
-                      <td class="py-3 px-4">
+                      <td class="py-3 px-4" [style.padding-left.rem]="1 + item.depth * 1.5">
                         <div class="flex items-center gap-2">
-                          @if (compFilterType() === 'all' && item.children.length > 0) {
+                          @if (compFilterType() === 'all' && !hasActiveCompCriteria() && item.children.length > 0) {
                             <button
                               type="button"
-                              class="flex items-center justify-center w-6 h-6 rounded hover:bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] transition-transform"
+                              class="flex shrink-0 items-center justify-center w-6 h-6 rounded hover:bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] transition-transform"
                               (click)="$event.stopPropagation(); toggleParentExpand(item.comp.id)"
                               [appTooltip]="isExpanded(item.comp.id) ? t('comps.collapseAll') : t('comps.expandAll')"
+                              [attr.aria-label]="(isExpanded(item.comp.id) ? t('comps.collapseAll') : t('comps.expandAll')) + ': ' + item.comp.name"
+                              [attr.aria-expanded]="isExpanded(item.comp.id)"
                               tooltipPosition="top"
                             >
                               <app-icon
@@ -296,30 +299,25 @@ type PendingDelete =
                                 size="0.875rem"
                               />
                             </button>
-                          } @else if (compFilterType() === 'variants') {
-                            <span class="w-2"></span>
+                          } @else if (item.depth > 0) {
+                            <span class="font-mono text-xs text-[var(--color-text-tertiary)] select-none" aria-hidden="true">
+                              {{ item.isLastSibling ? '└──' : '├──' }}
+                            </span>
                           } @else {
-                            <span class="inline-block w-6 text-center text-[var(--color-text-tertiary)]">•</span>
+                            <span class="inline-block w-6 text-center text-[var(--color-text-tertiary)]" aria-hidden="true">•</span>
                           }
 
                           <div class="flex flex-col gap-0.5 min-w-0">
                             <div class="flex flex-wrap items-center gap-1.5">
-                              <span class="font-semibold text-[var(--color-text)]">
-                                {{ item.comp.name }}
-                              </span>
+                              <span class="font-semibold text-[var(--color-text)]">{{ item.comp.name }}</span>
                               <span class="chip text-xs">v{{ item.comp.version }}</span>
-
-                              @if (compFilterType() === 'variants') {
-                                <span class="chip chip--tonal text-xs">{{ t('comps.badge.variant') }}</span>
-                              } @else if (item.children.length > 0) {
-                                <span class="chip chip--primary text-xs font-medium">
-                                  {{ t('comps.badge.parent') }} · {{ item.children.length }} {{ item.children.length === 1 ? t('comps.variantSingular') : t('comps.variantsPlural') }}
-                                </span>
-                              } @else {
-                                <span class="chip text-xs text-[var(--color-text-secondary)]">
-                                  {{ t('comps.badge.parent') }}
-                                </span>
-                              }
+                              <span
+                                class="chip text-xs"
+                                [class.chip--tonal]="item.depth > 0"
+                                [class.chip--primary]="item.depth === 0"
+                              >
+                                {{ item.depth > 0 ? t('comps.badge.variant') : t('comps.badge.parent') }}
+                              </span>
                             </div>
 
                             @if (compFilterType() === 'variants') {
@@ -345,7 +343,11 @@ type PendingDelete =
                         <span class="chip">{{ item.comp.category_name || t('comps.noCategory') }}</span>
                       </td>
                       <td class="py-3 px-3 text-[var(--color-text)]">
-                        {{ item.comp.build_count }} / {{ item.comp.total_quantity }}
+                        @if (item.capacityIncrement === null) {
+                          {{ item.comp.build_count }} / {{ item.comp.total_quantity }}
+                        } @else {
+                          <span>{{ formatCapacityIncrement(item.capacityIncrement) }} = {{ item.comp.total_quantity }}</span>
+                        }
                       </td>
                       <td class="py-3 px-3 text-right">
                         @if (compPerformance(item.comp.id); as performance) {
@@ -356,7 +358,7 @@ type PendingDelete =
                       </td>
                       <td class="py-3 px-4 text-right">
                         <div class="flex flex-wrap items-center justify-end gap-1.5" (click)="$event.stopPropagation()">
-                          @if (canManageComps() && compFilterType() !== 'variants') {
+                          @if (canManageComps()) {
                             <button
                               type="button"
                               class="btn btn--outline btn--sm"
@@ -384,67 +386,6 @@ type PendingDelete =
                         </div>
                       </td>
                     </tr>
-
-                    @if (compFilterType() === 'all' && item.children.length > 0 && isExpanded(item.comp.id)) {
-                      @for (child of item.children; track child.id; let lastChild = $last) {
-                        <tr
-                          class="bg-[var(--color-surface-2)]/30 hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors border-t border-[var(--color-border)]"
-                          (click)="openComp(child)"
-                        >
-                          <td class="py-2.5 px-4 pl-8">
-                            <div class="flex items-center gap-2">
-                              <span class="font-mono text-xs text-[var(--color-text-tertiary)] select-none">
-                                {{ lastChild ? '└──' : '├──' }} ↳
-                              </span>
-                              <div class="flex flex-col gap-0.5 min-w-0">
-                                <div class="flex flex-wrap items-center gap-1.5">
-                                  <span class="font-medium text-[var(--color-text)]">
-                                    {{ child.name }}
-                                  </span>
-                                  <span class="chip text-xs">v{{ child.version }}</span>
-                                  <span class="chip chip--tonal text-xs">{{ t('comps.badge.variant') }}</span>
-                                </div>
-                                @if (child.description) {
-                                  <span class="text-xs text-[var(--color-text-secondary)] line-clamp-1">
-                                    {{ child.description }}
-                                  </span>
-                                }
-                              </div>
-                            </div>
-                          </td>
-                          <td class="py-2.5 px-3">
-                            <span class="chip">{{ child.category_name || t('comps.noCategory') }}</span>
-                          </td>
-                          <td class="py-2.5 px-3 text-[var(--color-text)]">
-                            {{ child.build_count }} / {{ child.total_quantity }}
-                          </td>
-                          <td class="py-2.5 px-3 text-right">
-                            @if (compPerformance(child.id); as performance) {
-                              <span class="font-medium">{{ formatPercent(performance.stats.win_rate) }}</span>
-                            } @else {
-                              <span class="text-[var(--color-text-tertiary)]">-</span>
-                            }
-                          </td>
-                          <td class="py-2.5 px-4 text-right">
-                            <div class="flex flex-wrap items-center justify-end gap-1.5" (click)="$event.stopPropagation()">
-                              <a class="btn btn--tonal btn--sm" [routerLink]="['/comps', child.id]">
-                                {{ t('common.open') }}
-                              </a>
-                              @if (canManageComps()) {
-                                <button
-                                  type="button"
-                                  class="btn btn--danger btn--sm"
-                                  [disabled]="saving()"
-                                  (click)="askDeleteComp(child)"
-                                >
-                                  {{ t('common.delete') }}
-                                </button>
-                              }
-                            </div>
-                          </td>
-                        </tr>
-                      }
-                    }
                   }
                 </tbody>
               </table>
@@ -837,90 +778,49 @@ export class Comps {
     () => this.comps().filter((c) => !!c.parent_id).length,
   );
 
-  protected readonly compTree = computed<CompTreeItem[]>(() => {
-    const all = this.comps();
-    const parents: CompSummary[] = [];
-    const childrenMap = new Map<number, CompSummary[]>();
-    const knownIds = new Set(all.map((c) => c.id));
-    for (const c of all) {
-      if (c.parent_id && knownIds.has(c.parent_id)) {
-        const list = childrenMap.get(c.parent_id) ?? [];
-        list.push(c);
-        childrenMap.set(c.parent_id, list);
-      } else {
-        parents.push(c);
-      }
-    }
-    return parents.map((comp) => ({
-      comp,
-      children: childrenMap.get(comp.id) ?? [],
-    }));
-  });
+  protected readonly hasActiveCompCriteria = computed(
+    () => !!this.compSearchQuery().trim() || !!this.compSelectedCategory(),
+  );
 
-  protected readonly filteredCompTree = computed<CompTreeItem[]>(() => {
+  protected readonly compTree = computed<CompTreeNode[]>(() => buildCompForest(this.comps()));
+
+  protected readonly filteredCompTree = computed<CompTreeNode[]>(() =>
+    filterCompForest(this.compTree(), (comp) => this.matchesCompFilter(comp)),
+  );
+
+  protected readonly visibleCompRows = computed<CompTreeNode[]>(() => {
     const filterType = this.compFilterType();
-    const search = this.compSearchQuery().trim().toLowerCase();
-    const catId = this.compSelectedCategory() ? Number(this.compSelectedCategory()) : null;
-    const tree = this.compTree();
-
-    const matchesFilter = (c: CompSummary): boolean => {
-      if (catId !== null && c.category_id !== catId) {
-        return false;
-      }
-      if (!search) {
-        return true;
-      }
-      return (
-        c.name.toLowerCase().includes(search) ||
-        (c.description?.toLowerCase().includes(search) ?? false) ||
-        (c.category_name?.toLowerCase().includes(search) ?? false)
-      );
-    };
 
     if (filterType === 'parents') {
-      return tree
-        .filter((item) => matchesFilter(item.comp))
-        .map((item) => ({ comp: item.comp, children: [] }));
+      return this.compTree().filter((node) => this.matchesCompFilter(node.comp));
     }
 
     if (filterType === 'variants') {
-      const variantItems: CompTreeItem[] = [];
-      for (const item of tree) {
-        for (const child of item.children) {
-          if (matchesFilter(child)) {
-            variantItems.push({ comp: child, children: [] });
-          }
-        }
-      }
-      return variantItems;
+      return flattenCompForest(this.compTree(), new Set(), true).filter(
+        (node) => node.comp.parent_id !== null && this.matchesCompFilter(node.comp),
+      );
     }
 
-    const result: CompTreeItem[] = [];
-    for (const item of tree) {
-      const parentMatches = matchesFilter(item.comp);
-      const matchingChildren = item.children.filter((c) => matchesFilter(c));
-      if (parentMatches || matchingChildren.length > 0) {
-        result.push({
-          comp: item.comp,
-          children: search || catId !== null ? matchingChildren : item.children,
-        });
-      }
-    }
-    return result;
+    return flattenCompForest(
+      this.filteredCompTree(),
+      this.expandedParentIds(),
+      this.hasActiveCompCriteria(),
+    );
   });
 
-  protected readonly hasExpandableParents = computed(() => {
-    return this.filteredCompTree().some((item) => item.children.length > 0);
-  });
+  protected readonly expandableCompIds = computed(
+    () => new Set(this.collectExpandableCompIds(this.filteredCompTree())),
+  );
+
+  protected readonly hasExpandableParents = computed(() => this.expandableCompIds().size > 0);
 
   protected readonly areAllExpanded = computed(() => {
-    const tree = this.filteredCompTree();
-    const expandable = tree.filter((item) => item.children.length > 0);
-    if (expandable.length === 0) {
+    const expandable = this.expandableCompIds();
+    if (expandable.size === 0) {
       return false;
     }
-    const set = this.expandedParentIds();
-    return expandable.every((item) => set.has(item.comp.id));
+    const expanded = this.expandedParentIds();
+    return [...expandable].every((id) => expanded.has(id));
   });
 
   protected readonly createOpen = signal(false);
@@ -1187,16 +1087,49 @@ export class Comps {
   }
 
   protected toggleExpandAll(): void {
-    if (this.areAllExpanded()) {
-      this.expandedParentIds.set(new Set());
-    } else {
-      const allIds = new Set(
-        this.filteredCompTree()
-          .filter((i) => i.children.length > 0)
-          .map((i) => i.comp.id),
-      );
-      this.expandedParentIds.set(allIds);
+    const expandable = this.expandableCompIds();
+    this.expandedParentIds.update((expanded) => {
+      const next = new Set(expanded);
+      if (this.areAllExpanded()) {
+        for (const id of expandable) {
+          next.delete(id);
+        }
+      } else {
+        for (const id of expandable) {
+          next.add(id);
+        }
+      }
+      return next;
+    });
+  }
+
+  protected formatCapacityIncrement(increment: number): string {
+    return increment > 0 ? `+${increment}` : String(increment);
+  }
+
+  private matchesCompFilter(comp: CompSummary): boolean {
+    const categoryId = this.compSelectedCategory() ? Number(this.compSelectedCategory()) : null;
+    if (categoryId !== null && comp.category_id !== categoryId) {
+      return false;
     }
+
+    const search = this.compSearchQuery().trim().toLowerCase();
+    return (
+      !search ||
+      comp.name.toLowerCase().includes(search) ||
+      (comp.description?.toLowerCase().includes(search) ?? false) ||
+      (comp.category_name?.toLowerCase().includes(search) ?? false)
+    );
+  }
+
+  private collectExpandableCompIds(nodes: readonly CompTreeNode[]): number[] {
+    const ids: number[] = [];
+    for (const node of nodes) {
+      if (node.children.length > 0) {
+        ids.push(node.comp.id, ...this.collectExpandableCompIds(node.children));
+      }
+    }
+    return ids;
   }
 
   protected getParentCompName(parentId: number | null | undefined): string {
@@ -1823,13 +1756,9 @@ export class Comps {
       );
       this.comps.set(data.items);
       this.compsTotal.set(data.total_items);
-      const parentIds = new Set<number>();
-      for (const comp of data.items) {
-        if (comp.parent_id) {
-          parentIds.add(comp.parent_id);
-        }
-      }
-      this.expandedParentIds.set(parentIds);
+      this.expandedParentIds.set(
+        new Set(this.collectExpandableCompIds(buildCompForest(data.items))),
+      );
       await this.loadCompPerformance(data.items);
     } catch (error) {
       this.loadFailed.set(true);

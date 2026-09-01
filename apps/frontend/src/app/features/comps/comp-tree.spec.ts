@@ -83,4 +83,15 @@ describe('comp expansion tree', () => {
     expect(rows.map((entry) => entry.comp.id).sort()).toEqual([10, 15, 20]);
     expect(new Set(rows.map((entry) => entry.comp.id)).size).toBe(3);
   });
+
+  it('renders a comp with a missing parent as a recovery root', () => {
+    const forest = buildCompForest([
+      comp(10, '10-man', 10),
+      comp(15, 'orphaned 15-man', 15, 999),
+    ]);
+
+    const rows = flattenCompForest(forest, new Set(), true);
+    expect(rows.map((entry) => entry.comp.id)).toEqual([10, 15]);
+    expect(rows[1]).toMatchObject({ depth: 0, capacityIncrement: null });
+  });
 });

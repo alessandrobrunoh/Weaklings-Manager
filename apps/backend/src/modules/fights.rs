@@ -2158,6 +2158,160 @@ impl PlayerRollup {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::migration::MigratorTrait;
+    use sea_orm::Database;
+
+    async fn seed_db() -> DatabaseConnection {
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("connect to in-memory SQLite");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("run database migrations");
+        db
+    }
+
+    fn timestamp(offset_hours: i64) -> sea_orm::prelude::DateTimeWithTimeZone {
+        (Utc::now() + Duration::hours(offset_hours)).into()
+    }
+
+    fn test_config() -> Config {
+        Config {
+            backend_port: 3000,
+            database_url: "sqlite::memory:".to_string(),
+            discord_client_id: "test".to_string(),
+            discord_client_secret: "test".to_string(),
+            discord_redirect_uri: "http://localhost/callback".to_string(),
+            discord_guild_id: "test-guild".to_string(),
+            bot_api_secret: None,
+            discord_bot_token: None,
+            super_admin_discord_id: "test-admin".to_string(),
+            frontend_url: "http://localhost".to_string(),
+            albion_api_region: "europe".to_string(),
+            albion_guild_id: "friendly".to_string(),
+            albion_allied_guild_ids: String::new(),
+            albion_allied_guild_names: String::new(),
+            mistral_api_key: String::new(),
+            albionbb_base_url: "http://localhost".to_string(),
+            albionbb_request_timeout_secs: 60,
+            albiondata_request_timeout_secs: 30,
+        }
+    }
+
+    fn test_admin() -> UserContext {
+        UserContext {
+            id: "test-admin".to_string(),
+            username: "Test Admin".to_string(),
+            email: None,
+            avatar: None,
+            roles: Vec::new(),
+            highest_role: "Admin".to_string(),
+            user_id: 1,
+            super_admin_id: Some("test-admin".to_string()),
+        }
+    }
+
+    async fn insert_fight(
+        db: &DatabaseConnection,
+        started_at: sea_orm::prelude::DateTimeWithTimeZone,
+    ) -> fight::Model {
+        fight::ActiveModel {
+            started_at: Set(started_at),
+            ended_at: Set(None),
+            grouping_method: Set("automatic".to_string()),
+            grouping_confidence: Set(0.5),
+            grouping_version: Set("test".to_string()),
+            needs_review: Set(true),
+            created_at: Set(started_at),
+            updated_at: Set(started_at),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert fight")
+    }
+
+    async fn insert_snapshot(
+        db: &DatabaseConnection,
+        battle_id: i64,
+        started_at: sea_orm::prelude::DateTimeWithTimeZone,
+        ended_at: Option<sea_orm::prelude::DateTimeWithTimeZone>,
+        total_players: i64,
+        total_kills: i64,
+        total_fame: i64,
+        guilds: Vec<BattleGuildSummary>,
+        players: Vec<BattlePlayer>,
+        losses: BattleLossEstimate,
+    ) {
+        crate::modules::battles::entities::ActiveModel {
+            battle_id: Set(battle_id),
+            start_time: Set(started_at),
+            end_time: Set(ended_at),
+            total_players: Set(total_players),
+            total_kills: Set(total_kills),
+            total_fame: Set(total_fame),
+            guilds_json: Set(serde_json::to_string(&guilds).expect("serialize guilds")),
+            players_json: Set(serde_json::to_string(&players).expect("serialize players")),
+            kills_json: Set("[]".to_string()),
+            losses_json: Set(serde_json::to_string(&losses).expect("serialize losses")),
+            fetched_at: Set(started_at),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert battle snapshot");
+    }
+
+    async fn insert_segment(db: &DatabaseConnection, fight_id: i64, battle_id: i64, sequence: i32) {
+        fight_battle::ActiveModel {
+            fight_id: Set(fight_id),
+            battle_id: Set(battle_id),
+            sequence_number: Set(sequence),
+            created_at: Set(timestamp(0)),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert fight segment");
+    }
+
+    fn guild(
+        players: i64,
+        kills: i64,
+        deaths: i64,
+        kill_fame: i64,
+        winner: bool,
+        item_power: f64,
+    ) -> BattleGuildSummary {
+        BattleGuildSummary {
+            id: "friendly".to_string(),
+            name: "Weaklings".to_string(),
+            alliance_name: None,
+            alliance_id: None,
+            players,
+            kills,
+            deaths,
+            kill_fame,
+            winner,
+            average_item_power: item_power,
+        }
+    }
+
+    fn player(id: &str, kills: i64, deaths: i64, kill_fame: i64, item_power: f64) -> BattlePlayer {
+        BattlePlayer {
+            id: id.to_string(),
+            name: id.to_string(),
+            guild_id: "friendly".to_string(),
+            guild_name: "Weaklings".to_string(),
+            alliance_name: None,
+            alliance_id: None,
+            kills,
+            deaths,
+            kill_fame,
+            death_fame: deaths * 10,
+            item_power,
+        }
+    }
 
     fn fight_with_event(event_id: Option<i64>) -> fight::Model {
         let now = Utc::now().into();
@@ -2212,6 +2366,237 @@ mod tests {
                 method: "test".to_string(),
             },
         }
+    }
+
+    #[tokio::test]
+    async fn manual_mutations_persist_resequenced_segments_and_metadata() {
+        let db = seed_db().await;
+        let earlier = timestamp(-2);
+        let later = timestamp(-1);
+        let first_end = timestamp(0);
+        let target = insert_fight(&db, later).await;
+        let source = insert_fight(&db, earlier).await;
+        insert_snapshot(
+            &db,
+            100,
+            later,
+            Some(first_end),
+            10,
+            1,
+            100,
+            Vec::new(),
+            Vec::new(),
+            BattleLossEstimate::default(),
+        )
+        .await;
+        insert_snapshot(
+            &db,
+            200,
+            earlier,
+            Some(later),
+            20,
+            2,
+            200,
+            Vec::new(),
+            Vec::new(),
+            BattleLossEstimate::default(),
+        )
+        .await;
+        insert_segment(&db, target.id, 100, 1).await;
+        insert_segment(&db, source.id, 200, 1).await;
+
+        let Json(merged) = merge_fights(
+            test_admin(),
+            Extension(Permissions::new_empty()),
+            Extension(db.clone()),
+            Json(MergeFightsRequest {
+                target_fight_id: target.id,
+                fight_ids: vec![target.id, source.id],
+            }),
+        )
+        .await
+        .expect("merge fights");
+        assert_eq!(merged.data.battle_ids, [200, 100]);
+        assert_eq!(merged.data.deleted_fight_ids, [source.id]);
+
+        let merged_fight = fight::Entity::find_by_id(target.id)
+            .one(&db)
+            .await
+            .expect("query merged fight")
+            .expect("merged fight remains");
+        assert_eq!(merged_fight.started_at, earlier);
+        assert_eq!(merged_fight.ended_at, Some(first_end));
+        assert_eq!(merged_fight.grouping_method, MANUAL_GROUPING_METHOD);
+        assert_eq!(merged_fight.grouping_confidence, MANUAL_GROUPING_CONFIDENCE);
+        assert!(!merged_fight.needs_review);
+        assert!(
+            fight::Entity::find_by_id(source.id)
+                .one(&db)
+                .await
+                .expect("query deleted source")
+                .is_none()
+        );
+
+        let Json(split) = split_fight(
+            test_admin(),
+            Extension(Permissions::new_empty()),
+            Extension(db.clone()),
+            Path(target.id),
+            Json(SplitFightRequest {
+                battle_ids: vec![100],
+            }),
+        )
+        .await
+        .expect("split merged fight");
+        assert_eq!(split.data.battle_ids, [100]);
+
+        let Json(moved) = move_battle(
+            test_admin(),
+            Extension(Permissions::new_empty()),
+            Extension(db.clone()),
+            Path(split.data.fight_id),
+            Json(MoveBattleRequest {
+                battle_id: 100,
+                target_fight_id: target.id,
+            }),
+        )
+        .await
+        .expect("move split segment back");
+        assert_eq!(moved.data.battle_ids, [200, 100]);
+        assert_eq!(moved.data.deleted_fight_ids, [split.data.fight_id]);
+
+        let persisted = fight_battle::Entity::find()
+            .filter(fight_battle::Column::FightId.eq(target.id))
+            .order_by_asc(fight_battle::Column::SequenceNumber)
+            .all(&db)
+            .await
+            .expect("query resequenced segments");
+        assert_eq!(
+            persisted
+                .iter()
+                .map(|segment| (segment.battle_id, segment.sequence_number))
+                .collect::<Vec<_>>(),
+            [(200, 1), (100, 2)]
+        );
+    }
+
+    #[tokio::test]
+    async fn fight_detail_aggregates_persisted_segment_snapshots() {
+        let db = seed_db().await;
+        let first_start = timestamp(-2);
+        let second_start = timestamp(-1);
+        let fight = insert_fight(&db, first_start).await;
+        insert_snapshot(
+            &db,
+            501,
+            first_start,
+            Some(second_start),
+            10,
+            4,
+            100,
+            vec![guild(2, 2, 1, 50, true, 1200.0)],
+            vec![
+                player("alpha", 1, 0, 40, 1200.0),
+                player("bravo", 1, 1, 10, 1200.0),
+            ],
+            BattleLossEstimate {
+                total_estimated_loss: 100,
+                priced_items: 1,
+                total_items: 2,
+                players: vec![PlayerLossEstimate {
+                    player_name: "alpha".to_string(),
+                    guild_name: Some("Weaklings".to_string()),
+                    estimated_loss: 100,
+                    deaths: 1,
+                    priced_items: 1,
+                    total_items: 2,
+                }],
+                guilds: vec![GuildLossEstimate {
+                    guild_name: "Weaklings".to_string(),
+                    estimated_loss: 100,
+                    deaths: 1,
+                    priced_items: 1,
+                    total_items: 2,
+                }],
+            },
+        )
+        .await;
+        insert_snapshot(
+            &db,
+            502,
+            second_start,
+            None,
+            15,
+            3,
+            200,
+            vec![guild(2, 3, 2, 60, true, 1400.0)],
+            vec![
+                player("alpha", 2, 1, 60, 1400.0),
+                player("charlie", 1, 1, 30, 1400.0),
+            ],
+            BattleLossEstimate {
+                total_estimated_loss: 250,
+                priced_items: 2,
+                total_items: 3,
+                players: vec![PlayerLossEstimate {
+                    player_name: "alpha".to_string(),
+                    guild_name: Some("Weaklings".to_string()),
+                    estimated_loss: 250,
+                    deaths: 2,
+                    priced_items: 2,
+                    total_items: 3,
+                }],
+                guilds: vec![GuildLossEstimate {
+                    guild_name: "Weaklings".to_string(),
+                    estimated_loss: 250,
+                    deaths: 2,
+                    priced_items: 2,
+                    total_items: 3,
+                }],
+            },
+        )
+        .await;
+        insert_segment(&db, fight.id, 501, 1).await;
+        insert_segment(&db, fight.id, 502, 2).await;
+
+        let Json(response) = get_fight(
+            test_admin(),
+            Extension(db),
+            Extension(test_config()),
+            Path(fight.id),
+        )
+        .await
+        .expect("get fight detail");
+        let detail = response.data;
+
+        assert_eq!(detail.battle_ids, [501, 502]);
+        assert_eq!(detail.segment_count, 2);
+        assert_eq!(detail.total_players, 15);
+        assert_eq!(detail.total_kills, 7);
+        assert_eq!(detail.total_fame, 300);
+        assert_eq!(detail.unique_players, 3);
+        assert_eq!(detail.outcome.outcome, FightOutcome::Victory);
+        assert_eq!(detail.outcome.evidence_count, 2);
+        assert_eq!(detail.guilds.len(), 1);
+        assert_eq!(detail.guilds[0].players, 3);
+        assert_eq!(detail.guilds[0].kills, 5);
+        assert_eq!(detail.guilds[0].deaths, 3);
+        assert_eq!(detail.guilds[0].kill_fame, 110);
+        assert_eq!(detail.guilds[0].average_item_power, 1300.0);
+        assert_eq!(detail.players[0].id, "alpha");
+        assert_eq!(detail.players[0].kills, 3);
+        assert_eq!(detail.players[0].item_power, 1300.0);
+        assert_eq!(detail.estimated_losses.total_estimated_loss, 350);
+        assert_eq!(detail.estimated_losses.players[0].estimated_loss, 350);
+        assert_eq!(detail.observed_friendly_players.len(), 3);
+        assert_eq!(detail.observed_friendly_players[0].name, "alpha");
+        assert_eq!(detail.observed_friendly_players[0].segments_observed, 2);
+        assert_eq!(
+            detail.observed_friendly_players[0].average_item_power,
+            1300.0
+        );
+        assert!(!detail.participant_coverage.event_linked);
+        assert_eq!(detail.participant_coverage.persisted_segments, 2);
     }
 
     #[test]
