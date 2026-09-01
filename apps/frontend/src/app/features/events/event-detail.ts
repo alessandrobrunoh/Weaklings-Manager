@@ -32,6 +32,7 @@ import type {
   EventRosterRole,
   EventRosterSeat,
   EventRosterView,
+  OpenAlbionItemAbilities,
   OpponentPerformanceView,
   PaginatedData,
   ParticipateEventRequest,
@@ -47,12 +48,19 @@ import { RealtimeRosterService } from '../../core/services/realtime-roster.servi
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
+import { AlbionAbilitiesService } from '../../shared/services/albion-abilities.service';
+import {
+  abilityKeyForItem,
+  abilitySlotsFor,
+  type AbilitySlotView,
+} from '../../shared/data/albion-abilities';
 import {
   albionSpecializationKey,
   deduplicateAlbionCombatCatalog,
   normalizeAlbionEquipmentName,
 } from '../../shared/data/albion-equipment-catalog';
 import type { TranslationKey } from '../../i18n/en';
+import { AbilityBar } from '../../shared/components/ability-bar/ability-bar';
 import { Avatar } from '../../shared/components/avatar/avatar';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
@@ -103,6 +111,7 @@ interface EventRosterParty {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     RouterLink,
+    AbilityBar,
     Avatar,
     DataTable,
     DataTableCell,
@@ -390,15 +399,22 @@ interface EventRosterParty {
 
                     @if (ownRosterSeat(); as seat) {
                       <div class="flex flex-wrap items-center gap-3">
-                        <span class="chip chip--info font-mono text-xs font-semibold px-2.5 py-1">
-                          Party {{ rosterSeatPartyNumber(seat) }} &middot; Posizione {{ rosterSeatPosition(seat) }}
-                        </span>
-                        <span
-                          class="chip text-xs font-bold uppercase px-2.5 py-1"
-                          [class]="roleChip(seat.role)"
+                        <div
+                          class="flex items-center gap-3 rounded-xl border-2 px-4 py-2.5"
+                          [class]="roleSpotlightClass(seat.role)"
                         >
-                          {{ roleGlyph(seat.role) }} {{ rosterSeatRoleLabel(seat) }}
-                        </span>
+                          <span class="font-mono text-2xl sm:text-3xl font-black leading-none" aria-hidden="true">
+                            {{ roleGlyph(seat.role) }}
+                          </span>
+                          <div class="flex flex-col leading-tight">
+                            <span class="text-xl sm:text-2xl font-extrabold uppercase tracking-wide">
+                              {{ rosterSeatRoleLabel(seat) }}
+                            </span>
+                            <span class="font-mono text-[11px] font-semibold opacity-80">
+                              Party {{ rosterSeatPartyNumber(seat) }} &middot; Posizione {{ rosterSeatPosition(seat) }}
+                            </span>
+                          </div>
+                        </div>
                         <span class="font-semibold text-sm text-[var(--color-text)]">
                           {{ rosterSeatBuildName(seat) }}
                           @if (rosterSeatBuildVersion(seat)) {
@@ -423,13 +439,13 @@ interface EventRosterParty {
                     @if (rosterSeatBuildItems(seat).length > 0) {
                       <div class="mt-4 pt-4 border-t border-[var(--color-border)]">
                         <p class="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider mb-2">
-                          Equipaggiamento e abilità per questo ruolo:
+                          Equipaggiamento per questo ruolo:
                         </p>
                         <div class="flex flex-wrap gap-2">
                           @for (item of rosterSeatBuildItems(seat); track item.slot + ':' + item.loadout) {
                             <div
                               class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--color-surface-2)] border border-[var(--color-border)] text-xs"
-                              [appTooltip]="rosterItemSpells(item) ? slotLabel(item.slot) + ': ' + rosterItemSpells(item) : slotLabel(item.slot)"
+                              [appTooltip]="slotLabel(item.slot)"
                             >
                               @if (item.openalbion_item_icon) {
                                 <img
@@ -450,6 +466,25 @@ interface EventRosterParty {
                           }
                         </div>
                       </div>
+                    }
+
+                    <!-- Abilities & Passives set on this role's equipment, shown directly rather than on hover -->
+                    @if (rosterSeatAbilityRows(seat); as abilityRows) {
+                      @if (abilityRows.length > 0) {
+                        <div class="mt-4 pt-4 border-t border-[var(--color-border)] grid gap-3">
+                          <p class="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                            Abilità e passive
+                          </p>
+                          @for (row of abilityRows; track row.slot) {
+                            <div class="p-3 bg-[var(--color-surface-2)] rounded-lg grid gap-1.5 border border-[var(--color-border)]">
+                              <span class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                                {{ row.itemName }}
+                              </span>
+                              <app-ability-bar [slots]="row.slots" />
+                            </div>
+                          }
+                        </div>
+                      }
                     }
                   }
                 </section>
@@ -617,14 +652,32 @@ interface EventRosterParty {
                           <ol class="divide-y divide-[var(--color-border)]" [attr.aria-label]="rosterPartyName(party)">
                             @for (seat of party.seats; track seat.party_number + ':' + seat.position) {
                               <li
-                                class="p-3 transition-colors flex items-center justify-between gap-3 hover:bg-[var(--color-surface-hover)]"
+                                class="p-3 transition-all flex items-center justify-between gap-3 hover:bg-[var(--color-surface-hover)] select-none"
                                 [class]="roleBorderClass(seat.role)"
                                 [class.bg-[var(--color-surface-2)]]="rosterSwapSource()?.key === rosterSeatKey(seat)"
-                                [class.ring-2]="rosterSwapSource()?.key === rosterSeatKey(seat)"
-                                [class.ring-[var(--color-primary)]]="rosterSwapSource()?.key === rosterSeatKey(seat)"
+                                [class.ring-2]="rosterSwapSource()?.key === rosterSeatKey(seat) || dropTargetSeatKey() === rosterSeatKey(seat)"
+                                [class.ring-[var(--color-primary)]]="rosterSwapSource()?.key === rosterSeatKey(seat) || dropTargetSeatKey() === rosterSeatKey(seat)"
+                                [class.bg-[var(--color-primary)]/10]="dropTargetSeatKey() === rosterSeatKey(seat)"
+                                [class.border-dashed]="dropTargetSeatKey() === rosterSeatKey(seat)"
+                                [class.opacity-40]="draggedSeat()?.key === rosterSeatKey(seat)"
+                                [attr.draggable]="canManageParticipants() && seat.participant !== null && !rosterCommandSaving()"
+                                (dragstart)="onSeatDragStart($event, seat)"
+                                (dragend)="onDragEnd()"
+                                (dragover)="onSeatDragOver($event, seat)"
+                                (dragleave)="onSeatDragLeave($event, seat)"
+                                (drop)="onSeatDrop($event, seat)"
                               >
                                 <!-- Left: Weapon icon, Role, Build name -->
                                 <div class="flex items-center gap-3 min-w-0 flex-1">
+                                  @if (canManageParticipants() && seat.participant) {
+                                    <span
+                                      class="text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] cursor-grab active:cursor-grabbing flex-shrink-0"
+                                      [appTooltip]="'Trascina per scambiare posto o sposta in panchina'"
+                                      tooltipPosition="top"
+                                    >
+                                      <app-icon name="grip" size="0.875rem" />
+                                    </span>
+                                  }
                                   <div
                                     class="relative flex-shrink-0 h-11 w-11 rounded-lg p-0.5 flex items-center justify-center border border-[var(--color-border)] bg-[var(--color-surface-1)] cursor-pointer group hover:border-[var(--color-primary)] transition-colors"
                                     (click)="toggleSeatTooltip(seat)"
@@ -637,7 +690,7 @@ interface EventRosterParty {
                                       <img
                                         [src]="icon"
                                         [alt]="seat.build_name"
-                                        class="h-full w-full object-contain"
+                                        class="h-full w-full object-contain pointer-events-none"
                                         loading="lazy"
                                       />
                                     } @else {
@@ -762,7 +815,18 @@ interface EventRosterParty {
                   </div>
 
                   <!-- BENCH TRAY (PANCHINA) -->
-                  <aside class="card p-0 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm sticky top-4">
+                  <aside
+                    class="card p-0 overflow-hidden rounded-2xl border transition-all bg-[var(--color-surface)] shadow-sm sticky top-4"
+                    [class.border-[var(--color-border)]]="!isDropTargetBench()"
+                    [class.border-amber-500]="isDropTargetBench()"
+                    [class.border-dashed]="isDropTargetBench()"
+                    [class.ring-2]="isDropTargetBench()"
+                    [class.ring-amber-500/50]="isDropTargetBench()"
+                    [class.bg-amber-500/5]="isDropTargetBench()"
+                    (dragover)="onBenchDragOver($event)"
+                    (dragleave)="onBenchDragLeave($event)"
+                    (drop)="onBenchDrop($event)"
+                  >
                     <!-- Bench Header -->
                     <div class="bg-[var(--color-surface-1)] px-4 py-3.5 border-b border-[var(--color-border)] space-y-2.5">
                       <div class="flex items-center justify-between">
@@ -778,7 +842,7 @@ interface EventRosterParty {
                       </div>
 
                       <p class="text-[11px] text-[var(--color-text-secondary)]">
-                        Membri iscritti in attesa di assegnazione a un posto.
+                        Membri iscritti in attesa di assegnazione a un posto. Trascina sui posti o trascina qui per liberare un posto.
                       </p>
 
                       <!-- Search in Bench -->
@@ -793,16 +857,36 @@ interface EventRosterParty {
                       }
                     </div>
 
+                    @if (isDropTargetBench()) {
+                      <div class="m-3 p-3 rounded-xl border-2 border-dashed border-amber-500 bg-amber-500/15 text-amber-600 dark:text-amber-400 text-xs font-bold text-center animate-pulse flex items-center justify-center gap-2">
+                        <app-icon name="users" size="1rem" />
+                        Rilascia qui per spostare in panchina
+                      </div>
+                    }
+
                     <!-- Bench Members List -->
                     <div class="p-3 space-y-2 max-h-[38rem] overflow-y-auto">
                       @for (member of filteredRosterBench(); track member.user_id) {
                         <div
-                          class="p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)] transition-all space-y-2"
+                          class="p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)] transition-all space-y-2 select-none"
                           [class.border-amber-500]="rosterAssignTarget() !== null"
                           [class.bg-amber-500/5]="rosterAssignTarget() !== null"
+                          [class.opacity-40]="draggedBenchMember()?.user_id === member.user_id"
+                          [attr.draggable]="canManageParticipants() && !rosterCommandSaving()"
+                          (dragstart)="onBenchMemberDragStart($event, member)"
+                          (dragend)="onDragEnd()"
                         >
                           <div class="flex items-center justify-between gap-2">
                             <div class="flex items-center gap-2 min-w-0">
+                              @if (canManageParticipants()) {
+                                <span
+                                  class="text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] cursor-grab active:cursor-grabbing flex-shrink-0"
+                                  [appTooltip]="'Trascina su un posto per assegnare'"
+                                  tooltipPosition="top"
+                                >
+                                  <app-icon name="grip" size="0.875rem" />
+                                </span>
+                              }
                               <app-avatar [username]="member.username" size="sm" />
                               <span class="text-xs font-bold text-[var(--color-text)] truncate">
                                 {{ member.username }}
@@ -1872,6 +1956,7 @@ export class EventDetailPage {
   private readonly realtimeRoster = inject(RealtimeRosterService);
   private readonly translate = inject(TranslateService);
   private readonly albionCatalog = inject(AlbionCatalogService);
+  private readonly albionAbilities = inject(AlbionAbilitiesService);
   private readonly destroyRef = inject(DestroyRef);
   private eventId = 0;
 
@@ -1897,8 +1982,14 @@ export class EventDetailPage {
   protected readonly autoFilling = signal(false);
   protected readonly dragOverSlotKey = signal<string | null>(null);
   protected readonly draggedMember = signal<EventParticipant | null>(null);
+  protected readonly draggedSeat = signal<EventRosterSeat | null>(null);
+  protected readonly draggedBenchMember = signal<EventParticipant | null>(null);
+  protected readonly dropTargetSeatKey = signal<string | null>(null);
+  protected readonly isDropTargetBench = signal(false);
   protected readonly specializationCatalog = signal<OpenAlbionItem[]>([]);
   protected readonly selectedSpecializationKey = signal('');
+  /** The bundled ability catalog, loaded once and keyed by tier-stripped base identifier. */
+  protected readonly abilityCatalog = signal<Record<string, OpenAlbionItemAbilities>>({});
 
   protected readonly selectedSpecializationName = computed(() => {
     const key = this.selectedSpecializationKey();
@@ -2551,7 +2642,9 @@ export class EventDetailPage {
       }
       // The socket invalidates the complete event state, not only the seat snapshot:
       // signups, manager assignments, and role availability must stay synchronized.
-      void this.load();
+      // `silent` keeps the current view mounted instead of flashing the full-page
+      // loading state, so the update lands in real time rather than as a page refresh.
+      void this.load(true);
     });
 
     this.onCompSearchFilter({ search: '', dateFrom: '', dateTo: '' });
@@ -2648,12 +2741,6 @@ export class EventDetailPage {
 
   protected rosterSeatBuildItems(seat: EventRosterSeat): BuildItemSlot[] {
     return this.slotTooltipItems(seat.build_id);
-  }
-
-  protected rosterItemSpells(item: BuildItemSlot): string {
-    const active = Object.values(item.spells?.active ?? {});
-    const passive = Object.values(item.spells?.passive ?? {});
-    return [...active, ...passive].join(', ');
   }
 
   protected rosterSeatCount(): number {
@@ -2753,6 +2840,155 @@ export class EventDetailPage {
     );
   }
 
+  protected onSeatDragStart(event: DragEvent, seat: EventRosterSeat): void {
+    if (!this.canManageParticipants() || !seat.participant || this.rosterCommandSaving()) return;
+    this.draggedSeat.set(seat);
+    this.draggedBenchMember.set(null);
+    this.dropTargetSeatKey.set(null);
+    this.isDropTargetBench.set(false);
+    if (event.dataTransfer) {
+      event.dataTransfer.setData(
+        'text/plain',
+        JSON.stringify({ type: 'seat', key: this.rosterSeatKey(seat) }),
+      );
+      event.dataTransfer.effectAllowed = 'move';
+    }
+  }
+
+  protected onSeatDragOver(event: DragEvent, seat: EventRosterSeat): void {
+    if (!this.canManageParticipants() || this.rosterCommandSaving()) return;
+    const isDraggingSeat = this.draggedSeat() !== null;
+    const isDraggingBench = this.draggedBenchMember() !== null;
+    if (!isDraggingSeat && !isDraggingBench) return;
+
+    const seatKey = this.rosterSeatKey(seat);
+    if (isDraggingSeat && this.rosterSeatKey(this.draggedSeat()!) === seatKey) {
+      return;
+    }
+
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+    if (this.dropTargetSeatKey() !== seatKey) {
+      this.dropTargetSeatKey.set(seatKey);
+    }
+  }
+
+  protected onSeatDragLeave(event: DragEvent, seat: EventRosterSeat): void {
+    const seatKey = this.rosterSeatKey(seat);
+    if (this.dropTargetSeatKey() === seatKey) {
+      this.dropTargetSeatKey.set(null);
+    }
+  }
+
+  protected async onSeatDrop(event: DragEvent, targetSeat: EventRosterSeat): Promise<void> {
+    event.preventDefault();
+    this.dropTargetSeatKey.set(null);
+    const sourceSeat = this.draggedSeat();
+    const benchMember = this.draggedBenchMember();
+    this.draggedSeat.set(null);
+    this.draggedBenchMember.set(null);
+    this.isDropTargetBench.set(false);
+
+    if (!this.canManageParticipants() || this.rosterCommandSaving()) return;
+
+    if (sourceSeat) {
+      const sourceKey = this.rosterSeatKey(sourceSeat);
+      const targetKey = this.rosterSeatKey(targetSeat);
+      if (sourceKey === targetKey) return;
+      await this.performSeatSwap(sourceSeat, targetSeat);
+    } else if (benchMember) {
+      await this.assignBenchMemberToSeatDirect(benchMember.user_id, targetSeat);
+    }
+  }
+
+  protected onBenchMemberDragStart(event: DragEvent, member: EventParticipant): void {
+    if (!this.canManageParticipants() || this.rosterCommandSaving()) return;
+    this.draggedBenchMember.set(member);
+    this.draggedSeat.set(null);
+    this.dropTargetSeatKey.set(null);
+    this.isDropTargetBench.set(false);
+    if (event.dataTransfer) {
+      event.dataTransfer.setData(
+        'text/plain',
+        JSON.stringify({ type: 'bench', userId: member.user_id }),
+      );
+      event.dataTransfer.effectAllowed = 'move';
+    }
+  }
+
+  protected onBenchDragOver(event: DragEvent): void {
+    if (!this.canManageParticipants() || !this.draggedSeat() || this.rosterCommandSaving()) return;
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move';
+    }
+    if (!this.isDropTargetBench()) {
+      this.isDropTargetBench.set(true);
+    }
+  }
+
+  protected onBenchDragLeave(event: DragEvent): void {
+    const target = event.currentTarget as HTMLElement | null;
+    const related = event.relatedTarget as HTMLElement | null;
+    if (target && related && target.contains(related)) {
+      return;
+    }
+    this.isDropTargetBench.set(false);
+  }
+
+  protected async onBenchDrop(event: DragEvent): Promise<void> {
+    event.preventDefault();
+    this.isDropTargetBench.set(false);
+    const sourceSeat = this.draggedSeat();
+    this.draggedSeat.set(null);
+    this.draggedBenchMember.set(null);
+    this.dropTargetSeatKey.set(null);
+
+    if (!this.canManageParticipants() || !sourceSeat || this.rosterCommandSaving()) return;
+    await this.clearServerRosterSeat(sourceSeat);
+  }
+
+  protected onDragEnd(): void {
+    this.draggedSeat.set(null);
+    this.draggedBenchMember.set(null);
+    this.dropTargetSeatKey.set(null);
+    this.isDropTargetBench.set(false);
+  }
+
+  protected async performSeatSwap(source: EventRosterSeat, target: EventRosterSeat): Promise<void> {
+    const roster = this.rosterSnapshot();
+    const sourceKey = this.rosterSeatKey(source);
+    const targetKey = this.rosterSeatKey(target);
+    if (!roster || sourceKey === targetKey) return;
+
+    await this.runServerRosterCommand('Posti scambiati.', () =>
+      firstValueFrom(
+        this.api.post<EventRosterView>(`api/events/${this.eventId}/roster/swaps`, {
+          source_seat_key: sourceKey,
+          target_seat_key: targetKey,
+          expected_roster_version: roster.roster_version,
+        }),
+      ),
+    );
+  }
+
+  protected async assignBenchMemberToSeatDirect(userId: number, target: EventRosterSeat): Promise<void> {
+    const roster = this.rosterSnapshot();
+    const targetKey = this.rosterSeatKey(target);
+    if (!roster) return;
+
+    await this.runServerRosterCommand('Membro assegnato al posto.', () =>
+      firstValueFrom(
+        this.api.put<EventRosterView>(
+          `api/events/${this.eventId}/roster/seats/${encodeURIComponent(targetKey)}`,
+          { user_id: userId, expected_roster_version: roster.roster_version },
+        ),
+      ),
+    );
+  }
+
   protected async autoFillServerRoster(): Promise<void> {
     const roster = this.rosterSnapshot();
     if (!roster) return;
@@ -2815,6 +3051,26 @@ export class EventDetailPage {
         return 'border-l-4 border-l-cyan-500 bg-cyan-500/[0.02]';
       default:
         return 'border-l-4 border-l-[var(--color-border)]';
+    }
+  }
+
+  /** Colours for the large "my assignment" role badge — the same palette as {@link roleBorderClass}, at full strength. */
+  protected roleSpotlightClass(role: string): string {
+    switch (role) {
+      case 'tank':
+        return 'border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400';
+      case 'healer':
+        return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400';
+      case 'support':
+        return 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400';
+      case 'dps':
+        return 'border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400';
+      case 'battle_mount':
+        return 'border-purple-500/40 bg-purple-500/10 text-purple-600 dark:text-purple-400';
+      case 'brawler':
+        return 'border-cyan-500/40 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400';
+      default:
+        return 'border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text)]';
     }
   }
 
@@ -2888,7 +3144,7 @@ export class EventDetailPage {
       md += `**PARTY ${party.partyNumber} (${party.filledCount}/${party.totalCount})**\n`;
       party.slots.forEach((slot, idx) => {
         const occupant = this.slotParticipant(slot);
-        const slotNum = (party.partyNumber - 1) * 5 + idx + 1;
+        const slotNum = (party.partyNumber - 1) * 20 + idx + 1;
         const roleName = this.roleLabelName(slot.role);
         if (occupant) {
           md += `${slotNum}. [${roleName}] **${occupant.username}** — ${slot.build.name}\n`;
@@ -3511,9 +3767,40 @@ export class EventDetailPage {
     }
   }
 
-  protected async load(): Promise<void> {
+  private async loadAbilityCatalog(): Promise<void> {
+    if (Object.keys(this.abilityCatalog()).length > 0) return;
+    try {
+      this.abilityCatalog.set(await this.albionAbilities.load());
+    } catch {
+      // The roster spotlight card falls back to hiding the abilities section.
+    }
+  }
+
+  /**
+   * One ability bar per item equipped on a roster seat's build that actually offers abilities.
+   *
+   * Items with nothing to choose — off-hands, capes, bags, consumables, mounts — produce no row.
+   */
+  protected rosterSeatAbilityRows(
+    seat: EventRosterSeat,
+  ): { slot: BuildSlot; itemName: string; slots: AbilitySlotView[] }[] {
+    const catalog = this.abilityCatalog();
+    return this.rosterSeatBuildItems(seat).flatMap((item) => {
+      const key = abilityKeyForItem(item);
+      const slots = abilitySlotsFor(item.slot, key ? catalog[key] : undefined, item.spells);
+      return slots.length === 0
+        ? []
+        : [{ slot: item.slot, itemName: item.openalbion_item_name, slots }];
+    });
+  }
+
+  protected async load(silent = false): Promise<void> {
     if (!this.eventId) return;
-    this.loading.set(true);
+    // Silent reloads (e.g. a realtime roster event) keep the current view mounted
+    // and refresh its data in place, instead of flashing the full-page loading state.
+    if (!silent) {
+      this.loading.set(true);
+    }
     this.loadFailed.set(false);
     try {
       const detail = await firstValueFrom(
@@ -3523,8 +3810,9 @@ export class EventDetailPage {
       this.realtimeRoster.connect(this.eventId);
       this.eventLossEstimate.set(detail.estimated_losses ?? emptyLossEstimate());
       void this.loadSpecializationCatalog();
+      void this.loadAbilityCatalog();
       await Promise.all([
-        this.loadRosterSnapshot(),
+        this.loadRosterSnapshot(silent),
         this.loadActiveComp(),
         this.loadLinkedBattleLosses(detail),
       ]);
@@ -3532,20 +3820,30 @@ export class EventDetailPage {
       this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
-      this.loading.set(false);
+      if (!silent) {
+        this.loading.set(false);
+      }
     }
   }
 
-  private async loadRosterSnapshot(): Promise<void> {
-    this.rosterSnapshotState.set('loading');
-    this.rosterSnapshotError.set('');
+  private async loadRosterSnapshot(silent = false): Promise<void> {
+    // Silent reloads keep the roster panel mounted and swap the data in place,
+    // instead of flashing it to a loading state on every realtime update.
+    if (!silent) {
+      this.rosterSnapshotState.set('loading');
+      this.rosterSnapshotError.set('');
+    }
     try {
       const roster = await firstValueFrom(
         this.api.get<EventRosterView>(`api/events/${this.eventId}/roster`),
       );
       this.rosterSnapshot.set(roster);
       this.rosterSnapshotState.set('ready');
-      this.clearLegacyRosterInteractionState();
+      // A silent refresh comes from someone else's action; don't clobber the
+      // current user's own in-progress swap/search/drag interactions.
+      if (!silent) {
+        this.clearLegacyRosterInteractionState();
+      }
       await this.preloadRosterBuildDetails(roster.seats.map((seat) => seat.build_id));
       const ownSeat = this.ownRosterSeat();
       this.rosterAnnouncement.set(
