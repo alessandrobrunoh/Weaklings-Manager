@@ -109,6 +109,50 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
         />
       </section>
 
+      <!-- LIVE / CTA HIGHLIGHT BANNER -->
+      @if (liveEvents().length > 0) {
+        <div class="grid gap-3" aria-label="Live events">
+          @for (liveEvent of liveEvents(); track liveEvent.id) {
+            <div
+              class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl border border-[var(--color-success)] bg-[var(--color-surface)] shadow-lg hover:bg-[var(--color-surface-hover)] cursor-pointer transition-all"
+              (click)="openEventDetail(liveEvent.id)"
+            >
+              <div class="flex items-center gap-3">
+                <span class="relative flex h-3 w-3">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--color-success)] opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-3 w-3 bg-[var(--color-success)]"></span>
+                </span>
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="font-bold text-base text-[var(--color-text)]">{{ liveEvent.title }}</span>
+                    @if (liveEvent.call_to_arms) {
+                      <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-[var(--color-warning-subtle)] text-[var(--color-warning)] border border-[var(--color-warning)]">
+                        CALL TO ARMS
+                      </span>
+                    }
+                    <app-status-chip [value]="liveEvent.status" />
+                  </div>
+                  <div class="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                    Comp: {{ liveEvent.comp_name }} · {{ formatDate(liveEvent.event_date_utc) }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  class="btn btn--primary btn--sm"
+                  (click)="$event.stopPropagation(); openEventDetail(liveEvent.id)"
+                >
+                  <app-icon name="swords" size="0.75rem" />
+                  Enter Roster War Room
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      }
+
       <app-data-table
         [columns]="columns()"
         [rows]="events()"
@@ -423,8 +467,11 @@ export class Events {
   protected readonly sortColumn = signal<string | null>('date');
   protected readonly sortOrder = signal<'asc' | 'desc' | null>('desc');
 
+  protected readonly liveEvents = computed(
+    () => this.events().filter((e) => e.status === 'live'),
+  );
   protected readonly liveCount = computed(
-    () => this.events().filter((e) => e.status === 'live').length,
+    () => this.liveEvents().length,
   );
   protected readonly scheduledCount = computed(
     () => this.events().filter((e) => e.status === 'scheduled').length,

@@ -39,6 +39,8 @@ import { AbilityBar } from '../../shared/components/ability-bar/ability-bar';
 import { abilityKeyForItem, abilitySlotsFor } from '../../shared/data/albion-abilities';
 import type { AbilitySlotView } from '../../shared/data/albion-abilities';
 import { AlbionAbilitiesService } from '../../shared/services/albion-abilities.service';
+import { Icon } from '../../shared/components/icon/icon';
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 const ROLES: BuildRole[] = ['healer', 'support', 'dps', 'tank', 'battle_mount', 'brawler'];
 
@@ -78,6 +80,8 @@ const ROLE_LABELS: Record<BuildRole, string> = {
     VersionSwitcher,
     VersionDiffList,
     AbilityBar,
+    Icon,
+    TooltipDirective,
   ],
   template: `
     @if (loading()) {
@@ -169,7 +173,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
               <span class="label">{{ t('common.description') }}</span>
               <textarea
                 class="textarea"
-                rows="3"
+                rows="2"
                 [value]="editDescription()"
                 (input)="onEditDescriptionChange($event)"
               ></textarea>
@@ -194,316 +198,302 @@ const ROLE_LABELS: Record<BuildRole, string> = {
           </form>
         }
 
-        <section class="grid gap-4" aria-label="Composition overview">
-          <header class="flex flex-wrap items-end justify-between gap-2">
-            <div>
-              <h2 class="text-lg font-semibold" style="color: var(--color-text)">
-                Composition overview
-              </h2>
-              <p class="text-sm" style="color: var(--color-text-secondary)">
-                Role balance and equipment coverage for this composition.
-              </p>
-            </div>
-            @if (compositionStats().weaponNames.length > 0) {
-              <span class="text-xs" style="color: var(--color-text-secondary)">
-                {{ compositionStats().weaponNames.join(' · ') }}
-              </span>
-            }
-          </header>
+        <!-- 2-COLUMN MAIN VIEWPORT -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <!-- LEFT COLUMN: Albion-Native Party Matrix (8 cols) -->
+          <div class="lg:col-span-8 grid gap-6">
+            <!-- Section Header & Add Build Controller -->
+            <div class="flex flex-wrap items-center justify-between gap-3 bg-[var(--color-surface)] p-4 rounded-xl border border-[var(--color-border)]">
+              <div>
+                <h2 class="text-base font-bold text-[var(--color-text)]">
+                  Party Roster Matrix
+                </h2>
+                <p class="text-xs text-[var(--color-text-secondary)]">
+                  {{ current.total_quantity }} total player slots across {{ current.builds.length }} distinct builds.
+                </p>
+              </div>
 
-          <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-            <app-stat-card
-              label="Builds"
-              [value]="current.builds.length"
-              [sub]="current.builds.length === 1 ? 'distinct build' : 'distinct builds'"
-              icon="package"
-              tone="primary"
-            />
-            <app-stat-card
-              label="Roster size"
-              [value]="current.total_quantity"
-              sub="total player slots"
-              icon="users"
-              tone="neutral"
-            />
-            <app-stat-card
-              label="Roles"
-              [value]="compositionStats().roleCount"
-              [sub]="compositionStats().roleSummary"
-              icon="shield"
-              tone="primary"
-            />
-            <app-stat-card
-              label="Weapon types"
-              [value]="buildDetailsLoading() ? null : compositionStats().weaponCount"
-              [sub]="buildDetailsLoading() ? 'loading loadouts…' : compositionStats().weaponSummary"
-              icon="swords"
-              tone="warning"
-            />
-            <app-stat-card
-              label="Builds ready"
-              [value]="buildDetailsLoading() ? null : compositionStats().equippedBuildCount"
-              [sub]="buildDetailsLoading() ? 'loading loadouts…' : compositionStats().equipmentCoverage"
-              icon="check"
-              tone="success"
-            />
-          </div>
-
-          @if (compositionStats().roleDistribution.length > 0) {
-            <div class="surface flex flex-wrap gap-2 p-3" aria-label="Role distribution">
-              @for (role of compositionStats().roleDistribution; track role.role) {
-                <span class="chip">{{ roleLabel(role.role) }} · {{ role.quantity }}</span>
+              @if (canManage() && mode() === 'edit') {
+                <button
+                  type="button"
+                  class="btn btn--primary btn--sm"
+                  (click)="toggleAddBuild()"
+                >
+                  <app-icon name="plus" size="0.75rem" />
+                  {{ addingBuild() ? t('common.close') : t('comps.addBuild') }}
+                </button>
               }
             </div>
-          }
-        </section>
 
-        <section class="card grid gap-4 p-5" [attr.aria-label]="t('comps.builds')">
-          <header class="flex items-center justify-between gap-3">
-            <h2 class="text-lg font-semibold" style="color: var(--color-text)">
-              {{ t('comps.builds') }} ({{ current.builds.length }}) · {{ current.total_quantity }}
-            </h2>
-            @if (canManage() && mode() === 'edit') {
-              <button type="button" class="btn btn--outline" (click)="toggleAddBuild()">
-                {{ addingBuild() ? t('common.close') : t('comps.addBuild') }}
-              </button>
+            <!-- Add Build Panel (when active) -->
+            @if (addingBuild() && canManage() && mode() === 'edit') {
+              <form class="p-4 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border-strong)] grid gap-3" (submit)="addBuild($event)">
+                <div class="grid gap-3 sm:grid-cols-[1fr_8rem_auto]">
+                  <label class="grid gap-1">
+                    <span class="label">{{ t('comps.selectBuild') }}</span>
+                    <input
+                      class="input"
+                      type="search"
+                      name="build-search"
+                      list="available-composition-builds"
+                      autocomplete="off"
+                      [placeholder]="t('comps.selectBuild')"
+                      [value]="newBuildSearch()"
+                      (input)="onNewBuildSearchChange($event)"
+                    />
+                  </label>
+                  <datalist id="available-composition-builds">
+                    @for (build of availableBuildOptions(); track build.id) {
+                      <option [value]="buildOptionLabel(build)"></option>
+                    }
+                  </datalist>
+                  <label class="grid gap-1">
+                    <span class="label">Qty</span>
+                    <input
+                      class="input"
+                      type="number"
+                      min="1"
+                      [value]="newBuildQuantity()"
+                      (input)="onNewBuildQtyChange($event)"
+                    />
+                  </label>
+                  <div class="flex items-end">
+                    <button type="submit" class="btn btn--primary" [disabled]="saving()">
+                      {{ t('common.add') }}
+                    </button>
+                  </div>
+                </div>
+              </form>
             }
-          </header>
 
-          @if (addingBuild() && canManage() && mode() === 'edit') {
-            <form class="surface grid gap-3 p-4" (submit)="addBuild($event)">
-              <div class="grid gap-3 sm:grid-cols-[1fr_8rem_auto]">
-                <label class="grid gap-1">
-                  <span class="label">{{ t('comps.selectBuild') }}</span>
-                  <input
-                    class="input"
-                    type="search"
-                    name="build-search"
-                    list="available-composition-builds"
-                    autocomplete="off"
-                    [placeholder]="t('comps.selectBuild')"
-                    [value]="newBuildSearch()"
-                    (input)="onNewBuildSearchChange($event)"
-                  />
-                </label>
-                <datalist id="available-composition-builds">
-                  @for (build of availableBuildOptions(); track build.id) {
-                    <option [value]="buildOptionLabel(build)"></option>
-                  }
-                </datalist>
-                <input
-                  class="input"
-                  type="number"
-                  min="1"
-                  [value]="newBuildQuantity()"
-                  (input)="onNewBuildQtyChange($event)"
-                />
-                <button type="submit" class="btn btn--primary" [disabled]="saving()">
-                  {{ t('common.add') }}
-                </button>
-              </div>
-            </form>
-          }
-
-          @if (current.builds.length === 0) {
-            <p class="text-sm" style="color: var(--color-text-secondary)">
-              {{ t('comps.noBuilds') }}
-            </p>
-          } @else {
-            <ul class="grid gap-2">
-              @for (entry of current.builds; track entry.build_id) {
-                <li
-                  class="flex flex-wrap items-center justify-between gap-3 rounded-lg px-3 py-2"
-                  style="background-color: var(--color-surface-1)"
-                >
-                  <div class="flex items-center gap-3">
-                    <a
-                      class="font-medium hover:underline"
-                      [routerLink]="['/comps', 'builds', entry.build_id]"
-                    >
-                      {{ entry.build.name }}
-                    </a>
-                    <span class="chip">{{ roleLabel(entry.build.role) }}</span>
-                    <span class="text-xs" style="color: var(--color-text-secondary)">
-                      {{ entry.build.category_name || t('comps.noCategory') }}
+            @if (current.builds.length === 0) {
+              <app-empty-state icon="package" [message]="t('comps.noBuilds')" />
+            } @else {
+              <!-- Role Grouped Matrix Cards -->
+              @for (roleGroup of groupedBuildsByRole(); track roleGroup.role) {
+                <section class="grid gap-3">
+                  <div class="flex items-center justify-between px-1">
+                    <div class="flex items-center gap-2">
+                      <span
+                        class="w-3 h-3 rounded-full"
+                        [style.background-color]="roleColorHex(roleGroup.role)"
+                      ></span>
+                      <h3 class="text-sm font-bold uppercase tracking-wider text-[var(--color-text)]">
+                        {{ roleLabel(roleGroup.role) }} ({{ roleGroup.totalSlots }} slots)
+                      </h3>
+                    </div>
+                    <span class="text-xs text-[var(--color-text-secondary)]">
+                      {{ roleGroup.entries.length }} build variants
                     </span>
                   </div>
-                  <div class="flex items-center gap-2">
-                    @if (canManage()) {
-                      <a
-                        class="btn btn--outline btn--sm"
-                        [routerLink]="['/comps', 'builds', entry.build_id]"
-                        [attr.aria-label]="'Edit build ' + entry.build.name"
-                      >
-                        Edit build
-                      </a>
-                    }
-                    @if (mode() === 'edit' && editingBuildId() === entry.build_id) {
-                      <input
-                        class="input"
-                        type="number"
-                        min="1"
-                        style="width: 6rem"
-                        [value]="editingBuildQty()"
-                        (input)="onEditingBuildQtyChange($event)"
-                      />
-                      <button
-                        type="button"
-                        class="btn btn--primary btn--sm"
-                        (click)="saveBuildQty(entry.build_id)"
-                        [disabled]="saving()"
-                      >
-                        {{ t('common.save') }}
-                      </button>
-                      <button
-                        type="button"
-                        class="btn btn--ghost btn--sm"
-                        (click)="cancelEditBuild()"
-                      >
-                        {{ t('common.cancel') }}
-                      </button>
-                    } @else {
-                      <span class="chip">x{{ entry.quantity }}</span>
-                      @if (canManage() && mode() === 'edit') {
-                        <button
-                          type="button"
-                          class="btn btn--outline btn--sm"
-                          (click)="startEditBuild(entry.build_id, entry.quantity)"
-                        >
-                          {{ t('common.edit') }}
-                        </button>
-                        <button
-                          type="button"
-                          class="btn btn--danger btn--sm"
-                          (click)="removeBuild(entry.build_id)"
-                          [disabled]="saving()"
-                        >
-                          {{ t('common.delete') }}
-                        </button>
-                      }
-                    }
-                  </div>
 
-                  @if (abilityRowsFor(entry.build_id); as rows) {
-                    @if (rows.length > 0) {
-                      <div class="mt-2 grid gap-2">
-                        @for (row of rows; track row.slot) {
-                          <div class="grid gap-1 sm:grid-cols-[9rem_1fr] sm:items-center">
-                            <span class="text-xs" style="color: var(--color-text-secondary)">
-                              {{ row.itemName }}
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    @for (entry of roleGroup.entries; track entry.build_id) {
+                      <div
+                        class="flex flex-col justify-between p-4 rounded-xl border bg-[var(--color-surface)] hover:border-[var(--color-border-strong)] transition-all"
+                        [style.border-left-width]="'4px'"
+                        [style.border-left-color]="roleColorHex(entry.build.role)"
+                      >
+                        <!-- Card Header -->
+                        <div class="flex items-start justify-between gap-2">
+                          <div class="flex flex-col gap-0.5">
+                            <a
+                              class="font-semibold text-base text-[var(--color-text)] hover:underline"
+                              [routerLink]="['/comps', 'builds', entry.build_id]"
+                            >
+                              {{ entry.build.name }}
+                            </a>
+                            <span class="text-xs text-[var(--color-text-secondary)]">
+                              {{ entry.build.category_name || t('comps.noCategory') }}
                             </span>
-                            <app-ability-bar [slots]="row.slots" [emptyLabel]="t('comps.noAbility')" />
                           </div>
+
+                          <!-- Quantity Pill / Stepper -->
+                          @if (mode() === 'edit' && editingBuildId() === entry.build_id) {
+                            <div class="flex items-center gap-1">
+                              <input
+                                class="input text-center w-14"
+                                type="number"
+                                min="1"
+                                [value]="editingBuildQty()"
+                                (input)="onEditingBuildQtyChange($event)"
+                              />
+                              <button
+                                type="button"
+                                class="btn btn--primary btn--sm"
+                                (click)="saveBuildQty(entry.build_id)"
+                                [disabled]="saving()"
+                              >
+                                ✓
+                              </button>
+                              <button
+                                type="button"
+                                class="btn btn--ghost btn--sm"
+                                (click)="cancelEditBuild()"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          } @else {
+                            <div class="flex items-center gap-1.5">
+                              <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-[var(--color-surface-2)] text-[var(--color-text)] border border-[var(--color-border)]">
+                                x{{ entry.quantity }}
+                              </span>
+                              @if (canManage() && mode() === 'edit') {
+                                <button
+                                  type="button"
+                                  class="btn btn--ghost btn--sm"
+                                  (click)="startEditBuild(entry.build_id, entry.quantity)"
+                                >
+                                  <app-icon name="edit" size="0.75rem" />
+                                </button>
+                                <button
+                                  type="button"
+                                  class="btn btn--ghost btn--sm text-[var(--color-error)]"
+                                  (click)="removeBuild(entry.build_id)"
+                                  [disabled]="saving()"
+                                >
+                                  <app-icon name="close" size="0.75rem" />
+                                </button>
+                              }
+                            </div>
+                          }
+                        </div>
+
+                        <!-- Weapon & Ability Preview Bar -->
+                        @if (abilityRowsFor(entry.build_id); as rows) {
+                          @if (rows.length > 0) {
+                            <div class="mt-3 pt-3 border-t border-[var(--color-border)] grid gap-2">
+                              @for (row of rows; track row.slot) {
+                                <div class="flex items-center justify-between gap-2">
+                                  <span class="text-xs font-medium text-[var(--color-text-secondary)] truncate max-w-[120px]">
+                                    {{ row.itemName }}
+                                  </span>
+                                  <app-ability-bar [slots]="row.slots" [emptyLabel]="t('comps.noAbility')" />
+                                </div>
+                              }
+                            </div>
+                          }
                         }
                       </div>
                     }
-                  }
-                </li>
-              }
-            </ul>
-          }
-        </section>
-
-        @if (performance(); as perf) {
-          <section class="card grid gap-4 p-5" [attr.aria-label]="t('comps.performance')">
-            <header>
-              <h2 class="text-lg font-semibold" style="color: var(--color-text)">
-                {{ t('comps.performance') }}
-              </h2>
-              <p class="text-sm" style="color: var(--color-text-secondary)">
-                Aggregated from {{ perf.events_with_battles }} event(s) with linked battles.
-              </p>
-            </header>
-            @if (perf.stats.total_battles === 0) {
-              <p class="text-sm" style="color: var(--color-text-secondary)">
-                No battles linked to events using this comp yet.
-              </p>
-            } @else {
-              <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
-                <div class="surface p-3">
-                  <p class="text-xs uppercase" style="color: var(--color-text-secondary)">
-                    Battles
-                  </p>
-                  <p class="text-xl font-bold" style="color: var(--color-text)">
-                    {{ perf.stats.total_battles }}
-                  </p>
-                </div>
-                <div class="surface p-3">
-                  <p class="text-xs uppercase" style="color: var(--color-text-secondary)">W/L</p>
-                  <p class="text-xl font-bold" style="color: var(--color-text)">
-                    {{ perf.stats.wins }}-{{ perf.stats.losses }}
-                  </p>
-                </div>
-                <div class="surface p-3">
-                  <p class="text-xs uppercase" style="color: var(--color-text-secondary)">
-                    Win rate
-                  </p>
-                  <p class="text-xl font-bold" [style.color]="winRateColor(perf.stats.win_rate)">
-                    {{ formatPercent(perf.stats.win_rate) }}
-                  </p>
-                </div>
-                <div class="surface p-3">
-                  <p class="text-xs uppercase" style="color: var(--color-text-secondary)">K/D</p>
-                  <p class="text-xl font-bold" style="color: var(--color-text)">
-                    {{ formatRatio(perf.stats.kill_death_ratio) }}
-                  </p>
-                  <p class="text-xs" style="color: var(--color-text-secondary)">
-                    {{ perf.stats.total_kills }}/{{ perf.stats.total_deaths }}
-                  </p>
-                </div>
-                <div class="surface p-3">
-                  <p class="text-xs uppercase" style="color: var(--color-text-secondary)">
-                    Kill fame
-                  </p>
-                  <p class="text-xl font-bold" style="color: var(--color-text)">
-                    {{ formatNumber(perf.stats.total_kill_fame) }}
-                  </p>
-                </div>
-              </div>
-
-              @if (perf.stats.top_opponents.length > 0) {
-                <!-- Shared .table class (thead/hover/borders come from the
-                   design system) inside a horizontal-scroll wrapper, matching
-                   every other table in the app — this one used to clip its
-                   rightmost columns with overflow-hidden instead of
-                   scrolling them into view on narrow screens. -->
-                <div class="mt-2 overflow-x-auto">
-                  <table class="table">
-                    <thead>
-                      <tr>
-                        <th class="text-left">Opponent</th>
-                        <th class="text-right">Battles</th>
-                        <th class="text-right">W-L</th>
-                        <th class="text-right">Win %</th>
-                        <th class="text-right">Our fame</th>
-                        <th class="text-right">Their fame</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      @for (opponent of perf.stats.top_opponents; track opponentKey(opponent)) {
-                        <tr>
-                          <td>{{ opponent.guild_name }}</td>
-                          <td class="text-right">{{ opponent.battles }}</td>
-                          <td class="text-right">{{ opponent.wins }}-{{ opponent.losses }}</td>
-                          <td
-                            class="text-right"
-                            [style.color]="winRateColor(opponentBattlesWinRate(opponent))"
-                          >
-                            {{ formatPercent(opponentBattlesWinRate(opponent)) }}
-                          </td>
-                          <td class="text-right">{{ formatNumber(opponent.guild_kill_fame) }}</td>
-                          <td class="text-right">
-                            {{ formatNumber(opponent.opponent_kill_fame) }}
-                          </td>
-                        </tr>
-                      }
-                    </tbody>
-                  </table>
-                </div>
+                  </div>
+                </section>
               }
             }
-          </section>
-        }
+          </div>
+
+          <!-- RIGHT COLUMN: Tactical Analytics & Blueprint Sidebar (4 cols) -->
+          <aside class="lg:col-span-4 grid gap-5">
+            <!-- Blueprint Stats Card -->
+            <div class="card p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl grid gap-4">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]">
+                Role Composition Balance
+              </h3>
+
+              <!-- Role Balance Progress Bar -->
+              <div class="flex h-3 w-full rounded-full overflow-hidden bg-[var(--color-surface-2)]">
+                @for (dist of compositionStats().roleDistribution; track dist.role) {
+                  <div
+                    [style.width.%]="formatRolePercent(dist.quantity, current.total_quantity)"
+                    [style.background-color]="roleColorHex(dist.role)"
+                    [appTooltip]="roleLabel(dist.role) + ': ' + dist.quantity"
+                  ></div>
+                }
+              </div>
+
+              <div class="grid grid-cols-2 gap-2 text-xs">
+                @for (dist of compositionStats().roleDistribution; track dist.role) {
+                  <div class="flex items-center justify-between p-2 rounded-lg bg-[var(--color-surface-2)]">
+                    <div class="flex items-center gap-1.5">
+                      <span class="w-2 h-2 rounded-full" [style.background-color]="roleColorHex(dist.role)"></span>
+                      <span>{{ roleLabel(dist.role) }}</span>
+                    </div>
+                    <span class="font-bold">{{ dist.quantity }} ({{ formatRolePercent(dist.quantity, current.total_quantity) }}%)</span>
+                  </div>
+                }
+              </div>
+
+              @if (compositionStats().weaponNames.length > 0) {
+                <div class="pt-3 border-t border-[var(--color-border)]">
+                  <span class="text-xs font-semibold text-[var(--color-text-secondary)] block mb-1">Weapons In Comp</span>
+                  <div class="flex flex-wrap gap-1">
+                    @for (wName of compositionStats().weaponNames; track wName) {
+                      <span class="chip text-xs">{{ wName }}</span>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+
+            <!-- Performance Telemetry Card -->
+            @if (performance(); as perf) {
+              <div class="card p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl grid gap-4">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]">
+                  Battle Performance Record
+                </h3>
+
+                <div class="grid grid-cols-2 gap-3 text-center">
+                  <div class="p-3 bg-[var(--color-surface-2)] rounded-lg">
+                    <div class="text-xl font-bold" [style.color]="winRateColor(perf.stats.win_rate)">
+                      {{ formatPercent(perf.stats.win_rate) }}
+                    </div>
+                    <div class="text-xs text-[var(--color-text-secondary)]">Win Rate</div>
+                  </div>
+                  <div class="p-3 bg-[var(--color-surface-2)] rounded-lg">
+                    <div class="text-xl font-bold text-[var(--color-text)]">
+                      {{ formatRatio(perf.stats.kill_death_ratio) }}
+                    </div>
+                    <div class="text-xs text-[var(--color-text-secondary)]">K / D Ratio</div>
+                  </div>
+                </div>
+
+                <div class="text-xs space-y-1.5 text-[var(--color-text-secondary)]">
+                  <div class="flex justify-between">
+                    <span>Total Battles:</span>
+                    <strong class="text-[var(--color-text)]">{{ perf.stats.total_battles }}</strong>
+                  </div>
+                  <div class="flex justify-between">
+                    <span>Wins / Losses:</span>
+                    <strong class="text-[var(--color-text)]">{{ perf.stats.wins }}W - {{ perf.stats.losses }}L</strong>
+                  </div>
+                  <div class="flex justify-between">
+                    <span>Kill Fame Earned:</span>
+                    <strong class="text-[var(--color-text)]">{{ formatNumber(perf.stats.total_kill_fame) }}</strong>
+                  </div>
+                </div>
+
+                @if (perf.stats.top_opponents.length > 0) {
+                  <div class="pt-3 border-t border-[var(--color-border)]">
+                    <span class="text-xs font-semibold text-[var(--color-text-secondary)] block mb-2">Top Opponent Matchups</span>
+                    <div class="overflow-x-auto">
+                      <table class="table text-xs">
+                        <thead>
+                          <tr>
+                            <th class="text-left">Opponent</th>
+                            <th class="text-right">W-L</th>
+                            <th class="text-right">Win%</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (opponent of perf.stats.top_opponents; track opponentKey(opponent)) {
+                            <tr>
+                              <td>{{ opponent.guild_name }}</td>
+                              <td class="text-right">{{ opponent.wins }}-{{ opponent.losses }}</td>
+                              <td class="text-right" [style.color]="winRateColor(opponentBattlesWinRate(opponent))">
+                                {{ formatPercent(opponentBattlesWinRate(opponent)) }}
+                              </td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+          </aside>
+        </div>
       </app-page-stack>
 
       @if (comparing()) {
@@ -707,6 +697,37 @@ export class CompDetailPage {
       equipmentCoverage: `${equippedBuildCount}/${comp?.builds.length ?? 0} builds have a weapon`,
     };
   });
+
+  protected readonly roleColorMap: Record<BuildRole, string> = {
+    tank: 'var(--role-tank)',
+    healer: 'var(--role-healer)',
+    support: 'var(--role-support)',
+    dps: 'var(--role-dps)',
+    battle_mount: 'var(--role-bm)',
+    brawler: 'var(--role-brawler)',
+  };
+
+  protected roleColorHex(role: BuildRole): string {
+    return this.roleColorMap[role] ?? 'var(--color-primary)';
+  }
+
+  protected readonly groupedBuildsByRole = computed(() => {
+    const current = this.comp();
+    if (!current) return [];
+    const groups: { role: BuildRole; totalSlots: number; entries: typeof current.builds }[] = [];
+    for (const role of ROLES) {
+      const entries = current.builds.filter((b) => b.build.role === role);
+      if (entries.length > 0) {
+        const totalSlots = entries.reduce((sum, e) => sum + e.quantity, 0);
+        groups.push({ role, totalSlots, entries });
+      }
+    }
+    return groups;
+  });
+
+  protected formatRolePercent(quantity: number, total: number): number {
+    return total > 0 ? Math.round((quantity / total) * 100) : 0;
+  }
 
   /**
    * The comp row on screen.

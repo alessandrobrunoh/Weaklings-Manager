@@ -265,130 +265,133 @@ type PendingDelete =
               [message]="comps().length === 0 ? t('common.empty') : t('comps.noCompsMatch')"
             />
           } @else {
-            <div class="overflow-x-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
-              <table class="w-full text-left text-sm border-collapse">
-                <thead>
-                  <tr class="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] font-medium">
-                    <th class="py-3 px-4">{{ t('common.name') }}</th>
-                    <th class="py-3 px-3">{{ t('common.category') }}</th>
-                    <th class="py-3 px-3">{{ t('comps.slots') }}</th>
-                    <th class="py-3 px-3 text-right">{{ t('comps.winrate') }}</th>
-                    <th class="py-3 px-4 text-right">{{ t('common.actions') }}</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-[var(--color-border)]">
-                  @for (item of visibleCompRows(); track item.comp.id) {
-                    <tr
-                      class="hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors"
-                      (click)="openComp(item.comp)"
-                    >
-                      <td class="py-3 px-4" [style.padding-left.rem]="1 + item.depth * 1.5">
-                        <div class="flex items-center gap-2">
-                          @if (compFilterType() === 'all' && !hasActiveCompCriteria() && item.children.length > 0) {
-                            <button
-                              type="button"
-                              class="flex shrink-0 items-center justify-center w-6 h-6 rounded hover:bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] transition-transform"
-                              (click)="$event.stopPropagation(); toggleParentExpand(item.comp.id)"
-                              [appTooltip]="isExpanded(item.comp.id) ? t('comps.collapseAll') : t('comps.expandAll')"
-                              [attr.aria-label]="(isExpanded(item.comp.id) ? t('comps.collapseAll') : t('comps.expandAll')) + ': ' + item.comp.name"
-                              [attr.aria-expanded]="isExpanded(item.comp.id)"
-                              tooltipPosition="top"
-                            >
-                              <app-icon
-                                [name]="isExpanded(item.comp.id) ? 'chevron-down' : 'chevron-right'"
-                                size="0.875rem"
-                              />
-                            </button>
-                          } @else if (item.depth > 0) {
-                            <span class="font-mono text-xs text-[var(--color-text-tertiary)] select-none" aria-hidden="true">
-                              {{ item.isLastSibling ? '└──' : '├──' }}
-                            </span>
-                          } @else {
-                            <span class="inline-block w-6 text-center text-[var(--color-text-tertiary)]" aria-hidden="true">•</span>
-                          }
+            <div class="grid gap-3">
+              @for (item of visibleCompRows(); track item.comp.id) {
+                <div
+                  class="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-hover)] cursor-pointer transition-all"
+                  [style.margin-left.rem]="item.depth * 1.5"
+                  (click)="openComp(item.comp)"
+                >
+                  <!-- Comp Info & Ancestry -->
+                  <div class="flex items-center gap-3 min-w-0 flex-1">
+                    @if (compFilterType() === 'all' && !hasActiveCompCriteria() && item.children.length > 0) {
+                      <button
+                        type="button"
+                        class="flex shrink-0 items-center justify-center w-7 h-7 rounded-lg bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-transform"
+                        (click)="$event.stopPropagation(); toggleParentExpand(item.comp.id)"
+                        [appTooltip]="isExpanded(item.comp.id) ? t('comps.collapseAll') : t('comps.expandAll')"
+                        [attr.aria-label]="(isExpanded(item.comp.id) ? t('comps.collapseAll') : t('comps.expandAll')) + ': ' + item.comp.name"
+                        [attr.aria-expanded]="isExpanded(item.comp.id)"
+                        tooltipPosition="top"
+                      >
+                        <app-icon
+                          [name]="isExpanded(item.comp.id) ? 'chevron-down' : 'chevron-right'"
+                          size="0.875rem"
+                        />
+                      </button>
+                    } @else if (item.depth > 0) {
+                      <span class="font-mono text-sm text-[var(--color-text-tertiary)] select-none pl-2" aria-hidden="true">
+                        {{ item.isLastSibling ? '└──' : '├──' }}
+                      </span>
+                    }
 
-                          <div class="flex flex-col gap-0.5 min-w-0">
-                            <div class="flex flex-wrap items-center gap-1.5">
-                              <span class="font-semibold text-[var(--color-text)]">{{ item.comp.name }}</span>
-                              <span class="chip text-xs">v{{ item.comp.version }}</span>
-                              <span
-                                class="chip text-xs"
-                                [class.chip--tonal]="item.depth > 0"
-                                [class.chip--primary]="item.depth === 0"
-                              >
-                                {{ item.depth > 0 ? t('comps.badge.variant') : t('comps.badge.parent') }}
-                              </span>
-                            </div>
+                    <div class="flex flex-col gap-1 min-w-0">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="font-bold text-base text-[var(--color-text)]">{{ item.comp.name }}</span>
+                        <span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
+                          v{{ item.comp.version }}
+                        </span>
+                        <span
+                          class="px-2 py-0.5 rounded-full text-xs font-bold"
+                          [class.bg-[var(--color-primary-subtle)]]="item.depth === 0"
+                          [class.text-[var(--color-primary)]]="item.depth === 0"
+                          [class.bg-[var(--color-surface-2)]]="item.depth > 0"
+                          [class.text-[var(--color-text-secondary)]]="item.depth > 0"
+                        >
+                          {{ item.depth > 0 ? t('comps.badge.variant') : t('comps.badge.parent') }}
+                        </span>
+                        @if (item.comp.category_name) {
+                          <span class="chip text-xs">{{ item.comp.category_name }}</span>
+                        }
+                      </div>
 
-                            @if (compFilterType() === 'variants') {
-                              <div class="text-xs text-[var(--color-text-secondary)] flex items-center gap-1 mt-0.5">
-                                <span>↳ {{ t('comps.derivedFrom') }}:</span>
-                                <a
-                                  [routerLink]="['/comps', item.comp.parent_id]"
-                                  class="underline hover:text-[var(--color-text)] font-medium"
-                                  (click)="$event.stopPropagation()"
-                                >
-                                  {{ getParentCompName(item.comp.parent_id) }}
-                                </a>
-                              </div>
-                            } @else if (item.comp.description) {
-                              <span class="text-xs text-[var(--color-text-secondary)] line-clamp-1">
-                                {{ item.comp.description }}
-                              </span>
-                            }
-                          </div>
-                        </div>
-                      </td>
-                      <td class="py-3 px-3">
-                        <span class="chip">{{ item.comp.category_name || t('comps.noCategory') }}</span>
-                      </td>
-                      <td class="py-3 px-3 text-[var(--color-text)]">
-                        @if (item.capacityIncrement === null) {
-                          {{ item.comp.build_count }} / {{ item.comp.total_quantity }}
-                        } @else {
-                          <span>{{ formatCapacityIncrement(item.capacityIncrement) }} = {{ item.comp.total_quantity }}</span>
-                        }
-                      </td>
-                      <td class="py-3 px-3 text-right">
-                        @if (compPerformance(item.comp.id); as performance) {
-                          <span class="font-medium">{{ formatPercent(performance.stats.win_rate) }}</span>
-                        } @else {
-                          <span class="text-[var(--color-text-tertiary)]">-</span>
-                        }
-                      </td>
-                      <td class="py-3 px-4 text-right">
-                        <div class="flex flex-wrap items-center justify-end gap-1.5" (click)="$event.stopPropagation()">
-                          @if (canManageComps()) {
-                            <button
-                              type="button"
-                              class="btn btn--outline btn--sm"
-                              (click)="openCreateVariant(item.comp)"
-                              [appTooltip]="t('comps.createVariantTooltip')"
-                              tooltipPosition="bottom"
-                            >
-                              <app-icon name="plus" size="0.75rem" />
-                              {{ t('comps.addVariant') }}
-                            </button>
-                          }
-                          <a class="btn btn--tonal btn--sm" [routerLink]="['/comps', item.comp.id]">
-                            {{ t('common.open') }}
+                      @if (compFilterType() === 'variants') {
+                        <div class="text-xs text-[var(--color-text-secondary)] flex items-center gap-1">
+                          <span>↳ {{ t('comps.derivedFrom') }}:</span>
+                          <a
+                            [routerLink]="['/comps', item.comp.parent_id]"
+                            class="underline hover:text-[var(--color-text)] font-semibold"
+                            (click)="$event.stopPropagation()"
+                          >
+                            {{ getParentCompName(item.comp.parent_id) }}
                           </a>
-                          @if (canManageComps()) {
-                            <button
-                              type="button"
-                              class="btn btn--danger btn--sm"
-                              [disabled]="saving()"
-                              (click)="askDeleteComp(item.comp)"
-                            >
-                              {{ t('common.delete') }}
-                            </button>
+                        </div>
+                      } @else if (item.comp.description) {
+                        <span class="text-xs text-[var(--color-text-secondary)] line-clamp-1">
+                          {{ item.comp.description }}
+                        </span>
+                      }
+                    </div>
+                  </div>
+
+                  <!-- Comp Metrics & Actions -->
+                  <div class="flex flex-wrap items-center justify-between md:justify-end gap-3 shrink-0">
+                    <!-- Capacity & Win Rate -->
+                    <div class="flex items-center gap-4 text-xs">
+                      <div class="text-right">
+                        <div class="text-[var(--color-text-secondary)]">Roster Capacity</div>
+                        <div class="font-bold text-[var(--color-text)]">
+                          @if (item.capacityIncrement === null) {
+                            {{ item.comp.build_count }} builds · {{ item.comp.total_quantity }} slots
+                          } @else {
+                            {{ formatCapacityIncrement(item.capacityIncrement) }} = {{ item.comp.total_quantity }}
                           }
                         </div>
-                      </td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
+                      </div>
+
+                      <div class="text-right pl-3 border-l border-[var(--color-border)]">
+                        <div class="text-[var(--color-text-secondary)]">Win Rate</div>
+                        @if (compPerformance(item.comp.id); as performance) {
+                          <div class="font-bold text-sm text-[var(--color-text)]">
+                            {{ formatPercent(performance.stats.win_rate) }}
+                          </div>
+                        } @else {
+                          <div class="text-[var(--color-text-tertiary)] font-bold">—</div>
+                        }
+                      </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex items-center gap-1.5" (click)="$event.stopPropagation()">
+                      @if (canManageComps()) {
+                        <button
+                          type="button"
+                          class="btn btn--outline btn--sm"
+                          (click)="openCreateVariant(item.comp)"
+                          [appTooltip]="t('comps.createVariantTooltip')"
+                          tooltipPosition="bottom"
+                        >
+                          <app-icon name="plus" size="0.75rem" />
+                          {{ t('comps.addVariant') }}
+                        </button>
+                      }
+                      <a class="btn btn--tonal btn--sm" [routerLink]="['/comps', item.comp.id]">
+                        {{ t('common.open') }}
+                      </a>
+                      @if (canManageComps()) {
+                        <button
+                          type="button"
+                          class="btn btn--danger btn--sm"
+                          [disabled]="saving()"
+                          (click)="askDeleteComp(item.comp)"
+                        >
+                          {{ t('common.delete') }}
+                        </button>
+                      }
+                    </div>
+                  </div>
+                </div>
+              }
             </div>
           }
         </section>
@@ -409,16 +412,16 @@ type PendingDelete =
           (rowClick)="openBuild($event)"
         >
           <ng-template dataTableCell="name" let-row>
-            <span style="font-weight: 500">{{ row.name }}</span>
+            <span class="font-bold text-sm">{{ row.name }}</span>
           </ng-template>
           <ng-template dataTableCell="role" let-row>
-            <span class="chip">{{ roleLabel(row.role) }}</span>
+            <span class="chip font-semibold">{{ roleLabel(row.role) }}</span>
           </ng-template>
           <ng-template dataTableCell="category" let-row>
-            <span class="chip">{{ row.category_name || t('comps.noCategory') }}</span>
+            <span class="chip text-xs">{{ row.category_name || t('comps.noCategory') }}</span>
           </ng-template>
           <ng-template dataTableCell="items" let-row>
-            {{ row.item_count }}
+            <span class="font-mono text-xs font-semibold">{{ row.item_count }}/10 slots</span>
           </ng-template>
           <ng-template dataTableCell="actions" let-row>
             <div class="flex flex-wrap justify-end gap-2" (click)="$event.stopPropagation()">

@@ -46,6 +46,8 @@ import { AlbionCatalogService } from '../../shared/services/albion-catalog.servi
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { Icon } from '../../shared/components/icon/icon';
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 const SLOT_LABELS: Record<BuildSlot, string> = {
   weapon: 'Weapon',
@@ -113,6 +115,8 @@ const ITEM_TIERS = [
     VersionSwitcher,
     VersionDiffList,
     Dialog,
+    Icon,
+    TooltipDirective,
   ],
   template: `
     @if (loading()) {
@@ -218,111 +222,130 @@ const ITEM_TIERS = [
           </form>
         }
 
-        <section class="card grid gap-4 p-5" [attr.aria-label]="t('comps.mainLoadout')">
-          <header class="flex items-center justify-between gap-3">
-            <h2 class="text-lg font-semibold" style="color: var(--color-text)">
-              {{ t('comps.mainLoadout') }} ({{ mainItems().length }}/{{ SLOT_ORDER.length }})
-            </h2>
-            <span class="chip">{{ current.item_count }} {{ t('comps.items') }}</span>
-          </header>
-
-          <app-equipment-grid
-            [items]="mainItems()"
-            [canManage]="canManage() && mode() === 'edit'"
-            [editingSlot]="editingSlotFor('main')"
-            [draftTier]="draftTier()"
-            [draftSearch]="draftSearch()"
-            [draftItemId]="draftItemId()"
-            [searchResults]="searchResults()"
-            [searchLoading]="searchLoading()"
-            [tiers]="ITEM_TIERS"
-            (slotToggle)="onSlotToggle('main', $event)"
-            (tierChange)="onDraftTierChangeValue($event)"
-            (searchChange)="onDraftSearchChangeValue($event)"
-            (itemSelect)="onDraftItemChangeValue($event)"
-            (saveSlot)="saveSlot('main', $event)"
-            (cancelEdit)="cancelSlotEdit()"
-            (removeItem)="askRemoveItem('main', $event)"
-          />
-
-          @if (abilityRows('main'); as rows) {
-            @if (rows.length > 0) {
-              <div class="grid gap-3 border-t pt-4" style="border-color: var(--color-border)">
-                <div class="grid gap-1">
-                  <h3 class="text-sm font-semibold" style="color: var(--color-text)">
-                    {{ t('comps.abilities') }}
-                  </h3>
-                  <p class="text-sm" style="color: var(--color-text-secondary)">
-                    {{ t('comps.abilitiesHint') }}
+        <!-- 3-COLUMN CHARACTER FORGE -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <!-- COLUMN 1: Equipment Paperdoll (5 cols) -->
+          <div class="lg:col-span-5 grid gap-6">
+            <section class="card p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl grid gap-4">
+              <header class="flex items-center justify-between gap-3">
+                <div>
+                  <h2 class="text-base font-bold text-[var(--color-text)]">
+                    {{ t('comps.mainLoadout') }}
+                  </h2>
+                  <p class="text-xs text-[var(--color-text-secondary)]">
+                    {{ mainItems().length }}/{{ SLOT_ORDER.length }} slots equipped · {{ current.item_count }} items total
                   </p>
                 </div>
-                @for (row of rows; track row.slot) {
-                  <div class="grid gap-2 sm:grid-cols-[10rem_1fr] sm:items-center">
-                    <span class="text-sm font-medium" style="color: var(--color-text-secondary)">
-                      {{ row.itemName }}
-                    </span>
-                    <app-ability-bar
-                      [slots]="row.slots"
-                      [canManage]="canManage() && mode() === 'edit'"
-                      [emptyLabel]="t('comps.noAbility')"
-                      (choiceChange)="onAbilityChange('main', row.slot, $event)"
-                    />
-                  </div>
-                }
-              </div>
-            }
-          }
-        </section>
+                <span class="chip font-semibold">{{ roleLabel(current.role) }}</span>
+              </header>
 
-        @if (swapItems().length > 0 || (canManage() && mode() === 'edit')) {
-          <section class="card grid gap-4 p-5" [attr.aria-label]="t('comps.swapLoadout')">
-            <header class="flex items-center justify-between gap-3">
-              <div class="grid gap-1">
-                <h2 class="text-lg font-semibold" style="color: var(--color-text)">
-                  {{ t('comps.swapLoadout') }} ({{ swapItems().length }}/{{ SLOT_ORDER.length }})
-                </h2>
-                <p class="text-sm" style="color: var(--color-text-secondary)">
-                  {{ t('comps.swapHint') }}
-                </p>
-              </div>
-            </header>
-
-            @if (swapItems().length === 0 && mode() !== 'edit') {
-              <p class="text-sm" style="color: var(--color-text-secondary)">
-                {{ t('comps.noSwap') }}
-              </p>
-            } @else {
               <app-equipment-grid
-                [items]="swapItems()"
+                [items]="mainItems()"
                 [canManage]="canManage() && mode() === 'edit'"
-                [editingSlot]="editingSlotFor('swap')"
+                [editingSlot]="editingSlotFor('main')"
                 [draftTier]="draftTier()"
                 [draftSearch]="draftSearch()"
                 [draftItemId]="draftItemId()"
                 [searchResults]="searchResults()"
                 [searchLoading]="searchLoading()"
                 [tiers]="ITEM_TIERS"
-                (slotToggle)="onSlotToggle('swap', $event)"
+                (slotToggle)="onSlotToggle('main', $event)"
                 (tierChange)="onDraftTierChangeValue($event)"
                 (searchChange)="onDraftSearchChangeValue($event)"
                 (itemSelect)="onDraftItemChangeValue($event)"
-                (saveSlot)="saveSlot('swap', $event)"
+                (saveSlot)="saveSlot('main', $event)"
                 (cancelEdit)="cancelSlotEdit()"
-                (removeItem)="askRemoveItem('swap', $event)"
+                (removeItem)="askRemoveItem('main', $event)"
               />
+            </section>
 
-              @if (abilityRows('swap'); as rows) {
+            <!-- Swap Loadout Accordion / Card -->
+            @if (swapItems().length > 0 || (canManage() && mode() === 'edit')) {
+              <section class="card p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl grid gap-4">
+                <header class="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 class="text-base font-bold text-[var(--color-text)]">
+                      {{ t('comps.swapLoadout') }}
+                    </h2>
+                    <p class="text-xs text-[var(--color-text-secondary)]">
+                      {{ swapItems().length }}/{{ SLOT_ORDER.length }} optional tactical swap items
+                    </p>
+                  </div>
+                </header>
+
+                @if (swapItems().length === 0 && mode() !== 'edit') {
+                  <p class="text-xs text-[var(--color-text-secondary)]">
+                    {{ t('comps.noSwap') }}
+                  </p>
+                } @else {
+                  <app-equipment-grid
+                    [items]="swapItems()"
+                    [canManage]="canManage() && mode() === 'edit'"
+                    [editingSlot]="editingSlotFor('swap')"
+                    [draftTier]="draftTier()"
+                    [draftSearch]="draftSearch()"
+                    [draftItemId]="draftItemId()"
+                    [searchResults]="searchResults()"
+                    [searchLoading]="searchLoading()"
+                    [tiers]="ITEM_TIERS"
+                    (slotToggle)="onSlotToggle('swap', $event)"
+                    (tierChange)="onDraftTierChangeValue($event)"
+                    (searchChange)="onDraftSearchChangeValue($event)"
+                    (itemSelect)="onDraftItemChangeValue($event)"
+                    (saveSlot)="saveSlot('swap', $event)"
+                    (cancelEdit)="cancelSlotEdit()"
+                    (removeItem)="askRemoveItem('swap', $event)"
+                  />
+                }
+              </section>
+            }
+          </div>
+
+          <!-- COLUMN 2: Spell & Ability Deck (4 cols) -->
+          <div class="lg:col-span-4 grid gap-5">
+            <section class="card p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl grid gap-4">
+              <header>
+                <h2 class="text-base font-bold text-[var(--color-text)]">
+                  {{ t('comps.abilities') }}
+                </h2>
+                <p class="text-xs text-[var(--color-text-secondary)]">
+                  {{ t('comps.abilitiesHint') }}
+                </p>
+              </header>
+
+              <!-- Main Loadout Spells -->
+              @if (abilityRows('main'); as rows) {
                 @if (rows.length > 0) {
-                  <div class="grid gap-3 border-t pt-4" style="border-color: var(--color-border)">
-                    <h3 class="text-sm font-semibold" style="color: var(--color-text)">
-                      {{ t('comps.abilities') }}
-                    </h3>
+                  <div class="grid gap-3">
                     @for (row of rows; track row.slot) {
-                      <div class="grid gap-2 sm:grid-cols-[10rem_1fr] sm:items-center">
-                        <span
-                          class="text-sm font-medium"
-                          style="color: var(--color-text-secondary)"
-                        >
+                      <div class="p-3 bg-[var(--color-surface-2)] rounded-lg grid gap-1.5 border border-[var(--color-border)]">
+                        <span class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                          {{ row.itemName }}
+                        </span>
+                        <app-ability-bar
+                          [slots]="row.slots"
+                          [canManage]="canManage() && mode() === 'edit'"
+                          [emptyLabel]="t('comps.noAbility')"
+                          (choiceChange)="onAbilityChange('main', row.slot, $event)"
+                        />
+                      </div>
+                    }
+                  </div>
+                } @else {
+                  <p class="text-xs text-[var(--color-text-secondary)]">No abilities configured for main set.</p>
+                }
+              }
+
+              <!-- Swap Loadout Spells -->
+              @if (abilityRows('swap'); as swapRows) {
+                @if (swapRows.length > 0) {
+                  <div class="pt-4 border-t border-[var(--color-border)] grid gap-3">
+                    <span class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                      Swap Set Abilities
+                    </span>
+                    @for (row of swapRows; track row.slot) {
+                      <div class="p-3 bg-[var(--color-surface-2)] rounded-lg grid gap-1.5 border border-[var(--color-border)]">
+                        <span class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">
                           {{ row.itemName }}
                         </span>
                         <app-ability-bar
@@ -336,66 +359,67 @@ const ITEM_TIERS = [
                   </div>
                 }
               }
-            }
-          </section>
-        }
-        <section class="card grid gap-3 p-5" [attr.aria-label]="t('comps.performance')">
-          <header class="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 class="text-lg font-semibold" style="color: var(--color-text)">
-              {{ t('comps.performance') }} · v{{ current.version }}
-            </h2>
-            <span class="chip">
-              {{ t('comps.signups') }}
-              {{ (performance()?.signups_as_primary ?? 0) + (performance()?.signups_as_secondary ?? 0) }}
-            </span>
-          </header>
+            </section>
+          </div>
 
-          @if (performance(); as report) {
-            @if (report.stats; as stats) {
-              <dl class="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
-                <div>
-                  <dt class="label">{{ t('comps.winrate') }}</dt>
-                  <dd class="text-lg font-semibold" style="color: var(--color-text)">
-                    {{ winRate(stats.wins, stats.losses) }}
-                  </dd>
-                </div>
-                <div>
-                  <dt class="label">K / D</dt>
-                  <dd class="text-lg font-semibold" style="color: var(--color-text)">
-                    {{ stats.kills }} / {{ stats.deaths }}
-                  </dd>
-                </div>
-                <div>
-                  <dt class="label">{{ t('comps.matchedPlayers') }}</dt>
-                  <dd class="text-lg font-semibold" style="color: var(--color-text)">
-                    {{ stats.matched_players }}
-                  </dd>
-                </div>
-                <div>
-                  <dt class="label">Battles</dt>
-                  <dd class="text-lg font-semibold" style="color: var(--color-text)">
-                    {{ stats.battles }}
-                  </dd>
-                </div>
-                <div>
-                  <dt class="label">Kill fame</dt>
-                  <dd class="text-lg font-semibold" style="color: var(--color-text)">
-                    {{ stats.kill_fame }}
-                  </dd>
-                </div>
-              </dl>
-              @if (report.players_without_an_albion_link > 0) {
-                <p class="text-sm" style="color: var(--color-text-secondary)">
-                  {{ t('comps.unlinkedPlayers') }}: {{ report.players_without_an_albion_link }}
-                </p>
+          <!-- COLUMN 3: Performance & Signups Sidebar (3 cols) -->
+          <aside class="lg:col-span-3 grid gap-5">
+            <section class="card p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl grid gap-4">
+              <header class="flex items-center justify-between gap-2">
+                <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]">
+                  {{ t('comps.performance') }} · v{{ current.version }}
+                </h2>
+                <span class="chip text-xs">
+                  {{ (performance()?.signups_as_primary ?? 0) + (performance()?.signups_as_secondary ?? 0) }} Signups
+                </span>
+              </header>
+
+              @if (performance(); as report) {
+                @if (report.stats; as stats) {
+                  <div class="grid grid-cols-2 gap-3 text-center">
+                    <div class="p-2.5 bg-[var(--color-surface-2)] rounded-lg">
+                      <div class="text-base font-bold text-[var(--color-text)]">
+                        {{ winRate(stats.wins, stats.losses) }}
+                      </div>
+                      <div class="text-[10px] text-[var(--color-text-secondary)]">{{ t('comps.winrate') }}</div>
+                    </div>
+                    <div class="p-2.5 bg-[var(--color-surface-2)] rounded-lg">
+                      <div class="text-base font-bold text-[var(--color-text)]">
+                        {{ stats.kills }}/{{ stats.deaths }}
+                      </div>
+                      <div class="text-[10px] text-[var(--color-text-secondary)]">K / D Ratio</div>
+                    </div>
+                  </div>
+
+                  <div class="text-xs space-y-1.5 text-[var(--color-text-secondary)] pt-2 border-t border-[var(--color-border)]">
+                    <div class="flex justify-between">
+                      <span>Battles Tracked:</span>
+                      <strong class="text-[var(--color-text)]">{{ stats.battles }}</strong>
+                    </div>
+                    <div class="flex justify-between">
+                      <span>{{ t('comps.matchedPlayers') }}:</span>
+                      <strong class="text-[var(--color-text)]">{{ stats.matched_players }}</strong>
+                    </div>
+                    <div class="flex justify-between">
+                      <span>Kill Fame:</span>
+                      <strong class="text-[var(--color-text)]">{{ stats.kill_fame }}</strong>
+                    </div>
+                  </div>
+
+                  @if (report.players_without_an_albion_link > 0) {
+                    <div class="text-xs text-[var(--color-warning)] pt-2 border-t border-[var(--color-border)]">
+                      {{ t('comps.unlinkedPlayers') }}: {{ report.players_without_an_albion_link }}
+                    </div>
+                  }
+                } @else {
+                  <p class="text-xs text-[var(--color-text-secondary)]">
+                    {{ t('comps.noBattleData') }}
+                  </p>
+                }
               }
-            } @else {
-              <p class="text-sm" style="color: var(--color-text-secondary)">
-                {{ t('comps.noBattleData') }}
-              </p>
-            }
-          }
-        </section>
+            </section>
+          </aside>
+        </div>
       </app-page-stack>
 
       @if (comparing()) {

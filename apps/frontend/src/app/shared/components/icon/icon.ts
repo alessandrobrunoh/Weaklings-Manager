@@ -14,7 +14,9 @@ export type IconName =
   | 'chevron-up'
   | 'close'
   | 'discord'
+  | 'edit'
   | 'filter'
+  | 'grip'
   | 'hammer'
   | 'info'
   | 'link'
@@ -132,8 +134,20 @@ export type IconName =
           <path d="m8 6-.7-2" />
           <path d="m16 6 .7-2" />
         }
+        @case ('edit') {
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+        }
         @case ('filter') {
           <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+        }
+        @case ('grip') {
+          <circle cx="9" cy="5" r="1.5" fill="currentColor" stroke="none" />
+          <circle cx="9" cy="12" r="1.5" fill="currentColor" stroke="none" />
+          <circle cx="9" cy="19" r="1.5" fill="currentColor" stroke="none" />
+          <circle cx="15" cy="5" r="1.5" fill="currentColor" stroke="none" />
+          <circle cx="15" cy="12" r="1.5" fill="currentColor" stroke="none" />
+          <circle cx="15" cy="19" r="1.5" fill="currentColor" stroke="none" />
         }
         @case ('hammer') {
           <path d="m15 12-8.5 8.5a2.1 2.1 0 0 1-3-3L12 9" />

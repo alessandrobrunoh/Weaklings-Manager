@@ -34,6 +34,7 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 
+import { Icon } from '../../shared/components/icon/icon';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 const PAGE_SIZE = 10;
@@ -72,6 +73,7 @@ interface BattleScopeStats {
     StatCard,
     TooltipDirective,
     ViewToggle,
+    Icon,
   ],
   template: `
     <app-page-header [title]="t('battles.title')" [subtitle]="t('battles.subtitle')">
@@ -90,31 +92,9 @@ interface BattleScopeStats {
         [appTooltip]="t('battles.refresh_now')"
         tooltipPosition="bottom"
       >
+        <app-icon name="sparkles" size="0.875rem" />
         {{ t('battles.refresh_now') }}
       </button>
-      @if (tab() === 'me' && selectedBattleIds().length > 0) {
-        <span class="chip font-mono">
-          {{ selectedBattleIds().length }} {{ t('battles.selected') }}
-        </span>
-        <button
-          type="button"
-          class="btn btn--primary btn--sm"
-          (click)="openSelectedGroup()"
-          [appTooltip]="t('battles.group_selected')"
-          tooltipPosition="bottom"
-        >
-          {{ t('battles.group_selected') }}
-        </button>
-        <button
-          type="button"
-          class="btn btn--ghost btn--sm"
-          (click)="clearSelection()"
-          [appTooltip]="t('common.cancel')"
-          tooltipPosition="bottom"
-        >
-          {{ t('common.cancel') }}
-        </button>
-      }
       <app-view-toggle
         pageTabs
         [options]="tabOptions()"
@@ -226,6 +206,29 @@ interface BattleScopeStats {
             }
           </ng-template>
         </app-data-table>
+      }
+
+      @if (tab() === 'me' && selectedBattleIds().length > 0) {
+        <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-2xl bg-[var(--color-surface)] border-2 border-[var(--color-primary)] shadow-2xl backdrop-blur">
+          <span class="font-mono text-sm font-bold text-[var(--color-text)]">
+            {{ selectedBattleIds().length }} {{ t('battles.selected') }}
+          </span>
+          <button
+            type="button"
+            class="btn btn--primary btn--sm"
+            (click)="openSelectedGroup()"
+          >
+            <app-icon name="swords" size="0.75rem" />
+            {{ t('battles.group_selected') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm"
+            (click)="clearSelection()"
+          >
+            {{ t('common.cancel') }}
+          </button>
+        </div>
       }
     </app-page-stack>
   `,
