@@ -851,27 +851,35 @@ function normalizeSearchText(value: string): string {
 }
 
 function belongsToSlot(fileName: string, slot: BuildSlot): boolean {
+  // The API catalog uses tiered identifiers (for example `T8_2H_CLAYMORE_AVALON`),
+  // while the slot prefixes describe the tier-independent specialization.
+  const specialization = albionSpecializationIdentifier(fileName);
+
   switch (slot) {
     case 'weapon':
-      return fileName.startsWith('MAIN_') || fileName.startsWith('2H_');
+      return specialization.startsWith('MAIN_') || specialization.startsWith('2H_');
     case 'off_hand':
-      return fileName.startsWith('OFF_');
+      return specialization.startsWith('OFF_');
     case 'head':
-      return fileName.startsWith('HEAD_');
+      return specialization.startsWith('HEAD_');
     case 'armor':
-      return fileName.startsWith('ARMOR_');
+      return specialization.startsWith('ARMOR_');
     case 'shoes':
-      return fileName.startsWith('SHOES_');
+      return specialization.startsWith('SHOES_');
     case 'cape':
-      return fileName === 'CAPE' || fileName.startsWith('CAPEITEM_');
+      return specialization === 'CAPE' || specialization.startsWith('CAPEITEM_');
     case 'bag':
-      return fileName === 'BAG' || fileName.startsWith('BAG_') || fileName.startsWith('BACKPACK_');
+      return (
+        specialization === 'BAG' ||
+        specialization.startsWith('BAG_') ||
+        specialization.startsWith('BACKPACK_')
+      );
     case 'potion':
-      return fileName.startsWith('POTION_');
+      return specialization.startsWith('POTION_');
     case 'food':
-      return fileName.startsWith('MEAL_');
+      return specialization.startsWith('MEAL_');
     case 'mount':
-      return fileName.startsWith('MOUNT_');
+      return specialization.startsWith('MOUNT_');
   }
 }
 
