@@ -66,6 +66,10 @@ export const routes: Routes = [
           import('./features/events/event-detail').then((m) => m.EventDetailPage),
       },
       {
+        path: 'fights/trends',
+        loadComponent: () => import('./features/fights/fight-trends').then((m) => m.FightTrendsPage),
+      },
+      {
         path: 'battles/group',
         loadComponent: () =>
           import('./features/battles/battle-group').then((m) => m.BattleGroupPage),

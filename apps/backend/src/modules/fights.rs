@@ -7,7 +7,7 @@ use axum::{
     extract::Path,
     routing::{get, post},
 };
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DatabaseTransaction, EntityTrait,
     QueryFilter, QueryOrder, Set, TransactionTrait,
@@ -141,6 +141,78 @@ pub struct PlannedFightParticipantView {
 
 /// Explicit limits and results of roster-to-snapshot matching.
 #[derive(Debug, Serialize, ToSchema)]
+pub struct FightTrendView {
+    /// UTC time at which the rolling windows were evaluated.
+    pub generated_at: String,
+    /// Metrics for the most recent 30 complete days.
+    pub last_30_days: FightTrendPeriod,
+    /// Metrics for the 30 days immediately preceding `last_30_days`.
+    pub previous_30_days: FightTrendPeriod,
+    /// Canonical fights beginning on each UTC date in the recent window, including days with zero fights.
+    pub rolling_daily_fight_counts: Vec<FightTrendDay>,
+}
+
+/// One comparable 30-day fight-trend period. Combat values only include fights with a persisted
+/// snapshot; `coverage` describes precisely how much canonical fight data that excludes.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct FightTrendPeriod {
+    pub window_started_at: String,
+    pub window_ended_at: String,
+    /// All canonical fights that started in this period.
+    pub fight_sample_size: i64,
+    /// Fights with at least one persisted segment snapshot, used for kills, deaths and fame.
+    pub combat_sample_size: i64,
+    /// Fights with a friendly guild summary that can establish a win or loss.
+    pub win_sample_size: i64,
+    pub wins: i64,
+    pub losses: i64,
+    pub win_rate: Option<f64>,
+    pub kills: i64,
+    pub deaths: i64,
+    pub kd_ratio: Option<f64>,
+    pub kill_fame: i64,
+    pub coverage: FightTrendCoverage,
+    /// Planned roster selections counted once per linked canonical fight. A repeated event linked
+    /// to multiple fights intentionally contributes to each fight's participation sample.
+    pub planned_participation: FightTrendPlannedParticipation,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct FightTrendCoverage {
+    pub fights_with_snapshots: i64,
+    pub persisted_segments: i64,
+    pub total_segments: i64,
+    pub fights_with_winner_data: i64,
+    pub linked_event_fights: i64,
+    pub linked_events: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct FightTrendPlannedParticipation {
+    pub linked_fights: i64,
+    pub linked_events: i64,
+    pub planned_participant_assignments: i64,
+    pub primary_build_assignments: Vec<FightTrendSelectionCount>,
+    pub secondary_build_assignments: Vec<FightTrendSelectionCount>,
+    pub comp_assignments: Vec<FightTrendSelectionCount>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct FightTrendSelectionCount {
+    pub id: i64,
+    pub name: Option<String>,
+    pub count: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct FightTrendDay {
+    /// UTC calendar date (`YYYY-MM-DD`).
+    pub date: String,
+    pub fights: i64,
+}
+
+/// Explicit limits and results of roster-to-snapshot matching.
+#[derive(Debug, Serialize, ToSchema)]
 pub struct FightParticipantCoverage {
     /// Whether this fight has an event roster to compare.
     pub event_linked: bool,
@@ -165,6 +237,7 @@ pub fn router() -> Router {
         .route("/merge", post(merge_fights))
         .route("/{id}/move-battle", post(move_battle))
         .route("/{id}/split", post(split_fight))
+        .route("/trends", get(get_fight_trends))
         .route("/{id}", get(get_fight))
 }
 
@@ -702,6 +775,323 @@ async fn ordered_battle_ids(db: &DatabaseTransaction, fight_id: i64) -> Result<V
         .into_iter()
         .map(|segment| segment.battle_id)
         .collect())
+}
+
+/// Returns 30-day canonical fight trends with transparent snapshot and winner coverage.
+#[utoipa::path(
+    get,
+    path = "/api/fights/trends",
+    tag = "fights",
+    summary = "Get fight trends",
+    description = "Compares the latest 30 days with the preceding 30 days. Combat totals use persisted canonical-fight snapshots; roster build and comp selections use linked event participants.",
+    security(("session_cookie" = [])),
+    responses(
+        (status = 200, description = "Fight trends", body = FightTrendView),
+        (status = 401, description = "Unauthorized", body = crate::errors::ProblemDetails)
+    )
+)]
+async fn get_fight_trends(
+    _user: UserContext,
+    Extension(db): Extension<DatabaseConnection>,
+    Extension(config): Extension<Config>,
+) -> Result<Json<ApiResponse<FightTrendView>>, AppError> {
+    let window_end = Utc::now();
+    let current_start = window_end - Duration::days(30);
+    let previous_start = current_start - Duration::days(30);
+    let fights = fight::Entity::find()
+        .filter(fight::Column::StartedAt.gte(previous_start))
+        .filter(fight::Column::StartedAt.lt(window_end))
+        .order_by_asc(fight::Column::StartedAt)
+        .all(&db)
+        .await?;
+    let fight_ids = fights.iter().map(|row| row.id).collect::<Vec<_>>();
+    let segments = if fight_ids.is_empty() {
+        Vec::new()
+    } else {
+        fight_battle::Entity::find()
+            .filter(fight_battle::Column::FightId.is_in(fight_ids))
+            .all(&db)
+            .await?
+    };
+    let battle_ids = segments.iter().map(|row| row.battle_id).collect::<Vec<_>>();
+    let snapshots = if battle_ids.is_empty() {
+        Vec::new()
+    } else {
+        GuildBattleSnapshotEntity::find()
+            .filter(GuildBattleSnapshotColumn::BattleId.is_in(battle_ids))
+            .all(&db)
+            .await?
+    };
+    let snapshots_by_battle = snapshots
+        .into_iter()
+        .map(|snapshot| (snapshot.battle_id, snapshot))
+        .collect::<HashMap<_, _>>();
+    let mut segments_by_fight = HashMap::<i64, Vec<fight_battle::Model>>::new();
+    for segment in segments {
+        segments_by_fight
+            .entry(segment.fight_id)
+            .or_default()
+            .push(segment);
+    }
+    let event_ids = fights
+        .iter()
+        .filter_map(|row| row.event_id)
+        .collect::<HashSet<_>>();
+    let events = if event_ids.is_empty() {
+        Vec::new()
+    } else {
+        event::Entity::find()
+            .filter(event::Column::Id.is_in(event_ids.into_iter().collect::<Vec<_>>()))
+            .all(&db)
+            .await?
+    };
+    let participations = if events.is_empty() {
+        Vec::new()
+    } else {
+        event_participation::Entity::find()
+            .filter(event_participation::Column::EventId.is_in(events.iter().map(|row| row.id)))
+            .all(&db)
+            .await?
+    };
+    let build_ids = participations
+        .iter()
+        .flat_map(|row| [Some(row.primary_build_id), row.secondary_build_id])
+        .collect::<Vec<_>>();
+    let builds = if build_ids.is_empty() {
+        Vec::new()
+    } else {
+        build::Entity::find()
+            .filter(build::Column::Id.is_in(build_ids))
+            .all(&db)
+            .await?
+    };
+    let comp_ids = events.iter().map(|row| row.comp_id).collect::<Vec<_>>();
+    let comps = if comp_ids.is_empty() {
+        Vec::new()
+    } else {
+        comp::Entity::find()
+            .filter(comp::Column::Id.is_in(comp_ids))
+            .all(&db)
+            .await?
+    };
+    let event_by_id = events
+        .into_iter()
+        .map(|row| (row.id, row))
+        .collect::<HashMap<_, _>>();
+    let participations_by_event =
+        participations
+            .into_iter()
+            .fold(HashMap::<i64, Vec<_>>::new(), |mut grouped, row| {
+                grouped.entry(row.event_id).or_default().push(row);
+                grouped
+            });
+    let build_names = builds
+        .into_iter()
+        .map(|row| (row.id, row.name))
+        .collect::<HashMap<_, _>>();
+    let comp_names = comps
+        .into_iter()
+        .map(|row| (row.id, row.name))
+        .collect::<HashMap<_, _>>();
+    let last_30_days = build_fight_trend_period(
+        &fights,
+        &segments_by_fight,
+        &snapshots_by_battle,
+        &event_by_id,
+        &participations_by_event,
+        &build_names,
+        &comp_names,
+        &config,
+        current_start,
+        window_end,
+    )?;
+    let previous_30_days = build_fight_trend_period(
+        &fights,
+        &segments_by_fight,
+        &snapshots_by_battle,
+        &event_by_id,
+        &participations_by_event,
+        &build_names,
+        &comp_names,
+        &config,
+        previous_start,
+        current_start,
+    )?;
+    let rolling_daily_fight_counts = (0..30)
+        .map(|offset| {
+            let day = current_start.date_naive() + Duration::days(offset);
+            FightTrendDay {
+                date: day.to_string(),
+                fights: i64::try_from(
+                    fights
+                        .iter()
+                        .filter(|fight| fight.started_at.date_naive() == day)
+                        .count(),
+                )
+                .unwrap_or(i64::MAX),
+            }
+        })
+        .collect();
+    Ok(Json(ApiResponse::new(FightTrendView {
+        generated_at: window_end.to_rfc3339(),
+        last_30_days,
+        previous_30_days,
+        rolling_daily_fight_counts,
+    })))
+}
+
+fn build_fight_trend_period(
+    fights: &[fight::Model],
+    segments_by_fight: &HashMap<i64, Vec<fight_battle::Model>>,
+    snapshots_by_battle: &HashMap<i64, crate::modules::battles::entities::Model>,
+    events_by_id: &HashMap<i64, event::Model>,
+    participations_by_event: &HashMap<i64, Vec<event_participation::Model>>,
+    build_names: &HashMap<i64, String>,
+    comp_names: &HashMap<i64, String>,
+    config: &Config,
+    window_start: chrono::DateTime<Utc>,
+    window_end: chrono::DateTime<Utc>,
+) -> Result<FightTrendPeriod, AppError> {
+    let period_fights = fights.iter().filter(|fight| {
+        let started_at = fight.started_at.with_timezone(&Utc);
+        started_at >= window_start && started_at < window_end
+    });
+    let friendly_guild_ids = config
+        .albion_allied_guild_ids()
+        .into_iter()
+        .chain(std::iter::once(config.albion_guild_id.clone()))
+        .collect::<HashSet<_>>();
+    let friendly_guild_names = config
+        .albion_allied_guild_names()
+        .into_iter()
+        .map(|name| name.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+    let mut fight_sample_size = 0_i64;
+    let mut combat_sample_size = 0_i64;
+    let mut win_sample_size = 0_i64;
+    let mut wins = 0_i64;
+    let mut kills = 0_i64;
+    let mut deaths = 0_i64;
+    let mut kill_fame = 0_i64;
+    let mut persisted_segments = 0_i64;
+    let mut total_segments = 0_i64;
+    let mut linked_event_fights = 0_i64;
+    let mut linked_event_ids = HashSet::new();
+    let mut planned_participant_assignments = 0_i64;
+    let mut primary_builds = HashMap::<i64, i64>::new();
+    let mut secondary_builds = HashMap::<i64, i64>::new();
+    let mut comps = HashMap::<i64, i64>::new();
+
+    for fight in period_fights {
+        fight_sample_size += 1;
+        let segments = segments_by_fight
+            .get(&fight.id)
+            .map_or(&[][..], Vec::as_slice);
+        total_segments += i64::try_from(segments.len()).unwrap_or(i64::MAX);
+        let mut has_snapshot = false;
+        let mut winner = None;
+        for segment in segments {
+            let Some(snapshot) = snapshots_by_battle.get(&segment.battle_id) else {
+                continue;
+            };
+            has_snapshot = true;
+            persisted_segments += 1;
+            let snapshot_players: Vec<BattlePlayer> =
+                parse_snapshot(&snapshot.players_json, "player", snapshot.battle_id)?;
+            for player in snapshot_players.into_iter().filter(|player| {
+                friendly_guild_ids.contains(&player.guild_id)
+                    || friendly_guild_names.contains(&player.guild_name.to_ascii_lowercase())
+            }) {
+                kills += player.kills;
+                deaths += player.deaths;
+                kill_fame += player.kill_fame;
+            }
+            let snapshot_guilds: Vec<BattleGuildSummary> =
+                parse_snapshot(&snapshot.guilds_json, "guild", snapshot.battle_id)?;
+            for guild in snapshot_guilds.into_iter().filter(|guild| {
+                friendly_guild_ids.contains(&guild.id)
+                    || friendly_guild_names.contains(&guild.name.to_ascii_lowercase())
+            }) {
+                winner = Some(winner.unwrap_or(false) || guild.winner);
+            }
+        }
+        if has_snapshot {
+            combat_sample_size += 1;
+        }
+        if let Some(winner) = winner {
+            win_sample_size += 1;
+            if winner {
+                wins += 1;
+            }
+        }
+        if let Some(event_id) = fight.event_id {
+            linked_event_fights += 1;
+            linked_event_ids.insert(event_id);
+            if let Some(event) = events_by_id.get(&event_id) {
+                *comps.entry(event.comp_id).or_default() += 1;
+            }
+            if let Some(participations) = participations_by_event.get(&event_id) {
+                for participation in participations {
+                    planned_participant_assignments += 1;
+                    *primary_builds
+                        .entry(participation.primary_build_id)
+                        .or_default() += 1;
+                    if let Some(build_id) = participation.secondary_build_id {
+                        *secondary_builds.entry(build_id).or_default() += 1;
+                    }
+                }
+            }
+        }
+    }
+    let fights_with_snapshots = combat_sample_size;
+    let fights_with_winner_data = win_sample_size;
+    let selection_counts = |counts: HashMap<i64, i64>, names: &HashMap<i64, String>| {
+        let mut values = counts
+            .into_iter()
+            .map(|(id, count)| FightTrendSelectionCount {
+                id,
+                name: names.get(&id).cloned(),
+                count,
+            })
+            .collect::<Vec<_>>();
+        values.sort_by(|left, right| {
+            right
+                .count
+                .cmp(&left.count)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        values
+    };
+    Ok(FightTrendPeriod {
+        window_started_at: window_start.to_rfc3339(),
+        window_ended_at: window_end.to_rfc3339(),
+        fight_sample_size,
+        combat_sample_size,
+        win_sample_size,
+        wins,
+        losses: win_sample_size - wins,
+        win_rate: (win_sample_size > 0).then(|| wins as f64 / win_sample_size as f64),
+        kills,
+        deaths,
+        kd_ratio: (deaths > 0).then(|| kills as f64 / deaths as f64),
+        kill_fame,
+        coverage: FightTrendCoverage {
+            fights_with_snapshots,
+            persisted_segments,
+            total_segments,
+            fights_with_winner_data,
+            linked_event_fights,
+            linked_events: i64::try_from(linked_event_ids.len()).unwrap_or(i64::MAX),
+        },
+        planned_participation: FightTrendPlannedParticipation {
+            linked_fights: linked_event_fights,
+            linked_events: i64::try_from(linked_event_ids.len()).unwrap_or(i64::MAX),
+            planned_participant_assignments,
+            primary_build_assignments: selection_counts(primary_builds, build_names),
+            secondary_build_assignments: selection_counts(secondary_builds, build_names),
+            comp_assignments: selection_counts(comps, comp_names),
+        },
+    })
 }
 
 /// Returns one Fight with persisted performance and roster-observation analytics.

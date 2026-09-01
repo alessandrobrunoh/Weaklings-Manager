@@ -1344,6 +1344,60 @@ export interface HourBucket {
   losses: number;
 }
 
+/** Rolling 30-day canonical fight performance and its evidence coverage. */
+export interface FightTrendView {
+  generated_at: string;
+  last_30_days: FightTrendPeriod;
+  previous_30_days: FightTrendPeriod;
+  rolling_daily_fight_counts: FightTrendDay[];
+}
+
+export interface FightTrendPeriod {
+  window_started_at: string;
+  window_ended_at: string;
+  fight_sample_size: number;
+  combat_sample_size: number;
+  win_sample_size: number;
+  wins: number;
+  losses: number;
+  win_rate: number | null;
+  kills: number;
+  deaths: number;
+  kd_ratio: number | null;
+  kill_fame: number;
+  coverage: FightTrendCoverage;
+  planned_participation: FightTrendPlannedParticipation;
+}
+
+export interface FightTrendCoverage {
+  fights_with_snapshots: number;
+  persisted_segments: number;
+  total_segments: number;
+  fights_with_winner_data: number;
+  linked_event_fights: number;
+  linked_events: number;
+}
+
+export interface FightTrendPlannedParticipation {
+  linked_fights: number;
+  linked_events: number;
+  planned_participant_assignments: number;
+  primary_build_assignments: FightTrendSelectionCount[];
+  secondary_build_assignments: FightTrendSelectionCount[];
+  comp_assignments: FightTrendSelectionCount[];
+}
+
+export interface FightTrendSelectionCount {
+  id: number;
+  name: string | null;
+  count: number;
+}
+
+export interface FightTrendDay {
+  date: string;
+  fights: number;
+}
+
 export interface TimelineEntry {
   at: string;
   kind: 'battle' | 'event' | 'scout';
