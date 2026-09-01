@@ -26,6 +26,7 @@ import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 
 type WarnsTab = 'register' | 'escalations';
@@ -68,6 +69,7 @@ function isWarnsTab(value: string): value is WarnsTab {
     PageHeader,
     PageStack,
     StatCard,
+    TooltipDirective,
     ViewToggle,
   ],
   styles: `
@@ -80,13 +82,21 @@ function isWarnsTab(value: string): value is WarnsTab {
         class="btn btn--outline btn--sm"
         [disabled]="loading()"
         (click)="refreshNow()"
+        [appTooltip]="t('common.refreshNow')"
+        tooltipPosition="bottom"
       >
         <app-icon name="sparkles" size="0.875rem" />
         {{ t('common.refreshNow') }}
       </button>
 
       @if (canIssue() && tab() === 'register') {
-        <button type="button" class="btn btn--primary btn--sm" (click)="openIssueForm()">
+        <button
+          type="button"
+          class="btn btn--primary btn--sm"
+          (click)="openIssueForm()"
+          [appTooltip]="t('warns.issue')"
+          tooltipPosition="bottom"
+        >
           <app-icon name="plus" size="0.875rem" />
           {{ t('warns.issue') }}
         </button>

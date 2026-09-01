@@ -51,6 +51,7 @@ export const en = {
   'common.view': 'View',
   'common.clear': 'Clear',
   'common.clearFilters': 'Clear filters',
+  'common.totalResults': 'Total results',
 
   // Nav
   'nav.dashboard': 'Dashboard',
@@ -88,14 +89,20 @@ export const en = {
   'nav.section.system': 'System',
   'nav.section.admin': 'Administration',
   'nav.collapse': 'Collapse',
+  'nav.expand': 'Expand',
   'nav.aria.primary': 'Primary',
   'nav.aria.admin': 'Administration',
+
+  // Table
+  'table.itemsPerPage': 'Items per page',
 
   // Theme
   'theme.light': 'Light',
   'theme.dark': 'Dark',
   'theme.system': 'System',
   'theme.toggle': 'Toggle theme',
+  'theme.toggleDark': 'Switch to dark theme',
+  'theme.toggleLight': 'Switch to light theme',
 
   // Language
   'language.label': 'Language',

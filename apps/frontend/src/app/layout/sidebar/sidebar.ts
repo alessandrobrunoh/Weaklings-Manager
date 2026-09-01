@@ -91,9 +91,9 @@ export type { NavItem, NavSection } from '../nav';
           class="btn btn--ghost btn--sm w-full flex items-center gap-2 text-xs"
           [class.justify-center]="collapsed()"
           (click)="toggleCollapse.emit()"
-          [appTooltip]="collapsed() ? 'Espandi barra laterale' : 'Comprimi barra laterale'"
+          [appTooltip]="collapsed() ? t('nav.expand') : t('nav.collapse')"
           tooltipPosition="right"
-          [attr.aria-label]="collapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
+          [attr.aria-label]="collapsed() ? t('nav.expand') : t('nav.collapse')"
         >
           <app-icon [name]="collapsed() ? 'chevron-right' : 'chevron-left'" size="1rem" />
           @if (!collapsed()) {

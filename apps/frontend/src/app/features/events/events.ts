@@ -60,7 +60,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
         class="btn btn--outline btn--sm"
         [disabled]="loading()"
         (click)="refreshNow()"
-        [appTooltip]="'Aggiorna elenco eventi'"
+        [appTooltip]="t('common.refreshNow')"
         tooltipPosition="bottom"
       >
         <app-icon name="sparkles" size="0.875rem" />
@@ -72,7 +72,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
           type="button"
           class="btn btn--primary btn--sm"
           (click)="openCreate()"
-          [appTooltip]="'Crea un nuovo evento di gilda'"
+          [appTooltip]="t('events.new')"
           tooltipPosition="bottom"
         >
           <app-icon name="plus" size="0.875rem" />

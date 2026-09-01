@@ -76,15 +76,15 @@ const BODY_MAX = 2000;
       <app-icon name="bell" size="1rem" />
       @if (unreadCount() > 0) {
         <span
-          class="absolute flex items-center justify-center rounded-full text-[9px] font-semibold"
+          class="absolute flex items-center justify-center rounded-full text-[9px] font-bold"
           style="
             top: 2px;
             right: 2px;
             min-width: 14px;
             height: 14px;
             padding: 0 3px;
-            background-color: var(--color-text);
-            color: var(--color-surface);
+            background-color: var(--color-primary);
+            color: var(--color-on-primary);
           "
           aria-hidden="true"
         >

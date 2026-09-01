@@ -24,9 +24,21 @@ import { Icon, type IconName } from '../icon/icon';
         }
       </div>
       <div>
-        <p class="mono text-xl font-normal leading-tight tracking-[-0.02em]" [style.color]="valueColor()">
-          {{ value() !== null && value() !== undefined ? value() : '—' }}
-        </p>
+        <div class="flex items-baseline justify-between gap-2">
+          <p class="mono text-xl font-normal leading-tight tracking-[-0.02em]" [style.color]="valueColor()">
+            {{ value() !== null && value() !== undefined ? value() : '—' }}
+          </p>
+          @if (delta()) {
+            <span
+              class="chip text-[10px] font-mono font-bold"
+              [class.chip--success]="deltaDirection() === 'up'"
+              [class.chip--error]="deltaDirection() === 'down'"
+              [class.chip--neutral]="deltaDirection() === 'neutral'"
+            >
+              {{ delta() }}
+            </span>
+          }
+        </div>
         @if (sub()) {
           <p class="mt-1 text-[11px]" style="color: var(--color-text-tertiary)">{{ sub() }}</p>
         }
@@ -40,6 +52,8 @@ export class StatCard {
   readonly sub = input<string>();
   readonly icon = input<IconName | undefined>(undefined);
   readonly tone = input<'default' | 'neutral' | 'success' | 'warning' | 'danger' | 'primary'>('default');
+  readonly delta = input<string | undefined>(undefined);
+  readonly deltaDirection = input<'up' | 'down' | 'neutral'>('neutral');
 
   protected valueColor(): string {
     switch (this.tone()) {
@@ -50,7 +64,7 @@ export class StatCard {
       case 'danger':
         return 'var(--color-error)';
       case 'primary':
-        return 'var(--color-text)';
+        return 'var(--color-primary)';
       default:
         return 'var(--color-text)';
     }

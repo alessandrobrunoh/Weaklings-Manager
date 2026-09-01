@@ -78,7 +78,7 @@ import type { AuditLog } from '../audit/audit';
         class="btn btn--outline btn--sm"
         [disabled]="loading()"
         (click)="refreshNow()"
-        [appTooltip]="'Aggiorna statistiche e code'"
+        [appTooltip]="t('common.refreshNow')"
         tooltipPosition="bottom"
       >
         <app-icon name="sparkles" size="0.875rem" />

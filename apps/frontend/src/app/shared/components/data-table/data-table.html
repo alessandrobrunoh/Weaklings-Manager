@@ -104,9 +104,13 @@
                       tooltipPosition="top"
                     >
                       <span>{{ t(column.label) }}</span>
-                      <span class="data-table__sort-indicator" aria-hidden="true">{{
-                        sortIndicator(column.key) || '↕'
-                      }}</span>
+                      <span class="data-table__sort-indicator" aria-hidden="true">
+                        @if (sort()?.columnKey === column.key) {
+                          <app-icon [name]="sort()?.direction === 'asc' ? 'chevron-up' : 'chevron-down'" size="0.75rem" />
+                        } @else {
+                          <span class="text-[var(--color-text-disabled)] opacity-40">↕</span>
+                        }
+                      </span>
                     </button>
                   } @else {
                     <span class="data-table__th-label">{{ t(column.label) }}</span>
@@ -147,16 +151,16 @@
           {{ t('common.page') }} <span class="data-table__page-number">{{ page() }}</span>
           {{ t('common.of') }} {{ totalPages() }} ·
           <span class="data-table__page-number">{{ visibleTotal() }}</span>
-          {{ t('battles.total_results') }}
+          {{ t('common.totalResults') }}
         </p>
         <div class="data-table__controls">
           @if (!hidePageSize()) {
             <select
               class="select select--sm data-table__page-size"
-              [attr.aria-label]="'Elementi per pagina'"
+              [attr.aria-label]="t('table.itemsPerPage')"
               [value]="currentPageSize()"
               (change)="onPageSize($event)"
-              [appTooltip]="'Elementi per pagina'"
+              [appTooltip]="t('table.itemsPerPage')"
               tooltipPosition="top"
             >
               @for (size of pageSizeOptions(); track size) {

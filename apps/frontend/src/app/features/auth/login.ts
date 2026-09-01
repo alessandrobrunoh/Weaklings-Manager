@@ -7,6 +7,7 @@ import { TranslateService } from '../../core/services/translate.service';
 import { ToastService } from '../../core/services/toast.service';
 import type { TranslationKey } from '../../i18n/en';
 import { Icon } from '../../shared/components/icon/icon';
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-logo';
 
 /**
@@ -21,7 +22,7 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
 @Component({
   selector: 'app-login',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, WeaklingsLogo],
+  imports: [Icon, TooltipDirective, WeaklingsLogo],
   template: `
     <div
       class="min-h-dvh flex items-center justify-center p-4 sm:p-6"
@@ -29,10 +30,12 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
     >
       <div class="absolute top-4 right-4 flex items-center gap-2">
         <select
-          class="select"
-          style="width: auto; padding: 0.4rem 0.6rem; font-size: 0.8125rem"
+          class="select text-xs"
+          style="width: auto; padding: 0.4rem 0.6rem"
           [value]="translate.language()"
           (change)="onLanguageChange($event)"
+          [appTooltip]="t('language.label')"
+          tooltipPosition="bottom"
           [attr.aria-label]="t('language.label')"
         >
           @for (lang of translate.supportedLanguages; track lang) {
@@ -43,6 +46,8 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
           type="button"
           class="btn btn--ghost btn--icon"
           (click)="theme.toggle()"
+          [appTooltip]="theme.isDark() ? t('theme.toggleLight') : t('theme.toggleDark')"
+          tooltipPosition="bottom"
           [attr.aria-label]="t('theme.toggle')"
         >
           <app-icon [name]="theme.isDark() ? 'moon' : 'sun'" />

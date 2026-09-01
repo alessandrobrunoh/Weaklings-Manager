@@ -77,7 +77,7 @@ interface BattleScopeStats {
     <app-page-header [title]="t('battles.title')" [subtitle]="t('battles.subtitle')">
       <span
         class="chip battle-list__refresh-chip"
-        [appTooltip]="'Timer per il sync automatico con AlbionBB'"
+        [appTooltip]="t('battles.next_refresh')"
         tooltipPosition="bottom"
       >
         {{ t('battles.next_refresh') }} {{ refreshCountdown() }}
@@ -87,7 +87,7 @@ interface BattleScopeStats {
         class="btn btn--outline btn--sm"
         [disabled]="loading()"
         (click)="refreshNow()"
-        [appTooltip]="'Aggiorna subito da AlbionBB'"
+        [appTooltip]="t('battles.refresh_now')"
         tooltipPosition="bottom"
       >
         {{ t('battles.refresh_now') }}
@@ -100,7 +100,7 @@ interface BattleScopeStats {
           type="button"
           class="btn btn--primary btn--sm"
           (click)="openSelectedGroup()"
-          [appTooltip]="'Crea gruppo di battaglie combinate'"
+          [appTooltip]="t('battles.group_selected')"
           tooltipPosition="bottom"
         >
           {{ t('battles.group_selected') }}
@@ -109,7 +109,7 @@ interface BattleScopeStats {
           type="button"
           class="btn btn--ghost btn--sm"
           (click)="clearSelection()"
-          [appTooltip]="'Deseleziona tutte le battaglie'"
+          [appTooltip]="t('common.cancel')"
           tooltipPosition="bottom"
         >
           {{ t('common.cancel') }}

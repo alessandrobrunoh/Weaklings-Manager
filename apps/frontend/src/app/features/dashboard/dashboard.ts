@@ -74,7 +74,7 @@ interface DashboardStat {
         class="btn btn--outline btn--sm"
         [disabled]="loading()"
         (click)="refreshNow()"
-        [appTooltip]="'Aggiorna dati in tempo reale'"
+        [appTooltip]="t('common.refreshNow')"
         tooltipPosition="bottom"
       >
         <app-icon name="sparkles" size="0.875rem" />
@@ -83,20 +83,77 @@ interface DashboardStat {
     </app-page-header>
 
     <app-page-stack>
-      <!-- Guild operational snapshot -->
-      <section aria-label="Guild snapshot">
-        <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          @for (stat of stats; track stat.labelKey) {
-            <div [appTooltip]="stat.tooltip" tooltipPosition="top">
-              <app-stat-card
-                [label]="t(stat.labelKey)"
-                [value]="stat.value()"
-                [sub]="stat.hint()"
-                [icon]="stat.icon"
-                [tone]="stat.tone"
-              />
-            </div>
-          }
+      <!-- Tier 1: Personal Wallet & Operations -->
+      <section aria-label="Personal Wallet & Operations" class="space-y-2">
+        <div class="flex items-center justify-between">
+          <h2 class="eyebrow">Il tuo bilancio & Operazioni personali</h2>
+          <a routerLink="/bank" class="text-xs text-[var(--color-primary)] font-medium hover:underline">Vai alla Banca &rarr;</a>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div [appTooltip]="stats[0].tooltip" tooltipPosition="top">
+            <app-stat-card
+              [label]="t(stats[0].labelKey)"
+              [value]="stats[0].value()"
+              [sub]="stats[0].hint()"
+              [icon]="stats[0].icon"
+              [tone]="stats[0].tone"
+            />
+          </div>
+          <div [appTooltip]="stats[1].tooltip" tooltipPosition="top">
+            <app-stat-card
+              [label]="t(stats[1].labelKey)"
+              [value]="stats[1].value()"
+              [sub]="stats[1].hint()"
+              [icon]="stats[1].icon"
+              [tone]="stats[1].tone"
+            />
+          </div>
+          <div [appTooltip]="stats[2].tooltip" tooltipPosition="top">
+            <app-stat-card
+              [label]="t(stats[2].labelKey)"
+              [value]="stats[2].value()"
+              [sub]="stats[2].hint()"
+              [icon]="stats[2].icon"
+              [tone]="stats[2].tone"
+            />
+          </div>
+        </div>
+      </section>
+
+      <!-- Tier 2: Guild Overview -->
+      <section aria-label="Guild Overview" class="space-y-2">
+        <div class="flex items-center justify-between">
+          <h2 class="eyebrow">Panoramica Gilda & Storico</h2>
+          <a routerLink="/season" class="text-xs text-[var(--color-primary)] font-medium hover:underline">Classifiche &rarr;</a>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div [appTooltip]="stats[4].tooltip" tooltipPosition="top">
+            <app-stat-card
+              [label]="t(stats[4].labelKey)"
+              [value]="stats[4].value()"
+              [sub]="stats[4].hint()"
+              [icon]="stats[4].icon"
+              [tone]="stats[4].tone"
+            />
+          </div>
+          <div [appTooltip]="stats[3].tooltip" tooltipPosition="top">
+            <app-stat-card
+              [label]="t(stats[3].labelKey)"
+              [value]="stats[3].value()"
+              [sub]="stats[3].hint()"
+              [icon]="stats[3].icon"
+              [tone]="stats[3].tone"
+            />
+          </div>
+          <div [appTooltip]="stats[5].tooltip" tooltipPosition="top">
+            <app-stat-card
+              [label]="t(stats[5].labelKey)"
+              [value]="stats[5].value()"
+              [sub]="stats[5].hint()"
+              [icon]="stats[5].icon"
+              [tone]="stats[5].tone"
+            />
+          </div>
         </div>
       </section>
 
@@ -105,7 +162,7 @@ interface DashboardStat {
         <h2 class="eyebrow mb-2">
           {{ t('dashboard.quick_actions') }}
         </h2>
-        <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           @for (action of actions; track action.path) {
             <a
               [routerLink]="action.path"
@@ -121,9 +178,9 @@ interface DashboardStat {
               >
                 <app-icon [name]="action.icon" size="1.125rem" />
               </span>
-              <div class="dashboard-shortcut__copy">
-                <span class="text-xs font-medium block truncate group-hover:underline">{{ t(action.labelKey) }}</span>
-                <span class="text-[11px] block truncate mt-0.5" style="color: var(--color-text-secondary)">{{ action.desc }}</span>
+              <div class="dashboard-shortcut__copy min-w-0">
+                <span class="text-xs font-semibold block truncate">{{ t(action.labelKey) }}</span>
+                <span class="text-[10px] block truncate mt-0.5 text-[var(--color-text-secondary)]">{{ action.desc }}</span>
               </div>
             </a>
           }
@@ -131,31 +188,29 @@ interface DashboardStat {
       </section>
 
       <!-- Two-column activity panels -->
-      <section class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      <section class="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <!-- Live & upcoming events -->
-        <div class="card p-4">
-          <div class="mb-3 flex items-center justify-between">
+        <div class="card p-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
+          <div class="mb-3 flex items-center justify-between pb-2 border-b border-[var(--color-border)]">
             <div class="flex items-center gap-2">
-              <span class="inline-block h-2 w-2 rounded-full" style="background-color: var(--color-success)"></span>
-              <h2 class="eyebrow">
+              <span class="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <h2 class="eyebrow text-xs font-bold text-[var(--color-text)]">
                 {{ t('dashboard.events.upcoming') }}
               </h2>
             </div>
             <a
               routerLink="/events"
-              class="text-xs font-medium no-underline hover:underline"
-              style="color: var(--color-text-secondary)"
-              [appTooltip]="'Tutti gli eventi di gilda'"
+              class="text-xs font-semibold no-underline text-[var(--color-primary)] hover:underline"
               tooltipPosition="left"
             >
-              {{ t('dashboard.view_all') }} →
+              {{ t('dashboard.view_all') }} &rarr;
             </a>
           </div>
 
           @if (visibleEvents().length === 0) {
             <div class="py-8 text-center" style="color: var(--color-text-secondary)">
               <app-icon name="calendar" size="2rem" class="opacity-40 mx-auto mb-2" />
-              <p class="text-sm">{{ t('dashboard.events.empty') }}</p>
+              <p class="text-xs">{{ t('dashboard.events.empty') }}</p>
             </div>
           } @else {
             <ul class="flex flex-col gap-2">
@@ -163,28 +218,21 @@ interface DashboardStat {
                 <li>
                   <a
                     [routerLink]="['/events', event.id]"
-                    class="flex items-center gap-3 rounded-md px-2 py-2 no-underline transition-colors hover:bg-[var(--color-surface-hover)]"
-                    style="color: var(--color-text)"
+                    class="flex items-center justify-between gap-3 rounded-xl p-2.5 border border-[var(--color-border)] bg-[var(--color-surface-1)] no-underline transition-all hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-hover)]"
                   >
-                    <span
-                      class="h-2.5 w-2.5 shrink-0 rounded-full"
-                      [style.backgroundColor]="eventDotColor(event.status)"
-                      [appTooltip]="event.status"
-                      aria-hidden="true"
-                    ></span>
                     <div class="min-w-0 flex-1">
-                      <p class="truncate text-sm font-medium flex items-center gap-1.5">
+                      <div class="flex items-center gap-2 flex-wrap">
                         @if (event.call_to_arms) {
-                          <span
-                            class="cta-star font-bold text-xs"
-                            [appTooltip]="t('events.call_to_arms')"
-                            style="color: var(--color-warning)"
-                          >★ CTA</span>
+                          <span class="chip chip--warning font-bold text-[10px] uppercase">
+                            <span class="cta-star">★</span> CTA
+                          </span>
                         }
-                        {{ event.title }}
-                      </p>
-                      <p class="truncate text-xs mt-0.5" style="color: var(--color-text-secondary)">
-                        {{ event.comp_name }} · {{ formatEventDate(event.event_date_utc) }}
+                        <p class="truncate text-xs font-bold text-[var(--color-text)]">
+                          {{ event.title }}
+                        </p>
+                      </div>
+                      <p class="truncate text-[11px] mt-0.5 text-[var(--color-text-secondary)]">
+                        {{ event.comp_name || 'Nessuna comp' }} &middot; {{ formatEventDate(event.event_date_utc) }}
                       </p>
                     </div>
                     <app-status-chip [value]="event.status" />
@@ -196,29 +244,27 @@ interface DashboardStat {
         </div>
 
         <!-- Recent splits -->
-        <div class="card p-4">
-          <div class="mb-3 flex items-center justify-between">
+        <div class="card p-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
+          <div class="mb-3 flex items-center justify-between pb-2 border-b border-[var(--color-border)]">
             <div class="flex items-center gap-2">
-              <span class="inline-block h-2 w-2 rounded-full" style="background-color: var(--color-primary)"></span>
-              <h2 class="eyebrow">
+              <span class="inline-block h-2 w-2 rounded-full bg-[var(--color-primary)]"></span>
+              <h2 class="eyebrow text-xs font-bold text-[var(--color-text)]">
                 {{ t('dashboard.splits.recent') }}
               </h2>
             </div>
             <a
               routerLink="/splits"
-              class="text-xs font-medium no-underline hover:underline"
-              style="color: var(--color-text-secondary)"
-              [appTooltip]="'Tutte le split di bottino'"
+              class="text-xs font-semibold no-underline text-[var(--color-primary)] hover:underline"
               tooltipPosition="left"
             >
-              {{ t('dashboard.view_all') }} →
+              {{ t('dashboard.view_all') }} &rarr;
             </a>
           </div>
 
           @if (visibleSplits().length === 0) {
             <div class="py-8 text-center" style="color: var(--color-text-secondary)">
               <app-icon name="swords" size="2rem" class="opacity-40 mx-auto mb-2" />
-              <p class="text-sm">{{ t('dashboard.splits.empty') }}</p>
+              <p class="text-xs">{{ t('dashboard.splits.empty') }}</p>
             </div>
           } @else {
             <ul class="flex flex-col gap-2">
@@ -226,18 +272,17 @@ interface DashboardStat {
                 <li>
                   <a
                     [routerLink]="['/splits', split.id]"
-                    class="flex items-center gap-3 rounded-md px-2 py-2 no-underline transition-colors hover:bg-[var(--color-surface-hover)]"
-                    style="color: var(--color-text)"
+                    class="flex items-center justify-between gap-3 rounded-xl p-2.5 border border-[var(--color-border)] bg-[var(--color-surface-1)] no-underline transition-all hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-hover)]"
                   >
                     <div class="min-w-0 flex-1">
-                      <p class="truncate text-sm font-medium">
+                      <p class="truncate text-xs font-bold text-[var(--color-text)]">
                         {{ split.event_title ?? split.created_by_username }}
                       </p>
-                      <p class="truncate text-xs mt-0.5" style="color: var(--color-text-secondary)">
-                        {{ split.participant_count }} partecipanti · {{ formatRelative(split.created_at) }}
+                      <p class="truncate text-[11px] mt-0.5 text-[var(--color-text-secondary)]">
+                        {{ split.participant_count }} partecipanti &middot; {{ formatRelative(split.created_at) }}
                       </p>
                     </div>
-                    <span class="text-sm font-semibold tabular-nums mono" style="color: var(--color-success)">
+                    <span class="text-xs font-mono font-bold text-[var(--color-success)]">
                       {{ formatValue(split.estimated_market_value) }}
                     </span>
                     <app-status-chip [value]="split.status" />

@@ -4,6 +4,7 @@ import {
   Component,
   ElementRef,
   PLATFORM_ID,
+  computed,
   effect,
   inject,
   input,
@@ -61,7 +62,7 @@ let nextDialogTitleId = 0;
         <button
           type="button"
           class="btn btn--ghost btn--icon app-dialog__close"
-          [attr.aria-label]="closeLabel"
+          [attr.aria-label]="closeLabel()"
           (click)="dismiss()"
         >
           <app-icon name="close" size="1.125rem" />
@@ -98,7 +99,7 @@ export class Dialog {
   private readonly id = ++nextDialogTitleId;
   protected readonly titleId = `app-dialog-title-${this.id}`;
   protected readonly subtitleId = `app-dialog-sub-${this.id}`;
-  protected readonly closeLabel = this.translate.t('common.close' satisfies TranslationKey);
+  protected readonly closeLabel = computed(() => this.translate.t('common.close' satisfies TranslationKey));
 
   constructor() {
     effect(() => {

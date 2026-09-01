@@ -43,7 +43,7 @@ import type { NavSection } from '../sidebar/sidebar';
   `,
   template: `
     <header
-      class="flex h-10 items-center justify-between gap-2 px-3 sm:px-4 transition-colors"
+      class="flex h-12 items-center justify-between gap-2 px-3 sm:px-4 transition-colors"
       style="background-color: var(--color-surface); border-bottom: 1px solid var(--color-border)"
     >
       <div class="flex min-w-0 items-center gap-1.5">
@@ -64,21 +64,18 @@ import type { NavSection } from '../sidebar/sidebar';
           type="button"
           class="btn btn--ghost btn--icon hidden md:inline-flex"
           (click)="collapseToggle.emit()"
-          [appTooltip]="isSidebarCollapsed() ? 'Espandi barra laterale' : 'Comprimi barra laterale'"
+          [appTooltip]="isSidebarCollapsed() ? t('nav.expand') : t('nav.collapse')"
           tooltipPosition="bottom"
-          [attr.aria-label]="isSidebarCollapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
+          [attr.aria-label]="isSidebarCollapsed() ? t('nav.expand') : t('nav.collapse')"
         >
           <app-icon [name]="isSidebarCollapsed() ? 'chevron-right' : 'chevron-left'" size="0.95rem" />
         </button>
-        <span class="hidden min-w-0 truncate text-xs font-medium md:block" style="color: var(--color-text-secondary)">
-          Guild operations
-        </span>
       </div>
 
-      <div class="flex shrink-0 items-center gap-1">
+      <div class="flex shrink-0 items-center gap-1.5">
         <div class="relative hidden items-center lg:flex">
           <select
-            class="select select--sm w-auto cursor-pointer font-medium"
+            class="select select--sm w-auto cursor-pointer font-medium text-xs bg-[var(--color-surface-2)]"
             [value]="translate.language()"
             (change)="onLanguageChange($event)"
             [appTooltip]="t('language.label')"
@@ -96,7 +93,7 @@ import type { NavSection } from '../sidebar/sidebar';
           type="button"
           class="btn btn--ghost btn--icon shrink-0"
           (click)="theme.toggle()"
-          [appTooltip]="theme.isDark() ? 'Attiva tema chiaro' : 'Attiva tema scuro'"
+          [appTooltip]="theme.isDark() ? t('theme.toggleLight') : t('theme.toggleDark')"
           tooltipPosition="bottom"
           [attr.aria-label]="t('theme.toggle')"
           [attr.aria-pressed]="theme.isDark()"

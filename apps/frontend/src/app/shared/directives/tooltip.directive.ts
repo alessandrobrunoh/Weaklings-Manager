@@ -44,6 +44,19 @@ export class TooltipDirective implements OnDestroy {
 
   private tooltipEl: HTMLElement | null = null;
   private showTimeout: ReturnType<typeof setTimeout> | null = null;
+  private unlistenScroll: (() => void) | null = null;
+
+  constructor() {
+    this.ngZone.runOutsideAngular(() => {
+      const handler = () => {
+        if (this.tooltipEl) {
+          this.hide();
+        }
+      };
+      window.addEventListener('scroll', handler, { capture: true, passive: true });
+      this.unlistenScroll = () => window.removeEventListener('scroll', handler, { capture: true } as EventListenerOptions);
+    });
+  }
 
   onMouseEnter(): void {
     this.scheduleShow();
@@ -66,6 +79,7 @@ export class TooltipDirective implements OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.unlistenScroll?.();
     this.hide();
   }
 

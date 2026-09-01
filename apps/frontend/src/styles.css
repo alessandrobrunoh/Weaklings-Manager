@@ -1293,6 +1293,7 @@
   --color-surface-1: #0f1011;
   --color-surface-2: #161718;
   --color-surface-3: #23252a;
+  --color-surface-muted: #161718;
   --color-surface-hover: #1c1e21;
   --color-surface-charcoal: #08090a;
   --color-border: #23252a;
@@ -1308,7 +1309,7 @@
   --color-primary-hover: #ef4444;
   --color-primary-container: color-mix(in oklab, #dc2626 16%, transparent);
   --color-primary-soft: var(--color-primary-container);
-  --color-on-primary: #08090a;
+  --color-on-primary: #ffffff;
   --color-logo-glow: color-mix(in oklab, #eb5757 18%, transparent);
   --color-success: #4cc36a;
   --color-success-container: color-mix(in oklab, #4cc36a 13%, transparent);
@@ -1318,10 +1319,17 @@
   --color-error-container: color-mix(in oklab, #eb5757 13%, transparent);
   --color-danger: var(--color-error);
   --color-info: #75b7ff;
-  --radius-sm: 2px;
+  --role-tank: #3b82f6;
+  --role-healer: #22c55e;
+  --role-support: #f59e0b;
+  --role-dps: #ef4444;
+  --role-bm: #a855f7;
+  --role-brawler: #06b6d4;
+  --radius-sm: 4px;
   --radius-md: 6px;
+  --radius-lg: 8px;
   --radius-xl: 12px;
-  --radius-2xl: 12px;
+  --radius-2xl: 16px;
   --radius-cards: 12px;
   --radius-badges: 4px;
   --radius-inputs: 6px;
@@ -1346,6 +1354,7 @@
   --color-surface-1: #ffffff;
   --color-surface-2: #f1f2f4;
   --color-surface-3: #e7e9ed;
+  --color-surface-muted: #f1f2f4;
   --color-surface-hover: #eceef1;
   --color-surface-charcoal: #151617;
   --color-border: #dfe1e5;
@@ -1361,7 +1370,7 @@
   --color-primary-hover: #991b1b;
   --color-primary-container: #fee2e2;
   --color-primary-soft: var(--color-primary-container);
-  --color-on-primary: #08090a;
+  --color-on-primary: #ffffff;
   --color-success: #247a3a;
   --color-success-container: #e5f5e9;
   --color-warning: #956d00;
@@ -1370,6 +1379,12 @@
   --color-error-container: #ffebeb;
   --color-danger: var(--color-error);
   --color-info: #176bb8;
+  --role-tank: #2563eb;
+  --role-healer: #16a34a;
+  --role-support: #d97706;
+  --role-dps: #dc2626;
+  --role-bm: #9333ea;
+  --role-brawler: #0891b2;
   --shadow-subtle: inset 0 0 0 1px #dfe1e5;
   --shadow-subtle-2: inset 0 0 0 1px #dfe1e5;
   --shadow-xl: 0 1rem 2rem rgb(21 22 23 / 12%);
@@ -1443,6 +1458,9 @@
   .label { margin-bottom: 0.25rem; color: var(--color-text-secondary); font-size: 0.75rem; font-weight: 510; letter-spacing: -0.01em; }
 
   .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3125rem;
     min-height: 1.25rem;
     padding: 0.0625rem 0.375rem;
     border: 1px solid transparent;
@@ -1452,6 +1470,14 @@
     font-family: var(--font-sans);
     font-size: 0.6875rem;
     font-weight: 510;
+  }
+  .status-dot {
+    display: inline-block;
+    width: 0.375rem;
+    height: 0.375rem;
+    border-radius: 9999px;
+    background-color: currentColor;
+    flex-shrink: 0;
   }
   .chip--neutral, .chip--info { background: color-mix(in oklab, var(--color-surface-3) 76%, transparent); color: var(--color-text-secondary); }
   .chip--success { background: var(--color-success-container); color: var(--color-success); }
