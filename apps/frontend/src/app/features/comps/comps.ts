@@ -45,6 +45,9 @@ import {
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
+import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
+import { Loading } from '../../shared/components/loading/loading';
 import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
 import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
@@ -55,6 +58,13 @@ import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-
 
 const PAGE_SIZE = 10;
 const OPTIONS_LIMIT = 500;
+
+export interface CompTreeItem {
+  comp: CompSummary;
+  children: CompSummary[];
+}
+
+export type CompFilterType = 'all' | 'parents' | 'variants';
 
 type TabId = 'comps' | 'builds' | 'categories';
 type CategoryKind = 'build' | 'comp';
@@ -67,8 +77,9 @@ type PendingDelete =
 /**
  * Compositions and builds workspace.
  *
- * Three tabs share one route: server-paginated comps and builds, plus a small
- * client-side categories table. Create and delete always go through `app-dialog`.
+ * Three tabs share one route: server-paginated builds, client-side categories table,
+ * and a hierarchical tree-view for compositions with parent/variant grouping.
+ * Create and delete always go through `app-dialog`.
  */
 @Component({
   selector: 'app-comps',
@@ -81,8 +92,11 @@ type PendingDelete =
     DataTable,
     DataTableCell,
     Dialog,
+    EmptyState,
+    ErrorState,
     EquipmentGrid,
     Icon,
+    Loading,
     StatCard,
     TooltipDirective,
   ],
@@ -122,79 +136,321 @@ type PendingDelete =
 
     <app-page-stack>
       <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Comps summary">
-        <app-stat-card
-          [label]="t('comps.stat.comps')"
-          [value]="compsTotal()"
-          icon="swords"
-          tone="primary"
-        />
-        <app-stat-card
-          [label]="t('comps.stat.builds')"
-          [value]="buildsTotal()"
-          icon="shield"
-          tone="neutral"
-        />
-        <app-stat-card
-          [label]="t('comps.stat.buildCategories')"
-          [value]="buildCategories().length"
-          icon="list"
-          tone="neutral"
-        />
-        <app-stat-card
-          [label]="t('comps.stat.compCategories')"
-          [value]="compCategories().length"
-          icon="list"
-          tone="warning"
-        />
+        @if (tab() === 'comps') {
+          <app-stat-card
+            [label]="t('comps.stat.comps')"
+            [value]="comps().length"
+            icon="swords"
+            tone="primary"
+          />
+          <app-stat-card
+            [label]="t('comps.stat.parentComps')"
+            [value]="parentCompsCount()"
+            icon="shield"
+            tone="neutral"
+          />
+          <app-stat-card
+            [label]="t('comps.stat.variantComps')"
+            [value]="variantCompsCount()"
+            icon="sparkles"
+            tone="neutral"
+          />
+          <app-stat-card
+            [label]="t('comps.stat.compCategories')"
+            [value]="compCategories().length"
+            icon="list"
+            tone="warning"
+          />
+        } @else {
+          <app-stat-card
+            [label]="t('comps.stat.comps')"
+            [value]="compsTotal()"
+            icon="swords"
+            tone="primary"
+          />
+          <app-stat-card
+            [label]="t('comps.stat.builds')"
+            [value]="buildsTotal()"
+            icon="shield"
+            tone="neutral"
+          />
+          <app-stat-card
+            [label]="t('comps.stat.buildCategories')"
+            [value]="buildCategories().length"
+            icon="list"
+            tone="neutral"
+          />
+          <app-stat-card
+            [label]="t('comps.stat.compCategories')"
+            [value]="compCategories().length"
+            icon="list"
+            tone="warning"
+          />
+        }
       </section>
       @if (tab() === 'comps') {
-        <app-data-table
-          [columns]="compColumns()"
-          [rows]="comps()"
-          [loading]="loading()"
-          [error]="loadFailed()"
-          [serverMode]="true"
-          [totalItems]="compsTotal()"
-          [pageSize]="PAGE_SIZE"
-          [trackBy]="trackComp"
-          [rowClickable]="true"
-          emptyIcon="package"
-          (retry)="loadComps()"
-          (pageChange)="onCompsPageChange($event)"
-          (rowClick)="openComp($event)"
-        >
-          <ng-template dataTableCell="name" let-row>
-            <span style="font-weight: 500">{{ row.name }}</span>
-          </ng-template>
-          <ng-template dataTableCell="category" let-row>
-            <span class="chip">{{ row.category_name || t('comps.noCategory') }}</span>
-          </ng-template>
-          <ng-template dataTableCell="slots" let-row>
-            {{ row.build_count }} / {{ row.total_quantity }}
-          </ng-template>
-          <ng-template dataTableCell="winrate" let-row>
-            @if (compPerformance(row.id); as performance) {
-              {{ formatPercent(performance.stats.win_rate) }}
-            }
-          </ng-template>
-          <ng-template dataTableCell="actions" let-row>
-            <div class="flex flex-wrap justify-end gap-2" (click)="$event.stopPropagation()">
-              <a class="btn btn--tonal btn--sm" [routerLink]="['/comps', row.id]">{{
-                t('common.open')
-              }}</a>
-              @if (canManageComps()) {
+        <section class="grid gap-4" aria-label="Compositions list">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
+              <div class="relative flex-1 min-w-[200px] max-w-sm">
+                <span
+                  class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-[var(--color-text-secondary)]"
+                >
+                  <app-icon name="search" size="0.875rem" />
+                </span>
+                <input
+                  type="text"
+                  class="input pl-9 text-sm w-full"
+                  [placeholder]="t('comps.searchPlaceholder')"
+                  [value]="compSearchQuery()"
+                  (input)="onCompSearchChange($event)"
+                />
+                @if (compSearchQuery()) {
+                  <button
+                    type="button"
+                    class="absolute inset-y-0 right-0 flex items-center pr-2.5 text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
+                    (click)="clearCompSearch()"
+                  >
+                    <app-icon name="close" size="0.75rem" />
+                  </button>
+                }
+              </div>
+
+              <select
+                class="select text-sm w-auto min-w-[150px]"
+                [value]="compSelectedCategory()"
+                (change)="onCompCategoryChange($event)"
+              >
+                <option value="">{{ t('comps.allCategories') }}</option>
+                @for (category of compCategories(); track category.id) {
+                  <option [value]="category.id">{{ category.name }}</option>
+                }
+              </select>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
+              <app-view-toggle
+                [options]="compTypeFilterOptions()"
+                [active]="compFilterType()"
+                (activeChange)="setCompFilterType($event)"
+              />
+
+              @if (compFilterType() === 'all' && hasExpandableParents()) {
                 <button
                   type="button"
-                  class="btn btn--danger btn--sm"
-                  [disabled]="saving()"
-                  (click)="askDeleteComp(row)"
+                  class="btn btn--outline btn--sm"
+                  (click)="toggleExpandAll()"
+                  [appTooltip]="areAllExpanded() ? t('comps.collapseAll') : t('comps.expandAll')"
+                  tooltipPosition="bottom"
                 >
-                  {{ t('common.delete') }}
+                  <app-icon [name]="areAllExpanded() ? 'chevron-up' : 'chevron-down'" size="0.75rem" />
+                  {{ areAllExpanded() ? t('comps.collapseAll') : t('comps.expandAll') }}
                 </button>
               }
             </div>
-          </ng-template>
-        </app-data-table>
+          </div>
+
+          @if (loading()) {
+            <app-loading [label]="t('common.loading')" />
+          } @else if (loadFailed()) {
+            <app-error-state
+              [message]="t('common.error')"
+              [retryLabel]="t('common.retry')"
+              (retry)="loadComps()"
+            />
+          } @else if (filteredCompTree().length === 0) {
+            <app-empty-state
+              icon="package"
+              [message]="comps().length === 0 ? t('common.empty') : t('comps.noCompsMatch')"
+            />
+          } @else {
+            <div class="overflow-x-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+              <table class="w-full text-left text-sm border-collapse">
+                <thead>
+                  <tr class="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] font-medium">
+                    <th class="py-3 px-4">{{ t('common.name') }}</th>
+                    <th class="py-3 px-3">{{ t('common.category') }}</th>
+                    <th class="py-3 px-3">{{ t('comps.slots') }}</th>
+                    <th class="py-3 px-3 text-right">{{ t('comps.winrate') }}</th>
+                    <th class="py-3 px-4 text-right">{{ t('common.actions') }}</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-[var(--color-border)]">
+                  @for (item of filteredCompTree(); track item.comp.id) {
+                    <tr
+                      class="hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors"
+                      (click)="openComp(item.comp)"
+                    >
+                      <td class="py-3 px-4">
+                        <div class="flex items-center gap-2">
+                          @if (compFilterType() === 'all' && item.children.length > 0) {
+                            <button
+                              type="button"
+                              class="flex items-center justify-center w-6 h-6 rounded hover:bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] transition-transform"
+                              (click)="$event.stopPropagation(); toggleParentExpand(item.comp.id)"
+                              [appTooltip]="isExpanded(item.comp.id) ? t('comps.collapseAll') : t('comps.expandAll')"
+                              tooltipPosition="top"
+                            >
+                              <app-icon
+                                [name]="isExpanded(item.comp.id) ? 'chevron-down' : 'chevron-right'"
+                                size="0.875rem"
+                              />
+                            </button>
+                          } @else if (compFilterType() === 'variants') {
+                            <span class="w-2"></span>
+                          } @else {
+                            <span class="inline-block w-6 text-center text-[var(--color-text-tertiary)]">•</span>
+                          }
+
+                          <div class="flex flex-col gap-0.5 min-w-0">
+                            <div class="flex flex-wrap items-center gap-1.5">
+                              <span class="font-semibold text-[var(--color-text)]">
+                                {{ item.comp.name }}
+                              </span>
+                              <span class="chip text-xs">v{{ item.comp.version }}</span>
+
+                              @if (compFilterType() === 'variants') {
+                                <span class="chip chip--tonal text-xs">{{ t('comps.badge.variant') }}</span>
+                              } @else if (item.children.length > 0) {
+                                <span class="chip chip--primary text-xs font-medium">
+                                  {{ t('comps.badge.parent') }} · {{ item.children.length }} {{ item.children.length === 1 ? t('comps.variantSingular') : t('comps.variantsPlural') }}
+                                </span>
+                              } @else {
+                                <span class="chip text-xs text-[var(--color-text-secondary)]">
+                                  {{ t('comps.badge.parent') }}
+                                </span>
+                              }
+                            </div>
+
+                            @if (compFilterType() === 'variants') {
+                              <div class="text-xs text-[var(--color-text-secondary)] flex items-center gap-1 mt-0.5">
+                                <span>↳ {{ t('comps.derivedFrom') }}:</span>
+                                <a
+                                  [routerLink]="['/comps', item.comp.parent_id]"
+                                  class="underline hover:text-[var(--color-text)] font-medium"
+                                  (click)="$event.stopPropagation()"
+                                >
+                                  {{ getParentCompName(item.comp.parent_id) }}
+                                </a>
+                              </div>
+                            } @else if (item.comp.description) {
+                              <span class="text-xs text-[var(--color-text-secondary)] line-clamp-1">
+                                {{ item.comp.description }}
+                              </span>
+                            }
+                          </div>
+                        </div>
+                      </td>
+                      <td class="py-3 px-3">
+                        <span class="chip">{{ item.comp.category_name || t('comps.noCategory') }}</span>
+                      </td>
+                      <td class="py-3 px-3 text-[var(--color-text)]">
+                        {{ item.comp.build_count }} / {{ item.comp.total_quantity }}
+                      </td>
+                      <td class="py-3 px-3 text-right">
+                        @if (compPerformance(item.comp.id); as performance) {
+                          <span class="font-medium">{{ formatPercent(performance.stats.win_rate) }}</span>
+                        } @else {
+                          <span class="text-[var(--color-text-tertiary)]">-</span>
+                        }
+                      </td>
+                      <td class="py-3 px-4 text-right">
+                        <div class="flex flex-wrap items-center justify-end gap-1.5" (click)="$event.stopPropagation()">
+                          @if (canManageComps() && compFilterType() !== 'variants') {
+                            <button
+                              type="button"
+                              class="btn btn--outline btn--sm"
+                              (click)="openCreateVariant(item.comp)"
+                              [appTooltip]="t('comps.createVariantTooltip')"
+                              tooltipPosition="bottom"
+                            >
+                              <app-icon name="plus" size="0.75rem" />
+                              {{ t('comps.addVariant') }}
+                            </button>
+                          }
+                          <a class="btn btn--tonal btn--sm" [routerLink]="['/comps', item.comp.id]">
+                            {{ t('common.open') }}
+                          </a>
+                          @if (canManageComps()) {
+                            <button
+                              type="button"
+                              class="btn btn--danger btn--sm"
+                              [disabled]="saving()"
+                              (click)="askDeleteComp(item.comp)"
+                            >
+                              {{ t('common.delete') }}
+                            </button>
+                          }
+                        </div>
+                      </td>
+                    </tr>
+
+                    @if (compFilterType() === 'all' && item.children.length > 0 && isExpanded(item.comp.id)) {
+                      @for (child of item.children; track child.id; let lastChild = $last) {
+                        <tr
+                          class="bg-[var(--color-surface-2)]/30 hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors border-t border-[var(--color-border)]"
+                          (click)="openComp(child)"
+                        >
+                          <td class="py-2.5 px-4 pl-8">
+                            <div class="flex items-center gap-2">
+                              <span class="font-mono text-xs text-[var(--color-text-tertiary)] select-none">
+                                {{ lastChild ? '└──' : '├──' }} ↳
+                              </span>
+                              <div class="flex flex-col gap-0.5 min-w-0">
+                                <div class="flex flex-wrap items-center gap-1.5">
+                                  <span class="font-medium text-[var(--color-text)]">
+                                    {{ child.name }}
+                                  </span>
+                                  <span class="chip text-xs">v{{ child.version }}</span>
+                                  <span class="chip chip--tonal text-xs">{{ t('comps.badge.variant') }}</span>
+                                </div>
+                                @if (child.description) {
+                                  <span class="text-xs text-[var(--color-text-secondary)] line-clamp-1">
+                                    {{ child.description }}
+                                  </span>
+                                }
+                              </div>
+                            </div>
+                          </td>
+                          <td class="py-2.5 px-3">
+                            <span class="chip">{{ child.category_name || t('comps.noCategory') }}</span>
+                          </td>
+                          <td class="py-2.5 px-3 text-[var(--color-text)]">
+                            {{ child.build_count }} / {{ child.total_quantity }}
+                          </td>
+                          <td class="py-2.5 px-3 text-right">
+                            @if (compPerformance(child.id); as performance) {
+                              <span class="font-medium">{{ formatPercent(performance.stats.win_rate) }}</span>
+                            } @else {
+                              <span class="text-[var(--color-text-tertiary)]">-</span>
+                            }
+                          </td>
+                          <td class="py-2.5 px-4 text-right">
+                            <div class="flex flex-wrap items-center justify-end gap-1.5" (click)="$event.stopPropagation()">
+                              <a class="btn btn--tonal btn--sm" [routerLink]="['/comps', child.id]">
+                                {{ t('common.open') }}
+                              </a>
+                              @if (canManageComps()) {
+                                <button
+                                  type="button"
+                                  class="btn btn--danger btn--sm"
+                                  [disabled]="saving()"
+                                  (click)="askDeleteComp(child)"
+                                >
+                                  {{ t('common.delete') }}
+                                </button>
+                              }
+                            </div>
+                          </td>
+                        </tr>
+                      }
+                    }
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </section>
       } @else if (tab() === 'builds') {
         <app-data-table
           [columns]="buildColumns()"
@@ -290,7 +546,7 @@ type PendingDelete =
 
     @if (createOpen()) {
       <app-dialog
-        [title]="createButtonLabel()"
+        [title]="createDialogTitle()"
         [size]="tab() === 'builds' ? 'lg' : 'md'"
         (closed)="closeCreate()"
       >
@@ -548,6 +804,120 @@ export class Comps {
   protected readonly parentOptions = signal<CompSummary[]>([]);
   protected readonly compPerformanceById = signal<Record<number, CompPerformanceView>>({});
 
+  protected readonly compFilterType = signal<CompFilterType>('all');
+  protected readonly compSearchQuery = signal('');
+  protected readonly compSelectedCategory = signal('');
+  protected readonly expandedParentIds = signal<Set<number>>(new Set());
+  protected readonly createVariantTarget = signal<CompSummary | null>(null);
+
+  protected readonly compTypeFilterOptions = computed<ViewToggleOption[]>(() => [
+    { id: 'all', label: this.t('comps.filter.all') },
+    { id: 'parents', label: this.t('comps.filter.parents') },
+    { id: 'variants', label: this.t('comps.filter.variants') },
+  ]);
+
+  protected readonly compsMap = computed(() => {
+    const map = new Map<number, CompSummary>();
+    for (const comp of this.comps()) {
+      map.set(comp.id, comp);
+    }
+    return map;
+  });
+
+  protected readonly parentCompsCount = computed(
+    () => this.comps().filter((c) => !c.parent_id).length,
+  );
+
+  protected readonly variantCompsCount = computed(
+    () => this.comps().filter((c) => !!c.parent_id).length,
+  );
+
+  protected readonly compTree = computed<CompTreeItem[]>(() => {
+    const all = this.comps();
+    const parents: CompSummary[] = [];
+    const childrenMap = new Map<number, CompSummary[]>();
+    const knownIds = new Set(all.map((c) => c.id));
+    for (const c of all) {
+      if (c.parent_id && knownIds.has(c.parent_id)) {
+        const list = childrenMap.get(c.parent_id) ?? [];
+        list.push(c);
+        childrenMap.set(c.parent_id, list);
+      } else {
+        parents.push(c);
+      }
+    }
+    return parents.map((comp) => ({
+      comp,
+      children: childrenMap.get(comp.id) ?? [],
+    }));
+  });
+
+  protected readonly filteredCompTree = computed<CompTreeItem[]>(() => {
+    const filterType = this.compFilterType();
+    const search = this.compSearchQuery().trim().toLowerCase();
+    const catId = this.compSelectedCategory() ? Number(this.compSelectedCategory()) : null;
+    const tree = this.compTree();
+
+    const matchesFilter = (c: CompSummary): boolean => {
+      if (catId !== null && c.category_id !== catId) {
+        return false;
+      }
+      if (!search) {
+        return true;
+      }
+      return (
+        c.name.toLowerCase().includes(search) ||
+        (c.description?.toLowerCase().includes(search) ?? false) ||
+        (c.category_name?.toLowerCase().includes(search) ?? false)
+      );
+    };
+
+    if (filterType === 'parents') {
+      return tree
+        .filter((item) => matchesFilter(item.comp))
+        .map((item) => ({ comp: item.comp, children: [] }));
+    }
+
+    if (filterType === 'variants') {
+      const variantItems: CompTreeItem[] = [];
+      for (const item of tree) {
+        for (const child of item.children) {
+          if (matchesFilter(child)) {
+            variantItems.push({ comp: child, children: [] });
+          }
+        }
+      }
+      return variantItems;
+    }
+
+    const result: CompTreeItem[] = [];
+    for (const item of tree) {
+      const parentMatches = matchesFilter(item.comp);
+      const matchingChildren = item.children.filter((c) => matchesFilter(c));
+      if (parentMatches || matchingChildren.length > 0) {
+        result.push({
+          comp: item.comp,
+          children: search || catId !== null ? matchingChildren : item.children,
+        });
+      }
+    }
+    return result;
+  });
+
+  protected readonly hasExpandableParents = computed(() => {
+    return this.filteredCompTree().some((item) => item.children.length > 0);
+  });
+
+  protected readonly areAllExpanded = computed(() => {
+    const tree = this.filteredCompTree();
+    const expandable = tree.filter((item) => item.children.length > 0);
+    if (expandable.length === 0) {
+      return false;
+    }
+    const set = this.expandedParentIds();
+    return expandable.every((item) => set.has(item.comp.id));
+  });
+
   protected readonly createOpen = signal(false);
   protected readonly categoryDialogOpen = signal(false);
   protected readonly categoryDialogMode = signal<'create' | 'edit'>('create');
@@ -791,7 +1161,83 @@ export class Comps {
 
   protected closeCreate(): void {
     this.createOpen.set(false);
+    this.createVariantTarget.set(null);
     this.resetCreateForm();
+  }
+
+  protected isExpanded(parentId: number): boolean {
+    return this.expandedParentIds().has(parentId);
+  }
+
+  protected toggleParentExpand(parentId: number): void {
+    this.expandedParentIds.update((set) => {
+      const next = new Set(set);
+      if (next.has(parentId)) {
+        next.delete(parentId);
+      } else {
+        next.add(parentId);
+      }
+      return next;
+    });
+  }
+
+  protected toggleExpandAll(): void {
+    if (this.areAllExpanded()) {
+      this.expandedParentIds.set(new Set());
+    } else {
+      const allIds = new Set(
+        this.filteredCompTree()
+          .filter((i) => i.children.length > 0)
+          .map((i) => i.comp.id),
+      );
+      this.expandedParentIds.set(allIds);
+    }
+  }
+
+  protected getParentCompName(parentId: number | null | undefined): string {
+    if (!parentId) {
+      return '';
+    }
+    return this.compsMap().get(parentId)?.name ?? `#${parentId}`;
+  }
+
+  protected onCompSearchChange(event: Event): void {
+    this.compSearchQuery.set((event.target as HTMLInputElement).value);
+  }
+
+  protected clearCompSearch(): void {
+    this.compSearchQuery.set('');
+  }
+
+  protected onCompCategoryChange(event: Event): void {
+    this.compSelectedCategory.set((event.target as HTMLSelectElement).value);
+  }
+
+  protected setCompFilterType(type: string): void {
+    if (type === 'all' || type === 'parents' || type === 'variants') {
+      this.compFilterType.set(type);
+    }
+  }
+
+  protected openCreateVariant(parentComp: CompSummary): void {
+    this.draftName.set('');
+    this.draftDescription.set('');
+    this.draftCategoryId.set(String(parentComp.category_id));
+    this.draftParentCompId.set(String(parentComp.id));
+    this.draftBuildEntries.set([]);
+    this.selectedBuildId.set('');
+    this.selectedBuildQuantity.set(1);
+    this.createVariantTarget.set(parentComp);
+    this.createOpen.set(true);
+    void this.loadCreateOptions();
+  }
+
+  protected createDialogTitle(): string {
+    const target = this.createVariantTarget();
+    if (target) {
+      return `${this.t('comps.createVariantFor')}: ${target.name}`;
+    }
+    return this.createButtonLabel();
   }
 
   protected openComp(row: CompSummary): void {
@@ -1363,10 +1809,22 @@ export class Comps {
     this.loadFailed.set(false);
     try {
       const data = await firstValueFrom(
-        this.api.get<PaginatedData<CompSummary>>('api/comps', this.listParams(this.compsPage)),
+        this.api.get<PaginatedData<CompSummary>>('api/comps', {
+          page: 1,
+          limit: OPTIONS_LIMIT,
+          sort: 'name',
+          order: 'asc',
+        }),
       );
       this.comps.set(data.items);
       this.compsTotal.set(data.total_items);
+      const parentIds = new Set<number>();
+      for (const comp of data.items) {
+        if (comp.parent_id) {
+          parentIds.add(comp.parent_id);
+        }
+      }
+      this.expandedParentIds.set(parentIds);
       await this.loadCompPerformance(data.items);
     } catch (error) {
       this.loadFailed.set(true);

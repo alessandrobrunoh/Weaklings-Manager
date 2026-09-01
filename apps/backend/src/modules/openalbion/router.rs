@@ -293,7 +293,10 @@ pub async fn list_categories(
 )]
 pub async fn get_abilities(
     _user: UserContext,
-) -> Json<ApiResponse<&'static std::collections::HashMap<String, super::catalog::OpenAlbionItemAbilities>>>
-{
+) -> Json<
+    ApiResponse<
+        &'static std::collections::HashMap<String, super::catalog::OpenAlbionItemAbilities>,
+    >,
+> {
     Json(ApiResponse::new(super::service::ability_catalog()))
 }

@@ -65,6 +65,8 @@ mod m20260901_000002_add_loadout_to_build_items;
 mod m20260901_000003_create_build_item_spells;
 mod m20260901_000004_add_event_voice_category;
 mod m20260901_000005_add_event_voice_channel;
+mod m20260901_000006_create_fights;
+mod m20260901_000007_create_event_roster_roles;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -134,6 +136,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260901_000003_create_build_item_spells::Migration),
             Box::new(m20260901_000004_add_event_voice_category::Migration),
             Box::new(m20260901_000005_add_event_voice_channel::Migration),
+            Box::new(m20260901_000006_create_fights::Migration),
+            Box::new(m20260901_000007_create_event_roster_roles::Migration),
         ]
     }
 }

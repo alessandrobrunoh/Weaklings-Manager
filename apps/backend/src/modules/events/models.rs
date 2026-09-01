@@ -293,6 +293,44 @@ pub struct EventBattleView {
     pub opponent_kill_fame: Option<i64>,
 }
 
+/// One canonical real-world fight, composed of one or more AlbionBB battle segments.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct EventFightView {
+    /// Canonical Fight database ID.
+    pub id: i64,
+    /// When the first segment began (RFC3339).
+    pub started_at: String,
+    /// When the latest known segment ended, if supplied by AlbionBB.
+    pub ended_at: Option<String>,
+    /// `seeded`, `automatic`, or later `manual` grouping provenance.
+    pub grouping_method: String,
+    /// Evidence score used by automatic grouping.
+    pub grouping_confidence: f64,
+    /// Whether this grouping needs officer review.
+    pub needs_review: bool,
+    /// Technical AlbionBB battle IDs that make up this Fight, in sequence.
+    pub battle_ids: Vec<String>,
+}
+
+/// A role available on an event roster.
+///
+/// The first entry is always the virtual `Fill` role. It has no database ID or
+/// build and represents unlimited-capacity flexible assignments.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct EventRosterRoleView {
+    /// Persisted role ID. `None` for the virtual `Fill` role.
+    #[schema(example = 42)]
+    pub id: Option<i64>,
+    /// Build ID assigned to this extra role. `None` for `Fill`.
+    #[schema(example = 5)]
+    pub build_id: Option<i64>,
+    /// Display name of the role or build.
+    #[schema(example = "Fill")]
+    pub name: String,
+    /// Whether this is the automatic unlimited-capacity Fill role.
+    pub is_fill: bool,
+}
+
 /// Full details of an event including active comp details and participants list.
 #[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct EventDetailView {
@@ -307,9 +345,13 @@ pub struct EventDetailView {
     /// The total capacity of the active composition.
     #[schema(example = 25)]
     pub active_comp_capacity: i64,
+    /// Available roster roles. `Fill` is always first and has unlimited capacity.
+    pub roster_roles: Vec<EventRosterRoleView>,
     /// The list of registered participants.
     pub participants: Vec<EventParticipantView>,
-    /// Battles linked to this event session (only populated while/after live).
+    /// Canonical fights linked to this event. Each contains one or more raw Battle segments.
+    pub fights: Vec<EventFightView>,
+    /// Raw Battle segments retained for compatibility and traceability.
     pub battles: Vec<EventBattleView>,
     /// Aggregated event outcome and fight performance.
     pub stats: BattlePerformanceStats,
@@ -340,6 +382,15 @@ pub struct EventDetailView {
 pub struct UpdateEventBattlesRequest {
     /// AlbionBB battle IDs to attach. Empty list removes every linked battle from the event.
     pub battle_ids: Vec<String>,
+}
+
+/// Request body to add an existing build as an extra roster role for an event.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[schema(example = json!({ "build_id": 5 }))]
+pub struct CreateEventRosterRoleRequest {
+    /// Existing build to make available as an event-specific roster role.
+    #[schema(example = 5)]
+    pub build_id: i64,
 }
 
 /// Request body to create a new event.
@@ -417,9 +468,9 @@ pub struct UpdateEventRequest {
     "secondary_build_id": 7
 }))]
 pub struct ParticipateEventRequest {
-    /// The primary build ID chosen (must have available slots in active comp).
+    /// The primary build ID chosen (must have a slot in the active comp or an extra roster role).
     pub primary_build_id: i64,
-    /// The optional backup/secondary build ID.
+    /// The optional backup/secondary build ID (must be in the active comp or extra roster roles).
     pub secondary_build_id: Option<i64>,
 }
 
@@ -435,8 +486,8 @@ pub struct ParticipateEventRequest {
     "secondary_build_id": 7
 }))]
 pub struct SetParticipantRequest {
-    /// The primary build ID to assign (must have available slots in active comp).
+    /// The primary build ID to assign (must have a slot in the active comp or an extra roster role).
     pub primary_build_id: i64,
-    /// The optional backup/secondary build ID to assign.
+    /// The optional backup/secondary build ID to assign (must be in the active comp or extra roster roles).
     pub secondary_build_id: Option<i64>,
 }

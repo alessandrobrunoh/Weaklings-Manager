@@ -3,7 +3,7 @@
 use axum::{
     Extension, Json, Router,
     extract::{Path, Query},
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
 };
 
 use crate::config::Config;
@@ -13,16 +13,17 @@ use crate::modules::audit::service::AuditService;
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedData, PaginationParams};
 use crate::responses::{
-    ApiResponse, ApiResponseEventDetail, ApiResponseEventList, ApiResponseEventView,
+    ApiResponse, ApiResponseEventDetail, ApiResponseEventList, ApiResponseEventRosterRoleList,
+    ApiResponseEventView,
 };
 use axum::http::StatusCode;
 use sea_orm::EntityTrait;
 use std::collections::HashSet;
 
 use super::models::{
-    CreateEventRequest, EventDetailView, EventFilters, EventView, ParticipateEventRequest,
-    SetEventVoiceChannelRequest, SetParticipantRequest, UpdateEventBattlesRequest,
-    UpdateEventRequest,
+    CreateEventRequest, CreateEventRosterRoleRequest, EventDetailView, EventFilters,
+    EventRosterRoleView, EventView, ParticipateEventRequest, SetEventVoiceChannelRequest,
+    SetParticipantRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
 use super::service::{BattleLinkingContext, EventService};
 use crate::modules::admin::models::DiscordRoleView;
@@ -39,6 +40,14 @@ pub fn router() -> Router {
             get(get_event).patch(update_event).delete(delete_event),
         )
         .route("/discord-roles", get(list_event_discord_roles))
+        .route(
+            "/{id}/roster-roles",
+            get(list_event_roster_roles).post(create_event_roster_role),
+        )
+        .route(
+            "/{id}/roster-roles/{role_id}",
+            delete(delete_event_roster_role),
+        )
         .route(
             "/{id}/participate",
             post(participate).delete(cancel_participation),
@@ -131,6 +140,93 @@ async fn get_event(
         .get_event_detail_with_context(&db, id, &context)
         .await?;
     Ok(Json(ApiResponse::new(event)))
+}
+
+/// Lists event roster roles.
+///
+/// Any authenticated user can read the virtual `Fill` role and persisted extra roles.
+#[utoipa::path(
+    get,
+    path = "/api/events/{id}/roster-roles",
+    tag = "events",
+    summary = "List event roster roles",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    responses(
+        (status = 200, description = "Roster roles retrieved", body = ApiResponseEventRosterRoleList),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails)
+    )
+)]
+async fn list_event_roster_roles(
+    _user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<Vec<EventRosterRoleView>>>, AppError> {
+    let roles = EventService::new().list_event_roster_roles(&db, id).await?;
+    Ok(Json(ApiResponse::new(roles)))
+}
+
+/// Adds an existing build as an event-specific roster role.
+#[utoipa::path(
+    post,
+    path = "/api/events/{id}/roster-roles",
+    tag = "events",
+    summary = "Add event roster role",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    request_body = CreateEventRosterRoleRequest,
+    responses(
+        (status = 200, description = "Roster role added", body = EventRosterRoleView),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 404, description = "Event or build not found", body = ProblemDetails),
+        (status = 409, description = "Build is already an extra roster role", body = ProblemDetails)
+    )
+)]
+async fn create_event_roster_role(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+    Json(request): Json<CreateEventRosterRoleRequest>,
+) -> Result<Json<ApiResponse<EventRosterRoleView>>, AppError> {
+    user.require(&perms, Permission::EventsManage).await?;
+    let role = EventService::new()
+        .create_event_roster_role(&db, id, request)
+        .await?;
+    Ok(Json(ApiResponse::new(role)))
+}
+
+/// Deletes an event-specific roster role.
+#[utoipa::path(
+    delete,
+    path = "/api/events/{id}/roster-roles/{role_id}",
+    tag = "events",
+    summary = "Remove event roster role",
+    security(("session_cookie" = [])),
+    params(
+        ("id" = i64, Path, description = "Event ID"),
+        ("role_id" = i64, Path, description = "Persisted extra roster-role ID")
+    ),
+    responses(
+        (status = 204, description = "Roster role removed"),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 404, description = "Event roster role not found", body = ProblemDetails)
+    )
+)]
+async fn delete_event_roster_role(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path((id, role_id)): Path<(i64, i64)>,
+) -> Result<StatusCode, AppError> {
+    user.require(&perms, Permission::EventsManage).await?;
+    EventService::new()
+        .delete_event_roster_role(&db, id, role_id)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Creates a new event.

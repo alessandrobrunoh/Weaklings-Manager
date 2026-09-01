@@ -3,6 +3,7 @@
 //! Handles scheduling events and coordinating player sign-ups / comp scaling.
 
 pub mod entities;
+pub mod fight_grouping;
 pub mod models;
 pub mod router;
 pub mod service;

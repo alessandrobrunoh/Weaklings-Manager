@@ -1,6 +1,6 @@
 //! Sea-ORM entities for the events module tables.
 //!
-//! Two tables: events, event_participations.
+//! Event tables, including persisted participants and extra roster roles.
 
 pub mod event {
     use sea_orm::entity::prelude::*;
@@ -57,6 +57,7 @@ pub mod event {
         Participations,
         EventBattles,
         DiscordRoles,
+        RosterRoles,
     }
 
     impl RelationTrait for Relation {
@@ -73,6 +74,7 @@ pub mod event {
                 Self::Participations => Entity::has_many(super::event_participation::Entity).into(),
                 Self::EventBattles => Entity::has_many(super::event_battle::Entity).into(),
                 Self::DiscordRoles => Entity::has_many(super::event_discord_role::Entity).into(),
+                Self::RosterRoles => Entity::has_many(super::event_roster_role::Entity).into(),
             }
         }
     }
@@ -104,6 +106,12 @@ pub mod event {
     impl Related<super::event_discord_role::Entity> for Entity {
         fn to() -> RelationDef {
             Relation::DiscordRoles.def()
+        }
+    }
+
+    impl Related<super::event_roster_role::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::RosterRoles.def()
         }
     }
 
@@ -143,6 +151,58 @@ pub mod event_discord_role {
     impl Related<super::event::Entity> for Entity {
         fn to() -> RelationDef {
             Relation::Event.def()
+        }
+    }
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+pub mod event_roster_role {
+    use sea_orm::entity::prelude::*;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
+    #[sea_orm(table_name = "event_roster_roles")]
+    pub struct Model {
+        /// The unique persisted role ID.
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        /// Event that owns this extra role.
+        pub event_id: i64,
+        /// Existing build exposed as this extra roster role.
+        pub build_id: i64,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter)]
+    pub enum Relation {
+        Event,
+        Build,
+    }
+
+    impl RelationTrait for Relation {
+        fn def(&self) -> RelationDef {
+            match self {
+                Self::Event => Entity::belongs_to(super::event::Entity)
+                    .from(Column::EventId)
+                    .to(super::event::Column::Id)
+                    .into(),
+                Self::Build => Entity::belongs_to(crate::modules::comps::entities::build::Entity)
+                    .from(Column::BuildId)
+                    .to(crate::modules::comps::entities::build::Column::Id)
+                    .into(),
+            }
+        }
+    }
+
+    impl Related<super::event::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Event.def()
+        }
+    }
+
+    impl Related<crate::modules::comps::entities::build::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Build.def()
         }
     }
 
@@ -217,6 +277,99 @@ pub mod event_participation {
     impl Related<crate::modules::users::entities::Entity> for Entity {
         fn to() -> RelationDef {
             Relation::User.def()
+        }
+    }
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+pub mod fight {
+    use sea_orm::entity::prelude::*;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "fights")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        pub event_id: Option<i64>,
+        pub started_at: DateTimeWithTimeZone,
+        pub ended_at: Option<DateTimeWithTimeZone>,
+        pub grouping_method: String,
+        pub grouping_confidence: f64,
+        pub grouping_version: String,
+        pub needs_review: bool,
+        pub created_at: DateTimeWithTimeZone,
+        pub updated_at: DateTimeWithTimeZone,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter)]
+    pub enum Relation {
+        Event,
+        Segments,
+    }
+
+    impl RelationTrait for Relation {
+        fn def(&self) -> RelationDef {
+            match self {
+                Self::Event => Entity::belongs_to(super::event::Entity)
+                    .from(Column::EventId)
+                    .to(super::event::Column::Id)
+                    .into(),
+                Self::Segments => Entity::has_many(super::fight_battle::Entity).into(),
+            }
+        }
+    }
+
+    impl Related<super::event::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Event.def()
+        }
+    }
+
+    impl Related<super::fight_battle::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Segments.def()
+        }
+    }
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+pub mod fight_battle {
+    use sea_orm::entity::prelude::*;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
+    #[sea_orm(table_name = "fight_battles")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        pub fight_id: i64,
+        pub battle_id: i64,
+        pub sequence_number: i32,
+        pub created_at: DateTimeWithTimeZone,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter)]
+    pub enum Relation {
+        Fight,
+    }
+
+    impl RelationTrait for Relation {
+        fn def(&self) -> RelationDef {
+            match self {
+                Self::Fight => Entity::belongs_to(super::fight::Entity)
+                    .from(Column::FightId)
+                    .to(super::fight::Column::Id)
+                    .into(),
+            }
+        }
+    }
+
+    impl Related<super::fight::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Fight.def()
         }
     }
 

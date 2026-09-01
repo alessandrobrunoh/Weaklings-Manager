@@ -23,16 +23,15 @@ use super::entities::{
 use super::entities::{
     build::Column as BuildColumn, build_category::Column as BuildCategoryColumn,
     build_item::Column as BuildItemColumn, build_item_spell::Column as BuildItemSpellColumn,
-    comp::Column as CompColumn,
-    comp_build::Column as CompBuildColumn,
+    comp::Column as CompColumn, comp_build::Column as CompBuildColumn,
 };
 use super::models::{
     AddCompBuildRequest, BuildCategoryView, BuildDetail, BuildFilters, BuildItemSpells,
-    BuildItemView, BuildSummary, BuildVersionRef,
-    CompBuildView, CompCategoryView, CompDetail, CompFilters, CompSummary,
-    CreateBuildCategoryRequest, CreateBuildRequest, CreateCompCategoryRequest, CreateCompRequest,
-    UpdateBuildCategoryRequest, UpdateBuildRequest, UpdateCompBuildQuantityRequest,
-    UpdateCompCategoryRequest, UpdateCompRequest, UpsertBuildItemRequest,
+    BuildItemView, BuildSummary, BuildVersionRef, CompBuildView, CompCategoryView, CompDetail,
+    CompFilters, CompSummary, CreateBuildCategoryRequest, CreateBuildRequest,
+    CreateCompCategoryRequest, CreateCompRequest, UpdateBuildCategoryRequest, UpdateBuildRequest,
+    UpdateCompBuildQuantityRequest, UpdateCompCategoryRequest, UpdateCompRequest,
+    UpsertBuildItemRequest,
 };
 use super::status::{BuildLoadout, BuildRole, BuildSlot};
 
@@ -125,7 +124,11 @@ fn validate_ability_choice(
     let (groups, declared) = match kind {
         ACTIVE_KIND => (&abilities.active, abilities.active_slots),
         PASSIVE_KIND => (&abilities.passive, abilities.passive_slots),
-        other => return Err(AppError::Validation(format!("unknown ability kind: {other}"))),
+        other => {
+            return Err(AppError::Validation(format!(
+                "unknown ability kind: {other}"
+            )));
+        }
     };
 
     if slot_index < 1 || slot_index > declared {
@@ -211,7 +214,9 @@ async fn drop_abilities_the_item_no_longer_offers(
 
     for row in rows {
         if validate_ability_choice(item, &row.kind, row.slot_index, &row.spell_id).is_err() {
-            build_item_spell::Entity::delete_by_id(row.id).exec(db).await?;
+            build_item_spell::Entity::delete_by_id(row.id)
+                .exec(db)
+                .await?;
         }
     }
     Ok(())
@@ -740,9 +745,9 @@ impl CompService {
             .all(db)
             .await?;
 
-        let taken = siblings.iter().any(|sibling| {
-            Some(sibling.id) != exclude_id && identity_key(&sibling.name) == key
-        });
+        let taken = siblings
+            .iter()
+            .any(|sibling| Some(sibling.id) != exclude_id && identity_key(&sibling.name) == key);
         if taken {
             return Err(AppError::Conflict(format!(
                 "A build named {:?} already exists in this category",
@@ -774,7 +779,9 @@ impl CompService {
             .all(db)
             .await?
             .into_iter()
-            .any(|candidate| !moving.contains(&candidate.id) && identity_key(&candidate.name) == key);
+            .any(|candidate| {
+                !moving.contains(&candidate.id) && identity_key(&candidate.name) == key
+            });
         if taken {
             return Err(AppError::Conflict(format!(
                 "A build named {:?} already exists in this category",
@@ -804,7 +811,9 @@ impl CompService {
             .all(db)
             .await?
             .into_iter()
-            .any(|candidate| !moving.contains(&candidate.id) && identity_key(&candidate.name) == key);
+            .any(|candidate| {
+                !moving.contains(&candidate.id) && identity_key(&candidate.name) == key
+            });
         if taken {
             return Err(AppError::Conflict(format!(
                 "A composition named {:?} already exists in this category",
@@ -830,9 +839,9 @@ impl CompService {
             .all(db)
             .await?;
 
-        let taken = siblings.iter().any(|sibling| {
-            Some(sibling.id) != exclude_id && identity_key(&sibling.name) == key
-        });
+        let taken = siblings
+            .iter()
+            .any(|sibling| Some(sibling.id) != exclude_id && identity_key(&sibling.name) == key);
         if taken {
             return Err(AppError::Conflict(format!(
                 "A composition named {:?} already exists in this category",
@@ -841,7 +850,6 @@ impl CompService {
         }
         Ok(())
     }
-
 
     /// Creates a new build with optional initial items, validating the category exists.
     pub async fn create_build(
@@ -948,10 +956,15 @@ impl CompService {
             let _ = category_id; // used above for validation
         }
 
-        let target_name = req.name.as_deref().unwrap_or(&build.name).trim().to_string();
+        let target_name = req
+            .name
+            .as_deref()
+            .unwrap_or(&build.name)
+            .trim()
+            .to_string();
         let target_category = req.category_id.unwrap_or(build.category_id);
-        let identity_changed =
-            identity_key(&target_name) != identity_key(&build.name) || target_category != build.category_id;
+        let identity_changed = identity_key(&target_name) != identity_key(&build.name)
+            || target_category != build.category_id;
         if identity_changed {
             self.ensure_group_identity_free(db, &build, &target_name, target_category)
                 .await?;
@@ -1908,7 +1921,13 @@ mod tests {
 
         for loadout in [BuildLoadout::Main, BuildLoadout::Swap] {
             service
-                .upsert_build_item(&db, build_id, loadout, BuildSlot::Weapon, weapon("Polehammer"))
+                .upsert_build_item(
+                    &db,
+                    build_id,
+                    loadout,
+                    BuildSlot::Weapon,
+                    weapon("Polehammer"),
+                )
                 .await
                 .expect("weapon should be stored");
         }
@@ -1923,7 +1942,10 @@ mod tests {
             .count(&db)
             .await
             .unwrap();
-        assert_eq!(remaining, 0, "deleting a build must cascade to both loadouts");
+        assert_eq!(
+            remaining, 0,
+            "deleting a build must cascade to both loadouts"
+        );
     }
 
     #[test]
@@ -2029,13 +2051,22 @@ mod tests {
             .expect("abilities the weapon offers should be accepted");
 
         let stored = spells_on(&detail, BuildLoadout::Main, BuildSlot::Weapon);
-        assert_eq!(stored.active.get("1").map(String::as_str), Some("HEROICSTRIKE2"));
-        assert_eq!(stored.active.get("3").map(String::as_str), Some("MIGHTYBLOW"));
+        assert_eq!(
+            stored.active.get("1").map(String::as_str),
+            Some("HEROICSTRIKE2")
+        );
+        assert_eq!(
+            stored.active.get("3").map(String::as_str),
+            Some("MIGHTYBLOW")
+        );
         assert_eq!(
             stored.passive.get("1").map(String::as_str),
             Some("PASSIVE_BLEEDCHANCE")
         );
-        assert!(stored.active.get("2").is_none(), "an unfilled slot stays empty");
+        assert!(
+            stored.active.get("2").is_none(),
+            "an unfilled slot stays empty"
+        );
     }
 
     #[tokio::test]
@@ -2124,7 +2155,10 @@ mod tests {
 
         let stored = spells_on(&detail, BuildLoadout::Main, BuildSlot::Weapon);
         assert_eq!(stored.active.len(), 1, "the omitted slot should be cleared");
-        assert_eq!(stored.active.get("1").map(String::as_str), Some("HEROICSTRIKE2"));
+        assert_eq!(
+            stored.active.get("1").map(String::as_str),
+            Some("HEROICSTRIKE2")
+        );
     }
 
     #[tokio::test]
@@ -2358,7 +2392,10 @@ mod tests {
             .unwrap();
 
         let main = spells_on(&copy, BuildLoadout::Main, BuildSlot::Weapon);
-        assert_eq!(main.active.get("1").map(String::as_str), Some("HEROICSTRIKE2"));
+        assert_eq!(
+            main.active.get("1").map(String::as_str),
+            Some("HEROICSTRIKE2")
+        );
         assert_eq!(
             main.passive.get("1").map(String::as_str),
             Some("PASSIVE_BLEEDCHANCE")
@@ -2469,7 +2506,10 @@ mod tests {
             "v1's abilities must not follow v2's edit"
         );
         assert!(
-            !original.items.iter().any(|item| item.slot == BuildSlot::Head),
+            !original
+                .items
+                .iter()
+                .any(|item| item.slot == BuildSlot::Head),
             "v1 must not gain the item added to v2"
         );
     }
@@ -2596,7 +2636,11 @@ mod tests {
 
         let unchanged = service.get_build(&db, hammer.summary.id).await.unwrap();
         assert_eq!(unchanged.summary.name, "Pole Hammer");
-        assert_eq!(unchanged.versions.len(), 2, "no version was left half-renamed");
+        assert_eq!(
+            unchanged.versions.len(),
+            2,
+            "no version was left half-renamed"
+        );
     }
 
     #[tokio::test]
@@ -2625,7 +2669,12 @@ mod tests {
             .await
             .unwrap();
 
-        expect_conflict(service.delete_build(&db, second.summary.id).await.unwrap_err());
+        expect_conflict(
+            service
+                .delete_build(&db, second.summary.id)
+                .await
+                .unwrap_err(),
+        );
         service
             .delete_build(&db, build_id)
             .await
@@ -2820,7 +2869,12 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            service.get_comp(&db, comp.summary.id).await.unwrap().summary.name,
+            service
+                .get_comp(&db, comp.summary.id)
+                .await
+                .unwrap()
+                .summary
+                .name,
             "Bomb"
         );
     }
@@ -2873,12 +2927,31 @@ mod tests {
         // `insert_build` writes the row without naming `version`, exactly as a row written before
         // the column existed reads back through the migration's default.
         let legacy = insert_build(&db, "Pole Hammer", "dps", category, user).await;
-        let legacy_comp = insert_comp(&db, "Standard", insert_comp_category(&db, "ZvZ").await, user).await;
+        let legacy_comp = insert_comp(
+            &db,
+            "Standard",
+            insert_comp_category(&db, "ZvZ").await,
+            user,
+        )
+        .await;
         let service = CompService::new();
 
-        assert_eq!(service.get_build(&db, legacy).await.unwrap().summary.version, 1);
         assert_eq!(
-            service.get_comp(&db, legacy_comp).await.unwrap().summary.version,
+            service
+                .get_build(&db, legacy)
+                .await
+                .unwrap()
+                .summary
+                .version,
+            1
+        );
+        assert_eq!(
+            service
+                .get_comp(&db, legacy_comp)
+                .await
+                .unwrap()
+                .summary
+                .version,
             1
         );
     }
@@ -3156,7 +3229,10 @@ mod tests {
             )
             .await
             .expect("a build must not conflict with itself");
-        assert_eq!(updated.summary.description.as_deref(), Some("Crystal opener"));
+        assert_eq!(
+            updated.summary.description.as_deref(),
+            Some("Crystal opener")
+        );
     }
 
     #[tokio::test]

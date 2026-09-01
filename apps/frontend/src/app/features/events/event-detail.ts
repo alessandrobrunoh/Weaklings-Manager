@@ -20,12 +20,15 @@ import type {
   BuildItemSlot,
   BuildRole,
   BuildSlot,
+  BuildSummary,
   CompBuildEntry,
   CompDetail,
   CompSummary,
   EventBattleSummary,
   EventDetailView,
+  EventFight,
   EventParticipant,
+  EventRosterRole,
   OpponentPerformanceView,
   PaginatedData,
   ParticipateEventRequest,
@@ -426,6 +429,16 @@ export interface CompPartyGroup {
                     </button>
                   </div>
 
+                  @if (canEdit()) {
+                    <button
+                      type="button"
+                      class="btn btn--outline btn--sm"
+                      (click)="openRosterRoleManager()"
+                    >
+                      + Ruolo extra
+                    </button>
+                  }
+
                   @if (canManageParticipants()) {
                     <button
                       type="button"
@@ -714,6 +727,23 @@ export interface CompPartyGroup {
                   <!-- VIEW 2: ROLE MATRIX VIEW -->
                   @if (rosterView() === 'roles') {
                     <div class="space-y-4">
+                      <div class="card overflow-hidden border border-dashed border-[var(--color-border)] rounded-xl">
+                        <div class="bg-[var(--color-surface-1)] px-4 py-2.5 border-b border-[var(--color-border)] flex items-center justify-between gap-3">
+                          <div>
+                            <span class="chip chip--tonal font-medium text-xs">Fill</span>
+                            <p class="mt-1 text-xs text-[var(--color-text-secondary)]">Posti illimitati per i partecipanti non assegnati alla comp.</p>
+                          </div>
+                          <span class="text-xs font-mono text-[var(--color-text-secondary)]">{{ unassignedParticipants().length }} iscritti</span>
+                        </div>
+                        <div class="p-3 flex flex-wrap gap-2">
+                          @for (participant of unassignedParticipants(); track participant.user_id) {
+                            <span class="chip text-xs">{{ participant.username }} · {{ participant.primary_build_name }}</span>
+                          } @empty {
+                            <span class="text-xs text-[var(--color-text-secondary)]">Nessun partecipante nel Fill.</span>
+                          }
+                        </div>
+                      </div>
+
                       @for (group of compSlotsByRole(); track group.role) {
                         <div class="card p-0 overflow-hidden border border-[var(--color-border)] rounded-xl">
                           <div class="bg-[var(--color-surface-1)] px-4 py-2.5 border-b border-[var(--color-border)] flex items-center justify-between">
@@ -1060,7 +1090,7 @@ export interface CompPartyGroup {
                 <div class="flex flex-wrap items-center justify-between gap-3">
                   <div class="flex items-center gap-3">
                     <h2 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text)]">
-                      {{ t('events.detail.battles') }} ({{ detail.battles.length }})
+                      Fight {{ detail.fights.length }} · {{ t('events.detail.battles') }} ({{ detail.battles.length }})
                     </h2>
                     <span class="font-mono text-xs text-[var(--color-text-secondary)]">
                       {{ detail.stats.wins }}W / {{ detail.stats.losses }}L
@@ -1134,7 +1164,21 @@ export interface CompPartyGroup {
                 }
               </section>
 
-              <!-- Detailed Battle Cards List -->
+              @if (detail.fights.length > 0) {
+                <section class="space-y-2" aria-label="Canonical fights">
+                  @for (fight of detail.fights; track fight.id) {
+                    <article class="card flex flex-wrap items-center justify-between gap-3 p-3">
+                      <div>
+                        <p class="font-medium">Fight #{{ fight.id }} · {{ fight.battle_ids.length }} segments</p>
+                        <p class="text-xs text-[var(--color-text-secondary)]">{{ formatDate(fight.started_at) }} · {{ fight.grouping_method }} @if (fight.needs_review) { · review needed }</p>
+                      </div>
+                      <button type="button" class="btn btn--primary btn--sm" (click)="openFight(fight)">Open Fight</button>
+                    </article>
+                  }
+                </section>
+              }
+
+              <!-- Raw Battle segment drill-down -->
               @if (detail.battles.length > 0) {
                 <div class="space-y-3">
                   @for (battle of detail.battles; track battle.id) {
@@ -1484,6 +1528,47 @@ export interface CompPartyGroup {
           </div>
         </div>
       </div>
+    }
+
+    @if (rosterRoleManagerOpen()) {
+      <app-dialog title="Ruoli extra del roster" size="md" (closed)="closeRosterRoleManager()">
+        <div class="grid gap-4">
+          <section aria-labelledby="fill-role-heading" class="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-1)] p-3">
+            <h2 id="fill-role-heading" class="text-sm font-medium text-[var(--color-text)]">Fill</h2>
+            <p class="mt-1 text-xs text-[var(--color-text-secondary)]">Ruolo automatico con posti illimitati. Non può essere rimosso.</p>
+          </section>
+
+          <form class="grid gap-2" (submit)="addRosterRole($event)">
+            <label for="extra-roster-build" class="label">Build per il nuovo ruolo</label>
+            <div class="flex gap-2">
+              <select id="extra-roster-build" name="build_id" class="select flex-1" required [value]="draftRosterRoleBuildId()" (change)="onDraftRosterRoleBuildChange($event)">
+                <option value="">Seleziona una build</option>
+                @for (build of availableExtraRoleBuilds(); track build.id) {
+                  <option [value]="build.id">{{ build.name }} · {{ roleLabelName(build.role) }}</option>
+                }
+              </select>
+              <button type="submit" class="btn btn--primary btn--sm" [disabled]="rosterRoleSaving()">Aggiungi</button>
+            </div>
+            @if (rosterRoleError()) {
+              <p class="text-xs text-[var(--color-danger)]" aria-live="polite">{{ rosterRoleError() }}</p>
+            }
+          </form>
+
+          <section aria-labelledby="extra-roles-heading">
+            <h2 id="extra-roles-heading" class="label">Ruoli aggiunti per questo evento</h2>
+            <div class="mt-2 grid gap-2">
+              @for (role of extraRosterRoles(); track role.id) {
+                <div class="flex min-h-12 items-center justify-between gap-3 rounded-md border border-[var(--color-border)] px-3 py-2">
+                  <span class="text-sm text-[var(--color-text)]">{{ role.name }}</span>
+                  <button type="button" class="btn btn--danger btn--sm" (click)="removeRosterRole(role)" [disabled]="rosterRoleSaving()">Rimuovi</button>
+                </div>
+              } @empty {
+                <p class="text-xs text-[var(--color-text-secondary)]">Nessun ruolo extra.</p>
+              }
+            </div>
+          </section>
+        </div>
+      </app-dialog>
     }
 
     <!-- Search dialogs -->
@@ -1892,6 +1977,11 @@ export class EventDetailPage {
   protected readonly joinSubmitting = signal(false);
   protected readonly joinError = signal<string | null>(null);
   protected readonly availableBuilds = signal<CompBuildEntry[]>([]);
+  protected readonly allBuilds = signal<BuildSummary[]>([]);
+  protected readonly rosterRoleManagerOpen = signal(false);
+  protected readonly rosterRoleSaving = signal(false);
+  protected readonly rosterRoleError = signal<string | null>(null);
+  protected readonly draftRosterRoleBuildId = signal('');
   protected readonly draftPrimaryBuildId = signal('');
   protected readonly draftSecondaryBuildId = signal('');
 
@@ -1938,6 +2028,18 @@ export class EventDetailPage {
     const userId = this.auth.profile()?.user_id ?? null;
     if (!detail || userId === null) return null;
     return detail.participants.find((participant) => participant.user_id === userId) ?? null;
+  });
+
+  protected readonly extraRosterRoles = computed<readonly EventRosterRole[]>(() =>
+    (this.event()?.roster_roles ?? []).filter((role) => !role.is_fill),
+  );
+
+  protected readonly availableExtraRoleBuilds = computed<readonly BuildSummary[]>(() => {
+    const unavailable = new Set([
+      ...this.availableBuilds().map((entry) => entry.build_id),
+      ...this.extraRosterRoles().flatMap((role) => (role.build_id === null ? [] : [role.build_id])),
+    ]);
+    return this.allBuilds().filter((build) => !unavailable.has(build.id));
   });
 
   protected readonly buildIndex = computed<Map<number, CompBuildEntry>>(() => {
@@ -2399,6 +2501,56 @@ export class EventDetailPage {
         this.previouslyFocusedMemberTrigger = null;
       }
     });
+  }
+
+  protected openRosterRoleManager(): void {
+    this.rosterRoleError.set(null);
+    this.draftRosterRoleBuildId.set('');
+    this.rosterRoleManagerOpen.set(true);
+    void this.loadAllBuilds();
+  }
+
+  protected closeRosterRoleManager(): void {
+    this.rosterRoleManagerOpen.set(false);
+    this.rosterRoleError.set(null);
+  }
+
+  protected onDraftRosterRoleBuildChange(event: Event): void {
+    this.draftRosterRoleBuildId.set((event.target as HTMLSelectElement).value);
+  }
+
+  protected async addRosterRole(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    const buildId = Number(this.draftRosterRoleBuildId());
+    if (!Number.isInteger(buildId) || buildId <= 0) return;
+
+    this.rosterRoleSaving.set(true);
+    this.rosterRoleError.set(null);
+    try {
+      await firstValueFrom(this.api.post(`api/events/${this.eventId}/roster-roles`, { build_id: buildId }));
+      this.draftRosterRoleBuildId.set('');
+      await this.load();
+      this.toasts.success('Ruolo extra aggiunto al roster.');
+    } catch (error) {
+      this.rosterRoleError.set(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.rosterRoleSaving.set(false);
+    }
+  }
+
+  protected async removeRosterRole(role: EventRosterRole): Promise<void> {
+    if (role.id === null) return;
+    this.rosterRoleSaving.set(true);
+    this.rosterRoleError.set(null);
+    try {
+      await firstValueFrom(this.api.delete(`api/events/${this.eventId}/roster-roles/${role.id}`));
+      await this.load();
+      this.toasts.success('Ruolo extra rimosso dal roster.');
+    } catch (error) {
+      this.rosterRoleError.set(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.rosterRoleSaving.set(false);
+    }
   }
 
   protected slotAssignment(slot: CompSlotRow): number | null {
@@ -3293,6 +3445,11 @@ export class EventDetailPage {
     void this.router.navigate(['/battles', albionbbBattleId]);
   }
 
+  protected openFight(fight: EventFight): void {
+    if (fight.battle_ids.length === 0) return;
+    void this.router.navigate(['/battles/group'], { queryParams: { ids: fight.battle_ids.join(',') } });
+  }
+
   protected openBattleGroup(detail: EventDetailView): void {
     const ids = detail.battles.map((battle) => battle.albionbb_battle_id);
     if (ids.length === 0) return;
@@ -3410,12 +3567,42 @@ export class EventDetailPage {
     this.compLoading.set(true);
     try {
       const comp = await firstValueFrom(this.api.get<CompDetail>(`api/comps/${compId}`));
-      this.availableBuilds.set(comp.builds ?? []);
-      void this.preloadBuildDetails(comp.builds ?? []);
+      const extraBuildIds = (detail.roster_roles ?? [])
+        .filter((role) => !role.is_fill && role.build_id !== null)
+        .map((role) => role.build_id as number);
+      const extraBuilds = await Promise.all(
+        extraBuildIds.map((buildId) =>
+          firstValueFrom(this.api.get<BuildSummary>(`api/comps/builds/${buildId}`)).catch(() => null),
+        ),
+      );
+      const compBuildIds = new Set((comp.builds ?? []).map((entry) => entry.build_id));
+      const extraEntries: CompBuildEntry[] = extraBuilds
+        .filter((build): build is BuildSummary => build !== null && !compBuildIds.has(build.id))
+        .map((build) => ({ build_id: build.id, build, quantity: 1 }));
+      const rosterBuilds = [...(comp.builds ?? []), ...extraEntries];
+      this.availableBuilds.set(rosterBuilds);
+      void this.preloadBuildDetails(rosterBuilds);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.compLoading.set(false);
+    }
+  }
+
+  private async loadAllBuilds(): Promise<void> {
+    if (this.allBuilds().length > 0) return;
+    try {
+      const response = await firstValueFrom(
+        this.api.get<PaginatedData<BuildSummary>>('api/comps/builds', {
+          page: 1,
+          limit: 500,
+          sort: 'name',
+          order: 'asc',
+        }),
+      );
+      this.allBuilds.set(response.items);
+    } catch (error) {
+      this.rosterRoleError.set(error instanceof Error ? error.message : this.t('common.error'));
     }
   }
 

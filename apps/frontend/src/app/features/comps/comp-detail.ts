@@ -273,15 +273,24 @@ const ROLE_LABELS: Record<BuildRole, string> = {
           @if (addingBuild() && canManage() && mode() === 'edit') {
             <form class="surface grid gap-3 p-4" (submit)="addBuild($event)">
               <div class="grid gap-3 sm:grid-cols-[1fr_8rem_auto]">
-                <select class="select" [value]="newBuildId()" (change)="onNewBuildChange($event)">
-                  <option value="">{{ t('comps.selectBuild') }}</option>
-                  @for (build of buildOptions(); track build.id) {
-                    <option [value]="build.id">
-                      {{ build.name }} — {{ roleLabel(build.role) }} —
-                      {{ build.category_name || t('comps.noCategory') }}
-                    </option>
+                <label class="grid gap-1">
+                  <span class="label">{{ t('comps.selectBuild') }}</span>
+                  <input
+                    class="input"
+                    type="search"
+                    name="build-search"
+                    list="available-composition-builds"
+                    autocomplete="off"
+                    [placeholder]="t('comps.selectBuild')"
+                    [value]="newBuildSearch()"
+                    (input)="onNewBuildSearchChange($event)"
+                  />
+                </label>
+                <datalist id="available-composition-builds">
+                  @for (build of availableBuildOptions(); track build.id) {
+                    <option [value]="buildOptionLabel(build)"></option>
                   }
-                </select>
+                </datalist>
                 <input
                   class="input"
                   type="number"
@@ -622,6 +631,7 @@ export class CompDetailPage {
 
   protected readonly addingBuild = signal(false);
   protected readonly newBuildId = signal('');
+  protected readonly newBuildSearch = signal('');
   protected readonly newBuildQuantity = signal(1);
 
   protected readonly editingBuildId = signal<number | null>(null);
@@ -633,6 +643,10 @@ export class CompDetailPage {
   protected readonly availableParents = computed(() =>
     this.compSummaries().filter((sibling) => sibling.id !== this.comp()?.id),
   );
+  protected readonly availableBuildOptions = computed(() => {
+    const assignedBuildIds = new Set(this.comp()?.builds.map((entry) => entry.build_id) ?? []);
+    return this.buildOptions().filter((build) => !assignedBuildIds.has(build.id));
+  });
   protected readonly compositionStats = computed(() => {
     const comp = this.comp();
     const roleQuantities = new Map<BuildRole, number>();
@@ -804,6 +818,10 @@ export class CompDetailPage {
     return ROLE_LABELS[role] ?? role;
   }
 
+  protected buildOptionLabel(build: BuildSummary): string {
+    return `${build.name} — ${this.roleLabel(build.role)} — ${build.category_name || this.t('comps.noCategory')}`;
+  }
+
   protected enterEdit(): void {
     const current = this.comp();
     if (!current) {
@@ -827,6 +845,7 @@ export class CompDetailPage {
   protected toggleAddBuild(): void {
     this.addingBuild.update((value) => !value);
     this.newBuildId.set('');
+    this.newBuildSearch.set('');
     this.newBuildQuantity.set(1);
   }
 
@@ -846,8 +865,14 @@ export class CompDetailPage {
     this.editParentId.set((event.target as HTMLSelectElement).value);
   }
 
-  protected onNewBuildChange(event: Event): void {
-    this.newBuildId.set((event.target as HTMLSelectElement).value);
+  protected onNewBuildSearchChange(event: Event): void {
+    const search = (event.target as HTMLInputElement).value;
+    const selectedBuild = this.availableBuildOptions().find(
+      (build) => this.buildOptionLabel(build) === search,
+    );
+
+    this.newBuildSearch.set(search);
+    this.newBuildId.set(selectedBuild ? String(selectedBuild.id) : '');
   }
 
   protected onNewBuildQtyChange(event: Event): void {
@@ -977,7 +1002,8 @@ export class CompDetailPage {
     event.preventDefault();
     const comp = this.comp();
     const buildId = Number(this.newBuildId());
-    if (!comp || !buildId) {
+    const isAvailable = this.availableBuildOptions().some((build) => build.id === buildId);
+    if (!comp || !buildId || !isAvailable) {
       return;
     }
     this.saving.set(true);
