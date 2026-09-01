@@ -200,6 +200,8 @@ pub struct EventView {
     pub comp_id: i64,
     /// The name of the base composition.
     pub comp_name: String,
+    /// Optional signup threshold that advances through comp expansions without blocking signups.
+    pub player_cap: Option<i64>,
     /// The ID of the user who created this event.
     #[schema(example = 1)]
     pub created_by: i64,
@@ -334,6 +336,17 @@ pub struct EventRosterRoleView {
 
 /// A concrete build available for the next event signup.
 #[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct EventCompBuildView {
+    /// Build identifier in the active comp snapshot.
+    pub build_id: i64,
+    /// Human-readable build name.
+    pub name: String,
+    /// Number of slots this build contributes to the active comp.
+    pub quantity: i32,
+}
+
+/// A concrete build selectable while joining an event.
+#[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct EventSignupBuildView {
     /// Build identifier submitted to `POST /api/events/{id}/participate`.
     pub build_id: i64,
@@ -377,6 +390,8 @@ pub struct EventDetailView {
     pub active_comp_capacity: i64,
     /// Available roster roles. `Fill` is always first and has unlimited capacity.
     pub roster_roles: Vec<EventRosterRoleView>,
+    /// Every build and quantity in the active comp snapshot, including empty slots.
+    pub comp_builds: Vec<EventCompBuildView>,
     /// The list of registered participants.
     pub participants: Vec<EventParticipantView>,
     /// Canonical fights linked to this event. Each contains one or more raw Battle segments.
@@ -414,6 +429,45 @@ pub struct UpdateEventBattlesRequest {
     pub battle_ids: Vec<String>,
 }
 
+/// A persisted event roster snapshot.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct EventRosterView {
+    pub event_id: i64,
+    pub roster_version: i64,
+    pub active_comp_id: i64,
+    pub seats: Vec<EventRosterSeatView>,
+    pub bench: Vec<EventParticipantView>,
+}
+
+/// A canonical seat in the active composition.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct EventRosterSeatView {
+    pub key: String,
+    pub party_number: i32,
+    pub position: i32,
+    pub build_id: i64,
+    pub build_name: String,
+    pub build_version: i32,
+    pub role: String,
+    pub participant: Option<EventParticipantView>,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct AssignRosterSeatRequest {
+    pub user_id: i64,
+    pub expected_roster_version: i64,
+}
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct RosterVersionRequest {
+    pub expected_roster_version: i64,
+}
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct SwapRosterSeatsRequest {
+    pub source_seat_key: String,
+    pub target_seat_key: String,
+    pub expected_roster_version: i64,
+}
+
 /// Request body to add an existing build as an extra roster role for an event.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[schema(example = json!({ "build_id": 5 }))]
@@ -445,6 +499,10 @@ pub struct CreateEventRequest {
     pub regear: bool,
     /// The base composition ID to use.
     pub comp_id: i64,
+    /// Optional participant threshold that preemptively advances to the next comp expansion.
+    /// It is a planning value, never a hard signup limit.
+    #[serde(default)]
+    pub player_cap: Option<i64>,
     /// The start date and time of the event (UTC, e.g. RFC3339).
     pub event_date_utc: String,
     /// Discord role snowflakes to mention in the event announcement.

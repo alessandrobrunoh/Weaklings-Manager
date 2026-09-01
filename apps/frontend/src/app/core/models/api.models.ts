@@ -350,6 +350,8 @@ export interface EventView {
   call_to_arms: boolean;
   discord_role_ids: string[];
   regear: boolean;
+  /** Optional threshold that advances the comp expansion without blocking signups. */
+  player_cap?: number | null;
   comp_id: number;
   comp_name: string;
   created_by: number;
@@ -607,6 +609,91 @@ export interface EventParticipant {
   specializations?: Record<string, number>;
 }
 
+/** Participant fields included by the live roster snapshot. */
+export interface EventRosterParticipant {
+  user_id: number;
+  username: string;
+  discord_id: string | null;
+  primary_build_id: number | null;
+  primary_build_name: string;
+  secondary_build_id: number | null;
+  secondary_build_name: string | null;
+  specializations: Record<string, number>;
+}
+
+/** A concrete composition seat in the authoritative event roster. */
+export interface EventRosterSeat {
+  key: string;
+  party_number: number;
+  position: number;
+  build_id: number;
+  build_name: string;
+  build_version: number;
+  role: string;
+  participant: EventRosterParticipant | null;
+}
+
+/** A registered participant not occupying a concrete roster seat. */
+export interface EventRosterBenchParticipant extends EventRosterParticipant {}
+
+/** Authoritative roster snapshot returned by the roster endpoints. */
+export interface EventRosterView {
+  event_id: number;
+  roster_version: number;
+  active_comp_id: number;
+  seats: EventRosterSeat[];
+  bench: EventRosterBenchParticipant[];
+}
+
+/** Assign a registered participant to a concrete roster seat. */
+export interface AssignRosterSeatRequest {
+  user_id: number;
+  expected_roster_version: number;
+}
+
+/** Remove the participant from a concrete roster seat. */
+export interface ClearRosterSeatRequest {
+  expected_roster_version: number;
+}
+
+/** Exchange the participants assigned to two concrete roster seats. */
+export interface SwapRosterSeatsRequest {
+  source_seat_key: string;
+  target_seat_key: string;
+  expected_roster_version: number;
+}
+
+/** Fill currently empty concrete roster seats from registered participants. */
+export interface AutoFillRosterRequest {
+  expected_roster_version: number;
+}
+
+export interface RosterRealtimeReadyMessage {
+  type: 'ready';
+  event_id: number;
+  roster_version: number;
+}
+
+export interface RosterRealtimeChangedMessage {
+  type: 'roster_changed';
+  event_id: number;
+  roster_version: number;
+  change_kind?: string;
+  changed_seat_keys?: string[];
+}
+
+export interface RosterRealtimeResyncRequiredMessage {
+  type: 'resync_required';
+  event_id: number;
+  roster_version: number;
+}
+
+/** Notifications sent by `GET /api/events/{id}/roster/live`. */
+export type RosterRealtimeMessage =
+  | RosterRealtimeReadyMessage
+  | RosterRealtimeChangedMessage
+  | RosterRealtimeResyncRequiredMessage;
+
 export interface EventFilters {
   search?: string;
   date_from?: string;
@@ -638,6 +725,8 @@ export interface CreateEventRequest {
   call_to_arms?: boolean;
   regear?: boolean;
   comp_id: number;
+  /** Optional planning threshold; reaching it advances to the next comp expansion. */
+  player_cap?: number;
   event_date_utc: string;
   /** Discord role IDs to mention in the event announcement. */
   discord_role_ids?: string[];

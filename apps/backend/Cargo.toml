@@ -12,7 +12,7 @@ all = "deny"
 pedantic = "warn"
 
 [dependencies]
-axum = { version = "0.8", features = ["multipart"] }
+axum = { version = "0.8", features = ["multipart", "ws"] }
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 tracing = "0.1"

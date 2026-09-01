@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { EventView } from "../api/types.js";
+import type { EventDetailView, EventView } from "../api/types.js";
 import {
+  buildEventEmbed,
   buildEventReminderMessage,
   buildEventStartMessage,
   buildEventThreadActionRow,
@@ -31,6 +32,43 @@ function event(overrides: Partial<EventView> = {}): EventView {
     ...overrides,
   };
 }
+
+test("event embed renders every active comp build and marks empty seats", () => {
+  const embed = buildEventEmbed({
+    ...event(),
+    active_comp_id: 7,
+    active_comp_name: "Main ZvZ",
+    active_comp_capacity: 3,
+    comp_builds: [
+      { build_id: 10, name: "Main Tank", quantity: 2 },
+      { build_id: 11, name: "Holy Healer", quantity: 1 },
+    ],
+    participants: [
+      {
+        user_id: 1,
+        username: "Tank player",
+        discord_id: "333333333333333333",
+        primary_build_id: 10,
+        primary_build_name: "Main Tank",
+        secondary_build_id: null,
+        secondary_build_name: null,
+      },
+    ],
+  } as EventDetailView).toJSON();
+
+  assert.deepEqual(embed.fields, [
+    {
+      name: "Main Tank (1/2)",
+      value: "• <@333333333333333333>\n• *?*",
+      inline: true,
+    },
+    {
+      name: "Holy Healer (0/1)",
+      value: "• *?*",
+      inline: true,
+    },
+  ]);
+});
 
 test("thread action row exposes five state-aware event controls", () => {
   const scheduled = buildEventThreadActionRow(event()).toJSON().components;

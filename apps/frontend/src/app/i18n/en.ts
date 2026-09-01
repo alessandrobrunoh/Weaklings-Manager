@@ -303,6 +303,10 @@ export const en = {
   'events.regear': 'Regear',
   'events.new': 'New event',
   'events.create.comp_required': 'Composition is required.',
+  'events.create.playerCap': 'Player cap',
+  'events.create.playerCapHint':
+    'Optional planning threshold. On reaching it, the event automatically advances to the next comp expansion and never blocks signups.',
+  'events.create.playerCapInvalid': 'Player cap must be a whole number greater than zero.',
   'events.discordRoles.label': 'Discord roles to ping',
   'events.discordRoles.hint': 'Select one or more roles for the event announcement.',
   'events.discordRoles.search': 'Search roles',

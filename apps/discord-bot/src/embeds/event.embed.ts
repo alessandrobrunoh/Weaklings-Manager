@@ -121,9 +121,12 @@ export function buildEventEmbed(
   descLines.push(
     `🗓️ **Date & Time** — <t:${ts}:F> (<t:${ts}:R>)`,
     `⚡ **Status** — ${status}`,
-    `⚔️ **Composition** — ${event.comp_name}`,
+    `⚔️ **Composition** — ${detail.active_comp_name ?? event.comp_name}`,
     `👑 **Organizer** — ${event.created_by_username}`,
     `📋 **Roster** — ${rosterCount}/${detail.active_comp_capacity ?? "?"} filled`,
+    ...(event.player_cap
+      ? [`🎯 **Player cap** — ${event.player_cap} (expands automatically)`]
+      : []),
     ...(event.call_to_arms
       ? ["", "🚨 **URGENT — CALL TO ARMS** — be online and ready!"]
       : []),
@@ -139,52 +142,61 @@ export function buildEventEmbed(
     footerText: `Event #${event.id} • Weaklings Guild Manager`,
   });
 
-  // Who is actually signed up, grouped by build — not just how many, which
-  // told an officer nothing about *whether the right people* had signed up
-  // (e.g. three healers all on alts) short of opening the web app.
-  if (rosterCount > 0) {
+  // Render the complete active comp, including every unfilled seat. This lets
+  // shotcallers see missing roles directly in the announcement instead of
+  // inferring them from a list that only contained the builds already chosen.
+  const compBuilds = detail.comp_builds ?? [];
+  if (compBuilds.length > 0) {
+    const namesByBuildId = new Map<number, string[]>();
+    const fillNames: string[] = [];
+    for (const participant of detail.participants) {
+      const name = participant.discord_id
+        ? `<@${participant.discord_id}>`
+        : participant.username;
+      if (participant.primary_build_id === null) {
+        fillNames.push(name);
+      } else {
+        const names = namesByBuildId.get(participant.primary_build_id) ?? [];
+        names.push(name);
+        namesByBuildId.set(participant.primary_build_id, names);
+      }
+    }
+
+    for (const compBuild of compBuilds) {
+      const assigned = namesByBuildId.get(compBuild.build_id) ?? [];
+      const playerSlots = assigned.slice(0, compBuild.quantity);
+      const emptySlots = Array.from(
+        { length: Math.max(compBuild.quantity - playerSlots.length, 0) },
+        () => "*?*",
+      );
+      embed.addFields({
+        name: `${compBuild.name} (${playerSlots.length}/${compBuild.quantity})`,
+        value: formatNameList([...playerSlots, ...emptySlots]),
+        inline: true,
+      });
+    }
+
+    if (fillNames.length > 0) {
+      embed.addFields({
+        name: `Fill (${fillNames.length})`,
+        value: formatNameList(fillNames),
+        inline: true,
+      });
+    }
+  } else if (rosterCount > 0) {
     const byBuild = new Map<string, string[]>();
-    for (const p of detail.participants) {
-      const names = byBuild.get(p.primary_build_name) ?? [];
-      // A real @mention pings/links to the member, unlike plain text — falls
-      // back to a plain (not @-triggering) name for a participant whose
-      // Discord account isn't linked, since `<@undefined>` would render as
-      // broken literal text instead of quietly degrading.
-      names.push(p.discord_id ? `<@${p.discord_id}>` : p.username);
-      byBuild.set(p.primary_build_name, names);
+    for (const participant of detail.participants) {
+      const names = byBuild.get(participant.primary_build_name) ?? [];
+      names.push(participant.discord_id ? `<@${participant.discord_id}>` : participant.username);
+      byBuild.set(participant.primary_build_name, names);
     }
-
-    // Discord caps an embed at 25 fields total; this one is shared with a
-    // handful of others (description counts as the embed itself, not a
-    // field, so the real budget here is generous), but a comp with an
-    // unusually large number of distinct builds could still overflow it —
-    // fold the tail into a single "+N more roles" field rather than
-    // silently dropping fields past Discord's limit.
-    const MAX_BUILD_FIELDS = 23;
-    const entries = [...byBuild.entries()];
-    const shown = entries.slice(0, MAX_BUILD_FIELDS);
-    const overflow = entries.slice(MAX_BUILD_FIELDS);
-
-    for (const [buildName, names] of shown) {
-      embed.addFields({
-        name: `${buildName} (${names.length})`,
-        value: formatNameList(names),
-        inline: true,
-      });
-    }
-    if (overflow.length > 0) {
-      const overflowCount = overflow.reduce((sum, [, names]) => sum + names.length, 0);
-      embed.addFields({
-        name: `+${overflow.length} more roles`,
-        value: `${overflowCount} more player(s) — see the web app for the full roster.`,
-        inline: true,
-      });
+    for (const [buildName, names] of byBuild) {
+      embed.addFields({ name: `${buildName} (${names.length})`, value: formatNameList(names), inline: true });
     }
   } else {
     embed.addFields({
       name: "📋 Roster",
-      value:
-        "*No players registered yet. Click a role button below to sign up!*",
+      value: "*No players registered yet. Click a role button below to sign up!*",
       inline: false,
     });
   }

@@ -69,6 +69,8 @@ mod m20260901_000006_create_fights;
 mod m20260901_000007_create_event_roster_roles;
 mod m20260901_000008_seed_fights_permissions;
 mod m20260901_000009_allow_fill_event_participations;
+mod m20260901_000010_create_event_roster_assignments;
+mod m20260901_000011_add_player_cap_to_events;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -142,6 +144,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260901_000007_create_event_roster_roles::Migration),
             Box::new(m20260901_000008_seed_fights_permissions::Migration),
             Box::new(m20260901_000009_allow_fill_event_participations::Migration),
+            Box::new(m20260901_000010_create_event_roster_assignments::Migration),
+            Box::new(m20260901_000011_add_player_cap_to_events::Migration),
         ]
     }
 }

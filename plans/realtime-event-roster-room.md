@@ -1,7 +1,7 @@
 # Plan: Room roster realtime per evento
 
 **Branch proposta**: `feat/realtime-event-roster-room`  
-**Status**: Proposta — pronta per approvazione dei criteri prima della Slice 1
+**Status**: Implementazione completata — in attesa delle verifiche manuali di rilascio
 
 ## Obiettivo
 
@@ -191,6 +191,17 @@ Si applicano `PRODUCT.md` e `DESIGN.md`: superfici scure discrete, bordi sottili
 - [ ] La room resta utilizzabile da tastiera, a zoom 200%, con screen reader e su viewport mobile; gli aggiornamenti non rubano focus né producono annunci continui.
 - [ ] L'upgrade WebSocket rifiuta sessioni assenti e origin non consentite. Nessun token appare nell'URL, nei messaggi socket o nei log.
 - [ ] Audit, tracing e metriche consentono di diagnosticare cambiamenti, conflitti, connessioni, riconnessioni, lag e errori senza loggare il payload completo della room.
+
+## Stato di implementazione e verifica
+
+Completato nel worktree:
+
+- stato roster persistito, revisioni ottimistiche e vincolo partecipazione/assegnazione;
+- snapshot REST, comandi atomici e invalidazioni WebSocket post-commit;
+- room Angular con riconnessione, sospensione in background, briefing personale e comandi admin;
+- test frontend, build frontend, `cargo fmt --check`, `cargo check -p backend` e test mirato cancel/rejoin.
+
+Completata anche la documentazione del reverse-proxy WebSocket e del requisito backend a replica singola in `README.md`. Da completare prima del rilascio: smoke test con due sessioni browser contro Postgres e verifica a11y (tastiera, zoom 200%, screen reader/Axe). La suite backend completa ha eseguito 327 test con successo; resta un test estraneo al roster da correggere in `modules::auth::permissions::tests::all_contains_every_variant` (elenco atteso 32, enum attuale 33).
 
 ## Slices
 

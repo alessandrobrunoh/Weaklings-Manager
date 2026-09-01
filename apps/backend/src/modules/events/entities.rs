@@ -22,6 +22,8 @@ pub mod event {
         pub regear: bool,
         /// The composition associated with the event.
         pub comp_id: i64,
+        /// Optional signup threshold that advances to the next comp expansion without blocking signups.
+        pub player_cap: Option<i64>,
         /// The user who created the event.
         pub created_by: i64,
         /// The timestamp when the event will start (UTC).
@@ -48,6 +50,8 @@ pub mod event {
         pub link_battles_completed_at: Option<DateTimeWithTimeZone>,
         /// Discord voice channel created for the live event, if any.
         pub discord_voice_channel_id: Option<String>,
+        /// Monotonically increasing revision of persisted roster assignments.
+        pub roster_version: i64,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]
@@ -58,6 +62,7 @@ pub mod event {
         EventBattles,
         DiscordRoles,
         RosterRoles,
+        RosterAssignments,
     }
 
     impl RelationTrait for Relation {
@@ -75,6 +80,9 @@ pub mod event {
                 Self::EventBattles => Entity::has_many(super::event_battle::Entity).into(),
                 Self::DiscordRoles => Entity::has_many(super::event_discord_role::Entity).into(),
                 Self::RosterRoles => Entity::has_many(super::event_roster_role::Entity).into(),
+                Self::RosterAssignments => {
+                    Entity::has_many(super::event_roster_assignment::Entity).into()
+                }
             }
         }
     }
@@ -115,6 +123,61 @@ pub mod event {
         }
     }
 
+    impl Related<super::event_roster_assignment::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::RosterAssignments.def()
+        }
+    }
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+pub mod event_roster_assignment {
+    use sea_orm::entity::prelude::*;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
+    #[sea_orm(table_name = "event_roster_assignments")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub event_id: i64,
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub user_id: i64,
+        pub seat_key: String,
+        pub assigned_by: i64,
+        pub assigned_at: DateTimeWithTimeZone,
+        pub updated_at: DateTimeWithTimeZone,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter)]
+    pub enum Relation {
+        Event,
+        User,
+        Assigner,
+    }
+    impl RelationTrait for Relation {
+        fn def(&self) -> RelationDef {
+            match self {
+                Self::Event => Entity::belongs_to(super::event::Entity)
+                    .from(Column::EventId)
+                    .to(super::event::Column::Id)
+                    .into(),
+                Self::User => Entity::belongs_to(crate::modules::users::entities::Entity)
+                    .from(Column::UserId)
+                    .to(crate::modules::users::entities::Column::Id)
+                    .into(),
+                Self::Assigner => Entity::belongs_to(crate::modules::users::entities::Entity)
+                    .from(Column::AssignedBy)
+                    .to(crate::modules::users::entities::Column::Id)
+                    .into(),
+            }
+        }
+    }
+    impl Related<super::event::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Event.def()
+        }
+    }
     impl ActiveModelBehavior for ActiveModel {}
 }
 
