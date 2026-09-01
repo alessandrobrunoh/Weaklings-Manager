@@ -4,13 +4,13 @@ use std::collections::{HashMap, HashSet};
 
 use axum::{
     Extension, Json, Router,
-    extract::Path,
+    extract::{Path, Query},
     routing::{get, post},
 };
 use chrono::{Duration, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DatabaseTransaction, EntityTrait,
-    QueryFilter, QueryOrder, Set, TransactionTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, Set, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -31,6 +31,7 @@ use crate::modules::{
     audit::service::AuditService,
     auth::{Permission, Permissions, UserContext},
 };
+use crate::pagination::{PaginatedData, PaginationParams};
 use crate::responses::ApiResponse;
 use serde_json::{Value, json};
 
@@ -51,6 +52,47 @@ pub struct FightSegmentSummary {
     pub total_kills: i64,
     /// Fame reported by the upstream battle summary for this segment.
     pub total_fame: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct FightListItem {
+    /// Canonical Fight database ID.
+    pub id: i64,
+    /// Linked Event ID, if this fight belongs to an event session.
+    pub event_id: Option<i64>,
+    /// Linked Event title, if the event still exists.
+    pub event_title: Option<String>,
+    /// When the first segment began (RFC3339).
+    pub started_at: String,
+    /// When the latest known segment ended (RFC3339).
+    pub ended_at: Option<String>,
+    pub grouping_method: String,
+    pub grouping_confidence: f64,
+    pub needs_review: bool,
+    /// Number of persisted `fight_battles` segments.
+    pub segment_count: i64,
+}
+
+/// Paginated canonical-fight summaries.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PaginatedFightList {
+    pub items: Vec<FightListItem>,
+    pub total_items: u64,
+    pub total_pages: u64,
+    pub current_page: u64,
+    pub limit: u64,
+}
+
+impl From<PaginatedData<FightListItem>> for PaginatedFightList {
+    fn from(data: PaginatedData<FightListItem>) -> Self {
+        Self {
+            items: data.items,
+            total_items: data.total_items,
+            total_pages: data.total_pages,
+            current_page: data.current_page,
+            limit: data.limit,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -234,11 +276,118 @@ pub struct FightParticipantCoverage {
 
 pub fn router() -> Router {
     Router::new()
+        .route("/", get(list_fights))
         .route("/merge", post(merge_fights))
         .route("/{id}/move-battle", post(move_battle))
         .route("/{id}/split", post(split_fight))
         .route("/trends", get(get_fight_trends))
         .route("/{id}", get(get_fight))
+}
+
+/// Query parameters for browsing persisted canonical fights.
+///
+/// Pagination fields are declared inline because axum's query extractor cannot
+/// deserialize flattened non-string pagination fields.
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct FightListQuery {
+    /// Page number, starting at 1. Defaults to 1.
+    pub page: Option<u64>,
+    /// Number of fights per page. Defaults to 10.
+    pub limit: Option<u64>,
+}
+
+impl FightListQuery {
+    fn pagination(&self) -> PaginationParams {
+        PaginationParams {
+            page: self.page,
+            limit: self.limit,
+        }
+    }
+}
+
+/// Lists persisted canonical fights with linked event metadata and segment counts.
+///
+/// The tie-breaker on `id` makes pages deterministic when several fights share
+/// the same start timestamp.
+#[utoipa::path(
+    get,
+    path = "/api/fights",
+    tag = "fights",
+    summary = "List persisted fights",
+    security(("session_cookie" = [])),
+    params(FightListQuery),
+    responses(
+        (status = 200, description = "Paginated fight summaries", body = PaginatedFightList),
+        (status = 401, description = "Unauthorized", body = crate::errors::ProblemDetails)
+    )
+)]
+async fn list_fights(
+    _user: UserContext,
+    Extension(db): Extension<DatabaseConnection>,
+    Query(query): Query<FightListQuery>,
+) -> Result<Json<ApiResponse<PaginatedFightList>>, AppError> {
+    let pagination = query.pagination();
+    let page = pagination.offset_page();
+    let limit = pagination.limit();
+    let paginator = fight::Entity::find()
+        .order_by_desc(fight::Column::StartedAt)
+        .order_by_desc(fight::Column::Id)
+        .paginate(&db, limit);
+    let total_items = paginator.num_items().await.map_err(AppError::Database)?;
+    let total_pages = paginator.num_pages().await.map_err(AppError::Database)?;
+    let fights = paginator.fetch_page(page).await.map_err(AppError::Database)?;
+
+    let fight_ids = fights.iter().map(|model| model.id).collect::<Vec<_>>();
+    let segments = if fight_ids.is_empty() {
+        Vec::new()
+    } else {
+        fight_battle::Entity::find()
+            .filter(fight_battle::Column::FightId.is_in(fight_ids))
+            .all(&db)
+            .await
+            .map_err(AppError::Database)?
+    };
+    let mut segment_counts = HashMap::<i64, i64>::new();
+    for segment in segments {
+        *segment_counts.entry(segment.fight_id).or_default() += 1;
+    }
+
+    let event_ids = fights
+        .iter()
+        .filter_map(|model| model.event_id)
+        .collect::<Vec<_>>();
+    let event_titles = if event_ids.is_empty() {
+        HashMap::new()
+    } else {
+        event::Entity::find()
+            .filter(event::Column::Id.is_in(event_ids))
+            .all(&db)
+            .await
+            .map_err(AppError::Database)?
+            .into_iter()
+            .map(|model| (model.id, model.title))
+            .collect()
+    };
+
+    let items = fights
+        .into_iter()
+        .map(|model| FightListItem {
+            id: model.id,
+            event_id: model.event_id,
+            event_title: model
+                .event_id
+                .and_then(|event_id| event_titles.get(&event_id).cloned()),
+            started_at: model.started_at.to_rfc3339(),
+            ended_at: model.ended_at.map(|time| time.to_rfc3339()),
+            grouping_method: model.grouping_method,
+            grouping_confidence: model.grouping_confidence,
+            needs_review: model.needs_review,
+            segment_count: segment_counts.get(&model.id).copied().unwrap_or_default(),
+        })
+        .collect();
+    let paginated = PaginatedData::new(items, total_items, total_pages, page + 1, limit);
+
+    Ok(Json(ApiResponse::new(PaginatedFightList::from(paginated))))
 }
 
 /// Request to merge fights into `target_fight_id`.
@@ -276,6 +425,10 @@ pub struct FightMutationResult {
     /// Ordered Battle IDs in `fight_id` after the operation.
     pub battle_ids: Vec<i64>,
 }
+
+const MANUAL_GROUPING_METHOD: &str = "manual";
+const MANUAL_GROUPING_CONFIDENCE: f64 = 1.0;
+const MANUAL_NEEDS_REVIEW: bool = false;
 
 /// Merge selected fights into the supplied target fight.
 #[utoipa::path(
@@ -505,20 +658,17 @@ async fn split_fight(
     let source_membership_before = membership_snapshot(source_fight_id, &source_segments);
     let snapshots = snapshots_for_segments(&txn, &source_segments).await?;
     let now = Utc::now().into();
-    let new_fight = fight::ActiveModel {
+    let mut new_fight = fight::ActiveModel {
         event_id: Set(source.event_id),
         started_at: Set(source.started_at),
         ended_at: Set(source.ended_at),
-        grouping_method: Set("manual".to_string()),
-        grouping_confidence: Set(1.0),
         grouping_version: Set(source.grouping_version),
-        needs_review: Set(false),
         created_at: Set(now),
         updated_at: Set(now),
         ..Default::default()
-    }
-    .insert(&txn)
-    .await?;
+    };
+    set_manual_fight_metadata(&mut new_fight);
+    let new_fight = new_fight.insert(&txn).await?;
 
     let selected = battle_ids.iter().copied().collect::<HashSet<_>>();
     let moved = source_segments
@@ -730,6 +880,12 @@ fn order_segments(
     });
 }
 
+fn set_manual_fight_metadata(fight: &mut fight::ActiveModel) {
+    fight.grouping_method = Set(MANUAL_GROUPING_METHOD.to_string());
+    fight.grouping_confidence = Set(MANUAL_GROUPING_CONFIDENCE);
+    fight.needs_review = Set(MANUAL_NEEDS_REVIEW);
+}
+
 async fn refresh_manual_fight(
     db: &DatabaseTransaction,
     fight_id: i64,
@@ -758,9 +914,7 @@ async fn refresh_manual_fight(
     let mut active: fight::ActiveModel = model.into();
     active.started_at = Set(started_at);
     active.ended_at = Set(ended_at);
-    active.grouping_method = Set("manual".to_string());
-    active.grouping_confidence = Set(1.0);
-    active.needs_review = Set(false);
+    set_manual_fight_metadata(&mut active);
     active.updated_at = Set(Utc::now().into());
     active.update(db).await?;
     Ok(())
@@ -1624,6 +1778,101 @@ impl PlayerRollup {
     fn into_player(mut self) -> BattlePlayer {
         self.player.item_power = self.item_power_total / self.appearances as f64;
         self.player
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fight_with_event(event_id: Option<i64>) -> fight::Model {
+        let now = Utc::now().into();
+        fight::Model {
+            id: 1,
+            event_id,
+            started_at: now,
+            ended_at: None,
+            grouping_method: "automatic".to_string(),
+            grouping_confidence: 0.5,
+            grouping_version: "test".to_string(),
+            needs_review: true,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    fn segment(battle_id: i64, sequence_number: i32) -> fight_battle::Model {
+        fight_battle::Model {
+            id: battle_id,
+            fight_id: 7,
+            battle_id,
+            sequence_number,
+            created_at: Utc::now().into(),
+        }
+    }
+
+    #[test]
+    fn duplicate_manual_membership_ids_are_rejected() {
+        let error = unique_ids(vec![11, 12, 11], "battle_ids")
+            .expect_err("duplicate battle IDs must not form a manual membership");
+
+        assert!(
+            matches!(error, AppError::Validation(message) if message == "battle_ids must not contain duplicates")
+        );
+    }
+
+    #[test]
+    fn empty_manual_membership_ids_are_rejected() {
+        let error = unique_ids(Vec::new(), "fight_ids")
+            .expect_err("an empty fight selection must be rejected");
+
+        assert!(
+            matches!(error, AppError::Validation(message) if message == "fight_ids must not be empty")
+        );
+    }
+
+    #[test]
+    fn matching_or_unassigned_events_are_compatible() {
+        let fights = vec![fight_with_event(Some(42)), fight_with_event(None)];
+
+        assert_eq!(
+            compatible_event(&fights).expect("events are compatible"),
+            Some(42)
+        );
+    }
+
+    #[test]
+    fn cross_event_manual_operations_are_rejected() {
+        let fights = vec![fight_with_event(Some(42)), fight_with_event(Some(99))];
+        let error = compatible_event(&fights)
+            .expect_err("manual operations must not move memberships across events");
+
+        assert!(
+            matches!(error, AppError::Conflict(message) if message == "manual fight operations cannot cross Event boundaries")
+        );
+    }
+
+    #[test]
+    fn membership_snapshots_are_stably_sorted_for_audit() {
+        let snapshot = membership_snapshot(7, &[segment(30, 2), segment(10, 1), segment(20, 3)]);
+
+        assert_eq!(
+            snapshot,
+            json!({ "fight_id": 7, "battle_ids": [10, 20, 30] })
+        );
+    }
+
+    #[test]
+    fn manual_metadata_is_applied_consistently() {
+        let mut model = fight::ActiveModel::default();
+        set_manual_fight_metadata(&mut model);
+
+        assert_eq!(
+            model.grouping_method,
+            Set(MANUAL_GROUPING_METHOD.to_string())
+        );
+        assert_eq!(model.grouping_confidence, Set(MANUAL_GROUPING_CONFIDENCE));
+        assert_eq!(model.needs_review, Set(MANUAL_NEEDS_REVIEW));
     }
 }
 

@@ -12,6 +12,7 @@ pub mod bank;
 pub mod battles;
 pub mod comps;
 pub mod events;
+pub mod fights;
 pub mod health;
 pub mod intel;
 pub mod notifications;
@@ -44,6 +45,7 @@ pub fn router() -> Router {
         .nest("/openalbion", openalbion::router())
         .nest("/comps", comps::router())
         .nest("/events", events::router())
+        .nest("/fights", fights::router())
         .nest("/siphoned", siphoned::router())
         .nest("/regear", regear::router())
         .nest("/admin", admin::router())

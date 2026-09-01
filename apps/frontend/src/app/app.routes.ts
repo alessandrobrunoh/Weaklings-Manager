@@ -70,6 +70,11 @@ export const routes: Routes = [
         loadComponent: () => import('./features/fights/fight-trends').then((m) => m.FightTrendsPage),
       },
       {
+        path: 'fights/:fightId',
+        loadComponent: () =>
+          import('./features/fights/fight-detail').then((m) => m.FightDetailPage),
+      },
+      {
         path: 'battles/group',
         loadComponent: () =>
           import('./features/battles/battle-group').then((m) => m.BattleGroupPage),

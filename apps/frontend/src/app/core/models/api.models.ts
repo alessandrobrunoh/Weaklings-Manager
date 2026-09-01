@@ -428,6 +428,100 @@ export interface EventFight {
   battle_ids: string[];
 }
 
+/** Optional aggregate metrics exposed by the canonical fight detail endpoint. */
+export interface FightAggregateStats {
+  total_players?: number;
+  players?: number;
+  total_kills?: number;
+  kills?: number;
+  total_deaths?: number;
+  deaths?: number;
+  total_fame?: number;
+  total_kill_fame?: number;
+  kill_fame?: number;
+  kill_death_ratio?: number;
+  win_rate?: number;
+}
+
+export interface FightSegmentSummary {
+  battle_id: number;
+  sequence_number: number;
+  started_at: string;
+  ended_at: string | null;
+  total_players: number;
+  total_kills: number;
+  total_fame: number;
+}
+
+export interface ObservedFriendlyPlayer {
+  albion_player_id: string;
+  name: string;
+  guild_id: string;
+  guild_name: string;
+  segments_observed: number;
+  kills: number;
+  deaths: number;
+  kill_fame: number;
+  death_fame: number;
+  average_item_power: number;
+  user_id: number | null;
+}
+
+export interface FightPlannedComp {
+  id: number;
+  name: string | null;
+}
+
+export interface PlannedFightParticipant {
+  user_id: number;
+  username: string;
+  albion_player_id: string | null;
+  primary_build_id: number;
+  primary_build_name: string | null;
+  secondary_build_id: number | null;
+  secondary_build_name: string | null;
+  observed: boolean;
+}
+
+export interface FightParticipantCoverage {
+  event_linked: boolean;
+  planned_participants: number;
+  matchable_planned_participants: number;
+  observed_planned_participants: number;
+  unmatched_planned_participants: number;
+  unplanned_observed_players: number;
+  persisted_segments: number;
+  total_segments: number;
+}
+
+/**
+ * Canonical fight detail. Rich analytics are optional so the page also supports
+ * responses produced before the backend aggregation rollout.
+ */
+export interface FightDetail extends EventFight {
+  event_id?: number | null;
+  created_at?: string;
+  updated_at?: string;
+  stats?: FightAggregateStats;
+  segment_count?: number;
+  total_players?: number;
+  total_kills?: number;
+  total_deaths?: number;
+  total_fame?: number;
+  total_kill_fame?: number;
+  unique_players?: number;
+  kill_death_ratio?: number;
+  win_rate?: number;
+  guilds?: BattleGuildSummary[];
+  players?: BattlePlayer[];
+  estimated_losses?: BattleLossEstimate;
+  segments?: FightSegmentSummary[];
+  observed_friendly_players?: ObservedFriendlyPlayer[];
+  planned_comp?: FightPlannedComp | null;
+  planned_participants?: PlannedFightParticipant[];
+  participant_coverage?: FightParticipantCoverage;
+}
+
 export interface EventDetailView extends EventView {
   active_comp_id: number;
   active_comp_name: string;
