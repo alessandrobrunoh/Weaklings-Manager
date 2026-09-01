@@ -1030,8 +1030,8 @@ impl EventService {
                 let sequential = seats.len() as i32;
                 seats.push(EventRosterSeatView {
                     key: format!("build:{}:{ordinal}", row.build_id),
-                    party_number: sequential / 5 + 1,
-                    position: sequential % 5 + 1,
+                    party_number: sequential / 20 + 1,
+                    position: sequential % 20 + 1,
                     build_id: row.build_id,
                     build_name: build.name.clone(),
                     build_version: build.version,
@@ -1118,21 +1118,13 @@ impl EventService {
         let version = self
             .advance_roster_version(&txn, event_id, request.expected_roster_version)
             .await?;
-        if event_roster_assignment::Entity::find()
-            .filter(event_roster_assignment::Column::EventId.eq(event_id))
-            .filter(event_roster_assignment::Column::SeatKey.eq(seat_key))
-            .one(&txn)
-            .await
-            .map_err(AppError::Database)?
-            .is_some()
-        {
-            return Err(AppError::Conflict(
-                "roster seat is already occupied".to_string(),
-            ));
-        }
         event_roster_assignment::Entity::delete_many()
             .filter(event_roster_assignment::Column::EventId.eq(event_id))
-            .filter(event_roster_assignment::Column::UserId.eq(request.user_id))
+            .filter(
+                event_roster_assignment::Column::UserId
+                    .eq(request.user_id)
+                    .or(event_roster_assignment::Column::SeatKey.eq(seat_key)),
+            )
             .exec(&txn)
             .await
             .map_err(AppError::Database)?;

@@ -413,7 +413,7 @@ export const es: TranslationDict = {
   'events.detail.unassigned': 'Miembros sin asignar',
   'events.detail.no_build_items': 'No hay items configurados para esta build.',
   'events.detail.view_loadout': 'Ver equipo',
-  'events.detail.view_parties': 'Vista Party (5-man)',
+  'events.detail.view_parties': 'Vista Party (20-man)',
   'events.detail.view_roles': 'Matriz de Roles',
   'events.detail.view_table': 'Vista de Tabla',
   'events.detail.party_num': 'Party {number}',
