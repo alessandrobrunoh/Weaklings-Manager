@@ -216,6 +216,84 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
                   </div>
                 </section>
 
+                <section class="card p-5 lg:col-span-2" aria-labelledby="intel-performance-evidence-heading">
+                  <div class="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                    <div>
+                      <h2 class="eyebrow" id="intel-performance-evidence-heading">{{ t('intel.performanceEvidence') }}</h2>
+                      <p class="mt-1 text-xs" style="color: var(--color-text-secondary)">
+                        {{ t('intel.performanceEvidenceHint') }}
+                      </p>
+                    </div>
+                    <p class="mono text-[11px]" style="color: var(--color-text-tertiary)">
+                      {{ t('intel.reportWindow') }} {{ r.from | date: 'mediumDate' }}–{{ r.to | date: 'mediumDate' }}
+                    </p>
+                  </div>
+
+                  <div class="grid gap-3 lg:grid-cols-3">
+                    <section class="rounded-lg border p-3" style="border-color: var(--color-border); background-color: var(--color-surface-2)" aria-labelledby="intel-player-performance-heading">
+                      <h3 class="text-sm font-medium" id="intel-player-performance-heading" style="color: var(--color-text)">{{ t('intel.playerPerformance') }}</h3>
+                      <p class="mt-1 text-[11px]" style="color: var(--color-text-secondary)">
+                        {{ playerCoverageLabel(r) }}
+                      </p>
+                      @if (topPlayers().length > 0) {
+                        <ol class="mt-3 divide-y" style="border-color: var(--color-border)">
+                          @for (player of topPlayers(); track player.user_id) {
+                            <li class="flex items-center justify-between gap-3 py-2 first:pt-0">
+                              <span class="min-w-0 truncate text-sm" style="color: var(--color-text)">{{ player.username }}</span>
+                              <span class="mono shrink-0 text-xs" style="color: var(--color-text-secondary)">
+                                {{ player.fights }} {{ t('intel.fights') }} · {{ player.kill_death_ratio | number: '1.1-2' }} K/D
+                              </span>
+                            </li>
+                          }
+                        </ol>
+                      } @else {
+                        <p class="mt-3 text-sm" style="color: var(--color-text-secondary)">{{ t('intel.playerPerformanceUnavailable') }}</p>
+                      }
+                    </section>
+
+                    <section class="rounded-lg border p-3" style="border-color: var(--color-border); background-color: var(--color-surface-2)" aria-labelledby="intel-comp-performance-heading">
+                      <h3 class="text-sm font-medium" id="intel-comp-performance-heading" style="color: var(--color-text)">{{ t('intel.compPerformance') }}</h3>
+                      <p class="mt-1 text-[11px]" style="color: var(--color-text-secondary)">
+                        {{ compCoverageLabel(r) }}
+                      </p>
+                      @if (topComps().length > 0) {
+                        <ol class="mt-3 divide-y" style="border-color: var(--color-border)">
+                          @for (comp of topComps(); track comp.comp_id) {
+                            <li class="flex items-center justify-between gap-3 py-2 first:pt-0">
+                              <a class="min-w-0 truncate text-sm no-underline hover:underline" [routerLink]="['/comps', comp.comp_id]" style="color: var(--color-text)">{{ comp.name }}</a>
+                              <span class="mono shrink-0 text-xs" style="color: var(--color-text-secondary)">
+                                {{ comp.wins }}–{{ comp.losses }} · {{ comp.win_rate | number: '1.0-0' }}%
+                              </span>
+                            </li>
+                          }
+                        </ol>
+                      } @else {
+                        <p class="mt-3 text-sm" style="color: var(--color-text-secondary)">{{ t('intel.compPerformanceUnavailable') }}</p>
+                      }
+                    </section>
+
+                    <section class="rounded-lg border p-3" style="border-color: var(--color-border); background-color: var(--color-surface-2)" aria-labelledby="intel-build-performance-heading">
+                      <h3 class="text-sm font-medium" id="intel-build-performance-heading" style="color: var(--color-text)">{{ t('intel.buildPerformance') }}</h3>
+                      <p class="mt-1 text-[11px]" style="color: var(--color-text-secondary)">
+                        {{ t('intel.buildPerformanceUnavailable') }}
+                      </p>
+                      @if (plannedBuilds().length > 0) {
+                        <ol class="mt-3 divide-y" style="border-color: var(--color-border)">
+                          @for (build of plannedBuilds(); track build.id) {
+                            <li class="flex items-center justify-between gap-3 py-2 first:pt-0">
+                              <span class="min-w-0 truncate text-sm" style="color: var(--color-text)">{{ build.name }}</span>
+                              <span class="mono shrink-0 text-xs" style="color: var(--color-text-secondary)">{{ build.count }} {{ t('intel.assignments') }}</span>
+                            </li>
+                          }
+                        </ol>
+                        <p class="mt-3 text-[11px]" style="color: var(--color-text-tertiary)">{{ buildCoverageLabel() }}</p>
+                      } @else {
+                        <p class="mt-3 text-sm" style="color: var(--color-text-secondary)">{{ t('intel.buildCoverageUnavailable') }}</p>
+                      }
+                    </section>
+                  </div>
+                </section>
+
                 @if (fightTrends(); as trends) {
                   <section class="card p-5 lg:col-span-2 intel-trend-chart" aria-labelledby="intel-fight-pulse-heading">
                     <div class="intel-trend-chart__header">
@@ -957,6 +1035,60 @@ export class Intel {
       .split('_')
       .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
       .join(' ');
+  }
+
+  protected readonly topPlayers = computed(() =>
+    (this.report()?.members ?? [])
+      .filter((member) => member.fights > 0)
+      .sort((a, b) => b.fights - a.fights || b.kills - a.kills || a.username.localeCompare(b.username))
+      .slice(0, 4),
+  );
+
+  protected readonly topComps = computed(() =>
+    (this.report()?.comps ?? [])
+      .filter((comp) => comp.fights > 0)
+      .sort((a, b) => b.fights - a.fights || b.win_rate - a.win_rate || a.name.localeCompare(b.name))
+      .slice(0, 4),
+  );
+
+  protected readonly plannedBuilds = computed(() => {
+    const selections = this.fightTrends()?.last_30_days.planned_participation;
+    if (!selections) {
+      return [];
+    }
+    const counts = new Map<number, { id: number; name: string; count: number }>();
+    for (const selection of [...selections.primary_build_assignments, ...selections.secondary_build_assignments]) {
+      const current = counts.get(selection.id);
+      counts.set(selection.id, {
+        id: selection.id,
+        name: selection.name ?? `Unknown build #${selection.id}`,
+        count: (current?.count ?? 0) + selection.count,
+      });
+    }
+    return [...counts.values()]
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+      .slice(0, 4);
+  });
+
+  protected playerCoverageLabel(report: GuildReport): string {
+    const membersWithFights = report.members.filter((member) => member.fights > 0).length;
+    return `${membersWithFights} of ${report.members.length} roster members have combat records.`;
+  }
+
+  protected compCoverageLabel(report: GuildReport): string {
+    const attributed = report.data_quality.attributed_battles;
+    const total = report.data_quality.total_battles;
+    return total > 0
+      ? `${attributed} of ${total} battles are attributed to a comp.`
+      : 'No battle attribution is available in this report window.';
+  }
+
+  protected buildCoverageLabel(): string {
+    const participation = this.fightTrends()?.last_30_days.planned_participation;
+    if (!participation) {
+      return '';
+    }
+    return `${participation.planned_participant_assignments} planned assignments across ${participation.linked_fights} linked fights in the last 30 days.`;
   }
 
   protected readonly notableFights = computed(() => {
