@@ -414,6 +414,45 @@ pub struct UpdateEventBattlesRequest {
     pub battle_ids: Vec<String>,
 }
 
+/// A persisted event roster snapshot.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct EventRosterView {
+    pub event_id: i64,
+    pub roster_version: i64,
+    pub active_comp_id: i64,
+    pub seats: Vec<EventRosterSeatView>,
+    pub bench: Vec<EventParticipantView>,
+}
+
+/// A canonical seat in the active composition.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct EventRosterSeatView {
+    pub key: String,
+    pub party_number: i32,
+    pub position: i32,
+    pub build_id: i64,
+    pub build_name: String,
+    pub build_version: i32,
+    pub role: String,
+    pub participant: Option<EventParticipantView>,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct AssignRosterSeatRequest {
+    pub user_id: i64,
+    pub expected_roster_version: i64,
+}
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct RosterVersionRequest {
+    pub expected_roster_version: i64,
+}
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct SwapRosterSeatsRequest {
+    pub source_seat_key: String,
+    pub target_seat_key: String,
+    pub expected_roster_version: i64,
+}
+
 /// Request body to add an existing build as an extra roster role for an event.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[schema(example = json!({ "build_id": 5 }))]

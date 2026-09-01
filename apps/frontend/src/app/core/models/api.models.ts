@@ -607,6 +607,92 @@ export interface EventParticipant {
   specializations?: Record<string, number>;
 }
 
+/** Participant fields included by the live roster snapshot. */
+export interface EventRosterParticipant {
+  user_id: number;
+  username: string;
+  primary_build_id: number | null;
+  primary_build_name: string;
+  secondary_build_id: number | null;
+  secondary_build_name: string | null;
+}
+
+/** A concrete composition seat in the authoritative event roster. */
+export interface EventRosterSeat {
+  party_number: number;
+  position: number;
+  build_id: number;
+  build_name: string;
+  build_version: number;
+  role: BuildRole;
+  participant: EventRosterParticipant | null;
+}
+
+/** A registered participant not occupying a concrete composition seat. */
+export interface EventRosterBenchParticipant extends EventRosterParticipant {}
+
+/** Authoritative roster snapshot returned by the roster endpoints. */
+export interface EventRosterView {
+  event_id: number;
+  roster_version: number;
+  active_comp_id: number;
+  seats: EventRosterSeat[];
+  bench: EventRosterBenchParticipant[];
+}
+
+/** Assign a registered participant to a concrete roster seat. */
+export interface AssignRosterSeatRequest {
+  user_id: number;
+  party_number: number;
+  position: number;
+  expected_roster_version: number;
+}
+
+/** Remove the participant from a concrete roster seat. */
+export interface ClearRosterSeatRequest {
+  party_number: number;
+  position: number;
+  expected_roster_version: number;
+}
+
+/** Exchange the participants assigned to two concrete roster seats. */
+export interface SwapRosterSeatsRequest {
+  source_party_number: number;
+  source_position: number;
+  target_party_number: number;
+  target_position: number;
+  expected_roster_version: number;
+}
+
+/** Fill currently empty concrete roster seats from registered participants. */
+export interface AutoFillRosterRequest {
+  expected_roster_version: number;
+}
+
+export interface RosterRealtimeReadyMessage {
+  type: 'ready';
+  event_id: number;
+  roster_version: number;
+}
+
+export interface RosterRealtimeChangedMessage {
+  type: 'roster_changed';
+  event_id: number;
+  roster_version: number;
+}
+
+export interface RosterRealtimeResyncRequiredMessage {
+  type: 'resync_required';
+  event_id: number;
+  roster_version: number;
+}
+
+/** Notifications sent by `GET /api/events/{id}/roster/live`. */
+export type RosterRealtimeMessage =
+  | RosterRealtimeReadyMessage
+  | RosterRealtimeChangedMessage
+  | RosterRealtimeResyncRequiredMessage;
+
 export interface EventFilters {
   search?: string;
   date_from?: string;
