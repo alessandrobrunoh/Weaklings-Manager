@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::modules::battles::models::BattleLossEstimate;
+use crate::modules::comps::status::BuildRole;
 
 /// Filters for listing events.
 #[derive(Debug, Clone, Deserialize, ToSchema, Default)]
@@ -329,6 +330,35 @@ pub struct EventRosterRoleView {
     pub name: String,
     /// Whether this is the automatic unlimited-capacity Fill role.
     pub is_fill: bool,
+}
+
+/// A concrete build available for the next event signup.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct EventSignupBuildView {
+    /// Build identifier submitted to `POST /api/events/{id}/participate`.
+    pub build_id: i64,
+    /// Human-readable build name.
+    pub name: String,
+    /// Role category used by the Discord role-selection menu.
+    pub role: BuildRole,
+    /// Available slots from the prospective comp snapshot plus extra event roster slots.
+    pub quantity: i32,
+}
+
+/// The server-authoritative choices presented to a member before they select a concrete build.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct EventSignupOptionsView {
+    /// The comp tier that would be active for a new concrete signup by this member.
+    pub active_comp_id: i64,
+    /// Human-readable name of the prospective comp tier.
+    pub active_comp_name: String,
+    /// Concrete build capacity of the prospective comp tier.
+    pub active_comp_capacity: i64,
+    /// Whether the requesting member is already on the roster and therefore does not increment
+    /// the prospective threshold merely by opening the menu.
+    pub is_already_registered: bool,
+    /// Concrete builds available to select, including event-specific extra roster slots.
+    pub builds: Vec<EventSignupBuildView>,
 }
 
 /// Full details of an event including active comp details and participants list.

@@ -1,8 +1,12 @@
 import { StringSelectMenuInteraction } from "discord.js";
 import type { ApiClient } from "../api/client.js";
-import type { BuildRole } from "../api/types.js";
+import type { EventSignupOptionsView } from "../api/types.js";
 import { createResponseEmbed } from "../embeds/theme.js";
-import { FILL_SIGNUP_VALUE, type SignupRoleValue } from "../services/event-signup.js";
+import {
+  buildsForSignupRole,
+  FILL_SIGNUP_VALUE,
+  type SignupRoleValue,
+} from "../services/event-signup.js";
 
 export async function handleSelectMenu(
   interaction: StringSelectMenuInteraction,
@@ -18,28 +22,6 @@ export async function handleSelectMenu(
       const role = interaction.values[0] as SignupRoleValue;
 
       await interaction.deferUpdate();
-
-      // Fetch event and comp to get builds for this role
-      let event, comp;
-      try {
-        event = await api.get<any>(
-          `api/events/${eventId}`,
-          interaction.user.id,
-        );
-        comp = await api.get<any>(
-          `api/comps/${event.active_comp_id}`,
-          interaction.user.id,
-        );
-      } catch (err) {
-        const errEmbed = createResponseEmbed(
-          "error",
-          "Fetch Error",
-          "Failed to fetch event or comp details.",
-          "GUILD EVENT",
-        );
-        await interaction.editReply({ embeds: [errEmbed], components: [] });
-        return;
-      }
 
       if (role === FILL_SIGNUP_VALUE) {
         await api.post(
@@ -74,9 +56,24 @@ export async function handleSelectMenu(
         return;
       }
 
-      const availableBuilds = comp.builds.filter(
-        (b: any) => b.build.role === role,
-      );
+      let signupOptions;
+      try {
+        signupOptions = await api.get<EventSignupOptionsView>(
+          `api/events/${eventId}/signup-options`,
+          interaction.user.id,
+        );
+      } catch (err) {
+        const errEmbed = createResponseEmbed(
+          "error",
+          "Fetch Error",
+          "Failed to fetch event signup options.",
+          "GUILD EVENT",
+        );
+        await interaction.editReply({ embeds: [errEmbed], components: [] });
+        return;
+      }
+
+      const availableBuilds = buildsForSignupRole(signupOptions.builds, role);
 
       if (availableBuilds.length === 0) {
         const warnEmbed = createResponseEmbed(
@@ -99,11 +96,11 @@ export async function handleSelectMenu(
         .setCustomId(`event:join_build:${eventId}:${messageId}`)
         .setPlaceholder("Select your specific build")
         .addOptions(
-          availableBuilds.map((b: any) =>
+          availableBuilds.map((build) =>
             new StringSelectMenuOptionBuilder()
-              .setLabel(b.build.name)
-              .setDescription(`Requested count: ${b.quantity}`)
-              .setValue(String(b.build_id)),
+              .setLabel(build.name)
+              .setDescription(`Requested count: ${build.quantity}`)
+              .setValue(String(build.build_id)),
           ),
         );
 

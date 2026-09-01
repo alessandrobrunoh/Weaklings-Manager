@@ -16,6 +16,7 @@ import type {
   BattleDetail,
   BattleGuildSummary,
   BattleSummary,
+  FightListItem,
   PaginatedData,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
@@ -31,10 +32,7 @@ import { DataTableCell } from '../../shared/components/data-table/data-table-cel
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
-import {
-  ViewToggle,
-  type ViewToggleOption,
-} from '../../shared/components/view-toggle/view-toggle';
+import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
@@ -42,7 +40,8 @@ const PAGE_SIZE = 10;
 const BATTLE_REFRESH_INTERVAL_SECONDS = 5 * 60;
 
 type BattleTab = 'guild' | 'me';
-type BattleOutcomeType = 'victory' | 'defeat' | 'contested';
+type BattleOutcomeType = 'victory' | 'defeat' | 'contested' | 'draw' | 'unknown';
+type BattleListRow = BattleSummary | FightListItem;
 
 function isBattleTab(value: string): value is BattleTab {
   return value === 'guild' || value === 'me';
@@ -59,13 +58,21 @@ interface BattleScopeStats {
 /**
  * Battle list for recent guild and personal fights.
  *
- * Guild pages are hydrated from several AlbionBB pages, then filtered/sorted
- * by our API so table search and sort cover more than the visible page.
+ * The guild tab reads canonical Fight aggregates; the personal tab retains
+ * the raw AlbionBB battle view for per-battle detail and grouping workflows.
  */
 @Component({
   selector: 'app-battles',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PageHeader, PageStack, DataTable, DataTableCell, StatCard, TooltipDirective, ViewToggle],
+  imports: [
+    PageHeader,
+    PageStack,
+    DataTable,
+    DataTableCell,
+    StatCard,
+    TooltipDirective,
+    ViewToggle,
+  ],
   template: `
     <app-page-header [title]="t('battles.title')" [subtitle]="t('battles.subtitle')">
       <span
@@ -85,7 +92,7 @@ interface BattleScopeStats {
       >
         {{ t('battles.refresh_now') }}
       </button>
-      @if (selectedBattleIds().length > 0) {
+      @if (tab() === 'me' && selectedBattleIds().length > 0) {
         <span class="chip font-mono">
           {{ selectedBattleIds().length }} {{ t('battles.selected') }}
         </span>
@@ -141,12 +148,14 @@ interface BattleScopeStats {
             icon="swords"
             tone="success"
           />
-          <app-stat-card
-            [label]="t('battles.deaths')"
-            [value]="formatAmount(scopeStats().deaths)"
-            icon="alert"
-            tone="danger"
-          />
+          @if (tab() === 'me') {
+            <app-stat-card
+              [label]="t('battles.deaths')"
+              [value]="formatAmount(scopeStats().deaths)"
+              icon="alert"
+              tone="danger"
+            />
+          }
         </section>
       }
 
@@ -161,30 +170,32 @@ interface BattleScopeStats {
           [totalItems]="totalItems()"
           emptyIcon="shield"
           [rowClickable]="true"
-          (rowClick)="openBattle($event.battle_id)"
+          (rowClick)="openRow($event)"
           (pageChange)="onTableChange($event)"
         >
           <ng-template dataTableCell="select" let-row>
-            <input
-              type="checkbox"
-              class="checkbox"
-              [checked]="isSelected(row.battle_id)"
-              (click)="$event.stopPropagation()"
-              (change)="toggleSelection(row.battle_id); $event.stopPropagation()"
-              [attr.aria-label]="t('battles.select') + ' #' + row.battle_id"
-            />
+            @if (isBattle(row)) {
+              <input
+                type="checkbox"
+                class="checkbox"
+                [checked]="isSelected(row.battle_id)"
+                (click)="$event.stopPropagation()"
+                (change)="toggleSelection(row.battle_id); $event.stopPropagation()"
+                [attr.aria-label]="t('battles.select') + ' #' + row.battle_id"
+              />
+            }
           </ng-template>
           <ng-template dataTableCell="id" let-row>
-            <span class="mono font-medium">#{{ row.battle_id }}</span>
+            <span class="mono font-medium">#{{ rowId(row) }}</span>
           </ng-template>
           <ng-template dataTableCell="time" let-row>
-            <span class="text-sm">{{ formatDate(row.start_time) }}</span>
+            <span class="text-sm">{{ formatDate(rowStartTime(row)) }}</span>
             <span class="ml-1 text-xs" style="color: var(--color-text-secondary)">
               · {{ formatDuration(row) }}
             </span>
           </ng-template>
           <ng-template dataTableCell="outcome" let-row>
-            @if (battleOutcome(row); as outcome) {
+            @if (rowOutcome(row); as outcome) {
               <span
                 class="chip text-xs py-0 font-semibold"
                 [class.chip--success]="outcome.type === 'victory'"
@@ -202,10 +213,17 @@ interface BattleScopeStats {
             <span class="mono">{{ formatAmount(row.total_kills) }}</span>
           </ng-template>
           <ng-template dataTableCell="deaths" let-row>
-            <span class="mono">{{ formatAmount(battleDeaths(row)) }}</span>
+            @if (isBattle(row)) {
+              <span class="mono">{{ formatAmount(battleDeaths(row)) }}</span>
+            }
           </ng-template>
           <ng-template dataTableCell="players" let-row>
             <span class="mono">{{ formatAmount(row.total_players) }}</span>
+          </ng-template>
+          <ng-template dataTableCell="segments" let-row>
+            @if (isFight(row)) {
+              <span class="mono">{{ formatAmount(row.segment_count) }}</span>
+            }
           </ng-template>
         </app-data-table>
       }
@@ -229,7 +247,7 @@ export class Battles {
   private readonly translate = inject(TranslateService);
 
   protected readonly PAGE_SIZE = PAGE_SIZE;
-  protected readonly battles = signal<BattleSummary[]>([]);
+  protected readonly battles = signal<BattleListRow[]>([]);
   protected readonly loading = signal(false);
   protected readonly tab = signal<BattleTab>('guild');
   protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
@@ -253,74 +271,105 @@ export class Battles {
     columnFilters: {},
   });
 
-  protected readonly columns = computed<readonly DataTableColumn<BattleSummary>[]>(() => [
-    { key: 'select', label: '' },
-    {
-      key: 'id',
-      label: 'battles.id',
-      sortable: true,
-      searchable: true,
-      accessor: (row) => row.battle_id,
-      comparator: (a, b) => a.battle_id - b.battle_id,
-    },
-    {
-      key: 'time',
-      label: 'battles.time',
-      sortable: true,
-      accessor: (row) => row.start_time,
-      comparator: (a, b) => a.start_time.localeCompare(b.start_time),
-    },
-    {
-      key: 'outcome',
-      label: 'battles.outcome',
-      sortable: true,
-      accessor: (row) => this.battleOutcome(row).type,
-      comparator: (a, b) =>
-        this.battleOutcome(a).type.localeCompare(this.battleOutcome(b).type),
-      filterOptions: [
-        { value: 'victory', label: this.t('battles.victory') },
-        { value: 'defeat', label: this.t('battles.defeat') },
-        { value: 'contested', label: this.t('battles.contested') },
-      ],
-    },
-    {
-      key: 'fame',
-      label: 'battles.fame',
-      sortable: true,
-      accessor: (row) => row.total_fame,
-      comparator: (a, b) => a.total_fame - b.total_fame,
-      align: 'right',
-    },
-    {
-      key: 'kills',
-      label: 'battles.kills',
-      sortable: true,
-      accessor: (row) => row.total_kills,
-      comparator: (a, b) => a.total_kills - b.total_kills,
-      align: 'right',
-    },
-    {
-      key: 'deaths',
-      label: 'battles.deaths',
-      sortable: true,
-      accessor: (row) => this.battleDeaths(row),
-      comparator: (a, b) => this.battleDeaths(a) - this.battleDeaths(b),
-      align: 'right',
-    },
-    {
-      key: 'players',
-      label: 'battles.players',
-      sortable: true,
-      searchable: true,
-      accessor: (row) => row.total_players,
-      comparator: (a, b) => a.total_players - b.total_players,
-      align: 'right',
-    },
-  ]);
+  protected readonly columns = computed<readonly DataTableColumn<BattleListRow>[]>(() => {
+    const shared: DataTableColumn<BattleListRow>[] = [
+      {
+        key: 'id',
+        label: 'battles.id',
+        sortable: true,
+        searchable: true,
+        accessor: (row) => this.rowId(row),
+        comparator: (a, b) => this.rowId(a) - this.rowId(b),
+      },
+      {
+        key: 'time',
+        label: 'battles.time',
+        sortable: true,
+        accessor: (row) => this.rowStartTime(row),
+        comparator: (a, b) => this.rowStartTime(a).localeCompare(this.rowStartTime(b)),
+      },
+      {
+        key: 'outcome',
+        label: 'battles.outcome',
+        sortable: true,
+        accessor: (row) => this.rowOutcome(row).type,
+        comparator: (a, b) => this.rowOutcome(a).type.localeCompare(this.rowOutcome(b).type),
+        filterOptions:
+          this.tab() === 'guild'
+            ? [
+                { value: 'victory', label: this.t('battles.victory') },
+                { value: 'defeat', label: this.t('battles.defeat') },
+                { value: 'draw', label: this.t('battles.draw') },
+                { value: 'unknown', label: this.t('battles.unknown') },
+              ]
+            : [
+                { value: 'victory', label: this.t('battles.victory') },
+                { value: 'defeat', label: this.t('battles.defeat') },
+                { value: 'contested', label: this.t('battles.contested') },
+              ],
+      },
+      {
+        key: 'fame',
+        label: 'battles.fame',
+        sortable: true,
+        accessor: (row) => row.total_fame,
+        comparator: (a, b) => a.total_fame - b.total_fame,
+        align: 'right',
+      },
+      {
+        key: 'kills',
+        label: 'battles.kills',
+        sortable: true,
+        accessor: (row) => row.total_kills,
+        comparator: (a, b) => a.total_kills - b.total_kills,
+        align: 'right',
+      },
+      {
+        key: 'players',
+        label: 'battles.players',
+        sortable: true,
+        searchable: true,
+        accessor: (row) => row.total_players,
+        comparator: (a, b) => a.total_players - b.total_players,
+        align: 'right',
+      },
+    ];
+
+    if (this.tab() === 'guild') {
+      return [
+        ...shared,
+        {
+          key: 'segments',
+          label: 'battles.segments',
+          sortable: true,
+          accessor: (row) => (this.isFight(row) ? row.segment_count : 0),
+          comparator: (a, b) =>
+            (this.isFight(a) ? a.segment_count : 0) - (this.isFight(b) ? b.segment_count : 0),
+          align: 'right',
+        },
+      ];
+    }
+
+    return [
+      { key: 'select', label: '' },
+      ...shared.slice(0, 5),
+      {
+        key: 'deaths',
+        label: 'battles.deaths',
+        sortable: true,
+        accessor: (row) => (this.isBattle(row) ? this.battleDeaths(row) : 0),
+        comparator: (a, b) =>
+          (this.isBattle(a) ? this.battleDeaths(a) : 0) -
+          (this.isBattle(b) ? this.battleDeaths(b) : 0),
+        align: 'right',
+      },
+      shared[5],
+    ];
+  });
 
   protected readonly tableRows = computed(() => this.battles());
 
-  protected readonly trackBattle = (battle: BattleSummary): unknown => battle.battle_id;
+  protected readonly trackBattle = (battle: BattleListRow): unknown => this.rowId(battle);
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
@@ -335,8 +384,10 @@ export class Battles {
     void this.load();
   }
 
-  protected openBattle(battleId: number): void {
-    void this.router.navigate(['/battles', battleId]);
+  protected openRow(row: BattleListRow): void {
+    void this.router.navigate(
+      this.isFight(row) ? ['/fights', row.id] : ['/battles', row.battle_id],
+    );
   }
 
   protected refreshNow(): void {
@@ -392,10 +443,39 @@ export class Battles {
     );
   }
 
-  protected formatDuration(battle: Pick<BattleSummary, 'start_time' | 'end_time'>): string {
-    const ms = new Date(battle.end_time).getTime() - new Date(battle.start_time).getTime();
+  protected formatDuration(row: BattleListRow): string {
+    const endedAt = this.isFight(row) ? row.ended_at : row.end_time;
+    if (!endedAt) return this.t('battles.duration_unknown');
+    const ms = new Date(endedAt).getTime() - new Date(this.rowStartTime(row)).getTime();
     if (!Number.isFinite(ms) || ms <= 0) return this.t('battles.duration_unknown');
     return `${Math.max(1, Math.round(ms / 60000))}m`;
+  }
+
+  protected isBattle(row: BattleListRow): row is BattleSummary {
+    return 'battle_id' in row;
+  }
+
+  protected isFight(row: BattleListRow): row is FightListItem {
+    return !this.isBattle(row);
+  }
+
+  protected rowId(row: BattleListRow): number {
+    return this.isFight(row) ? row.id : row.battle_id;
+  }
+
+  protected rowStartTime(row: BattleListRow): string {
+    return this.isFight(row) ? row.started_at : row.start_time;
+  }
+
+  protected rowOutcome(row: BattleListRow): { label: string; type: BattleOutcomeType } {
+    if (this.isBattle(row)) return this.battleOutcome(row);
+    const labels: Record<FightListItem['outcome']['outcome'], TranslationKey> = {
+      victory: 'battles.victory',
+      defeat: 'battles.defeat',
+      draw: 'battles.draw',
+      unknown: 'battles.unknown',
+    };
+    return { label: this.t(labels[row.outcome.outcome]), type: row.outcome.outcome };
   }
 
   protected battleDeaths(battle: BattleSummary): number {
@@ -456,7 +536,7 @@ export class Battles {
     this.loading.set(true);
     try {
       const isGuildTab = this.tab() === 'guild';
-      const path = isGuildTab ? 'api/battles' : 'api/battles/me';
+      const path = isGuildTab ? 'api/fights' : 'api/battles/me';
       const query = this.tableQuery();
       const params: Record<string, string | number> = {
         page: query.page,
@@ -476,16 +556,21 @@ export class Battles {
       if (outcome) {
         params['outcome'] = outcome;
       }
-      const response = await firstValueFrom(
-        this.api.get<PaginatedData<BattleSummary>>(path, params),
-      );
-      this.battles.set(response.items);
-      this.totalItems.set(response.total_items);
-      this.scopeStats.set(
-        isGuildTab
-          ? this.buildGuildScopeStats(response.items)
-          : await this.buildPersonalScopeStats(response.items),
-      );
+      if (isGuildTab) {
+        const response = await firstValueFrom(
+          this.api.get<PaginatedData<FightListItem>>(path, params),
+        );
+        this.battles.set(response.items);
+        this.totalItems.set(response.total_items);
+        this.scopeStats.set(this.buildGuildScopeStats(response.items));
+      } else {
+        const response = await firstValueFrom(
+          this.api.get<PaginatedData<BattleSummary>>(path, params),
+        );
+        this.battles.set(response.items);
+        this.totalItems.set(response.total_items);
+        this.scopeStats.set(await this.buildPersonalScopeStats(response.items));
+      }
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -497,18 +582,17 @@ export class Battles {
     return { battles: 0, players: 0, kills: 0, deaths: 0, fame: 0 };
   }
 
-  private buildGuildScopeStats(battles: readonly BattleSummary[]): BattleScopeStats {
-    return battles.reduce<BattleScopeStats>((stats, battle) => {
-      const guild = this.guildStatsForBattle(battle);
-      if (!guild) return stats;
-      return {
+  private buildGuildScopeStats(fights: readonly FightListItem[]): BattleScopeStats {
+    return fights.reduce<BattleScopeStats>(
+      (stats, fight) => ({
         battles: stats.battles + 1,
-        players: stats.players + guild.players,
-        kills: stats.kills + guild.kills,
-        deaths: stats.deaths + guild.deaths,
-        fame: stats.fame + guild.kill_fame,
-      };
-    }, this.emptyScopeStats());
+        players: stats.players + fight.total_players,
+        kills: stats.kills + fight.total_kills,
+        deaths: stats.deaths,
+        fame: stats.fame + fight.total_fame,
+      }),
+      this.emptyScopeStats(),
+    );
   }
 
   private async buildPersonalScopeStats(

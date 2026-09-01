@@ -22,8 +22,9 @@ use std::collections::HashSet;
 
 use super::models::{
     CreateEventRequest, CreateEventRosterRoleRequest, EventDetailView, EventFilters,
-    EventRosterRoleView, EventView, ParticipateEventRequest, SetEventVoiceChannelRequest,
-    SetParticipantRequest, UpdateEventBattlesRequest, UpdateEventRequest,
+    EventRosterRoleView, EventSignupOptionsView, EventView, ParticipateEventRequest,
+    SetEventVoiceChannelRequest, SetParticipantRequest, UpdateEventBattlesRequest,
+    UpdateEventRequest,
 };
 use super::service::{BattleLinkingContext, EventService};
 use crate::modules::admin::models::DiscordRoleView;
@@ -40,6 +41,7 @@ pub fn router() -> Router {
             get(get_event).patch(update_event).delete(delete_event),
         )
         .route("/discord-roles", get(list_event_discord_roles))
+        .route("/{id}/signup-options", get(get_event_signup_options))
         .route(
             "/{id}/roster-roles",
             get(list_event_roster_roles).post(create_event_roster_role),
@@ -140,6 +142,35 @@ async fn get_event(
         .get_event_detail_with_context(&db, id, &context)
         .await?;
     Ok(Json(ApiResponse::new(event)))
+}
+
+/// Returns the next concrete signup choices for the authenticated member.
+///
+/// The server evaluates an unregistered member as one additional concrete signup and returns the
+/// corresponding comp tier. Existing roster members do not inflate the calculation merely by
+/// opening the menu.
+#[utoipa::path(
+    get,
+    path = "/api/events/{id}/signup-options",
+    tag = "events",
+    summary = "Get prospective event signup options",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    responses(
+        (status = 200, description = "Prospective signup options retrieved", body = EventSignupOptionsView),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails)
+    )
+)]
+async fn get_event_signup_options(
+    user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<EventSignupOptionsView>>, AppError> {
+    let options = EventService::new()
+        .get_event_signup_options(&db, id, user.user_id)
+        .await?;
+    Ok(Json(ApiResponse::new(options)))
 }
 
 /// Lists event roster roles.

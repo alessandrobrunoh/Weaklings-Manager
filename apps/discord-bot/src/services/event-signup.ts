@@ -1,4 +1,4 @@
-import type { BuildRole } from "../api/types.js";
+import type { BuildRole, EventSignupBuildOption } from "../api/types.js";
 
 export const FILL_SIGNUP_VALUE = "fill";
 
@@ -17,6 +17,19 @@ export interface SignupRoleOption {
   label: string;
   value: SignupRoleValue;
   description?: string;
+}
+
+/** Returns the role categories represented by the server-authoritative signup build list. */
+export function signupRoles(builds: readonly EventSignupBuildOption[]): BuildRole[] {
+  return [...new Set(builds.map((build) => build.role))];
+}
+
+/** Filters the server-authoritative signup build list for a selected role. */
+export function buildsForSignupRole(
+  builds: readonly EventSignupBuildOption[],
+  role: BuildRole,
+): EventSignupBuildOption[] {
+  return builds.filter((build) => build.role === role);
 }
 
 /** Builds the first-stage Discord signup menu, with the unlimited Fill role first. */

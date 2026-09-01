@@ -3,12 +3,14 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
+import { ApiService } from '../../core/services/api.service';
 import { IntelService } from '../../core/services/intel.service';
 import type { ScoutListParams } from '../../core/services/intel.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import type {
+  FightTrendView,
   GuildReport,
   MatchupReport,
   ScoutedCompSummary,
@@ -71,6 +73,23 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
     TooltipDirective,
     ViewToggle,
   ],
+  styles: `
+    .intel-trend-chart { min-inline-size: 0; }
+    .intel-trend-chart__header { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 0.5rem 1rem; }
+    .intel-trend-chart__title { margin: 0; color: var(--color-text); font-size: 0.875rem; font-weight: 600; }
+    .intel-trend-chart__note, .intel-trend-chart__sample { margin: 0.2rem 0 0; color: var(--color-text-secondary); font-size: 0.75rem; line-height: 1.45; }
+    .intel-trend-chart__sample { color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.6875rem; white-space: nowrap; }
+    .intel-trend-chart__bars { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); align-items: end; gap: 0.2rem; block-size: 8rem; margin-block: 1rem 0; padding-block: 0.35rem; border-block-end: 1px solid var(--color-border-strong); }
+    .intel-trend-chart__bar { display: block; min-block-size: 2px; border-radius: 2px 2px 0 0; background-color: var(--color-primary); opacity: 0.8; }
+    .intel-trend-chart__axis { display: flex; justify-content: space-between; margin-block-start: 0.4rem; color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.6875rem; }
+    .intel-trend-chart__data { margin-block-start: 0.875rem; color: var(--color-text-secondary); font-size: 0.75rem; }
+    .intel-trend-chart__data summary { inline-size: fit-content; cursor: pointer; }
+    .intel-trend-chart__data summary:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
+    .intel-trend-chart__table { inline-size: 100%; margin-block-start: 0.625rem; border-collapse: collapse; font-size: 0.75rem; }
+    .intel-trend-chart__table th, .intel-trend-chart__table td { padding: 0.375rem 0.5rem; border-block-end: 1px solid var(--color-border); text-align: end; }
+    .intel-trend-chart__table th:first-child, .intel-trend-chart__table td:first-child { text-align: start; }
+    @media (max-width: 32rem) { .intel-trend-chart__bars { gap: 0.1rem; } .intel-trend-chart__sample { white-space: normal; } }
+  `,
   template: `
     <app-page-header [title]="t('intel.title')" [subtitle]="t('intel.subtitle')">
       <button
@@ -197,6 +216,122 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
                   </div>
                 </section>
 
+                <section class="card p-5 lg:col-span-2" aria-labelledby="intel-performance-evidence-heading">
+                  <div class="mb-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                    <div>
+                      <h2 class="eyebrow" id="intel-performance-evidence-heading">{{ t('intel.performanceEvidence') }}</h2>
+                      <p class="mt-1 text-xs" style="color: var(--color-text-secondary)">
+                        {{ t('intel.performanceEvidenceHint') }}
+                      </p>
+                    </div>
+                    <p class="mono text-[11px]" style="color: var(--color-text-tertiary)">
+                      {{ t('intel.reportWindow') }} {{ r.from | date: 'mediumDate' }}–{{ r.to | date: 'mediumDate' }}
+                    </p>
+                  </div>
+
+                  <div class="grid gap-3 lg:grid-cols-3">
+                    <section class="rounded-lg border p-3" style="border-color: var(--color-border); background-color: var(--color-surface-2)" aria-labelledby="intel-player-performance-heading">
+                      <h3 class="text-sm font-medium" id="intel-player-performance-heading" style="color: var(--color-text)">{{ t('intel.playerPerformance') }}</h3>
+                      <p class="mt-1 text-[11px]" style="color: var(--color-text-secondary)">
+                        {{ playerCoverageLabel(r) }}
+                      </p>
+                      @if (topPlayers().length > 0) {
+                        <ol class="mt-3 divide-y" style="border-color: var(--color-border)">
+                          @for (player of topPlayers(); track player.user_id) {
+                            <li class="flex items-center justify-between gap-3 py-2 first:pt-0">
+                              <span class="min-w-0 truncate text-sm" style="color: var(--color-text)">{{ player.username }}</span>
+                              <span class="mono shrink-0 text-xs" style="color: var(--color-text-secondary)">
+                                {{ player.fights }} {{ t('intel.fights') }} · {{ player.kill_death_ratio | number: '1.1-2' }} K/D
+                              </span>
+                            </li>
+                          }
+                        </ol>
+                      } @else {
+                        <p class="mt-3 text-sm" style="color: var(--color-text-secondary)">{{ t('intel.playerPerformanceUnavailable') }}</p>
+                      }
+                    </section>
+
+                    <section class="rounded-lg border p-3" style="border-color: var(--color-border); background-color: var(--color-surface-2)" aria-labelledby="intel-comp-performance-heading">
+                      <h3 class="text-sm font-medium" id="intel-comp-performance-heading" style="color: var(--color-text)">{{ t('intel.compPerformance') }}</h3>
+                      <p class="mt-1 text-[11px]" style="color: var(--color-text-secondary)">
+                        {{ compCoverageLabel(r) }}
+                      </p>
+                      @if (topComps().length > 0) {
+                        <ol class="mt-3 divide-y" style="border-color: var(--color-border)">
+                          @for (comp of topComps(); track comp.comp_id) {
+                            <li class="flex items-center justify-between gap-3 py-2 first:pt-0">
+                              <a class="min-w-0 truncate text-sm no-underline hover:underline" [routerLink]="['/comps', comp.comp_id]" style="color: var(--color-text)">{{ comp.name }}</a>
+                              <span class="mono shrink-0 text-xs" style="color: var(--color-text-secondary)">
+                                {{ comp.wins }}–{{ comp.losses }} · {{ comp.win_rate | number: '1.0-0' }}%
+                              </span>
+                            </li>
+                          }
+                        </ol>
+                      } @else {
+                        <p class="mt-3 text-sm" style="color: var(--color-text-secondary)">{{ t('intel.compPerformanceUnavailable') }}</p>
+                      }
+                    </section>
+
+                    <section class="rounded-lg border p-3" style="border-color: var(--color-border); background-color: var(--color-surface-2)" aria-labelledby="intel-build-performance-heading">
+                      <h3 class="text-sm font-medium" id="intel-build-performance-heading" style="color: var(--color-text)">{{ t('intel.buildPerformance') }}</h3>
+                      <p class="mt-1 text-[11px]" style="color: var(--color-text-secondary)">
+                        {{ t('intel.buildPerformanceUnavailable') }}
+                      </p>
+                      @if (plannedBuilds().length > 0) {
+                        <ol class="mt-3 divide-y" style="border-color: var(--color-border)">
+                          @for (build of plannedBuilds(); track build.id) {
+                            <li class="flex items-center justify-between gap-3 py-2 first:pt-0">
+                              <span class="min-w-0 truncate text-sm" style="color: var(--color-text)">{{ build.name }}</span>
+                              <span class="mono shrink-0 text-xs" style="color: var(--color-text-secondary)">{{ build.count }} {{ t('intel.assignments') }}</span>
+                            </li>
+                          }
+                        </ol>
+                        <p class="mt-3 text-[11px]" style="color: var(--color-text-tertiary)">{{ buildCoverageLabel() }}</p>
+                      } @else {
+                        <p class="mt-3 text-sm" style="color: var(--color-text-secondary)">{{ t('intel.buildCoverageUnavailable') }}</p>
+                      }
+                    </section>
+                  </div>
+                </section>
+
+                @if (fightTrends(); as trends) {
+                  <section class="card p-5 lg:col-span-2 intel-trend-chart" aria-labelledby="intel-fight-pulse-heading">
+                    <div class="intel-trend-chart__header">
+                      <div>
+                        <h2 class="intel-trend-chart__title" id="intel-fight-pulse-heading">30-day fight pulse</h2>
+                        <p class="intel-trend-chart__note">Daily canonical fights. Quiet days are included so gaps do not look like missing data.</p>
+                      </div>
+                      <p class="intel-trend-chart__sample">{{ fightTrendSampleLabel(trends) }}</p>
+                    </div>
+                    <figure class="mt-1" aria-describedby="intel-fight-pulse-description">
+                      <figcaption class="sr-only" id="intel-fight-pulse-description">
+                        {{ fightTrendDescription(trends) }} Exact daily values are available in the table below.
+                      </figcaption>
+                      <div class="intel-trend-chart__bars" aria-hidden="true">
+                        @for (day of trends.rolling_daily_fight_counts; track day.date) {
+                          <span class="intel-trend-chart__bar" [style.height.%]="dailyFightBarHeight(day.fights)"></span>
+                        }
+                      </div>
+                      <div class="intel-trend-chart__axis" aria-hidden="true">
+                        <span>{{ trends.rolling_daily_fight_counts[0]?.date | date: 'MMM d' }}</span>
+                        <span>{{ trends.rolling_daily_fight_counts[trends.rolling_daily_fight_counts.length - 1]?.date | date: 'MMM d' }}</span>
+                      </div>
+                    </figure>
+                    <details class="intel-trend-chart__data">
+                      <summary>View daily fight counts as a table</summary>
+                      <table class="intel-trend-chart__table">
+                        <caption class="sr-only">Canonical fights for each day in the 30-day trend</caption>
+                        <thead><tr><th scope="col">UTC date</th><th scope="col">Fights</th></tr></thead>
+                        <tbody>
+                          @for (day of trends.rolling_daily_fight_counts; track day.date) {
+                            <tr><td>{{ day.date | date: 'MMM d, y' }}</td><td class="mono">{{ day.fights }}</td></tr>
+                          }
+                        </tbody>
+                      </table>
+                    </details>
+                  </section>
+                }
+
                 <!-- Activity by hour of day -->
                 <section class="card p-5 lg:col-span-2">
                   <div class="flex items-center justify-between mb-3">
@@ -234,7 +369,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
                 <!-- Activity Timeline -->
                 <section class="card p-5 lg:col-span-2">
                   <h2 class="eyebrow mb-3">{{ t('intel.tab.timeline') }}</h2>
-                  <div class="divide-y divide-[var(--color-border)]">
+                  <div class="divide-y divide-(--color-border)">
                     @for (entry of r.timeline; track entry.at + entry.title) {
                       <div class="flex items-baseline gap-3 py-2.5">
                         <span class="mono shrink-0 text-xs" style="color: var(--color-text-secondary)">
@@ -260,7 +395,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
               <section>
                 <div class="mb-2">
                   <h2 class="text-lg font-semibold" style="color: var(--color-text)">{{ t('intel.nav.matchups') }}</h2>
-                  <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('intel.coverageNoteHint') }}</p>
+                  <p class="text-xs" style="color: var(--color-text-secondary)">{{ matchupCoverageLabel() }}</p>
                 </div>
                 <app-data-table
                   [columns]="matchupColumns()"
@@ -604,6 +739,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
   `,
 })
 export class Intel {
+  private readonly api = inject(ApiService);
   private readonly intel = inject(IntelService);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
@@ -616,6 +752,8 @@ export class Intel {
   protected readonly scouts = signal<ScoutedCompSummary[]>([]);
   protected readonly matchups = signal<MatchupReport | null>(null);
   protected readonly report = signal<GuildReport | null>(null);
+  /** Optional existing Fight Trends endpoint, intentionally non-blocking for Intel. */
+  protected readonly fightTrends = signal<FightTrendView | null>(null);
   protected readonly tab = signal('overview');
   protected readonly headlineTotal = signal(0);
   protected readonly headlineTopThreat = signal<ScoutedCompSummary | null>(null);
@@ -865,12 +1003,92 @@ export class Intel {
     return cov.battles_with_comp === cov.total_battles ? 'success' : 'warning';
   }
 
+  protected matchupCoverageLabel(): string {
+    const cov = this.coverage();
+    if (!cov || cov.total_battles === 0) {
+      return this.t('intel.coverageNoteHint');
+    }
+    return `${cov.battles_with_comp} of ${cov.total_battles} battles have composition evidence (${this.coverageLabel()} coverage).`;
+  }
+
+  protected readonly maxDailyFights = computed(() =>
+    Math.max(1, ...(this.fightTrends()?.rolling_daily_fight_counts.map((day) => day.fights) ?? [0])),
+  );
+
+  protected dailyFightBarHeight(fights: number): number {
+    return (fights / this.maxDailyFights()) * 100;
+  }
+
+  protected fightTrendSampleLabel(trends: FightTrendView): string {
+    const period = trends.last_30_days;
+    return `${period.fight_sample_size} canonical fights · ${period.win_sample_size} with winner data · ${period.combat_sample_size} with snapshots`;
+  }
+
+  protected fightTrendDescription(trends: FightTrendView): string {
+    const days = trends.rolling_daily_fight_counts;
+    return `Daily canonical fight volume from ${days[0]?.date ?? trends.last_30_days.window_started_at} to ${days.at(-1)?.date ?? trends.last_30_days.window_ended_at}, peaking at ${this.maxDailyFights()} fights per day.`;
+  }
+
   protected prettyWeapon(id: string): string {
     return id
       .replace(/^(MAIN|2H|OFF)_/, '')
       .split('_')
       .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
       .join(' ');
+  }
+
+  protected readonly topPlayers = computed(() =>
+    (this.report()?.members ?? [])
+      .filter((member) => member.fights > 0)
+      .sort((a, b) => b.fights - a.fights || b.kills - a.kills || a.username.localeCompare(b.username))
+      .slice(0, 4),
+  );
+
+  protected readonly topComps = computed(() =>
+    (this.report()?.comps ?? [])
+      .filter((comp) => comp.fights > 0)
+      .sort((a, b) => b.fights - a.fights || b.win_rate - a.win_rate || a.name.localeCompare(b.name))
+      .slice(0, 4),
+  );
+
+  protected readonly plannedBuilds = computed(() => {
+    const selections = this.fightTrends()?.last_30_days.planned_participation;
+    if (!selections) {
+      return [];
+    }
+    const counts = new Map<number, { id: number; name: string; count: number }>();
+    for (const selection of [...selections.primary_build_assignments, ...selections.secondary_build_assignments]) {
+      const current = counts.get(selection.id);
+      counts.set(selection.id, {
+        id: selection.id,
+        name: selection.name ?? `Unknown build #${selection.id}`,
+        count: (current?.count ?? 0) + selection.count,
+      });
+    }
+    return [...counts.values()]
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+      .slice(0, 4);
+  });
+
+  protected playerCoverageLabel(report: GuildReport): string {
+    const membersWithFights = report.members.filter((member) => member.fights > 0).length;
+    return `${membersWithFights} of ${report.members.length} roster members have combat records.`;
+  }
+
+  protected compCoverageLabel(report: GuildReport): string {
+    const attributed = report.data_quality.attributed_battles;
+    const total = report.data_quality.total_battles;
+    return total > 0
+      ? `${attributed} of ${total} battles are attributed to a comp.`
+      : 'No battle attribution is available in this report window.';
+  }
+
+  protected buildCoverageLabel(): string {
+    const participation = this.fightTrends()?.last_30_days.planned_participation;
+    if (!participation) {
+      return '';
+    }
+    return `${participation.planned_participant_assignments} planned assignments across ${participation.linked_fights} linked fights in the last 30 days.`;
   }
 
   protected readonly notableFights = computed(() => {
@@ -978,10 +1196,11 @@ export class Intel {
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
-      const [library, matchups, report] = await Promise.all([
+      const [library, matchups, report, fightTrends] = await Promise.all([
         firstValueFrom(this.intel.listScouts({ limit: SCOUT_PAGE_LIMIT, sort: 'threat', page: 1 })),
         firstValueFrom(this.intel.matchups()).catch(() => null),
         firstValueFrom(this.intel.report()).catch(() => null),
+        firstValueFrom(this.api.get<FightTrendView>('/api/fights/trends')).catch(() => null),
       ]);
       this.scouts.set(library.items);
       this.rememberScoutNames(library.items);
@@ -990,6 +1209,7 @@ export class Intel {
       this.headlineTopThreat.set(library.items.at(0) ?? null);
       this.matchups.set(matchups);
       this.report.set(report);
+      this.fightTrends.set(fightTrends);
     } catch (error) {
       this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

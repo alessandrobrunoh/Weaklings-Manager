@@ -1,6 +1,6 @@
 //! Business logic for the events module.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::str::FromStr;
 
 use sea_orm::sea_query::{Expr, Func};
@@ -18,9 +18,9 @@ use super::entities::{
 use super::models::{
     BattlePerformanceStats, BuildBattleStats, BuildPerformanceView, CompPerformanceView,
     CreateEventRequest, CreateEventRosterRoleRequest, EventBattleView, EventDetailView,
-    EventFightView, EventParticipantView, EventRosterRoleView, EventSplitStats, EventView,
-    OpponentPerformanceView, ParticipateEventRequest, UpdateEventBattlesRequest,
-    UpdateEventRequest,
+    EventFightView, EventParticipantView, EventRosterRoleView, EventSignupBuildView,
+    EventSignupOptionsView, EventSplitStats, EventView, OpponentPerformanceView,
+    ParticipateEventRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
 
 use super::fight_grouping::{
@@ -39,6 +39,7 @@ use crate::modules::battles::models::{
     BattleGuildSummary, BattleLossEstimate, BattlePlayer, GuildLossEstimate, PlayerLossEstimate,
 };
 use crate::modules::comps::entities::{build, comp, comp_build};
+use crate::modules::comps::status::BuildRole;
 use crate::modules::splits::entities::{split, split_participant};
 use crate::modules::splits::service::SplitService;
 use crate::modules::splits::status::SplitStatus;
@@ -1034,7 +1035,11 @@ impl EventService {
         let mut visited = HashSet::from([base_comp_id]);
 
         while let Some((parent_id, parent_capacity)) = pending.pop() {
-            for child in children_by_parent.remove(&parent_id).unwrap_or_default() {
+            for child in children_by_parent
+                .get(&parent_id)
+                .cloned()
+                .unwrap_or_default()
+            {
                 if !visited.insert(child.id) {
                     tracing::warn!(
                         base_comp_id,
@@ -1080,6 +1085,102 @@ impl EventService {
             .max_by_key(|(candidate, capacity)| (*capacity, candidate.id))
             .expect("the base comp always provides one reachable comp");
         Ok((active_comp, capacity))
+    }
+
+    /// Returns the server-authoritative concrete build choices for a member's next signup.
+    ///
+    /// A member already in the roster keeps the current concrete-assignment count while changing
+    /// choices. A member not yet registered is evaluated as one additional concrete signup, so
+    /// Discord can show roles introduced by the tier that their selection would activate.
+    pub async fn get_event_signup_options(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+        user_id: i64,
+    ) -> Result<EventSignupOptionsView, AppError> {
+        let event = event::Entity::find_by_id(event_id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+        let participations = event_participation::Entity::find()
+            .filter(event_participation::Column::EventId.eq(event_id))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let is_already_registered = participations
+            .iter()
+            .any(|participation| participation.user_id == user_id);
+        let concrete_assignment_count = participations
+            .iter()
+            .filter(|participation| participation.primary_build_id.is_some())
+            .count();
+        let prospective_concrete_assignment_count =
+            concrete_assignment_count + usize::from(!is_already_registered);
+
+        let extra_roster_roles = event_roster_role::Entity::find()
+            .filter(event_roster_role::Column::EventId.eq(event_id))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let (active_comp, active_comp_capacity) = self
+            .resolve_active_comp_with_extra_slots(
+                db,
+                event.comp_id,
+                prospective_concrete_assignment_count,
+                extra_roster_roles.len(),
+            )
+            .await?;
+
+        let comp_builds = comp_build::Entity::find()
+            .filter(comp_build::Column::CompId.eq(active_comp.id))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let mut builds = BTreeMap::<i64, EventSignupBuildView>::new();
+        for (build_id, quantity) in comp_builds
+            .into_iter()
+            .map(|entry| (entry.build_id, entry.quantity))
+            .chain(
+                extra_roster_roles
+                    .into_iter()
+                    .map(|entry| (entry.build_id, 1)),
+            )
+        {
+            if let Some(existing) = builds.get_mut(&build_id) {
+                existing.quantity = existing.quantity.checked_add(quantity).ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "signup slot quantity overflow for build {build_id}"
+                    ))
+                })?;
+                continue;
+            }
+
+            let build = build::Entity::find_by_id(build_id)
+                .one(db)
+                .await
+                .map_err(AppError::Database)?
+                .ok_or_else(|| AppError::NotFound(format!("Build {build_id} not found")))?;
+            let role = BuildRole::from_str(&build.role)
+                .map_err(|_| AppError::Internal(format!("Unknown build role: {}", build.role)))?;
+            builds.insert(
+                build_id,
+                EventSignupBuildView {
+                    build_id,
+                    name: build.name,
+                    role,
+                    quantity,
+                },
+            );
+        }
+
+        Ok(EventSignupOptionsView {
+            active_comp_id: active_comp.id,
+            active_comp_name: active_comp.name,
+            active_comp_capacity,
+            is_already_registered,
+            builds: builds.into_values().collect(),
+        })
     }
 
     /// Helper to convert event::Model to EventView.
@@ -2848,6 +2949,77 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn signup_options_use_the_prospective_comp_without_double_counting_members() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "author", "author@example.com").await;
+        let build_category = create_build_category(&db, "Roster builds").await;
+        let base_build = create_build(&db, "Base DPS", build_category).await;
+        let expansion_build = create_build(&db, "Expansion Tank", build_category).await;
+        let comp_category = create_comp_category(&db, "Roster comps").await;
+        let base = create_comp(&db, "10-man", comp_category, None, vec![(base_build, 10)]).await;
+        let expansion = create_comp(
+            &db,
+            "15-man",
+            comp_category,
+            Some(base),
+            vec![(base_build, 10), (expansion_build, 5)],
+        )
+        .await;
+        let event_id = event::ActiveModel {
+            title: Set("Signup options event".to_string()),
+            comp_id: Set(base),
+            created_by: Set(author),
+            event_date_utc: Set(ts()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("event should be created")
+        .id;
+
+        let mut existing_member = None;
+        for number in 0..10 {
+            let member = insert_user(
+                &db,
+                &format!("member-{number}"),
+                &format!("member-{number}@example.com"),
+            )
+            .await;
+            sign_up(&db, event_id, member, base_build).await;
+            if number == 0 {
+                existing_member = Some(member);
+            }
+        }
+        let prospective_member = insert_user(&db, "next", "next@example.com").await;
+        let service = EventService::new();
+
+        let options = service
+            .get_event_signup_options(&db, event_id, prospective_member)
+            .await
+            .expect("a new concrete signup should resolve the expansion tier");
+        assert_eq!(options.active_comp_id, expansion);
+        assert_eq!(options.active_comp_capacity, 15);
+        assert!(
+            options
+                .builds
+                .iter()
+                .any(|build| build.build_id == expansion_build)
+        );
+        assert!(!options.is_already_registered);
+
+        let existing_options = service
+            .get_event_signup_options(
+                &db,
+                event_id,
+                existing_member.expect("existing member should be captured"),
+            )
+            .await
+            .expect("an existing member must not force the next tier");
+        assert_eq!(existing_options.active_comp_id, base);
+        assert!(existing_options.is_already_registered);
+    }
+
+    #[tokio::test]
     async fn resolves_the_smallest_sufficient_comp_across_an_expansion_chain() {
         let db = seed_db().await;
         let _author = insert_user(&db, "author", "author@example.com").await;
@@ -3567,7 +3739,7 @@ mod tests {
     async fn create_build(db: &DatabaseConnection, name: &str, category_id: i64) -> i64 {
         let build = BuildActiveModel {
             name: Set(name.to_string()),
-            role: Set("Dps".to_string()),
+            role: Set("dps".to_string()),
             category_id: Set(category_id),
             created_by: Set(1),
             ..Default::default()
