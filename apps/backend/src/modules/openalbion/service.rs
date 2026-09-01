@@ -443,9 +443,9 @@ mod ability_catalog_tests {
                 ("passive", &entry.passive, entry.passive_slots),
             ] {
                 for index in groups.keys() {
-                    let index: i32 = index
-                        .parse()
-                        .unwrap_or_else(|_| panic!("{base}: {kind} slot key {index:?} is not a number"));
+                    let index: i32 = index.parse().unwrap_or_else(|_| {
+                        panic!("{base}: {kind} slot key {index:?} is not a number")
+                    });
                     assert!(
                         index >= 1 && index <= declared,
                         "{base}: a {kind} ability sits in slot {index} but the item declares \
@@ -461,7 +461,10 @@ mod ability_catalog_tests {
         for (base, entry) in ability_catalog() {
             for choices in entry.active.values().chain(entry.passive.values()) {
                 for ability in choices {
-                    assert!(!ability.id.trim().is_empty(), "{base}: an ability has no id");
+                    assert!(
+                        !ability.id.trim().is_empty(),
+                        "{base}: an ability has no id"
+                    );
                     assert!(
                         !ability.name.trim().is_empty(),
                         "{base}: ability {} has no name — check its @namelocatag",
@@ -476,7 +479,10 @@ mod ability_catalog_tests {
     fn an_item_with_no_slots_of_a_kind_offers_no_choices_of_that_kind() {
         for (base, entry) in ability_catalog() {
             if entry.active_slots == 0 {
-                assert!(entry.active.is_empty(), "{base}: no active slots but active choices exist");
+                assert!(
+                    entry.active.is_empty(),
+                    "{base}: no active slots but active choices exist"
+                );
             }
             if entry.passive_slots == 0 {
                 assert!(
@@ -491,18 +497,25 @@ mod ability_catalog_tests {
     fn the_weapon_and_armor_shapes_match_the_game() {
         let abilities = ability_catalog();
 
-        let sword = abilities.get("MAIN_SWORD").expect("MAIN_SWORD must be present");
+        let sword = abilities
+            .get("MAIN_SWORD")
+            .expect("MAIN_SWORD must be present");
         assert_eq!(sword.active_slots, 3, "a weapon fills Q, W and E");
         assert_eq!(sword.passive_slots, 1);
         assert!(
-            sword.active["1"].iter().any(|ability| ability.id == "HEROICSTRIKE2"),
+            sword.active["1"]
+                .iter()
+                .any(|ability| ability.id == "HEROICSTRIKE2"),
             "Heroic Strike is a Broadsword Q"
         );
 
         let chest = abilities
             .get("ARMOR_PLATE_SET1")
             .expect("ARMOR_PLATE_SET1 must be present");
-        assert_eq!(chest.active_slots, 1, "chest armor has one active, bound to R");
+        assert_eq!(
+            chest.active_slots, 1,
+            "chest armor has one active, bound to R"
+        );
         assert_eq!(chest.passive_slots, 2, "chest armor has two passive slots");
         assert_eq!(chest.passive.len(), 2, "both passive slots offer choices");
     }

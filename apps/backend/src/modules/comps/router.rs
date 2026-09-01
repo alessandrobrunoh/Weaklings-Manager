@@ -23,10 +23,10 @@ use crate::responses::{
 };
 
 use super::models::{
-    AddCompBuildRequest, BuildFilters, BuildItemSpells, CompFilters, CreateBuildCategoryRequest, CreateBuildRequest,
-    CreateCompCategoryRequest, CreateCompRequest, UpdateBuildCategoryRequest, UpdateBuildRequest,
-    UpdateCompBuildQuantityRequest, UpdateCompCategoryRequest, UpdateCompRequest,
-    UpsertBuildItemRequest,
+    AddCompBuildRequest, BuildFilters, BuildItemSpells, CompFilters, CreateBuildCategoryRequest,
+    CreateBuildRequest, CreateCompCategoryRequest, CreateCompRequest, UpdateBuildCategoryRequest,
+    UpdateBuildRequest, UpdateCompBuildQuantityRequest, UpdateCompCategoryRequest,
+    UpdateCompRequest, UpsertBuildItemRequest,
 };
 use super::service::CompService;
 
@@ -124,7 +124,10 @@ pub fn router() -> Router {
             "/builds/{id}/items/{slot}",
             put(upsert_build_item).delete(remove_build_item),
         )
-        .route("/builds/{id}/items/{slot}/spells", put(set_build_item_spells))
+        .route(
+            "/builds/{id}/items/{slot}/spells",
+            put(set_build_item_spells),
+        )
         .route("/builds/{id}/versions", post(create_build_version))
         .route("/builds/{id}/performance", get(get_build_performance))
         // Comps
@@ -590,7 +593,9 @@ async fn upsert_build_item(
         .map_err(|e| AppError::Validation(e))?;
     let loadout = loadout.resolve()?;
     let service = CompService::new();
-    let build = service.upsert_build_item(&db, id, loadout, slot, req).await?;
+    let build = service
+        .upsert_build_item(&db, id, loadout, slot, req)
+        .await?;
     Ok(Json(ApiResponse::new(build)))
 }
 

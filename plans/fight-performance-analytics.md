@@ -1,7 +1,7 @@
 # Plan: Canonical Fights and Guild Performance Analytics
 
 **Branch**: `feat/fight-performance-analytics`
-**Status**: Draft — architecture agreed in principle; Slice 1 acceptance criteria require human confirmation before implementation
+**Status**: Slice 1 in progress — canonical Fight persistence and Event snapshot reconciliation implemented; final API/UI projection and validation remain.
 
 ## Goal
 

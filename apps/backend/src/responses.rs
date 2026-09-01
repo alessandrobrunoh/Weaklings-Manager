@@ -308,6 +308,16 @@ pub struct ApiResponseEventView {
     pub data: crate::modules::events::models::EventView,
 }
 
+/// `OpenAPI` schema wrapper for event roster-role list responses.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseEventRosterRoleList {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Event roster roles, starting with the virtual `Fill` role.
+    pub data: Vec<crate::modules::events::models::EventRosterRoleView>,
+}
+
 /// `OpenAPI` schema wrapper for `EventDetailView` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseEventDetail {

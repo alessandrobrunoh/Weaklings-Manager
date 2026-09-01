@@ -1,6 +1,6 @@
 //! Business logic for the events module.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::str::FromStr;
 
 use sea_orm::sea_query::{Expr, Func};
@@ -11,14 +11,20 @@ use sea_orm::{
 
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 
-use super::entities::{event, event_battle, event_discord_role, event_participation};
+use super::entities::{
+    event, event_battle, event_discord_role, event_participation, event_roster_role, fight,
+    fight_battle,
+};
 use super::models::{
     BattlePerformanceStats, BuildBattleStats, BuildPerformanceView, CompPerformanceView,
-    CreateEventRequest, EventBattleView, EventDetailView, EventParticipantView, EventSplitStats,
-    EventView, OpponentPerformanceView, ParticipateEventRequest, UpdateEventBattlesRequest,
-    UpdateEventRequest,
+    CreateEventRequest, CreateEventRosterRoleRequest, EventBattleView, EventDetailView,
+    EventParticipantView, EventRosterRoleView, EventSplitStats, EventView, OpponentPerformanceView,
+    ParticipateEventRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
 
+use super::fight_grouping::{
+    FIGHT_GROUPING_VERSION, FightEvidence, FightGroupingDecision, score_fight_grouping,
+};
 use crate::errors::AppError;
 use crate::modules::albionbb::client::{
     AlbionBbBattleSummary, AlbionBbBattlesFilters, AlbionBbGuild,
@@ -28,7 +34,9 @@ use crate::modules::audit::service::AuditService;
 use crate::modules::battles::entities::{
     Column as GuildBattleSnapshotColumn, Entity as GuildBattleSnapshotEntity,
 };
-use crate::modules::battles::models::{BattleLossEstimate, GuildLossEstimate, PlayerLossEstimate};
+use crate::modules::battles::models::{
+    BattleGuildSummary, BattleLossEstimate, BattlePlayer, GuildLossEstimate, PlayerLossEstimate,
+};
 use crate::modules::comps::entities::{build, comp, comp_build};
 use crate::modules::splits::entities::{split, split_participant};
 use crate::modules::splits::service::SplitService;
@@ -77,6 +85,42 @@ async fn load_event_discord_role_ids(
         .into_iter()
         .map(|role| role.discord_role_id)
         .collect())
+}
+
+async fn load_event_roster_roles(
+    db: &DatabaseConnection,
+    event_id: i64,
+) -> Result<Vec<EventRosterRoleView>, AppError> {
+    let extra_roles = event_roster_role::Entity::find()
+        .filter(event_roster_role::Column::EventId.eq(event_id))
+        .order_by_asc(event_roster_role::Column::Id)
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+
+    let mut roles = Vec::with_capacity(extra_roles.len() + 1);
+    roles.push(EventRosterRoleView {
+        id: None,
+        build_id: None,
+        name: "Fill".to_string(),
+        is_fill: true,
+    });
+
+    for role in extra_roles {
+        let build = build::Entity::find_by_id(role.build_id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Build {} not found", role.build_id)))?;
+        roles.push(EventRosterRoleView {
+            id: Some(role.id),
+            build_id: Some(role.build_id),
+            name: build.name,
+            is_fill: false,
+        });
+    }
+
+    Ok(roles)
 }
 
 /// Incremental accumulator for opponent analytics.
@@ -267,7 +311,7 @@ fn linked_battle_snapshot(
     let guild = battle
         .guilds
         .iter()
-        .find(|guild| guild.id == context.guild_id());
+        .find(|guild| context.is_friendly_guild(&guild.id, &guild.name));
     let opponent = battle
         .guilds
         .iter()
@@ -324,6 +368,326 @@ fn apply_battle_snapshot(
     row.opponent_deaths = Set(opponent.map(|guild| guild.deaths));
     row.opponent_kill_fame = Set(opponent.map(|guild| guild.kill_fame));
     Ok(())
+}
+
+/// Ensures the initial one-Battle-per-Fight mapping exists for an Event.
+///
+/// This is intentionally idempotent: historical data predates the `fights` tables,
+/// while newly linked Battles can arrive after the migration has run. A raw Battle
+/// may belong to only one Fight globally, so a conflicting Event association is
+/// surfaced instead of being silently reassigned.
+async fn ensure_seed_fights_for_event(
+    db: &DatabaseConnection,
+    event_id: i64,
+    battle_rows: &[event_battle::Model],
+) -> Result<(), AppError> {
+    for battle in battle_rows {
+        let battle_id = battle.albionbb_battle_id.parse::<i64>().map_err(|error| {
+            AppError::Validation(format!(
+                "Event {event_id} has an invalid AlbionBB battle id '{}': {error}",
+                battle.albionbb_battle_id
+            ))
+        })?;
+
+        if battle_is_assigned_to_another_event(db, event_id, battle_id).await? {
+            return Err(AppError::Conflict(format!(
+                "Battle {battle_id} is already assigned to another event"
+            )));
+        }
+        if fight_battle::Entity::find()
+            .filter(fight_battle::Column::BattleId.eq(battle_id))
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .is_some()
+        {
+            continue;
+        }
+
+        let created = fight::ActiveModel {
+            event_id: Set(Some(event_id)),
+            started_at: Set(battle.battle_started_at),
+            ended_at: Set(None),
+            grouping_method: Set("seeded".to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .map_err(AppError::Database)?;
+        fight_battle::ActiveModel {
+            fight_id: Set(created.id),
+            battle_id: Set(battle_id),
+            sequence_number: Set(1),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .map_err(AppError::Database)?;
+    }
+    Ok(())
+}
+
+/// Returns whether the globally canonical Battle is linked to a different Event.
+async fn battle_is_assigned_to_another_event(
+    db: &DatabaseConnection,
+    event_id: i64,
+    battle_id: i64,
+) -> Result<bool, AppError> {
+    let Some(link) = fight_battle::Entity::find()
+        .filter(fight_battle::Column::BattleId.eq(battle_id))
+        .one(db)
+        .await
+        .map_err(AppError::Database)?
+    else {
+        return Ok(false);
+    };
+    let existing_fight = fight::Entity::find_by_id(link.fight_id)
+        .one(db)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| {
+            AppError::Internal(format!(
+                "Fight segment {} references missing fight {}",
+                link.id, link.fight_id
+            ))
+        })?;
+    Ok(existing_fight.event_id != Some(event_id))
+}
+
+/// Conservatively merges adjacent seeded Battles from one Event when hydrated evidence proves
+/// that they are segments of the same real engagement. Ambiguous candidates remain separate and
+/// are persisted as requiring officer review.
+async fn automatically_group_event_fights(
+    db: &DatabaseConnection,
+    event_id: i64,
+    context: Option<&BattleLinkingContext>,
+) -> Result<(), AppError> {
+    let Some(context) = context else {
+        return Ok(());
+    };
+    let fights = fight::Entity::find()
+        .filter(fight::Column::EventId.eq(event_id))
+        .order_by_asc(fight::Column::StartedAt)
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+    if fights.len() < 2 {
+        return Ok(());
+    }
+    let fight_ids = fights.iter().map(|fight| fight.id).collect::<Vec<_>>();
+    let segments = fight_battle::Entity::find()
+        .filter(fight_battle::Column::FightId.is_in(fight_ids))
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+    let battle_ids = segments
+        .iter()
+        .map(|segment| segment.battle_id)
+        .collect::<Vec<_>>();
+    let snapshots = GuildBattleSnapshotEntity::find()
+        .filter(GuildBattleSnapshotColumn::BattleId.is_in(battle_ids))
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+    let snapshots = snapshots
+        .into_iter()
+        .map(|snapshot| (snapshot.battle_id, snapshot))
+        .collect::<HashMap<_, _>>();
+    let mut fight_by_battle = segments
+        .iter()
+        .map(|segment| (segment.battle_id, segment.fight_id))
+        .collect::<HashMap<_, _>>();
+    let mut evidence = Vec::new();
+    for segment in segments {
+        let Some(snapshot) = snapshots.get(&segment.battle_id) else {
+            continue;
+        };
+        let guilds = serde_json::from_str::<Vec<BattleGuildSummary>>(&snapshot.guilds_json)
+            .unwrap_or_default();
+        let players =
+            serde_json::from_str::<Vec<BattlePlayer>>(&snapshot.players_json).unwrap_or_default();
+        evidence.push((
+            segment.battle_id,
+            FightEvidence {
+                event_id: Some(event_id),
+                started_at: Some(snapshot.start_time.with_timezone(&Utc)),
+                ended_at: snapshot.end_time.map(|time| time.with_timezone(&Utc)),
+                friendly_guild_ids: guilds
+                    .iter()
+                    .filter(|guild| context.is_friendly_guild(&guild.id, &guild.name))
+                    .map(|guild| guild.id.clone())
+                    .collect::<BTreeSet<_>>(),
+                opponent_guild_ids: guilds
+                    .iter()
+                    .filter(|guild| !context.is_friendly_guild(&guild.id, &guild.name))
+                    .map(|guild| guild.id.clone())
+                    .collect::<BTreeSet<_>>(),
+                player_ids: players
+                    .iter()
+                    .filter(|player| {
+                        context.is_friendly_guild(&player.guild_id, &player.guild_name)
+                    })
+                    .map(|player| player.id.clone())
+                    .collect::<BTreeSet<_>>(),
+                size: usize::try_from(snapshot.total_players).ok(),
+            },
+        ));
+    }
+    evidence.sort_by_key(|(_, evidence)| evidence.started_at);
+
+    for pair in evidence.windows(2) {
+        let (left_battle_id, left) = &pair[0];
+        let (right_battle_id, right) = &pair[1];
+        let result = score_fight_grouping(left, right);
+        let Some(&left_fight_id) = fight_by_battle.get(left_battle_id) else {
+            continue;
+        };
+        let Some(&right_fight_id) = fight_by_battle.get(right_battle_id) else {
+            continue;
+        };
+        if left_fight_id == right_fight_id {
+            continue;
+        }
+        match result.decision {
+            FightGroupingDecision::AutoMerge => {
+                let moved_segments = fight_battle::Entity::find()
+                    .filter(fight_battle::Column::FightId.eq(right_fight_id))
+                    .order_by_asc(fight_battle::Column::SequenceNumber)
+                    .all(db)
+                    .await
+                    .map_err(AppError::Database)?;
+                let sequence_offset = fight_battle::Entity::find()
+                    .filter(fight_battle::Column::FightId.eq(left_fight_id))
+                    .count(db)
+                    .await
+                    .map_err(AppError::Database)? as i32;
+                for (index, segment) in moved_segments.into_iter().enumerate() {
+                    let mut active: fight_battle::ActiveModel = segment.into();
+                    active.fight_id = Set(left_fight_id);
+                    active.sequence_number = Set(sequence_offset + index as i32 + 1);
+                    active.update(db).await.map_err(AppError::Database)?;
+                }
+                let winner = fight::Entity::find_by_id(left_fight_id)
+                    .one(db)
+                    .await
+                    .map_err(AppError::Database)?
+                    .ok_or_else(|| {
+                        AppError::Internal(format!("Fight {left_fight_id} is missing"))
+                    })?;
+                let mut winner: fight::ActiveModel = winner.into();
+                winner.grouping_method = Set("automatic".to_string());
+                winner.grouping_confidence = Set(result.score);
+                winner.grouping_version = Set(FIGHT_GROUPING_VERSION.to_string());
+                winner.needs_review = Set(false);
+                winner.ended_at = Set(right.ended_at.map(Into::into));
+                winner.updated_at = Set(Utc::now().into());
+                winner.update(db).await.map_err(AppError::Database)?;
+                fight::Entity::delete_by_id(right_fight_id)
+                    .exec(db)
+                    .await
+                    .map_err(AppError::Database)?;
+                for fight_id in fight_by_battle.values_mut() {
+                    if *fight_id == right_fight_id {
+                        *fight_id = left_fight_id;
+                    }
+                }
+            }
+            FightGroupingDecision::NeedsReview => {
+                for fight_id in [left_fight_id, right_fight_id] {
+                    let candidate = fight::Entity::find_by_id(fight_id)
+                        .one(db)
+                        .await
+                        .map_err(AppError::Database)?
+                        .ok_or_else(|| {
+                            AppError::Internal(format!("Fight {fight_id} is missing"))
+                        })?;
+                    let mut candidate: fight::ActiveModel = candidate.into();
+                    candidate.grouping_confidence = Set(result.score);
+                    candidate.grouping_version = Set(FIGHT_GROUPING_VERSION.to_string());
+                    candidate.needs_review = Set(true);
+                    candidate.updated_at = Set(Utc::now().into());
+                    candidate.update(db).await.map_err(AppError::Database)?;
+                }
+            }
+            FightGroupingDecision::Separate => {}
+        }
+    }
+    Ok(())
+}
+
+/// Replaces stale event-link summary metrics with hydrated canonical snapshot data.
+///
+/// The event linker receives a compact AlbionBB list payload; the persisted battle
+/// snapshot is hydrated from the detail endpoint and is therefore authoritative when
+/// present. The original row remains the fallback for historical data not yet hydrated.
+async fn apply_canonical_snapshot_metrics(
+    db: &DatabaseConnection,
+    battle_rows: Vec<event_battle::Model>,
+    context: Option<&BattleLinkingContext>,
+) -> Result<Vec<event_battle::Model>, AppError> {
+    let battle_ids = battle_rows
+        .iter()
+        .filter_map(|battle| battle.albionbb_battle_id.parse::<i64>().ok())
+        .collect::<Vec<_>>();
+    if battle_ids.is_empty() {
+        return Ok(battle_rows);
+    }
+
+    let snapshots = GuildBattleSnapshotEntity::find()
+        .filter(GuildBattleSnapshotColumn::BattleId.is_in(battle_ids))
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+    let snapshots_by_battle = snapshots
+        .into_iter()
+        .map(|snapshot| (snapshot.battle_id, snapshot))
+        .collect::<HashMap<_, _>>();
+
+    Ok(battle_rows
+        .into_iter()
+        .map(|mut battle| {
+            let Some(battle_id) = battle.albionbb_battle_id.parse::<i64>().ok() else {
+                return battle;
+            };
+            let Some(snapshot) = snapshots_by_battle.get(&battle_id) else {
+                return battle;
+            };
+            let Ok(guilds) = serde_json::from_str::<Vec<BattleGuildSummary>>(&snapshot.guilds_json)
+            else {
+                tracing::warn!(battle_id, "skipping malformed canonical guild snapshot");
+                return battle;
+            };
+            let Some(context) = context else {
+                return battle;
+            };
+            let Some(our_guild) = guilds
+                .iter()
+                .find(|guild| context.is_friendly_guild(&guild.id, &guild.name))
+            else {
+                return battle;
+            };
+            let opponent = guilds
+                .iter()
+                .filter(|guild| !context.is_friendly_guild(&guild.id, &guild.name))
+                .max_by_key(|guild| guild.kill_fame);
+
+            battle.guild_players_count = i32::try_from(our_guild.players).unwrap_or(i32::MAX);
+            battle.battle_total_players =
+                Some(i32::try_from(snapshot.total_players).unwrap_or(i32::MAX));
+            battle.guild_kills = our_guild.kills;
+            battle.guild_deaths = our_guild.deaths;
+            battle.guild_kill_fame = our_guild.kill_fame;
+            battle.is_win = our_guild.winner;
+            battle.opponent_guild_id = opponent.map(|guild| guild.id.clone());
+            battle.opponent_guild_name = opponent.map(|guild| guild.name.clone());
+            battle.opponent_players_count =
+                opponent.and_then(|guild| i32::try_from(guild.players).ok());
+            battle.opponent_kills = opponent.map(|guild| guild.kills);
+            battle.opponent_deaths = opponent.map(|guild| guild.deaths);
+            battle.opponent_kill_fame = opponent.map(|guild| guild.kill_fame);
+            battle
+        })
+        .collect())
 }
 
 /// Aggregates persisted battle loss estimates for an event.
@@ -460,6 +824,93 @@ impl EventService {
         Self
     }
 
+    /// Lists an event's roster roles, with the virtual unlimited-capacity `Fill` role first.
+    pub async fn list_event_roster_roles(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+    ) -> Result<Vec<EventRosterRoleView>, AppError> {
+        event::Entity::find_by_id(event_id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+        load_event_roster_roles(db, event_id).await
+    }
+
+    /// Adds an existing build as an event-specific roster role.
+    pub async fn create_event_roster_role(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+        request: CreateEventRosterRoleRequest,
+    ) -> Result<EventRosterRoleView, AppError> {
+        event::Entity::find_by_id(event_id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+        let build = build::Entity::find_by_id(request.build_id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Build {} not found", request.build_id)))?;
+
+        if event_roster_role::Entity::find()
+            .filter(event_roster_role::Column::EventId.eq(event_id))
+            .filter(event_roster_role::Column::BuildId.eq(request.build_id))
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .is_some()
+        {
+            return Err(AppError::Conflict(format!(
+                "Build {} is already an extra roster role for event {event_id}",
+                request.build_id
+            )));
+        }
+
+        let role = event_roster_role::ActiveModel {
+            event_id: Set(event_id),
+            build_id: Set(request.build_id),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .map_err(AppError::Database)?;
+
+        Ok(EventRosterRoleView {
+            id: Some(role.id),
+            build_id: Some(role.build_id),
+            name: build.name,
+            is_fill: false,
+        })
+    }
+
+    /// Deletes an event-specific extra roster role.
+    pub async fn delete_event_roster_role(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+        role_id: i64,
+    ) -> Result<(), AppError> {
+        let role = event_roster_role::Entity::find_by_id(role_id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Roster role {role_id} not found")))?;
+        if role.event_id != event_id {
+            return Err(AppError::NotFound(format!(
+                "Roster role {role_id} was not found for event {event_id}"
+            )));
+        }
+        event_roster_role::Entity::delete_by_id(role_id)
+            .exec(db)
+            .await
+            .map_err(AppError::Database)?;
+        Ok(())
+    }
+
     /// Helper to get total capacity of a composition.
     pub async fn get_comp_capacity(
         &self,
@@ -482,6 +933,18 @@ impl EventService {
         db: &DatabaseConnection,
         base_comp_id: i64,
         target_size: usize,
+    ) -> Result<(comp::Model, i64), AppError> {
+        self.resolve_active_comp_with_extra_slots(db, base_comp_id, target_size, 0)
+            .await
+    }
+
+    /// Resolves the active composition while accounting for fixed-capacity extra roster roles.
+    async fn resolve_active_comp_with_extra_slots(
+        &self,
+        db: &DatabaseConnection,
+        base_comp_id: i64,
+        target_size: usize,
+        extra_roster_slots: usize,
     ) -> Result<(comp::Model, i64), AppError> {
         // Fetch base comp
         let base_comp = comp::Entity::find_by_id(base_comp_id)
@@ -512,7 +975,7 @@ impl EventService {
         // Find first comp with capacity >= target_size
         let active = comps_with_capacity
             .into_iter()
-            .find(|(_, cap)| *cap >= target_size as i64);
+            .find(|(_, cap)| *cap + extra_roster_slots as i64 >= target_size as i64);
 
         if let Some((active_comp, capacity)) = active {
             Ok((active_comp, capacity))
@@ -701,6 +1164,8 @@ impl EventService {
 
         let event_view = self.to_event_view(db, event_model.clone()).await?;
 
+        let roster_roles = load_event_roster_roles(db, id).await?;
+
         let participations = event_participation::Entity::find()
             .filter(event_participation::Column::EventId.eq(id))
             .order_by_asc(event_participation::Column::CreatedAt)
@@ -708,8 +1173,18 @@ impl EventService {
             .await
             .map_err(AppError::Database)?;
 
+        let extra_roster_slots = event_roster_role::Entity::find()
+            .filter(event_roster_role::Column::EventId.eq(id))
+            .count(db)
+            .await
+            .map_err(AppError::Database)? as usize;
         let (active_comp, active_capacity) = self
-            .resolve_active_comp(db, event_model.comp_id, participations.len())
+            .resolve_active_comp_with_extra_slots(
+                db,
+                event_model.comp_id,
+                participations.len(),
+                extra_roster_slots,
+            )
             .await?;
 
         let participant_user_ids: Vec<i64> = participations.iter().map(|p| p.user_id).collect();
@@ -785,6 +1260,9 @@ impl EventService {
             .all(db)
             .await
             .map_err(AppError::Database)?;
+        ensure_seed_fights_for_event(db, id, &battle_rows).await?;
+        automatically_group_event_fights(db, id, context).await?;
+        let battle_rows = apply_canonical_snapshot_metrics(db, battle_rows, context).await?;
         let battle_rows = Self::apply_read_context_to_battles(battle_rows, context);
         let stats = Self::build_performance_stats(&battle_rows);
         let estimated_losses = build_event_loss_estimate(db, &battle_rows).await?;
@@ -820,6 +1298,7 @@ impl EventService {
             active_comp_id: active_comp.id,
             active_comp_name: active_comp.name,
             active_comp_capacity: active_capacity,
+            roster_roles,
             participants: participant_views,
             battles,
             stats,
@@ -1574,6 +2053,12 @@ impl EventService {
             }
 
             let snapshot = linked_battle_snapshot(&battle, context);
+            if battle_is_assigned_to_another_event(db, event_id, battle.id).await? {
+                return Err(AppError::Conflict(format!(
+                    "Battle {} is already assigned to another event",
+                    battle.id
+                )));
+            }
 
             let existing = event_battle::Entity::find()
                 .filter(event_battle::Column::EventId.eq(event_id))
@@ -1601,6 +2086,13 @@ impl EventService {
             row.insert(db).await.map_err(AppError::Database)?;
             inserted += 1;
         }
+
+        let linked_battles = event_battle::Entity::find()
+            .filter(event_battle::Column::EventId.eq(event_id))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        ensure_seed_fights_for_event(db, event_id, &linked_battles).await?;
 
         Ok(inserted)
     }
@@ -1667,14 +2159,25 @@ impl EventService {
                     "Battle {battle_id} does not include the configured guild"
                 )));
             }
-            let started = chrono::DateTime::parse_from_rfc3339(&battle.start_time)
-                .map_err(|error| {
+            let started =
+                chrono::DateTime::parse_from_rfc3339(&battle.start_time).map_err(|error| {
                     AppError::UpstreamService(format!(
-                        "AlbionBB battle {battle_id} has an invalid start time: {error}"
+                        "Battle {battle_id} has invalid start time '{}': {error}",
+                        battle.start_time
                     ))
-                })?
-                .with_timezone(&Utc);
-            snapshots.push((battle.id.to_string(), started, snapshot));
+                })?;
+            snapshots.push((battle_id.clone(), started, snapshot));
+        }
+
+        for battle_id in &battle_ids {
+            let parsed_battle_id = battle_id.parse::<i64>().map_err(|error| {
+                AppError::Validation(format!("Invalid AlbionBB battle id '{battle_id}': {error}"))
+            })?;
+            if battle_is_assigned_to_another_event(db, event_id, parsed_battle_id).await? {
+                return Err(AppError::Conflict(format!(
+                    "Battle {battle_id} is already assigned to another event"
+                )));
+            }
         }
 
         event_battle::Entity::delete_many()
@@ -1694,6 +2197,13 @@ impl EventService {
             apply_battle_snapshot(&mut row, &snapshot)?;
             row.insert(db).await.map_err(AppError::Database)?;
         }
+
+        let linked_battles = event_battle::Entity::find()
+            .filter(event_battle::Column::EventId.eq(event_id))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        ensure_seed_fights_for_event(db, event_id, &linked_battles).await?;
 
         Self::finalize_link(db, event_id, false).await?;
         self.get_event_detail_with_context(db, event_id, context)
@@ -1784,7 +2294,7 @@ impl EventService {
     }
 
     /// Inserts (or updates) a single participation row after validating event,
-    /// build existence, comp membership and slot availability.
+    /// build existence, roster membership and primary slot availability.
     ///
     /// Shared by both the self-service `participate` and the officer-driven
     /// `set_participant` so the rules never drift between the two paths.
@@ -1845,9 +2355,24 @@ impl EventService {
             current_participations.len() + 1
         };
 
-        // Resolve the active comp
+        let extra_roster_roles = event_roster_role::Entity::find()
+            .filter(event_roster_role::Column::EventId.eq(event_id))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let extra_roster_build_ids: HashSet<i64> = extra_roster_roles
+            .iter()
+            .map(|role| role.build_id)
+            .collect();
+
+        // Each persisted extra role adds one primary slot when selecting a comp variant.
         let (active_comp, _) = self
-            .resolve_active_comp(db, event_model.comp_id, target_size)
+            .resolve_active_comp_with_extra_slots(
+                db,
+                event_model.comp_id,
+                target_size,
+                extra_roster_build_ids.len(),
+            )
             .await?;
 
         // Fetch comp builds for active comp to validate build selections
@@ -1857,38 +2382,37 @@ impl EventService {
             .await
             .map_err(AppError::Database)?;
 
-        // Verify primary build exists in active comp
-        let primary_cb = active_comp_builds
+        let comp_primary_slots = active_comp_builds
             .iter()
             .find(|cb| cb.build_id == primary_build_id)
-            .ok_or_else(|| {
-                AppError::Validation(format!(
-                    "Primary build {primary_build_id} is not allowed in comp {}",
-                    active_comp.name
-                ))
-            })?;
+            .map_or(0, |comp_build| comp_build.quantity as usize);
+        let extra_primary_slots = usize::from(extra_roster_build_ids.contains(&primary_build_id));
+        let primary_slot_limit = comp_primary_slots + extra_primary_slots;
+        if primary_slot_limit == 0 {
+            return Err(AppError::Validation(format!(
+                "Primary build {primary_build_id} is not allowed in comp {} or its extra roster roles",
+                active_comp.name
+            )));
+        }
 
-        // Verify secondary build exists in active comp (if provided)
+        // Secondary builds do not consume a primary slot, but must be available from either source.
         if let Some(sec_id) = secondary_build_id {
-            let exists = active_comp_builds.iter().any(|cb| cb.build_id == sec_id);
-            if !exists {
+            let in_active_comp = active_comp_builds.iter().any(|cb| cb.build_id == sec_id);
+            if !in_active_comp && !extra_roster_build_ids.contains(&sec_id) {
                 return Err(AppError::Validation(format!(
-                    "Secondary build {sec_id} is not allowed in comp {}",
+                    "Secondary build {sec_id} is not allowed in comp {} or its extra roster roles",
                     active_comp.name
                 )));
             }
         }
 
-        // Verify primary build slot availability
         let taken_count = current_participations
             .iter()
             .filter(|p| p.user_id != user_id && p.primary_build_id == primary_build_id)
             .count();
-
-        if taken_count >= primary_cb.quantity as usize {
+        if taken_count >= primary_slot_limit {
             return Err(AppError::Validation(format!(
-                "The primary role for build '{}' is already full (comp limit: {})",
-                primary_build_id, primary_cb.quantity
+                "The primary role for build '{primary_build_id}' is already full (limit: {primary_slot_limit})"
             )));
         }
 
@@ -2096,7 +2620,8 @@ mod tests {
             guilds_json: Set("[]".to_string()),
             players_json: Set(players_json),
             kills_json: Set("[]".to_string()),
-            losses_json: Set("[]".to_string()),
+            losses_json: Set(serde_json::to_string(&BattleLossEstimate::default())
+                .expect("failed to serialize empty loss estimate")),
             fetched_at: Set(ts()),
             ..Default::default()
         }
@@ -2133,6 +2658,124 @@ mod tests {
         .insert(db)
         .await
         .expect("failed to sign the member up");
+    }
+
+    #[tokio::test]
+    async fn participation_allows_an_extra_roster_build_once_beyond_comp_capacity() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let first_user = insert_user(&db, "first", "first@example.com").await;
+        let second_user = insert_user(&db, "second", "second@example.com").await;
+        let third_user = insert_user(&db, "third", "third@example.com").await;
+        let build_category = create_build_category(&db, "Roster builds").await;
+        let comp_build_id = create_build(&db, "Main Tank", build_category).await;
+        let extra_build_id = create_build(&db, "Reserve Healer", build_category).await;
+        let comp_category = create_comp_category(&db, "Roster comps").await;
+        let comp_id = create_comp(
+            &db,
+            "One-slot comp",
+            comp_category,
+            None,
+            vec![(comp_build_id, 1)],
+        )
+        .await;
+        let event_id = event::ActiveModel {
+            title: Set("Roster event".to_string()),
+            comp_id: Set(comp_id),
+            created_by: Set(author),
+            event_date_utc: Set(ts()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("event should be created")
+        .id;
+        let service = EventService::new();
+        service
+            .create_event_roster_role(
+                &db,
+                event_id,
+                CreateEventRosterRoleRequest {
+                    build_id: extra_build_id,
+                },
+            )
+            .await
+            .expect("extra role should be created");
+
+        service
+            .apply_participation(
+                &db,
+                event_id,
+                first_user,
+                comp_build_id,
+                Some(extra_build_id),
+            )
+            .await
+            .expect("comp build and extra secondary should be allowed");
+        service
+            .apply_participation(&db, event_id, second_user, extra_build_id, None)
+            .await
+            .expect("one extra primary slot should be allowed beyond comp capacity");
+
+        assert!(matches!(
+            service
+                .apply_participation(&db, event_id, third_user, extra_build_id, None)
+                .await,
+            Err(AppError::Validation(message)) if message.contains("already full")
+        ));
+    }
+
+    #[tokio::test]
+    async fn event_roster_roles_always_include_fill_and_prevent_duplicate_builds() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let event_id = insert_event(&db, "Roster event", author).await;
+        let category = create_build_category(&db, "Roster builds").await;
+        let build_id = create_build(&db, "Siege Bow", category).await;
+        let service = EventService::new();
+
+        assert!(matches!(
+            service.list_event_roster_roles(&db, event_id).await,
+            Ok(roles) if roles.len() == 1
+                && roles[0].is_fill
+                && roles[0].name == "Fill"
+                && roles[0].id.is_none()
+                && roles[0].build_id.is_none()
+        ));
+
+        let added = service
+            .create_event_roster_role(&db, event_id, CreateEventRosterRoleRequest { build_id })
+            .await
+            .expect("existing build should be added as a roster role");
+        assert_eq!(added.build_id, Some(build_id));
+        assert!(!added.is_fill);
+
+        assert!(matches!(
+            service
+                .create_event_roster_role(&db, event_id, CreateEventRosterRoleRequest { build_id })
+                .await,
+            Err(AppError::Conflict(_))
+        ));
+
+        let roles = service
+            .list_event_roster_roles(&db, event_id)
+            .await
+            .expect("roster roles should list");
+        assert!(roles[0].is_fill);
+        assert_eq!(roles[1].id, added.id);
+
+        service
+            .delete_event_roster_role(&db, event_id, added.id.expect("persisted role id"))
+            .await
+            .expect("extra role should be removed");
+        assert_eq!(
+            service
+                .list_event_roster_roles(&db, event_id)
+                .await
+                .expect("Fill should remain after removing an extra role")
+                .len(),
+            1
+        );
     }
 
     #[tokio::test]
@@ -2273,6 +2916,186 @@ mod tests {
         );
         assert_eq!(never_used.signups_as_primary, 0);
         assert_eq!(lost_stats.stats.unwrap().losses, 1);
+    }
+
+    #[tokio::test]
+    async fn event_detail_seeds_exactly_one_fight_for_each_linked_battle() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let event_id = insert_event(&db, "Canonical fight", author).await;
+        insert_battle_with_players(&db, event_id, 425_654_502, true, &[("Alice", 2, 1)]).await;
+
+        EventService::new()
+            .get_event_detail(&db, event_id)
+            .await
+            .expect("event detail should seed its canonical fight");
+        EventService::new()
+            .get_event_detail(&db, event_id)
+            .await
+            .expect("seeding must be idempotent");
+
+        let segment = fight_battle::Entity::find()
+            .filter(fight_battle::Column::BattleId.eq(425_654_502))
+            .one(&db)
+            .await
+            .expect("fight segment query should succeed")
+            .expect("linked battle should have one fight segment");
+        let seeded_fight = fight::Entity::find_by_id(segment.fight_id)
+            .one(&db)
+            .await
+            .expect("fight query should succeed")
+            .expect("fight segment must reference an existing fight");
+
+        assert_eq!(seeded_fight.event_id, Some(event_id));
+        assert_eq!(
+            fight_battle::Entity::find()
+                .filter(fight_battle::Column::BattleId.eq(425_654_502))
+                .count(&db)
+                .await
+                .expect("fight segment count should succeed"),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn event_detail_rejects_a_battle_already_owned_by_another_event() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let first_event = insert_event(&db, "First event", author).await;
+        let second_event = insert_event(&db, "Second event", author).await;
+        let battle_id = 425_654_504;
+        insert_battle_with_players(&db, first_event, battle_id, true, &[("Alice", 1, 0)]).await;
+
+        EventService::new()
+            .get_event_detail(&db, first_event)
+            .await
+            .expect("first event should claim its battle");
+        insert_battle_with_players(&db, second_event, battle_id, true, &[("Alice", 1, 0)]).await;
+
+        let error = EventService::new()
+            .get_event_detail(&db, second_event)
+            .await
+            .expect_err("a raw battle cannot belong to two canonical fights");
+
+        assert!(matches!(error, AppError::Conflict(_)));
+        assert_eq!(
+            fight_battle::Entity::find()
+                .filter(fight_battle::Column::BattleId.eq(battle_id))
+                .count(&db)
+                .await
+                .expect("fight segment count should succeed"),
+            1,
+            "the rejected event must not create another fight membership"
+        );
+    }
+
+    #[tokio::test]
+    async fn event_detail_prefers_hydrated_snapshot_metrics_over_zeroed_link_summary() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let event_id = insert_event(&db, "Hydrated event", author).await;
+        let battle_id = 425_654_503;
+        insert_battle_with_players(&db, event_id, battle_id, false, &[("Alice", 0, 0)]).await;
+
+        let snapshot = GuildBattleSnapshotEntity::find()
+            .filter(GuildBattleSnapshotColumn::BattleId.eq(battle_id))
+            .one(&db)
+            .await
+            .expect("snapshot query should succeed")
+            .expect("snapshot should exist");
+        let mut snapshot: crate::modules::battles::entities::ActiveModel = snapshot.into();
+        snapshot.total_players = Set(42);
+        snapshot.guilds_json = Set(serde_json::to_string(&vec![
+            BattleGuildSummary {
+                id: "configured-guild-id".to_string(),
+                name: "Weaklings".to_string(),
+                alliance_name: None,
+                alliance_id: None,
+                players: 14,
+                kills: 11,
+                deaths: 7,
+                kill_fame: 2_700_000,
+                winner: true,
+                average_item_power: 1_400.0,
+            },
+            BattleGuildSummary {
+                id: "enemy-id".to_string(),
+                name: "Black Order".to_string(),
+                alliance_name: None,
+                alliance_id: None,
+                players: 18,
+                kills: 7,
+                deaths: 11,
+                kill_fame: 1_500_000,
+                winner: false,
+                average_item_power: 1_390.0,
+            },
+        ])
+        .expect("guild snapshot should serialize"));
+        snapshot
+            .update(&db)
+            .await
+            .expect("snapshot update should succeed");
+
+        let context = BattleLinkingContext::new("configured-guild-id", &[], &[]);
+        let detail = EventService::new()
+            .get_event_detail_with_context(&db, event_id, &context)
+            .await
+            .expect("event detail should use the hydrated snapshot");
+
+        assert_eq!(detail.stats.total_kills, 11);
+        assert_eq!(detail.stats.total_deaths, 7);
+        assert_eq!(detail.stats.total_kill_fame, 2_700_000);
+        assert_eq!(detail.stats.average_guild_players, 14.0);
+        assert_eq!(detail.stats.wins, 1);
+    }
+
+    #[test]
+    fn linked_battle_snapshot_uses_the_guild_name_when_the_list_payload_has_no_guild_id() {
+        let context =
+            BattleLinkingContext::new("configured-guild-id", &[], &["Weaklings".to_string()]);
+        let battle = AlbionBbBattleSummary {
+            id: 425_654_502,
+            start_time: "2026-09-01T20:02:00Z".to_string(),
+            end_time: "2026-09-01T20:12:00Z".to_string(),
+            total_players: 42,
+            total_kills: 18,
+            total_fame: 4_200_000,
+            guilds: vec![
+                AlbionBbGuild {
+                    id: String::new(),
+                    name: "Weaklings".to_string(),
+                    players: 14,
+                    kills: 11,
+                    deaths: 7,
+                    kill_fame: 2_700_000,
+                    winner: true,
+                    alliance_name: None,
+                    alliance_id: None,
+                    average_item_power: 1_400.0,
+                },
+                AlbionBbGuild {
+                    id: "enemy-id".to_string(),
+                    name: "Black Order".to_string(),
+                    players: 18,
+                    kills: 7,
+                    deaths: 11,
+                    kill_fame: 1_500_000,
+                    winner: false,
+                    alliance_name: None,
+                    alliance_id: None,
+                    average_item_power: 1_390.0,
+                },
+            ],
+        };
+
+        let snapshot = linked_battle_snapshot(&battle, &context);
+
+        assert_eq!(snapshot.guild_players_count, 14);
+        assert_eq!(snapshot.guild_kills, 11);
+        assert_eq!(snapshot.guild_deaths, 7);
+        assert_eq!(snapshot.guild_kill_fame, 2_700_000);
+        assert!(snapshot.is_win);
     }
 
     #[tokio::test]

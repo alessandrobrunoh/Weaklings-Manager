@@ -409,10 +409,20 @@ export interface EventSplitStats {
   participant_entries: number;
 }
 
+export interface EventRosterRole {
+  /** `null` identifies the automatic, unlimited Fill role. */
+  id: number | null;
+  build_id: number | null;
+  name: string;
+  is_fill: boolean;
+}
+
 export interface EventDetailView extends EventView {
   active_comp_id: number;
   active_comp_name: string;
   active_comp_capacity: number;
+  /** Fill is always present; all remaining entries are event-specific extra build roles. */
+  roster_roles: EventRosterRole[];
   participants: EventParticipant[];
   battles: EventBattleSummary[];
   stats: BattlePerformanceStats;
