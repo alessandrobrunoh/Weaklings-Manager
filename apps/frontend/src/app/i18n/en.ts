@@ -602,6 +602,8 @@ export const en = {
   'comps.createVariantFor': 'Create variant for',
   'comps.createVariantTooltip': 'Create a child variant for this composition',
   'comps.derivedFrom': 'Derived from',
+  'comps.expansionAdditions': 'Additional builds and quantities',
+  'comps.expansionHint': 'The parent comp builds are inherited automatically. Add only new builds or extra quantities here.',
   'comps.expandAll': 'Expand all',
   'comps.collapseAll': 'Collapse all',
   'comps.noCompsMatch': 'No compositions match your search or filter criteria.',

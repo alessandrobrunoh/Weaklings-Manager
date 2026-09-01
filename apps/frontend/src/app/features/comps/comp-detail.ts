@@ -960,7 +960,6 @@ export class CompDetailPage {
           build_id: entry.build_id,
           quantity: entry.quantity,
         })),
-        parent_id: comp.id,
       };
       const created = await firstValueFrom(this.api.post<CompDetail>('api/comps', request));
       this.toasts.success('Composition cloned');
