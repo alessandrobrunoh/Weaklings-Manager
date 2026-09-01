@@ -50,6 +50,7 @@ export type PermissionKey =
   | 'comps.builds.manage'
   | 'comps.comps.manage'
   | 'events.manage'
+  | 'fights.manage'
   | 'siphoned.ingest'
   | 'siphoned.view'
   | 'audit.view'
@@ -492,6 +493,32 @@ export interface FightParticipantCoverage {
   unplanned_observed_players: number;
   persisted_segments: number;
   total_segments: number;
+}
+
+/* ------------------------- Fight management ------------------------- */
+
+/** Payload for consolidating compatible canonical fights. */
+export interface MergeFightsRequest {
+  target_fight_id: number;
+  fight_ids: number[];
+}
+
+/** Payload for moving one battle segment between compatible fights. */
+export interface MoveBattleRequest {
+  battle_id: number;
+  target_fight_id: number;
+}
+
+/** Payload for extracting a proper subset of segments into a new fight. */
+export interface SplitFightRequest {
+  battle_ids: number[];
+}
+
+/** Result of a manual fight grouping operation. */
+export interface FightMutationResult {
+  fight_id: number;
+  deleted_fight_ids: number[];
+  battle_ids: number[];
 }
 
 /**

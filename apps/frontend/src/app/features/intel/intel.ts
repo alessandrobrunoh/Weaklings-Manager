@@ -3,12 +3,14 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
+import { ApiService } from '../../core/services/api.service';
 import { IntelService } from '../../core/services/intel.service';
 import type { ScoutListParams } from '../../core/services/intel.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import type {
+  FightTrendView,
   GuildReport,
   MatchupReport,
   ScoutedCompSummary,
@@ -71,6 +73,23 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
     TooltipDirective,
     ViewToggle,
   ],
+  styles: `
+    .intel-trend-chart { min-inline-size: 0; }
+    .intel-trend-chart__header { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 0.5rem 1rem; }
+    .intel-trend-chart__title { margin: 0; color: var(--color-text); font-size: 0.875rem; font-weight: 600; }
+    .intel-trend-chart__note, .intel-trend-chart__sample { margin: 0.2rem 0 0; color: var(--color-text-secondary); font-size: 0.75rem; line-height: 1.45; }
+    .intel-trend-chart__sample { color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.6875rem; white-space: nowrap; }
+    .intel-trend-chart__bars { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); align-items: end; gap: 0.2rem; block-size: 8rem; margin-block: 1rem 0; padding-block: 0.35rem; border-block-end: 1px solid var(--color-border-strong); }
+    .intel-trend-chart__bar { display: block; min-block-size: 2px; border-radius: 2px 2px 0 0; background-color: var(--color-primary); opacity: 0.8; }
+    .intel-trend-chart__axis { display: flex; justify-content: space-between; margin-block-start: 0.4rem; color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.6875rem; }
+    .intel-trend-chart__data { margin-block-start: 0.875rem; color: var(--color-text-secondary); font-size: 0.75rem; }
+    .intel-trend-chart__data summary { inline-size: fit-content; cursor: pointer; }
+    .intel-trend-chart__data summary:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
+    .intel-trend-chart__table { inline-size: 100%; margin-block-start: 0.625rem; border-collapse: collapse; font-size: 0.75rem; }
+    .intel-trend-chart__table th, .intel-trend-chart__table td { padding: 0.375rem 0.5rem; border-block-end: 1px solid var(--color-border); text-align: end; }
+    .intel-trend-chart__table th:first-child, .intel-trend-chart__table td:first-child { text-align: start; }
+    @media (max-width: 32rem) { .intel-trend-chart__bars { gap: 0.1rem; } .intel-trend-chart__sample { white-space: normal; } }
+  `,
   template: `
     <app-page-header [title]="t('intel.title')" [subtitle]="t('intel.subtitle')">
       <button
@@ -197,6 +216,44 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
                   </div>
                 </section>
 
+                @if (fightTrends(); as trends) {
+                  <section class="card p-5 lg:col-span-2 intel-trend-chart" aria-labelledby="intel-fight-pulse-heading">
+                    <div class="intel-trend-chart__header">
+                      <div>
+                        <h2 class="intel-trend-chart__title" id="intel-fight-pulse-heading">30-day fight pulse</h2>
+                        <p class="intel-trend-chart__note">Daily canonical fights. Quiet days are included so gaps do not look like missing data.</p>
+                      </div>
+                      <p class="intel-trend-chart__sample">{{ fightTrendSampleLabel(trends) }}</p>
+                    </div>
+                    <figure class="mt-1" aria-describedby="intel-fight-pulse-description">
+                      <figcaption class="sr-only" id="intel-fight-pulse-description">
+                        {{ fightTrendDescription(trends) }} Exact daily values are available in the table below.
+                      </figcaption>
+                      <div class="intel-trend-chart__bars" aria-hidden="true">
+                        @for (day of trends.rolling_daily_fight_counts; track day.date) {
+                          <span class="intel-trend-chart__bar" [style.height.%]="dailyFightBarHeight(day.fights)"></span>
+                        }
+                      </div>
+                      <div class="intel-trend-chart__axis" aria-hidden="true">
+                        <span>{{ trends.rolling_daily_fight_counts[0]?.date | date: 'MMM d' }}</span>
+                        <span>{{ trends.rolling_daily_fight_counts[trends.rolling_daily_fight_counts.length - 1]?.date | date: 'MMM d' }}</span>
+                      </div>
+                    </figure>
+                    <details class="intel-trend-chart__data">
+                      <summary>View daily fight counts as a table</summary>
+                      <table class="intel-trend-chart__table">
+                        <caption class="sr-only">Canonical fights for each day in the 30-day trend</caption>
+                        <thead><tr><th scope="col">UTC date</th><th scope="col">Fights</th></tr></thead>
+                        <tbody>
+                          @for (day of trends.rolling_daily_fight_counts; track day.date) {
+                            <tr><td>{{ day.date | date: 'MMM d, y' }}</td><td class="mono">{{ day.fights }}</td></tr>
+                          }
+                        </tbody>
+                      </table>
+                    </details>
+                  </section>
+                }
+
                 <!-- Activity by hour of day -->
                 <section class="card p-5 lg:col-span-2">
                   <div class="flex items-center justify-between mb-3">
@@ -260,7 +317,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
               <section>
                 <div class="mb-2">
                   <h2 class="text-lg font-semibold" style="color: var(--color-text)">{{ t('intel.nav.matchups') }}</h2>
-                  <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('intel.coverageNoteHint') }}</p>
+                  <p class="text-xs" style="color: var(--color-text-secondary)">{{ matchupCoverageLabel() }}</p>
                 </div>
                 <app-data-table
                   [columns]="matchupColumns()"
@@ -604,6 +661,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
   `,
 })
 export class Intel {
+  private readonly api = inject(ApiService);
   private readonly intel = inject(IntelService);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
@@ -616,6 +674,8 @@ export class Intel {
   protected readonly scouts = signal<ScoutedCompSummary[]>([]);
   protected readonly matchups = signal<MatchupReport | null>(null);
   protected readonly report = signal<GuildReport | null>(null);
+  /** Optional existing Fight Trends endpoint, intentionally non-blocking for Intel. */
+  protected readonly fightTrends = signal<FightTrendView | null>(null);
   protected readonly tab = signal('overview');
   protected readonly headlineTotal = signal(0);
   protected readonly headlineTopThreat = signal<ScoutedCompSummary | null>(null);
@@ -865,6 +925,32 @@ export class Intel {
     return cov.battles_with_comp === cov.total_battles ? 'success' : 'warning';
   }
 
+  protected matchupCoverageLabel(): string {
+    const cov = this.coverage();
+    if (!cov || cov.total_battles === 0) {
+      return this.t('intel.coverageNoteHint');
+    }
+    return `${cov.battles_with_comp} of ${cov.total_battles} battles have composition evidence (${this.coverageLabel()} coverage).`;
+  }
+
+  protected readonly maxDailyFights = computed(() =>
+    Math.max(1, ...(this.fightTrends()?.rolling_daily_fight_counts.map((day) => day.fights) ?? [0])),
+  );
+
+  protected dailyFightBarHeight(fights: number): number {
+    return (fights / this.maxDailyFights()) * 100;
+  }
+
+  protected fightTrendSampleLabel(trends: FightTrendView): string {
+    const period = trends.last_30_days;
+    return `${period.fight_sample_size} canonical fights · ${period.win_sample_size} with winner data · ${period.combat_sample_size} with snapshots`;
+  }
+
+  protected fightTrendDescription(trends: FightTrendView): string {
+    const days = trends.rolling_daily_fight_counts;
+    return `Daily canonical fight volume from ${days[0]?.date ?? trends.last_30_days.window_started_at} to ${days.at(-1)?.date ?? trends.last_30_days.window_ended_at}, peaking at ${this.maxDailyFights()} fights per day.`;
+  }
+
   protected prettyWeapon(id: string): string {
     return id
       .replace(/^(MAIN|2H|OFF)_/, '')
@@ -978,10 +1064,11 @@ export class Intel {
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
-      const [library, matchups, report] = await Promise.all([
+      const [library, matchups, report, fightTrends] = await Promise.all([
         firstValueFrom(this.intel.listScouts({ limit: SCOUT_PAGE_LIMIT, sort: 'threat', page: 1 })),
         firstValueFrom(this.intel.matchups()).catch(() => null),
         firstValueFrom(this.intel.report()).catch(() => null),
+        firstValueFrom(this.api.get<FightTrendView>('/api/fights/trends')).catch(() => null),
       ]);
       this.scouts.set(library.items);
       this.rememberScoutNames(library.items);
@@ -990,6 +1077,7 @@ export class Intel {
       this.headlineTopThreat.set(library.items.at(0) ?? null);
       this.matchups.set(matchups);
       this.report.set(report);
+      this.fightTrends.set(fightTrends);
     } catch (error) {
       this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

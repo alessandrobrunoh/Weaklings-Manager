@@ -1,14 +1,16 @@
 import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
-import type { FightDetail } from '../../core/models/api.models';
+import type { FightDetail, FightMutationResult, MergeFightsRequest, MoveBattleRequest, SplitFightRequest } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { Dialog } from '../../shared/components/dialog/dialog';
 
 interface FightStat {
   readonly label: string;
@@ -16,11 +18,16 @@ interface FightStat {
   readonly tone?: 'success' | 'error' | 'warning';
 }
 
+type PendingFightMutation =
+  | { readonly kind: 'merge'; readonly body: MergeFightsRequest; readonly description: string }
+  | { readonly kind: 'split'; readonly body: SplitFightRequest; readonly description: string }
+  | { readonly kind: 'move'; readonly battleId: number; readonly body: MoveBattleRequest; readonly description: string };
+
 /** Read-only detail view for a canonical fight and its roster-to-snapshot evidence. */
 @Component({
   selector: 'app-fight-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgTemplateOutlet, RouterLink, ErrorState, Loading, PageHeader, PageStack],
+  imports: [NgTemplateOutlet, RouterLink, ErrorState, Loading, PageHeader, PageStack, Dialog],
   template: `
     @if (loading()) {
       <app-loading label="Loading fight…" />
@@ -36,6 +43,21 @@ interface FightStat {
       />
 
       <app-page-stack>
+        @if (canManageFights()) {
+          <section class="surface p-5 fight-detail__management" aria-labelledby="fight-management-title">
+            <div>
+              <h2 id="fight-management-title" class="fight-detail__section-title">Officer controls</h2>
+              <p class="fight-detail__hint">Manual grouping is permanent. Fights must belong to the same event, or neither can be event-linked.</p>
+            </div>
+            @if (mutationError(); as error) { <p class="fight-detail__mutation-error" role="alert">{{ error }}</p> }
+            @if (mutationSuccess(); as message) { <p class="fight-detail__mutation-success" aria-live="polite">{{ message }}</p> }
+            <div class="fight-detail__management-actions">
+              <button type="button" class="btn btn--outline btn--sm" [disabled]="mutating()" (click)="openMerge()">Merge fights</button>
+              <button type="button" class="btn btn--outline btn--sm" [disabled]="mutating() || detail.battle_ids.length < 2" (click)="openSplit()">Split segments</button>
+            </div>
+          </section>
+        }
+
         <section class="surface p-5" aria-labelledby="fight-metadata-title">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -158,12 +180,44 @@ interface FightStat {
           @if (detail.battle_ids.length) {
             <ol class="fight-detail__segment-list">
               @for (battleId of detail.battle_ids; track battleId; let index = $index) {
-                <li><a class="fight-detail__segment-link" [routerLink]="['/battles', battleId]"><span class="fight-detail__segment-number" aria-hidden="true">{{ index + 1 }}</span><span><span class="fight-detail__segment-label">Battle segment</span><span class="mono">#{{ battleId }}</span></span><span class="fight-detail__open">Open <span aria-hidden="true">→</span></span></a></li>
+                <li><a class="fight-detail__segment-link" [routerLink]="['/battles', battleId]"><span class="fight-detail__segment-number" aria-hidden="true">{{ index + 1 }}</span><span><span class="fight-detail__segment-label">Battle segment</span><span class="mono">#{{ battleId }}</span></span><span class="fight-detail__open">Open <span aria-hidden="true">→</span></span></a>@if (canManageFights()) { <button type="button" class="btn btn--ghost btn--sm fight-detail__move" [disabled]="mutating()" (click)="openMove(battleId)">Move</button> }</li>
               }
             </ol>
           } @else { <p class="p-5 text-sm text-secondary">No battle segments have been attached to this fight.</p> }
         </section>
       </app-page-stack>
+
+      @if (mergeOpen()) {
+        <app-dialog title="Merge fights" subtitle="Choose the fight that remains, then list one or more other fights to merge into it." size="sm" (closed)="closeMutationDialog()">
+          <form id="fight-merge-form" (submit)="stageMerge($event)">
+            <label class="fight-detail__field-label" for="fight-merge-target">Surviving fight ID</label>
+            <input id="fight-merge-target" class="input fight-detail__input" name="targetFightId" type="number" min="1" inputmode="numeric" [value]="mergeTargetId()" (input)="mergeTargetId.set(inputValue($event)); clearDialogError()" required />
+            <label class="fight-detail__field-label" for="fight-merge-others">Other fight IDs</label>
+            <input id="fight-merge-others" class="input fight-detail__input" name="otherFightIds" inputmode="numeric" placeholder="For example: 42, 57" [value]="mergeOtherIds()" (input)="mergeOtherIds.set(inputValue($event)); clearDialogError()" required aria-describedby="fight-merge-help" />
+            <p id="fight-merge-help" class="fight-detail__hint">The current fight is included automatically if it is not already listed.</p>
+            @if (dialogError(); as error) { <p class="fight-detail__mutation-error" role="alert">{{ error }}</p> }
+          </form>
+          <div dialogFooter><button type="button" class="btn btn--ghost btn--sm" (click)="closeMutationDialog()">Cancel</button><button type="submit" class="btn btn--primary btn--sm" form="fight-merge-form">Review merge</button></div>
+        </app-dialog>
+      }
+
+      @if (splitOpen()) {
+        <app-dialog title="Split segments" subtitle="Selected segments will become a new canonical fight." size="sm" (closed)="closeMutationDialog()">
+          <form id="fight-split-form" (submit)="stageSplit($event)"><fieldset><legend class="fight-detail__field-label">Segments to move</legend><div class="fight-detail__checkboxes">@for (battleId of detail.battle_ids; track battleId) { <label><input type="checkbox" class="checkbox" [checked]="isSplitSelected(battleId)" (change)="toggleSplitBattle(battleId)" /> <span class="mono">#{{ battleId }}</span></label> }</div></fieldset>@if (dialogError(); as error) { <p class="fight-detail__mutation-error" role="alert">{{ error }}</p> }</form>
+          <div dialogFooter><button type="button" class="btn btn--ghost btn--sm" (click)="closeMutationDialog()">Cancel</button><button type="submit" class="btn btn--primary btn--sm" form="fight-split-form">Review split</button></div>
+        </app-dialog>
+      }
+
+      @if (moveBattleId(); as battleId) {
+        <app-dialog title="Move battle segment" subtitle="Move this segment into another compatible fight." size="sm" (closed)="closeMutationDialog()">
+          <form id="fight-move-form" (submit)="stageMove(battleId, $event)"><label class="fight-detail__field-label" for="fight-move-target">Destination fight ID</label><input id="fight-move-target" class="input fight-detail__input" name="targetFightId" type="number" min="1" inputmode="numeric" [value]="moveTargetId()" (input)="moveTargetId.set(inputValue($event)); clearDialogError()" required />@if (dialogError(); as error) { <p class="fight-detail__mutation-error" role="alert">{{ error }}</p> }</form>
+          <div dialogFooter><button type="button" class="btn btn--ghost btn--sm" (click)="closeMutationDialog()">Cancel</button><button type="submit" class="btn btn--primary btn--sm" form="fight-move-form">Review move</button></div>
+        </app-dialog>
+      }
+
+      @if (pendingMutation(); as pending) {
+        <app-dialog title="Confirm fight change" size="sm" (closed)="cancelPendingMutation()"><p>{{ pending.description }}</p><p class="fight-detail__hint">This cannot be undone from the fight screen.</p>@if (dialogError(); as error) { <p class="fight-detail__mutation-error" role="alert">{{ error }}</p> }<div dialogFooter><button type="button" class="btn btn--ghost btn--sm" [disabled]="mutating()" (click)="cancelPendingMutation()">Cancel</button><button type="button" class="btn btn--danger btn--sm" [disabled]="mutating()" (click)="confirmMutation()">{{ mutating() ? 'Applying…' : 'Confirm change' }}</button></div></app-dialog>
+      }
 
       <ng-template #guildTable let-guilds><article class="surface p-4"><h3 class="fight-detail__table-title">Guilds</h3><div class="fight-detail__table-wrap"><table class="fight-detail__table"><caption>Guild performance</caption><thead><tr><th scope="col">Guild</th><th scope="col" class="numeric">Players</th><th scope="col" class="numeric">K / D</th><th scope="col" class="numeric">Kill fame</th></tr></thead><tbody>@for (guild of guilds; track guild.id) { <tr><th scope="row">{{ guild.name }}</th><td class="numeric">{{ guild.players }}</td><td class="numeric">{{ guild.kills }} / {{ guild.deaths }}</td><td class="numeric">{{ formatAmount(guild.kill_fame) }}</td></tr> }</tbody></table></div></article></ng-template>
       <ng-template #playerTable let-players><article class="surface p-4"><h3 class="fight-detail__table-title">Players</h3><div class="fight-detail__table-wrap"><table class="fight-detail__table"><caption>Player performance</caption><thead><tr><th scope="col">Player</th><th scope="col">Guild</th><th scope="col" class="numeric">K / D</th><th scope="col" class="numeric">Kill fame</th></tr></thead><tbody>@for (player of players; track player.id) { <tr><th scope="row">{{ player.name }}</th><td>{{ player.guild_name }}</td><td class="numeric">{{ player.kills }} / {{ player.deaths }}</td><td class="numeric">{{ formatAmount(player.kill_fame) }}</td></tr> }</tbody></table></div></article></ng-template>
@@ -198,14 +252,40 @@ interface FightStat {
       .fight-detail__segment-number { align-items: center; background: var(--color-surface-2); border-radius: var(--radius-sm); color: var(--color-text-secondary); display: inline-flex; font-family: var(--font-mono); font-size: .75rem; height: 1.5rem; justify-content: center; width: 1.5rem; }
       .fight-detail__segment-label { display: block; margin-bottom: .15rem; }
       .fight-detail__open { color: var(--color-text-secondary); font-size: .75rem; }
+      .fight-detail__management { display: grid; gap: 1rem; }
+      .fight-detail__management-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+      .fight-detail__mutation-error, .fight-detail__mutation-success { margin: 0; border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: .625rem .75rem; font-size: .8125rem; }
+      .fight-detail__mutation-error { color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface)); }
+      .fight-detail__mutation-success { color: var(--color-success); background: color-mix(in srgb, var(--color-success) 10%, var(--color-surface)); }
+      .fight-detail__move { margin: 0 .75rem .625rem; }
+      .fight-detail__field-label { display: block; color: var(--color-text); font-size: .8125rem; font-weight: 600; margin: 1rem 0 .375rem; }
+      .fight-detail__field-label:first-child { margin-top: 0; }
+      .fight-detail__input { box-sizing: border-box; min-height: 2.5rem; width: 100%; }
+      .fight-detail__checkboxes { display: grid; gap: .5rem; margin-top: .5rem; }
+      .fight-detail__checkboxes label { align-items: center; display: flex; gap: .5rem; min-height: 2.25rem; }
     }
   `,
 })
 export class FightDetailPage {
   private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   protected readonly fight = signal<FightDetail | null>(null);
+  protected readonly canManageFights = computed(() => this.auth.hasPermission('fights.manage'));
+  protected readonly mergeOpen = signal(false);
+  protected readonly splitOpen = signal(false);
+  protected readonly moveBattleId = signal<number | null>(null);
+  protected readonly mergeTargetId = signal('');
+  protected readonly mergeOtherIds = signal('');
+  protected readonly moveTargetId = signal('');
+  protected readonly splitBattleIds = signal<number[]>([]);
+  protected readonly pendingMutation = signal<PendingFightMutation | null>(null);
+  protected readonly dialogError = signal<string | null>(null);
+  protected readonly mutationError = signal<string | null>(null);
+  protected readonly mutationSuccess = signal<string | null>(null);
+  protected readonly mutating = signal(false);
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
   protected readonly hasRosterEvidence = computed(() => {
@@ -246,11 +326,139 @@ export class FightDetailPage {
     finally { this.loading.set(false); }
   }
 
+  protected openMerge(): void {
+    this.closeMutationDialog();
+    this.mutationError.set(null);
+    this.mutationSuccess.set(null);
+    this.mergeOpen.set(true);
+  }
+
+  protected openSplit(): void {
+    this.closeMutationDialog();
+    this.mutationError.set(null);
+    this.mutationSuccess.set(null);
+    this.splitBattleIds.set([]);
+    this.splitOpen.set(true);
+  }
+
+  protected openMove(battleId: string | number): void {
+    const id = this.parsePositiveId(String(battleId));
+    if (!id) return;
+    this.closeMutationDialog();
+    this.mutationError.set(null);
+    this.mutationSuccess.set(null);
+    this.moveBattleId.set(id);
+  }
+
+  protected closeMutationDialog(): void {
+    if (this.mutating()) return;
+    this.mergeOpen.set(false);
+    this.splitOpen.set(false);
+    this.moveBattleId.set(null);
+    this.dialogError.set(null);
+  }
+
+  protected clearDialogError(): void { this.dialogError.set(null); }
+  protected inputValue(event: Event): string { return (event.target as HTMLInputElement).value; }
+  protected isSplitSelected(battleId: string | number): boolean { const id = this.parsePositiveId(String(battleId)); return id !== null && this.splitBattleIds().includes(id); }
+  protected toggleSplitBattle(battleId: string | number): void {
+    const id = this.parsePositiveId(String(battleId));
+    if (!id) return;
+    this.splitBattleIds.update((ids) => ids.includes(id) ? ids.filter((candidate) => candidate !== id) : [...ids, id]);
+    this.clearDialogError();
+  }
+
+  protected stageMerge(event: SubmitEvent): void {
+    event.preventDefault();
+    const currentId = this.fight()?.id;
+    const targetId = this.parsePositiveId(this.mergeTargetId());
+    const otherIds = this.parseIdList(this.mergeOtherIds());
+    if (!currentId || !targetId || otherIds === null) {
+      this.dialogError.set('Enter a surviving fight ID and a comma-separated list of valid fight IDs.');
+      return;
+    }
+    const fightIds = [...new Set([currentId, targetId, ...otherIds])];
+    if (fightIds.length < 2) {
+      this.dialogError.set('Select at least two different fights to merge.');
+      return;
+    }
+    this.mergeOpen.set(false);
+    this.pendingMutation.set({ kind: 'merge', body: { target_fight_id: targetId, fight_ids: fightIds }, description: `Merge ${fightIds.map((id) => `fight #${id}`).join(', ')}. Fight #${targetId} will remain.` });
+  }
+
+  protected stageSplit(event: SubmitEvent): void {
+    event.preventDefault();
+    const sourceId = this.fight()?.id;
+    const selected = this.splitBattleIds();
+    const total = this.fight()?.battle_ids.length ?? 0;
+    if (!sourceId || selected.length === 0 || selected.length >= total) {
+      this.dialogError.set('Select at least one segment, but leave at least one segment in this fight.');
+      return;
+    }
+    this.splitOpen.set(false);
+    this.pendingMutation.set({ kind: 'split', body: { battle_ids: selected }, description: `Split ${selected.map((id) => `battle #${id}`).join(', ')} into a new fight.` });
+  }
+
+  protected stageMove(battleId: number, event: SubmitEvent): void {
+    event.preventDefault();
+    const sourceId = this.fight()?.id;
+    const targetId = this.parsePositiveId(this.moveTargetId());
+    if (!sourceId || !targetId || targetId === sourceId) {
+      this.dialogError.set('Enter a different, valid destination fight ID.');
+      return;
+    }
+    this.moveBattleId.set(null);
+    this.pendingMutation.set({ kind: 'move', battleId, body: { battle_id: battleId, target_fight_id: targetId }, description: `Move battle #${battleId} from fight #${sourceId} to fight #${targetId}.` });
+  }
+
+  protected cancelPendingMutation(): void {
+    if (this.mutating()) return;
+    this.pendingMutation.set(null);
+    this.dialogError.set(null);
+  }
+
+  protected async confirmMutation(): Promise<void> {
+    const pending = this.pendingMutation();
+    const sourceId = this.fight()?.id;
+    if (!pending || !sourceId) return;
+    this.mutating.set(true);
+    this.dialogError.set(null);
+    this.mutationError.set(null);
+    try {
+      const path = pending.kind === 'merge' ? 'api/fights/merge' : pending.kind === 'split' ? `api/fights/${sourceId}/split` : `api/fights/${sourceId}/move-battle`;
+      const result = await firstValueFrom(this.api.post<FightMutationResult>(path, pending.body));
+      this.pendingMutation.set(null);
+      this.mutationSuccess.set(`Fight grouping updated. Resulting fight: #${result.fight_id}.`);
+      if (result.fight_id === sourceId) {
+        await this.load();
+      } else {
+        await this.router.navigate(['/fights', result.fight_id]);
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unable to update fight grouping.';
+      this.dialogError.set(message);
+      this.mutationError.set(message);
+    } finally {
+      this.mutating.set(false);
+    }
+  }
+
   protected fightWindow(fight: FightDetail): string { return `${this.formatDate(fight.started_at)}${fight.ended_at ? ` to ${this.formatDate(fight.ended_at)}` : ''}`; }
   protected formatDate(value: string): string { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString(); }
   protected formatAmount(value: number): string { return Intl.NumberFormat().format(value); }
   protected formatDecimal(value: number): string { return value.toFixed(0); }
   protected formatPercent(value: number): string { return `${(value <= 1 ? value * 100 : value).toFixed(0)}%`; }
+  private parsePositiveId(value: string): number | null {
+    if (!/^\d+$/.test(value.trim())) return null;
+    const id = Number(value);
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  }
+  private parseIdList(value: string): number[] | null {
+    const parts = value.split(',').map((part) => part.trim()).filter(Boolean);
+    if (!parts.length) return null;
+    const ids = parts.map((part) => this.parsePositiveId(part));
+    return ids.every((id): id is number => id !== null) ? ids : null;
+  }
   private ratioStat(label: string, value: number | undefined): FightStat | null { return value === undefined ? null : { label, value: value.toFixed(2), tone: value >= 1 ? 'success' : 'error' }; }
   private percentStat(label: string, value: number | undefined): FightStat | null { return value === undefined ? null : { label, value: this.formatPercent(value), tone: 'success' }; }
 }

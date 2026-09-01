@@ -1034,7 +1034,11 @@ impl EventService {
         let mut visited = HashSet::from([base_comp_id]);
 
         while let Some((parent_id, parent_capacity)) = pending.pop() {
-            for child in children_by_parent.remove(&parent_id).unwrap_or_default() {
+            for child in children_by_parent
+                .get(&parent_id)
+                .cloned()
+                .unwrap_or_default()
+            {
                 if !visited.insert(child.id) {
                     tracing::warn!(
                         base_comp_id,
