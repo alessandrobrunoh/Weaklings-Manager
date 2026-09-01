@@ -164,16 +164,21 @@ const PAGE_SIZE = 10;
         (pageChange)="onTableChange($event)"
       >
         <ng-template dataTableCell="player_name" let-row>
-          <span style="font-weight: 500">{{ row.player_name }}</span>
+          <div class="flex flex-col gap-0.5">
+            <span class="font-bold text-sm text-[var(--color-text)]">{{ row.player_name }}</span>
+            @if (row.primary_build_name) {
+              <span class="text-xs text-[var(--color-text-secondary)] font-medium">{{ row.primary_build_name }}</span>
+            }
+          </div>
         </ng-template>
         <ng-template dataTableCell="event" let-row>
-          <span>{{ row.event_title }}</span>
+          <span class="font-medium text-sm text-[var(--color-text)]">{{ row.event_title }}</span>
         </ng-template>
         <ng-template dataTableCell="status" let-row>
           <span class="chip" [class]="statusChipClass(row.status)">{{ statusLabel(row.status) }}</span>
         </ng-template>
         <ng-template dataTableCell="estimate" let-row>
-          <span style="font-variant-numeric: tabular-nums">{{ formatSilver(row.auto_estimate_total) }}</span>
+          <span class="font-bold font-mono text-sm text-[var(--color-text)]">{{ formatSilver(row.auto_estimate_total) }}</span>
         </ng-template>
         <ng-template dataTableCell="actions" let-row>
           @if (canRequest(row)) {
@@ -186,7 +191,7 @@ const PAGE_SIZE = 10;
               {{ t('regears.request') }}
             </button>
           } @else {
-            <span style="color: var(--color-text-disabled)">{{ t('common.view') }}</span>
+            <span class="btn btn--ghost btn--sm text-xs">{{ t('common.open') }}</span>
           }
         </ng-template>
       </app-data-table>

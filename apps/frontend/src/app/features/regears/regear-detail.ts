@@ -21,6 +21,9 @@ import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 
+import { Icon } from '../../shared/components/icon/icon';
+import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+
 /** Editing copy of a breakdown row used in the officer accept dialog. */
 interface EditableBreakdownRow extends RegearBreakdownRow {
   /** Editable unit_price as a string for the input binding. */
@@ -37,7 +40,7 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
 @Component({
   selector: 'app-regear-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Dialog, EmptyState, ErrorState, Loading, PageHeader, PageStack],
+  imports: [RouterLink, Dialog, EmptyState, ErrorState, Loading, PageHeader, PageStack, Icon, TooltipDirective],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
@@ -69,87 +72,99 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
       </app-page-header>
 
       <app-page-stack>
-        <section class="card p-5">
-          <dl class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm">
-            <div>
-              <dt style="color: var(--color-text-secondary)">{{ t('common.player') }}</dt>
-              <dd class="font-semibold">{{ current.player_name }}</dd>
+        <section class="card p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
+          <dl class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+            <div class="p-3 bg-[var(--color-surface-2)] rounded-lg">
+              <dt class="text-xs text-[var(--color-text-secondary)] font-semibold uppercase">{{ t('common.player') }}</dt>
+              <dd class="font-bold text-base text-[var(--color-text)] mt-0.5">{{ current.player_name }}</dd>
             </div>
-            <div>
-              <dt style="color: var(--color-text-secondary)">{{ t('regears.event') }}</dt>
-              <dd>{{ current.event_title }}</dd>
+            <div class="p-3 bg-[var(--color-surface-2)] rounded-lg">
+              <dt class="text-xs text-[var(--color-text-secondary)] font-semibold uppercase">{{ t('regears.event') }}</dt>
+              <dd class="font-bold text-sm text-[var(--color-text)] mt-0.5 truncate">{{ current.event_title }}</dd>
             </div>
-            <div>
-              <dt style="color: var(--color-text-secondary)">{{ t('regears.battle') }}</dt>
-              <dd>
-                <a [routerLink]="['/battles', current.albionbb_battle_id]" class="link">
-                  #{{ current.albionbb_battle_id }}
+            <div class="p-3 bg-[var(--color-surface-2)] rounded-lg">
+              <dt class="text-xs text-[var(--color-text-secondary)] font-semibold uppercase">{{ t('regears.battle') }}</dt>
+              <dd class="mt-0.5">
+                <a [routerLink]="['/battles', current.albionbb_battle_id]" class="font-bold text-sm text-[var(--color-primary)] hover:underline">
+                  Battle #{{ current.albionbb_battle_id }}
                 </a>
               </dd>
             </div>
-            <div>
-              <dt style="color: var(--color-text-secondary)">{{ t('regears.killedAt') }}</dt>
-              <dd>{{ formatDate(current.killed_at) }}</dd>
-            </div>
-            <div>
-              <dt style="color: var(--color-text-secondary)">{{ t('common.status') }}</dt>
-              <dd>
+            <div class="p-3 bg-[var(--color-surface-2)] rounded-lg">
+              <dt class="text-xs text-[var(--color-text-secondary)] font-semibold uppercase">{{ t('common.status') }}</dt>
+              <dd class="mt-0.5">
                 <span class="chip" [class]="statusChipClass(current.status)">{{
                   statusLabel(current.status)
                 }}</span>
               </dd>
             </div>
-            @if (current.primary_build_name) {
-              <div>
-                <dt style="color: var(--color-text-secondary)">{{ t('regears.build') }}</dt>
-                <dd>{{ current.primary_build_name }}</dd>
-              </div>
-            }
+          </dl>
+
+          <div class="grid gap-3 sm:grid-cols-3 mt-4 pt-4 border-t border-[var(--color-border)] text-sm">
             <div>
-              <dt style="color: var(--color-text-secondary)">{{ t('regears.estimate') }}</dt>
-              <dd class="font-semibold">{{ formatSilver(current.auto_estimate_total) }}</dd>
+              <span class="text-xs text-[var(--color-text-secondary)] block">{{ t('regears.killedAt') }}</span>
+              <span class="font-medium">{{ formatDate(current.killed_at) }}</span>
+            </div>
+            <div>
+              <span class="text-xs text-[var(--color-text-secondary)] block">{{ t('regears.estimate') }}</span>
+              <span class="font-bold text-base">{{ formatSilver(current.auto_estimate_total) }}</span>
             </div>
             @if (current.final_amount !== null) {
               <div>
-                <dt style="color: var(--color-text-secondary)">{{ t('regears.final') }}</dt>
-                <dd class="font-semibold" style="color: var(--color-accent-gold)">
+                <span class="text-xs text-[var(--color-text-secondary)] block">{{ t('regears.final') }}</span>
+                <span class="font-bold text-base text-[var(--color-success)]">
                   {{ formatSilver(current.final_amount) }}
-                </dd>
+                </span>
               </div>
             }
-          </dl>
+          </div>
+
           @if (current.officer_note) {
-            <p class="mt-4 text-sm italic" style="color: var(--color-text-secondary)">
-              {{ t('regears.officerNote') }}: {{ current.officer_note }}
-            </p>
+            <div class="mt-4 p-3 bg-[var(--color-surface-2)] rounded-lg text-xs border border-[var(--color-border)]">
+              <span class="font-bold text-[var(--color-text)]">{{ t('regears.officerNote') }}:</span>
+              <span class="text-[var(--color-text-secondary)] ml-1">{{ current.officer_note }}</span>
+            </div>
           }
         </section>
 
-        <section class="card p-5">
-          <h2 class="mb-3 text-base font-semibold">{{ t('regears.detail.breakdown') }}</h2>
+        <!-- ITEM BREAKDOWN TABLE WITH ALBION SPRITES -->
+        <section class="card p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
+          <h2 class="mb-4 text-base font-bold text-[var(--color-text)]">{{ t('regears.detail.breakdown') }}</h2>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
               <thead>
-                <tr style="color: var(--color-text-secondary)">
-                  <th class="px-2 py-1 text-left">{{ t('regears.slot') }}</th>
-                  <th class="px-2 py-1 text-left">{{ t('regears.item') }}</th>
-                  <th class="px-2 py-1 text-right">{{ t('regears.unitPrice') }}</th>
-                  <th class="px-2 py-1 text-right">{{ t('regears.qty') }}</th>
-                  <th class="px-2 py-1 text-center">{{ t('regears.included') }}</th>
+                <tr class="text-xs uppercase text-[var(--color-text-secondary)] border-b border-[var(--color-border)]">
+                  <th class="px-3 py-2 text-left">{{ t('regears.slot') }}</th>
+                  <th class="px-3 py-2 text-left">{{ t('regears.item') }}</th>
+                  <th class="px-3 py-2 text-right">{{ t('regears.unitPrice') }}</th>
+                  <th class="px-3 py-2 text-right">{{ t('regears.qty') }}</th>
+                  <th class="px-3 py-2 text-center">{{ t('regears.included') }}</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody class="divide-y divide-[var(--color-border)]">
                 @for (row of breakdown(); track row.item_id + row.slot) {
-                  <tr style="border-top: 1px solid var(--color-border)">
-                    <td class="px-2 py-1">{{ row.slot }}</td>
-                    <td class="px-2 py-1 font-mono text-xs">{{ row.item_id }}</td>
-                    <td class="px-2 py-1 text-right">{{ formatSilver(row.unit_price) }}</td>
-                    <td class="px-2 py-1 text-right">{{ row.quantity }}</td>
-                    <td class="px-2 py-1 text-center">
+                  <tr class="hover:bg-[var(--color-surface-hover)] transition-colors">
+                    <td class="px-3 py-2.5">
+                      <span class="chip text-xs font-bold uppercase">{{ row.slot }}</span>
+                    </td>
+                    <td class="px-3 py-2.5">
+                      <div class="flex items-center gap-2.5">
+                        <img
+                          [src]="itemIconUrl(row.item_id)"
+                          [alt]="row.item_id"
+                          class="h-8 w-8 object-contain bg-[var(--color-surface-2)] rounded p-0.5 border border-[var(--color-border)]"
+                          loading="lazy"
+                        />
+                        <span class="font-mono text-xs font-semibold text-[var(--color-text)]">{{ row.item_id }}</span>
+                      </div>
+                    </td>
+                    <td class="px-3 py-2.5 text-right font-mono font-medium">{{ formatSilver(row.unit_price) }}</td>
+                    <td class="px-3 py-2.5 text-right font-mono font-bold">{{ row.quantity }}</td>
+                    <td class="px-3 py-2.5 text-center">
                       @if (row.included) {
-                        <span style="color: var(--color-success)">✓</span>
+                        <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-[var(--color-success-subtle)] text-[var(--color-success)]">✓ Included</span>
                       } @else {
-                        <span style="color: var(--color-text-disabled)">—</span>
+                        <span class="text-xs text-[var(--color-text-tertiary)] font-bold">— Excluded</span>
                       }
                     </td>
                   </tr>
@@ -167,36 +182,47 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
         size="lg"
         (closed)="closeAcceptDialog()"
       >
-        <p class="mb-3 text-sm" style="color: var(--color-text-secondary)">
+        <p class="mb-3 text-sm text-[var(--color-text-secondary)]">
           {{ t('regears.acceptHint') }}
         </p>
         <div class="mb-3 max-h-80 overflow-y-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr style="color: var(--color-text-secondary)">
-                <th class="px-2 py-1 text-left">{{ t('regears.slot') }}</th>
-                <th class="px-2 py-1 text-left">{{ t('regears.item') }}</th>
-                <th class="px-2 py-1 text-right">{{ t('regears.unitPrice') }}</th>
-                <th class="px-2 py-1 text-center">{{ t('regears.included') }}</th>
+              <tr class="text-xs uppercase text-[var(--color-text-secondary)] border-b border-[var(--color-border)]">
+                <th class="px-3 py-2 text-left">{{ t('regears.slot') }}</th>
+                <th class="px-3 py-2 text-left">{{ t('regears.item') }}</th>
+                <th class="px-3 py-2 text-right">{{ t('regears.unitPrice') }}</th>
+                <th class="px-3 py-2 text-center">{{ t('regears.included') }}</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody class="divide-y divide-[var(--color-border)]">
               @for (row of acceptRows(); track row.item_id + row.slot; let i = $index) {
-                <tr style="border-top: 1px solid var(--color-border)">
-                  <td class="px-2 py-1">{{ row.slot }}</td>
-                  <td class="px-2 py-1 font-mono text-xs">{{ row.item_id }}</td>
-                  <td class="px-2 py-1 text-right">
+                <tr>
+                  <td class="px-3 py-2 font-bold uppercase text-xs">{{ row.slot }}</td>
+                  <td class="px-3 py-2">
+                    <div class="flex items-center gap-2">
+                      <img
+                        [src]="itemIconUrl(row.item_id)"
+                        [alt]="row.item_id"
+                        class="h-7 w-7 object-contain bg-[var(--color-surface-2)] rounded p-0.5 border border-[var(--color-border)]"
+                        loading="lazy"
+                      />
+                      <span class="font-mono text-xs">{{ row.item_id }}</span>
+                    </div>
+                  </td>
+                  <td class="px-3 py-2 text-right">
                     <input
-                      class="input input--sm w-32 text-right"
+                      class="input input--sm w-32 text-right font-mono"
                       type="number"
                       min="0"
                       [value]="row.unit_price_input"
                       (input)="updateEditablePrice(i, $event)"
                     />
                   </td>
-                  <td class="px-2 py-1 text-center">
+                  <td class="px-3 py-2 text-center">
                     <input
                       type="checkbox"
+                      class="checkbox"
                       [checked]="row.included"
                       (change)="toggleEditableIncluded(i, $event)"
                     />
@@ -290,6 +316,10 @@ export class RegearDetailPage {
   });
 
   protected readonly acceptTotal = computed(() => this.computeEditableTotal(this.acceptRows()));
+
+  protected itemIconUrl(itemId: string): string {
+    return `https://render.albiononline.com/v1/item/${itemId}.png`;
+  }
 
   protected readonly canRequest = computed(() => {
     const death = this.death();
