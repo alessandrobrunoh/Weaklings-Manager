@@ -3,3 +3,4 @@
 # Environment
 .env
 .albion-dumps-cache/
+.playwright-mcp/
