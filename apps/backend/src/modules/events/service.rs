@@ -12,15 +12,16 @@ use sea_orm::{
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 
 use super::entities::{
-    event, event_battle, event_discord_role, event_participation, event_roster_assignment, event_roster_role, fight,
-    fight_battle,
+    event, event_battle, event_discord_role, event_participation, event_roster_assignment,
+    event_roster_role, fight, fight_battle,
 };
 use super::models::{
-    AssignRosterSeatRequest, BattlePerformanceStats, BuildBattleStats, BuildPerformanceView, CompPerformanceView,
-    CreateEventRequest, CreateEventRosterRoleRequest, EventBattleView, EventDetailView,
-    EventFightView, EventParticipantView, EventRosterSeatView, EventRosterRoleView, EventRosterView, EventSignupBuildView,
-    EventSignupOptionsView, EventSplitStats, EventView, OpponentPerformanceView,
-    ParticipateEventRequest, RosterVersionRequest, SwapRosterSeatsRequest, UpdateEventBattlesRequest, UpdateEventRequest,
+    AssignRosterSeatRequest, BattlePerformanceStats, BuildBattleStats, BuildPerformanceView,
+    CompPerformanceView, CreateEventRequest, CreateEventRosterRoleRequest, EventBattleView,
+    EventDetailView, EventFightView, EventParticipantView, EventRosterRoleView,
+    EventRosterSeatView, EventRosterView, EventSignupBuildView, EventSignupOptionsView,
+    EventSplitStats, EventView, OpponentPerformanceView, ParticipateEventRequest,
+    RosterVersionRequest, SwapRosterSeatsRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
 
 use super::fight_grouping::{
@@ -891,81 +892,383 @@ impl EventService {
     }
 
     /// Returns the durable assignment snapshot for an event.
-    pub async fn get_roster(&self, db: &DatabaseConnection, event_id: i64) -> Result<EventRosterView, AppError> {
-        let event_model = event::Entity::find_by_id(event_id).one(db).await.map_err(AppError::Database)?
+    pub async fn get_roster(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+    ) -> Result<EventRosterView, AppError> {
+        let event_model = event::Entity::find_by_id(event_id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
-        let participations = event_participation::Entity::find().filter(event_participation::Column::EventId.eq(event_id))
-            .order_by_asc(event_participation::Column::CreatedAt).all(db).await.map_err(AppError::Database)?;
-        let concrete = participations.iter().filter(|p| p.primary_build_id.is_some()).count();
-        let extras = event_roster_role::Entity::find().filter(event_roster_role::Column::EventId.eq(event_id)).count(db).await.map_err(AppError::Database)? as usize;
-        let (active_comp, _) = self.resolve_active_comp_with_extra_slots(db, event_model.comp_id, concrete, extras).await?;
+        let participations = event_participation::Entity::find()
+            .filter(event_participation::Column::EventId.eq(event_id))
+            .order_by_asc(event_participation::Column::CreatedAt)
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let concrete = participations
+            .iter()
+            .filter(|p| p.primary_build_id.is_some())
+            .count();
+        let extras = event_roster_role::Entity::find()
+            .filter(event_roster_role::Column::EventId.eq(event_id))
+            .count(db)
+            .await
+            .map_err(AppError::Database)? as usize;
+        let (active_comp, _) = self
+            .resolve_active_comp_with_extra_slots(db, event_model.comp_id, concrete, extras)
+            .await?;
         let mut seats = self.canonical_roster_seats(db, active_comp.id).await?;
-        let assignments = event_roster_assignment::Entity::find().filter(event_roster_assignment::Column::EventId.eq(event_id)).all(db).await.map_err(AppError::Database)?;
+        let assignments = event_roster_assignment::Entity::find()
+            .filter(event_roster_assignment::Column::EventId.eq(event_id))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
         let mut participants = HashMap::new();
         for participation in participations {
-            let user = crate::modules::users::entities::Entity::find_by_id(participation.user_id).one(db).await.map_err(AppError::Database)?
-                .ok_or_else(|| AppError::NotFound(format!("User {} not found", participation.user_id)))?;
-            let primary_build_name = match participation.primary_build_id { Some(id) => build::Entity::find_by_id(id).one(db).await.map_err(AppError::Database)?.ok_or_else(|| AppError::NotFound(format!("Build {id} not found")))?.name, None => "Fill".to_string() };
-            let secondary_build_name = match participation.secondary_build_id { Some(id) => Some(build::Entity::find_by_id(id).one(db).await.map_err(AppError::Database)?.ok_or_else(|| AppError::NotFound(format!("Build {id} not found")))?.name), None => None };
-            participants.insert(participation.user_id, EventParticipantView { user_id: participation.user_id, username: crate::modules::users::display_name::resolve(db, &user).await?, discord_id: user.discord_id, primary_build_id: participation.primary_build_id, primary_build_name, secondary_build_id: participation.secondary_build_id, secondary_build_name, specializations: HashMap::new() });
+            let user = crate::modules::users::entities::Entity::find_by_id(participation.user_id)
+                .one(db)
+                .await
+                .map_err(AppError::Database)?
+                .ok_or_else(|| {
+                    AppError::NotFound(format!("User {} not found", participation.user_id))
+                })?;
+            let primary_build_name = match participation.primary_build_id {
+                Some(id) => {
+                    build::Entity::find_by_id(id)
+                        .one(db)
+                        .await
+                        .map_err(AppError::Database)?
+                        .ok_or_else(|| AppError::NotFound(format!("Build {id} not found")))?
+                        .name
+                }
+                None => "Fill".to_string(),
+            };
+            let secondary_build_name = match participation.secondary_build_id {
+                Some(id) => Some(
+                    build::Entity::find_by_id(id)
+                        .one(db)
+                        .await
+                        .map_err(AppError::Database)?
+                        .ok_or_else(|| AppError::NotFound(format!("Build {id} not found")))?
+                        .name,
+                ),
+                None => None,
+            };
+            participants.insert(
+                participation.user_id,
+                EventParticipantView {
+                    user_id: participation.user_id,
+                    username: crate::modules::users::display_name::resolve(db, &user).await?,
+                    discord_id: user.discord_id,
+                    primary_build_id: participation.primary_build_id,
+                    primary_build_name,
+                    secondary_build_id: participation.secondary_build_id,
+                    secondary_build_name,
+                    specializations: HashMap::new(),
+                },
+            );
         }
-        let assigned: HashMap<_, _> = assignments.into_iter().map(|a| (a.seat_key, a.user_id)).collect();
+        let assigned: HashMap<_, _> = assignments
+            .into_iter()
+            .map(|a| (a.seat_key, a.user_id))
+            .collect();
         let mut assigned_users = HashSet::new();
-        for seat in &mut seats { if let Some(user_id) = assigned.get(&seat.key) { seat.participant = participants.get(user_id).cloned(); assigned_users.insert(*user_id); } }
-        let bench = participants.into_iter().filter_map(|(user_id, participant)| (!assigned_users.contains(&user_id)).then_some(participant)).collect();
-        Ok(EventRosterView { event_id, roster_version: event_model.roster_version, active_comp_id: active_comp.id, seats, bench })
+        for seat in &mut seats {
+            if let Some(user_id) = assigned.get(&seat.key) {
+                seat.participant = participants.get(user_id).cloned();
+                assigned_users.insert(*user_id);
+            }
+        }
+        let bench = participants
+            .into_iter()
+            .filter_map(|(user_id, participant)| {
+                (!assigned_users.contains(&user_id)).then_some(participant)
+            })
+            .collect();
+        Ok(EventRosterView {
+            event_id,
+            roster_version: event_model.roster_version,
+            active_comp_id: active_comp.id,
+            seats,
+            bench,
+        })
     }
 
-    async fn canonical_roster_seats(&self, db: &DatabaseConnection, comp_id: i64) -> Result<Vec<EventRosterSeatView>, AppError> {
-        let mut rows = comp_build::Entity::find().filter(comp_build::Column::CompId.eq(comp_id)).all(db).await.map_err(AppError::Database)?;
+    async fn canonical_roster_seats(
+        &self,
+        db: &DatabaseConnection,
+        comp_id: i64,
+    ) -> Result<Vec<EventRosterSeatView>, AppError> {
+        let mut rows = comp_build::Entity::find()
+            .filter(comp_build::Column::CompId.eq(comp_id))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
         rows.sort_by_key(|row| row.build_id);
         let mut seats = Vec::new();
-        for row in rows { let build = build::Entity::find_by_id(row.build_id).one(db).await.map_err(AppError::Database)?.ok_or_else(|| AppError::NotFound(format!("Build {} not found", row.build_id)))?; for ordinal in 1..=row.quantity { let sequential = seats.len() as i32; seats.push(EventRosterSeatView { key: format!("build:{}:{ordinal}", row.build_id), party_number: sequential / 5 + 1, position: sequential % 5 + 1, build_id: row.build_id, build_name: build.name.clone(), build_version: build.version, role: build.role.clone(), participant: None }); } }
+        for row in rows {
+            let build = build::Entity::find_by_id(row.build_id)
+                .one(db)
+                .await
+                .map_err(AppError::Database)?
+                .ok_or_else(|| AppError::NotFound(format!("Build {} not found", row.build_id)))?;
+            for ordinal in 1..=row.quantity {
+                let sequential = seats.len() as i32;
+                seats.push(EventRosterSeatView {
+                    key: format!("build:{}:{ordinal}", row.build_id),
+                    party_number: sequential / 5 + 1,
+                    position: sequential % 5 + 1,
+                    build_id: row.build_id,
+                    build_name: build.name.clone(),
+                    build_version: build.version,
+                    role: build.role.clone(),
+                    participant: None,
+                });
+            }
+        }
         Ok(seats)
     }
 
-    async fn validate_roster_seat(&self, db: &DatabaseConnection, event_id: i64, seat_key: &str) -> Result<(), AppError> {
-        if self.get_roster(db, event_id).await?.seats.iter().any(|seat| seat.key == seat_key) { Ok(()) } else { Err(AppError::Validation(format!("invalid roster seat key: {seat_key}"))) }
+    async fn validate_roster_seat(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+        seat_key: &str,
+    ) -> Result<(), AppError> {
+        if self
+            .get_roster(db, event_id)
+            .await?
+            .seats
+            .iter()
+            .any(|seat| seat.key == seat_key)
+        {
+            Ok(())
+        } else {
+            Err(AppError::Validation(format!(
+                "invalid roster seat key: {seat_key}"
+            )))
+        }
     }
 
-    async fn advance_roster_version(&self, txn: &sea_orm::DatabaseTransaction, event_id: i64, expected: i64) -> Result<i64, AppError> {
-        let result = event::Entity::update_many().col_expr(event::Column::RosterVersion, Expr::col(event::Column::RosterVersion).add(1))
-            .filter(event::Column::Id.eq(event_id)).filter(event::Column::RosterVersion.eq(expected)).exec(txn).await.map_err(AppError::Database)?;
-        if result.rows_affected != 1 { return Err(AppError::Conflict("roster version is stale".to_string())); }
+    async fn advance_roster_version(
+        &self,
+        txn: &sea_orm::DatabaseTransaction,
+        event_id: i64,
+        expected: i64,
+    ) -> Result<i64, AppError> {
+        let result = event::Entity::update_many()
+            .col_expr(
+                event::Column::RosterVersion,
+                Expr::col(event::Column::RosterVersion).add(1),
+            )
+            .filter(event::Column::Id.eq(event_id))
+            .filter(event::Column::RosterVersion.eq(expected))
+            .exec(txn)
+            .await
+            .map_err(AppError::Database)?;
+        if result.rows_affected != 1 {
+            return Err(AppError::Conflict("roster version is stale".to_string()));
+        }
         Ok(expected + 1)
     }
 
     /// Assigns a signed-up participant to a canonical seat without changing preferences.
-    pub async fn assign_roster_seat(&self, db: &DatabaseConnection, event_id: i64, seat_key: &str, request: AssignRosterSeatRequest, actor_id: i64) -> Result<i64, AppError> {
+    pub async fn assign_roster_seat(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+        seat_key: &str,
+        request: AssignRosterSeatRequest,
+        actor_id: i64,
+    ) -> Result<i64, AppError> {
         self.validate_roster_seat(db, event_id, seat_key).await?;
-        if event_participation::Entity::find().filter(event_participation::Column::EventId.eq(event_id)).filter(event_participation::Column::UserId.eq(request.user_id)).one(db).await.map_err(AppError::Database)?.is_none() { return Err(AppError::Validation("user is not participating in this event".to_string())); }
+        if event_participation::Entity::find()
+            .filter(event_participation::Column::EventId.eq(event_id))
+            .filter(event_participation::Column::UserId.eq(request.user_id))
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .is_none()
+        {
+            return Err(AppError::Validation(
+                "user is not participating in this event".to_string(),
+            ));
+        }
         let txn = db.begin().await.map_err(AppError::Database)?;
-        let version = self.advance_roster_version(&txn, event_id, request.expected_roster_version).await?;
-        if event_roster_assignment::Entity::find().filter(event_roster_assignment::Column::EventId.eq(event_id)).filter(event_roster_assignment::Column::SeatKey.eq(seat_key)).one(&txn).await.map_err(AppError::Database)?.is_some() { return Err(AppError::Conflict("roster seat is already occupied".to_string())); }
-        event_roster_assignment::Entity::delete_many().filter(event_roster_assignment::Column::EventId.eq(event_id)).filter(event_roster_assignment::Column::UserId.eq(request.user_id)).exec(&txn).await.map_err(AppError::Database)?;
-        event_roster_assignment::ActiveModel { event_id: Set(event_id), user_id: Set(request.user_id), seat_key: Set(seat_key.to_string()), assigned_by: Set(actor_id), assigned_at: Set(Utc::now().into()), updated_at: Set(Utc::now().into()) }.insert(&txn).await.map_err(AppError::Database)?;
-        txn.commit().await.map_err(AppError::Database)?; Ok(version)
+        let version = self
+            .advance_roster_version(&txn, event_id, request.expected_roster_version)
+            .await?;
+        if event_roster_assignment::Entity::find()
+            .filter(event_roster_assignment::Column::EventId.eq(event_id))
+            .filter(event_roster_assignment::Column::SeatKey.eq(seat_key))
+            .one(&txn)
+            .await
+            .map_err(AppError::Database)?
+            .is_some()
+        {
+            return Err(AppError::Conflict(
+                "roster seat is already occupied".to_string(),
+            ));
+        }
+        event_roster_assignment::Entity::delete_many()
+            .filter(event_roster_assignment::Column::EventId.eq(event_id))
+            .filter(event_roster_assignment::Column::UserId.eq(request.user_id))
+            .exec(&txn)
+            .await
+            .map_err(AppError::Database)?;
+        event_roster_assignment::ActiveModel {
+            event_id: Set(event_id),
+            user_id: Set(request.user_id),
+            seat_key: Set(seat_key.to_string()),
+            assigned_by: Set(actor_id),
+            assigned_at: Set(Utc::now().into()),
+            updated_at: Set(Utc::now().into()),
+        }
+        .insert(&txn)
+        .await
+        .map_err(AppError::Database)?;
+        txn.commit().await.map_err(AppError::Database)?;
+        Ok(version)
     }
 
     /// Clears a seat assignment, returning its participant to the bench.
-    pub async fn clear_roster_seat(&self, db: &DatabaseConnection, event_id: i64, seat_key: &str, request: RosterVersionRequest) -> Result<i64, AppError> {
+    pub async fn clear_roster_seat(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+        seat_key: &str,
+        request: RosterVersionRequest,
+    ) -> Result<i64, AppError> {
         self.validate_roster_seat(db, event_id, seat_key).await?;
         let txn = db.begin().await.map_err(AppError::Database)?;
-        let version = self.advance_roster_version(&txn, event_id, request.expected_roster_version).await?;
-        let deleted = event_roster_assignment::Entity::delete_many().filter(event_roster_assignment::Column::EventId.eq(event_id)).filter(event_roster_assignment::Column::SeatKey.eq(seat_key)).exec(&txn).await.map_err(AppError::Database)?;
-        if deleted.rows_affected != 1 { return Err(AppError::NotFound("roster seat assignment not found".to_string())); }
-        txn.commit().await.map_err(AppError::Database)?; Ok(version)
+        let version = self
+            .advance_roster_version(&txn, event_id, request.expected_roster_version)
+            .await?;
+        let deleted = event_roster_assignment::Entity::delete_many()
+            .filter(event_roster_assignment::Column::EventId.eq(event_id))
+            .filter(event_roster_assignment::Column::SeatKey.eq(seat_key))
+            .exec(&txn)
+            .await
+            .map_err(AppError::Database)?;
+        if deleted.rows_affected != 1 {
+            return Err(AppError::NotFound(
+                "roster seat assignment not found".to_string(),
+            ));
+        }
+        txn.commit().await.map_err(AppError::Database)?;
+        Ok(version)
     }
 
     /// Swaps the occupants of two seats in one transaction.
-    pub async fn swap_roster_seats(&self, db: &DatabaseConnection, event_id: i64, request: SwapRosterSeatsRequest, actor_id: i64) -> Result<i64, AppError> {
-        if request.source_seat_key == request.target_seat_key { return Err(AppError::Validation("source and target roster seats must differ".to_string())); }
-        self.validate_roster_seat(db, event_id, &request.source_seat_key).await?; self.validate_roster_seat(db, event_id, &request.target_seat_key).await?;
-        let txn = db.begin().await.map_err(AppError::Database)?; let version = self.advance_roster_version(&txn, event_id, request.expected_roster_version).await?;
-        let assignments = event_roster_assignment::Entity::find().filter(event_roster_assignment::Column::EventId.eq(event_id)).filter(event_roster_assignment::Column::SeatKey.is_in([request.source_seat_key.clone(), request.target_seat_key.clone()])).all(&txn).await.map_err(AppError::Database)?;
-        event_roster_assignment::Entity::delete_many().filter(event_roster_assignment::Column::EventId.eq(event_id)).filter(event_roster_assignment::Column::SeatKey.is_in([request.source_seat_key.clone(), request.target_seat_key.clone()])).exec(&txn).await.map_err(AppError::Database)?;
-        for assignment in assignments { let seat_key = if assignment.seat_key == request.source_seat_key { request.target_seat_key.clone() } else { request.source_seat_key.clone() }; event_roster_assignment::ActiveModel { event_id: Set(event_id), user_id: Set(assignment.user_id), seat_key: Set(seat_key), assigned_by: Set(actor_id), assigned_at: Set(assignment.assigned_at), updated_at: Set(Utc::now().into()) }.insert(&txn).await.map_err(AppError::Database)?; }
-        txn.commit().await.map_err(AppError::Database)?; Ok(version)
+    pub async fn swap_roster_seats(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+        request: SwapRosterSeatsRequest,
+        actor_id: i64,
+    ) -> Result<i64, AppError> {
+        if request.source_seat_key == request.target_seat_key {
+            return Err(AppError::Validation(
+                "source and target roster seats must differ".to_string(),
+            ));
+        }
+        self.validate_roster_seat(db, event_id, &request.source_seat_key)
+            .await?;
+        self.validate_roster_seat(db, event_id, &request.target_seat_key)
+            .await?;
+        let txn = db.begin().await.map_err(AppError::Database)?;
+        let version = self
+            .advance_roster_version(&txn, event_id, request.expected_roster_version)
+            .await?;
+        let assignments = event_roster_assignment::Entity::find()
+            .filter(event_roster_assignment::Column::EventId.eq(event_id))
+            .filter(event_roster_assignment::Column::SeatKey.is_in([
+                request.source_seat_key.clone(),
+                request.target_seat_key.clone(),
+            ]))
+            .all(&txn)
+            .await
+            .map_err(AppError::Database)?;
+        event_roster_assignment::Entity::delete_many()
+            .filter(event_roster_assignment::Column::EventId.eq(event_id))
+            .filter(event_roster_assignment::Column::SeatKey.is_in([
+                request.source_seat_key.clone(),
+                request.target_seat_key.clone(),
+            ]))
+            .exec(&txn)
+            .await
+            .map_err(AppError::Database)?;
+        for assignment in assignments {
+            let seat_key = if assignment.seat_key == request.source_seat_key {
+                request.target_seat_key.clone()
+            } else {
+                request.source_seat_key.clone()
+            };
+            event_roster_assignment::ActiveModel {
+                event_id: Set(event_id),
+                user_id: Set(assignment.user_id),
+                seat_key: Set(seat_key),
+                assigned_by: Set(actor_id),
+                assigned_at: Set(assignment.assigned_at),
+                updated_at: Set(Utc::now().into()),
+            }
+            .insert(&txn)
+            .await
+            .map_err(AppError::Database)?;
+        }
+        txn.commit().await.map_err(AppError::Database)?;
+        Ok(version)
+    }
+
+    /// Assigns unseated participants to matching primary then secondary seats.
+    pub async fn auto_fill_roster(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+        request: RosterVersionRequest,
+        actor_id: i64,
+    ) -> Result<(i64, Vec<String>), AppError> {
+        let roster = self.get_roster(db, event_id).await?;
+        let mut available: Vec<_> = roster
+            .seats
+            .into_iter()
+            .filter(|seat| seat.participant.is_none())
+            .collect();
+        let txn = db.begin().await.map_err(AppError::Database)?;
+        let version = self
+            .advance_roster_version(&txn, event_id, request.expected_roster_version)
+            .await?;
+        let mut changed = Vec::new();
+        for participant in roster.bench {
+            let index = available
+                .iter()
+                .position(|seat| Some(seat.build_id) == participant.primary_build_id)
+                .or_else(|| {
+                    available
+                        .iter()
+                        .position(|seat| Some(seat.build_id) == participant.secondary_build_id)
+                });
+            if let Some(index) = index {
+                let seat = available.remove(index);
+                event_roster_assignment::ActiveModel {
+                    event_id: Set(event_id),
+                    user_id: Set(participant.user_id),
+                    seat_key: Set(seat.key.clone()),
+                    assigned_by: Set(actor_id),
+                    assigned_at: Set(Utc::now().into()),
+                    updated_at: Set(Utc::now().into()),
+                }
+                .insert(&txn)
+                .await
+                .map_err(AppError::Database)?;
+                changed.push(seat.key);
+            }
+        }
+        txn.commit().await.map_err(AppError::Database)?;
+        Ok((version, changed))
     }
 
     /// Lists an event's roster roles, with the virtual unlimited-capacity `Fill` role first.
@@ -3297,6 +3600,87 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fill_participants_advance_the_comp_expansion_without_claiming_build_slots() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let first_fill = insert_user(&db, "first-fill", "first-fill@example.com").await;
+        let second_fill = insert_user(&db, "second-fill", "second-fill@example.com").await;
+        let concrete_member = insert_user(&db, "concrete", "concrete@example.com").await;
+        let build_category = create_build_category(&db, "Roster builds").await;
+        let build_id = create_build(&db, "Main Tank", build_category).await;
+        let comp_category = create_comp_category(&db, "Roster comps").await;
+        let base = create_comp(
+            &db,
+            "One-player comp",
+            comp_category,
+            None,
+            vec![(build_id, 1)],
+        )
+        .await;
+        let expansion = create_comp(
+            &db,
+            "Two-player comp",
+            comp_category,
+            Some(base),
+            vec![(build_id, 2)],
+        )
+        .await;
+        let event_id = event::ActiveModel {
+            title: Set("Fill expansion event".to_string()),
+            comp_id: Set(base),
+            created_by: Set(author),
+            event_date_utc: Set(ts()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("event should be created")
+        .id;
+        let service = EventService::new();
+
+        let first_detail = service
+            .participate(
+                &db,
+                event_id,
+                first_fill,
+                ParticipateEventRequest {
+                    primary_build_id: None,
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .expect("first Fill should be accepted");
+        assert_eq!(first_detail.active_comp_id, base);
+
+        let second_detail = service
+            .participate(
+                &db,
+                event_id,
+                second_fill,
+                ParticipateEventRequest {
+                    primary_build_id: None,
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .expect("second Fill should activate the expansion");
+        assert_eq!(second_detail.active_comp_id, expansion);
+
+        service
+            .participate(
+                &db,
+                event_id,
+                concrete_member,
+                ParticipateEventRequest {
+                    primary_build_id: Some(build_id),
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .expect("Fill participants must not claim the build slot");
+    }
+
+    #[tokio::test]
     async fn event_roster_roles_always_include_fill_and_prevent_duplicate_builds() {
         let db = seed_db().await;
         let author = insert_user(&db, "admin", "admin@example.com").await;
@@ -3884,6 +4268,7 @@ mod tests {
                     call_to_arms: false,
                     regear: false,
                     comp_id,
+                    player_cap: Some(10),
                     event_date_utc: "2026-07-20T20:00:00Z".to_string(),
                     discord_role_ids: vec![
                         "111111111111111111".to_string(),
@@ -3899,6 +4284,7 @@ mod tests {
 
         assert_eq!(event.title, "ZvZ Castle Fight");
         assert_eq!(event.comp_id, comp_id);
+        assert_eq!(event.player_cap, Some(10));
         assert_eq!(
             event.discord_role_ids,
             vec![

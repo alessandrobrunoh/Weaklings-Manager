@@ -122,6 +122,9 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(axum::Extension(battles_service))
         .layer(axum::Extension(regear_guild_context))
         .layer(axum::Extension(modules::intel::cache::ReportCache::new()))
+        .layer(axum::Extension(
+            modules::events::roster_hub::RosterHub::new(),
+        ))
         .layer(axum::Extension(permissions.clone()))
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive());

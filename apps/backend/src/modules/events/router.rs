@@ -2,7 +2,12 @@
 
 use axum::{
     Extension, Json, Router,
-    extract::{Path, Query},
+    extract::{
+        Path, Query,
+        ws::{Message, WebSocket, WebSocketUpgrade},
+    },
+    http::{HeaderMap, StatusCode},
+    response::Response,
     routing::{delete, get, post, put},
 };
 
@@ -16,16 +21,17 @@ use crate::responses::{
     ApiResponse, ApiResponseEventDetail, ApiResponseEventList, ApiResponseEventRosterRoleList,
     ApiResponseEventView,
 };
-use axum::http::StatusCode;
+
 use sea_orm::EntityTrait;
 use std::collections::HashSet;
 
 use super::models::{
-    CreateEventRequest, CreateEventRosterRoleRequest, EventDetailView, EventFilters,
-    EventRosterRoleView, EventSignupOptionsView, EventView, ParticipateEventRequest,
-    SetEventVoiceChannelRequest, SetParticipantRequest, UpdateEventBattlesRequest,
-    UpdateEventRequest,
+    AssignRosterSeatRequest, CreateEventRequest, CreateEventRosterRoleRequest, EventDetailView,
+    EventFilters, EventRosterRoleView, EventRosterView, EventSignupOptionsView, EventView,
+    ParticipateEventRequest, RosterVersionRequest, SetEventVoiceChannelRequest,
+    SetParticipantRequest, SwapRosterSeatsRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
+use super::roster_hub::{RosterHub, RosterNotification};
 use super::service::{BattleLinkingContext, EventService};
 use crate::modules::admin::models::DiscordRoleView;
 use crate::modules::admin::service::AdminService;
@@ -42,6 +48,14 @@ pub fn router() -> Router {
         )
         .route("/discord-roles", get(list_event_discord_roles))
         .route("/{id}/signup-options", get(get_event_signup_options))
+        .route("/{id}/roster", get(get_roster))
+        .route("/{id}/roster/live", get(roster_live))
+        .route(
+            "/{id}/roster/seats/{seat_key}",
+            put(assign_roster_seat).delete(clear_roster_seat),
+        )
+        .route("/{id}/roster/swaps", post(swap_roster_seats))
+        .route("/{id}/roster/auto-fill", post(auto_fill_roster))
         .route(
             "/{id}/roster-roles",
             get(list_event_roster_roles).post(create_event_roster_role),
@@ -171,6 +185,200 @@ async fn get_event_signup_options(
         .get_event_signup_options(&db, id, user.user_id)
         .await?;
     Ok(Json(ApiResponse::new(options)))
+}
+
+async fn get_roster(
+    _user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
+    Ok(Json(ApiResponse::new(
+        EventService::new().get_roster(&db, id).await?,
+    )))
+}
+
+async fn assign_roster_seat(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(hub): Extension<RosterHub>,
+    Path((id, seat_key)): Path<(i64, String)>,
+    Json(request): Json<AssignRosterSeatRequest>,
+) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
+    require_event_management_authority(&user, &perms, &db, id).await?;
+    let version = EventService::new()
+        .assign_roster_seat(&db, id, &seat_key, request, user.user_id)
+        .await?;
+    tracing::info!(
+        event_id = id,
+        roster_version = version,
+        actor_id = user.user_id,
+        seat_key,
+        "roster seat assigned"
+    );
+    hub.publish(id, version, "assigned", vec![seat_key]);
+    Ok(Json(ApiResponse::new(
+        EventService::new().get_roster(&db, id).await?,
+    )))
+}
+
+async fn clear_roster_seat(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(hub): Extension<RosterHub>,
+    Path((id, seat_key)): Path<(i64, String)>,
+    Json(request): Json<RosterVersionRequest>,
+) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
+    require_event_management_authority(&user, &perms, &db, id).await?;
+    let version = EventService::new()
+        .clear_roster_seat(&db, id, &seat_key, request)
+        .await?;
+    tracing::info!(
+        event_id = id,
+        roster_version = version,
+        actor_id = user.user_id,
+        seat_key,
+        "roster seat cleared"
+    );
+    hub.publish(id, version, "cleared", vec![seat_key]);
+    Ok(Json(ApiResponse::new(
+        EventService::new().get_roster(&db, id).await?,
+    )))
+}
+
+async fn swap_roster_seats(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(hub): Extension<RosterHub>,
+    Path(id): Path<i64>,
+    Json(request): Json<SwapRosterSeatsRequest>,
+) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
+    require_event_management_authority(&user, &perms, &db, id).await?;
+    let keys = vec![
+        request.source_seat_key.clone(),
+        request.target_seat_key.clone(),
+    ];
+    let version = EventService::new()
+        .swap_roster_seats(&db, id, request, user.user_id)
+        .await?;
+    tracing::info!(
+        event_id = id,
+        roster_version = version,
+        actor_id = user.user_id,
+        "roster seats swapped"
+    );
+    hub.publish(id, version, "swapped", keys);
+    Ok(Json(ApiResponse::new(
+        EventService::new().get_roster(&db, id).await?,
+    )))
+}
+
+async fn auto_fill_roster(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(hub): Extension<RosterHub>,
+    Path(id): Path<i64>,
+    Json(request): Json<RosterVersionRequest>,
+) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
+    require_event_management_authority(&user, &perms, &db, id).await?;
+    let (version, changed) = EventService::new()
+        .auto_fill_roster(&db, id, request, user.user_id)
+        .await?;
+    tracing::info!(
+        event_id = id,
+        roster_version = version,
+        actor_id = user.user_id,
+        assignments = changed.len(),
+        "roster auto-filled"
+    );
+    hub.publish(id, version, "auto_filled", changed);
+    Ok(Json(ApiResponse::new(
+        EventService::new().get_roster(&db, id).await?,
+    )))
+}
+
+async fn roster_live(
+    _user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Extension(hub): Extension<RosterHub>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    websocket: WebSocketUpgrade,
+) -> Result<Response, AppError> {
+    super::entities::event::Entity::find_by_id(id)
+        .one(&db)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
+    let origin = headers
+        .get(axum::http::header::ORIGIN)
+        .and_then(|value| value.to_str().ok());
+    if origin != Some(cfg.frontend_url.trim_end_matches('/')) {
+        return Err(AppError::Forbidden(
+            "websocket origin is not allowed".to_string(),
+        ));
+    }
+    Ok(websocket.on_upgrade(move |socket| roster_socket(socket, hub, id)))
+}
+
+async fn roster_socket(mut socket: WebSocket, hub: RosterHub, event_id: i64) {
+    let mut receiver = hub.subscribe();
+    let ready = RosterNotification {
+        message_type: "ready",
+        event_id,
+        roster_version: 0,
+        change_kind: None,
+        changed_seat_keys: None,
+    };
+    if send_roster_notification(&mut socket, &ready).await.is_err() {
+        return;
+    }
+    loop {
+        match receiver.recv().await {
+            Ok(notification) if notification.event_id == event_id => {
+                if send_roster_notification(&mut socket, &notification)
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+            }
+            Ok(_) => {}
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                let resync = RosterNotification {
+                    message_type: "resync_required",
+                    event_id,
+                    roster_version: 0,
+                    change_kind: None,
+                    changed_seat_keys: None,
+                };
+                if send_roster_notification(&mut socket, &resync)
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+        }
+    }
+}
+
+async fn send_roster_notification(
+    socket: &mut WebSocket,
+    notification: &RosterNotification,
+) -> Result<(), axum::Error> {
+    socket
+        .send(Message::Text(
+            serde_json::to_string(notification)
+                .expect("roster notification serializes")
+                .into(),
+        ))
+        .await
 }
 
 /// Lists event roster roles.
