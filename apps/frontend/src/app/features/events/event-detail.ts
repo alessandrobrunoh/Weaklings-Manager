@@ -26,6 +26,7 @@ import type {
   CompSummary,
   EventBattleSummary,
   EventDetailView,
+  EventFight,
   EventParticipant,
   EventRosterRole,
   OpponentPerformanceView,
@@ -1089,7 +1090,7 @@ export interface CompPartyGroup {
                 <div class="flex flex-wrap items-center justify-between gap-3">
                   <div class="flex items-center gap-3">
                     <h2 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text)]">
-                      {{ t('events.detail.battles') }} ({{ detail.battles.length }})
+                      Fight {{ detail.fights.length }} · {{ t('events.detail.battles') }} ({{ detail.battles.length }})
                     </h2>
                     <span class="font-mono text-xs text-[var(--color-text-secondary)]">
                       {{ detail.stats.wins }}W / {{ detail.stats.losses }}L
@@ -1163,7 +1164,21 @@ export interface CompPartyGroup {
                 }
               </section>
 
-              <!-- Detailed Battle Cards List -->
+              @if (detail.fights.length > 0) {
+                <section class="space-y-2" aria-label="Canonical fights">
+                  @for (fight of detail.fights; track fight.id) {
+                    <article class="card flex flex-wrap items-center justify-between gap-3 p-3">
+                      <div>
+                        <p class="font-medium">Fight #{{ fight.id }} · {{ fight.battle_ids.length }} segments</p>
+                        <p class="text-xs text-[var(--color-text-secondary)]">{{ formatDate(fight.started_at) }} · {{ fight.grouping_method }} @if (fight.needs_review) { · review needed }</p>
+                      </div>
+                      <button type="button" class="btn btn--primary btn--sm" (click)="openFight(fight)">Open Fight</button>
+                    </article>
+                  }
+                </section>
+              }
+
+              <!-- Raw Battle segment drill-down -->
               @if (detail.battles.length > 0) {
                 <div class="space-y-3">
                   @for (battle of detail.battles; track battle.id) {
@@ -3428,6 +3443,11 @@ export class EventDetailPage {
 
   protected openBattle(albionbbBattleId: string): void {
     void this.router.navigate(['/battles', albionbbBattleId]);
+  }
+
+  protected openFight(fight: EventFight): void {
+    if (fight.battle_ids.length === 0) return;
+    void this.router.navigate(['/battles/group'], { queryParams: { ids: fight.battle_ids.join(',') } });
   }
 
   protected openBattleGroup(detail: EventDetailView): void {

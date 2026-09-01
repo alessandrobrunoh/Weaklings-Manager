@@ -417,6 +417,17 @@ export interface EventRosterRole {
   is_fill: boolean;
 }
 
+export interface EventFight {
+  id: number;
+  started_at: string;
+  ended_at: string | null;
+  grouping_method: 'seeded' | 'automatic' | 'manual' | string;
+  grouping_confidence: number;
+  needs_review: boolean;
+  /** Raw AlbionBB Battle IDs, in their persisted Fight sequence. */
+  battle_ids: string[];
+}
+
 export interface EventDetailView extends EventView {
   active_comp_id: number;
   active_comp_name: string;
@@ -424,6 +435,8 @@ export interface EventDetailView extends EventView {
   /** Fill is always present; all remaining entries are event-specific extra build roles. */
   roster_roles: EventRosterRole[];
   participants: EventParticipant[];
+  /** Canonical real-world fights; raw segments remain available in `battles`. */
+  fights: EventFight[];
   battles: EventBattleSummary[];
   stats: BattlePerformanceStats;
   estimated_losses: BattleLossEstimate;

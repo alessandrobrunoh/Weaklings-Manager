@@ -18,6 +18,7 @@ use crate::modules::albionbb::client::{AlbionBbBattlesFilters, AlbionBbKillEvent
 use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::albiondata::client::AlbionDataMarketPrice;
 use crate::modules::albiondata::service::AlbionDataService;
+use crate::modules::events::entities::{fight, fight_battle};
 use crate::pagination::{
     PaginatedData, PaginationParams, SortOrder, paginate_vec, resolve_sort_key,
 };
@@ -469,6 +470,68 @@ async fn persist_battle_snapshot(
     row.losses_json = Set(serialize_snapshot(&battle.estimated_losses)?);
     row.fetched_at = Set(chrono::Utc::now().into());
     row.save(db).await.map_err(AppError::Database)?;
+    ensure_canonical_fight(db, battle, start_time, end_time).await
+}
+
+/// Creates the canonical Fight for a hydrated Battle when it is first seen.
+/// An Event can attach this initially unattributed Fight later without creating
+/// a second membership for the same upstream Battle.
+async fn ensure_canonical_fight(
+    db: &DatabaseConnection,
+    battle: &BattleDetail,
+    started_at: chrono::DateTime<chrono::FixedOffset>,
+    ended_at: Option<chrono::DateTime<chrono::FixedOffset>>,
+) -> Result<(), AppError> {
+    let battle_id = battle.summary.battle_id;
+    if let Some(segment) = fight_battle::Entity::find()
+        .filter(fight_battle::Column::BattleId.eq(battle_id))
+        .one(db)
+        .await
+        .map_err(AppError::Database)?
+    {
+        if let Some(event_id) = battle.linked_event.as_ref().map(|event| event.id) {
+            let existing = fight::Entity::find_by_id(segment.fight_id)
+                .one(db)
+                .await
+                .map_err(AppError::Database)?
+                .ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "Fight segment {} references missing fight {}",
+                        segment.id, segment.fight_id
+                    ))
+                })?;
+            if existing.event_id.is_none() {
+                let mut active: fight::ActiveModel = existing.into();
+                active.event_id = Set(Some(event_id));
+                active.updated_at = Set(chrono::Utc::now().into());
+                active.update(db).await.map_err(AppError::Database)?;
+            }
+        }
+        return Ok(());
+    }
+
+    let created = fight::ActiveModel {
+        event_id: Set(battle.linked_event.as_ref().map(|event| event.id)),
+        started_at: Set(started_at),
+        ended_at: Set(ended_at),
+        grouping_method: Set("seeded".to_string()),
+        grouping_confidence: Set(0.0),
+        grouping_version: Set("1".to_string()),
+        needs_review: Set(false),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .map_err(AppError::Database)?;
+    fight_battle::ActiveModel {
+        fight_id: Set(created.id),
+        battle_id: Set(battle_id),
+        sequence_number: Set(1),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .map_err(AppError::Database)?;
     Ok(())
 }
 

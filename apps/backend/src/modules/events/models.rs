@@ -293,6 +293,25 @@ pub struct EventBattleView {
     pub opponent_kill_fame: Option<i64>,
 }
 
+/// One canonical real-world fight, composed of one or more AlbionBB battle segments.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct EventFightView {
+    /// Canonical Fight database ID.
+    pub id: i64,
+    /// When the first segment began (RFC3339).
+    pub started_at: String,
+    /// When the latest known segment ended, if supplied by AlbionBB.
+    pub ended_at: Option<String>,
+    /// `seeded`, `automatic`, or later `manual` grouping provenance.
+    pub grouping_method: String,
+    /// Evidence score used by automatic grouping.
+    pub grouping_confidence: f64,
+    /// Whether this grouping needs officer review.
+    pub needs_review: bool,
+    /// Technical AlbionBB battle IDs that make up this Fight, in sequence.
+    pub battle_ids: Vec<String>,
+}
+
 /// A role available on an event roster.
 ///
 /// The first entry is always the virtual `Fill` role. It has no database ID or
@@ -330,7 +349,9 @@ pub struct EventDetailView {
     pub roster_roles: Vec<EventRosterRoleView>,
     /// The list of registered participants.
     pub participants: Vec<EventParticipantView>,
-    /// Battles linked to this event session (only populated while/after live).
+    /// Canonical fights linked to this event. Each contains one or more raw Battle segments.
+    pub fights: Vec<EventFightView>,
+    /// Raw Battle segments retained for compatibility and traceability.
     pub battles: Vec<EventBattleView>,
     /// Aggregated event outcome and fight performance.
     pub stats: BattlePerformanceStats,

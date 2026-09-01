@@ -18,8 +18,9 @@ use super::entities::{
 use super::models::{
     BattlePerformanceStats, BuildBattleStats, BuildPerformanceView, CompPerformanceView,
     CreateEventRequest, CreateEventRosterRoleRequest, EventBattleView, EventDetailView,
-    EventParticipantView, EventRosterRoleView, EventSplitStats, EventView, OpponentPerformanceView,
-    ParticipateEventRequest, UpdateEventBattlesRequest, UpdateEventRequest,
+    EventFightView, EventParticipantView, EventRosterRoleView, EventSplitStats, EventView,
+    OpponentPerformanceView, ParticipateEventRequest, UpdateEventBattlesRequest,
+    UpdateEventRequest,
 };
 
 use super::fight_grouping::{
@@ -389,19 +390,37 @@ async fn ensure_seed_fights_for_event(
             ))
         })?;
 
-        if battle_is_assigned_to_another_event(db, event_id, battle_id).await? {
-            return Err(AppError::Conflict(format!(
-                "Battle {battle_id} is already assigned to another event"
-            )));
-        }
-        if fight_battle::Entity::find()
+        if let Some(link) = fight_battle::Entity::find()
             .filter(fight_battle::Column::BattleId.eq(battle_id))
             .one(db)
             .await
             .map_err(AppError::Database)?
-            .is_some()
         {
-            continue;
+            let existing_fight = fight::Entity::find_by_id(link.fight_id)
+                .one(db)
+                .await
+                .map_err(AppError::Database)?
+                .ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "Fight segment {} references missing fight {}",
+                        link.id, link.fight_id
+                    ))
+                })?;
+            match existing_fight.event_id {
+                Some(existing_event_id) if existing_event_id != event_id => {
+                    return Err(AppError::Conflict(format!(
+                        "Battle {battle_id} is already assigned to event {existing_event_id}"
+                    )));
+                }
+                Some(_) => continue,
+                None => {
+                    let mut active: fight::ActiveModel = existing_fight.into();
+                    active.event_id = Set(Some(event_id));
+                    active.updated_at = Set(Utc::now().into());
+                    active.update(db).await.map_err(AppError::Database)?;
+                    continue;
+                }
+            }
         }
 
         let created = fight::ActiveModel {
@@ -451,7 +470,10 @@ async fn battle_is_assigned_to_another_event(
                 link.id, link.fight_id
             ))
         })?;
-    Ok(existing_fight.event_id != Some(event_id))
+    Ok(matches!(
+        existing_fight.event_id,
+        Some(existing_event_id) if existing_event_id != event_id
+    ))
 }
 
 /// Conservatively merges adjacent seeded Battles from one Event when hydrated evidence proves
@@ -613,6 +635,49 @@ async fn automatically_group_event_fights(
         }
     }
     Ok(())
+}
+
+/// Builds stable canonical Fight views while preserving every raw Battle ID for drill-down.
+async fn build_event_fight_views(
+    db: &DatabaseConnection,
+    event_id: i64,
+) -> Result<Vec<EventFightView>, AppError> {
+    let fights = fight::Entity::find()
+        .filter(fight::Column::EventId.eq(event_id))
+        .order_by_asc(fight::Column::StartedAt)
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+    let fight_ids = fights.iter().map(|fight| fight.id).collect::<Vec<_>>();
+    let segments = if fight_ids.is_empty() {
+        Vec::new()
+    } else {
+        fight_battle::Entity::find()
+            .filter(fight_battle::Column::FightId.is_in(fight_ids))
+            .order_by_asc(fight_battle::Column::SequenceNumber)
+            .all(db)
+            .await
+            .map_err(AppError::Database)?
+    };
+    let mut battle_ids_by_fight = HashMap::<i64, Vec<String>>::new();
+    for segment in segments {
+        battle_ids_by_fight
+            .entry(segment.fight_id)
+            .or_default()
+            .push(segment.battle_id.to_string());
+    }
+    Ok(fights
+        .into_iter()
+        .map(|fight| EventFightView {
+            id: fight.id,
+            started_at: fight.started_at.to_rfc3339(),
+            ended_at: fight.ended_at.map(|time| time.to_rfc3339()),
+            grouping_method: fight.grouping_method,
+            grouping_confidence: fight.grouping_confidence,
+            needs_review: fight.needs_review,
+            battle_ids: battle_ids_by_fight.remove(&fight.id).unwrap_or_default(),
+        })
+        .collect())
 }
 
 /// Replaces stale event-link summary metrics with hydrated canonical snapshot data.
@@ -1266,6 +1331,7 @@ impl EventService {
         let battle_rows = Self::apply_read_context_to_battles(battle_rows, context);
         let stats = Self::build_performance_stats(&battle_rows);
         let estimated_losses = build_event_loss_estimate(db, &battle_rows).await?;
+        let fights = build_event_fight_views(db, id).await?;
         let battles = battle_rows
             .into_iter()
             .map(Self::to_event_battle_view)
@@ -1300,6 +1366,7 @@ impl EventService {
             active_comp_capacity: active_capacity,
             roster_roles,
             participants: participant_views,
+            fights,
             battles,
             stats,
             estimated_losses,
@@ -2958,6 +3025,85 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn event_detail_automatically_groups_matching_battle_segments() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let event_id = insert_event(&db, "Long engagement", author).await;
+        let first_battle_id = 425_654_505;
+        let second_battle_id = 425_654_506;
+        insert_battle_with_players(&db, event_id, first_battle_id, true, &[("Alice", 3, 1)]).await;
+        insert_battle_with_players(&db, event_id, second_battle_id, true, &[("Alice", 2, 0)]).await;
+
+        let guilds = serde_json::to_string(&[
+            BattleGuildSummary {
+                id: "weaklings-id".to_string(),
+                name: "Weaklings".to_string(),
+                alliance_name: None,
+                alliance_id: None,
+                players: 14,
+                kills: 5,
+                deaths: 1,
+                kill_fame: 1_000_000,
+                winner: true,
+                average_item_power: 1_400.0,
+            },
+            BattleGuildSummary {
+                id: "opponent-id".to_string(),
+                name: "Black Order".to_string(),
+                alliance_name: None,
+                alliance_id: None,
+                players: 18,
+                kills: 1,
+                deaths: 5,
+                kill_fame: 500_000,
+                winner: false,
+                average_item_power: 1_390.0,
+            },
+        ])
+        .expect("guild snapshot should serialize");
+        for battle_id in [first_battle_id, second_battle_id] {
+            let snapshot = GuildBattleSnapshotEntity::find()
+                .filter(GuildBattleSnapshotColumn::BattleId.eq(battle_id))
+                .one(&db)
+                .await
+                .expect("snapshot query should succeed")
+                .expect("snapshot should exist");
+            let mut snapshot: crate::modules::battles::entities::ActiveModel = snapshot.into();
+            snapshot.guilds_json = Set(guilds.clone());
+            snapshot.end_time = Set(Some((Utc::now() + ChronoDuration::minutes(5)).into()));
+            snapshot
+                .update(&db)
+                .await
+                .expect("snapshot update should succeed");
+        }
+
+        let context = BattleLinkingContext::new("weaklings-id", &[], &[]);
+        let detail = EventService::new()
+            .get_event_detail_with_context(&db, event_id, &context)
+            .await
+            .expect("event detail should group matching segments");
+        assert_eq!(detail.fights.len(), 1);
+        assert_eq!(detail.fights[0].battle_ids.len(), 2);
+
+        let fights = fight::Entity::find()
+            .filter(fight::Column::EventId.eq(event_id))
+            .all(&db)
+            .await
+            .expect("fight query should succeed");
+        assert_eq!(fights.len(), 1);
+        assert_eq!(fights[0].grouping_method, "automatic");
+        assert!(!fights[0].needs_review);
+        assert_eq!(
+            fight_battle::Entity::find()
+                .filter(fight_battle::Column::FightId.eq(fights[0].id))
+                .count(&db)
+                .await
+                .expect("fight segment count should succeed"),
+            2
+        );
+    }
+
+    #[tokio::test]
     async fn event_detail_rejects_a_battle_already_owned_by_another_event() {
         let db = seed_db().await;
         let author = insert_user(&db, "admin", "admin@example.com").await;
@@ -2970,7 +3116,21 @@ mod tests {
             .get_event_detail(&db, first_event)
             .await
             .expect("first event should claim its battle");
-        insert_battle_with_players(&db, second_event, battle_id, true, &[("Alice", 1, 0)]).await;
+        event_battle::ActiveModel {
+            event_id: Set(second_event),
+            albionbb_battle_id: Set(battle_id.to_string()),
+            battle_started_at: Set(ts()),
+            guild_players_count: Set(1),
+            fetched_at: Set(ts()),
+            guild_kills: Set(1),
+            guild_deaths: Set(0),
+            guild_kill_fame: Set(0),
+            is_win: Set(true),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("second event link should be inserted");
 
         let error = EventService::new()
             .get_event_detail(&db, second_event)
