@@ -1135,14 +1135,14 @@ export interface CreateCompRequest {
   description?: string;
   category_id: number;
   parent_id?: number;
-  builds: Array<{ build_id: number; quantity: number }>;
 }
 
 export interface UpdateCompRequest {
   name?: string;
   description?: string;
   category_id?: number;
-  parent_id?: number;
+  /** `null` explicitly removes the parent. */
+  parent_id?: number | null;
 }
 
 /* ------------------------------ Utils ------------------------------- */

@@ -159,7 +159,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                   (change)="onEditCategoryChange($event)"
                 >
                   <option value="">{{ t('comps.noCategory') }}</option>
-                  @for (category of compCategories(); track category.id) {
+                  @for (category of editCategoryOptions(); track category.id) {
                     <option [value]="category.id">{{ category.name }}</option>
                   }
                 </select>
@@ -178,7 +178,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
               <span class="label">{{ t('comps.parent') }}</span>
               <select class="select" [value]="editParentId()" (change)="onEditParentChange($event)">
                 <option value="">{{ t('comps.noParent') }}</option>
-                @for (sibling of availableParents(); track sibling.id) {
+                @for (sibling of editParentOptions(); track sibling.id) {
                   <option [value]="sibling.id">{{ sibling.name }}</option>
                 }
               </select>
@@ -643,6 +643,31 @@ export class CompDetailPage {
   protected readonly availableParents = computed(() =>
     this.compSummaries().filter((sibling) => sibling.id !== this.comp()?.id),
   );
+  // Keep the current values visible even when the options request is paginated or temporarily
+  // unavailable. Native selects otherwise fall back to the first option (usually "No ...").
+  protected readonly editCategoryOptions = computed(() => {
+    const current = this.comp();
+    const categories = this.compCategories();
+    if (!current || categories.some((category) => category.id === current.category_id)) {
+      return categories;
+    }
+    return [
+      {
+        id: current.category_id,
+        name: current.category_name ?? this.t('comps.noCategory'),
+      },
+      ...categories,
+    ];
+  });
+  protected readonly editParentOptions = computed(() => {
+    const current = this.comp();
+    const parents = this.availableParents();
+    const parent = this.parentComp();
+    if (!current || !parent || parents.some((candidate) => candidate.id === parent.id)) {
+      return parents;
+    }
+    return [parent, ...parents];
+  });
   protected readonly availableBuildOptions = computed(() => {
     const assignedBuildIds = new Set(this.comp()?.builds.map((entry) => entry.build_id) ?? []);
     return this.buildOptions().filter((build) => !assignedBuildIds.has(build.id));
@@ -923,7 +948,7 @@ export class CompDetailPage {
     if (categoryId && categoryId !== comp.category_id) request.category_id = categoryId;
     const parentId = this.editParentId() ? Number(this.editParentId()) : null;
     if ((parentId ?? null) !== (comp.parent_id ?? null)) {
-      request.parent_id = parentId ?? undefined;
+      request.parent_id = parentId;
     }
 
     if (Object.keys(request).length === 0) {

@@ -386,8 +386,9 @@ pub struct UpdateCompRequest {
     pub description: Option<String>,
     /// The new category ID this comp belongs to.
     pub category_id: Option<i64>,
-    /// The new parent comp ID if this comp is a variant.
-    pub parent_id: Option<i64>,
+    /// The new parent comp ID if this comp is a variant. `null` explicitly removes the parent;
+    /// omitting the field leaves the current parent unchanged.
+    pub parent_id: Option<Option<i64>>,
 }
 
 /// Request body to add a build to a comp.
