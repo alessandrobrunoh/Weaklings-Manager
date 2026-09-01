@@ -1135,6 +1135,7 @@ export interface CreateCompRequest {
   description?: string;
   category_id: number;
   parent_id?: number;
+  builds: Array<{ build_id: number; quantity: number }>;
 }
 
 export interface UpdateCompRequest {

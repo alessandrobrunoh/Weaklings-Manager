@@ -2939,7 +2939,7 @@ mod tests {
                         name: None,
                         description: None,
                         category_id: None,
-                        parent_id: Some(comp.summary.id),
+                        parent_id: Some(Some(comp.summary.id)),
                     },
                 )
                 .await,
