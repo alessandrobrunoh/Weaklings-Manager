@@ -91,6 +91,7 @@ pub struct MyBattlesQuery {
 pub async fn list_battles(
     _user: UserContext,
     Extension(service): Extension<BattlesService>,
+    Extension(db): Extension<DatabaseConnection>,
     Query(query): Query<BattlesListQuery>,
 ) -> Result<Json<ApiResponse<PaginatedBattleSummary>>, AppError> {
     let pagination = PaginationParams {
@@ -99,6 +100,7 @@ pub async fn list_battles(
     };
     let paginated = service
         .list_guild_battles(
+            &db,
             query.min_players,
             &pagination,
             query.search.as_deref(),

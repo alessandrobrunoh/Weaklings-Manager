@@ -28,8 +28,8 @@ use super::entities::{
     ActiveModel as GuildBattleSnapshotActiveModel, Column as GuildBattleSnapshotColumn,
 };
 use super::models::{
-    BattleDetail, BattleLossEstimate, BattleSummary, GuildLossEstimate, LinkedEvent,
-    PlayerLossEstimate,
+    BattleDetail, BattleFightMetadata, BattleLossEstimate, BattleSummary, GuildLossEstimate,
+    LinkedEvent, PlayerLossEstimate,
 };
 
 /// Upper bound on how many upstream battle-list pages `/me` will scan before
@@ -80,6 +80,7 @@ impl BattlesService {
     /// pages, cache it, then filter/sort/paginate in memory.
     pub async fn list_guild_battles(
         &self,
+        db: &DatabaseConnection,
         min_players: Option<i64>,
         pagination: &PaginationParams,
         search: Option<&str>,
@@ -99,6 +100,9 @@ impl BattlesService {
             pagination,
         )?;
         self.hydrate_page(&mut page.items).await;
+        if let Err(error) = attach_fight_metadata(db, &mut page.items).await {
+            tracing::warn!(error = %error, "failed to attach canonical Fight metadata to battle list");
+        }
         Ok(page)
     }
 
@@ -366,7 +370,7 @@ fn filter_sort_page_battles(
 #[cfg(test)]
 mod filter_tests {
     use super::{battle_outcome, filter_sort_page_battles};
-    use crate::modules::battles::models::{BattleGuildSummary, BattleSummary};
+    use crate::modules::battles::models::{BattleFightMetadata, BattleGuildSummary, BattleSummary};
     use crate::pagination::{PaginationParams, SortOrder};
 
     fn guild(
@@ -400,7 +404,37 @@ mod filter_tests {
             total_kills: guilds.iter().map(|g| g.kills).sum(),
             total_fame: fame,
             guilds,
+            fight: None,
         }
+    }
+
+    #[test]
+    fn omits_fight_metadata_for_unmapped_battles() {
+        let battle = battle(1, "2026-01-01T00:00:00Z", 100, vec![]);
+        let serialized = serde_json::to_value(battle).expect("battle summary serializes");
+        assert!(serialized.get("fight").is_none());
+    }
+
+    #[test]
+    fn serializes_canonical_fight_metadata_for_mapped_battles() {
+        let mut battle = battle(1, "2026-01-01T00:00:00Z", 100, vec![]);
+        battle.fight = Some(BattleFightMetadata {
+            fight_id: 42,
+            grouping_method: "automatic".to_string(),
+            needs_review: true,
+            sequence_number: 2,
+        });
+
+        let serialized = serde_json::to_value(battle).expect("battle summary serializes");
+        assert_eq!(
+            serialized.get("fight"),
+            Some(&serde_json::json!({
+                "fight_id": 42,
+                "grouping_method": "automatic",
+                "needs_review": true,
+                "sequence_number": 2,
+            }))
+        );
     }
 
     #[test]
@@ -440,6 +474,60 @@ mod filter_tests {
         assert_eq!(page.items[0].battle_id, 2);
         assert_eq!(battle_outcome(&page.items[0], ours), "defeat");
     }
+}
+
+/// Attaches canonical Fight metadata to mapped battles in a visible list page.
+async fn attach_fight_metadata(
+    db: &DatabaseConnection,
+    items: &mut [BattleSummary],
+) -> Result<(), AppError> {
+    let battle_ids = items.iter().map(|item| item.battle_id).collect::<Vec<_>>();
+    if battle_ids.is_empty() {
+        return Ok(());
+    }
+
+    let segments = fight_battle::Entity::find()
+        .filter(fight_battle::Column::BattleId.is_in(battle_ids))
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+    if segments.is_empty() {
+        return Ok(());
+    }
+
+    let fight_ids = segments
+        .iter()
+        .map(|segment| segment.fight_id)
+        .collect::<Vec<_>>();
+    let fights_by_id = fight::Entity::find()
+        .filter(fight::Column::Id.is_in(fight_ids))
+        .all(db)
+        .await
+        .map_err(AppError::Database)?
+        .into_iter()
+        .map(|canonical_fight| (canonical_fight.id, canonical_fight))
+        .collect::<HashMap<_, _>>();
+
+    let metadata_by_battle = segments
+        .into_iter()
+        .filter_map(|segment| {
+            let canonical_fight = fights_by_id.get(&segment.fight_id)?;
+            Some((
+                segment.battle_id,
+                BattleFightMetadata {
+                    fight_id: canonical_fight.id,
+                    grouping_method: canonical_fight.grouping_method.clone(),
+                    needs_review: canonical_fight.needs_review,
+                    sequence_number: segment.sequence_number,
+                },
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+
+    for item in items {
+        item.fight = metadata_by_battle.get(&item.battle_id).cloned();
+    }
+    Ok(())
 }
 
 /// Persists the enriched battle payload for future local analytics.
