@@ -135,9 +135,9 @@ pub async fn search(
     _user: UserContext,
     Extension(cfg): Extension<Config>,
     Query(query): Query<SearchQuery>,
-) -> Result<Json<AlbionSearchResult>, AppError> {
+) -> Result<Json<ApiResponse<AlbionSearchResult>>, AppError> {
     let service = build_service(&cfg);
-    Ok(Json(service.search(&query.q).await?))
+    Ok(Json(ApiResponse::new(service.search(&query.q).await?)))
 }
 
 /// Generic passthrough to Albion Online's player lookup.

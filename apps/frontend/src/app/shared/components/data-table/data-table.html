@@ -1,5 +1,5 @@
-<div class="data-table-card card">
-  @if (loading()) {
+<div class="data-table-card card" [attr.aria-busy]="loading()">
+  @if (loading() && rows().length === 0) {
     <div class="data-table__state-container">
       <app-loading [label]="t('common.loading')" />
     </div>
@@ -81,12 +81,20 @@
         <app-empty-state [message]="t(emptyLabel())" [icon]="emptyIcon()" />
       </div>
     } @else {
-      <div class="data-table__table-wrapper" role="region" [attr.aria-label]="t('common.search') + ' results'" tabindex="0">
+      <div
+        class="data-table__table-wrapper"
+        role="region"
+        [attr.aria-label]="t('common.search') + ' results'"
+        tabindex="0"
+      >
         <table class="table data-table__table">
           <thead>
             <tr>
               @for (column of columns(); track column.key) {
-                <th [class]="columnAlign(column)" [attr.aria-sort]="column.sortable ? sortAria(column.key) : null">
+                <th
+                  [class]="columnAlign(column)"
+                  [attr.aria-sort]="column.sortable ? sortAria(column.key) : null"
+                >
                   @if (column.sortable) {
                     <button
                       type="button"
@@ -96,7 +104,9 @@
                       tooltipPosition="top"
                     >
                       <span>{{ t(column.label) }}</span>
-                      <span class="data-table__sort-indicator" aria-hidden="true">{{ sortIndicator(column.key) || '↕' }}</span>
+                      <span class="data-table__sort-indicator" aria-hidden="true">{{
+                        sortIndicator(column.key) || '↕'
+                      }}</span>
                     </button>
                   } @else {
                     <span class="data-table__th-label">{{ t(column.label) }}</span>
@@ -134,8 +144,10 @@
 
       <footer class="data-table__footer">
         <p class="data-table__page-info">
-          {{ t('common.page') }} <span class="data-table__page-number">{{ page() }}</span> {{ t('common.of') }} {{ totalPages() }}
-          · <span class="data-table__page-number">{{ visibleTotal() }}</span> {{ t('battles.total_results') }}
+          {{ t('common.page') }} <span class="data-table__page-number">{{ page() }}</span>
+          {{ t('common.of') }} {{ totalPages() }} ·
+          <span class="data-table__page-number">{{ visibleTotal() }}</span>
+          {{ t('battles.total_results') }}
         </p>
         <div class="data-table__controls">
           @if (!hidePageSize()) {
