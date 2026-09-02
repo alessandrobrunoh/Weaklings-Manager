@@ -106,16 +106,18 @@ interface SplitParticipantDraft {
           tooltipPosition="bottom"
         >{{ t('splits.catalog.manage') }}</a>
       }
-      <button
-        type="button"
-        class="btn btn--primary btn--sm flex items-center gap-1.5"
-        (click)="openCreateDialog()"
-        [appTooltip]="t('splits.new')"
-        tooltipPosition="bottom"
-      >
-        <app-icon name="plus" size="0.875rem" />
-        {{ t('splits.new') }}
-      </button>
+      @if (canCreate()) {
+        <button
+          type="button"
+          class="btn btn--primary btn--sm flex items-center gap-1.5"
+          (click)="openCreateDialog()"
+          [appTooltip]="t('splits.new')"
+          tooltipPosition="bottom"
+        >
+          <app-icon name="plus" size="0.875rem" />
+          {{ t('splits.new') }}
+        </button>
+      }
     </app-page-header>
 
     <app-page-stack>
@@ -257,7 +259,7 @@ interface SplitParticipantDraft {
             <button type="button" class="btn btn--outline btn--sm" (click)="openSplit(row)">
               {{ t('common.open') }}
             </button>
-            @if (canAct()) {
+            @if (canDelete()) {
               <button type="button" class="btn btn--danger btn--sm" (click)="askDelete(row)">
                 {{ t('common.delete') }}
               </button>
@@ -857,7 +859,9 @@ export class Splits {
     const id = Number(this.draftIslandId());
     return this.islands().find((island) => island.id === id)?.tabs ?? [];
   });
-  protected readonly canAct = computed(() => this.auth.hasPermission('splits.manage'));
+  protected readonly canAct = computed(() => this.auth.hasPermission('splits.edit'));
+  protected readonly canDelete = computed(() => this.auth.hasPermission('splits.delete'));
+  protected readonly canCreate = computed(() => this.auth.hasPermission('splits.create'));
   protected readonly canManageIslands = computed(() =>
     this.auth.hasPermission('splits.islands.manage'),
   );

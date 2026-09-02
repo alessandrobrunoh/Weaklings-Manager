@@ -131,6 +131,8 @@ const ROLE_LABELS: Record<BuildRole, string> = {
             >
               {{ t('common.clone') }}
             </button>
+          }
+          @if (canDelete()) {
             <button
               type="button"
               class="btn btn--danger"
@@ -654,7 +656,8 @@ export class CompDetailPage {
 
   protected readonly t = (key: TranslationKey) => this.translate.t(key);
 
-  protected readonly canManage = computed(() => this.auth.hasPermission('comps.comps.manage'));
+  protected readonly canManage = computed(() => this.auth.hasPermission('comps.comps.edit'));
+  protected readonly canDelete = computed(() => this.auth.hasPermission('comps.comps.delete'));
   protected readonly availableParents = computed(() =>
     this.compSummaries().filter((sibling) => sibling.id !== this.comp()?.id),
   );

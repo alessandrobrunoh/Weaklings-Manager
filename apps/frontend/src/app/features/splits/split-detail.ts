@@ -105,7 +105,7 @@ function parsePercentageInput(raw: string): number | null {
               {{ t('splits.mark_lost') }}
             </button>
           }
-          @if (canAct()) {
+          @if (canDelete()) {
             <button type="button" class="btn btn--danger btn--sm" (click)="showDelete.set(true)">
               {{ t('common.delete') }}
             </button>
@@ -674,7 +674,8 @@ export class SplitDetailPage {
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);
 
-  protected readonly canAct = computed(() => this.auth.hasPermission('splits.manage'));
+  protected readonly canAct = computed(() => this.auth.hasPermission('splits.edit'));
+  protected readonly canDelete = computed(() => this.auth.hasPermission('splits.delete'));
   protected readonly canEdit = computed(() => this.canAct() && this.split()?.status === 'pending');
   protected readonly editFee = computed(() => parsePercentageInput(this.editFeeInput()) ?? DEFAULT_SPLIT_FEE);
   protected readonly editNetPreview = computed(() =>
