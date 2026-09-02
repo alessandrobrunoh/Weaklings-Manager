@@ -1,3 +1,4 @@
+import { en } from './en';
 import type { TranslationDict } from './en';
 
 /**
@@ -5,6 +6,7 @@ import type { TranslationDict } from './en';
  * Keys mirror en.ts exactly.
  */
 export const fr: TranslationDict = {
+  ...en,
   'app.title': 'WEAKLINGS',
   'app.tagline': 'Allez fort !',
   'common.loading': 'Chargement…',

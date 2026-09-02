@@ -20,6 +20,7 @@ import {
   createEventAnnouncementThread,
   sendEventSignupMessage,
 } from "./event-announcement-thread.js";
+import { massDiscordEvent, startDiscordEvent, stopDiscordEvent } from "./event-lifecycle.js";
 import { SplitForumAdapter } from "./split-forum.js";
 
 const STATE_FILE_NAME = "poller-state.json";
@@ -33,6 +34,8 @@ interface PollerState {
   /** Stable cursor over split (updated_at, id), persisted only after successful Forum sync. */
   splitUpdatedAt: string | null;
   splitAfterId: number | null;
+  massedEvents: number[];
+  emptyLiveChecks: Record<string, number>;
 }
 
 function createDefaultState(): PollerState {
@@ -43,6 +46,8 @@ function createDefaultState(): PollerState {
     eventThreadIds: {},
     splitUpdatedAt: null,
     splitAfterId: null,
+    massedEvents: [],
+    emptyLiveChecks: {},
   };
 }
 
@@ -105,6 +110,8 @@ function loadState(stateDirectory: string): PollerState {
       eventThreadIds: parsedState.eventThreadIds ?? {},
       splitUpdatedAt: parsedState.splitUpdatedAt ?? null,
       splitAfterId: parsedState.splitAfterId ?? null,
+      massedEvents: parsedState.massedEvents ?? [],
+      emptyLiveChecks: parsedState.emptyLiveChecks ?? {},
     };
   } catch (error) {
     console.warn(
@@ -193,6 +200,7 @@ export class Poller {
       // created event already has its discussion thread recorded.
       await this.checkNewEvents();
       await this.checkClosedEvents();
+      await this.checkEventLifecycle();
       await Promise.allSettled([
         this.checkNewBattles(),
         this.checkUpcomingEvents(),
@@ -316,7 +324,7 @@ export class Poller {
 
   /** Closes persisted event discussion threads when the backend event reaches a terminal status. */
   private async checkClosedEvents(): Promise<void> {
-    const terminalStatuses = new Set(["stopped", "auto_stopped"]);
+    const terminalStatuses = new Set(["stopped", "auto_stopped", "cancelled"]);
     for (const [eventId, threadId] of Object.entries(this.state.eventThreadIds)) {
       try {
         const event = await this.api.get<EventView>(`api/events/${eventId}`);
@@ -329,6 +337,67 @@ export class Poller {
         // Keep the mapping so a temporary Discord/API failure is retried on the next poll.
         console.warn(`[Poller] Could not close event thread for #${eventId}:`, error);
       }
+    }
+  }
+
+  /** Executes Mass and Start automatically, then auto-stops only live empty events. */
+  private async checkEventLifecycle(): Promise<void> {
+    try {
+      const result = await this.api.get<PaginatedData<EventView>>("api/events", undefined, { page: 1, limit: 50 });
+      const now = Date.now();
+      for (const event of result.items) {
+        if (event.status === "scheduled") {
+          const massAt = new Date(event.mass_time_utc ?? event.event_date_utc).getTime();
+          if (Number.isFinite(massAt) && now >= massAt && !this.state.massedEvents.includes(event.id)) {
+            const thread = await this.getEventThread(event.id);
+            await massDiscordEvent(this.client, this.api, "", event.id, thread ?? undefined);
+            this.state.massedEvents.push(event.id);
+            saveState(this.stateDirectory, this.state);
+          }
+          const startAt = new Date(event.start_time_utc ?? event.event_date_utc).getTime();
+          if (Number.isFinite(startAt) && now >= startAt) {
+            const thread = await this.getEventThread(event.id);
+            await startDiscordEvent(this.client, this.api, "", event.id, thread ?? undefined);
+            saveState(this.stateDirectory, this.state);
+          }
+          continue;
+        }
+        if (event.status !== "live" || !event.discord_voice_channel_id) {
+          delete this.state.emptyLiveChecks[String(event.id)];
+          continue;
+        }
+        try {
+          const channel = await this.client.channels.fetch(event.discord_voice_channel_id);
+          const key = String(event.id);
+          if (!channel?.isVoiceBased()) {
+            delete this.state.emptyLiveChecks[key];
+            continue;
+          }
+          const empty = channel.members.size === 0;
+          this.state.emptyLiveChecks[key] = empty ? (this.state.emptyLiveChecks[key] ?? 0) + 1 : 0;
+          if (empty && this.state.emptyLiveChecks[key] >= 2) {
+            await stopDiscordEvent(this.client, this.api, "", event.id);
+            await this.closeEventThread(event.id);
+            delete this.state.emptyLiveChecks[key];
+          }
+          saveState(this.stateDirectory, this.state);
+        } catch (error) {
+          console.warn(`[Poller] Could not inspect live event #${event.id}:`, error);
+        }
+      }
+    } catch (error) {
+      console.error("[Poller] Failed to process event lifecycle:", error);
+    }
+  }
+
+  private async getEventThread(eventId: number): Promise<import("discord.js").ThreadChannel | null> {
+    const threadId = this.state.eventThreadIds[String(eventId)];
+    if (!threadId) return null;
+    try {
+      const channel = await this.client.channels.fetch(threadId);
+      return channel?.isThread() ? channel : null;
+    } catch {
+      return null;
     }
   }
 

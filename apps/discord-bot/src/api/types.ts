@@ -217,7 +217,7 @@ export interface UpdateSplitDiscordSyncState {
 
 /* ----------------------------- Events ------------------------------- */
 
-export type EventStatus = 'scheduled' | 'live' | 'stopped' | 'auto_stopped';
+export type EventStatus = 'scheduled' | 'live' | 'stopped' | 'auto_stopped' | 'cancelled';
 
 export interface EventView {
   id: number;
@@ -233,6 +233,10 @@ export interface EventView {
   created_by: number;
   created_by_username: string;
   event_date_utc: string;
+  /** Separate operational mass time; omitted by older API responses during migration. */
+  mass_time_utc?: string | null;
+  /** Separate automatic/live start time; falls back to event_date_utc for older events. */
+  start_time_utc?: string | null;
   created_at: string;
   updated_at: string;
   status: EventStatus;
@@ -292,7 +296,20 @@ export interface CreateEventRequest {
   comp_id: number;
   player_cap?: number;
   event_date_utc: string;
+  mass_time_utc?: string;
+  start_time_utc?: string;
   discord_role_ids?: string[];
+}
+
+export interface UpdateEventRequest {
+  title?: string;
+  description?: string;
+  call_to_arms?: boolean;
+  regear?: boolean;
+  comp_id?: number;
+  event_date_utc?: string;
+  mass_time_utc?: string;
+  start_time_utc?: string;
 }
 
 export interface ParticipateEventRequest {

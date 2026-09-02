@@ -21,6 +21,7 @@ import { formatSilver } from '../format.js';
 import { startDiscordEvent, stopDiscordEvent } from "../services/event-lifecycle.js";
 import { getPoller } from "../services/poller.js";
 import { buildSignupRoleOptions, signupRoles } from "../services/event-signup.js";
+import { closeEventAnnouncementThread } from "../services/event-announcement-thread.js";
 
 /**
  * Handles all button interactions.
@@ -265,6 +266,30 @@ async function handleEventButton(
       "success",
       "Event Live",
       `Event **#${eventId}** is now **LIVE** in <#${result.voiceChannelId}>.`,
+      "GUILD EVENT",
+    );
+    await interaction.editReply({ embeds: [successEmbed] });
+    return;
+  }
+
+  if (action === "cancel") {
+    const [eventIdStr] = rest;
+    const eventId = Number(eventIdStr);
+    await interaction.deferReply({ flags: ["Ephemeral"] });
+    if (!Number.isSafeInteger(eventId) || eventId <= 0) throw new Error("Invalid event ID.");
+    const event = await api.post<EventDetailView>(`api/events/${eventId}/cancel`, {}, interaction.user.id);
+    await interaction.message.edit({
+      embeds: [buildEventEmbed(event)],
+      components: [buildEventThreadActionRow(event)],
+    });
+    const closed = await getPoller()?.closeEventThread(eventId);
+    if (!closed && interaction.channel?.isThread()) {
+      await closeEventAnnouncementThread(interaction.channel, eventId, "Cancel button");
+    }
+    const successEmbed = createResponseEmbed(
+      "warning",
+      "Event Cancelled",
+      `Event **#${eventId}** has been cancelled and its discussion thread was closed.`,
       "GUILD EVENT",
     );
     await interaction.editReply({ embeds: [successEmbed] });

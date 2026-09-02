@@ -20,12 +20,13 @@ import { BOT_COLORS, createBaseEmbed } from "./theme.js";
  * await channel.send({ content, allowedMentions: { roles: event.discord_role_ids } });
  */
 export function buildEventAnnouncementContent(event: EventView): string {
-  const timestamp = Math.floor(new Date(event.event_date_utc).getTime() / 1000);
+  const massTimestamp = eventTimestamp(event, "mass");
+  const startTimestamp = eventTimestamp(event, "start");
   const description = event.description?.trim() || "*No description provided.*";
   const roleMentions = (event.discord_role_ids ?? []).map((roleId) => `<@&${roleId}>`).join(" ");
 
   return [
-    `📌 ${event.title} - <t:${timestamp}:t> | <t:${timestamp}:d>`,
+    `📌 ${event.title} - Mass <t:${massTimestamp}:t> | Start <t:${startTimestamp}:t> | <t:${startTimestamp}:d>`, 
     "",
     description,
     "",
@@ -45,9 +46,29 @@ export interface EventStartMessage {
   allowedMentions: { parse: []; users: string[] };
 }
 
+export const eventTimestamp = (event: EventView, kind: "mass" | "start"): number => {
+  const value = kind === "mass" ? event.mass_time_utc : event.start_time_utc;
+  return Math.floor(new Date(value ?? event.event_date_utc).getTime() / 1000);
+};
+
+export function buildEventMassMessage(
+  event: EventView,
+  participants: Array<{ discord_id: string | null; username: string }>,
+  voiceChannelId: string,
+): EventStartMessage {
+  const linkedUserIds = [...new Set(participants.flatMap((p) => p.discord_id ? [p.discord_id] : []))];
+  const unlinkedNames = participants.filter((p) => !p.discord_id).map((p) => p.username);
+  const mentions = linkedUserIds.map((id) => `<@${id}>`).join(" ") || "No linked Discord participants yet.";
+  const unlinked = unlinkedNames.length ? `\nNot linked on Discord: ${unlinkedNames.join(", ")}.` : "";
+  return {
+    content: `🔔 ${mentions}\n**${event.title}** mass is starting — join <#${voiceChannelId}>. Start: <t:${eventTimestamp(event, "start")}:R>.${unlinked}`,
+    allowedMentions: { parse: [], users: linkedUserIds },
+  };
+}
+
 /** Builds the manual pre-event reminder without enabling broad Discord mention parsing. */
 export function buildEventReminderMessage(event: EventView): EventReminderMessage {
-  const timestamp = Math.floor(new Date(event.event_date_utc).getTime() / 1000);
+  const timestamp = eventTimestamp(event, "start");
   const roleIds = [...new Set(event.discord_role_ids ?? [])];
   const roleMentions = roleIds.map((roleId) => `<@&${roleId}>`).join(" ");
   const prefix = roleMentions ? `${roleMentions} ` : "";
@@ -90,6 +111,7 @@ const STATUS_COLOR: Record<string, number> = {
   live: BOT_COLORS.SUCCESS,
   stopped: BOT_COLORS.DARK,
   auto_stopped: BOT_COLORS.WARNING,
+  cancelled: BOT_COLORS.DANGER,
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -97,6 +119,7 @@ const STATUS_LABEL: Record<string, string> = {
   live: "LIVE 🟢",
   stopped: "STOPPED ⏹️",
   auto_stopped: "AUTO-STOPPED ⚠️",
+  cancelled: "CANCELLED ❌",
 };
 
 // ── Event detail embed ───────────────────────────────────────────────────────
@@ -106,8 +129,13 @@ export function buildEventEmbed(
 ): EmbedBuilder {
   const color = STATUS_COLOR[event.status] ?? BOT_COLORS.BRAND;
   const status = STATUS_LABEL[event.status] ?? event.status.toUpperCase();
-  const date = new Date(event.event_date_utc);
-  const ts = Math.floor(date.getTime() / 1000);
+  const dateTs = Math.floor(new Date(event.event_date_utc).getTime() / 1000);
+  const massTs = event.mass_time_utc
+    ? Math.floor(new Date(event.mass_time_utc).getTime() / 1000)
+    : dateTs;
+  const startTs = event.start_time_utc
+    ? Math.floor(new Date(event.start_time_utc).getTime() / 1000)
+    : dateTs;
 
   let descLines: string[] = [];
 
@@ -119,7 +147,9 @@ export function buildEventEmbed(
   const rosterCount = detail.participants?.length ?? 0;
 
   descLines.push(
-    `🗓️ **Date & Time** — <t:${ts}:F> (<t:${ts}:R>)`,
+    `🗓️ **Date** — <t:${dateTs}:d>`,
+    `📣 **Mass** — <t:${massTs}:F> (<t:${massTs}:R>)`,
+    `▶️ **Start** — <t:${startTs}:F> (<t:${startTs}:R>)`,
     `⚡ **Status** — ${status}`,
     `⚔️ **Composition** — ${detail.active_comp_name ?? event.comp_name}`,
     `👑 **Organizer** — ${event.created_by_username}`,
@@ -251,11 +281,11 @@ export function buildEventSummaryEmbed(
   }
 
   const lines = events.map((e) => {
-    const ts = Math.floor(new Date(e.event_date_utc).getTime() / 1000);
+    const timestamp = eventTimestamp(e, "start");
     const status = STATUS_LABEL[e.status] ?? e.status.toUpperCase();
     return [
       `${e.call_to_arms ? "🚨 " : "📌 "}**[#${e.id}] ${e.title}**`,
-      `• ⚡ \`${status}\` · ⚔️ **${e.comp_name}** · <t:${ts}:R>`,
+      `• ⚡ \`${status}\` · ⚔️ **${e.comp_name}** · Mass <t:${eventTimestamp(e, "mass")}:R> · Start <t:${timestamp}:R>`,
     ].join("\n");
   });
 
@@ -332,5 +362,11 @@ export function buildEventThreadActionRow(
       .setEmoji("⏹️")
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(!isLive),
+    new ButtonBuilder()
+      .setCustomId(`event:cancel:${event.id}`)
+      .setLabel("Cancel")
+      .setEmoji("❌")
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(!(isScheduled || isLive)),
   );
 }
