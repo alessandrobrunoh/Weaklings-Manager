@@ -388,6 +388,7 @@ pub struct UpdateCompRequest {
     pub category_id: Option<i64>,
     /// The new parent comp ID if this comp is a variant. `null` explicitly removes the parent;
     /// omitting the field leaves the current parent unchanged.
+    #[serde(default, deserialize_with = "crate::serde_helpers::double_option")]
     pub parent_id: Option<Option<i64>>,
 }
 

@@ -217,6 +217,7 @@ pub struct UpdateTransactionRequest {
     pub to_user_id: Option<i64>,
     /// The new payer. `null` explicitly clears it back to the virtual Guild Bank; omitting the
     /// field leaves the current payer unchanged.
+    #[serde(default, deserialize_with = "crate::serde_helpers::double_option")]
     pub from_user_id: Option<Option<i64>>,
     /// The new amount. Must be positive.
     #[schema(value_type = Option<String>, example = "42.50")]
@@ -228,6 +229,7 @@ pub struct UpdateTransactionRequest {
     pub r#type: Option<String>,
     /// The new linked split. `null` explicitly unlinks it from any split; omitting the field
     /// leaves the current linkage unchanged.
+    #[serde(default, deserialize_with = "crate::serde_helpers::double_option")]
     pub split_id: Option<Option<i64>>,
     /// Whether the destination is the virtual Guild Bank.
     pub to_guild_bank: Option<bool>,
