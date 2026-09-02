@@ -144,6 +144,7 @@ interface BattleScopeStats {
           [columns]="columns()"
           [rows]="tableRows()"
           [loading]="loading()"
+          [error]="loadFailed()"
           [trackBy]="trackBattle"
           [pageSize]="PAGE_SIZE"
           [serverMode]="true"
@@ -152,6 +153,7 @@ interface BattleScopeStats {
           [rowClickable]="true"
           (rowClick)="openRow($event)"
           (pageChange)="onTableChange($event)"
+          (retry)="refreshNow()"
         >
           <ng-template dataTableCell="select" let-row>
             @if (isBattle(row)) {
@@ -252,6 +254,7 @@ export class Battles {
   protected readonly PAGE_SIZE = PAGE_SIZE;
   protected readonly battles = signal<BattleListRow[]>([]);
   protected readonly loading = signal(false);
+  protected readonly loadFailed = signal(false);
   protected readonly tab = signal<BattleTab>('guild');
   protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
     { id: 'guild', label: this.t('battles.guild') },
@@ -537,6 +540,7 @@ export class Battles {
 
   private async load(): Promise<void> {
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       const isGuildTab = this.tab() === 'guild';
       const path = isGuildTab ? 'api/fights' : 'api/battles/me';
@@ -575,6 +579,7 @@ export class Battles {
         this.scopeStats.set(await this.buildPersonalScopeStats(response.items));
       }
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);

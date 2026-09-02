@@ -662,8 +662,10 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
           <app-data-table
             [columns]="guildRosterColumns"
             [rows]="filteredGuildRosterRows()"
+            [error]="loadFailed()"
             [trackBy]="trackPlayerRow"
             [pageSize]="15"
+            (retry)="load()"
           >
             <ng-template dataTableCell="player" let-row>
               <div class="flex items-center gap-2.5">
@@ -771,8 +773,10 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
           <app-data-table
             [columns]="allGuildColumns"
             [rows]="enrichedGuildRows()"
+            [error]="loadFailed()"
             [trackBy]="trackGuildRow"
             [pageSize]="12"
+            (retry)="load()"
           >
             <ng-template dataTableCell="name" let-row>
               <div class="flex items-center gap-2">
@@ -853,8 +857,10 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
           <app-data-table
             [columns]="allPlayerColumns"
             [rows]="filteredAllPlayerRows()"
+            [error]="loadFailed()"
             [trackBy]="trackPlayerRow"
             [pageSize]="20"
+            (retry)="load()"
           >
             <ng-template dataTableCell="name" let-row>
               <div class="flex items-center gap-2">
@@ -1272,6 +1278,7 @@ export class BattleDetailPage {
 
   protected readonly battle = signal<BattleDetail | null>(null);
   protected readonly loading = signal(false);
+  protected readonly loadFailed = signal(false);
   protected readonly tab = signal<DetailTab>('overview');
 
   // Filter signals
@@ -2372,9 +2379,11 @@ export class BattleDetailPage {
       return;
     }
     this.loading.set(true);
+    this.loadFailed.set(false);
     try {
       this.battle.set(await firstValueFrom(this.api.get<BattleDetail>(`api/battles/${battleId}`)));
     } catch (error) {
+      this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);
