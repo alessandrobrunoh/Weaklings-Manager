@@ -181,6 +181,7 @@ pub struct TransactionFilters {
     /// Restrict to transactions linked to a single split. Since this can span every
     /// participant's own transactions, listing with this set requires the same permission as
     /// `?global=true` (`bank.view_others` or `bank.withdraw.accept`).
+    #[serde(deserialize_with = "crate::serde_helpers::optional_i64_from_string_or_number")]
     pub split_id: Option<i64>,
 }
 

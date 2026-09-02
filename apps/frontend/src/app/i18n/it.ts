@@ -268,7 +268,7 @@ export const it: TranslationDict = {
   'splits.create_hint':
     'Carica uno screenshot del party, abbina i nomi o cerca nel roster di gilda.',
   'splits.net_preview': 'Anteprima',
-  'splits.net_formula': 'Stimato − Fee − Riparazioni + Borse',
+  'splits.net_formula': '(Stimato − Riparazioni + Borse) − Fee',
   'splits.roster_hint': 'Regola le quote in percentuale',
   'splits.fee_invalid': 'La fee deve essere tra 0 e 100%.',
   'splits.weight_sum_invalid': 'La somma dei pesi dei partecipanti deve essere 100%.',
@@ -1116,6 +1116,8 @@ export const it: TranslationDict = {
   'admin.discord.placeholder': 'Non impostato',
   'admin.discord.save': 'Salva',
   'admin.discord.saved': 'Impostazioni Discord salvate.',
+  'admin.split.defaultFee': 'Fee predefinita degli split',
+  'admin.split.defaultFeeHint': 'Applicata ai nuovi split quando non inserisci una fee. Intervallo consentito: 0–100%.',
   'admin.autorole.title': 'Ruolo Gilda base',
   'admin.autorole.hint':
     'Questo ruolo viene assegnato solo quando un personaggio Albion collegato risulta nella gilda configurata. Non viene assegnato al semplice ingresso nel server Discord.',

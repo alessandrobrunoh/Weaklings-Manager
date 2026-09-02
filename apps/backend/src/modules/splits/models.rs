@@ -47,6 +47,9 @@ pub struct SplitKpiSummary {
     pub total_estimated_volume: Decimal,
     /// Total participant rows across every split.
     pub total_participants: u64,
+    /// Default fee percentage for newly created splits.
+    #[schema(value_type = String, example = "20.00")]
+    pub default_split_fee: Decimal,
 }
 
 /// A split's summary, as shown in list views.

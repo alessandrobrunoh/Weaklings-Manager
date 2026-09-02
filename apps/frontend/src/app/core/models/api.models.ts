@@ -284,6 +284,7 @@ export interface SplitKpiSummary {
   total_net_distributed: number;
   total_estimated_volume: number;
   total_participants: number;
+  default_split_fee: number | string;
 }
 
 export interface SplitParticipant {
@@ -1865,6 +1866,7 @@ export interface GuildSettingsView {
   discord_auto_role_id: string | null;
   discord_splits_forum_channel_id: string | null;
   discord_event_voice_category_id: string | null;
+  default_split_fee: number | string;
 }
 
 /**

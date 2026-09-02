@@ -82,6 +82,7 @@ mod m20260902_000007_seed_bank_transactions_permissions;
 mod m20260902_000008_add_scouted_comps_unique_index;
 mod m20260902_000009_fix_fill_participation_nullability;
 mod m20260902_000010_add_archived_at_to_builds_and_comps;
+mod m20260902_000011_add_default_split_fee;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -168,6 +169,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260902_000008_add_scouted_comps_unique_index::Migration),
             Box::new(m20260902_000009_fix_fill_participation_nullability::Migration),
             Box::new(m20260902_000010_add_archived_at_to_builds_and_comps::Migration),
+            Box::new(m20260902_000011_add_default_split_fee::Migration),
         ]
     }
 }

@@ -32,6 +32,8 @@ pub struct Model {
     pub discord_splits_forum_channel_id: Option<String>,
     /// Category where the bot creates live event voice channels.
     pub discord_event_voice_category_id: Option<String>,
+    /// Default fee percentage applied to new loot splits when no fee is provided.
+    pub default_split_fee: Decimal,
     /// Last admin edit.
     pub updated_at: DateTimeWithTimeZone,
     /// Last admin editor.

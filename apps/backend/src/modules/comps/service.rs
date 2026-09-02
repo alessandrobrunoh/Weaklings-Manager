@@ -166,7 +166,10 @@ fn validated_spell_rows(
     spells: &BuildItemSpells,
 ) -> Result<Vec<(&'static str, i32, String)>, AppError> {
     let mut chosen = Vec::new();
-    for (kind, entries) in [(ACTIVE_KIND, &spells.active), (PASSIVE_KIND, &spells.passive)] {
+    for (kind, entries) in [
+        (ACTIVE_KIND, &spells.active),
+        (PASSIVE_KIND, &spells.passive),
+    ] {
         for (raw_index, spell_id) in entries {
             let slot_index: i32 = raw_index.parse().map_err(|_| {
                 AppError::Validation(format!("{kind} slot {raw_index:?} is not a slot number"))
@@ -1720,12 +1723,20 @@ impl CompService {
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Comp {id} not found")))?;
+        let was_parentless = comp.parent_id.is_none();
         let mut active: comp::ActiveModel = comp.into();
         if let Some(description) = req.description {
             active.description = Set(Some(description));
         }
         if let Some(parent_id) = req.parent_id {
             if let Some(parent_id) = parent_id {
+                // A comp created without a parent may contain only the additions (for example,
+                // a 5-player Comp2 created before its 10-player Comp1 is selected). Materialize
+                // that shorthand when the parent is assigned during a later edit.
+                if was_parentless {
+                    self.merge_parent_builds_if_additions(db, id, parent_id)
+                        .await?;
+                }
                 self.validate_expansion_parent(db, id, parent_id).await?;
                 active.parent_id = Set(Some(parent_id));
             } else {
@@ -1737,6 +1748,62 @@ impl CompService {
         let updated = active.update(db).await?;
 
         self.to_comp_detail(db, updated).await
+    }
+
+    /// Adds a parent's snapshot to a parentless comp when its current rows are clearly additions.
+    ///
+    /// This supports creating a variant in two steps: first saving the additional builds, then
+    /// assigning the parent while editing. A comp that already exceeds the parent is left alone,
+    /// because its rows already represent a complete snapshot.
+    async fn merge_parent_builds_if_additions(
+        &self,
+        db: &DatabaseConnection,
+        comp_id: i64,
+        parent_id: i64,
+    ) -> Result<(), AppError> {
+        let current_capacity = self.get_comp_capacity(db, comp_id).await?;
+        let parent_capacity = self.get_comp_capacity(db, parent_id).await?;
+        if current_capacity > parent_capacity {
+            return Ok(());
+        }
+
+        let parent_builds = comp_build::Entity::find()
+            .filter(CompBuildColumn::CompId.eq(parent_id))
+            .all(db)
+            .await?;
+        for parent_build in parent_builds {
+            let existing = comp_build::Entity::find()
+                .filter(CompBuildColumn::CompId.eq(comp_id))
+                .filter(CompBuildColumn::BuildId.eq(parent_build.build_id))
+                .one(db)
+                .await?;
+            let quantity = existing
+                .as_ref()
+                .map_or(0, |build| build.quantity)
+                .checked_add(parent_build.quantity)
+                .ok_or_else(|| {
+                    AppError::Validation(format!(
+                        "quantity for build {} exceeds the supported limit",
+                        parent_build.build_id
+                    ))
+                })?;
+
+            if let Some(existing) = existing {
+                let mut active: comp_build::ActiveModel = existing.into();
+                active.quantity = Set(quantity);
+                active.update(db).await?;
+            } else {
+                comp_build::ActiveModel {
+                    comp_id: Set(comp_id),
+                    build_id: Set(parent_build.build_id),
+                    quantity: Set(parent_build.quantity),
+                    ..Default::default()
+                }
+                .insert(db)
+                .await?;
+            }
+        }
+        Ok(())
     }
 
     /// Returns the total number of concrete slots in a comp snapshot.
