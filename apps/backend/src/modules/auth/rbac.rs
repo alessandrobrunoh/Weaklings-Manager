@@ -12,8 +12,10 @@ use super::service::DiscordUserProfile;
 use crate::config::Config;
 use crate::errors::AppError;
 use axum::{extract::FromRequestParts, http::request::Parts};
+use axum_extra::extract::cookie::{Key, PrivateCookieJar};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
+use subtle::ConstantTimeEq;
 use utoipa::ToSchema;
 
 /// Request context holding authenticated user details retrieved from session.
@@ -90,24 +92,16 @@ where
 
 /// Attempts to build a `UserContext` from the `session_user` cookie.
 ///
-/// Returns `None` if the cookie is absent (not an error — bot requests have no cookie).
-/// Returns `Some(ctx)` on a valid cookie, or `None` if the cookie is malformed
-/// (we treat malformed cookies as absent rather than hard-failing so bot auth can still succeed).
+/// Returns `None` if the cookie is absent (not an error — bot requests have no cookie), if the
+/// server has no `Key` configured, or if the cookie fails to decrypt/authenticate (tampered,
+/// forged, or signed with a different key) — we treat all of these as "no session" rather than
+/// hard-failing so bot auth can still succeed.
 fn try_from_session_cookie(parts: &mut Parts) -> Option<UserContext> {
-    let cookie_header = parts
-        .headers
-        .get(axum::http::header::COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
+    let key = parts.extensions.get::<Key>()?;
+    let jar = PrivateCookieJar::from_headers(&parts.headers, key.clone());
+    let session_cookie = jar.get("session_user")?;
 
-    let encoded_val = cookie_header
-        .split(';')
-        .map(str::trim)
-        .find(|c| c.starts_with("session_user="))
-        .map(|c| &c["session_user=".len()..])?;
-
-    let decoded_val = urlencoding::decode(encoded_val).ok()?;
-    let profile: DiscordUserProfile = serde_json::from_str(&decoded_val).ok()?;
+    let profile: DiscordUserProfile = serde_json::from_str(session_cookie.value()).ok()?;
 
     let super_admin_id = parts
         .extensions
@@ -159,7 +153,13 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
         )
     })?;
 
-    if provided_secret != expected_secret {
+    // Constant-time comparison: an early-exit `!=` would let an attacker time the mismatch
+    // position and brute-force the secret byte-by-byte.
+    let secret_matches: bool = provided_secret
+        .as_bytes()
+        .ct_eq(expected_secret.as_bytes())
+        .into();
+    if !secret_matches {
         return Err(AppError::Unauthorized(
             "Invalid bot secret (X-Bot-Secret mismatch)".to_string(),
         ));
@@ -283,7 +283,13 @@ where
             )
         })?;
 
-        if provided_secret != expected_secret {
+        // Constant-time comparison: an early-exit `!=` would let an attacker time the mismatch
+        // position and brute-force the secret byte-by-byte.
+        let secret_matches: bool = provided_secret
+            .as_bytes()
+            .ct_eq(expected_secret.as_bytes())
+            .into();
+        if !secret_matches {
             return Err(AppError::Unauthorized(
                 "Invalid bot secret (X-Bot-Secret mismatch)".to_string(),
             ));
@@ -297,17 +303,35 @@ where
 mod tests {
     use super::*;
     use axum::http::Request;
+    use axum::response::IntoResponse;
+
+    /// Encrypts `profile_json` into a `session_user` cookie the way `discord_callback`/`get_me`
+    /// do, and returns just the `name=value` pair as a browser would send it back on `Cookie`.
+    fn encrypt_session_cookie(key: &Key, profile_json: String) -> String {
+        let response = PrivateCookieJar::new(key.clone())
+            .add(("session_user", profile_json))
+            .into_response();
+        let set_cookie = response
+            .headers()
+            .get(axum::http::header::SET_COOKIE)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        set_cookie.split(';').next().unwrap().to_string()
+    }
 
     #[tokio::test]
     async fn test_user_context_extraction_success() {
         let profile_json = r#"{"id":"386488773351047168","username":"admin_user","email":"admin@example.com","avatar":null,"roles":["Admin"],"highest_role":"Admin","user_id":0}"#;
-        let cookie_str = format!("session_user={}", urlencoding::encode(profile_json));
+        let key = Key::generate();
+        let cookie_str = encrypt_session_cookie(&key, profile_json.to_string());
 
         let req = Request::builder()
             .header("Cookie", cookie_str)
             .body(())
             .unwrap();
         let (mut parts, _) = req.into_parts();
+        parts.extensions.insert(key);
 
         let context = UserContext::from_request_parts(&mut parts, &())
             .await
@@ -323,6 +347,26 @@ mod tests {
     async fn test_user_context_extraction_missing_cookie() {
         let req = Request::builder().body(()).unwrap();
         let (mut parts, _) = req.into_parts();
+        parts.extensions.insert(Key::generate());
+        let result = UserContext::from_request_parts(&mut parts, &()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_user_context_extraction_tampered_cookie_rejected() {
+        // A plaintext/forged cookie (as the old unsigned scheme would have accepted) must be
+        // rejected now that the cookie is encrypted — decryption fails and we fall through to
+        // "no session" rather than trusting attacker-controlled JSON.
+        let profile_json = r#"{"id":"386488773351047168","username":"admin_user","email":"admin@example.com","avatar":null,"roles":["Admin"],"highest_role":"Admin","user_id":0}"#;
+        let cookie_str = format!("session_user={}", urlencoding::encode(profile_json));
+
+        let req = Request::builder()
+            .header("Cookie", cookie_str)
+            .body(())
+            .unwrap();
+        let (mut parts, _) = req.into_parts();
+        parts.extensions.insert(Key::generate());
+
         let result = UserContext::from_request_parts(&mut parts, &()).await;
         assert!(result.is_err());
     }

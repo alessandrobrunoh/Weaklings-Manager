@@ -518,7 +518,11 @@ pub async fn refresh_guild_report(
 /// Split out from the full report deliberately. Rankings are something every
 /// member should see, while the report around them carries silver flow and
 /// per-member bank balances that are officer business — so this endpoint is
-/// gated at `intel.view` and returns only the boards.
+/// gated at `intel.view` and returns only the boards. The financial boards
+/// (`silver_lost`, `split_earnings`, `regear_silver`, `siphoned`) are further
+/// gated behind `intel.report.view`: a caller without it gets every other
+/// board with the financial ones returned empty rather than 403ing the whole
+/// request.
 ///
 /// # Errors
 ///
@@ -531,7 +535,10 @@ pub async fn refresh_guild_report(
     description = "Attendance, kills, deaths, kill and death fame, silver lost, split \
         earnings, regear silver and siphoned energy, each ranked over the window and computed \
         from real activity rather than stored counters. Members with nothing to show are \
-        omitted rather than padding the tail with zeroes. Defaults to the last 30 days.",
+        omitted rather than padding the tail with zeroes. Defaults to the last 30 days. The \
+        silver lost, split earnings, regear silver and siphoned boards are only populated for \
+        callers who also hold `intel.report.view`; other callers get empty arrays for those \
+        boards.",
     security(("session_cookie" = ["intel.view"])),
     params(ReportParams),
     responses(
@@ -549,13 +556,25 @@ pub async fn leaderboards(
     Query(params): Query<ReportParams>,
 ) -> Result<Json<ApiResponse<ReportLeaderboards>>, AppError> {
     user.require(&perms, Permission::IntelView).await?;
+    // Silver flow is officer business (same gate as `/report`); a caller with
+    // only `intel.view` gets the combat/attendance boards but not the
+    // financial ones.
+    let can_see_financials = user.has_permission(&perms, Permission::IntelReportView).await;
     let range = DateRange::resolve(params.from.as_deref(), params.to.as_deref())?;
     // Shares the report's cache: an officer who already opened the dashboard
     // has paid for this computation, and vice versa.
-    if let Some(cached) = cache.get(range) {
-        return Ok(Json(ApiResponse::new(cached.leaderboards)));
+    let mut leaderboards = if let Some(cached) = cache.get(range) {
+        cached.leaderboards
+    } else {
+        let report = build_guild_report(&db, &guild_context(&cfg), range).await?;
+        cache.put(range, &report);
+        report.leaderboards
+    };
+    if !can_see_financials {
+        leaderboards.silver_lost.clear();
+        leaderboards.split_earnings.clear();
+        leaderboards.regear_silver.clear();
+        leaderboards.siphoned.clear();
     }
-    let report = build_guild_report(&db, &guild_context(&cfg), range).await?;
-    cache.put(range, &report);
-    Ok(Json(ApiResponse::new(report.leaderboards)))
+    Ok(Json(ApiResponse::new(leaderboards)))
 }

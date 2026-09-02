@@ -318,13 +318,37 @@ pub async fn link_player(
 pub async fn unlink_player(
     user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
     let link_service = AlbionLinkService::new();
     link_service.delete_link(&db, &user.id).await?;
+    super::discord_guild_role::revoke_guild_role(&db, &cfg, &user.id).await;
     Ok(Json(ApiResponse::new(())))
 }
 
 /// Retrieves the Albion player link status for a specific user.
+///
+/// # Errors
+///
+/// * Returns `AppError::Forbidden` if the caller requests another user's status without
+///   `roles.manage`.
+/// * Returns `AppError::NotFound` if the target user does not exist.
+#[utoipa::path(
+    get,
+    path = "/api/albion/link/users/{user_id}",
+    tag = "albion",
+    summary = "Get one user's Albion player link status",
+    description = "Same response shape as `GET /albion/link/me`. Callers may always fetch their own \
+        status; fetching another user's status requires `roles.manage`.",
+    security(("session_cookie" = [])),
+    params(("user_id" = i64, Path, description = "Internal user id")),
+    responses(
+        (status = 200, description = "Link status retrieved successfully", body = ApiResponseAlbionLinkStatus),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - requires roles.manage to view another user's link status", body = ProblemDetails),
+        (status = 404, description = "Target user not found", body = ProblemDetails)
+    )
+)]
 pub async fn get_user_link_status(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -340,6 +364,35 @@ pub async fn get_user_link_status(
 }
 
 /// Admin endpoint to link any user to an Albion player.
+///
+/// # Errors
+///
+/// * Returns `AppError::Forbidden` if the caller lacks `roles.manage`.
+/// * Returns an upstream/not-found error if the player cannot be resolved from Albion.
+/// * Returns `AppError::Validation` if the target user has no Discord ID.
+/// * Returns `AppError::NotFound` if the target user does not exist.
+#[utoipa::path(
+    post,
+    path = "/api/albion/link/users/{user_id}",
+    tag = "albion",
+    summary = "Admin: link or re-link any user to an Albion character",
+    description = "Requires `roles.manage`. Unlike the self-service `POST /albion/link`, this always \
+        succeeds in replacing any existing link: it deletes the target user's current link (if any) \
+        and any other account's claim on the requested Albion character before creating the new link, \
+        all in a single transaction. The server resolves the selected player from Albion and persists \
+        that authoritative name. After a successful link the backend best-effort sets the target \
+        user's Discord guild nickname to the Albion character name.",
+    security(("session_cookie" = ["roles.manage"])),
+    params(("user_id" = i64, Path, description = "Internal user id")),
+    request_body(content = LinkPlayerRequest, description = "The Albion character to claim, as picked from GET /albion/search."),
+    responses(
+        (status = 200, description = "Player linked successfully; linked is now true", body = ApiResponseAlbionLinkStatus),
+        (status = 400, description = "Validation error - target user has no Discord ID", body = ProblemDetails),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - requires roles.manage", body = ProblemDetails),
+        (status = 404, description = "Target user not found, or no Albion player exists for the given albion_player_id", body = ProblemDetails)
+    )
+)]
 pub async fn admin_link_user_handler(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
@@ -365,14 +418,39 @@ pub async fn admin_link_user_handler(
 }
 
 /// Admin endpoint to unlink any user from their Albion player.
+///
+/// # Errors
+///
+/// * Returns `AppError::Forbidden` if the caller lacks `roles.manage`.
+/// * Returns `AppError::NotFound` if the target user does not exist.
+#[utoipa::path(
+    delete,
+    path = "/api/albion/link/users/{user_id}",
+    tag = "albion",
+    summary = "Admin: unlink any user from their Albion character",
+    description = "Requires `roles.manage`. Idempotent, unlike the self-service `DELETE /albion/link`: \
+        succeeds whether or not the target user currently has a link. When a link is removed, the \
+        backend best-effort revokes the configured Discord guild role from the target user.",
+    security(("session_cookie" = ["roles.manage"])),
+    params(("user_id" = i64, Path, description = "Internal user id")),
+    responses(
+        (status = 200, description = "Unlinked successfully (or already had no link); data is null"),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - requires roles.manage", body = ProblemDetails),
+        (status = 404, description = "Target user not found", body = ProblemDetails)
+    )
+)]
 pub async fn admin_unlink_user_handler(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
     Path(user_id): Path<i64>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
     user.require(&perms, Permission::RolesManage).await?;
     let link_service = AlbionLinkService::new();
-    link_service.admin_unlink_user(&db, user_id).await?;
+    if let Some(discord_id) = link_service.admin_unlink_user(&db, user_id).await? {
+        super::discord_guild_role::revoke_guild_role(&db, &cfg, &discord_id).await;
+    }
     Ok(Json(ApiResponse::new(())))
 }

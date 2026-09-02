@@ -194,8 +194,12 @@ pub struct AlbionApiClient {
 impl AlbionApiClient {
     #[must_use]
     pub fn new(region: AlbionRegion) -> Self {
+        let http = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         Self {
-            http: reqwest::Client::new(),
+            http,
             base_url: region.base_url(),
         }
     }

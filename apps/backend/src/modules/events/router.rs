@@ -1031,28 +1031,31 @@ async fn stop_event(
 
 /// Returns the battles linked to an event session so far.
 ///
-/// Any authenticated user can read this; it's the same data already embedded
+/// Requires `events.view` permission; it's the same data already embedded
 /// in `EventDetailView.battles`.
 #[utoipa::path(
     get,
     path = "/api/events/{id}/battles",
     tag = "events",
     summary = "List battles linked to an event",
-    description = "Returns battles pulled from AlbionBB whose guild-player count matches the event's sign-up range.",
+    description = "Returns battles pulled from AlbionBB whose guild-player count matches the event's sign-up range. Requires `events.view` permission.",
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Event ID")),
     responses(
         (status = 200, description = "Linked battles", body = ApiResponseEventDetail),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.view permission", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails)
     )
 )]
 async fn list_event_battles(
-    _user: UserContext,
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
+    user.require(&perms, Permission::EventsView).await?;
     let service = EventService::new();
     let context = BattleLinkingContext::new(
         &cfg.albion_guild_id,

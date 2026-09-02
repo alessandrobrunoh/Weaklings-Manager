@@ -483,6 +483,21 @@ impl SplitService {
         }
         let fee = req.fee.unwrap_or_else(default_split_fee);
         validate_fee(fee)?;
+        if req.estimated_market_value < Decimal::ZERO {
+            return Err(AppError::Validation(
+                "estimated market value must not be negative".to_string(),
+            ));
+        }
+        if req.repair_value < Decimal::ZERO {
+            return Err(AppError::Validation(
+                "repair value must not be negative".to_string(),
+            ));
+        }
+        if req.bags_value < Decimal::ZERO {
+            return Err(AppError::Validation(
+                "bags value must not be negative".to_string(),
+            ));
+        }
         if participants.iter().any(|p| p.weight <= Decimal::ZERO) {
             return Err(AppError::Validation("weight must be positive".to_string()));
         }
@@ -554,13 +569,39 @@ impl SplitService {
         split_id: i64,
         status: SplitStatus,
     ) -> Result<SplitDetail, AppError> {
-        let split = self
-            .load_with_status(db, split_id, SplitStatus::Pending, "close")
+        self.load_with_status(db, split_id, SplitStatus::Pending, "close")
             .await?;
-        let mut active: SplitActiveModel = split.into();
-        active.status = Set(status.to_string());
-        active.updated_at = Set(chrono::Utc::now().into());
-        let updated = active.update(db).await?;
+
+        let txn = db.begin().await?;
+
+        // Re-check the status as part of the write itself: a concurrent close/complete could have
+        // moved the split out of `pending` between the read above and here. A losing request gets
+        // a clean conflict instead of silently overwriting the other outcome.
+        let now = chrono::Utc::now().into();
+        let flip = SplitEntity::update_many()
+            .filter(SplitColumn::Id.eq(split_id))
+            .filter(SplitColumn::Status.eq(SplitStatus::Pending.to_string()))
+            .set(SplitActiveModel {
+                status: Set(status.to_string()),
+                updated_at: Set(now),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+        if flip.rows_affected != 1 {
+            return Err(AppError::Conflict(format!(
+                "split {split_id} is no longer pending and cannot be closed"
+            )));
+        }
+
+        let updated = SplitEntity::find_by_id(split_id)
+            .one(&txn)
+            .await?
+            .ok_or_else(|| AppError::Internal("closed split disappeared".to_string()))?;
+
+        txn.commit().await?;
+
         self.to_detail(db, updated).await
     }
 
@@ -618,12 +659,27 @@ impl SplitService {
         active.updated_at = Set(chrono::Utc::now().into());
 
         if let Some(value) = req.estimated_market_value {
+            if value < Decimal::ZERO {
+                return Err(AppError::Validation(
+                    "estimated market value must not be negative".to_string(),
+                ));
+            }
             active.estimated_market_value = Set(value);
         }
         if let Some(value) = req.repair_value {
+            if value < Decimal::ZERO {
+                return Err(AppError::Validation(
+                    "repair value must not be negative".to_string(),
+                ));
+            }
             active.repair_value = Set(value);
         }
         if let Some(value) = req.bags_value {
+            if value < Decimal::ZERO {
+                return Err(AppError::Validation(
+                    "bags value must not be negative".to_string(),
+                ));
+            }
             active.bags_value = Set(value);
         }
         if let Some(fee) = req.fee {
@@ -741,16 +797,16 @@ impl SplitService {
     ///
     /// # Errors
     ///
-    /// Returns `AppError::NotFound` if the split does not exist.
+    /// * Returns `AppError::NotFound` if the split does not exist.
+    /// * Returns `AppError::Validation` if the split is not in `"pending"` status.
     pub async fn delete_split(
         &self,
         db: &DatabaseConnection,
         split_id: i64,
     ) -> Result<(), AppError> {
-        let split = SplitEntity::find_by_id(split_id)
-            .one(db)
-            .await?
-            .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
+        let split = self
+            .load_with_status(db, split_id, SplitStatus::Pending, "delete")
+            .await?;
 
         let txn = db.begin().await?;
         ParticipantEntity::delete_many()
@@ -1396,6 +1452,29 @@ impl SplitService {
 
         let txn = db.begin().await?;
 
+        // Guard the status flip with a conditional update, checked before any payout is
+        // generated: a concurrent completion (or close) between the read above and here loses the
+        // race here instead of both racers generating a full set of participant transactions.
+        let now = chrono::Utc::now().into();
+        let flip = SplitEntity::update_many()
+            .filter(SplitColumn::Id.eq(split_id))
+            .filter(SplitColumn::Status.eq(SplitStatus::Pending.to_string()))
+            .set(SplitActiveModel {
+                status: Set(SplitStatus::Completed.to_string()),
+                net_value: Set(Some(net_value)),
+                finalized_at: Set(Some(now)),
+                updated_at: Set(now),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+        if flip.rows_affected != 1 {
+            return Err(AppError::Conflict(format!(
+                "split {split_id} is no longer pending and cannot be completed"
+            )));
+        }
+
         let mut running_total = Decimal::ZERO;
         let last_index = participants.len() - 1;
         for (i, participant) in participants.iter().enumerate() {
@@ -1433,12 +1512,10 @@ impl SplitService {
             .await;
         }
 
-        let mut split_active: SplitActiveModel = split.into();
-        split_active.updated_at = Set(chrono::Utc::now().into());
-        split_active.status = Set(SplitStatus::Completed.to_string());
-        split_active.net_value = Set(Some(net_value));
-        split_active.finalized_at = Set(Some(chrono::Utc::now().into()));
-        let updated_split = split_active.update(&txn).await?;
+        let updated_split = SplitEntity::find_by_id(split_id)
+            .one(&txn)
+            .await?
+            .ok_or_else(|| AppError::Internal("completed split disappeared".to_string()))?;
 
         txn.commit().await?;
 

@@ -225,6 +225,15 @@ impl IntelService {
     }
 
     /// Creates a new scout from a draft.
+    ///
+    /// `scout_battle` only checks for a matching row against the snapshot of
+    /// existing scouts it read at the start of the call, so two concurrent
+    /// scouts of the same battle (the background worker retrying alongside a
+    /// manual scout, say) can both decide "no match" and both land here for
+    /// what should be one row. `idx_scouted_comps_guild_category_fingerprint_unique`
+    /// catches the exact-fingerprint case at the database level; on that
+    /// conflict, fold this draft into whichever row won the race instead of
+    /// failing the request.
     async fn insert_draft(
         &self,
         db: &DatabaseConnection,
@@ -258,7 +267,41 @@ impl IntelService {
             updated_at: Set(now),
             ..Default::default()
         };
-        let inserted = active.insert(&txn).await?;
+        let inserted = match active.insert(&txn).await {
+            Ok(row) => row,
+            Err(err)
+                if matches!(
+                    err.sql_err(),
+                    Some(sea_orm::SqlErr::UniqueConstraintViolation(_))
+                ) =>
+            {
+                // Someone else committed the same (guild, category, fingerprint) first.
+                // Roll back explicitly (a failed statement leaves the transaction unable
+                // to run anything further on Postgres) and merge into their row on a
+                // fresh statement instead. The index only enforces uniqueness when
+                // `opponent_guild_id` is present (SQL treats NULLs as distinct), so a
+                // violation here guarantees it is `Some`.
+                txn.rollback().await?;
+                let guild_filter = match &draft.opponent_guild_id {
+                    Some(guild_id) => scouted_comp::Column::OpponentGuildId.eq(guild_id.clone()),
+                    None => scouted_comp::Column::OpponentGuildId.is_null(),
+                };
+                let winner = scouted_comp::Entity::find()
+                    .filter(guild_filter)
+                    .filter(scouted_comp::Column::Category.eq(draft.category.as_str()))
+                    .filter(scouted_comp::Column::Fingerprint.eq(draft.fingerprint.clone()))
+                    .one(db)
+                    .await?
+                    .ok_or_else(|| {
+                        AppError::Internal(
+                            "scouted_comp unique-constraint conflict but no matching row found"
+                                .to_string(),
+                        )
+                    })?;
+                return self.merge_draft(db, &winner, draft).await;
+            }
+            Err(err) => return Err(err.into()),
+        };
 
         scouted_comp_battle::ActiveModel {
             scouted_comp_id: Set(inserted.id),

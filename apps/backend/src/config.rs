@@ -2,6 +2,7 @@
 ///
 /// Uses `dotenvy` to load a `.env` file at startup and `serde` to
 /// deserialize typed config from environment variables.
+use axum_extra::extract::cookie::Key as CookieKey;
 use serde::Deserialize;
 
 /// Compiled-in version from `Cargo.toml` — set automatically at compile time.
@@ -37,6 +38,13 @@ pub struct Config {
     pub discord_bot_token: Option<String>,
     /// Super Admin Discord User ID.
     pub super_admin_discord_id: String,
+    /// Secret used to encrypt/authenticate the `session_user` cookie (see [`Config::session_key`]).
+    ///
+    /// Must be at least 64 bytes of random data — generate one with `openssl rand -hex 64` and
+    /// keep it stable across deploys (rotating it invalidates every active session). Required:
+    /// the server refuses to start without a sufficiently long secret, so a broken deployment
+    /// fails fast instead of ever serving forgeable sessions.
+    pub session_secret: String,
     /// URL of the frontend for redirection (default: http://localhost:5173, Vite dev).
     #[serde(default = "default_frontend_url")]
     pub frontend_url: String,
@@ -105,6 +113,27 @@ impl Config {
     /// non-critical work instead of aborting — the audit log rows themselves are never lost.
     pub fn try_from_env() -> Result<Self, envy::Error> {
         envy::from_env()
+    }
+
+    /// Derives the [`cookie::Key`](CookieKey) used to encrypt and authenticate the
+    /// `session_user` cookie from `session_secret`.
+    ///
+    /// Intended to be called once at startup (see `main.rs`) and shared via app state/extension
+    /// so every request reuses the same key instead of re-deriving it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `session_secret` is shorter than 64 bytes — the minimum `cookie::Key` accepts
+    /// for already-random input. This is deliberate: it must fail the deployment at startup,
+    /// never mid-request. Generate a valid secret with `openssl rand -hex 64`.
+    #[must_use]
+    pub fn session_key(&self) -> CookieKey {
+        CookieKey::try_from(self.session_secret.as_bytes()).unwrap_or_else(|e| {
+            panic!(
+                "SESSION_SECRET is invalid ({e}): it must be at least 64 bytes of random data \
+                 (generate one with `openssl rand -hex 64`)"
+            )
+        })
     }
 
     /// Parses optional comma-separated allied guild IDs without forcing deployment-specific state

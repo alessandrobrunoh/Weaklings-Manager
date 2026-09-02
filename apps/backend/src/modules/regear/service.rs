@@ -272,6 +272,31 @@ impl RegearService {
         let breakdown_json = serde_json::to_string(&req.breakdown)
             .map_err(|err| AppError::Internal(format!("failed to serialize breakdown: {err}")))?;
 
+        // Guard the status flip with a conditional update, checked before the Guild Bank credit is
+        // created: a concurrent acceptance/rejection between the read above and here loses the
+        // race here instead of creating a duplicate credit and overwriting `decided_by_user_id`.
+        let flip = RegearDeathEntity::update_many()
+            .filter(RegearDeathColumn::Id.eq(death_id))
+            .filter(RegearDeathColumn::Status.eq(RegearStatus::Pending.to_string()))
+            .set(RegearDeathActiveModel {
+                status: Set(RegearStatus::Approved.to_string()),
+                decided_at: Set(Some(now)),
+                decided_by_user_id: Set(Some(officer_user_id)),
+                final_amount: Set(Some(req.final_amount)),
+                final_breakdown_json: Set(Some(breakdown_json)),
+                officer_note: Set(req.note.clone()),
+                updated_at: Set(now),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+        if flip.rows_affected != 1 {
+            return Err(AppError::Conflict(format!(
+                "death {death_id} is no longer pending (accepted or rejected by a concurrent request)"
+            )));
+        }
+
         // Insert the Guild Bank row in `pending` so the user still has to withdraw it.
         let bank_active = BankActiveModel {
             id: sea_orm::ActiveValue::NotSet,
@@ -289,16 +314,19 @@ impl RegearService {
         };
         let inserted_bank = bank_active.insert(&txn).await?;
 
-        let mut active: RegearDeathActiveModel = model.into();
-        active.status = Set(RegearStatus::Approved.to_string());
-        active.decided_at = Set(Some(now));
-        active.decided_by_user_id = Set(Some(officer_user_id));
-        active.final_amount = Set(Some(req.final_amount));
-        active.final_breakdown_json = Set(Some(breakdown_json));
-        active.officer_note = Set(req.note.clone());
-        active.bank_transaction_id = Set(Some(inserted_bank.id));
-        active.updated_at = Set(now);
-        let updated = active.update(&txn).await?;
+        RegearDeathEntity::update_many()
+            .filter(RegearDeathColumn::Id.eq(death_id))
+            .set(RegearDeathActiveModel {
+                bank_transaction_id: Set(Some(inserted_bank.id)),
+                ..Default::default()
+            })
+            .exec(&txn)
+            .await?;
+
+        let updated = RegearDeathEntity::find_by_id(death_id)
+            .one(&txn)
+            .await?
+            .ok_or_else(|| AppError::Internal("accepted regear death disappeared".to_string()))?;
 
         txn.commit().await?;
 

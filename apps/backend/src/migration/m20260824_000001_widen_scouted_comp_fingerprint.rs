@@ -42,6 +42,16 @@ impl MigrationTrait for Migration {
             .await
     }
 
+    /// # Data-loss / failure warning
+    ///
+    /// Rolling back narrows `fingerprint` from unbounded `text` back to `varchar(512)`. This is
+    /// exactly the scenario `up()`'s doc comment above describes as the reason this migration
+    /// exists: a ZvZ fight easily produces a fingerprint well past 512 characters. On Postgres,
+    /// narrowing a column fails outright (`ERROR: value too long for type character varying(512)`)
+    /// against any row already exceeding the new limit, aborting the rollback; even for rows that
+    /// happen to fit, this reintroduces the original overflow bug for the next large fight scouted.
+    /// Confirm every `scouted_comps.fingerprint` value is at most 512 characters before rolling
+    /// this migration back, and expect to have to prune/truncate long fingerprints first if not.
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         if manager.get_database_backend() == sea_orm::DatabaseBackend::Sqlite {
             return Ok(());

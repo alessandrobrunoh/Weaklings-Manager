@@ -57,8 +57,13 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(EventParticipations::Table)
+                    // `.null()` is what emits `DROP NOT NULL`; without it sea-query only
+                    // writes the `ALTER COLUMN ... TYPE bigint` half and the original
+                    // NOT NULL constraint survives, rejecting every Fill signup.
                     .modify_column(
-                        ColumnDef::new(EventParticipations::PrimaryBuildId).big_integer(),
+                        ColumnDef::new(EventParticipations::PrimaryBuildId)
+                            .big_integer()
+                            .null(),
                     )
                     .to_owned(),
             )

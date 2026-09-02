@@ -417,7 +417,7 @@ pub async fn build_guild_report(
 
     let overview = compute_overview(&fights, &attributed);
     let operations = compute_operations(&raw, &range);
-    let economy = compute_economy(&raw, &overview);
+    let economy = compute_economy(&raw, &overview, &fights);
     let members = compute_members(&raw, &fights, &name_to_user);
     let comps = compute_comps(&raw, &matchup_rows);
     let enemies = compute_enemies(&raw, &matchup_rows);
@@ -839,7 +839,7 @@ fn count_status(events: &[event::Model], status: &str) -> i64 {
 /// The bank is therefore the single source of outflow, and regear and split are
 /// reported as *slices of* it. The four figures satisfy
 /// `total == splits + regear + other` by construction.
-fn compute_economy(raw: &RawData, overview: &ReportOverview) -> ReportEconomy {
+fn compute_economy(raw: &RawData, overview: &ReportOverview, fights: &[Fight]) -> ReportEconomy {
     let regear_tx_ids: HashSet<i64> = raw
         .regears
         .iter()
@@ -903,7 +903,14 @@ fn compute_economy(raw: &RawData, overview: &ReportOverview) -> ReportEconomy {
     // `approved` means the credit was created, not that the member received it.
     let regear_paid = outflow_regear;
 
-    let our_player_count: i64 = raw.snapshots.len().max(1) as i64;
+    // Distinct players, not battle snapshots: a member who fought every battle in
+    // the window must not multiply the denominator once per fight they were in.
+    let our_player_count: i64 = fights
+        .iter()
+        .flat_map(|fight| fight.our_players.iter().map(|p| p.id.as_str()))
+        .collect::<HashSet<_>>()
+        .len()
+        .max(1) as i64;
     let fame_per_player = if overview.fights > 0 {
         overview.kill_fame / our_player_count.max(1)
     } else {
@@ -1124,9 +1131,32 @@ fn compute_comps(raw: &RawData, matchup_rows: &[MatchupRow]) -> Vec<CompRow> {
         })
         .collect();
 
-    // A comp with a proven record outranks one that merely exists.
-    let _ = matchup_rows;
-    rows.sort_by(|a, b| b.fights.cmp(&a.fights).then_with(|| a.name.cmp(&b.name)));
+    // A comp with a proven record outranks one that merely exists: rank by the
+    // win rate against scouted opponents first (mirroring `best_counter`'s "win
+    // rate, then sample size" ordering) so a comp that's meaningfully better
+    // against real opposition isn't buried under one that's merely been fielded
+    // more often. Comps with no matchup coverage yet fall back to their event
+    // win rate rather than sinking to the bottom outright.
+    let matchup_record_by_comp: HashMap<i64, (i64, i64)> =
+        matchup_rows.iter().fold(HashMap::new(), |mut acc, m| {
+            let entry = acc.entry(m.our_comp_id).or_insert((0, 0));
+            entry.0 += m.wins;
+            entry.1 += m.battles;
+            acc
+        });
+    let comp_win_rate = |row: &CompRow| -> f64 {
+        match matchup_record_by_comp.get(&row.comp_id) {
+            Some((wins, battles)) if *battles > 0 => ratio_percent(*wins, *battles),
+            _ => row.win_rate,
+        }
+    };
+    rows.sort_by(|a, b| {
+        comp_win_rate(b)
+            .partial_cmp(&comp_win_rate(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.fights.cmp(&a.fights))
+            .then_with(|| a.name.cmp(&b.name))
+    });
     rows
 }
 
@@ -1811,7 +1841,7 @@ mod tests {
             withdrawn_at: None,
         });
 
-        let economy = compute_economy(&raw, &compute_overview(&[], &HashSet::new()));
+        let economy = compute_economy(&raw, &compute_overview(&[], &HashSet::new()), &[]);
         assert_eq!(economy.split_completed, 95_000);
         assert_eq!(economy.loot_in, 95_000);
 
