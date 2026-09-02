@@ -14,7 +14,12 @@ use sea_orm::{
 
 use sea_orm::sea_query::{Expr, Func};
 
-use crate::errors::AppError;
+use crate::errors::{AppError, BlockingReference};
+use crate::modules::events::entities::{
+    event, event_participation, event_roster_role,
+    event_participation::Column as EventParticipationColumn,
+    event_roster_role::Column as EventRosterRoleColumn,
+};
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
 use super::entities::{
@@ -1115,16 +1120,70 @@ impl CompService {
     }
 
     /// Deletes a build. Fails with [`AppError::Conflict`] if any comp references it.
+    ///
+    /// `comp_builds.build_id`, `event_participations.{primary,secondary}_build_id`, and
+    /// `event_roster_roles.build_id` are all `RESTRICT` FKs — checked here first so the
+    /// caller gets the specific blocking comps/events back instead of a raw constraint error.
     pub async fn delete_build(&self, db: &DatabaseConnection, id: i64) -> Result<(), AppError> {
-        let count = comp_build::Entity::find()
+        let blocking_comps = comp_build::Entity::find()
             .filter(CompBuildColumn::BuildId.eq(id))
-            .count(db)
+            .find_also_related(comp::Entity)
+            .all(db)
             .await?;
 
-        if count > 0 {
-            return Err(AppError::Conflict(format!(
-                "Cannot delete build {id}: referenced by {count} comp(s)"
-            )));
+        let mut references: Vec<BlockingReference> = blocking_comps
+            .into_iter()
+            .filter_map(|(_, comp)| comp)
+            .map(|c| BlockingReference {
+                resource: "comp".to_string(),
+                id: c.id,
+                label: c.name,
+            })
+            .collect();
+
+        let mut blocking_event_ids: HashSet<i64> = HashSet::new();
+        for participation in event_participation::Entity::find()
+            .filter(
+                EventParticipationColumn::PrimaryBuildId
+                    .eq(id)
+                    .or(EventParticipationColumn::SecondaryBuildId.eq(id)),
+            )
+            .all(db)
+            .await?
+        {
+            blocking_event_ids.insert(participation.event_id);
+        }
+        for roster_role in event_roster_role::Entity::find()
+            .filter(EventRosterRoleColumn::BuildId.eq(id))
+            .all(db)
+            .await?
+        {
+            blocking_event_ids.insert(roster_role.event_id);
+        }
+
+        if !blocking_event_ids.is_empty() {
+            references.extend(
+                event::Entity::find()
+                    .filter(event::Column::Id.is_in(blocking_event_ids))
+                    .all(db)
+                    .await?
+                    .into_iter()
+                    .map(|e| BlockingReference {
+                        resource: "event".to_string(),
+                        id: e.id,
+                        label: e.title,
+                    }),
+            );
+        }
+
+        if !references.is_empty() {
+            return Err(AppError::ConflictWithReferences {
+                message: format!(
+                    "Cannot delete build {id}: {} comp(s)/event(s) still use it",
+                    references.len()
+                ),
+                references,
+            });
         }
 
         build::Entity::delete_by_id(id).exec(db).await?;
@@ -1654,7 +1713,32 @@ impl CompService {
     }
 
     /// Deletes a comp. Cascades to `comp_builds` via FK.
+    ///
+    /// `events.comp_id` is a `RESTRICT` FK, so a comp still linked to any
+    /// event can't be deleted at the database level — checked here first so
+    /// the caller gets the specific blocking events back instead of a raw
+    /// constraint-violation error.
     pub async fn delete_comp(&self, db: &DatabaseConnection, id: i64) -> Result<(), AppError> {
+        let blocking_events = event::Entity::find()
+            .filter(event::Column::CompId.eq(id))
+            .all(db)
+            .await?;
+
+        if !blocking_events.is_empty() {
+            let count = blocking_events.len();
+            return Err(AppError::ConflictWithReferences {
+                message: format!("Cannot delete comp {id}: {count} event(s) still use it"),
+                references: blocking_events
+                    .into_iter()
+                    .map(|e| BlockingReference {
+                        resource: "event".to_string(),
+                        id: e.id,
+                        label: e.title,
+                    })
+                    .collect(),
+            });
+        }
+
         comp::Entity::delete_by_id(id).exec(db).await?;
         Ok(())
     }
@@ -1890,6 +1974,13 @@ mod tests {
         match error {
             AppError::Conflict(message) => message,
             other => panic!("expected conflict, got {other:?}"),
+        }
+    }
+
+    fn expect_conflict_with_references(error: AppError) -> Vec<BlockingReference> {
+        match error {
+            AppError::ConflictWithReferences { references, .. } => references,
+            other => panic!("expected conflict with references, got {other:?}"),
         }
     }
 
@@ -2775,16 +2866,50 @@ mod tests {
             .await
             .unwrap();
 
-        expect_conflict(
+        let references = expect_conflict_with_references(
             service
                 .delete_build(&db, second.summary.id)
                 .await
                 .unwrap_err(),
         );
+        assert_eq!(references.len(), 1);
+        assert_eq!(references[0].resource, "comp");
+        assert_eq!(references[0].label, "Standard");
+
         service
             .delete_build(&db, build_id)
             .await
             .expect("the unreferenced version is still deletable");
+    }
+
+    #[tokio::test]
+    async fn a_comp_an_event_uses_cannot_be_deleted() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let zvz = insert_comp_category(&db, "ZvZ").await;
+        let service = CompService::new();
+        let comp = service
+            .create_comp(&db, user, comp_request("Roaming", zvz))
+            .await
+            .unwrap();
+
+        event::ActiveModel {
+            title: Set("Roaming per i Draghi".to_string()),
+            comp_id: Set(comp.summary.id),
+            created_by: Set(user),
+            event_date_utc: Set(now()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert the event");
+
+        let references = expect_conflict_with_references(
+            service.delete_comp(&db, comp.summary.id).await.unwrap_err(),
+        );
+        assert_eq!(references.len(), 1);
+        assert_eq!(references[0].resource, "event");
+        assert_eq!(references[0].label, "Roaming per i Draghi");
     }
 
     #[tokio::test]
