@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CompSummary } from '../../core/models/api.models';
-import {
-  buildCompForest,
-  filterCompForest,
-  flattenCompForest,
-} from './comp-tree';
+import { buildCompForest, filterCompForest, flattenCompForest } from './comp-tree';
 
 function comp(
   id: number,
@@ -25,6 +21,7 @@ function comp(
     build_count: 1,
     total_quantity: totalQuantity,
     parent_id: parentId,
+    archived_at: null,
   };
 }
 
@@ -85,10 +82,7 @@ describe('comp expansion tree', () => {
   });
 
   it('renders a comp with a missing parent as a recovery root', () => {
-    const forest = buildCompForest([
-      comp(10, '10-man', 10),
-      comp(15, 'orphaned 15-man', 15, 999),
-    ]);
+    const forest = buildCompForest([comp(10, '10-man', 10), comp(15, 'orphaned 15-man', 15, 999)]);
 
     const rows = flattenCompForest(forest, new Set(), true);
     expect(rows.map((entry) => entry.comp.id)).toEqual([10, 15]);

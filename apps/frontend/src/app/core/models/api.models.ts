@@ -137,7 +137,6 @@ export interface UserProfile {
 
 export type AlbionCombatCategory = 'weapon' | 'armor';
 
-
 export interface UserSpecialization {
   node_key: string;
   node_name: string;
@@ -366,13 +365,7 @@ export interface MatchedParticipant {
 }
 
 export type SplitIslandCity =
-  | 'lymhurst'
-  | 'bridgewatch'
-  | 'martlock'
-  | 'fort_sterling'
-  | 'thetford'
-  | 'caerleon'
-  | 'brecilien';
+  'lymhurst' | 'bridgewatch' | 'martlock' | 'fort_sterling' | 'thetford' | 'caerleon' | 'brecilien';
 
 export interface SplitIslandTab {
   id: number;
@@ -759,9 +752,7 @@ export interface RosterRealtimeResyncRequiredMessage {
 
 /** Notifications sent by `GET /api/events/{id}/roster/live`. */
 export type RosterRealtimeMessage =
-  | RosterRealtimeReadyMessage
-  | RosterRealtimeChangedMessage
-  | RosterRealtimeResyncRequiredMessage;
+  RosterRealtimeReadyMessage | RosterRealtimeChangedMessage | RosterRealtimeResyncRequiredMessage;
 
 export interface EventFilters {
   search?: string;
@@ -1965,12 +1956,7 @@ export interface ProgressionLeaderboardEntry {
 
 /** Why a progression ledger row was written. */
 export type XpSource =
-  | 'message'
-  | 'event_create'
-  | 'event_join'
-  | 'event_complete'
-  | 'vod'
-  | 'admin_adjust';
+  'message' | 'event_create' | 'event_join' | 'event_complete' | 'vod' | 'admin_adjust';
 
 /** One append-only XP award (or admin adjust) row. */
 export interface ProgressionLedgerRow {

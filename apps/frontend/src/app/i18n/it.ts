@@ -560,14 +560,14 @@ export const it: TranslationDict = {
     '[{alliance}] ha contribuito per il {share}% della fama totale della battaglia.',
   'battles.momentum': 'Slancio della Battaglia',
   'battles.momentum_hint':
-    "Oscillazione cumulativa della fama al minuto — mostra chi sta vincendo lo scontro nel tempo.",
+    'Oscillazione cumulativa della fama al minuto — mostra chi sta vincendo lo scontro nel tempo.',
   'battles.momentum_ally_lead': 'Vantaggio Alleato',
   'battles.momentum_enemy_lead': 'Vantaggio Nemico',
   'battles.composition_by_side': 'Composizione per Schieramento',
   'battles.composition_by_side_hint': 'Confronto dei ruoli tra le nostre forze e il nemico.',
   'battles.ip_performance': 'Potere Oggetti vs Fama Netta',
   'battles.ip_performance_hint':
-    "Ogni punto è un giocatore: investimento in equipaggiamento contro fama guadagnata meno fama persa.",
+    'Ogni punto è un giocatore: investimento in equipaggiamento contro fama guadagnata meno fama persa.',
   'battles.enemy_kills': 'Uccisioni Nemiche',
   'battles.side': 'Schieramento',
   'comps.title': 'Composizioni',
@@ -663,6 +663,14 @@ export const it: TranslationDict = {
   'comps.quantityUpdated': 'Quantità aggiornata',
   'comps.buildRemoved': 'Build rimossa',
   'comps.delete.blocked': 'Impossibile eliminare "{name}": è ancora in uso.',
+  'comps.archive': 'Archivia',
+  'comps.unarchive': 'Riattiva',
+  'comps.archived': 'Archiviata',
+  'comps.showArchived': 'Mostra archiviate',
+  'comps.archiveConfirm':
+    'Verrà nascosta da ogni selezione finché non la riattivi. Tutto ciò che la usa già — un evento, una comp — continuerà a funzionare.',
+  'comps.archiveSuccess': 'Archiviata',
+  'comps.unarchiveSuccess': 'Riattivata',
 
   'albion.title': 'Collegamento Albion',
   'albion.subtitle': 'Collega Discord al tuo personaggio di gioco.',
@@ -1306,12 +1314,14 @@ export const it: TranslationDict = {
 
   // Intel — classifiche di gilda, minacce nemiche, report per singolo giocatore
   'intel.leaderboards.title': 'Classifiche di gilda',
-  'intel.leaderboards.hint': 'Ordinate per attività reale in questa finestra, non contatori salvati.',
+  'intel.leaderboards.hint':
+    'Ordinate per attività reale in questa finestra, non contatori salvati.',
   'intel.kills': 'Uccisioni',
   'intel.killFame': 'Fama da uccisioni',
   'intel.splitEarnings': 'Guadagni da split',
   'intel.topThreats.title': 'Minacce principali',
-  'intel.topThreats.hint': 'Nemici ordinati per livello di minaccia, con il nostro record contro di loro.',
+  'intel.topThreats.hint':
+    'Nemici ordinati per livello di minaccia, con il nostro record contro di loro.',
   'intel.topThreats.counter': 'Nostro counter',
   'intel.recordVsUs': 'Record contro di noi',
   'intel.player.title': 'Intel di combattimento',
@@ -1536,7 +1546,7 @@ export const it: TranslationDict = {
   // Guild overview
   'guild.title': 'Panoramica Gilda',
   'guild.subtitle':
-    "Tutto sulla gilda in un unico posto — combattimento, organico, economia, meta e classifiche.",
+    'Tutto sulla gilda in un unico posto — combattimento, organico, economia, meta e classifiche.',
   'guild.tabs.overview': 'Panoramica',
   'guild.tabs.roster': 'Organico e Operazioni',
   'guild.tabs.economy': 'Economia',
@@ -1561,7 +1571,7 @@ export const it: TranslationDict = {
   'guild.charts.noData': 'Nessun dato per questo periodo.',
   'guild.timeline.title': 'Attività recente',
   'guild.dataQuality.line':
-    "{attributed} di {total} battaglie attribuite ai membri; {unlinked} nome/i giocatore non collegato/i visto/i in battaglia.",
+    '{attributed} di {total} battaglie attribuite ai membri; {unlinked} nome/i giocatore non collegato/i visto/i in battaglia.',
   'guild.roster.roleNeeded': 'Richiesti',
   'guild.roster.roleFilled': 'Coperti',
   'guild.roster.inactive': 'Membri inattivi',
