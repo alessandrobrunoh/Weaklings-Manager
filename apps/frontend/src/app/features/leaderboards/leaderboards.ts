@@ -20,6 +20,7 @@ import {
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
@@ -103,6 +104,7 @@ const PODIUM_SIZE = 3;
     DataTable,
     DataTableCell,
     EmptyState,
+    ErrorState,
     Icon,
     Loading,
     PageHeader,
@@ -350,12 +352,11 @@ const PODIUM_SIZE = 3;
           @if (activeState().isLoading) {
             <app-loading [label]="t('common.loading')" />
           } @else if (activeState().hasError) {
-            <div class="state state--error" role="alert">
-              <span>{{ t('common.error') }}</span>
-              <button type="button" class="link-btn" (click)="reloadActive()">
-                {{ t('common.retry') }}
-              </button>
-            </div>
+            <app-error-state
+              [message]="t('common.error')"
+              [retryLabel]="t('common.retry')"
+              (retry)="reloadActive()"
+            />
           } @else if (activeEntries().length === 0) {
             <app-empty-state icon="trophy" [message]="t('season.empty')" />
           } @else {
@@ -878,36 +879,6 @@ const PODIUM_SIZE = 3;
         color: var(--color-text-secondary);
       }
 
-      /* ---------- States ---------- */
-
-      .state {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.75rem;
-        padding: 3rem 1rem;
-        text-align: center;
-        font-size: 0.875rem;
-        color: var(--color-text-secondary);
-      }
-
-      .state--error {
-        flex-direction: column;
-        color: var(--color-error);
-      }
-
-      .link-btn {
-        background: none;
-        border: none;
-        color: var(--color-primary);
-        font-weight: 600;
-        cursor: pointer;
-        padding: 0;
-      }
-
-      .link-btn:hover {
-        text-decoration: underline;
-      }
 
       /* ---------- Podium ---------- */
 
@@ -1012,31 +983,31 @@ const PODIUM_SIZE = 3;
       .podium__medal--gold {
         background: linear-gradient(
           135deg,
-          #fde047,
-          #eab308 60%,
-          #ca8a04
+          var(--color-medal-gold-1),
+          var(--color-medal-gold-2) 60%,
+          var(--color-medal-gold-3)
         );
-        color: #713f12;
+        color: var(--color-medal-gold-text);
       }
 
       .podium__medal--silver {
         background: linear-gradient(
           135deg,
-          #f4f4f5,
-          #cbd5e1 60%,
-          #94a3b8
+          var(--color-medal-silver-1),
+          var(--color-medal-silver-2) 60%,
+          var(--color-medal-silver-3)
         );
-        color: #334155;
+        color: var(--color-medal-silver-text);
       }
 
       .podium__medal--bronze {
         background: linear-gradient(
           135deg,
-          #fdba74,
-          #ea580c 65%,
-          #9a3412
+          var(--color-medal-bronze-1),
+          var(--color-medal-bronze-2) 65%,
+          var(--color-medal-bronze-3)
         );
-        color: #ffffff;
+        color: var(--color-medal-bronze-text);
       }
 
       .podium__name {
