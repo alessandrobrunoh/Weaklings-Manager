@@ -132,23 +132,78 @@ interface EventRosterParty {
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
     } @else if (event(); as detail) {
-      <!-- ================= HERO HEADER BANNER ================= -->
-      <section class="card mb-5 overflow-hidden border border-[var(--color-border)] p-0 rounded-2xl shadow-sm">
-        <div class="bg-[var(--color-surface)] p-5 sm:p-6 border-b border-[var(--color-border)]">
-          <!-- Top Row: Back, Badges, Officer Actions -->
-          <div class="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-[var(--color-border)]">
-            <div class="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                class="btn btn--ghost btn--sm"
-                (click)="backToEvents()"
-                [appTooltip]="'Torna all\\'elenco degli eventi'"
-                tooltipPosition="bottom"
-              >
-                <app-icon name="chevron-left" size="0.875rem" />
-                {{ t('events.detail.back') }}
-              </button>
+      <!-- ================= PAGE HEADER: title, officer actions, tabs ================= -->
+      <app-page-header [title]="detail.title">
+        <button
+          type="button"
+          class="btn btn--ghost btn--sm"
+          (click)="backToEvents()"
+          [appTooltip]="'Torna all\\'elenco degli eventi'"
+          tooltipPosition="bottom"
+        >
+          <app-icon name="chevron-left" size="0.875rem" />
+          {{ t('events.detail.back') }}
+        </button>
+        @if (canManage() && detail.status === 'scheduled') {
+          <button
+            type="button"
+            class="btn btn--primary btn--sm"
+            (click)="start(detail.id)"
+            [appTooltip]="'Avvia ufficialmente l\\'evento'"
+            tooltipPosition="bottom"
+          >
+            <app-icon name="sparkles" size="0.875rem" />
+            {{ t('events.start') }}
+          </button>
+        }
+        @if (canManage() && detail.status === 'live') {
+          <button
+            type="button"
+            class="btn btn--danger btn--sm"
+            (click)="stop(detail.id)"
+            [appTooltip]="'Concludi l\\'evento in corso'"
+            tooltipPosition="bottom"
+          >
+            <app-icon name="close" size="0.875rem" />
+            {{ t('events.stop') }}
+          </button>
+        }
+        @if (canEdit()) {
+          <button
+            type="button"
+            class="btn btn--outline btn--sm"
+            (click)="toggleEditForm()"
+            [appTooltip]="'Modifica dettagli evento'"
+            tooltipPosition="bottom"
+          >
+            <app-icon name="settings" size="0.875rem" />
+            {{ t('common.edit') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm text-[var(--color-danger)] hover:bg-[var(--color-error-container)]"
+            (click)="requestDelete()"
+            [appTooltip]="'Elimina definitivamente l\\'evento'"
+            tooltipPosition="bottom"
+          >
+            <app-icon name="close" size="0.875rem" />
+            {{ t('common.delete') }}
+          </button>
+        }
+        <app-view-toggle
+          pageTabs
+          [options]="tabOptions()"
+          [active]="tab()"
+          (activeChange)="onTabChange($event)"
+        />
+      </app-page-header>
 
+      <!-- ================= EVENT SUMMARY: status, meta, description, your registration ================= -->
+      <section class="card mb-5 p-4 sm:p-5">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+          <!-- Left Info Block -->
+          <div class="space-y-2 min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
               <app-status-chip [value]="detail.status" />
 
               @if (detail.call_to_arms) {
@@ -188,181 +243,111 @@ interface EventRosterParty {
               }
             </div>
 
-            <!-- Management Actions for Officers -->
-            <div class="flex flex-wrap items-center gap-2">
-              @if (canManage() && detail.status === 'scheduled') {
-                <button
-                  type="button"
-                  class="btn btn--primary btn--sm"
-                  (click)="start(detail.id)"
-                  [appTooltip]="'Avvia ufficialmente l\\'evento'"
-                  tooltipPosition="bottom"
-                >
-                  <app-icon name="sparkles" size="0.875rem" />
-                  {{ t('events.start') }}
-                </button>
-              }
-              @if (canManage() && detail.status === 'live') {
-                <button
-                  type="button"
-                  class="btn btn--danger btn--sm"
-                  (click)="stop(detail.id)"
-                  [appTooltip]="'Concludi l\\'evento in corso'"
-                  tooltipPosition="bottom"
-                >
-                  <app-icon name="close" size="0.875rem" />
-                  {{ t('events.stop') }}
-                </button>
-              }
-              @if (canEdit()) {
-                <button
-                  type="button"
-                  class="btn btn--outline btn--sm"
-                  (click)="toggleEditForm()"
-                  [appTooltip]="'Modifica dettagli evento'"
-                  tooltipPosition="bottom"
-                >
-                  <app-icon name="settings" size="0.875rem" />
-                  {{ t('common.edit') }}
-                </button>
-                <button
-                  type="button"
-                  class="btn btn--ghost btn--sm text-[var(--color-danger)] hover:bg-[var(--color-error-container)]"
-                  (click)="requestDelete()"
-                  [appTooltip]="'Elimina definitivamente l\\'evento'"
-                  tooltipPosition="bottom"
-                >
-                  <app-icon name="close" size="0.875rem" />
-                  {{ t('common.delete') }}
-                </button>
-              }
-            </div>
-          </div>
+            <div class="flex flex-wrap items-center gap-3 text-xs text-[var(--color-text-secondary)]">
+              <span class="inline-flex items-center gap-1.5 font-medium text-[var(--color-text)]">
+                <app-icon name="calendar" size="0.875rem" />
+                {{ formatDate(detail.event_date_utc) }}
+              </span>
 
-          <!-- Middle Row: Event Title, Info & User Participation Card -->
-          <div class="mt-4 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-            <!-- Left Info Block -->
-            <div class="space-y-2 min-w-0 flex-1">
-              <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--color-text)]">
-                {{ detail.title }}
-              </h1>
+              <span class="text-[var(--color-text-tertiary)]">&bull;</span>
 
-              <div class="flex flex-wrap items-center gap-3 text-xs text-[var(--color-text-secondary)]">
-                <span class="inline-flex items-center gap-1.5 font-medium text-[var(--color-text)]">
-                  <app-icon name="calendar" size="0.875rem" />
-                  {{ formatDate(detail.event_date_utc) }}
+              <span class="inline-flex items-center gap-1.5">
+                <app-icon name="package" size="0.875rem" />
+                <strong class="text-[var(--color-text)] font-semibold">{{
+                  detail.active_comp_name || detail.comp_name || t('events.detail.no_comp_linked')
+                }}</strong>
+              </span>
+
+              <span class="text-[var(--color-text-tertiary)]">&bull;</span>
+
+              <!-- Capacity Progress Pill -->
+              <div class="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-[var(--color-surface-2)] border border-[var(--color-border)]">
+                <span>{{ t('events.detail.comp_capacity') }}:</span>
+                <span class="font-mono font-bold text-[var(--color-text)]">
+                  {{ rosterFilledSeats() }}/{{ rosterSeatCount() }}
                 </span>
-
-                <span class="text-[var(--color-text-tertiary)]">&bull;</span>
-
-                <span class="inline-flex items-center gap-1.5">
-                  <app-icon name="package" size="0.875rem" />
-                  <strong class="text-[var(--color-text)] font-semibold">{{
-                    detail.active_comp_name || detail.comp_name || t('events.detail.no_comp_linked')
-                  }}</strong>
-                </span>
-
-                <span class="text-[var(--color-text-tertiary)]">&bull;</span>
-
-                <!-- Capacity Progress Pill -->
-                <div class="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-[var(--color-surface-2)] border border-[var(--color-border)]">
-                  <span>{{ t('events.detail.comp_capacity') }}:</span>
-                  <span class="font-mono font-bold text-[var(--color-text)]">
-                    {{ rosterFilledSeats() }}/{{ rosterSeatCount() }}
-                  </span>
-                  <div class="h-1.5 w-12 bg-[var(--color-border)] rounded-full overflow-hidden">
-                    <div
-                      class="h-full bg-[var(--color-success)] rounded-full transition-all"
-                      [style.width.%]="rosterSeatCount() > 0 ? (rosterFilledSeats() / rosterSeatCount()) * 100 : 0"
-                    ></div>
-                  </div>
+                <div class="h-1.5 w-12 bg-[var(--color-border)] rounded-full overflow-hidden">
+                  <div
+                    class="h-full bg-[var(--color-success)] rounded-full transition-all"
+                    [style.width.%]="rosterSeatCount() > 0 ? (rosterFilledSeats() / rosterSeatCount()) * 100 : 0"
+                  ></div>
                 </div>
               </div>
-
-              @if (detail.description) {
-                <p class="pt-1 text-xs text-[var(--color-text-secondary)] max-w-4xl leading-relaxed">
-                  {{ detail.description }}
-                </p>
-              }
             </div>
 
-            <!-- Right Participation Card -->
-            <div class="flex-shrink-0">
-              @if (currentParticipant(); as participation) {
-                <div class="rounded-xl p-3.5 border border-emerald-500/30 bg-emerald-500/5 min-w-[280px] space-y-2">
-                  <div class="flex items-center justify-between gap-2">
-                    <div class="flex items-center gap-2">
-                      <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      <span class="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                        {{ t('events.detail.registered_as') }}
-                      </span>
-                    </div>
-                    <span class="chip chip--success text-[10px] font-bold uppercase px-1.5 py-0.5">
-                      {{ ownRosterSeat() ? 'Titolare' : (isCurrentUserOnRosterBench() ? 'Bench' : 'Iscritto') }}
-                    </span>
-                  </div>
+            @if (detail.description) {
+              <p class="pt-1 text-xs text-[var(--color-text-secondary)] max-w-4xl leading-relaxed">
+                {{ detail.description }}
+              </p>
+            }
+          </div>
 
-                  <div class="text-xs">
-                    <p class="font-semibold text-sm text-[var(--color-text)] truncate">
-                      {{ participation.primary_build_name || 'Build #' + participation.primary_build_id }}
-                    </p>
-                    @if (participation.secondary_build_name) {
-                      <p class="text-[11px] text-[var(--color-text-secondary)] truncate">
-                        Sec: {{ participation.secondary_build_name }}
-                      </p>
-                    }
-                  </div>
-
-                  <div class="flex items-center gap-1.5 pt-2 border-t border-emerald-500/20">
-                    <button
-                      type="button"
-                      class="btn btn--outline btn--sm text-xs flex-1"
-                      (click)="toggleJoinForm()"
-                    >
-                      {{ t('events.detail.change_build') }}
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn--ghost btn--sm text-xs text-[var(--color-danger)] hover:bg-rose-500/10"
-                      (click)="leave(detail.id)"
-                    >
-                      {{ t('events.leave') }}
-                    </button>
-                  </div>
-                </div>
-              } @else {
-                <div class="rounded-xl p-4 border border-[var(--color-border)] bg-[var(--color-surface-2)] min-w-[260px] flex flex-col items-start gap-2.5">
+          <!-- Right Participation Card -->
+          <div class="flex-shrink-0">
+            @if (currentParticipant(); as participation) {
+              <div class="rounded-xl p-3.5 border border-emerald-500/30 bg-emerald-500/5 min-w-[280px] space-y-2">
+                <div class="flex items-center justify-between gap-2">
                   <div class="flex items-center gap-2">
-                    <app-icon name="users" size="1rem" />
-                    <span class="text-xs font-medium text-[var(--color-text)]">
-                      Non sei ancora iscritto
+                    <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span class="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                      {{ t('events.detail.registered_as') }}
                     </span>
                   </div>
-                  <p class="text-[11px] text-[var(--color-text-secondary)]">
-                    Unisciti all'evento e prenota il tuo ruolo nella composizione.
+                  <span class="chip chip--success text-[10px] font-bold uppercase px-1.5 py-0.5">
+                    {{ ownRosterSeat() ? 'Titolare' : (isCurrentUserOnRosterBench() ? 'Bench' : 'Iscritto') }}
+                  </span>
+                </div>
+
+                <div class="text-xs">
+                  <p class="font-semibold text-sm text-[var(--color-text)] truncate">
+                    {{ participation.primary_build_name || 'Build #' + participation.primary_build_id }}
                   </p>
+                  @if (participation.secondary_build_name) {
+                    <p class="text-[11px] text-[var(--color-text-secondary)] truncate">
+                      Sec: {{ participation.secondary_build_name }}
+                    </p>
+                  }
+                </div>
+
+                <div class="flex items-center gap-1.5 pt-2 border-t border-emerald-500/20">
                   <button
                     type="button"
-                    class="btn btn--primary btn--sm w-full"
+                    class="btn btn--outline btn--sm text-xs flex-1"
                     (click)="toggleJoinForm()"
                   >
-                    <app-icon name="plus" size="0.875rem" />
-                    {{ t('events.participate') }}
+                    {{ t('events.detail.change_build') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn--ghost btn--sm text-xs text-[var(--color-danger)] hover:bg-rose-500/10"
+                    (click)="leave(detail.id)"
+                  >
+                    {{ t('events.leave') }}
                   </button>
                 </div>
-              }
-            </div>
+              </div>
+            } @else {
+              <div class="rounded-xl p-4 border border-[var(--color-border)] bg-[var(--color-surface-2)] min-w-[260px] flex flex-col items-start gap-2.5">
+                <div class="flex items-center gap-2">
+                  <app-icon name="users" size="1rem" />
+                  <span class="text-xs font-medium text-[var(--color-text)]">
+                    Non sei ancora iscritto
+                  </span>
+                </div>
+                <p class="text-[11px] text-[var(--color-text-secondary)]">
+                  Unisciti all'evento e prenota il tuo ruolo nella composizione.
+                </p>
+                <button
+                  type="button"
+                  class="btn btn--primary btn--sm w-full"
+                  (click)="toggleJoinForm()"
+                >
+                  <app-icon name="plus" size="0.875rem" />
+                  {{ t('events.participate') }}
+                </button>
+              </div>
+            }
           </div>
-        </div>
-
-        <!-- Navigation Tab Strip -->
-        <div class="bg-[var(--color-surface-1)] px-4 py-2 border-t border-[var(--color-border)]">
-          <app-view-toggle
-            pageTabs
-            [options]="tabOptions()"
-            [active]="tab()"
-            (activeChange)="onTabChange($event)"
-          />
         </div>
       </section>
 
