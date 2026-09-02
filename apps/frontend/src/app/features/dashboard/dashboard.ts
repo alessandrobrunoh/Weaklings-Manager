@@ -190,7 +190,7 @@ interface DashboardStat {
       <!-- Two-column activity panels -->
       <section class="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <!-- Live & upcoming events -->
-        <div class="card p-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
+        <div class="card p-4 shadow-sm">
           <div class="mb-3 flex items-center justify-between pb-2 border-b border-[var(--color-border)]">
             <div class="flex items-center gap-2">
               <span class="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -218,7 +218,7 @@ interface DashboardStat {
                 <li>
                   <a
                     [routerLink]="['/events', event.id]"
-                    class="flex items-center justify-between gap-3 rounded-xl p-2.5 border border-[var(--color-border)] bg-[var(--color-surface-1)] no-underline transition-all hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-hover)]"
+                    class="surface flex items-center justify-between gap-3 p-2.5 no-underline transition-all hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-hover)]"
                   >
                     <div class="min-w-0 flex-1">
                       <div class="flex items-center gap-2 flex-wrap">
@@ -244,7 +244,7 @@ interface DashboardStat {
         </div>
 
         <!-- Recent splits -->
-        <div class="card p-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
+        <div class="card p-4 shadow-sm">
           <div class="mb-3 flex items-center justify-between pb-2 border-b border-[var(--color-border)]">
             <div class="flex items-center gap-2">
               <span class="inline-block h-2 w-2 rounded-full bg-[var(--color-primary)]"></span>
@@ -272,7 +272,7 @@ interface DashboardStat {
                 <li>
                   <a
                     [routerLink]="['/splits', split.id]"
-                    class="flex items-center justify-between gap-3 rounded-xl p-2.5 border border-[var(--color-border)] bg-[var(--color-surface-1)] no-underline transition-all hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-hover)]"
+                    class="surface flex items-center justify-between gap-3 p-2.5 no-underline transition-all hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-hover)]"
                   >
                     <div class="min-w-0 flex-1">
                       <p class="truncate text-xs font-bold text-[var(--color-text)]">
