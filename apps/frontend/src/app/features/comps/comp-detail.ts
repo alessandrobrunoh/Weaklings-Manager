@@ -203,7 +203,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
           <!-- LEFT COLUMN: Albion-Native Party Matrix (8 cols) -->
           <div class="lg:col-span-8 grid gap-6">
             <!-- Section Header & Add Build Controller -->
-            <div class="flex flex-wrap items-center justify-between gap-3 bg-[var(--color-surface)] p-4 rounded-xl border border-[var(--color-border)]">
+            <div class="card flex flex-wrap items-center justify-between gap-3 p-4">
               <div>
                 <h2 class="text-base font-bold text-[var(--color-text)]">
                   Party Roster Matrix
@@ -290,7 +290,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                   <div class="grid gap-3 sm:grid-cols-2">
                     @for (entry of roleGroup.entries; track entry.build_id) {
                       <div
-                        class="flex flex-col justify-between p-4 rounded-xl border bg-[var(--color-surface)] hover:border-[var(--color-border-strong)] transition-all"
+                        class="card flex flex-col justify-between p-4 transition-all"
                         [style.border-left-width]="'4px'"
                         [style.border-left-color]="roleColorHex(entry.build.role)"
                       >
@@ -386,7 +386,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
           <!-- RIGHT COLUMN: Tactical Analytics & Blueprint Sidebar (4 cols) -->
           <aside class="lg:col-span-4 grid gap-5">
             <!-- Blueprint Stats Card -->
-            <div class="card p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl grid gap-4">
+            <div class="card p-5 grid gap-4">
               <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]">
                 Role Composition Balance
               </h3>
@@ -428,7 +428,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
 
             <!-- Performance Telemetry Card -->
             @if (performance(); as perf) {
-              <div class="card p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl grid gap-4">
+              <div class="card p-5 grid gap-4">
                 <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]">
                   Battle Performance Record
                 </h3>

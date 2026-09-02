@@ -226,7 +226,7 @@ const ITEM_TIERS = [
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           <!-- COLUMN 1: Equipment Paperdoll (5 cols) -->
           <div class="lg:col-span-5 grid gap-6">
-            <section class="card p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl grid gap-4">
+            <section class="card p-5 grid gap-4">
               <header class="flex items-center justify-between gap-3">
                 <div>
                   <h2 class="text-base font-bold text-[var(--color-text)]">
@@ -261,7 +261,7 @@ const ITEM_TIERS = [
 
             <!-- Swap Loadout Accordion / Card -->
             @if (swapItems().length > 0 || (canManage() && mode() === 'edit')) {
-              <section class="card p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl grid gap-4">
+              <section class="card p-5 grid gap-4">
                 <header class="flex items-center justify-between gap-3">
                   <div>
                     <h2 class="text-base font-bold text-[var(--color-text)]">
@@ -303,7 +303,7 @@ const ITEM_TIERS = [
 
           <!-- COLUMN 2: Spell & Ability Deck (4 cols) -->
           <div class="lg:col-span-4 grid gap-5">
-            <section class="card p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl grid gap-4">
+            <section class="card p-5 grid gap-4">
               <header>
                 <h2 class="text-base font-bold text-[var(--color-text)]">
                   {{ t('comps.abilities') }}
@@ -364,7 +364,7 @@ const ITEM_TIERS = [
 
           <!-- COLUMN 3: Performance & Signups Sidebar (3 cols) -->
           <aside class="lg:col-span-3 grid gap-5">
-            <section class="card p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl grid gap-4">
+            <section class="card p-5 grid gap-4">
               <header class="flex items-center justify-between gap-2">
                 <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]">
                   {{ t('comps.performance') }} · v{{ current.version }}
