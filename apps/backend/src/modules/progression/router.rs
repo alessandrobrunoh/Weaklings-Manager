@@ -162,7 +162,7 @@ async fn update_settings(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<UpdateProgressionSettingsRequest>,
 ) -> Result<Json<ApiResponse<ProgressionSettingsView>>, AppError> {
-    user.require(&perms, Permission::ProgressionSettingsManage)
+    user.require(&perms, Permission::ProgressionSettingsEdit)
         .await?;
     let view = ProgressionService::new()
         .update_settings(&db, user.user_id, &req)
@@ -222,7 +222,7 @@ async fn create_season(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<CreateSeasonRequest>,
 ) -> Result<Json<ApiResponse<SeasonView>>, AppError> {
-    user.require(&perms, Permission::ProgressionSettingsManage)
+    user.require(&perms, Permission::ProgressionSettingsCreate)
         .await?;
     let season = ProgressionService::new()
         .create_season(&db, user.user_id, &req)
@@ -258,7 +258,7 @@ async fn update_season(
     Path(season_id): Path<i64>,
     Json(req): Json<UpdateSeasonRequest>,
 ) -> Result<Json<ApiResponse<SeasonView>>, AppError> {
-    user.require(&perms, Permission::ProgressionSettingsManage)
+    user.require(&perms, Permission::ProgressionSettingsEdit)
         .await?;
     let season = ProgressionService::new()
         .update_season(&db, user.user_id, season_id, &req)
@@ -291,7 +291,7 @@ async fn activate_season(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(season_id): Path<i64>,
 ) -> Result<Json<ApiResponse<SeasonView>>, AppError> {
-    user.require(&perms, Permission::ProgressionSettingsManage)
+    user.require(&perms, Permission::ProgressionSettingsEdit)
         .await?;
     let season = ProgressionService::new()
         .activate_season(&db, user.user_id, season_id)

@@ -201,8 +201,19 @@ pub enum Permission {
     #[strum(serialize = "intel.view")]
     IntelView,
     /// Create / edit / merge / archive scouted comps and trigger manual scouting. Officer+.
+    /// Superseded by intel.create/.edit/.delete below — kept so existing
+    /// role_permissions rows keep resolving.
     #[strum(serialize = "intel.manage")]
     IntelManage,
+    /// Scout a battle, creating a new scouted comp entry. Officer+.
+    #[strum(serialize = "intel.create")]
+    IntelCreate,
+    /// Edit a scouted comp, or trigger a guild-report refresh. Officer+.
+    #[strum(serialize = "intel.edit")]
+    IntelEdit,
+    /// Delete a scouted comp. Officer+.
+    #[strum(serialize = "intel.delete")]
+    IntelDelete,
     /// View the full guild report aggregate (silver flows, attendance, leaderboards). Officer+.
     #[strum(serialize = "intel.report.view")]
     IntelReportView,
@@ -217,8 +228,17 @@ pub enum Permission {
     #[strum(serialize = "progression.view")]
     ProgressionView,
     /// Edit the XP curve, rates, warn threshold, and seasons. Admin+.
+    /// Superseded by progression.settings.create/.edit below — kept so
+    /// existing role_permissions rows keep resolving.
     #[strum(serialize = "progression.settings.manage")]
     ProgressionSettingsManage,
+    /// Create a new season. Admin+.
+    #[strum(serialize = "progression.settings.create")]
+    ProgressionSettingsCreate,
+    /// Edit the XP curve, rates, warn threshold, an existing season, or
+    /// activate a season. Admin+.
+    #[strum(serialize = "progression.settings.edit")]
+    ProgressionSettingsEdit,
     /// Add/set another member's XP, level, or multiplier. Officer+.
     #[strum(serialize = "progression.adjust")]
     ProgressionAdjust,
