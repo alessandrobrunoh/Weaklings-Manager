@@ -57,6 +57,7 @@ services:
       - traefik.docker.network=proxy
       - traefik.http.routers.weaklings.rule=Host(`weaklings.alessandrobrunoh.it`)
       - traefik.http.routers.weaklings.entrypoints=websecure
+      - traefik.http.routers.weaklings.tls=true
       - traefik.http.routers.weaklings.tls.certresolver=le
       - traefik.http.services.weaklings.loadbalancer.server.port=3000
 
