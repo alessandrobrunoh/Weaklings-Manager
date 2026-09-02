@@ -87,13 +87,13 @@ pub fn router() -> Router {
 
 /// Lists all events (paginated).
 ///
-/// Any authenticated user can list events.
+/// Requires `events.view` permission.
 #[utoipa::path(
     get,
     path = "/api/events",
     tag = "events",
     summary = "List events",
-    description = "Returns a paginated list of scheduled events. Any authenticated user can call this.",
+    description = "Returns a paginated list of scheduled events. Requires `events.view` permission.",
     security(("session_cookie" = [])),
     params(
         ("page" = Option<u64>, Query, description = "Page number (1-indexed, default: 1)"),
@@ -107,15 +107,18 @@ pub fn router() -> Router {
     ),
     responses(
         (status = 200, description = "Events list retrieved successfully", body = ApiResponseEventList),
-        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.view permission", body = ProblemDetails)
     )
 )]
 async fn list_events(
-    _user: UserContext,
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<EventFilters>,
 ) -> Result<Json<ApiResponse<PaginatedData<EventView>>>, AppError> {
+    user.require(&perms, Permission::EventsView).await?;
     let service = EventService::new();
     let events = service.list_events(&db, pagination, filters).await?;
     Ok(Json(ApiResponse::new(events)))
@@ -123,13 +126,13 @@ async fn list_events(
 
 /// Gets a detailed event.
 ///
-/// Any authenticated user can fetch an event.
+/// Requires `events.view` permission.
 #[utoipa::path(
     get,
     path = "/api/events/{id}",
     tag = "events",
     summary = "Get event detail",
-    description = "Returns the full details of an event including active comp configuration and participants list. Any authenticated user can call this.",
+    description = "Returns the full details of an event including active comp configuration and participants list. Requires `events.view` permission.",
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Event ID")
@@ -137,15 +140,18 @@ async fn list_events(
     responses(
         (status = 200, description = "Event details retrieved successfully", body = ApiResponseEventDetail),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.view permission", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails)
     )
 )]
 async fn get_event(
-    _user: UserContext,
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
+    user.require(&perms, Permission::EventsView).await?;
     let service = EventService::new();
     let context = BattleLinkingContext::new(
         &cfg.albion_guild_id,
@@ -435,7 +441,7 @@ async fn list_event_roster_roles(
     responses(
         (status = 200, description = "Roster role added", body = EventRosterRoleView),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event or build not found", body = ProblemDetails),
         (status = 409, description = "Build is already an extra roster role", body = ProblemDetails)
     )
@@ -447,7 +453,7 @@ async fn create_event_roster_role(
     Path(id): Path<i64>,
     Json(request): Json<CreateEventRosterRoleRequest>,
 ) -> Result<Json<ApiResponse<EventRosterRoleView>>, AppError> {
-    user.require(&perms, Permission::EventsManage).await?;
+    user.require(&perms, Permission::EventsEdit).await?;
     let role = EventService::new()
         .create_event_roster_role(&db, id, request)
         .await?;
@@ -468,7 +474,7 @@ async fn create_event_roster_role(
     responses(
         (status = 204, description = "Roster role removed"),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event roster role not found", body = ProblemDetails)
     )
 )]
@@ -478,7 +484,7 @@ async fn delete_event_roster_role(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path((id, role_id)): Path<(i64, i64)>,
 ) -> Result<StatusCode, AppError> {
-    user.require(&perms, Permission::EventsManage).await?;
+    user.require(&perms, Permission::EventsEdit).await?;
     EventService::new()
         .delete_event_roster_role(&db, id, role_id)
         .await?;
@@ -487,20 +493,20 @@ async fn delete_event_roster_role(
 
 /// Creates a new event.
 ///
-/// Requires `events.manage` permission.
+/// Requires `events.create` permission.
 #[utoipa::path(
     post,
     path = "/api/events",
     tag = "events",
     summary = "Create an event",
-    description = "Creates a new event with a base composition. Requires `events.manage` permission.",
+    description = "Creates a new event with a base composition. Requires `events.create` permission.",
     security(("session_cookie" = [])),
     request_body(content = CreateEventRequest, description = "Event details"),
     responses(
         (status = 200, description = "Event created successfully", body = ApiResponseEventView),
         (status = 400, description = "Validation error", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails)
+        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails)
     )
 )]
 async fn create_event(
@@ -510,7 +516,7 @@ async fn create_event(
     Extension(cfg): Extension<Config>,
     Json(req): Json<CreateEventRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    user.require(&perms, Permission::EventsManage).await?;
+    user.require(&perms, Permission::EventsCreate).await?;
 
     if !req.discord_role_ids.is_empty() {
         let allowed_role_ids: HashSet<String> = AdminService::discord_roles(&cfg)
@@ -540,12 +546,12 @@ async fn create_event(
     path = "/api/events/discord-roles",
     tag = "events",
     summary = "List Discord roles available for event announcements",
-    description = "Returns non-managed roles in the configured Discord guild. Requires events.manage.",
+    description = "Returns non-managed roles in the configured Discord guild. Requires events.edit.",
     security(("session_cookie" = [])),
     responses(
         (status = 200, description = "Discord roles retrieved", body = [DiscordRoleView]),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 502, description = "Discord API unavailable or bot token missing", body = ProblemDetails)
     )
 )]
@@ -554,7 +560,7 @@ async fn list_event_discord_roles(
     Extension(perms): Extension<Permissions>,
     Extension(cfg): Extension<Config>,
 ) -> Result<Json<ApiResponse<Vec<DiscordRoleView>>>, AppError> {
-    user.require(&perms, Permission::EventsManage).await?;
+    user.require(&perms, Permission::EventsEdit).await?;
     Ok(Json(ApiResponse::new(
         AdminService::discord_roles(&cfg).await?,
     )))
@@ -562,13 +568,13 @@ async fn list_event_discord_roles(
 
 /// Updates an existing event.
 ///
-/// Requires `events.manage` permission.
+/// Requires `events.edit` permission.
 #[utoipa::path(
     patch,
     path = "/api/events/{id}",
     tag = "events",
     summary = "Update an event",
-    description = "Updates an event. Requires `events.manage` permission.",
+    description = "Updates an event. Requires `events.edit` permission.",
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Event ID")
@@ -578,7 +584,7 @@ async fn list_event_discord_roles(
         (status = 200, description = "Event updated successfully", body = ApiResponseEventView),
         (status = 400, description = "Validation error", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails)
     )
 )]
@@ -589,7 +595,7 @@ async fn update_event(
     Path(id): Path<i64>,
     Json(req): Json<UpdateEventRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    user.require(&perms, Permission::EventsManage).await?;
+    user.require(&perms, Permission::EventsEdit).await?;
     let service = EventService::new();
     let event = service.update_event(&db, id, req).await?;
     Ok(Json(ApiResponse::new(event)))
@@ -597,13 +603,13 @@ async fn update_event(
 
 /// Deletes an event.
 ///
-/// Requires `events.manage` permission.
+/// Requires `events.delete` permission.
 #[utoipa::path(
     delete,
     path = "/api/events/{id}",
     tag = "events",
     summary = "Delete an event",
-    description = "Deletes an event. Requires `events.manage` permission.",
+    description = "Deletes an event. Requires `events.delete` permission.",
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Event ID")
@@ -611,7 +617,7 @@ async fn update_event(
     responses(
         (status = 204, description = "Event deleted successfully"),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails)
     )
 )]
@@ -621,7 +627,7 @@ async fn delete_event(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
-    user.require(&perms, Permission::EventsManage).await?;
+    user.require(&perms, Permission::EventsDelete).await?;
     let service = EventService::new();
     service.delete_event(&db, id).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -707,7 +713,7 @@ async fn cancel_participation(
 
 /// Guard for endpoints that mutate an event's participant roster on behalf of
 /// someone other than the caller: either the event's creator or any user with
-/// `events.manage` may act. Everyone else gets a 403.
+/// `events.edit` may act. Everyone else gets a 403.
 ///
 /// We intentionally avoid `UserContext::require` here because the policy is an
 /// OR between role-based permission and ownership of the row, not a single
@@ -720,7 +726,7 @@ async fn require_event_management_authority(
 ) -> Result<(), AppError> {
     if user.is_superadmin()
         || perms
-            .check(user.is_superadmin(), &user.roles, Permission::EventsManage)
+            .check(user.is_superadmin(), &user.roles, Permission::EventsEdit)
             .await
     {
         return Ok(());
@@ -738,13 +744,13 @@ async fn require_event_management_authority(
     }
 
     Err(AppError::Forbidden(
-        "Only the event creator or users with events.manage may manage participants".to_string(),
+        "Only the event creator or users with events.edit may manage participants".to_string(),
     ))
 }
 
 /// Inserts or updates a participant on behalf of an arbitrary guild member.
 ///
-/// Restricted to the event creator or users holding `events.manage`.
+/// Restricted to the event creator or users holding `events.edit`.
 #[utoipa::path(
     put,
     path = "/api/events/{id}/participants/{user_id}",
@@ -765,7 +771,7 @@ async fn require_event_management_authority(
         (status = 200, description = "Participant upserted", body = ApiResponseEventDetail),
         (status = 400, description = "Validation error (e.g. comp full, build not allowed)", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - caller is not creator and lacks events.manage", body = ProblemDetails),
+        (status = 403, description = "Forbidden - caller is not creator and lacks events.edit", body = ProblemDetails),
         (status = 404, description = "Event / user / build not found", body = ProblemDetails)
     )
 )]
@@ -788,7 +794,7 @@ async fn set_participant(
 
 /// Removes a participant from an event on behalf of an arbitrary guild member.
 ///
-/// Restricted to the event creator or users holding `events.manage`.
+/// Restricted to the event creator or users holding `events.edit`.
 #[utoipa::path(
     delete,
     path = "/api/events/{id}/participants/{user_id}",
@@ -804,7 +810,7 @@ async fn set_participant(
     responses(
         (status = 200, description = "Participant removed", body = ApiResponseEventDetail),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - caller is not creator and lacks events.manage", body = ProblemDetails),
+        (status = 403, description = "Forbidden - caller is not creator and lacks events.edit", body = ProblemDetails),
         (status = 404, description = "Event / participation not found", body = ProblemDetails)
     )
 )]
@@ -838,7 +844,7 @@ async fn remove_participant(
 
 /// Authorizes a manual Discord reminder for a scheduled event.
 ///
-/// Requires `events.manage` permission. Discord delivery remains the bot's responsibility.
+/// Requires `events.edit` permission. Discord delivery remains the bot's responsibility.
 #[utoipa::path(
     post,
     path = "/api/events/{id}/remind",
@@ -850,7 +856,7 @@ async fn remove_participant(
     responses(
         (status = 200, description = "Reminder authorized", body = ApiResponseEventView),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
         (status = 409, description = "Event is not scheduled", body = ProblemDetails)
     )
@@ -861,7 +867,7 @@ async fn remind_event(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    user.require(&perms, Permission::EventsManage).await?;
+    user.require(&perms, Permission::EventsEdit).await?;
     let event = EventService::new().prepare_event_reminder(&db, id).await?;
 
     let _ = AuditService::log(
@@ -879,7 +885,7 @@ async fn remind_event(
 
 /// Associates the Discord voice channel created by the bot with a live event.
 ///
-/// Requires `events.manage` permission.
+/// Requires `events.edit` permission.
 #[utoipa::path(
     put,
     path = "/api/events/{id}/discord-voice-channel",
@@ -892,7 +898,7 @@ async fn remind_event(
         (status = 200, description = "Voice channel bound", body = ApiResponseEventView),
         (status = 400, description = "Invalid Discord channel ID", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
         (status = 409, description = "Event is not live or has another voice channel", body = ProblemDetails)
     )
@@ -904,7 +910,7 @@ async fn set_event_voice_channel(
     Path(id): Path<i64>,
     Json(req): Json<SetEventVoiceChannelRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    user.require(&perms, Permission::EventsManage).await?;
+    user.require(&perms, Permission::EventsEdit).await?;
     let event = EventService::new()
         .bind_event_voice_channel(&db, id, &req.channel_id)
         .await?;
@@ -922,7 +928,7 @@ async fn set_event_voice_channel(
 
 /// Clears the persisted Discord voice channel after a stopped event's cleanup.
 ///
-/// Requires `events.manage` permission.
+/// Requires `events.edit` permission.
 #[utoipa::path(
     delete,
     path = "/api/events/{id}/discord-voice-channel",
@@ -933,7 +939,7 @@ async fn set_event_voice_channel(
     responses(
         (status = 200, description = "Voice channel binding cleared", body = ApiResponseEventView),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
         (status = 409, description = "Event is not stopped", body = ProblemDetails)
     )
@@ -944,7 +950,7 @@ async fn clear_event_voice_channel(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    user.require(&perms, Permission::EventsManage).await?;
+    user.require(&perms, Permission::EventsEdit).await?;
     let event = EventService::new()
         .clear_event_voice_channel(&db, id)
         .await?;
@@ -962,7 +968,7 @@ async fn clear_event_voice_channel(
 
 /// Starts an event session (status -> live).
 ///
-/// Requires `events.manage` permission.
+/// Requires `events.edit` permission.
 #[utoipa::path(
     post,
     path = "/api/events/{id}/start",
@@ -974,7 +980,7 @@ async fn clear_event_voice_channel(
     responses(
         (status = 200, description = "Session started", body = ApiResponseEventView),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
         (status = 409, description = "Event already live", body = ProblemDetails)
     )
@@ -985,7 +991,7 @@ async fn start_event(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    user.require(&perms, Permission::EventsManage).await?;
+    user.require(&perms, Permission::EventsEdit).await?;
     let service = EventService::new();
     let event = service.start_event(&db, id).await?;
     Ok(Json(ApiResponse::new(event)))
@@ -993,7 +999,7 @@ async fn start_event(
 
 /// Stops an event session (status -> stopped).
 ///
-/// Requires `events.manage` permission. Auto-stops (`status=auto_stopped`) are
+/// Requires `events.edit` permission. Auto-stops (`status=auto_stopped`) are
 /// handled by the background worker.
 #[utoipa::path(
     post,
@@ -1006,7 +1012,7 @@ async fn start_event(
     responses(
         (status = 200, description = "Session stopped", body = ApiResponseEventView),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
         (status = 409, description = "Event is not live", body = ProblemDetails)
     )
@@ -1017,7 +1023,7 @@ async fn stop_event(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
-    user.require(&perms, Permission::EventsManage).await?;
+    user.require(&perms, Permission::EventsEdit).await?;
     let service = EventService::new();
     let event = service.stop_event(&db, id, false).await?;
     Ok(Json(ApiResponse::new(event)))
@@ -1061,7 +1067,7 @@ async fn list_event_battles(
 
 /// Replaces the complete set of battles linked to an event.
 ///
-/// Requires `events.manage` permission. Passing an empty `battle_ids` array is valid and removes
+/// Requires `events.edit` permission. Passing an empty `battle_ids` array is valid and removes
 /// every linked battle, so an event can explicitly have zero battles.
 #[utoipa::path(
     put,
@@ -1076,7 +1082,7 @@ async fn list_event_battles(
         (status = 200, description = "Linked battles replaced", body = ApiResponseEventDetail),
         (status = 400, description = "Invalid battle list or battle outside configured guild", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
-        (status = 403, description = "Forbidden - lacks events.manage permission", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event or battle not found", body = ProblemDetails),
         (status = 502, description = "Upstream AlbionBB API error", body = ProblemDetails)
     )
@@ -1090,7 +1096,7 @@ async fn replace_event_battles(
     Path(id): Path<i64>,
     Json(req): Json<UpdateEventBattlesRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
-    user.require(&perms, Permission::EventsManage).await?;
+    user.require(&perms, Permission::EventsEdit).await?;
     let service = EventService::new();
     let server = normalize_server(Some(&cfg.albion_api_region));
     let context = BattleLinkingContext::new(

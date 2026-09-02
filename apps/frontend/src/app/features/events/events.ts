@@ -67,7 +67,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
         {{ t('common.refreshNow') }}
       </button>
 
-      @if (canManage()) {
+      @if (canCreate()) {
         <button
           type="button"
           class="btn btn--primary btn--sm"
@@ -203,7 +203,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
                 {{ t('events.participate') }}
               </button>
             }
-            @if (canManage()) {
+            @if (canDelete()) {
               <button
                 type="button"
                 class="btn btn--danger btn--sm"
@@ -564,9 +564,14 @@ export class Events {
     void this.load();
   }
 
-  /** True when the current user can create or delete events. */
-  protected canManage(): boolean {
-    return this.auth.hasPermission('events.manage');
+  /** True when the current user can create a new event. */
+  protected canCreate(): boolean {
+    return this.auth.hasPermission('events.create');
+  }
+
+  /** True when the current user can delete an event. */
+  protected canDelete(): boolean {
+    return this.auth.hasPermission('events.delete');
   }
 
   protected cityLabel(city: SplitIslandCity): string {
