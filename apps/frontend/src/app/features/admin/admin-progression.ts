@@ -13,6 +13,7 @@ import type { TranslationKey } from '../../i18n/en';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 
 interface ProgressionDraft {
   xp_base: number;
@@ -63,7 +64,7 @@ const EMPTY_PROGRESSION_DRAFT: ProgressionDraft = {
 @Component({
   selector: 'app-admin-progression',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ErrorState, Loading, PageHeader],
+  imports: [ErrorState, Loading, PageHeader, PageStack],
   template: `
     <app-page-header
       [title]="t('admin.progression.title')"
@@ -73,6 +74,7 @@ const EMPTY_PROGRESSION_DRAFT: ProgressionDraft = {
     @if (progressionLoading()) {
       <app-loading />
     } @else if (progressionSettings(); as settings) {
+      <app-page-stack>
       <section class="card p-5">
         <form class="grid gap-4 sm:grid-cols-3" (submit)="saveProgressionSettings($event)">
           <p class="sm:col-span-3 eyebrow">{{ t('admin.progression.curve') }}</p>
@@ -240,6 +242,7 @@ const EMPTY_PROGRESSION_DRAFT: ProgressionDraft = {
           </form>
         </div>
       </section>
+      </app-page-stack>
     } @else {
       <app-error-state
         [message]="t('common.error')"
