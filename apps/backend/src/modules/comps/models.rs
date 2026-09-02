@@ -314,7 +314,8 @@ pub struct UpdateBuildRequest {
     "openalbion_item_id": 4532,
     "openalbion_item_name": "Holy Staff",
     "openalbion_item_icon": "https://...",
-    "openalbion_item_tier": "8.0"
+    "openalbion_item_tier": "8.0",
+    "spells": { "active": { "1": "HEROICSTRIKE2" }, "passive": {} }
 }))]
 pub struct CreateBuildItemRequest {
     /// The equipment slot where this item belongs.
@@ -327,6 +328,10 @@ pub struct CreateBuildItemRequest {
     pub openalbion_item_name: String,
     /// The OpenAlbion item icon URL.
     pub openalbion_item_icon: Option<String>,
+    /// Abilities chosen for this item while it was still a picker draft, if any. Validated the
+    /// same way `PUT .../items/{slot}/spells` validates them.
+    #[serde(default)]
+    pub spells: Option<BuildItemSpells>,
     /// The OpenAlbion item tier.
     pub openalbion_item_tier: Option<String>,
 }

@@ -32,10 +32,10 @@ use super::entities::{
 use super::models::{
     AddCompBuildRequest, BuildCategoryView, BuildDetail, BuildFilters, BuildItemSpells,
     BuildItemView, BuildSummary, BuildVersionRef, CompBuildView, CompCategoryView, CompDetail,
-    CompFilters, CompSummary, CreateBuildCategoryRequest, CreateBuildRequest,
-    CreateCompCategoryRequest, CreateCompRequest, UpdateBuildCategoryRequest, UpdateBuildRequest,
-    UpdateCompBuildQuantityRequest, UpdateCompCategoryRequest, UpdateCompRequest,
-    UpsertBuildItemRequest,
+    CompFilters, CompSummary, CreateBuildCategoryRequest, CreateBuildItemRequest,
+    CreateBuildRequest, CreateCompCategoryRequest, CreateCompRequest, UpdateBuildCategoryRequest,
+    UpdateBuildRequest, UpdateCompBuildQuantityRequest, UpdateCompCategoryRequest,
+    UpdateCompRequest, UpsertBuildItemRequest,
 };
 use super::status::{BuildLoadout, BuildRole, BuildSlot};
 
@@ -152,6 +152,30 @@ fn validate_ability_choice(
         )));
     }
     Ok(())
+}
+
+/// Validates every entry in a spell selection against what the item actually offers, returning the
+/// rows ready to insert.
+///
+/// Shared by `create_build` (items can arrive with abilities already chosen in the picker) and
+/// `set_build_item_spells` (abilities edited afterwards), so both reject the same invalid choice
+/// the same way. Validating everything up front, before either caller touches the database, keeps
+/// a bad request from partially applying.
+fn validated_spell_rows(
+    item: &build_item::Model,
+    spells: &BuildItemSpells,
+) -> Result<Vec<(&'static str, i32, String)>, AppError> {
+    let mut chosen = Vec::new();
+    for (kind, entries) in [(ACTIVE_KIND, &spells.active), (PASSIVE_KIND, &spells.passive)] {
+        for (raw_index, spell_id) in entries {
+            let slot_index: i32 = raw_index.parse().map_err(|_| {
+                AppError::Validation(format!("{kind} slot {raw_index:?} is not a slot number"))
+            })?;
+            validate_ability_choice(item, kind, slot_index, spell_id)?;
+            chosen.push((kind, slot_index, spell_id.clone()));
+        }
+    }
+    Ok(chosen)
 }
 
 /// Resolves a user's display name by id, returning `"Unknown"` if the user no longer exists.
@@ -906,6 +930,7 @@ impl CompService {
                     )));
                 }
 
+                let spells = item.spells;
                 let active = build_item::ActiveModel {
                     build_id: Set(inserted.id),
                     // Items supplied at creation time are always the main loadout; the swap is
@@ -919,7 +944,25 @@ impl CompService {
                     openalbion_item_tier: Set(item.openalbion_item_tier),
                     ..Default::default()
                 };
-                active.insert(&txn).await?;
+                let inserted_item = active.insert(&txn).await?;
+
+                // Abilities the officer already picked in the item's search popover, so the
+                // build comes out of creation fully slotted rather than needing a second pass.
+                if let Some(spells) = spells {
+                    for (kind, slot_index, spell_id) in
+                        validated_spell_rows(&inserted_item, &spells)?
+                    {
+                        build_item_spell::ActiveModel {
+                            build_item_id: Set(inserted_item.id),
+                            kind: Set(kind.to_string()),
+                            slot_index: Set(slot_index),
+                            spell_id: Set(spell_id),
+                            ..Default::default()
+                        }
+                        .insert(&txn)
+                        .await?;
+                    }
+                }
             }
         }
 
@@ -1308,16 +1351,7 @@ impl CompService {
                 ))
             })?;
 
-        let mut chosen: Vec<(&str, i32, String)> = Vec::new();
-        for (kind, entries) in [(ACTIVE_KIND, &req.active), (PASSIVE_KIND, &req.passive)] {
-            for (raw_index, spell_id) in entries {
-                let slot_index: i32 = raw_index.parse().map_err(|_| {
-                    AppError::Validation(format!("{kind} slot {raw_index:?} is not a slot number"))
-                })?;
-                validate_ability_choice(&item, kind, slot_index, spell_id)?;
-                chosen.push((kind, slot_index, spell_id.clone()));
-            }
-        }
+        let chosen = validated_spell_rows(&item, &req)?;
 
         let txn = db.begin().await?;
         build_item_spell::Entity::delete_many()
@@ -2376,6 +2410,23 @@ mod tests {
                     .to_string(),
             ),
             openalbion_item_tier: Some("8".to_string()),
+        }
+    }
+
+    /// Same weapon as [`broadsword`], but as the shape `create_build` accepts — with abilities
+    /// already picked, the way the item search popover now sends it.
+    fn broadsword_create_item(spells: Option<BuildItemSpells>) -> CreateBuildItemRequest {
+        CreateBuildItemRequest {
+            slot: BuildSlot::Weapon,
+            openalbion_item_type: "weapon".to_string(),
+            openalbion_item_id: 1,
+            openalbion_item_name: "Broadsword".to_string(),
+            openalbion_item_icon: Some(
+                "https://render.albiononline.com/v1/item/T8_MAIN_SWORD.png?quality=1&size=64"
+                    .to_string(),
+            ),
+            openalbion_item_tier: Some("8".to_string()),
+            spells,
         }
     }
 
@@ -3812,6 +3863,55 @@ mod tests {
             .expect("build should be created");
 
         assert_eq!(created.summary.name, "Pole Hammer");
+    }
+
+    #[tokio::test]
+    async fn create_build_accepts_abilities_chosen_in_the_item_picker() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let crystal = insert_build_category(&db, "Crystal").await;
+        let service = CompService::new();
+
+        let mut request = build_request("Broadsword DPS", crystal);
+        request.items = Some(vec![broadsword_create_item(Some(spells(
+            &[("1", "HEROICSTRIKE2")],
+            &[("1", "PASSIVE_BLEEDCHANCE")],
+        )))]);
+
+        let created = service
+            .create_build(&db, user, request)
+            .await
+            .expect("a build with abilities already picked should be created");
+
+        let stored = spells_on(&created, BuildLoadout::Main, BuildSlot::Weapon);
+        assert_eq!(
+            stored.active.get("1").map(String::as_str),
+            Some("HEROICSTRIKE2")
+        );
+        assert_eq!(
+            stored.passive.get("1").map(String::as_str),
+            Some("PASSIVE_BLEEDCHANCE")
+        );
+    }
+
+    #[tokio::test]
+    async fn create_build_refuses_an_ability_the_item_does_not_offer() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let crystal = insert_build_category(&db, "Crystal").await;
+        let service = CompService::new();
+
+        let mut request = build_request("Broadsword DPS", crystal);
+        request.items = Some(vec![broadsword_create_item(Some(spells(
+            &[("1", "NOT_A_REAL_SPELL")],
+            &[],
+        )))]);
+
+        let error = service
+            .create_build(&db, user, request)
+            .await
+            .expect_err("an ability the weapon does not offer should be refused");
+        assert!(matches!(error, AppError::Validation(_)));
     }
 
     #[tokio::test]
