@@ -268,7 +268,7 @@ type PendingDelete =
             <div class="grid gap-3">
               @for (item of visibleCompRows(); track item.comp.id) {
                 <div
-                  class="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-hover)] cursor-pointer transition-all"
+                  class="card flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 hover:bg-[var(--color-surface-hover)] cursor-pointer transition-all"
                   [style.margin-left.rem]="item.depth * 1.5"
                   (click)="openComp(item.comp)"
                 >
