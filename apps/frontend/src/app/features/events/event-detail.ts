@@ -1239,9 +1239,7 @@ interface EventRosterParty {
                           <span
                             class="text-xs font-mono font-medium text-[var(--color-text-secondary)]"
                           >
-                            {{ opponent.wins }}W / {{ opponent.losses }}L ({{
-                              opponent.battles
-                            }}
+                            {{ opponent.wins }}W / {{ opponent.losses }}L ({{ opponent.battles }}
                             btl)
                           </span>
                         </div>
@@ -2159,6 +2157,11 @@ export class EventDetailPage {
    * wrong event.
    */
   private loadGeneration = 0;
+  /**
+   * Generation of the load that currently owns the full-page spinner. Only a non-silent load
+   * raises `loading`, so only a newer non-silent load may leave it raised on its behalf.
+   */
+  private loadingGeneration = 0;
 
   protected readonly event = signal<EventDetailView | null>(null);
   protected readonly eventLossEstimate = signal<BattleLossEstimate>(emptyLossEstimate());
@@ -4031,6 +4034,7 @@ export class EventDetailPage {
     // Silent reloads (e.g. a realtime roster event) keep the current view mounted
     // and refresh its data in place, instead of flashing the full-page loading state.
     if (!silent) {
+      this.loadingGeneration = generation;
       this.loading.set(true);
     }
     this.loadFailed.set(false);
@@ -4052,7 +4056,12 @@ export class EventDetailPage {
       this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
-      if (!silent && !this.isStaleLoad(generation, eventId)) {
+      // A silent reload bumps the generation without ever touching `loading` — and the roster
+      // socket, which `connect()` above opens, pushes its first message while this very load is
+      // still awaiting the calls below. Deferring to `isStaleLoad` here would hand the spinner to
+      // a load that never lowers it, leaving the page stuck on "loading" forever. Only a newer
+      // non-silent load, which raises the spinner itself, may keep it up.
+      if (!silent && this.loadingGeneration === generation) {
         this.loading.set(false);
       }
     }

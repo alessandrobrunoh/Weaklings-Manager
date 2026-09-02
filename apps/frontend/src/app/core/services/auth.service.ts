@@ -1,4 +1,5 @@
-import { inject, Injectable, signal } from '@angular/core';
+import { inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from './api.service';
@@ -15,12 +16,15 @@ import type { DiscordUserProfile } from '../models/api.models';
  * Side effects:
  *  - On `load()`, an HTTP call is made to `/api/auth/me`; failures set the
  *    profile to `null` (treated as "not logged in") rather than throwing, so
- *    the auth guard can route unauthenticated users to the login page.
+ *    the auth guard can route unauthenticated users to the login page. The
+ *    call is skipped entirely during server-side rendering — see
+ *    `fetchProfile`.
  */
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly api = inject(ApiService);
   private readonly apiBaseUrl = inject(API_BASE_URL);
+  private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
 
   private readonly _profile = signal<DiscordUserProfile | null>(null);
   private readonly _loading = signal(false);
@@ -110,6 +114,18 @@ export class AuthService {
   }
 
   private async fetchProfile(): Promise<DiscordUserProfile | null> {
+    // The session is an http-only cookie, and nothing forwards it into the
+    // server render, so on the server this probe can only ever answer "signed
+    // out". It does not even reach the backend: with no `window`,
+    // `API_BASE_URL` is empty and Angular resolves the relative path against
+    // the render's document base, which carries no port — every render spent
+    // two refused connections to `http://localhost/api/auth/me`. Render the
+    // signed-out shell straight away and let hydration do the real probe.
+    if (!this.isBrowser) {
+      this.setProfile(null);
+      return null;
+    }
+
     try {
       const profile = await firstValueFrom(this.api.get<DiscordUserProfile>('api/auth/me'));
       this.setProfile(profile ?? null);
