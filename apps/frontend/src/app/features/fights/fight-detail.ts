@@ -267,7 +267,7 @@ export class FightDetailPage {
   private readonly router = inject(Router);
 
   protected readonly fight = signal<FightDetail | null>(null);
-  protected readonly canManageFights = computed(() => this.auth.hasPermission('fights.manage'));
+  protected readonly canManageFights = computed(() => this.auth.hasPermission('fights.edit'));
   protected readonly mergeOpen = signal(false);
   protected readonly splitOpen = signal(false);
   protected readonly moveBattleId = signal<number | null>(null);

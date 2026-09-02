@@ -71,6 +71,8 @@ export type PermissionKey =
   | 'events.edit'
   | 'events.delete'
   | 'fights.manage'
+  | 'fights.view'
+  | 'fights.edit'
   | 'siphoned.ingest'
   | 'siphoned.view'
   | 'audit.view'

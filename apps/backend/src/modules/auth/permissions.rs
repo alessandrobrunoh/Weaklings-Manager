@@ -47,8 +47,16 @@ pub enum Permission {
     #[strum(serialize = "splits.manage")]
     SplitsManage,
     /// Manually merge, split, or move canonical Fight segments. Officer-or-above.
+    /// Superseded by fights.view/.edit below — kept so existing
+    /// role_permissions rows keep resolving.
     #[strum(serialize = "fights.manage")]
     FightsManage,
+    /// View fights, their detail, and trend reports. Member+.
+    #[strum(serialize = "fights.view")]
+    FightsView,
+    /// Merge, split, or move canonical Fight segments. Officer+.
+    #[strum(serialize = "fights.edit")]
+    FightsEdit,
     /// Create, rename, and delete the island/tab catalog used when locating a split. Admin-only.
     #[strum(serialize = "splits.islands.manage")]
     SplitsIslandsManage,

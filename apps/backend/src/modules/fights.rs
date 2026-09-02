@@ -377,11 +377,13 @@ impl FightListQuery {
     )
 )]
 async fn list_fights(
-    _user: UserContext,
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<DatabaseConnection>,
     Extension(config): Extension<Config>,
     Query(query): Query<FightListQuery>,
 ) -> Result<Json<ApiResponse<PaginatedFightList>>, AppError> {
+    user.require(&perms, Permission::FightsView).await?;
     let pagination = query.pagination();
     // Outcome and combat values are derived from every Fight's persisted segments, so pagination
     // must happen after hydration, filtering, and sorting rather than on the raw `fights` rows.
@@ -812,7 +814,7 @@ async fn merge_fights(
     Extension(db): Extension<DatabaseConnection>,
     Json(request): Json<MergeFightsRequest>,
 ) -> Result<Json<ApiResponse<FightMutationResult>>, AppError> {
-    user.require(&perms, Permission::FightsManage).await?;
+    user.require(&perms, Permission::FightsEdit).await?;
 
     let fight_ids = unique_ids(request.fight_ids, "fight_ids")?;
     if fight_ids.len() < 2 || !fight_ids.contains(&request.target_fight_id) {
@@ -885,7 +887,7 @@ async fn move_battle(
     Path(source_fight_id): Path<i64>,
     Json(request): Json<MoveBattleRequest>,
 ) -> Result<Json<ApiResponse<FightMutationResult>>, AppError> {
-    user.require(&perms, Permission::FightsManage).await?;
+    user.require(&perms, Permission::FightsEdit).await?;
 
     if source_fight_id == request.target_fight_id {
         return Err(AppError::Validation(
@@ -993,7 +995,7 @@ async fn split_fight(
     Path(source_fight_id): Path<i64>,
     Json(request): Json<SplitFightRequest>,
 ) -> Result<Json<ApiResponse<FightMutationResult>>, AppError> {
-    user.require(&perms, Permission::FightsManage).await?;
+    user.require(&perms, Permission::FightsEdit).await?;
 
     let battle_ids = unique_ids(request.battle_ids, "battle_ids")?;
     let txn = db.begin().await?;
@@ -1304,10 +1306,12 @@ async fn ordered_battle_ids(db: &DatabaseTransaction, fight_id: i64) -> Result<V
     )
 )]
 async fn get_fight_trends(
-    _user: UserContext,
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<DatabaseConnection>,
     Extension(config): Extension<Config>,
 ) -> Result<Json<ApiResponse<FightTrendView>>, AppError> {
+    user.require(&perms, Permission::FightsView).await?;
     let window_end = Utc::now();
     let current_start = window_end - Duration::days(30);
     let previous_start = current_start - Duration::days(30);
@@ -1622,11 +1626,13 @@ fn build_fight_trend_period(
     )
 )]
 async fn get_fight(
-    _user: UserContext,
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<DatabaseConnection>,
     Extension(config): Extension<Config>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<FightDetailView>>, AppError> {
+    user.require(&perms, Permission::FightsView).await?;
     let model = fight::Entity::find_by_id(id)
         .one(&db)
         .await
@@ -2561,6 +2567,7 @@ mod tests {
 
         let Json(response) = get_fight(
             test_admin(),
+            Extension(Permissions::new_empty()),
             Extension(db),
             Extension(test_config()),
             Path(fight.id),
