@@ -222,10 +222,19 @@ export class Poller {
         0,
       );
       if (newestEventId > 0 && newestEventId < this.state.lastEventId) {
+        // The checkpoint points at an event id that no longer sorts to the top of the
+        // API window — almost always because that event (or a newer one) was deleted,
+        // not because the database was wiped. Resetting to 0 here used to treat every
+        // event in the current page as "new" and mass re-announce up to 50 old events
+        // (and re-open their threads) on the very next poll. Clamp to the current max
+        // instead: every event id at or below it has already had its chance to be
+        // announced, so this converges to "nothing new" rather than "everything is
+        // new". Only a genuine full database reset would need the checkpoint file
+        // cleared by hand.
         console.warn(
-          `[Poller] Event checkpoint ${this.state.lastEventId} is newer than the API (${newestEventId}); resetting it`,
+          `[Poller] Event checkpoint ${this.state.lastEventId} is ahead of the newest known event (${newestEventId}); clamping instead of resetting to avoid re-announcing old events`,
         );
-        this.state.lastEventId = 0;
+        this.state.lastEventId = newestEventId;
         saveState(this.stateDirectory, this.state);
       }
 
