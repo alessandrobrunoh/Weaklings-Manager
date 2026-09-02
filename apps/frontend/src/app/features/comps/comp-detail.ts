@@ -160,14 +160,17 @@ const ROLE_LABELS: Record<BuildRole, string> = {
               </label>
               <label>
                 <span class="label">{{ t('common.category') }}</span>
-                <select
-                  class="select"
-                  [value]="editCategoryId()"
-                  (change)="onEditCategoryChange($event)"
-                >
-                  <option value="">{{ t('comps.noCategory') }}</option>
+                <select class="select" (change)="onEditCategoryChange($event)">
+                  <option value="" [selected]="!editCategoryId()">
+                    {{ t('comps.noCategory') }}
+                  </option>
                   @for (category of editCategoryOptions(); track category.id) {
-                    <option [value]="category.id">{{ category.name }}</option>
+                    <option
+                      [value]="category.id"
+                      [selected]="isSelectedId(editCategoryId(), category.id)"
+                    >
+                      {{ category.name }}
+                    </option>
                   }
                 </select>
               </label>
@@ -183,10 +186,15 @@ const ROLE_LABELS: Record<BuildRole, string> = {
             </label>
             <label>
               <span class="label">{{ t('comps.parent') }}</span>
-              <select class="select" [value]="editParentId()" (change)="onEditParentChange($event)">
-                <option value="">{{ t('comps.noParent') }}</option>
+              <select class="select" (change)="onEditParentChange($event)">
+                <option value="" [selected]="!editParentId()">{{ t('comps.noParent') }}</option>
                 @for (sibling of editParentOptions(); track sibling.id) {
-                  <option [value]="sibling.id">{{ sibling.name }}</option>
+                  <option
+                    [value]="sibling.id"
+                    [selected]="isSelectedId(editParentId(), sibling.id)"
+                  >
+                    {{ sibling.name }}
+                  </option>
                 }
               </select>
             </label>
@@ -208,20 +216,15 @@ const ROLE_LABELS: Record<BuildRole, string> = {
             <!-- Section Header & Add Build Controller -->
             <div class="card flex flex-wrap items-center justify-between gap-3 p-4">
               <div>
-                <h2 class="text-base font-bold text-[var(--color-text)]">
-                  Party Roster Matrix
-                </h2>
+                <h2 class="text-base font-bold text-[var(--color-text)]">Party Roster Matrix</h2>
                 <p class="text-xs text-[var(--color-text-secondary)]">
-                  {{ current.total_quantity }} total player slots across {{ current.builds.length }} distinct builds.
+                  {{ current.total_quantity }} total player slots across
+                  {{ current.builds.length }} distinct builds.
                 </p>
               </div>
 
               @if (canManage() && mode() === 'edit') {
-                <button
-                  type="button"
-                  class="btn btn--primary btn--sm"
-                  (click)="toggleAddBuild()"
-                >
+                <button type="button" class="btn btn--primary btn--sm" (click)="toggleAddBuild()">
                   <app-icon name="plus" size="0.75rem" />
                   {{ addingBuild() ? t('common.close') : t('comps.addBuild') }}
                 </button>
@@ -230,7 +233,10 @@ const ROLE_LABELS: Record<BuildRole, string> = {
 
             <!-- Add Build Panel (when active) -->
             @if (addingBuild() && canManage() && mode() === 'edit') {
-              <form class="p-4 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border-strong)] grid gap-3" (submit)="addBuild($event)">
+              <form
+                class="p-4 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border-strong)] grid gap-3"
+                (submit)="addBuild($event)"
+              >
                 <div class="grid gap-3 sm:grid-cols-[1fr_8rem_auto]">
                   <label class="grid gap-1">
                     <span class="label">{{ t('comps.selectBuild') }}</span>
@@ -281,7 +287,9 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                         class="w-3 h-3 rounded-full"
                         [style.background-color]="roleColorHex(roleGroup.role)"
                       ></span>
-                      <h3 class="text-sm font-bold uppercase tracking-wider text-[var(--color-text)]">
+                      <h3
+                        class="text-sm font-bold uppercase tracking-wider text-[var(--color-text)]"
+                      >
                         {{ roleLabel(roleGroup.role) }} ({{ roleGroup.totalSlots }} slots)
                       </h3>
                     </div>
@@ -339,7 +347,9 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                             </div>
                           } @else {
                             <div class="flex items-center gap-1.5">
-                              <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-[var(--color-surface-2)] text-[var(--color-text)] border border-[var(--color-border)]">
+                              <span
+                                class="px-2.5 py-1 rounded-full text-xs font-bold bg-[var(--color-surface-2)] text-[var(--color-text)] border border-[var(--color-border)]"
+                              >
                                 x{{ entry.quantity }}
                               </span>
                               @if (canManage() && mode() === 'edit') {
@@ -369,10 +379,15 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                             <div class="mt-3 pt-3 border-t border-[var(--color-border)] grid gap-2">
                               @for (row of rows; track row.slot) {
                                 <div class="flex items-center justify-between gap-2">
-                                  <span class="text-xs font-medium text-[var(--color-text-secondary)] truncate max-w-[120px]">
+                                  <span
+                                    class="text-xs font-medium text-[var(--color-text-secondary)] truncate max-w-[120px]"
+                                  >
                                     {{ row.itemName }}
                                   </span>
-                                  <app-ability-bar [slots]="row.slots" [emptyLabel]="t('comps.noAbility')" />
+                                  <app-ability-bar
+                                    [slots]="row.slots"
+                                    [emptyLabel]="t('comps.noAbility')"
+                                  />
                                 </div>
                               }
                             </div>
@@ -390,7 +405,9 @@ const ROLE_LABELS: Record<BuildRole, string> = {
           <aside class="lg:col-span-4 grid gap-5">
             <!-- Blueprint Stats Card -->
             <div class="card p-5 grid gap-4">
-              <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]">
+              <h3
+                class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
+              >
                 Role Composition Balance
               </h3>
 
@@ -407,19 +424,30 @@ const ROLE_LABELS: Record<BuildRole, string> = {
 
               <div class="grid grid-cols-2 gap-2 text-xs">
                 @for (dist of compositionStats().roleDistribution; track dist.role) {
-                  <div class="flex items-center justify-between p-2 rounded-lg bg-[var(--color-surface-2)]">
+                  <div
+                    class="flex items-center justify-between p-2 rounded-lg bg-[var(--color-surface-2)]"
+                  >
                     <div class="flex items-center gap-1.5">
-                      <span class="w-2 h-2 rounded-full" [style.background-color]="roleColorHex(dist.role)"></span>
+                      <span
+                        class="w-2 h-2 rounded-full"
+                        [style.background-color]="roleColorHex(dist.role)"
+                      ></span>
                       <span>{{ roleLabel(dist.role) }}</span>
                     </div>
-                    <span class="font-bold">{{ dist.quantity }} ({{ formatRolePercent(dist.quantity, current.total_quantity) }}%)</span>
+                    <span class="font-bold"
+                      >{{ dist.quantity }} ({{
+                        formatRolePercent(dist.quantity, current.total_quantity)
+                      }}%)</span
+                    >
                   </div>
                 }
               </div>
 
               @if (compositionStats().weaponNames.length > 0) {
                 <div class="pt-3 border-t border-[var(--color-border)]">
-                  <span class="text-xs font-semibold text-[var(--color-text-secondary)] block mb-1">Weapons In Comp</span>
+                  <span class="text-xs font-semibold text-[var(--color-text-secondary)] block mb-1"
+                    >Weapons In Comp</span
+                  >
                   <div class="flex flex-wrap gap-1">
                     @for (wName of compositionStats().weaponNames; track wName) {
                       <span class="chip text-xs">{{ wName }}</span>
@@ -432,13 +460,18 @@ const ROLE_LABELS: Record<BuildRole, string> = {
             <!-- Performance Telemetry Card -->
             @if (performance(); as perf) {
               <div class="card p-5 grid gap-4">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]">
+                <h3
+                  class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
+                >
                   Battle Performance Record
                 </h3>
 
                 <div class="grid grid-cols-2 gap-3 text-center">
                   <div class="p-3 bg-[var(--color-surface-2)] rounded-lg">
-                    <div class="text-xl font-bold" [style.color]="winRateColor(perf.stats.win_rate)">
+                    <div
+                      class="text-xl font-bold"
+                      [style.color]="winRateColor(perf.stats.win_rate)"
+                    >
                       {{ formatPercent(perf.stats.win_rate) }}
                     </div>
                     <div class="text-xs text-[var(--color-text-secondary)]">Win Rate</div>
@@ -458,17 +491,24 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                   </div>
                   <div class="flex justify-between">
                     <span>Wins / Losses:</span>
-                    <strong class="text-[var(--color-text)]">{{ perf.stats.wins }}W - {{ perf.stats.losses }}L</strong>
+                    <strong class="text-[var(--color-text)]"
+                      >{{ perf.stats.wins }}W - {{ perf.stats.losses }}L</strong
+                    >
                   </div>
                   <div class="flex justify-between">
                     <span>Kill Fame Earned:</span>
-                    <strong class="text-[var(--color-text)]">{{ formatNumber(perf.stats.total_kill_fame) }}</strong>
+                    <strong class="text-[var(--color-text)]">{{
+                      formatNumber(perf.stats.total_kill_fame)
+                    }}</strong>
                   </div>
                 </div>
 
                 @if (perf.stats.top_opponents.length > 0) {
                   <div class="pt-3 border-t border-[var(--color-border)]">
-                    <span class="text-xs font-semibold text-[var(--color-text-secondary)] block mb-2">Top Opponent Matchups</span>
+                    <span
+                      class="text-xs font-semibold text-[var(--color-text-secondary)] block mb-2"
+                      >Top Opponent Matchups</span
+                    >
                     <div class="overflow-x-auto">
                       <table class="table text-xs">
                         <thead>
@@ -483,7 +523,10 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                             <tr>
                               <td>{{ opponent.guild_name }}</td>
                               <td class="text-right">{{ opponent.wins }}-{{ opponent.losses }}</td>
-                              <td class="text-right" [style.color]="winRateColor(opponentBattlesWinRate(opponent))">
+                              <td
+                                class="text-right"
+                                [style.color]="winRateColor(opponentBattlesWinRate(opponent))"
+                              >
                                 {{ formatPercent(opponentBattlesWinRate(opponent)) }}
                               </td>
                             </tr>
@@ -562,7 +605,10 @@ const ROLE_LABELS: Record<BuildRole, string> = {
               @for (ref of refs; track ref.resource + ':' + ref.id) {
                 <li>
                   @if (ref.resource === 'event') {
-                    <a class="text-primary no-underline hover:underline" [routerLink]="['/events', ref.id]">
+                    <a
+                      class="text-primary no-underline hover:underline"
+                      [routerLink]="['/events', ref.id]"
+                    >
                       {{ ref.label }}
                     </a>
                   } @else {
@@ -578,7 +624,9 @@ const ROLE_LABELS: Record<BuildRole, string> = {
             </div>
           } @else {
             <p>{{ t('comps.delete.confirm') }}</p>
-            <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">{{ current.name }}</p>
+            <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
+              {{ current.name }}
+            </p>
             <div dialogFooter>
               <button type="button" class="btn btn--ghost" (click)="closeDelete()">
                 {{ t('common.cancel') }}
@@ -701,7 +749,9 @@ export class CompDetailPage {
         entry.build.role,
         (roleQuantities.get(entry.build.role) ?? 0) + entry.quantity,
       );
-      const weapon = this.buildDetails().get(entry.build_id)?.items.find((item) => item.slot === 'weapon');
+      const weapon = this.buildDetails()
+        .get(entry.build_id)
+        ?.items.find((item) => item.slot === 'weapon');
       if (weapon) {
         equippedBuildCount += 1;
         weaponNames.add(weapon.openalbion_item_name);
@@ -716,8 +766,9 @@ export class CompDetailPage {
       roleCount: roleQuantities.size,
       roleDistribution,
       roleSummary:
-        roleDistribution.map(({ role, quantity }) => `${ROLE_LABELS[role]} ${quantity}`).join(' · ') ||
-        'no roles assigned',
+        roleDistribution
+          .map(({ role, quantity }) => `${ROLE_LABELS[role]} ${quantity}`)
+          .join(' · ') || 'no roles assigned',
       weaponCount: weaponNames.size,
       weaponNames: [...weaponNames].sort((left, right) => left.localeCompare(right)),
       weaponSummary: weaponNames.size === 1 ? 'unique weapon' : 'unique weapons',
@@ -851,9 +902,9 @@ export class CompDetailPage {
     try {
       const [detail, performance] = await Promise.all([
         firstValueFrom(this.api.get<CompDetail>(`api/comps/${compId}`)),
-        firstValueFrom(
-          this.api.get<CompPerformanceView>(`api/comps/${compId}/performance`),
-        ).catch(() => null),
+        firstValueFrom(this.api.get<CompPerformanceView>(`api/comps/${compId}/performance`)).catch(
+          () => null,
+        ),
       ]);
       this.compareWith.set(detail);
       this.comparePerformance.set(performance);
@@ -929,6 +980,15 @@ export class CompDetailPage {
 
   protected onEditDescriptionChange(event: Event): void {
     this.editDescription.set((event.target as HTMLTextAreaElement).value);
+  }
+
+  /**
+   * Options for these selects load asynchronously, so a `[value]` binding on the `<select>` is
+   * applied while the list is still empty and the browser silently resets it. Marking the matching
+   * `<option>` as selected instead keeps the current value visible once the options arrive.
+   */
+  protected isSelectedId(selected: string, id: number | null | undefined): boolean {
+    return id != null && selected === String(id);
   }
 
   protected onEditCategoryChange(event: Event): void {
