@@ -10,15 +10,13 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql
     restart: unless-stopped
+    networks:
+      - default
 
   backend:
     image: ghcr.io/alessandrobrunoh/weaklings-backend:latest
     ports:
       - "8001:3000"
-    # Discord channel/role IDs (CTA channel, audit log, transaction spam,
-    # event-ping role) used to be set here. They now live in the
-    # `guild_settings` DB table, editable from Admin > Discord integration
-    # in the web app — no redeploy needed to change them.
     environment:
       - RUST_LOG=${RUST_LOG}
       - BACKEND_PORT=${BACKEND_PORT}
@@ -38,6 +36,8 @@ services:
     depends_on:
       - database
     restart: unless-stopped
+    networks:
+      - default
 
   frontend:
     image: ghcr.io/alessandrobrunoh/weaklings-frontend:latest
@@ -49,13 +49,19 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+    networks:
+      - default
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.routers.weaklings.rule=Host(`weaklings.alessandrobrunoh.it`)
+      - traefik.http.routers.weaklings.entrypoints=websecure
+      - traefik.http.routers.weaklings.tls.certresolver=le
+      - traefik.http.services.weaklings.loadbalancer.server.port=3000
 
   discord-bot:
     image: ghcr.io/alessandrobrunoh/weaklings-discord-bot:latest
-    # Events/battles channel IDs and the event-ping role used to be set here
-    # too. The bot now fetches them from the backend's Admin > Discord
-    # integration settings at startup (and refreshes periodically), so they
-    # only need setting once, from the web app.
     environment:
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
@@ -70,7 +76,13 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+    networks:
+      - default
 
 volumes:
   pgdata:
   discord_bot_data:
+
+networks:
+  proxy:
+    external: true

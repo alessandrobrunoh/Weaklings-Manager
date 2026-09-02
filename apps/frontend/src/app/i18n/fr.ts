@@ -1,3 +1,4 @@
+import { en } from './en';
 import type { TranslationDict } from './en';
 
 /**
@@ -5,6 +6,7 @@ import type { TranslationDict } from './en';
  * Keys mirror en.ts exactly.
  */
 export const fr: TranslationDict = {
+  ...en,
   'app.title': 'WEAKLINGS',
   'app.tagline': 'Allez fort !',
   'common.loading': 'Chargement…',
@@ -306,6 +308,7 @@ export const fr: TranslationDict = {
   'events.discordRoles.none': 'No roles selected. The announcement will not ping a role.',
   'events.start': 'Start',
   'events.stop': 'Stop',
+  'events.cancel': 'Cancel',
   'events.participate': 'Join',
   'events.viewAndJoin': 'View & join',
   'events.leave': 'Leave',
@@ -317,6 +320,7 @@ export const fr: TranslationDict = {
   'events.status.live': 'En direct',
   'events.status.stopped': 'Stopped',
   'events.status.auto_stopped': 'Auto-stopped',
+  'events.status.cancelled': 'Cancelled',
   'events.detail.back': 'Back to events',
   'events.detail.performance': 'Performance',
   'events.detail.opponents': 'Top opponents',

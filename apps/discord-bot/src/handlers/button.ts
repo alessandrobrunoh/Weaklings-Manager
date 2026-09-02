@@ -21,6 +21,7 @@ import { formatSilver } from '../format.js';
 import { startDiscordEvent, stopDiscordEvent } from "../services/event-lifecycle.js";
 import { getPoller } from "../services/poller.js";
 import { buildSignupRoleOptions, signupRoles } from "../services/event-signup.js";
+import { closeEventAnnouncementThread } from "../services/event-announcement-thread.js";
 
 /**
  * Handles all button interactions.
@@ -265,6 +266,46 @@ async function handleEventButton(
       "success",
       "Event Live",
       `Event **#${eventId}** is now **LIVE** in <#${result.voiceChannelId}>.`,
+      "GUILD EVENT",
+    );
+    await interaction.editReply({ embeds: [successEmbed] });
+    return;
+  }
+
+  if (action === "cancel") {
+    const [eventIdStr] = rest;
+    const eventId = Number(eventIdStr);
+    await interaction.deferReply({ flags: ["Ephemeral"] });
+    if (!Number.isSafeInteger(eventId) || eventId <= 0) throw new Error("Invalid event ID.");
+    let event = await api.post<EventDetailView>(`api/events/${eventId}/cancel`, {}, interaction.user.id);
+    // Cancellation may leave a Mass-created voice behind. Remove it only when empty; occupied
+    // channels remain available for members to leave safely.
+    if (event.discord_voice_channel_id) {
+      try {
+        const channel = await interaction.client.channels.fetch(event.discord_voice_channel_id);
+        if (channel?.isVoiceBased() && channel.members.size === 0) {
+          await channel.delete(`Event #${eventId} cancelled and voice channel was empty`);
+          event = await api.delete<EventDetailView>(
+            `api/events/${eventId}/discord-voice-channel`,
+            interaction.user.id,
+          ) ?? event;
+        }
+      } catch (error) {
+        console.warn(`[Button] Could not clean up cancelled event #${eventId} voice channel:`, error);
+      }
+    }
+    await interaction.message.edit({
+      embeds: [buildEventEmbed(event)],
+      components: [buildEventThreadActionRow(event)],
+    });
+    const closed = await getPoller()?.closeEventThread(eventId);
+    if (!closed && interaction.channel?.isThread()) {
+      await closeEventAnnouncementThread(interaction.channel, eventId, "Cancel button");
+    }
+    const successEmbed = createResponseEmbed(
+      "warning",
+      "Event Cancelled",
+      `Event **#${eventId}** has been cancelled and its discussion thread was closed.`,
       "GUILD EVENT",
     );
     await interaction.editReply({ embeds: [successEmbed] });

@@ -404,7 +404,7 @@ export interface UpdateIslandTabRequest {
 
 /* ----------------------------- Events ------------------------------- */
 
-export type EventStatus = 'scheduled' | 'live' | 'stopped' | 'auto_stopped';
+export type EventStatus = 'scheduled' | 'live' | 'stopped' | 'auto_stopped' | 'cancelled';
 
 export interface EventView {
   id: number;
@@ -420,6 +420,8 @@ export interface EventView {
   created_by: number;
   created_by_username: string;
   event_date_utc: string;
+  mass_time_utc?: string | null;
+  start_time_utc?: string | null;
   created_at: string;
   updated_at: string;
   status: EventStatus;
@@ -789,6 +791,8 @@ export interface CreateEventRequest {
   /** Optional planning threshold; reaching it advances to the next comp expansion. */
   player_cap?: number;
   event_date_utc: string;
+  mass_time_utc?: string;
+  start_time_utc?: string;
   /** Discord role IDs to mention in the event announcement. */
   discord_role_ids?: string[];
   /** Also create an empty loot split already linked to this event. */
@@ -802,6 +806,8 @@ export interface UpdateEventRequest {
   call_to_arms?: boolean;
   regear?: boolean;
   event_date_utc?: string;
+  mass_time_utc?: string;
+  start_time_utc?: string;
   comp_id?: number;
 }
 

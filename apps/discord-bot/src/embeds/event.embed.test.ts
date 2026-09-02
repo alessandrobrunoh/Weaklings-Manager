@@ -3,6 +3,7 @@ import test from "node:test";
 import type { EventDetailView, EventView } from "../api/types.js";
 import {
   buildEventEmbed,
+  buildEventMassMessage,
   buildEventReminderMessage,
   buildEventStartMessage,
   buildEventThreadActionRow,
@@ -70,7 +71,7 @@ test("event embed renders every active comp build and marks empty seats", () => 
   ]);
 });
 
-test("thread action row exposes five state-aware event controls", () => {
+test("thread action row exposes six state-aware event controls", () => {
   const scheduled = buildEventThreadActionRow(event()).toJSON().components;
 
   assert.deepEqual(
@@ -83,21 +84,48 @@ test("thread action row exposes five state-aware event controls", () => {
       "event:ping:42",
       "event:start:42",
       "event:stop:42",
+      "event:cancel:42",
     ],
   );
   assert.deepEqual(
     scheduled.map((component) => component.disabled ?? false),
-    [false, false, false, false, true],
+    [false, false, false, false, true, false],
   );
 
   const live = buildEventThreadActionRow(event({ status: "live" })).toJSON().components;
   assert.deepEqual(
     live.map((component) => component.disabled ?? false),
-    [true, true, true, true, false],
+    [true, true, true, true, false, false],
   );
 
   const stopped = buildEventThreadActionRow(event({ status: "stopped" })).toJSON().components;
   assert.ok(stopped.every((component) => component.disabled));
+
+  const cancelled = buildEventThreadActionRow(event({ status: "cancelled" })).toJSON().components;
+  assert.ok(cancelled.every((component) => component.disabled));
+});
+
+test("event embed renders distinct Mass and Start timestamps", () => {
+  const embed = buildEventEmbed(event({
+    mass_time_utc: "2026-09-01T19:30:00Z",
+    start_time_utc: "2026-09-01T20:00:00Z",
+  })).toJSON();
+  assert.match(embed.description ?? "", /Mass.*<t:1788291000:F>/);
+  assert.match(embed.description ?? "", /Start.*<t:1788292800:F>/);
+});
+
+test("Mass notice pings linked participants and points at the pre-created voice channel", () => {
+  const message = buildEventMassMessage(
+    event({ start_time_utc: "2026-09-01T20:00:00Z" }),
+    [{ discord_id: "333333333333333333", username: "Linked" }],
+    "444444444444444444",
+  );
+  assert.match(message.content, /<@333333333333333333>/);
+  assert.match(message.content, /<#444444444444444444>/);
+  assert.deepEqual(message.allowedMentions, {
+    parse: [],
+    users: ["333333333333333333"],
+  });
 });
 
 test("reminder uses stable per-event role mentions and a relative event timestamp", () => {

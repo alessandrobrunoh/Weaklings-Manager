@@ -72,6 +72,21 @@ fn comp_resolution_target(participant_count: usize, player_cap: Option<i64>) -> 
     participant_count.saturating_add(usize::from(cap_reached))
 }
 
+fn parse_event_timestamp(value: &str, field: &str) -> Result<DateTime<Utc>, AppError> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .map(|timestamp| timestamp.with_timezone(&Utc))
+        .map_err(|error| AppError::Validation(format!("Invalid {field}: {error}")))
+}
+
+fn validate_event_times(mass: DateTime<Utc>, start: DateTime<Utc>) -> Result<(), AppError> {
+    if mass > start {
+        return Err(AppError::Validation(
+            "mass_time_utc must be earlier than or equal to start_time_utc".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn normalize_discord_role_ids(role_ids: Vec<String>) -> Result<Vec<String>, AppError> {
     let mut normalized = Vec::with_capacity(role_ids.len());
     let mut seen = HashSet::with_capacity(role_ids.len());
@@ -1729,6 +1744,10 @@ impl EventService {
         let created_by_username =
             crate::modules::users::display_name::resolve_by_id(db, model.created_by).await?;
         let discord_role_ids = load_event_discord_role_ids(db, model.id).await?;
+        let start_time_utc = model.start_time_utc.unwrap_or(model.event_date_utc);
+        let mass_time_utc = model
+            .mass_time_utc
+            .unwrap_or(start_time_utc - ChronoDuration::minutes(30));
 
         Ok(EventView {
             id: model.id,
@@ -1743,7 +1762,9 @@ impl EventService {
             player_cap: model.player_cap,
             created_by: model.created_by,
             created_by_username,
-            event_date_utc: model.event_date_utc.to_rfc3339(),
+            event_date_utc: start_time_utc.to_rfc3339(),
+            mass_time_utc: mass_time_utc.to_rfc3339(),
+            start_time_utc: start_time_utc.to_rfc3339(),
             created_at: model.created_at.to_rfc3339(),
             updated_at: model.updated_at.to_rfc3339(),
             status: model.status,
@@ -1783,13 +1804,13 @@ impl EventService {
 
         if let Some(date_from) = filters.date_from {
             if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_from) {
-                query = query.filter(event::Column::EventDateUtc.gte(dt));
+                query = query.filter(event::Column::StartTimeUtc.gte(dt));
             }
         }
 
         if let Some(date_to) = filters.date_to {
             if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&date_to) {
-                query = query.filter(event::Column::EventDateUtc.lte(dt));
+                query = query.filter(event::Column::StartTimeUtc.lte(dt));
             }
         }
 
@@ -1805,7 +1826,9 @@ impl EventService {
         let sort_column = resolve_sort_key(
             filters.sort.as_deref(),
             &[
-                ("event_date_utc", event::Column::EventDateUtc),
+                ("event_date_utc", event::Column::StartTimeUtc),
+                ("start_time_utc", event::Column::StartTimeUtc),
+                ("mass_time_utc", event::Column::MassTimeUtc),
                 ("title", event::Column::Title),
                 ("created_at", event::Column::CreatedAt),
                 ("status", event::Column::Status),
@@ -2433,9 +2456,19 @@ impl EventService {
             None
         };
 
-        // Parse date
-        let parsed_date = chrono::DateTime::parse_from_rfc3339(&req.event_date_utc)
-            .map_err(|e| AppError::Validation(format!("Invalid event date: {e}")))?;
+        let start = req
+            .start_time_utc
+            .as_deref()
+            .or(req.event_date_utc.as_deref())
+            .ok_or_else(|| AppError::Validation("start_time_utc is required".to_string()))
+            .and_then(|value| parse_event_timestamp(value, "start_time_utc"))?;
+        let mass = req
+            .mass_time_utc
+            .as_deref()
+            .map(|value| parse_event_timestamp(value, "mass_time_utc"))
+            .transpose()?
+            .unwrap_or(start - ChronoDuration::minutes(30));
+        validate_event_times(mass, start)?;
 
         let event_model = event::ActiveModel {
             title: Set(req.title),
@@ -2445,7 +2478,9 @@ impl EventService {
             comp_id: Set(req.comp_id),
             player_cap: Set(req.player_cap),
             created_by: Set(creator_id),
-            event_date_utc: Set(parsed_date.into()),
+            event_date_utc: Set(start.into()),
+            mass_time_utc: Set(Some(mass.into())),
+            start_time_utc: Set(Some(start.into())),
             ..Default::default()
         }
         .insert(db)
@@ -2518,7 +2553,7 @@ impl EventService {
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
 
-        let mut active: event::ActiveModel = event_model.into();
+        let mut active: event::ActiveModel = event_model.clone().into();
 
         if let Some(title) = req.title {
             active.title = Set(title);
@@ -2547,11 +2582,38 @@ impl EventService {
             }
             active.comp_id = Set(comp_id);
         }
-        if let Some(date_str) = req.event_date_utc {
-            let parsed_date = chrono::DateTime::parse_from_rfc3339(&date_str)
-                .map_err(|e| AppError::Validation(format!("Invalid event date: {e}")))?;
-            active.event_date_utc = Set(parsed_date.into());
-        }
+        let current_start = event_model
+            .start_time_utc
+            .unwrap_or(event_model.event_date_utc)
+            .with_timezone(&Utc);
+        let current_mass = event_model
+            .mass_time_utc
+            .unwrap_or(event_model.event_date_utc - ChronoDuration::minutes(30))
+            .with_timezone(&Utc);
+        let start_changed = req.start_time_utc.is_some() || req.event_date_utc.is_some();
+        let start = req
+            .start_time_utc
+            .as_deref()
+            .or(req.event_date_utc.as_deref())
+            .map(|value| parse_event_timestamp(value, "start_time_utc"))
+            .transpose()?
+            .unwrap_or(current_start);
+        let mass = req
+            .mass_time_utc
+            .as_deref()
+            .map(|value| parse_event_timestamp(value, "mass_time_utc"))
+            .transpose()?
+            .unwrap_or_else(|| {
+                if start_changed {
+                    start - ChronoDuration::minutes(30)
+                } else {
+                    current_mass
+                }
+            });
+        validate_event_times(mass, start)?;
+        active.event_date_utc = Set(start.into());
+        active.mass_time_utc = Set(Some(mass.into()));
+        active.start_time_utc = Set(Some(start.into()));
 
         active.updated_at = Set(chrono::Utc::now().into());
 
@@ -2670,7 +2732,42 @@ impl EventService {
         self.to_event_view(db, updated).await
     }
 
-    /// Marks an event as live, recording `started_at = now` and computing the
+    /// Cancels an event before or during its session.
+    ///
+    /// Cancellation is idempotent. Completed sessions (`stopped`/`auto_stopped`) cannot be
+    /// cancelled because they already represent a terminal outcome.
+    pub async fn cancel_event(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+    ) -> Result<EventView, AppError> {
+        let model = event::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
+
+        if model.status == "cancelled" {
+            return self.to_event_view(db, model).await;
+        }
+        if model.status != "scheduled" && model.status != "live" {
+            return Err(AppError::Conflict(format!(
+                "Event {id} cannot be cancelled (status={})",
+                model.status
+            )));
+        }
+
+        let now: DateTime<Utc> = Utc::now();
+        let mut active: event::ActiveModel = model.into();
+        active.status = Set("cancelled".to_string());
+        active.stopped_at = Set(Some(now.into()));
+        active.auto_stop_deadline = Set(None);
+        active.updated_at = Set(now.into());
+        let updated = active.update(db).await.map_err(AppError::Database)?;
+        self.to_event_view(db, updated).await
+    }
+
+    /// Marks an event session as live, recording `started_at = now` and computing the
     /// `auto_stop_deadline = now + MAX_SESSION_DURATION` (3 hours).
     ///
     /// Idempotent guard: rejects if already live. Re-opening a stopped session
@@ -3154,6 +3251,10 @@ impl EventService {
             .await
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+
+        if event_model.status == "cancelled" {
+            return Err(AppError::Conflict(format!("Event {event_id} is cancelled")));
+        }
 
         // A missing primary build is the virtual, unlimited Fill role. Concrete build IDs remain
         // validated exactly as before.
@@ -4847,7 +4948,9 @@ mod tests {
                     regear: false,
                     comp_id,
                     player_cap: Some(10),
-                    event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
+                    mass_time_utc: None,
+                    start_time_utc: None,
                     discord_role_ids: vec![
                         "111111111111111111".to_string(),
                         "222222222222222222".to_string(),
@@ -4863,6 +4966,8 @@ mod tests {
         assert_eq!(event.title, "ZvZ Castle Fight");
         assert_eq!(event.comp_id, comp_id);
         assert_eq!(event.player_cap, Some(10));
+        assert_eq!(event.mass_time_utc, "2026-07-20T19:30:00+00:00");
+        assert_eq!(event.start_time_utc, "2026-07-20T20:00:00+00:00");
         assert_eq!(
             event.discord_role_ids,
             vec![
@@ -4871,6 +4976,38 @@ mod tests {
                 "333333333333333333".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn event_times_require_mass_not_after_start() {
+        let mass = parse_event_timestamp("2026-07-20T20:01:00Z", "mass_time_utc").unwrap();
+        let start = parse_event_timestamp("2026-07-20T20:00:00Z", "start_time_utc").unwrap();
+        let error = validate_event_times(mass, start).unwrap_err();
+        assert!(error.to_string().contains("mass_time_utc"));
+    }
+
+    #[test]
+    fn event_times_accept_equal_mass_and_start() {
+        let timestamp = parse_event_timestamp("2026-07-20T20:00:00Z", "start_time_utc").unwrap();
+        validate_event_times(timestamp, timestamp).unwrap();
+    }
+
+    #[tokio::test]
+    async fn cancel_event_is_idempotent_and_rejects_completed_events() {
+        let db = seed_db().await;
+        let creator = insert_user(&db, "admin", "admin@example.com").await;
+        let service = EventService::new();
+        let event_id = insert_event(&db, "Cancelable", creator).await;
+
+        let cancelled = service.cancel_event(&db, event_id).await.unwrap();
+        assert_eq!(cancelled.status, "cancelled");
+        let repeated = service.cancel_event(&db, event_id).await.unwrap();
+        assert_eq!(repeated.status, "cancelled");
+
+        let completed_id = insert_event(&db, "Completed", creator).await;
+        service.start_event(&db, completed_id).await.unwrap();
+        service.stop_event(&db, completed_id, false).await.unwrap();
+        assert!(service.cancel_event(&db, completed_id).await.is_err());
     }
 
     #[test]
@@ -4925,7 +5062,9 @@ mod tests {
                     regear: false,
                     comp_id,
                     player_cap: None,
-                    event_date_utc: "2026-09-01T20:00:00Z".to_string(),
+                    event_date_utc: Some("2026-09-01T20:00:00Z".to_string()),
+                    mass_time_utc: None,
+                    start_time_utc: None,
                     discord_role_ids: vec!["111111111111111111".to_string()],
                     create_split: false,
                     island_tab_id: None,
@@ -4964,7 +5103,9 @@ mod tests {
                     regear: false,
                     comp_id,
                     player_cap: None,
-                    event_date_utc: "2026-09-01T20:00:00Z".to_string(),
+                    event_date_utc: Some("2026-09-01T20:00:00Z".to_string()),
+                    mass_time_utc: None,
+                    start_time_utc: None,
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
@@ -5041,7 +5182,9 @@ mod tests {
                     regear: false,
                     comp_id,
                     player_cap: None,
-                    event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
+                    mass_time_utc: None,
+                    start_time_utc: None,
                     discord_role_ids: vec![],
                     create_split: true,
                     island_tab_id: None,
@@ -5081,7 +5224,9 @@ mod tests {
                     regear: false,
                     comp_id,
                     player_cap: None,
-                    event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
+                    mass_time_utc: None,
+                    start_time_utc: None,
                     discord_role_ids: vec![],
                     create_split: true,
                     island_tab_id: Some(tab_id),
@@ -5148,7 +5293,9 @@ mod tests {
                     regear: false,
                     comp_id: base_comp,
                     player_cap: None,
-                    event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
+                    mass_time_utc: None,
+                    start_time_utc: None,
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
@@ -5237,7 +5384,9 @@ mod tests {
                     regear: false,
                     comp_id,
                     player_cap: None,
-                    event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
+                    mass_time_utc: None,
+                    start_time_utc: None,
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
@@ -5346,7 +5495,9 @@ mod tests {
                     regear: false,
                     comp_id,
                     player_cap: None,
-                    event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
+                    mass_time_utc: None,
+                    start_time_utc: None,
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
@@ -5396,7 +5547,9 @@ mod tests {
                     regear: false,
                     comp_id,
                     player_cap: None,
-                    event_date_utc: "2026-07-20T20:00:00Z".to_string(),
+                    event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
+                    mass_time_utc: None,
+                    start_time_utc: None,
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
@@ -5446,7 +5599,9 @@ mod tests {
                     regear: false,
                     comp_id,
                     player_cap: None,
-                    event_date_utc: "2026-07-21T20:00:00Z".to_string(),
+                    event_date_utc: Some("2026-07-21T20:00:00Z".to_string()),
+                    mass_time_utc: None,
+                    start_time_utc: None,
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
@@ -5465,7 +5620,9 @@ mod tests {
                     regear: false,
                     comp_id,
                     player_cap: None,
-                    event_date_utc: "2026-07-22T20:00:00Z".to_string(),
+                    event_date_utc: Some("2026-07-22T20:00:00Z".to_string()),
+                    mass_time_utc: None,
+                    start_time_utc: None,
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,

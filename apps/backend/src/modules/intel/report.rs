@@ -1942,6 +1942,8 @@ mod tests {
             player_cap: None,
             created_by: 1,
             event_date_utc: ts("2026-08-19T20:00:00Z"),
+            mass_time_utc: Some(ts("2026-08-19T19:30:00Z")),
+            start_time_utc: Some(ts("2026-08-19T20:00:00Z")),
             created_at: ts("2026-08-01T00:00:00Z"),
             updated_at: ts("2026-08-01T00:00:00Z"),
             status: "stopped".to_string(),
