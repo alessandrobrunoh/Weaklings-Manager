@@ -144,7 +144,7 @@ interface EventRosterParty {
           <app-icon name="chevron-left" size="0.875rem" />
           {{ t('events.detail.back') }}
         </button>
-        @if (canManage() && detail.status === 'scheduled') {
+        @if (canEdit() && detail.status === 'scheduled') {
           <button
             type="button"
             class="btn btn--primary btn--sm"
@@ -156,7 +156,7 @@ interface EventRosterParty {
             {{ t('events.start') }}
           </button>
         }
-        @if (canManage() && detail.status === 'live') {
+        @if (canEdit() && detail.status === 'live') {
           <button
             type="button"
             class="btn btn--danger btn--sm"
@@ -179,6 +179,8 @@ interface EventRosterParty {
             <app-icon name="settings" size="0.875rem" />
             {{ t('common.edit') }}
           </button>
+        }
+        @if (canDelete()) {
           <button
             type="button"
             class="btn btn--ghost btn--sm text-[var(--color-danger)] hover:bg-[var(--color-error-container)]"
@@ -1950,6 +1952,7 @@ export class EventDetailPage {
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
   protected readonly canEdit = signal(false);
+  protected readonly canDelete = signal(false);
   protected readonly showEditForm = signal(false);
   protected readonly tab = signal<EventDetailTab>('roster');
   protected readonly pendingConfirm = signal<PendingConfirm | null>(null);
@@ -2074,7 +2077,7 @@ export class EventDetailPage {
     const detail = this.event();
     const userId = this.auth.profile()?.user_id ?? null;
     if (userId === null) return false;
-    return this.canManage() || detail?.created_by === userId;
+    return this.canEdit() || detail?.created_by === userId;
   });
 
   protected readonly showMemberSearch = signal(false);
@@ -2588,7 +2591,8 @@ export class EventDetailPage {
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   constructor() {
-    this.canEdit.set(this.auth.hasPermission('events.manage'));
+    this.canEdit.set(this.auth.hasPermission('events.edit'));
+    this.canDelete.set(this.auth.hasPermission('events.delete'));
     this.route.paramMap.subscribe((params) => {
       const id = params.get('eventId');
       if (id) {
@@ -3513,10 +3517,6 @@ export class EventDetailPage {
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     }
-  }
-
-  protected canManage(): boolean {
-    return this.auth.hasPermission('events.manage');
   }
 
   protected toggleJoinForm(): void {

@@ -76,9 +76,25 @@ pub enum Permission {
     /// Manage comps (create, edit, delete).
     #[strum(serialize = "comps.comps.manage")]
     CompsCompsManage,
-    /// Manage events (create, edit, delete).
+    /// Manage events (create, edit, delete). Superseded by the split
+    /// events.view/.create/.edit/.delete below — kept so existing
+    /// role_permissions rows and any external reference keep resolving.
     #[strum(serialize = "events.manage")]
     EventsManage,
+    /// View events and their rosters. Member+.
+    #[strum(serialize = "events.view")]
+    EventsView,
+    /// Create a new event. Officer+.
+    #[strum(serialize = "events.create")]
+    EventsCreate,
+    /// Edit an event: details, roster roles, voice channel, reminders,
+    /// start/stop, linked battles, and participant management on another
+    /// member's behalf. Officer+.
+    #[strum(serialize = "events.edit")]
+    EventsEdit,
+    /// Delete an event. Officer+.
+    #[strum(serialize = "events.delete")]
+    EventsDelete,
     /// Import siphoned energy ledger rows from the Albion export. Moderator-or-above today.
     #[strum(serialize = "siphoned.ingest")]
     SiphonedIngest,
