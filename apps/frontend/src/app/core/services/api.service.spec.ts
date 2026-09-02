@@ -10,7 +10,7 @@ import { API_BASE_URL } from '../tokens/api-base.token';
 import { ApiService } from './api.service';
 
 describe('ApiService query parameters', () => {
-  it('preserves an empty split_id marker for flattened optional bank filters', () => {
+  it('omits empty optional query parameters', () => {
     TestBed.configureTestingModule({
       providers: [
         provideHttpClient(),
@@ -26,8 +26,7 @@ describe('ApiService query parameters', () => {
 
     const request = http.expectOne((req) => req.url === '/api/bank/transactions');
     expect(request.request.params.get('page')).toBe('1');
-    expect(request.request.params.has('split_id')).toBe(true);
-    expect(request.request.params.get('split_id')).toBe('');
+    expect(request.request.params.has('split_id')).toBe(false);
     request.flush({ status: 'success', data: {} });
     http.verify();
   });

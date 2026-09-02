@@ -84,7 +84,10 @@ mod tests {
 
     #[derive(Debug, serde::Deserialize, PartialEq)]
     struct OptionalIntegerProbe {
-        #[serde(deserialize_with = "super::optional_i64_from_string_or_number")]
+        #[serde(
+            default,
+            deserialize_with = "super::optional_i64_from_string_or_number"
+        )]
         field: Option<i64>,
     }
 
@@ -94,5 +97,11 @@ mod tests {
         let string: OptionalIntegerProbe = serde_json::from_str(r#"{"field": "23"}"#).unwrap();
         assert_eq!(number.field, Some(23));
         assert_eq!(string.field, Some(23));
+    }
+
+    #[test]
+    fn optional_integer_accepts_missing_field() {
+        let missing: OptionalIntegerProbe = serde_json::from_str("{}").unwrap();
+        assert_eq!(missing.field, None);
     }
 }
