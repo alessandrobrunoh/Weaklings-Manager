@@ -394,6 +394,20 @@ type PendingDelete =
               }
             </div>
           }
+
+          @if (!loading() && !loadFailed() && comps().length < compsTotal()) {
+            <div class="flex items-center justify-between gap-3 text-xs text-[var(--color-text-secondary)]">
+              <span>{{ t('comps.showingCount', { shown: comps().length, total: compsTotal() }) }}</span>
+              <button
+                type="button"
+                class="btn btn--outline btn--sm"
+                [disabled]="compsLoadingMore()"
+                (click)="loadMoreComps()"
+              >
+                {{ t('comps.loadMore') }}
+              </button>
+            </div>
+          }
         </section>
       } @else if (tab() === 'builds') {
         <app-data-table
@@ -749,6 +763,9 @@ export class Comps {
 
   protected readonly comps = signal<CompSummary[]>([]);
   protected readonly compsTotal = signal(0);
+  protected readonly compsLoadingMore = signal(false);
+  /** Pages of `OPTIONS_LIMIT` comps already fetched into `comps()`. */
+  private compsLoadedPage = 1;
   protected readonly builds = signal<BuildSummary[]>([]);
   protected readonly buildsTotal = signal(0);
   protected readonly buildCategories = signal<BuildCategoryView[]>([]);
@@ -1005,7 +1022,8 @@ export class Comps {
     { key: 'actions', label: 'common.actions', align: 'right' },
   ]);
 
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
 
   constructor() {
     void this.init();
@@ -1766,6 +1784,7 @@ export class Comps {
   protected async loadComps(): Promise<void> {
     this.loading.set(true);
     this.loadFailed.set(false);
+    this.compsLoadedPage = 1;
     try {
       const data = await firstValueFrom(
         this.api.get<PaginatedData<CompSummary>>('api/comps', {
@@ -1777,6 +1796,7 @@ export class Comps {
       );
       this.comps.set(data.items);
       this.compsTotal.set(data.total_items);
+      this.compPerformanceById.set({});
       this.expandedParentIds.set(
         new Set(this.collectExpandableCompIds(buildCompForest(data.items))),
       );
@@ -1786,6 +1806,38 @@ export class Comps {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  /**
+   * Fetches the next page of comps and appends it, instead of the list
+   * silently truncating at `OPTIONS_LIMIT` rows for guilds with more comps.
+   */
+  protected async loadMoreComps(): Promise<void> {
+    if (this.compsLoadingMore() || this.comps().length >= this.compsTotal()) {
+      return;
+    }
+    this.compsLoadingMore.set(true);
+    const nextPage = this.compsLoadedPage + 1;
+    try {
+      const data = await firstValueFrom(
+        this.api.get<PaginatedData<CompSummary>>('api/comps', {
+          page: nextPage,
+          limit: OPTIONS_LIMIT,
+          sort: 'name',
+          order: 'asc',
+        }),
+      );
+      this.compsLoadedPage = nextPage;
+      const merged = [...this.comps(), ...data.items];
+      this.comps.set(merged);
+      this.compsTotal.set(data.total_items);
+      this.expandedParentIds.set(new Set(this.collectExpandableCompIds(buildCompForest(merged))));
+      await this.loadCompPerformance(data.items);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.compsLoadingMore.set(false);
     }
   }
 
@@ -1810,9 +1862,13 @@ export class Comps {
     }
   }
 
+  /**
+   * Fetches performance for `comps` and merges it into the existing map — a
+   * `loadMoreComps()` page must not wipe out performance already fetched for
+   * the comps loaded before it.
+   */
   private async loadCompPerformance(comps: readonly CompSummary[]): Promise<void> {
     if (comps.length === 0) {
-      this.compPerformanceById.set({});
       return;
     }
     const performanceEntries = await Promise.all(
@@ -1827,12 +1883,13 @@ export class Comps {
         }
       }),
     );
-    this.compPerformanceById.set(
-      Object.fromEntries(
+    this.compPerformanceById.update((current) => ({
+      ...current,
+      ...Object.fromEntries(
         performanceEntries.filter(
           (entry): entry is readonly [number, CompPerformanceView] => entry !== null,
         ),
       ),
-    );
+    }));
   }
 }

@@ -1,6 +1,6 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type { FightDetail, FightMutationResult, MergeFightsRequest, MoveBattleRequest, SplitFightRequest } from '../../core/models/api.models';
@@ -263,8 +263,16 @@ type PendingFightMutation =
 export class FightDetailPage {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
-  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+
+  /**
+   * Route-bound input, not a one-time constructor read. Angular's default
+   * route-reuse strategy keeps this component instance alive across
+   * navigations within the same route config — e.g. a merge/move mutation
+   * that redirects to a different fight ID — so the page must react to
+   * `fightId()` changing rather than only reading it once on construction.
+   */
+  readonly fightId = input.required<string>();
 
   protected readonly fight = signal<FightDetail | null>(null);
   protected readonly canManageFights = computed(() => this.auth.hasPermission('fights.edit'));
@@ -309,10 +317,15 @@ export class FightDetailPage {
     ].filter((stat): stat is FightStat => stat !== null);
   });
 
-  constructor() { void this.load(); }
+  constructor() {
+    effect(() => {
+      this.fightId();
+      untracked(() => void this.load());
+    });
+  }
 
   protected async load(): Promise<void> {
-    const fightId = Number(this.route.snapshot.paramMap.get('fightId'));
+    const fightId = Number(this.fightId());
     if (!Number.isSafeInteger(fightId) || fightId <= 0) { this.loadFailed.set(true); this.loading.set(false); return; }
     this.loading.set(true); this.loadFailed.set(false);
     try { this.fight.set(await firstValueFrom(this.api.get<FightDetail>(`api/fights/${fightId}`))); }

@@ -9,6 +9,7 @@ import {
   input,
   output,
   signal,
+  untracked,
 } from '@angular/core';
 
 import { TranslateService } from '../../../core/services/translate.service';
@@ -35,6 +36,7 @@ import type {
 
 const DEFAULT_PAGE_SIZE = 10;
 const DEFAULT_PAGE_SIZES: readonly number[] = [10, 25, 50, 100];
+const SEARCH_DEBOUNCE_MS = 300;
 
 @Component({
   selector: 'app-data-table',
@@ -129,19 +131,37 @@ export class DataTable<T> {
 
   protected readonly t = (key: TranslationKey | '') => (key === '' ? '' : this.translate.t(key));
 
+  /** Debounce timer for search input; see `onSearchInput`. */
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor() {
     // Synchronise the page size signal with the input.
     effect(() => this.currentPageSize.set(this.pageSize()));
 
-    // Reset to first page whenever structural inputs change. In server mode the
-    // host keeps responsibility for resetting on its own data changes.
+    // Reset to first page whenever structural inputs (columns) change. In server
+    // mode the host keeps responsibility for resetting on its own data changes,
+    // but a genuine structural change still needs to trigger a refetch of page 1.
+    // `pageSize` is read untracked below: it's already kept in sync by the
+    // sibling effect above, and tracking it here would re-fire this reset on
+    // every page-size change instead of only on `columns()` changes.
+    let columnsInitialized = false;
     effect(() => {
       this.columns();
-      this.currentPageSize.set(this.pageSize());
+      if (this.searchTimer) {
+        clearTimeout(this.searchTimer);
+        this.searchTimer = null;
+      }
+      this.currentPageSize.set(untracked(() => this.pageSize()));
       this.page.set(1);
       this.search.set('');
       this.sort.set(null);
       this.columnFilters.set({});
+      // The host already fetches its own initial page; only notify it here for
+      // a genuine post-mount structural change, not for the effect's first run.
+      if (columnsInitialized) {
+        this.emitChange();
+      }
+      columnsInitialized = true;
     });
   }
 
@@ -219,11 +239,20 @@ export class DataTable<T> {
 
   protected onSearchInput(event: Event): void {
     this.search.set((event.target as HTMLInputElement).value);
-    this.page.set(1);
-    this.emitChange();
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+    }
+    this.searchTimer = setTimeout(() => {
+      this.page.set(1);
+      this.emitChange();
+    }, SEARCH_DEBOUNCE_MS);
   }
 
   protected clearSearch(): void {
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+    }
     if (!this.search()) {
       return;
     }
@@ -233,6 +262,10 @@ export class DataTable<T> {
   }
 
   protected clearAllFilters(): void {
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+    }
     this.search.set('');
     this.columnFilters.set({});
     this.page.set(1);

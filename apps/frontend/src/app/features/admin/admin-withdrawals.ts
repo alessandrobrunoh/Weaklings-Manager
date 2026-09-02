@@ -41,6 +41,15 @@ function emptyPageChange(): DataTablePageChange {
 }
 
 /**
+ * Grouping (collapsing every `requested` transaction per player into one
+ * queue row) has to happen across the whole matching result, not just one
+ * table page, or a player's requests split across pages would show up as
+ * several separate rows. This fetch limit stands in for "the whole matching
+ * dataset"; pagination is then done client-side over the grouped rows.
+ */
+const GROUPING_FETCH_LIMIT = 500;
+
+/**
  * Officer withdrawal review queue.
  *
  * Split out of `/bank` (which is now a member's own ledger only) so
@@ -84,13 +93,13 @@ function emptyPageChange(): DataTablePageChange {
 
       <app-data-table
         [columns]="columns()"
-        [rows]="displayedRows()"
+        [rows]="pagedRows()"
         [loading]="loading()"
         [error]="loadFailed()"
         (retry)="loadTransactions()"
         [trackBy]="trackRow"
         [serverMode]="true"
-        [totalItems]="transactionTotal()"
+        [totalItems]="displayedRows().length"
         [pageSize]="10"
         [rowClickable]="true"
         emptyIcon="bank"
@@ -380,6 +389,19 @@ export class AdminWithdrawals {
     return result;
   });
 
+  /**
+   * `app-data-table` in `serverMode` expects only the current page's rows —
+   * `displayedRows()` already holds every grouped row matching the current
+   * filters (see `GROUPING_FETCH_LIMIT`), so pagination here is just an
+   * in-memory slice; it needs no extra network round-trip.
+   */
+  protected readonly pagedRows = computed<WithdrawalQueueRow[]>(() => {
+    const rows = this.displayedRows();
+    const query = this.tableQuery();
+    const start = (query.page - 1) * query.pageSize;
+    return rows.slice(start, start + query.pageSize);
+  });
+
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);
 
@@ -493,9 +515,12 @@ export class AdminWithdrawals {
     this.loadFailed.set(false);
     try {
       const query = this.tableQuery();
+      // Always fetch the whole matching dataset (not just one table page) so
+      // grouping-by-player below is correct across every page — pagination
+      // for display is then done client-side in `pagedRows()`.
       const params: Record<string, string | number | boolean> = {
-        page: query.page,
-        limit: query.pageSize,
+        page: 1,
+        limit: GROUPING_FETCH_LIMIT,
         global: true,
       };
       if (query.search.trim()) {

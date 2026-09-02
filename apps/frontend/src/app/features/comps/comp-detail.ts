@@ -132,7 +132,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
               {{ t('common.clone') }}
             </button>
           }
-          @if (canDelete()) {
+          @if (canDelete() && mode() === 'view') {
             <button
               type="button"
               class="btn btn--danger"
@@ -906,9 +906,12 @@ export class CompDetailPage {
           () => null,
         ),
       ]);
+      // Discard if the user has since picked a different comparison target.
+      if (Number(this.compareWithId()) !== compId) return;
       this.compareWith.set(detail);
       this.comparePerformance.set(performance);
     } catch (error) {
+      if (Number(this.compareWithId()) !== compId) return;
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     }
   }
@@ -1010,11 +1013,23 @@ export class CompDetailPage {
   }
 
   protected onNewBuildQtyChange(event: Event): void {
-    this.newBuildQuantity.set(Number((event.target as HTMLInputElement).value) || 1);
+    this.newBuildQuantity.set(this.parseQuantity((event.target as HTMLInputElement).value));
   }
 
   protected onEditingBuildQtyChange(event: Event): void {
-    this.editingBuildQty.set(Number((event.target as HTMLInputElement).value) || 1);
+    this.editingBuildQty.set(this.parseQuantity((event.target as HTMLInputElement).value));
+  }
+
+  /**
+   * Parses a stepper input's value into a positive integer quantity.
+   *
+   * `Number(value) || 1` alone lets a negative number (e.g. "-5") through
+   * unchanged, since it's truthy — the native `min="1"` on the input never
+   * catches it either because these fields sit outside a `<form>`.
+   */
+  private parseQuantity(value: string): number {
+    const parsed = Math.trunc(Number(value));
+    return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
   }
 
   protected startEditBuild(buildId: number, currentQty: number): void {
@@ -1037,7 +1052,7 @@ export class CompDetailPage {
     // name `if (editName())`, so clearing the field was silently ignored
     // instead of rejected, and the save still reported success.
     const nameError = validateBuildName(this.editName(), {
-      existingNames: [],
+      existingNames: this.compSummaries().map((summary) => summary.name),
       currentName: comp.name,
     });
     if (nameError) {
@@ -1271,6 +1286,8 @@ export class CompDetailPage {
           ),
         ),
       );
+      // Discard if the page has since switched to a different version.
+      if (comp.id !== this.compId()) return;
       this.buildDetails.set(
         new Map(
           details
@@ -1279,7 +1296,9 @@ export class CompDetailPage {
         ),
       );
     } finally {
-      this.buildDetailsLoading.set(false);
+      if (comp.id === this.compId()) {
+        this.buildDetailsLoading.set(false);
+      }
     }
   }
 
@@ -1297,6 +1316,8 @@ export class CompDetailPage {
           () => null,
         ),
       ]);
+      // Discard if the page has since switched to a different version's comp id.
+      if (compId !== this.compId()) return;
       this.comp.set(comp);
       this.performance.set(performance);
       void this.loadBuildDetails(comp);
@@ -1304,15 +1325,19 @@ export class CompDetailPage {
         const parent = await firstValueFrom(
           this.api.get<CompSummary>(`api/comps/${comp.parent_id}`),
         ).catch(() => null);
+        if (compId !== this.compId()) return;
         this.parentComp.set(parent);
       } else {
         this.parentComp.set(null);
       }
     } catch (error) {
+      if (compId !== this.compId()) return;
       this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
-      this.loading.set(false);
+      if (compId === this.compId()) {
+        this.loading.set(false);
+      }
     }
   }
 }

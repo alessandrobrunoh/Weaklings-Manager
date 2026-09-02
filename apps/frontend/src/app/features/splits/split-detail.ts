@@ -392,7 +392,11 @@ function parsePercentageInput(raw: string): number | null {
                     <button type="button" class="btn btn--ghost btn--sm" (click)="cancelEdit()">
                       {{ t('common.cancel') }}
                     </button>
-                    <button type="submit" class="btn btn--primary btn--sm" [disabled]="saving()">
+                    <button
+                      type="submit"
+                      class="btn btn--primary btn--sm"
+                      [disabled]="saving() || editTotalWeight() !== 100"
+                    >
                       {{ saving() ? t('common.loading') : t('common.save') }}
                     </button>
                   </div>
@@ -487,7 +491,12 @@ function parsePercentageInput(raw: string): number | null {
                   <span class="font-mono text-xs font-medium text-[var(--color-success)]">
                     {{
                       formatAmount(
-                        row.share_amount ?? estimatedShare(netOf(detail), toNumber(row.weight), 100)
+                        row.share_amount ??
+                          estimatedShare(
+                            netOf(detail),
+                            toNumber(row.weight),
+                            participantsTotalWeight(detail.participants)
+                          )
                       )
                     }}
                   </span>
@@ -592,7 +601,11 @@ function parsePercentageInput(raw: string): number | null {
                         {{
                           formatAmount(
                             participant.share_amount ??
-                              estimatedShare(netOf(detail), toNumber(participant.weight), 100)
+                              estimatedShare(
+                                netOf(detail),
+                                toNumber(participant.weight),
+                                participantsTotalWeight(detail.participants)
+                              )
                           )
                         }}
                       </span>
@@ -875,6 +888,11 @@ export class SplitDetailPage {
     );
   }
 
+  /** Real sum of participant weights, used instead of assuming they already total 100. */
+  protected participantsTotalWeight(participants: readonly SplitParticipant[]): number {
+    return participants.reduce((sum, participant) => sum + this.toNumber(participant.weight), 0);
+  }
+
   protected editWeightValue(participant: SplitParticipant): string {
     return this.editWeightInputs()[participant.user_id] ?? this.formatWeightInput(participant.weight);
   }
@@ -1112,6 +1130,10 @@ export class SplitDetailPage {
         return;
       }
       weights.push({ participant, weight });
+    }
+    if (Math.abs(this.editTotalWeight() - 100) > 0.01) {
+      this.toasts.error(this.t('splits.weight_sum_invalid'));
+      return;
     }
 
     this.saving.set(true);

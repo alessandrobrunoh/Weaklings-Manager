@@ -196,9 +196,12 @@ export const en = {
   'bank.finance.regearPaid': 'Regear paid',
   'bank.finance.siphonedNet': 'Siphoned Energy net',
   'bank.finance.siphonedDetail': 'Resource units, not a silver valuation',
-  'bank.finance.reportPermission': 'Your role can see ledger totals. The 30-day cross-system report requires the additional finance reporting permission.',
-  'bank.finance.ledgerNote': 'Guild Bank is currently a virtual ledger counterparty. These totals do not represent the physical silver currently held in-game. Siphoned Energy is tracked as a resource quantity; market value needs an explicit item tier and city before it can be priced correctly.',
-  'bank.finance.unavailable': 'Guild finance data could not be loaded. Check the officer permissions for the bank ledger and retry.',
+  'bank.finance.reportPermission':
+    'Your role can see ledger totals. The 30-day cross-system report requires the additional finance reporting permission.',
+  'bank.finance.ledgerNote':
+    'Guild Bank is currently a virtual ledger counterparty. These totals do not represent the physical silver currently held in-game. Siphoned Energy is tracked as a resource quantity; market value needs an explicit item tier and city before it can be priced correctly.',
+  'bank.finance.unavailable':
+    'Guild finance data could not be loaded. Check the officer permissions for the bank ledger and retry.',
   'bank.finance.analytics': 'Finance analytics',
   'bank.finance.liabilityMix': 'Liability mix',
   'bank.finance.currentLedger': 'Current ledger position',
@@ -273,6 +276,7 @@ export const en = {
   'splits.net_formula': 'Estimated − Fee − Repairs + Bags',
   'splits.roster_hint': 'Adjust percentage shares',
   'splits.fee_invalid': 'Fee must be between 0 and 100%.',
+  'splits.weight_sum_invalid': 'Participant weights must sum to 100%.',
   'splits.roster_empty': 'No participants in the roster yet',
   'splits.remove_participant': 'Remove participant',
   'splits.pending_payout': 'Pending payout',
@@ -378,6 +382,7 @@ export const en = {
   'events.detail.comp_capacity': 'Capacity',
   'events.detail.primary_build': 'Primary build',
   'events.detail.secondary_build': 'Secondary build',
+  'events.detail.fill_option': 'Fill — any role / build',
   'events.detail.no_opponents': 'No opponent data yet.',
   'events.detail.no_battles': 'No battles linked yet.',
   'events.detail.manage_battles': 'Manage battles',
@@ -620,10 +625,13 @@ export const en = {
   'comps.createVariantTooltip': 'Create a child variant for this composition',
   'comps.derivedFrom': 'Derived from',
   'comps.expansionAdditions': 'Additional builds and quantities',
-  'comps.expansionHint': 'The parent comp builds are inherited automatically. Add only new builds or extra quantities here.',
+  'comps.expansionHint':
+    'The parent comp builds are inherited automatically. Add only new builds or extra quantities here.',
   'comps.expandAll': 'Expand all',
   'comps.collapseAll': 'Collapse all',
   'comps.noCompsMatch': 'No compositions match your search or filter criteria.',
+  'comps.showingCount': 'Showing {shown} of {total}',
+  'comps.loadMore': 'Load more',
 
   // Albion
   'albion.title': 'Albion Link',
@@ -654,7 +662,8 @@ export const en = {
   'siphoned.weeklyHint':
     'Update this ledger manually at least once per week by importing the latest Albion export.',
   'siphoned.addEntry': 'Add manual entry',
-  'siphoned.missingManagePermission': 'You can view this ledger, but importing or changing entries requires the siphoned.ingest permission.',
+  'siphoned.missingManagePermission':
+    'You can view this ledger, but importing or changing entries requires the siphoned.ingest permission.',
   'siphoned.editEntry': 'Edit entry',
   'siphoned.saveEntry': 'Save entry',
   'siphoned.entryAdded': 'Entry added',
@@ -696,6 +705,7 @@ export const en = {
   'regears.acceptTitle': 'Accept regear',
   'regears.rejectTitle': 'Reject regear',
   'regears.acceptHint': 'Edit prices and toggle included slots. The total is recomputed live.',
+  'regears.negativePrice': 'Unit price cannot be negative.',
   'regears.rejectWarning': 'Rejection is final. The member cannot re-request this death.',
   'regears.rejectReason': 'Reason',
   'regears.note': 'Note',
@@ -817,8 +827,10 @@ export const en = {
   'admin.islands.detail.deleteTab': 'Delete tab',
   'admin.islands.detail.tabUpdated': 'Tab updated.',
   'admin.islands.detail.tabDeleted': 'Tab deleted.',
-  'admin.islands.detail.confirmDelete': 'Delete this island? Splits cannot be located here anymore.',
-  'admin.islands.detail.confirmDeleteTab': 'Delete this tab? Existing splits linked to this tab will remain.',
+  'admin.islands.detail.confirmDelete':
+    'Delete this island? Splits cannot be located here anymore.',
+  'admin.islands.detail.confirmDeleteTab':
+    'Delete this tab? Existing splits linked to this tab will remain.',
   'admin.islands.detail.noTabs': 'No tabs configured for this island.',
   'admin.transactions.title': 'Transactions',
   'admin.transactions.hint': 'The full guild ledger. Create, edit, or delete any transaction.',
@@ -870,7 +882,8 @@ export const en = {
   'season.subtitle': 'Active guild season progress, milestones, and competitive rankings.',
   'season.hero.active': 'Active Season',
   'season.hero.noActive': 'No Active Season',
-  'season.hero.noActiveDesc': 'No guild season is currently running. XP and activity continue accumulating to lifetime totals.',
+  'season.hero.noActiveDesc':
+    'No guild season is currently running. XP and activity continue accumulating to lifetime totals.',
   'season.hero.status.live': 'Live',
   'season.hero.status.upcoming': 'Upcoming',
   'season.hero.status.ended': 'Concluded',
@@ -955,16 +968,19 @@ export const en = {
   'splits.batch.complete': 'Complete selected',
   'splits.batch.completed': 'splits completed',
   'splits.batch.confirmTitle': 'Confirm Batch Split Completion',
-  'splits.batch.confirmSubtitle': 'Review splits and credit transactions that will be generated for participants',
+  'splits.batch.confirmSubtitle':
+    'Review splits and credit transactions that will be generated for participants',
   'splits.batch.selectedSplits': 'Selected Splits',
   'splits.batch.totalNetPayout': 'Total Net Payout',
   'splits.batch.totalRecipients': 'Total Recipients',
   'splits.batch.splitsList': 'Splits in Batch',
-  'splits.batch.confirmWarning': 'Completing this batch will generate individual Guild Bank credit transactions for all participants.',
+  'splits.batch.confirmWarning':
+    'Completing this batch will generate individual Guild Bank credit transactions for all participants.',
   'splits.batch.acceptAndPay': 'Accept & Complete Batch',
   'splits.detail.confirmCompleteTitle': 'Confirm Split Payout',
   'splits.detail.confirmCompleteSubtitle': 'Review shares and participant credits',
-  'splits.detail.confirmCompleteWarning': 'Completing this split will immediately generate Guild Bank credit transactions for all participants.',
+  'splits.detail.confirmCompleteWarning':
+    'Completing this split will immediately generate Guild Bank credit transactions for all participants.',
   'splits.detail.confirmCompleteAction': 'Accept & Credit Split',
   'splits.detail.transactionsTitle': 'Transactions',
   'splits.detail.transactionsEmpty': 'No transactions linked to this split yet.',
@@ -973,7 +989,8 @@ export const en = {
   'bank.withdraw.confirmSubtitle': 'Review requested transactions to pay out',
   'bank.withdraw.transactionsList': 'Transactions to Pay Out',
   'bank.withdraw.totalPayout': 'Total Payout Amount',
-  'bank.withdraw.confirmWarning': 'This will move the selected transactions to Withdrawn status and record the payment.',
+  'bank.withdraw.confirmWarning':
+    'This will move the selected transactions to Withdrawn status and record the payment.',
   'bank.withdraw.confirmAction': 'Accept & Pay Out',
   'bank.withdraw.playerDialogTitle': 'Withdrawal Requests · {player}',
   'bank.withdraw.playerDialogSubtitle': 'Select individual transactions to accept or reject',
@@ -1097,15 +1114,18 @@ export const en = {
   'intel.record': 'W / L',
   'intel.winRate': 'Win rate',
   'intel.performanceEvidence': 'Performance evidence',
-  'intel.performanceEvidenceHint': 'Rankings only use recorded report data. Coverage is stated for every panel.',
+  'intel.performanceEvidenceHint':
+    'Rankings only use recorded report data. Coverage is stated for every panel.',
   'intel.reportWindow': 'Report window:',
   'intel.playerPerformance': 'Player performance',
   'intel.playerPerformanceUnavailable': 'No player combat records in this report window.',
   'intel.compPerformance': 'Composition performance',
   'intel.compPerformanceUnavailable': 'No attributed composition records in this report window.',
   'intel.buildPerformance': 'Build performance',
-  'intel.buildPerformanceUnavailable': 'Outcome-per-build data is unavailable. These are planned selections, not performance results.',
-  'intel.buildCoverageUnavailable': 'No planned build assignments are available for the current 30-day trends window.',
+  'intel.buildPerformanceUnavailable':
+    'Outcome-per-build data is unavailable. These are planned selections, not performance results.',
+  'intel.buildCoverageUnavailable':
+    'No planned build assignments are available for the current 30-day trends window.',
   'intel.assignments': 'assignments',
   'intel.coverageNote': 'Attributed battles:',
   'intel.coverageNoteHint':
@@ -1280,7 +1300,8 @@ export const en = {
   'warns.ack': 'Acknowledge',
   'warns.acked': 'Handled',
   'warns.issue': 'Issue warn',
-  'warns.missingManagePermission': 'You can view this register, but revoking or issuing warns requires the warns.issue permission.',
+  'warns.missingManagePermission':
+    'You can view this register, but revoking or issuing warns requires the warns.issue permission.',
   'warns.issueSuccess': 'Warn issued.',
   'warns.reason': 'Reason',
   'warns.severity': 'Severity',

@@ -21,6 +21,7 @@ import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { resolveBattleOutcome, type BattleOutcomeType } from './battle-outcome';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
@@ -665,6 +666,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
             [error]="loadFailed()"
             [trackBy]="trackPlayerRow"
             [pageSize]="15"
+            [hideSearch]="true"
             (retry)="load()"
           >
             <ng-template dataTableCell="player" let-row>
@@ -860,6 +862,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
             [error]="loadFailed()"
             [trackBy]="trackPlayerRow"
             [pageSize]="20"
+            [hideSearch]="true"
             (retry)="load()"
           >
             <ng-template dataTableCell="name" let-row>
@@ -1388,11 +1391,18 @@ export class BattleDetailPage {
     const allyMap = this.guildAllianceMap();
     const map = new Map<string, { isSolo: boolean; guilds: BattleGuildSummary[] }>();
 
+    // Grouped case-insensitively: an alliance or solo guild name reported with
+    // inconsistent casing across guild rows must not be split into two groups.
+    const groupNames = new Map<string, string>();
     for (const guild of detail.guilds) {
       const resolvedAlly = guild.alliance_name?.trim() || allyMap.get(guild.name.toLowerCase()) || null;
-      const groupKey = resolvedAlly ? resolvedAlly : `[SOLO] ${guild.name}`;
+      const groupName = resolvedAlly ? resolvedAlly : `[SOLO] ${guild.name}`;
+      const groupKey = groupName.toLowerCase();
       const isSolo = !resolvedAlly;
 
+      if (!groupNames.has(groupKey)) {
+        groupNames.set(groupKey, groupName);
+      }
       const entry = map.get(groupKey) ?? { isSolo, guilds: [] };
       entry.guilds.push({
         ...guild,
@@ -1404,7 +1414,7 @@ export class BattleDetailPage {
     const summaries: AllianceSummary[] = [];
     for (const [key, entry] of map.entries()) {
       const { isSolo, guilds } = entry;
-      const name = isSolo ? guilds[0].name : key;
+      const name = isSolo ? guilds[0].name : (groupNames.get(key) ?? key);
       const players = guilds.reduce((sum, g) => sum + g.players, 0);
       const kills = guilds.reduce((sum, g) => sum + g.kills, 0);
       const deaths = guilds.reduce((sum, g) => sum + g.deaths, 0);
@@ -1465,24 +1475,23 @@ export class BattleDetailPage {
   });
 
   // Battle Verdict computation
+  // Shares `resolveBattleOutcome` with the battles list's own outcome badge so
+  // the same battle can't read "Victory" there and "Contested" here.
   protected readonly battleVerdict = computed<{ label: string; type: 'victory' | 'defeat' | 'contested' }>(() => {
-    const ourAlly = this.ourAlliance();
-    const ourG = this.ourGuild();
     const detail = this.battle();
     if (!detail) return { label: 'BATTLE', type: 'contested' };
 
-    const kills = ourAlly?.kills ?? ourG?.kills ?? 0;
-    const deaths = ourAlly?.deaths ?? ourG?.deaths ?? 0;
-    const fame = ourAlly?.killFame ?? ourG?.kill_fame ?? 0;
-    const isWinner = ourG?.winner || (ourAlly && ourAlly.killFame >= detail.total_fame * 0.45);
-
-    if (isWinner || (kills > deaths && fame >= detail.total_fame * 0.4)) {
-      return { label: this.t('battles.victory'), type: 'victory' };
-    }
-    if (deaths > kills && fame < detail.total_fame * 0.3) {
-      return { label: this.t('battles.defeat'), type: 'defeat' };
-    }
-    return { label: this.t('battles.contested'), type: 'contested' };
+    const type = resolveBattleOutcome({
+      guilds: detail.guilds,
+      totalFame: detail.total_fame,
+      ourGuildName: DEFAULT_OUR_GUILD_NAME,
+    });
+    const labels: Record<BattleOutcomeType, TranslationKey> = {
+      victory: 'battles.victory',
+      defeat: 'battles.defeat',
+      contested: 'battles.contested',
+    };
+    return { label: this.t(labels[type]), type };
   });
 
   // Enemy forces totals
@@ -1571,9 +1580,9 @@ export class BattleDetailPage {
 
   // Top Guilds sorted by KD
   protected readonly topKdGuilds = computed<GuildEnrichedRow[]>(() => {
-    return this.enrichedGuildRows()
-      .slice(0, 8)
-      .sort((a, b) => b.kdRatio - a.kdRatio);
+    return [...this.enrichedGuildRows()]
+      .sort((a, b) => b.kdRatio - a.kdRatio)
+      .slice(0, 8);
   });
 
   protected readonly maxGuildKd = computed(() => {

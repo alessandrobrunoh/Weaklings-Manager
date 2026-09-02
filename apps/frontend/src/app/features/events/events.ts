@@ -621,6 +621,11 @@ export class Events {
       await firstValueFrom(this.api.delete(`api/events/${doomed.id}`));
       this.pendingDelete.set(null);
       this.toasts.success(this.t('common.delete'));
+      // If that was the last row on the current page, step back a page instead
+      // of reloading into a now-empty one.
+      if (this.events().length === 1 && this.page() > 1) {
+        this.page.set(this.page() - 1);
+      }
       await this.load();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

@@ -161,7 +161,8 @@ export const es: TranslationDict = {
   'bank.withdrawalsInReview': '{count} retiros en revisión',
   'bank.queue.ariaLabel': 'Cola de revisión de retiros de la hermandad',
   'bank.queue.heading': 'Cola de revisión de retiros',
-  'bank.queue.description': 'Revisa los retiros solicitados en este libro mayor paginado por el servidor.',
+  'bank.queue.description':
+    'Revisa los retiros solicitados en este libro mayor paginado por el servidor.',
   'bank.queue.entryCount': '{count} entradas del libro mayor',
   'bank.refreshTooltip': 'Actualizar saldo y transacciones',
   'bank.requestTooltip': 'Solicitar el retiro de tu saldo',
@@ -187,9 +188,12 @@ export const es: TranslationDict = {
   'bank.finance.regearPaid': 'Regear pagado',
   'bank.finance.siphonedNet': 'Energía Siphoned neta',
   'bank.finance.siphonedDetail': 'Unidades de recurso, no una valoración en plata',
-  'bank.finance.reportPermission': 'Tu rol puede ver los totales del libro mayor. El informe entre sistemas de los últimos 30 días requiere el permiso adicional de informes financieros.',
-  'bank.finance.ledgerNote': 'El Banco de la Hermandad es actualmente una contraparte virtual del libro mayor. Estos totales no representan la plata física disponible en el juego. La Energía Siphoned se registra como cantidad de recurso; para calcular su valor de mercado se necesita un nivel de objeto y una ciudad explícitos.',
-  'bank.finance.unavailable': 'No se pudieron cargar los datos financieros de la hermandad. Comprueba los permisos de oficial para el libro mayor e inténtalo de nuevo.',
+  'bank.finance.reportPermission':
+    'Tu rol puede ver los totales del libro mayor. El informe entre sistemas de los últimos 30 días requiere el permiso adicional de informes financieros.',
+  'bank.finance.ledgerNote':
+    'El Banco de la Hermandad es actualmente una contraparte virtual del libro mayor. Estos totales no representan la plata física disponible en el juego. La Energía Siphoned se registra como cantidad de recurso; para calcular su valor de mercado se necesita un nivel de objeto y una ciudad explícitos.',
+  'bank.finance.unavailable':
+    'No se pudieron cargar los datos financieros de la hermandad. Comprueba los permisos de oficial para el libro mayor e inténtalo de nuevo.',
   'bank.finance.analytics': 'Análisis financiero',
   'bank.finance.liabilityMix': 'Composición de pasivos',
   'bank.finance.currentLedger': 'Posición actual del libro mayor',
@@ -200,7 +204,8 @@ export const es: TranslationDict = {
   'bank.finance.weeklyFlow': 'Flujo semanal de plata',
   'bank.finance.weeklyFlowDescription': 'Botín creado frente a las salidas de miembros.',
   'bank.finance.weeklyActivity': 'Operaciones semanales',
-  'bank.finance.weeklyActivityDescription': 'Luchas y eventos de la hermandad en el periodo del informe.',
+  'bank.finance.weeklyActivityDescription':
+    'Luchas y eventos de la hermandad en el periodo del informe.',
   'bank.finance.fights': 'Luchas',
   'bank.finance.events': 'Eventos',
   'bank.finance.splitOutflow': 'Pagos de reparto',
@@ -266,6 +271,7 @@ export const es: TranslationDict = {
   'splits.net_formula': 'Estimado − Comisión − Reparaciones + Bolsas',
   'splits.roster_hint': 'Ajusta las cuotas en porcentaje',
   'splits.fee_invalid': 'La comisión debe estar entre 0 y 100%.',
+  'splits.weight_sum_invalid': 'Los pesos de los participantes deben sumar 100%.',
   'splits.roster_empty': 'Aún no hay participantes',
   'splits.remove_participant': 'Quitar participante',
   'splits.pending_payout': 'Pago pendiente',
@@ -370,6 +376,7 @@ export const es: TranslationDict = {
   'events.detail.comp_capacity': 'Capacidad',
   'events.detail.primary_build': 'Build primaria',
   'events.detail.secondary_build': 'Build secundaria',
+  'events.detail.fill_option': 'Fill — cualquier rol / build',
   'events.detail.no_opponents': 'Sin datos de oponentes.',
   'events.detail.no_battles': 'Sin batallas vinculadas.',
   'events.detail.manage_battles': 'Gestionar batallas',
@@ -609,10 +616,13 @@ export const es: TranslationDict = {
   'comps.createVariantTooltip': 'Crear una variante hija para esta composición',
   'comps.derivedFrom': 'Derivada de',
   'comps.expansionAdditions': 'Builds y cantidades adicionales',
-  'comps.expansionHint': 'Las builds de la composición padre se heredan automáticamente. Añade aquí solo builds nuevas o cantidades adicionales.',
+  'comps.expansionHint':
+    'Las builds de la composición padre se heredan automáticamente. Añade aquí solo builds nuevas o cantidades adicionales.',
   'comps.expandAll': 'Expandir todo',
   'comps.collapseAll': 'Contraer todo',
   'comps.noCompsMatch': 'Ninguna composición coincide con los criterios de búsqueda o filtro.',
+  'comps.showingCount': 'Mostrando {shown} de {total}',
+  'comps.loadMore': 'Cargar más',
 
   'albion.title': 'Enlace Albion',
   'albion.subtitle': 'Enlaza Discord a tu personaje del juego.',
@@ -641,7 +651,8 @@ export const es: TranslationDict = {
   'siphoned.weeklyHint':
     'Actualiza este registro manualmente al menos una vez por semana importando el último export de Albion.',
   'siphoned.addEntry': 'Añadir entrada manual',
-  'siphoned.missingManagePermission': 'Puedes ver este libro mayor, pero importar o modificar entradas requiere el permiso siphoned.ingest.',
+  'siphoned.missingManagePermission':
+    'Puedes ver este libro mayor, pero importar o modificar entradas requiere el permiso siphoned.ingest.',
   'siphoned.editEntry': 'Editar entrada',
   'siphoned.saveEntry': 'Guardar entrada',
   'siphoned.entryAdded': 'Entrada añadida',
@@ -682,6 +693,7 @@ export const es: TranslationDict = {
   'regears.acceptTitle': 'Aceptar regear',
   'regears.rejectTitle': 'Rechazar regear',
   'regears.acceptHint': 'Edita precios y ranuras incluidas. El total se recalcula en vivo.',
+  'regears.negativePrice': 'El precio unitario no puede ser negativo.',
   'regears.rejectWarning':
     'El rechazo es definitivo. El miembro no puede volver a solicitar esta muerte.',
   'regears.rejectReason': 'Motivo',
@@ -756,10 +768,12 @@ export const es: TranslationDict = {
 
   // Season
   'season.title': 'Resumen de Temporada',
-  'season.subtitle': 'Progreso de la temporada activa del gremio, hitos y clasificaciones competitivas.',
+  'season.subtitle':
+    'Progreso de la temporada activa del gremio, hitos y clasificaciones competitivas.',
   'season.hero.active': 'Temporada Activa',
   'season.hero.noActive': 'Sin Temporada Activa',
-  'season.hero.noActiveDesc': 'No hay ninguna temporada de gremio en curso. La XP y la actividad continúan acumulándose en los totales globales.',
+  'season.hero.noActiveDesc':
+    'No hay ninguna temporada de gremio en curso. La XP y la actividad continúan acumulándose en los totales globales.',
   'season.hero.status.live': 'En curso',
   'season.hero.status.upcoming': 'Próxima',
   'season.hero.status.ended': 'Concluida',
@@ -790,7 +804,8 @@ export const es: TranslationDict = {
   'season.tabs.siphoned': 'Energía siphoned',
   'season.tabs.deathfame': 'Death Fame',
   'season.rankings.title': 'Clasificación por categorías',
-  'season.rankings.subtitle': 'Compara el rendimiento de los miembros del gremio en las categorías de la temporada activa.',
+  'season.rankings.subtitle':
+    'Compara el rendimiento de los miembros del gremio en las categorías de la temporada activa.',
   'season.podium.champion': '1.er puesto',
   'season.podium.runnerUp': '2.º puesto',
   'season.podium.thirdPlace': '3.er puesto',
@@ -844,16 +859,19 @@ export const es: TranslationDict = {
   'splits.batch.complete': 'Completar seleccionados',
   'splits.batch.completed': 'repartos completados',
   'splits.batch.confirmTitle': 'Confirmar liquidación del lote de repartos',
-  'splits.batch.confirmSubtitle': 'Revisa los repartos y transacciones de crédito que se generarán para los participantes',
+  'splits.batch.confirmSubtitle':
+    'Revisa los repartos y transacciones de crédito que se generarán para los participantes',
   'splits.batch.selectedSplits': 'Repartos seleccionados',
   'splits.batch.totalNetPayout': 'Valor neto total',
   'splits.batch.totalRecipients': 'Participantes totales',
   'splits.batch.splitsList': 'Repartos en el lote',
-  'splits.batch.confirmWarning': 'Completar este lote generará transacciones individuales de crédito en el Banco de Gremio para todos los participantes.',
+  'splits.batch.confirmWarning':
+    'Completar este lote generará transacciones individuales de crédito en el Banco de Gremio para todos los participantes.',
   'splits.batch.acceptAndPay': 'Aceptar y liquidar lote',
   'splits.detail.confirmCompleteTitle': 'Confirmar liquidación del reparto',
   'splits.detail.confirmCompleteSubtitle': 'Revisa las cuotas y créditos de los participantes',
-  'splits.detail.confirmCompleteWarning': 'Esta acción acreditará inmediatamente las cuotas en el saldo del banco de cada participante.',
+  'splits.detail.confirmCompleteWarning':
+    'Esta acción acreditará inmediatamente las cuotas en el saldo del banco de cada participante.',
   'splits.detail.confirmCompleteAction': 'Aceptar y liquidar reparto',
   'splits.detail.transactionsTitle': 'Transacciones',
   'splits.detail.transactionsEmpty': 'Todavía no hay transacciones vinculadas a este reparto.',
@@ -862,10 +880,12 @@ export const es: TranslationDict = {
   'bank.withdraw.confirmSubtitle': 'Revisa las transacciones solicitadas a liquidar',
   'bank.withdraw.transactionsList': 'Transacciones a liquidar',
   'bank.withdraw.totalPayout': 'Importe total a liquidar',
-  'bank.withdraw.confirmWarning': 'Esta acción moverá las transacciones seleccionadas a Retirado y registrará el pago.',
+  'bank.withdraw.confirmWarning':
+    'Esta acción moverá las transacciones seleccionadas a Retirado y registrará el pago.',
   'bank.withdraw.confirmAction': 'Aceptar y pagar',
   'bank.withdraw.playerDialogTitle': 'Solicitudes de Retiro · {player}',
-  'bank.withdraw.playerDialogSubtitle': 'Selecciona las transacciones individuales para aceptar o rechazar',
+  'bank.withdraw.playerDialogSubtitle':
+    'Selecciona las transacciones individuales para aceptar o rechazar',
   'bank.withdraw.selectAll': 'Seleccionar todas',
   'bank.withdraw.selectedCount': '{count} seleccionadas',
   'bank.withdraw.selectedTotal': 'Total seleccionado',
@@ -874,7 +894,8 @@ export const es: TranslationDict = {
   'bank.withdraw.requestCount': '{count} solicitudes',
   'bank.withdraw.requestConfirmSubtitle': 'Confirma la solicitud de retiro',
   'bank.withdraw.requestConfirmBody': 'Estás a punto de solicitar el retiro de',
-  'bank.withdraw.requestConfirmHint': 'Un oficial autorizado completará la transferencia en el juego.',
+  'bank.withdraw.requestConfirmHint':
+    'Un oficial autorizado completará la transferencia en el juego.',
 
   'admin.title': 'Administración',
   'admin.loadError': 'No se pudo cargar la matriz de permisos. Intenta recargar la página.',
@@ -890,8 +911,10 @@ export const es: TranslationDict = {
   'admin.hub.islandsHint': 'Ciudades, islas y pestañas de loot usadas al localizar splits.',
   'admin.hub.financeHint': 'Pasivos, pagos, fuentes y destinos de todo el libro mayor.',
   'admin.hub.withdrawalsHint': 'Revisa y liquida los retiros solicitados por los miembros.',
-  'admin.hub.transactionsHint': 'Libro contable completo de la hermandad: crea, edita o elimina cualquier transacción.',
-  'admin.hub.usersHint': 'Directorio de miembros del gremio, gestión de roles y vínculos de Albion.',
+  'admin.hub.transactionsHint':
+    'Libro contable completo de la hermandad: crea, edita o elimina cualquier transacción.',
+  'admin.hub.usersHint':
+    'Directorio de miembros del gremio, gestión de roles y vínculos de Albion.',
   'admin.regears.title': 'Ajustes de regear',
   'admin.regears.hint': 'Límites de gremio, ciudad de precios y huecos de equipo reembolsables.',
   'admin.regears.maxPerEvent': 'Regears máximos por evento',
@@ -937,7 +960,8 @@ export const es: TranslationDict = {
   'admin.islands.detail.notFound': 'No se encontró esta isla.',
   'admin.islands.detail.overview': 'Detalles de la isla',
   'admin.islands.detail.tabsTitle': 'Gestionar pestañas de cofres',
-  'admin.islands.detail.tabsHint': 'Cofres disponibles para almacenar botines de splits en esta isla.',
+  'admin.islands.detail.tabsHint':
+    'Cofres disponibles para almacenar botines de splits en esta isla.',
   'admin.islands.detail.tabName': 'Nombre de pestaña',
   'admin.islands.detail.sortOrder': 'Orden',
   'admin.islands.detail.moveUp': 'Mover arriba',
@@ -946,11 +970,14 @@ export const es: TranslationDict = {
   'admin.islands.detail.deleteTab': 'Eliminar pestaña',
   'admin.islands.detail.tabUpdated': 'Pestaña actualizada.',
   'admin.islands.detail.tabDeleted': 'Pestaña eliminada.',
-  'admin.islands.detail.confirmDelete': '¿Eliminar esta isla? Ya no se podrán localizar splits aquí.',
-  'admin.islands.detail.confirmDeleteTab': '¿Eliminar esta pestaña? Los splits existentes vinculados se mantendrán.',
+  'admin.islands.detail.confirmDelete':
+    '¿Eliminar esta isla? Ya no se podrán localizar splits aquí.',
+  'admin.islands.detail.confirmDeleteTab':
+    '¿Eliminar esta pestaña? Los splits existentes vinculados se mantendrán.',
   'admin.islands.detail.noTabs': 'No hay pestañas configuradas para esta isla.',
   'admin.transactions.title': 'Transacciones',
-  'admin.transactions.hint': 'El libro contable completo de la hermandad. Crea, edita o elimina cualquier transacción.',
+  'admin.transactions.hint':
+    'El libro contable completo de la hermandad. Crea, edita o elimina cualquier transacción.',
   'admin.transactions.empty': 'Todavía no hay transacciones.',
   'admin.transactions.create': 'Nueva transacción',
   'admin.transactions.created': 'Transacción creada.',
@@ -1193,15 +1220,18 @@ export const es: TranslationDict = {
   'intel.record': 'V / D',
   'intel.winRate': 'Tasa de victoria',
   'intel.performanceEvidence': 'Evidencia de rendimiento',
-  'intel.performanceEvidenceHint': 'Las clasificaciones solo usan datos registrados en el informe. Cada panel indica su cobertura.',
+  'intel.performanceEvidenceHint':
+    'Las clasificaciones solo usan datos registrados en el informe. Cada panel indica su cobertura.',
   'intel.reportWindow': 'Periodo del informe:',
   'intel.playerPerformance': 'Rendimiento de jugadores',
   'intel.playerPerformanceUnavailable': 'No hay registros de combate de jugadores en este periodo.',
   'intel.compPerformance': 'Rendimiento de composición',
   'intel.compPerformanceUnavailable': 'No hay registros de composición atribuidos en este periodo.',
   'intel.buildPerformance': 'Rendimiento de builds',
-  'intel.buildPerformanceUnavailable': 'No hay datos de resultados por build. Estas son selecciones planificadas, no resultados de rendimiento.',
-  'intel.buildCoverageUnavailable': 'No hay asignaciones de builds planificadas para la ventana actual de tendencias de 30 días.',
+  'intel.buildPerformanceUnavailable':
+    'No hay datos de resultados por build. Estas son selecciones planificadas, no resultados de rendimiento.',
+  'intel.buildCoverageUnavailable':
+    'No hay asignaciones de builds planificadas para la ventana actual de tendencias de 30 días.',
   'intel.assignments': 'asignaciones',
   'intel.coverageNote': 'Batallas atribuidas:',
   'intel.coverageNoteHint':
@@ -1260,7 +1290,8 @@ export const es: TranslationDict = {
   'warns.ack': 'Confirmar',
   'warns.acked': 'Gestionada',
   'warns.issue': 'Emitir warn',
-  'warns.missingManagePermission': 'Puedes ver este registro, pero emitir o revocar advertencias requiere el permiso warns.issue.',
+  'warns.missingManagePermission':
+    'Puedes ver este registro, pero emitir o revocar advertencias requiere el permiso warns.issue.',
   'warns.issueSuccess': 'Warn emitido.',
   'warns.reason': 'Motivo',
   'warns.severity': 'Gravedad',
@@ -1332,7 +1363,8 @@ export const es: TranslationDict = {
   'notifications.title': 'Notificaciones',
   'notifications.open': 'Abrir notificaciones',
   'notifications.empty': 'Nada por aquí todavía.',
-  'notifications.emptyHint': 'Aquí aparecen los anuncios del gremio y las actualizaciones personales.',
+  'notifications.emptyHint':
+    'Aquí aparecen los anuncios del gremio y las actualizaciones personales.',
   'notifications.markAllRead': 'Marcar todo como leído',
   'notifications.broadcast': 'Anuncio del gremio',
   'notifications.broadcastHint': 'Todos los miembros lo verán en su bandeja.',

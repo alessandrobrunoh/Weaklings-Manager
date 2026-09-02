@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
@@ -14,8 +14,10 @@ import type {
   BuildRole,
   BuildSlot,
   BuildPerformanceView,
+  BuildSummary,
   OpenAlbionItem,
   OpenAlbionItemAbilities,
+  PaginatedData,
   UpdateBuildRequest,
 } from '../../core/models/api.models';
 import { filterAlbionEquipmentCatalog } from '../../shared/data/albion-equipment-catalog';
@@ -543,6 +545,7 @@ export class CompBuildDetailPage {
   private readonly router = inject(Router);
   private readonly albionCatalog = inject(AlbionCatalogService);
   private readonly albionAbilities = inject(AlbionAbilitiesService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly SLOT_ORDER = SLOT_ORDER;
   protected readonly ITEM_TIERS = ITEM_TIERS;
@@ -585,6 +588,8 @@ export class CompBuildDetailPage {
   protected readonly editName = signal('');
   protected readonly editDescription = signal('');
   protected readonly editCategoryId = signal('');
+  /** Existing build names, fetched lazily so a rename can be checked for duplicates. */
+  protected readonly existingBuildNames = signal<string[]>([]);
   protected readonly editRole = signal('');
 
   /** The slot whose picker is open, together with the loadout it belongs to. */
@@ -644,6 +649,12 @@ export class CompBuildDetailPage {
       .load()
       .then((abilities) => this.abilityCatalog.set(abilities))
       .catch(() => this.abilityCatalog.set({}));
+
+    this.destroyRef.onDestroy(() => {
+      if (this.searchTimer) {
+        clearTimeout(this.searchTimer);
+      }
+    });
   }
 
   protected roleLabel(role: BuildRole): string {
@@ -699,6 +710,22 @@ export class CompBuildDetailPage {
     this.editRole.set(current.role);
     this.editDescription.set(current.description ?? '');
     this.mode.set('edit');
+    void this.loadExistingBuildNames();
+  }
+
+  /** Fetches every build name once, so a rename can be checked for duplicates like the create path. */
+  private async loadExistingBuildNames(): Promise<void> {
+    try {
+      const response = await firstValueFrom(
+        this.api.get<PaginatedData<BuildSummary>>('api/comps/builds', {
+          page: 1,
+          limit: 500,
+        }),
+      );
+      this.existingBuildNames.set(response.items.map((build) => build.name));
+    } catch {
+      this.existingBuildNames.set([]);
+    }
   }
 
   protected cancelEdit(): void {
@@ -832,7 +859,7 @@ export class CompBuildDetailPage {
     // applied it `if (editName())`, so clearing the field was silently ignored
     // rather than rejected, and the user was told the save succeeded.
     const nameError = validateBuildName(this.editName(), {
-      existingNames: [],
+      existingNames: this.existingBuildNames(),
       currentName: build.name,
     });
     if (nameError) {
@@ -1019,9 +1046,12 @@ export class CompBuildDetailPage {
           this.api.get<BuildPerformanceView>(`api/comps/builds/${buildId}/performance`),
         ).catch(() => null),
       ]);
+      // Discard if the user has since picked a different comparison target.
+      if (Number(this.compareWithId()) !== buildId) return;
       this.compareWith.set(detail);
       this.comparePerformance.set(performance);
     } catch (error) {
+      if (Number(this.compareWithId()) !== buildId) return;
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     }
   }
@@ -1055,12 +1085,14 @@ export class CompBuildDetailPage {
   /** Performance is per version, so it reloads whenever the page shows a different build row. */
   private async loadPerformance(buildId: number): Promise<void> {
     try {
-      this.performance.set(
-        await firstValueFrom(
-          this.api.get<BuildPerformanceView>(`api/comps/builds/${buildId}/performance`),
-        ),
+      const performance = await firstValueFrom(
+        this.api.get<BuildPerformanceView>(`api/comps/builds/${buildId}/performance`),
       );
+      // Discard if the page has since switched to a different version.
+      if (buildId !== this.buildId()) return;
+      this.performance.set(performance);
     } catch {
+      if (buildId !== this.buildId()) return;
       this.performance.set(null);
     }
   }
@@ -1100,14 +1132,19 @@ export class CompBuildDetailPage {
           () => [],
         ),
       ]);
+      // Discard if the page has since switched to a different version's build id.
+      if (buildId !== this.buildId()) return;
       this.build.set(build);
       this.buildCategories.set(categories);
       void this.loadPerformance(buildId);
     } catch (error) {
+      if (buildId !== this.buildId()) return;
       this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
-      this.loading.set(false);
+      if (buildId === this.buildId()) {
+        this.loading.set(false);
+      }
     }
   }
 }

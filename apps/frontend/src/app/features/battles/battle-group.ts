@@ -394,7 +394,10 @@ export class BattleGroupPage {
     for (const battle of this.battleDetails()) {
       for (const guild of battle.guilds) {
         const name = guild.name || this.t('common.none');
-        const previous = statsByGuild.get(name) ?? {
+        // Keyed case-insensitively so the same guild reported with
+        // inconsistent casing across battles isn't split into two rows.
+        const key = name.toLowerCase();
+        const previous = statsByGuild.get(key) ?? {
           name,
           alliance_name: guild.alliance_name ?? null,
           isOurGuild: name.toLowerCase() === 'weaklings',
@@ -404,7 +407,7 @@ export class BattleGroupPage {
           kill_fame: 0,
           battles: 0,
         };
-        statsByGuild.set(name, {
+        statsByGuild.set(key, {
           ...previous,
           alliance_name: previous.alliance_name || (guild.alliance_name ?? null),
           players: previous.players + guild.players,

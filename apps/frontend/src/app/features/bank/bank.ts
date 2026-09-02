@@ -168,7 +168,12 @@ function emptyPageChange(): DataTablePageChange {
           <button type="button" class="btn btn--ghost btn--sm" (click)="confirmWithdrawalOpen.set(false)">
             {{ t('common.cancel') }}
           </button>
-          <button type="button" class="btn btn--primary btn--sm" (click)="executeWithdrawal()">
+          <button
+            type="button"
+            class="btn btn--primary btn--sm"
+            [disabled]="withdrawing()"
+            (click)="executeWithdrawal()"
+          >
             {{ t('common.confirm') }}
           </button>
         </div>
@@ -189,6 +194,7 @@ export class Bank {
   protected readonly transactionsLoadFailed = signal(false);
 
   protected readonly confirmWithdrawalOpen = signal(false);
+  protected readonly withdrawing = signal(false);
 
   protected readonly trackRow = (row: TransactionView): number => row.id;
 
@@ -244,8 +250,16 @@ export class Bank {
   }
 
   protected async executeWithdrawal(): Promise<void> {
+    if (this.withdrawing()) {
+      return;
+    }
+    this.withdrawing.set(true);
     this.confirmWithdrawalOpen.set(false);
-    await this.mutate('api/bank/transactions/withdraw', 'bank.withdraw.request', { all: true });
+    try {
+      await this.mutate('api/bank/transactions/withdraw', 'bank.withdraw.request', { all: true });
+    } finally {
+      this.withdrawing.set(false);
+    }
   }
 
   private async load(): Promise<void> {

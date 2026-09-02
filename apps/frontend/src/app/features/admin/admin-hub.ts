@@ -118,7 +118,7 @@ import type { AuditLog } from '../audit/audit';
         />
         <app-stat-card
           [label]="t('admin.stat.totalRoles')"
-          [value]="formatCount(matrix()?.roles?.length ?? (auth.hasPermission('roles.manage') ? visiblePanels().length : null))"
+          [value]="formatCount(matrix()?.roles?.length)"
           icon="shield"
           tone="primary"
         />
