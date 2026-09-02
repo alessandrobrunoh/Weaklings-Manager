@@ -117,7 +117,7 @@ type PendingFightMutation =
 
             @if (detail.planned_participants?.length) {
               <div class="fight-detail__table-wrap mt-5">
-                <table class="fight-detail__table">
+                <table class="table">
                   <caption>Planned participants and observation status</caption>
                   <thead><tr><th scope="col">Member</th><th scope="col">Primary build</th><th scope="col">Secondary build</th><th scope="col">Snapshot status</th></tr></thead>
                   <tbody>
@@ -143,7 +143,7 @@ type PendingFightMutation =
               <p class="fight-detail__hint">Players directly recorded in configured friendly guild snapshots.</p>
             </div>
             <div class="fight-detail__table-wrap">
-              <table class="fight-detail__table">
+              <table class="table">
                 <caption>Friendly player performance across persisted segments</caption>
                 <thead><tr><th scope="col">Player</th><th scope="col">Guild</th><th scope="col" class="numeric">Segments</th><th scope="col" class="numeric">K / D</th><th scope="col" class="numeric">Kill fame</th><th scope="col" class="numeric">Avg. IP</th></tr></thead>
                 <tbody>
@@ -219,10 +219,10 @@ type PendingFightMutation =
         <app-dialog title="Confirm fight change" size="sm" (closed)="cancelPendingMutation()"><p>{{ pending.description }}</p><p class="fight-detail__hint">This cannot be undone from the fight screen.</p>@if (dialogError(); as error) { <p class="fight-detail__mutation-error" role="alert">{{ error }}</p> }<div dialogFooter><button type="button" class="btn btn--ghost btn--sm" [disabled]="mutating()" (click)="cancelPendingMutation()">Cancel</button><button type="button" class="btn btn--danger btn--sm" [disabled]="mutating()" (click)="confirmMutation()">{{ mutating() ? 'Applying…' : 'Confirm change' }}</button></div></app-dialog>
       }
 
-      <ng-template #guildTable let-guilds><article class="surface p-4"><h3 class="fight-detail__table-title">Guilds</h3><div class="fight-detail__table-wrap"><table class="fight-detail__table"><caption>Guild performance</caption><thead><tr><th scope="col">Guild</th><th scope="col" class="numeric">Players</th><th scope="col" class="numeric">K / D</th><th scope="col" class="numeric">Kill fame</th></tr></thead><tbody>@for (guild of guilds; track guild.id) { <tr><th scope="row">{{ guild.name }}</th><td class="numeric">{{ guild.players }}</td><td class="numeric">{{ guild.kills }} / {{ guild.deaths }}</td><td class="numeric">{{ formatAmount(guild.kill_fame) }}</td></tr> }</tbody></table></div></article></ng-template>
-      <ng-template #playerTable let-players><article class="surface p-4"><h3 class="fight-detail__table-title">Players</h3><div class="fight-detail__table-wrap"><table class="fight-detail__table"><caption>Player performance</caption><thead><tr><th scope="col">Player</th><th scope="col">Guild</th><th scope="col" class="numeric">K / D</th><th scope="col" class="numeric">Kill fame</th></tr></thead><tbody>@for (player of players; track player.id) { <tr><th scope="row">{{ player.name }}</th><td>{{ player.guild_name }}</td><td class="numeric">{{ player.kills }} / {{ player.deaths }}</td><td class="numeric">{{ formatAmount(player.kill_fame) }}</td></tr> }</tbody></table></div></article></ng-template>
-      <ng-template #guildLossTable let-losses><article class="surface p-4"><h3 class="fight-detail__table-title">Guild losses</h3><div class="fight-detail__table-wrap"><table class="fight-detail__table"><caption>Estimated losses by guild</caption><thead><tr><th scope="col">Guild</th><th scope="col" class="numeric">Deaths</th><th scope="col" class="numeric">Estimated loss</th></tr></thead><tbody>@for (loss of losses; track loss.guild_name) { <tr><th scope="row">{{ loss.guild_name }}</th><td class="numeric">{{ loss.deaths }}</td><td class="numeric">{{ formatAmount(loss.estimated_loss) }}</td></tr> }</tbody></table></div></article></ng-template>
-      <ng-template #playerLossTable let-losses><article class="surface p-4"><h3 class="fight-detail__table-title">Player losses</h3><div class="fight-detail__table-wrap"><table class="fight-detail__table"><caption>Estimated losses by player</caption><thead><tr><th scope="col">Player</th><th scope="col">Guild</th><th scope="col" class="numeric">Deaths</th><th scope="col" class="numeric">Estimated loss</th></tr></thead><tbody>@for (loss of losses; track loss.player_name) { <tr><th scope="row">{{ loss.player_name }}</th><td>{{ loss.guild_name || 'Unknown' }}</td><td class="numeric">{{ loss.deaths }}</td><td class="numeric">{{ formatAmount(loss.estimated_loss) }}</td></tr> }</tbody></table></div></article></ng-template>
+      <ng-template #guildTable let-guilds><article class="surface p-4"><h3 class="fight-detail__table-title">Guilds</h3><div class="fight-detail__table-wrap"><table class="table"><caption>Guild performance</caption><thead><tr><th scope="col">Guild</th><th scope="col" class="numeric">Players</th><th scope="col" class="numeric">K / D</th><th scope="col" class="numeric">Kill fame</th></tr></thead><tbody>@for (guild of guilds; track guild.id) { <tr><th scope="row">{{ guild.name }}</th><td class="numeric">{{ guild.players }}</td><td class="numeric">{{ guild.kills }} / {{ guild.deaths }}</td><td class="numeric">{{ formatAmount(guild.kill_fame) }}</td></tr> }</tbody></table></div></article></ng-template>
+      <ng-template #playerTable let-players><article class="surface p-4"><h3 class="fight-detail__table-title">Players</h3><div class="fight-detail__table-wrap"><table class="table"><caption>Player performance</caption><thead><tr><th scope="col">Player</th><th scope="col">Guild</th><th scope="col" class="numeric">K / D</th><th scope="col" class="numeric">Kill fame</th></tr></thead><tbody>@for (player of players; track player.id) { <tr><th scope="row">{{ player.name }}</th><td>{{ player.guild_name }}</td><td class="numeric">{{ player.kills }} / {{ player.deaths }}</td><td class="numeric">{{ formatAmount(player.kill_fame) }}</td></tr> }</tbody></table></div></article></ng-template>
+      <ng-template #guildLossTable let-losses><article class="surface p-4"><h3 class="fight-detail__table-title">Guild losses</h3><div class="fight-detail__table-wrap"><table class="table"><caption>Estimated losses by guild</caption><thead><tr><th scope="col">Guild</th><th scope="col" class="numeric">Deaths</th><th scope="col" class="numeric">Estimated loss</th></tr></thead><tbody>@for (loss of losses; track loss.guild_name) { <tr><th scope="row">{{ loss.guild_name }}</th><td class="numeric">{{ loss.deaths }}</td><td class="numeric">{{ formatAmount(loss.estimated_loss) }}</td></tr> }</tbody></table></div></article></ng-template>
+      <ng-template #playerLossTable let-losses><article class="surface p-4"><h3 class="fight-detail__table-title">Player losses</h3><div class="fight-detail__table-wrap"><table class="table"><caption>Estimated losses by player</caption><thead><tr><th scope="col">Player</th><th scope="col">Guild</th><th scope="col" class="numeric">Deaths</th><th scope="col" class="numeric">Estimated loss</th></tr></thead><tbody>@for (loss of losses; track loss.player_name) { <tr><th scope="row">{{ loss.player_name }}</th><td>{{ loss.guild_name || 'Unknown' }}</td><td class="numeric">{{ loss.deaths }}</td><td class="numeric">{{ formatAmount(loss.estimated_loss) }}</td></tr> }</tbody></table></div></article></ng-template>
     }
   `,
   styles: `
@@ -236,13 +236,7 @@ type PendingFightMutation =
       .fight-detail__stat-value { color: var(--color-text); font-size: 1.4rem; font-weight: 600; margin-top: .35rem; }
       .fight-detail__deferred { content-visibility: auto; contain-intrinsic-size: auto none auto 32rem; }
       .fight-detail__table-wrap { overflow-x: auto; }
-      .fight-detail__table { border-collapse: collapse; min-width: 34rem; width: 100%; }
-      .fight-detail__table caption { caption-side: bottom; color: var(--color-text-secondary); font-size: .7rem; padding-top: .65rem; text-align: left; }
-      .fight-detail__table th, .fight-detail__table td { border-top: 1px solid var(--color-border); padding: .625rem .5rem; text-align: left; vertical-align: middle; }
-      .fight-detail__table thead th { border-top: 0; color: var(--color-text-secondary); font-size: .7rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
-      .fight-detail__table tbody th { color: var(--color-text); font-size: .8125rem; font-weight: 500; }
-      .fight-detail__table td { color: var(--color-text-secondary); font-size: .8125rem; }
-      .fight-detail__table .numeric { font-family: var(--font-mono); text-align: right; }
+      .numeric { font-family: var(--font-mono); text-align: right; }
       .fight-detail__segments-header { align-items: center; border-bottom: 1px solid var(--color-border); display: flex; justify-content: space-between; padding: 1rem 1.25rem; }
       .fight-detail__segment-list { list-style: none; margin: 0; padding: 0; }
       .fight-detail__segment-list > li + li { border-top: 1px solid var(--color-border); }

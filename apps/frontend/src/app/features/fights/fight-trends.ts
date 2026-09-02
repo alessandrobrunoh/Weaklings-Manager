@@ -39,12 +39,12 @@ interface PlannedSelection {
     .fight-trends__panel-header { padding: 0.875rem 1rem; border-block-end: 1px solid var(--color-border); }
     .fight-trends__panel-title { margin: 0; color: var(--color-text); font-size: 0.875rem; font-weight: 600; }
     .fight-trends__panel-note { margin: 0.2rem 0 0; color: var(--color-text-tertiary); font-size: 0.6875rem; line-height: 1.4; }
-    .fight-trends__metrics { inline-size: 100%; border-collapse: collapse; font-size: 0.75rem; }
-    .fight-trends__metrics caption { padding: 0.75rem 1rem 0; color: var(--color-text-secondary); font-size: 0.6875rem; text-align: start; }
-    .fight-trends__metrics th, .fight-trends__metrics td { padding: 0.625rem 1rem; border-block-end: 1px solid var(--color-border); text-align: end; }
-    .fight-trends__metrics tr:last-child th, .fight-trends__metrics tr:last-child td { border-block-end: 0; }
-    .fight-trends__metrics thead th { color: var(--color-text-tertiary); font-size: 0.6875rem; font-weight: 600; }
-    .fight-trends__metrics th[scope='row'] { color: var(--color-text-secondary); font-weight: 500; text-align: start; }
+    /* .fight-trends__metrics now rides on the shared .table class; these are
+       just its differences from the default (top-positioned caption, and
+       right-aligned value columns with a left-aligned row-label column). */
+    .fight-trends__metrics caption { caption-side: top; padding: 0.75rem 1rem 0; color: var(--color-text-secondary); font-size: 0.6875rem; text-align: start; }
+    .fight-trends__metrics th, .fight-trends__metrics td { text-align: end; }
+    .fight-trends__metrics th[scope='row'] { text-align: start; }
     .fight-trends__value { color: var(--color-text); font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
     .fight-trends__sample { display: block; margin-block-start: 0.125rem; color: var(--color-text-tertiary); font-family: var(--font-sans); font-size: 0.625rem; font-weight: 400; white-space: normal; }
     .fight-trends__delta { color: var(--color-text-secondary); font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -58,8 +58,8 @@ interface PlannedSelection {
     .fight-trends__axis { display: flex; justify-content: space-between; margin-block-start: 0.45rem; color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.625rem; }
     .fight-trends__data { margin-block-start: 0.875rem; color: var(--color-text-secondary); font-size: 0.75rem; }
     .fight-trends__data-summary { cursor: pointer; color: var(--color-text-secondary); }
-    .fight-trends__daily-table { inline-size: 100%; margin-block-start: 0.625rem; border-collapse: collapse; font-size: 0.6875rem; }
-    .fight-trends__daily-table th, .fight-trends__daily-table td { padding: 0.375rem 0.5rem; border-block-end: 1px solid var(--color-border); text-align: end; }
+    .fight-trends__daily-table { margin-block-start: 0.625rem; font-size: 0.6875rem; }
+    .fight-trends__daily-table th, .fight-trends__daily-table td { text-align: end; }
     .fight-trends__daily-table th:first-child, .fight-trends__daily-table td:first-child { text-align: start; }
     .fight-trends__details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.875rem; }
     .fight-trends__detail-list { margin: 0; padding: 0; list-style: none; }
@@ -94,7 +94,7 @@ interface PlannedSelection {
               <h2 class="fight-trends__panel-title" id="fight-performance-heading">Performance comparison</h2>
               <p class="fight-trends__panel-note">Combat totals use persisted snapshots. Win rate uses fights with a friendly winner record.</p>
             </header>
-            <table class="fight-trends__metrics">
+            <table class="table fight-trends__metrics">
               <caption>Current 30 days compared with the previous 30 days</caption>
               <thead><tr><th scope="col">Metric</th><th scope="col">Current</th><th scope="col">Previous</th><th scope="col">Change</th></tr></thead>
               <tbody>
@@ -120,7 +120,7 @@ interface PlannedSelection {
                 @for (day of data.rolling_daily_fight_counts; track day.date) { <span class="fight-trends__bar" [style.height.%]="barHeight(day.fights)"></span> }
               </div>
               <div class="fight-trends__axis" aria-hidden="true"><span>{{ data.rolling_daily_fight_counts[0]?.date | date: 'MMM d' }}</span><span>{{ data.rolling_daily_fight_counts[data.rolling_daily_fight_counts.length - 1]?.date | date: 'MMM d' }}</span></div>
-              <details class="fight-trends__data"><summary class="fight-trends__data-summary">View daily fight counts as a table</summary><table class="fight-trends__daily-table"><thead><tr><th scope="col">UTC date</th><th scope="col">Fights</th></tr></thead><tbody>@for (day of data.rolling_daily_fight_counts; track day.date) { <tr><td>{{ day.date | date: 'MMM d, y' }}</td><td>{{ day.fights }}</td></tr> }</tbody></table></details>
+              <details class="fight-trends__data"><summary class="fight-trends__data-summary">View daily fight counts as a table</summary><table class="table fight-trends__daily-table"><thead><tr><th scope="col">UTC date</th><th scope="col">Fights</th></tr></thead><tbody>@for (day of data.rolling_daily_fight_counts; track day.date) { <tr><td>{{ day.date | date: 'MMM d, y' }}</td><td>{{ day.fights }}</td></tr> }</tbody></table></details>
             </div>
           </section>
 
