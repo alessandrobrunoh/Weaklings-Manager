@@ -1,9 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
-
   inject,
-  input,
   output,
 } from '@angular/core';
 import { Router } from '@angular/router';
@@ -57,18 +55,6 @@ import type { NavSection } from '../sidebar/sidebar';
           [attr.aria-label]="t('nav.openMenu')"
         >
           <app-icon name="menu" size="1.125rem" />
-        </button>
-
-        <!-- Desktop sidebar collapse toggle -->
-        <button
-          type="button"
-          class="btn btn--ghost btn--icon hidden md:inline-flex"
-          (click)="collapseToggle.emit()"
-          [appTooltip]="isSidebarCollapsed() ? t('nav.expand') : t('nav.collapse')"
-          tooltipPosition="bottom"
-          [attr.aria-label]="isSidebarCollapsed() ? t('nav.expand') : t('nav.collapse')"
-        >
-          <app-icon [name]="isSidebarCollapsed() ? 'chevron-right' : 'chevron-left'" size="0.95rem" />
         </button>
       </div>
 
@@ -170,8 +156,6 @@ export class Topbar {
   private readonly router = inject(Router);
 
   readonly menuToggle = output<void>();
-  readonly collapseToggle = output<void>();
-  readonly isSidebarCollapsed = input<boolean>(false);
 
 
   protected t = (key: TranslationKey) => this.translate.t(key);
