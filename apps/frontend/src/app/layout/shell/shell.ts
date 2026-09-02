@@ -83,11 +83,7 @@ import { Topbar } from '../topbar/topbar';
 
       <!-- Main column -->
       <div class="flex flex-1 flex-col min-w-0 overflow-hidden">
-        <app-topbar
-          [isSidebarCollapsed]="isSidebarCollapsed()"
-          (menuToggle)="toggleDrawer()"
-          (collapseToggle)="toggleSidebarCollapse()"
-        />
+        <app-topbar (menuToggle)="toggleDrawer()" />
         <main #main class="workspace-main flex-1 overflow-y-auto overscroll-contain scrollbar-thin">
           <div class="w-full min-w-0">
             <router-outlet />
