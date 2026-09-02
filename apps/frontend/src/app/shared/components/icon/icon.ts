@@ -35,7 +35,15 @@ export type IconName =
   | 'swords'
   | 'users'
   | 'trophy'
-  | 'logout';
+  | 'logout'
+  | 'arrow-right'
+  | 'chevrons-left'
+  | 'circle-dot'
+  | 'coins'
+  | 'dashboard'
+  | 'percent'
+  | 'loader'
+  | 'zap';
 
 /**
  * Inline SVG icon primitive for the app shell and feature cards.
@@ -257,6 +265,40 @@ export type IconName =
           <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
           <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
           <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+        }
+        @case ('arrow-right') {
+          <path d="M5 12h14" />
+          <path d="m12 5 7 7-7 7" />
+        }
+        @case ('chevrons-left') {
+          <path d="m11 17-5-5 5-5" />
+          <path d="m18 17-5-5 5-5" />
+        }
+        @case ('circle-dot') {
+          <circle cx="12" cy="12" r="10" />
+          <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" />
+        }
+        @case ('coins') {
+          <circle cx="8" cy="8" r="6" />
+          <path d="M18.09 10.37A6 6 0 1 1 10.34 18" />
+          <path d="M7 6h1v4" />
+          <path d="m16.71 13.88.7.71-2.82 2.82" />
+        }
+        @case ('dashboard') {
+          <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+          <polyline points="9 22 9 12 15 12 15 22" />
+        }
+        @case ('percent') {
+          <circle cx="12" cy="12" r="10" />
+          <path d="m15 9-6 6" />
+          <circle cx="9" cy="9" r="1" fill="currentColor" stroke="none" />
+          <circle cx="15" cy="15" r="1" fill="currentColor" stroke="none" />
+        }
+        @case ('loader') {
+          <circle cx="12" cy="12" r="9" stroke-dasharray="40 16" />
+        }
+        @case ('zap') {
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
         }
       }
     </svg>

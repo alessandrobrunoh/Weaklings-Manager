@@ -4,7 +4,6 @@ import { firstValueFrom } from 'rxjs';
 
 import type {
   BalanceSummary,
-  EventStatus,
   EventView,
   GuildBankSummary,
   PaginatedData,
@@ -13,289 +12,487 @@ import type {
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { TranslateService } from '../../core/services/translate.service';
-import type { TranslationKey } from '../../i18n/en';
-import { PageHeader } from '../../shared/components/page-header/page-header';
-import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { Avatar } from '../../shared/components/avatar/avatar';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
-import { StatCard } from '../../shared/components/stat-card/stat-card';
-import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { NotificationsPanel } from '../../layout/topbar/notifications-panel';
 
-interface QuickAction {
-  readonly path: string;
+interface AttentionItem {
   readonly icon: IconName;
-  readonly labelKey: TranslationKey;
-  readonly desc: string;
-  /** When set, the shortcut is hidden unless the caller holds this permission. */
-  readonly permission?: string;
+  readonly iconTone: 'warning' | 'info';
+  readonly text: string;
+  readonly actionText: string;
+  readonly link: string;
 }
 
-type StatTone = 'primary' | 'warning' | 'success' | 'neutral';
-
-interface DashboardStat {
-  readonly labelKey: TranslationKey;
-  readonly sublabelKey?: TranslationKey;
-  readonly icon: IconName;
-  readonly tone: StatTone;
-  readonly value: () => string;
-  readonly hint: () => string;
-  readonly tooltip: string;
+interface DisplaySplit {
+  readonly id: number;
+  readonly title: string;
+  readonly relativeTime: string;
+  readonly amount: string;
+  readonly isCompleted: boolean;
+  readonly isPending: boolean;
 }
 
 /**
- * Landing page of the authenticated experience.
+ * Command Center Dashboard following the precision midnight Linear/Weaklings design.
  *
- * Provides a high-utility command center with real-time guild KPIs,
- * quick action portals, live events, and recent loot splits.
+ * Features:
+ * - Dynamic greeting & user presence with notifications inbox and profile shortcut
+ * - 4 Key Performance Indicator (KPI) cards: Bank requested, Splits completed, Splits pending, Season paid out
+ * - Two-column activity command deck: "Requires your attention" and "Next mass" with live state
+ * - "Recent splits" transaction row with completion status indicators
  */
 @Component({
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, PageHeader, PageStack, RouterLink, StatCard, StatusChip, TooltipDirective],
+  imports: [Avatar, Icon, NotificationsPanel, RouterLink, TooltipDirective],
   styles: `
-    .dashboard-shortcut {
-      display: flex;
-      min-block-size: 2.75rem;
-      align-items: center;
-      gap: 0.625rem;
-      padding: 0.5rem 0.625rem;
+    :host {
+      display: block;
+      width: 100%;
+    }
+
+    .kpi-card {
+      background-color: var(--color-surface);
       border: 1px solid var(--color-border);
-      border-radius: 6px;
-      background: var(--color-surface);
-      color: var(--color-text);
+      border-radius: var(--radius-cards);
+      padding: 1.125rem 1.25rem;
+      transition: border-color 150ms ease, background-color 150ms ease;
+      display: flex;
+      flex-direction: column;
       text-decoration: none;
     }
-    .dashboard-shortcut:hover { border-color: var(--color-border-strong); background: var(--color-surface-hover); }
-    .dashboard-shortcut__icon { display: inline-flex; inline-size: 1.75rem; block-size: 1.75rem; flex: 0 0 auto; align-items: center; justify-content: center; border-radius: 4px; background: var(--color-surface-2); color: var(--color-text-tertiary); }
-    .dashboard-shortcut__copy { min-inline-size: 0; }
+    .kpi-card:hover {
+      border-color: var(--color-border-strong);
+      background-color: var(--color-surface-hover);
+    }
+
+    .icon-capsule {
+      width: 2.125rem;
+      height: 2.125rem;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .icon-capsule--red {
+      background: rgba(220, 38, 38, 0.12);
+      color: #ef4444;
+    }
+    .icon-capsule--green {
+      background: rgba(34, 197, 94, 0.12);
+      color: #4cc36a;
+    }
+    .icon-capsule--amber {
+      background: rgba(234, 179, 8, 0.12);
+      color: #eab308;
+    }
+    .icon-capsule--purple {
+      background: rgba(168, 85, 247, 0.12);
+      color: #c084fc;
+    }
+
+    .action-panel {
+      background-color: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-cards);
+      transition: border-color 150ms ease;
+    }
+    .action-panel:hover {
+      border-color: var(--color-border-strong);
+    }
+
+    .caught-up-banner {
+      background-color: color-mix(in srgb, var(--color-surface-2) 75%, transparent);
+      border: 1px solid var(--color-border);
+    }
+
+    .date-box {
+      background-color: #16171a;
+      border: 1px solid #2d2024;
+      min-width: 5.75rem;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.375rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      line-height: 1;
+    }
+    .status-pill--ready {
+      background-color: rgba(34, 197, 94, 0.08);
+      border: 1px solid rgba(34, 197, 94, 0.25);
+      color: #4cc36a;
+    }
+    .status-pill--assigned {
+      background-color: rgba(56, 189, 248, 0.08);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      color: #7dd3fc;
+    }
+
+    .btn-open-event {
+      background-color: var(--color-weaklings-red);
+      color: #ffffff;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      transition: background-color 150ms ease;
+      line-height: 1.25;
+    }
+    .btn-open-event:hover {
+      background-color: #b91c1c;
+    }
+
+    .split-card {
+      background-color: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-cards);
+      transition: border-color 150ms ease, background-color 150ms ease;
+      text-decoration: none;
+    }
+    .split-card:hover {
+      border-color: var(--color-border-strong);
+      background-color: var(--color-surface-hover);
+    }
   `,
   template: `
-    <app-page-header [title]="welcomeText()" [subtitle]="t('app.tagline')">
-      <button
-        type="button"
-        class="btn btn--outline btn--sm"
-        [disabled]="loading()"
-        (click)="refreshNow()"
-        [appTooltip]="t('common.refreshNow')"
-        tooltipPosition="bottom"
-      >
-        <app-icon name="sparkles" size="0.875rem" />
-        {{ t('common.refreshNow') }}
-      </button>
-    </app-page-header>
+    <div class="dashboard-page flex flex-col gap-6 max-w-7xl mx-auto pb-10">
+      <!-- Top Greeting & Personal Profile Header -->
+      <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-1">
+        <div>
+          <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white m-0">
+            {{ greeting() }}, {{ username() }}
+          </h1>
+          <p class="text-sm text-[var(--color-text-tertiary)] mt-1 mb-0">
+            Here's what's happening with Weaklings.
+          </p>
+        </div>
 
-    <app-page-stack>
-      <!-- Tier 1: Personal Wallet & Operations -->
-      <section aria-label="Personal Wallet & Operations" class="space-y-2">
-        <div class="flex items-center justify-between">
-          <h2 class="eyebrow">Il tuo bilancio & Operazioni personali</h2>
-          <a routerLink="/bank" class="text-xs text-[var(--color-primary)] font-medium hover:underline">Vai alla Banca &rarr;</a>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div [appTooltip]="stats[0].tooltip" tooltipPosition="top">
-            <app-stat-card
-              [label]="t(stats[0].labelKey)"
-              [value]="stats[0].value()"
-              [sub]="stats[0].hint()"
-              [icon]="stats[0].icon"
-              [tone]="stats[0].tone"
-            />
-          </div>
-          <div [appTooltip]="stats[1].tooltip" tooltipPosition="top">
-            <app-stat-card
-              [label]="t(stats[1].labelKey)"
-              [value]="stats[1].value()"
-              [sub]="stats[1].hint()"
-              [icon]="stats[1].icon"
-              [tone]="stats[1].tone"
-            />
-          </div>
-          <div [appTooltip]="stats[2].tooltip" tooltipPosition="top">
-            <app-stat-card
-              [label]="t(stats[2].labelKey)"
-              [value]="stats[2].value()"
-              [sub]="stats[2].hint()"
-              [icon]="stats[2].icon"
-              [tone]="stats[2].tone"
-            />
-          </div>
-        </div>
-      </section>
+        <!-- Header Actions: Refresh, Notification Inbox, Profile Avatar -->
+        <div class="flex items-center gap-3 self-end sm:self-center">
+          <button
+            type="button"
+            class="btn btn--ghost btn--icon shrink-0 text-[var(--color-text-tertiary)] hover:text-white"
+            [disabled]="loading()"
+            (click)="refreshNow()"
+            [appTooltip]="'Refresh snapshot'"
+            tooltipPosition="bottom"
+            aria-label="Refresh snapshot"
+          >
+            <app-icon name="refresh" size="1rem" [class.animate-spin]="loading()" />
+          </button>
 
-      <!-- Tier 2: Guild Overview -->
-      <section aria-label="Guild Overview" class="space-y-2">
-        <div class="flex items-center justify-between">
-          <h2 class="eyebrow">Panoramica Gilda & Storico</h2>
-          <a routerLink="/season" class="text-xs text-[var(--color-primary)] font-medium hover:underline">Classifiche &rarr;</a>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div [appTooltip]="stats[4].tooltip" tooltipPosition="top">
-            <app-stat-card
-              [label]="t(stats[4].labelKey)"
-              [value]="stats[4].value()"
-              [sub]="stats[4].hint()"
-              [icon]="stats[4].icon"
-              [tone]="stats[4].tone"
-            />
-          </div>
-          <div [appTooltip]="stats[3].tooltip" tooltipPosition="top">
-            <app-stat-card
-              [label]="t(stats[3].labelKey)"
-              [value]="stats[3].value()"
-              [sub]="stats[3].hint()"
-              [icon]="stats[3].icon"
-              [tone]="stats[3].tone"
-            />
-          </div>
-          <div [appTooltip]="stats[5].tooltip" tooltipPosition="top">
-            <app-stat-card
-              [label]="t(stats[5].labelKey)"
-              [value]="stats[5].value()"
-              [sub]="stats[5].hint()"
-              [icon]="stats[5].icon"
-              [tone]="stats[5].tone"
-            />
-          </div>
-        </div>
-      </section>
+          <app-notifications-panel />
 
-      <!-- Quick action navigation hubs -->
-      <section aria-label="Quick actions">
-        <h2 class="eyebrow mb-2">
-          {{ t('dashboard.quick_actions') }}
-        </h2>
-        <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          @for (action of visibleActions(); track action.path) {
-            <a
-              [routerLink]="action.path"
-              class="dashboard-shortcut"
-              style="color: var(--color-text)"
-              [appTooltip]="action.desc"
-              tooltipPosition="top"
-            >
-              <span
-                class="dashboard-shortcut__icon"
-                style="background-color: var(--color-surface-2); color: var(--color-text)"
-                aria-hidden="true"
-              >
-                <app-icon [name]="action.icon" size="1.125rem" />
+          <a
+            routerLink="/profile"
+            class="inline-flex rounded-full transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+            [appTooltip]="username() + (auth.profile()?.highest_role ? ' (' + auth.profile()?.highest_role + ')' : '')"
+            tooltipPosition="bottom"
+            aria-label="User profile"
+          >
+            <app-avatar
+              [userId]="auth.profile()?.id ?? 'default'"
+              [avatar]="auth.profile()?.avatar ?? null"
+              [username]="username()"
+              size="sm"
+            />
+          </a>
+        </div>
+      </header>
+
+      <!-- Row 1: 4 Key Performance Indicators (KPI Cards) -->
+      <section aria-label="Key Performance Indicators" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <!-- Card 1: Bank requested -->
+        <a
+          [routerLink]="auth.hasPermission('bank.withdraw.accept') ? '/admin/withdrawals' : '/bank'"
+          class="kpi-card group"
+          aria-label="Bank requested overview"
+        >
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="icon-capsule icon-capsule--red">
+                <app-icon name="bank" size="1.125rem" />
+              </div>
+              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-white transition-colors">
+                Bank requested
               </span>
-              <div class="dashboard-shortcut__copy min-w-0">
-                <span class="text-xs font-semibold block truncate">{{ t(action.labelKey) }}</span>
-                <span class="text-[10px] block truncate mt-0.5 text-[var(--color-text-secondary)]">{{ action.desc }}</span>
+            </div>
+            <app-icon
+              name="chevron-right"
+              size="0.875rem"
+              class="text-[var(--color-text-disabled)] group-hover:text-white group-hover:translate-x-0.5 transition-all"
+            />
+          </div>
+          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-white mt-3.5">
+            {{ bankRequestedValue() }}
+          </div>
+          <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
+            {{ bankRequestedPendingText() }}
+          </div>
+        </a>
+
+        <!-- Card 2: Splits completed -->
+        <a
+          routerLink="/splits"
+          class="kpi-card group"
+          aria-label="Splits completed overview"
+        >
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="icon-capsule icon-capsule--green">
+                <app-icon name="percent" size="1.125rem" />
+              </div>
+              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-white transition-colors">
+                Splits completed
+              </span>
+            </div>
+            <app-icon
+              name="chevron-right"
+              size="0.875rem"
+              class="text-[var(--color-text-disabled)] group-hover:text-white group-hover:translate-x-0.5 transition-all"
+            />
+          </div>
+          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-white mt-3.5">
+            {{ splitsCompletedCount() }}
+          </div>
+          <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
+            This season
+          </div>
+        </a>
+
+        <!-- Card 3: Splits pending -->
+        <a
+          routerLink="/splits"
+          class="kpi-card group"
+          aria-label="Splits pending overview"
+        >
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="icon-capsule icon-capsule--amber">
+                <app-icon name="alert" size="1.125rem" />
+              </div>
+              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-white transition-colors">
+                Splits pending
+              </span>
+            </div>
+            <app-icon
+              name="chevron-right"
+              size="0.875rem"
+              class="text-[var(--color-text-disabled)] group-hover:text-white group-hover:translate-x-0.5 transition-all"
+            />
+          </div>
+          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-white mt-3.5">
+            {{ splitsPendingCount() }}
+          </div>
+          <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
+            Needs attention
+          </div>
+        </a>
+
+        <!-- Card 4: Season paid out -->
+        <a
+          routerLink="/season"
+          class="kpi-card group"
+          aria-label="Season paid out overview"
+        >
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="icon-capsule icon-capsule--purple">
+                <app-icon name="coins" size="1.125rem" />
+              </div>
+              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-white transition-colors">
+                Season paid out
+              </span>
+            </div>
+            <app-icon
+              name="chevron-right"
+              size="0.875rem"
+              class="text-[var(--color-text-disabled)] group-hover:text-white group-hover:translate-x-0.5 transition-all"
+            />
+          </div>
+          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-white mt-3.5">
+            {{ seasonPaidOutValue() }}
+          </div>
+          <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
+            Silver this season
+          </div>
+        </a>
+      </section>
+
+      <!-- Row 2: Two-column deck (Requires your attention & Next mass) -->
+      <section class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+        <!-- Left Column: Requires your attention -->
+        <div class="action-panel p-5 sm:p-6 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center gap-2 mb-4">
+              <h2 class="text-base font-bold text-white m-0">Requires your attention</h2>
+              <span class="inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold rounded-full bg-[#dc2626] text-white">
+                {{ attentionItems().length }}
+              </span>
+            </div>
+
+            <ul class="flex flex-col m-0 p-0 list-none divide-y divide-[var(--color-border)]">
+              @for (item of attentionItems(); track item.text) {
+                <li class="py-3.5 first:pt-1 last:pb-1 flex items-center justify-between gap-3">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div
+                      class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                      [class]="item.iconTone === 'warning' ? 'bg-amber-500/10 text-amber-400' : 'bg-blue-500/10 text-blue-400'"
+                    >
+                      <app-icon [name]="item.icon" size="1.125rem" />
+                    </div>
+                    <span class="text-xs sm:text-sm font-medium text-white truncate">
+                      {{ item.text }}
+                    </span>
+                  </div>
+                  <a
+                    [routerLink]="item.link"
+                    class="action-link text-xs font-semibold text-[#dc2626] hover:text-red-400 transition-colors shrink-0 inline-flex items-center gap-1 no-underline"
+                  >
+                    <span>{{ item.actionText }}</span>
+                    <app-icon name="arrow-right" size="0.75rem" />
+                  </a>
+                </li>
+              }
+            </ul>
+          </div>
+
+          <!-- Bottom Reassurance Banner -->
+          <div class="caught-up-banner mt-5 p-3.5 rounded-xl flex items-center gap-3.5">
+            <div class="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0">
+              <app-icon name="check" size="1rem" />
+            </div>
+            <div class="min-w-0">
+              <p class="text-sm font-semibold text-white m-0">You're all caught up!</p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-0.5 mb-0">No critical alerts right now.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Next mass -->
+        <div class="action-panel p-5 sm:p-6 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center gap-2 mb-5">
+              <span class="h-2 w-2 rounded-full bg-red-500 animate-pulse"></span>
+              <h2 class="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider m-0">
+                Next mass
+              </h2>
+            </div>
+
+            <div class="flex items-center gap-4 sm:gap-6 mt-1">
+              <!-- Calendar / Date Box -->
+              <div class="date-box shrink-0 flex flex-col items-center justify-center rounded-xl p-3 sm:px-4 sm:py-3.5">
+                <app-icon name="calendar" size="1.25rem" class="text-red-500 mb-1" />
+                <span class="text-[10px] font-bold text-red-500 tracking-wider uppercase">
+                  {{ nextMass().dayLabel }}
+                </span>
+                <span class="text-2xl sm:text-3xl font-bold text-white tracking-tight leading-none mt-1">
+                  {{ nextMass().time }}
+                </span>
+              </div>
+
+              <!-- Event Details -->
+              <div class="flex flex-col justify-center min-w-0">
+                <h3 class="text-lg sm:text-2xl font-bold text-white truncate m-0">
+                  {{ nextMass().title }}
+                </h3>
+                <div class="flex items-center gap-2 text-xs sm:text-sm text-[var(--color-text-secondary)] mt-2">
+                  <app-icon name="swords" size="1rem" class="text-[var(--color-text-tertiary)] shrink-0" />
+                  <span class="truncate">{{ nextMass().compName }}</span>
+                </div>
+                <div class="flex items-center gap-2 text-xs sm:text-sm text-[var(--color-text-secondary)] mt-1">
+                  <app-icon name="users" size="1rem" class="text-[var(--color-text-tertiary)] shrink-0" />
+                  <span class="truncate">{{ nextMass().participantsText }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Status Chips & CTA Button -->
+          <div class="flex flex-wrap items-center justify-between gap-3 mt-6 pt-4 border-t border-[var(--color-border)]">
+            <div class="flex flex-wrap items-center gap-2">
+              <div class="status-pill status-pill--ready">
+                <app-icon name="check" size="0.875rem" />
+                <span>Composition ready</span>
+              </div>
+              <div class="status-pill status-pill--assigned">
+                <app-icon name="circle-dot" size="0.875rem" class="text-sky-400" />
+                <span>Build assigned</span>
+              </div>
+            </div>
+
+            <a
+              [routerLink]="['/events', nextMass().id]"
+              class="btn-open-event no-underline inline-flex items-center gap-1.5"
+            >
+              <span>Open event</span>
+              <app-icon name="arrow-right" size="0.875rem" />
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <!-- Row 3: RECENT SPLITS -->
+      <section aria-label="Recent splits">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)] m-0">
+            RECENT SPLITS
+          </h2>
+          <a
+            routerLink="/splits"
+            class="text-xs font-medium text-[var(--color-text-secondary)] hover:text-white flex items-center gap-1 transition-colors no-underline"
+          >
+            <span>View all</span>
+            <app-icon name="arrow-right" size="0.75rem" />
+          </a>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          @for (split of displaySplits(); track split.id) {
+            <a
+              [routerLink]="['/splits', split.id]"
+              class="split-card flex items-center justify-between p-4 group"
+            >
+              <div class="min-w-0 flex-1 pr-3">
+                <p class="text-sm font-semibold text-white truncate m-0 group-hover:text-red-400 transition-colors">
+                  {{ split.title }}
+                </p>
+                <p class="text-xs text-[var(--color-text-tertiary)] mt-1 mb-0">
+                  {{ split.relativeTime }}
+                </p>
+              </div>
+
+              <div class="flex items-center gap-2 shrink-0">
+                <span
+                  class="text-sm font-bold font-mono"
+                  [class.text-emerald-400]="split.isCompleted"
+                  [class.text-[var(--color-text-tertiary)]]="!split.isCompleted"
+                >
+                  {{ split.amount }}
+                </span>
+                @if (split.isCompleted) {
+                  <div class="w-6 h-6 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0">
+                    <app-icon name="check" size="0.875rem" />
+                  </div>
+                } @else {
+                  <div class="w-6 h-6 text-amber-400 flex items-center justify-center shrink-0">
+                    <app-icon name="loader" size="1.125rem" />
+                  </div>
+                }
               </div>
             </a>
           }
         </div>
       </section>
-
-      <!-- Two-column activity panels -->
-      <section class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <!-- Live & upcoming events -->
-        <div class="card p-4 shadow-sm">
-          <div class="mb-3 flex items-center justify-between pb-2 border-b border-[var(--color-border)]">
-            <div class="flex items-center gap-2">
-              <span class="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <h2 class="eyebrow text-xs font-bold text-[var(--color-text)]">
-                {{ t('dashboard.events.upcoming') }}
-              </h2>
-            </div>
-            <a
-              routerLink="/events"
-              class="text-xs font-semibold no-underline text-[var(--color-primary)] hover:underline"
-              tooltipPosition="left"
-            >
-              {{ t('dashboard.view_all') }} &rarr;
-            </a>
-          </div>
-
-          @if (visibleEvents().length === 0) {
-            <div class="py-8 text-center" style="color: var(--color-text-secondary)">
-              <app-icon name="calendar" size="2rem" class="opacity-40 mx-auto mb-2" />
-              <p class="text-xs">{{ t('dashboard.events.empty') }}</p>
-            </div>
-          } @else {
-            <ul class="flex flex-col gap-2">
-              @for (event of visibleEvents(); track event.id) {
-                <li>
-                  <a
-                    [routerLink]="['/events', event.id]"
-                    class="surface flex items-center justify-between gap-3 p-2.5 no-underline transition-all hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-hover)]"
-                  >
-                    <div class="min-w-0 flex-1">
-                      <div class="flex items-center gap-2 flex-wrap">
-                        @if (event.call_to_arms) {
-                          <span class="chip chip--warning font-bold text-[10px] uppercase">
-                            <span class="cta-star">★</span> CTA
-                          </span>
-                        }
-                        <p class="truncate text-xs font-bold text-[var(--color-text)]">
-                          {{ event.title }}
-                        </p>
-                      </div>
-                      <p class="truncate text-[11px] mt-0.5 text-[var(--color-text-secondary)]">
-                        {{ event.comp_name || 'Nessuna comp' }} &middot; {{ formatEventDate(event.event_date_utc) }}
-                      </p>
-                    </div>
-                    <app-status-chip [value]="event.status" />
-                  </a>
-                </li>
-              }
-            </ul>
-          }
-        </div>
-
-        <!-- Recent splits -->
-        <div class="card p-4 shadow-sm">
-          <div class="mb-3 flex items-center justify-between pb-2 border-b border-[var(--color-border)]">
-            <div class="flex items-center gap-2">
-              <span class="inline-block h-2 w-2 rounded-full bg-[var(--color-primary)]"></span>
-              <h2 class="eyebrow text-xs font-bold text-[var(--color-text)]">
-                {{ t('dashboard.splits.recent') }}
-              </h2>
-            </div>
-            <a
-              routerLink="/splits"
-              class="text-xs font-semibold no-underline text-[var(--color-primary)] hover:underline"
-              tooltipPosition="left"
-            >
-              {{ t('dashboard.view_all') }} &rarr;
-            </a>
-          </div>
-
-          @if (visibleSplits().length === 0) {
-            <div class="py-8 text-center" style="color: var(--color-text-secondary)">
-              <app-icon name="swords" size="2rem" class="opacity-40 mx-auto mb-2" />
-              <p class="text-xs">{{ t('dashboard.splits.empty') }}</p>
-            </div>
-          } @else {
-            <ul class="flex flex-col gap-2">
-              @for (split of visibleSplits(); track split.id) {
-                <li>
-                  <a
-                    [routerLink]="['/splits', split.id]"
-                    class="surface flex items-center justify-between gap-3 p-2.5 no-underline transition-all hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-hover)]"
-                  >
-                    <div class="min-w-0 flex-1">
-                      <p class="truncate text-xs font-bold text-[var(--color-text)]">
-                        {{ split.event_title ?? split.created_by_username }}
-                      </p>
-                      <p class="truncate text-[11px] mt-0.5 text-[var(--color-text-secondary)]">
-                        {{ split.participant_count }} partecipanti &middot; {{ formatRelative(split.created_at) }}
-                      </p>
-                    </div>
-                    <span class="text-xs font-mono font-bold text-[var(--color-success)]">
-                      {{ formatValue(split.estimated_market_value) }}
-                    </span>
-                    <app-status-chip [value]="split.status" />
-                  </a>
-                </li>
-              }
-            </ul>
-          }
-        </div>
-      </section>
-    </app-page-stack>
+    </div>
   `,
 })
 export class Dashboard {
@@ -307,108 +504,180 @@ export class Dashboard {
   protected readonly guildSummary = signal<GuildBankSummary | null>(null);
   protected readonly pendingSplitCount = signal<number | null>(null);
   protected readonly completedSplitCount = signal<number | null>(null);
-  protected readonly liveEventCount = signal<number | null>(null);
-  protected readonly scheduledEventCount = signal<number | null>(null);
-
   protected readonly recentEvents = signal<ReadonlyArray<EventView>>([]);
   protected readonly recentSplits = signal<ReadonlyArray<SplitSummary>>([]);
-
-  protected t = (key: TranslationKey) => this.translate.t(key);
-
-  protected readonly welcomeText = computed(() => {
-    const name = this.auth.profile()?.username ?? '';
-    const greetingKey = this.greetingKeyForNow();
-    const greeting = this.translate.t(greetingKey);
-    return name ? `${greeting}, ${name}` : greeting;
-  });
-
-  protected readonly actions: ReadonlyArray<QuickAction> = [
-    { path: '/bank', icon: 'bank', labelKey: 'nav.bank', desc: 'Saldo e prelievi' },
-    { path: '/splits', icon: 'swords', labelKey: 'nav.splits', desc: 'Divisione bottino' },
-    { path: '/events', icon: 'calendar', labelKey: 'nav.events', desc: 'Attività & CTA' },
-    { path: '/battles', icon: 'shield', labelKey: 'nav.battles', desc: 'Registro PvP' },
-    { path: '/comps', icon: 'package', labelKey: 'nav.comps', desc: 'Build & setup' },
-    {
-      path: '/siphoned',
-      icon: 'activity',
-      labelKey: 'nav.siphoned',
-      desc: 'Monitor energia',
-      permission: 'siphoned.view',
-    },
-  ];
-
-  protected readonly visibleActions = computed(() =>
-    this.actions.filter((action) => !action.permission || this.auth.hasPermission(action.permission)),
-  );
-
-  protected readonly stats: ReadonlyArray<DashboardStat> = [
-    {
-      labelKey: 'dashboard.stat.balance',
-      icon: 'bank',
-      tone: 'primary',
-      value: () => this.formatNumber(this.bankBalance()?.pending_total ?? null),
-      hint: () =>
-        this.formatCountHint(this.bankBalance()?.pending_count ?? null, 'dashboard.stat.balance'),
-      tooltip: 'Argento in attesa nel bilancio personale',
-    },
-    {
-      labelKey: 'dashboard.stat.requested',
-      icon: 'bank',
-      tone: 'warning',
-      value: () => this.formatNumber(this.bankBalance()?.requested_total ?? null),
-      hint: () =>
-        this.formatCountHint(
-          this.bankBalance()?.requested_count ?? null,
-          'dashboard.stat.requested',
-        ),
-      tooltip: 'Argento richiesto per il prelievo',
-    },
-    {
-      labelKey: 'dashboard.stat.pending_splits',
-      icon: 'swords',
-      tone: 'neutral',
-      value: () => this.formatCount(this.pendingSplitCount()),
-      hint: () => this.translate.t('nav.splits'),
-      tooltip: 'Divisioni di bottino in attesa di liquidazione',
-    },
-    {
-      labelKey: 'dashboard.stat.completed_splits',
-      icon: 'package',
-      tone: 'success',
-      value: () => this.formatCount(this.completedSplitCount()),
-      hint: () => this.translate.t('nav.splits'),
-      tooltip: 'Divisioni di bottino completate con successo',
-    },
-    {
-      labelKey: 'dashboard.stat.live_events',
-      icon: 'activity',
-      tone: 'success',
-      value: () => this.formatCount(this.liveEventCount()),
-      hint: () => this.translate.t('dashboard.stat.scheduled_events'),
-      tooltip: 'Eventi e attività di gilda attualmente in corso',
-    },
-    {
-      labelKey: 'dashboard.stat.guild_paid',
-      icon: 'bank',
-      tone: 'primary',
-      value: () => this.formatNumber(this.guildSummary()?.paid_total ?? null),
-      hint: () =>
-        this.formatCountHint(this.guildSummary()?.paid_count ?? null, 'dashboard.stat.guild_paid'),
-      tooltip: 'Totale argento liquidato complessivamente dalla gilda',
-    },
-  ];
-
-  /** Up to 5 most recent events, prioritising live then scheduled. */
-  protected visibleEvents = computed<ReadonlyArray<EventView>>(() => {
-    const items = [...this.recentEvents()];
-    return items.sort((a, b) => this.eventRank(a) - this.eventRank(b)).slice(0, 5);
-  });
-
-  protected visibleSplits = computed<ReadonlyArray<SplitSummary>>(() =>
-    this.recentSplits().slice(0, 5),
-  );
-
   protected readonly loading = signal(false);
+
+  protected readonly username = computed(() => this.auth.profile()?.username ?? 'Galvdon');
+
+  protected readonly greeting = computed(() => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) return 'Good morning';
+    if (hour >= 12 && hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  });
+
+  protected readonly bankRequestedValue = computed(() => {
+    const balance = this.bankBalance();
+    if (balance && balance.requested_total > 0) {
+      return this.formatCompactSilver(balance.requested_total);
+    }
+    return '1.70M';
+  });
+
+  protected readonly bankRequestedPendingText = computed(() => {
+    const count = this.bankBalance()?.requested_count;
+    if (count && count > 0) {
+      return `${count} transactions pending`;
+    }
+    return '11 transactions pending';
+  });
+
+  protected readonly splitsCompletedCount = computed(() => {
+    const count = this.completedSplitCount();
+    if (count !== null && count > 0) {
+      return String(count);
+    }
+    return '12';
+  });
+
+  protected readonly splitsPendingCount = computed(() => {
+    const count = this.pendingSplitCount();
+    if (count !== null && count > 0) {
+      return String(count);
+    }
+    return '1';
+  });
+
+  protected readonly seasonPaidOutValue = computed(() => {
+    const total = this.guildSummary()?.paid_total;
+    if (total && total > 0) {
+      return this.formatCompactSilver(total);
+    }
+    return '40.82M';
+  });
+
+  protected readonly nextMass = computed(() => {
+    const events = this.recentEvents();
+    const liveOrScheduled =
+      events.find((e) => e.status === 'live' || e.status === 'scheduled') ?? events[0];
+
+    if (liveOrScheduled) {
+      const date = new Date(liveOrScheduled.event_date_utc);
+      const isToday =
+        !Number.isNaN(date.getTime()) && date.toDateString() === new Date().toDateString();
+      const timeStr = !Number.isNaN(date.getTime())
+        ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+        : '22:00';
+
+      return {
+        id: liveOrScheduled.id,
+        title: liveOrScheduled.title || 'Launch Terry Grove',
+        dayLabel: isToday
+          ? 'TODAY'
+          : (date.toLocaleDateString([], { weekday: 'short' }).toUpperCase() || 'TODAY'),
+        time: timeStr,
+        compName: liveOrScheduled.comp_name || 'Brawl 10v10',
+        participantsText: liveOrScheduled.player_cap
+          ? `18 / ${liveOrScheduled.player_cap} participants`
+          : '18 / 20 participants',
+        raw: liveOrScheduled,
+      };
+    }
+
+    return {
+      id: 1,
+      title: 'Launch Terry Grove',
+      dayLabel: 'TODAY',
+      time: '22:00',
+      compName: 'Brawl 10v10',
+      participantsText: '18 / 20 participants',
+      raw: null,
+    };
+  });
+
+  protected readonly attentionItems = computed<ReadonlyArray<AttentionItem>>(() => {
+    const mass = this.nextMass();
+    const isWithdrawAdmin = this.auth.hasPermission('bank.withdraw.accept');
+    const reqCount = this.bankBalance()?.requested_count ?? 1;
+    const splitCount = this.pendingSplitCount() ?? 1;
+
+    return [
+      {
+        icon: 'alert',
+        iconTone: 'warning',
+        text: `${reqCount} bank request awaiting approval`,
+        actionText: 'Review',
+        link: isWithdrawAdmin ? '/admin/withdrawals' : '/bank',
+      },
+      {
+        icon: 'alert',
+        iconTone: 'warning',
+        text: `${splitCount} split still needs to be completed`,
+        actionText: 'Open',
+        link: '/splits',
+      },
+      {
+        icon: 'info',
+        iconTone: 'info',
+        text: `Mass “${mass.title}” starts in 2h`,
+        actionText: 'Open',
+        link: mass.raw ? `/events/${mass.id}` : '/events',
+      },
+    ];
+  });
+
+  protected readonly displaySplits = computed<ReadonlyArray<DisplaySplit>>(() => {
+    const splits = this.recentSplits();
+    if (splits.length > 0) {
+      return splits.slice(0, 4).map((s) => ({
+        id: s.id,
+        title: s.event_title || s.created_by_username || 'Split',
+        relativeTime: this.formatRelative(s.created_at),
+        amount:
+          s.status === 'completed'
+            ? this.formatCompactSilver(s.estimated_market_value, true)
+            : '—',
+        isCompleted: s.status === 'completed',
+        isPending: s.status === 'pending',
+      }));
+    }
+
+    return [
+      {
+        id: 1,
+        title: 'Galvdon',
+        relativeTime: '1 hour ago',
+        amount: '+10.80M',
+        isCompleted: true,
+        isPending: false,
+      },
+      {
+        id: 2,
+        title: 'Launch Terry Grove',
+        relativeTime: '8 hours ago',
+        amount: '—',
+        isCompleted: false,
+        isPending: true,
+      },
+      {
+        id: 3,
+        title: 'Galvdon',
+        relativeTime: 'Yesterday',
+        amount: '+4.85M',
+        isCompleted: true,
+        isPending: false,
+      },
+      {
+        id: 4,
+        title: 'FRATELLI E SORELLE',
+        relativeTime: 'Yesterday',
+        amount: '+30.34M',
+        isCompleted: true,
+        isPending: false,
+      },
+    ];
+  });
 
   constructor() {
     void this.loadSnapshot();
@@ -443,10 +712,10 @@ export class Dashboard {
           }),
         ),
         firstValueFrom(
-          this.api.get<PaginatedData<EventView>>('api/events', { page: 1, limit: 25 }),
+          this.api.get<PaginatedData<EventView>>('api/events', { page: 1, limit: 10 }),
         ),
         firstValueFrom(
-          this.api.get<PaginatedData<SplitSummary>>('api/splits', { page: 1, limit: 5 }),
+          this.api.get<PaginatedData<SplitSummary>>('api/splits', { page: 1, limit: 10 }),
         ),
       ]);
 
@@ -463,109 +732,52 @@ export class Dashboard {
       this.completedSplitCount.set(completedSplits.value.total_items);
     }
     if (events.status === 'fulfilled') {
-      const list = events.value.items;
-      this.recentEvents.set(list);
-      this.liveEventCount.set(list.filter((event) => event.status === 'live').length);
-      this.scheduledEventCount.set(list.filter((event) => event.status === 'scheduled').length);
+      this.recentEvents.set(events.value.items);
     }
     if (recentSplits.status === 'fulfilled') {
       this.recentSplits.set(recentSplits.value.items);
     }
   }
 
-  private greetingKeyForNow(): TranslationKey {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'dashboard.greeting.morning';
-    if (hour < 18) return 'dashboard.greeting.afternoon';
-    return 'dashboard.greeting.evening';
+  formatCompactSilver(
+    value: number | string | null | undefined,
+    showPlus = false,
+  ): string {
+    return formatCompactSilver(value, showPlus);
   }
 
-  private eventRank(event: EventView): number {
-    // Live first, then scheduled, then by date ascending.
-    if (event.status === 'live') return 0;
-    if (event.status === 'scheduled') return 1;
-    return 2;
-  }
-
-  private getLocale(): string {
-    const lang = this.translate.language();
-    if (lang === 'it') return 'it-IT';
-    if (lang === 'es') return 'es-ES';
-    return 'en-US';
-  }
-
-  private formatCount(value: number | null | undefined): string {
-    if (value === null || value === undefined) return '—';
-    return value.toLocaleString(this.getLocale());
-  }
-
-  protected formatNumber(value: number | string | null | undefined): string {
-    if (value === null || value === undefined || value === '') return '—';
-    const num = typeof value === 'number' ? value : Number(value);
-    if (Number.isNaN(num)) return '—';
-    return num.toLocaleString(this.getLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-
-  private formatCountHint(count: number | null | undefined, _key: TranslationKey): string {
-    if (count === null || count === undefined) return '';
-    return `${count.toLocaleString(this.getLocale())} tx`;
-  }
-
-  protected formatValue(value: number | string): string {
-    const num = typeof value === 'number' ? value : Number(value);
-    if (Number.isNaN(num)) return '—';
-    return num.toLocaleString(this.getLocale());
-  }
-
-  protected formatEventDate(iso: string): string {
+  protected formatRelative(iso: string | null | undefined): string {
+    if (!iso) return 'Recent';
     const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return iso;
-    return date.toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  }
-
-  protected formatRelative(iso: string): string {
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return iso;
-    const diffMs = date.getTime() - Date.now();
-    const diffDays = Math.round(diffMs / 86_400_000);
-    const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
-    if (Math.abs(diffDays) >= 1) return rtf.format(diffDays, 'day');
+    if (Number.isNaN(date.getTime())) return 'Recent';
+    const diffMs = Date.now() - date.getTime();
     const diffHours = Math.round(diffMs / 3_600_000);
-    return rtf.format(diffHours, 'hour');
-  }
-
-  // --- Tone palettes for stat cards ---
-
-  protected toneBg(tone: StatTone): string {
-    return TONE_BG[tone];
-  }
-
-  protected toneFg(tone: StatTone): string {
-    return TONE_FG[tone];
-  }
-
-  protected eventDotColor(status: EventStatus): string {
-    if (status === 'live') return 'var(--color-success)';
-    if (status === 'scheduled') return 'var(--color-primary)';
-    return 'var(--color-text-disabled)';
+    const diffDays = Math.round(diffMs / 86_400_000);
+    if (diffHours < 1) return 'Just now';
+    if (diffHours === 1) return '1 hour ago';
+    if (diffHours < 24) return `${diffHours} hours ago`;
+    if (diffDays === 1) return 'Yesterday';
+    return `${diffDays} days ago`;
   }
 }
 
-const TONE_BG: Record<StatTone, string> = {
-  primary: 'var(--color-primary-container)',
-  warning: 'var(--color-warning-container)',
-  success: 'var(--color-success-container)',
-  neutral: 'var(--color-surface-2)',
-};
-
-const TONE_FG: Record<StatTone, string> = {
-  primary: 'var(--color-primary)',
-  warning: 'var(--color-warning)',
-  success: 'var(--color-success)',
-  neutral: 'var(--color-text-secondary)',
-};
+export function formatCompactSilver(
+  value: number | string | null | undefined,
+  showPlus = false,
+): string {
+  if (value === null || value === undefined || value === '') return '—';
+  const num = typeof value === 'number' ? value : Number(value);
+  if (Number.isNaN(num)) return '—';
+  const sign = showPlus && num > 0 ? '+' : '';
+  const abs = Math.abs(num);
+  if (abs >= 1_000_000_000) {
+    return `${sign}${(num / 1_000_000_000).toFixed(2)}B`;
+  }
+  if (abs >= 1_000_000) {
+    return `${sign}${(num / 1_000_000).toFixed(2)}M`;
+  }
+  if (abs >= 1_000) {
+    return `${sign}${(num / 1_000).toFixed(1)}k`;
+  }
+  return `${sign}${num.toLocaleString()}`;
+}

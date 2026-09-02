@@ -87,6 +87,8 @@ export const en = {
   'nav.profile': 'Profile',
   'nav.logout': 'Sign out',
   'nav.section.main': 'Main',
+  'nav.section.operations': 'Operations',
+  'nav.section.economy': 'Economy',
   'nav.openMenu': 'Open menu',
   'nav.section.guild': 'Guild',
   'nav.section.system': 'System',
@@ -311,6 +313,7 @@ export const en = {
   'splits.city.thetford': 'Thetford',
   'splits.city.caerleon': 'Caerleon',
   'splits.city.brecilien': 'Brecilien',
+  'splits.all_islands': 'All islands',
   'admin.link.splits': 'Split islands',
   'admin.link.splitsHint': 'The island and tab catalog used when locating loot splits.',
 

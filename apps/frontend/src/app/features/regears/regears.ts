@@ -64,10 +64,57 @@ const STATS_FETCH_LIMIT = 1000;
     Icon,
     PageHeader,
     PageStack,
-    StatCard,
     TooltipDirective,
     ViewToggle,
   ],
+  styles: `
+    .kpi-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius-cards);
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      padding: 1.125rem 1.25rem;
+      transition: border-color var(--motion-fast), transform var(--motion-fast);
+    }
+    .kpi-card:hover {
+      border-color: var(--color-border-hover);
+    }
+    .icon-capsule {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 0.5rem;
+      flex-shrink: 0;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.25rem 0.625rem;
+      border-radius: 9999px;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .status-pill--approved {
+      background: rgba(34, 197, 94, 0.12);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.25);
+    }
+    .status-pill--pending {
+      background: rgba(234, 179, 8, 0.12);
+      color: #facc15;
+      border: 1px solid rgba(234, 179, 8, 0.25);
+    }
+    .status-pill--rejected {
+      background: rgba(239, 68, 68, 0.12);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.25);
+    }
+  `,
   template: `
     <app-page-header
       [title]="t('regears.title')"
@@ -91,7 +138,10 @@ const STATS_FETCH_LIMIT = 1000;
           routerLink="/admin/regears"
           [appTooltip]="t('regears.settingsLink')"
           tooltipPosition="bottom"
-        >{{ t('regears.settingsLink') }}</a>
+        >
+          <app-icon name="settings" size="0.875rem" />
+          {{ t('regears.settingsLink') }}
+        </a>
       }
       <app-view-toggle
         pageTabs
@@ -102,57 +152,163 @@ const STATS_FETCH_LIMIT = 1000;
     </app-page-header>
 
     <app-page-stack>
-      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Regear summary">
+      <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Regear summary">
         @if (tab() === 'mine') {
-          <app-stat-card
-            [label]="t('regears.budget.event')"
-            [value]="(summary()?.per_event_used ?? 0) + ' / ' + (summary()?.per_event_max ?? 0)"
-            icon="shield"
-            tone="neutral"
-          />
-          <app-stat-card
-            [label]="t('regears.budget.month')"
-            [value]="(summary()?.per_month_used ?? 0) + ' / ' + (summary()?.per_month_max ?? 0)"
-            icon="calendar"
-            tone="primary"
-          />
-          <app-stat-card
-            [label]="t('regears.status.pending')"
-            [value]="pendingMineCount()"
-            icon="alert"
-            tone="warning"
-          />
-          <app-stat-card
-            [label]="t('regears.status.approved')"
-            [value]="approvedMineCount()"
-            icon="check"
-            tone="success"
-          />
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('regears.budget.event') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ (summary()?.per_event_used ?? 0) }} / {{ (summary()?.per_event_max ?? 0) }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Event allowance
+                </p>
+              </div>
+              <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                <app-icon name="shield" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('regears.budget.month') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ (summary()?.per_month_used ?? 0) }} / {{ (summary()?.per_month_max ?? 0) }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Monthly quota
+                </p>
+              </div>
+              <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                <app-icon name="calendar" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('regears.status.pending') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ pendingMineCount() }}
+                </p>
+                <p class="text-xs text-amber-400/90 mt-1 truncate flex items-center gap-1.5">
+                  @if (pendingMineCount() > 0) {
+                    <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                  }
+                  Awaiting review
+                </p>
+              </div>
+              <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <app-icon name="alert" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('regears.status.approved') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ approvedMineCount() }}
+                </p>
+                <p class="text-xs text-emerald-400/90 mt-1 truncate">
+                  Approved & paid
+                </p>
+              </div>
+              <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <app-icon name="check" size="1.25rem" />
+              </div>
+            </div>
+          </article>
         } @else {
-          <app-stat-card
-            [label]="t('regears.stat.pending')"
-            [value]="tab() === 'queue' ? totalItems() : pendingMineCount()"
-            icon="alert"
-            tone="warning"
-          />
-          <app-stat-card
-            [label]="t('regears.stat.approved')"
-            [value]="approvedMineCount()"
-            icon="check"
-            tone="success"
-          />
-          <app-stat-card
-            [label]="t('regears.stat.rejected')"
-            [value]="rejectedMineCount()"
-            icon="close"
-            tone="danger"
-          />
-          <app-stat-card
-            [label]="t('regears.stat.totalReimbursed')"
-            [value]="formatSilver(totalEstimatedValue())"
-            icon="bank"
-            tone="neutral"
-          />
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('regears.stat.pending') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ tab() === 'queue' ? totalItems() : pendingMineCount() }}
+                </p>
+                <p class="text-xs text-amber-400/90 mt-1 truncate flex items-center gap-1.5">
+                  <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                  Queue to verify
+                </p>
+              </div>
+              <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <app-icon name="alert" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('regears.stat.approved') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ approvedMineCount() }}
+                </p>
+                <p class="text-xs text-emerald-400/90 mt-1 truncate">
+                  Reimbursed deaths
+                </p>
+              </div>
+              <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <app-icon name="check" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('regears.stat.rejected') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ rejectedMineCount() }}
+                </p>
+                <p class="text-xs text-red-400/90 mt-1 truncate">
+                  Ineligible deaths
+                </p>
+              </div>
+              <div class="icon-capsule bg-red-500/10 text-red-400 border border-red-500/20">
+                <app-icon name="close" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('regears.stat.totalReimbursed') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-purple-400 mt-1">
+                  {{ formatSilver(totalEstimatedValue()) }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Total silver estimated
+                </p>
+              </div>
+              <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                <app-icon name="bank" size="1.25rem" />
+              </div>
+            </div>
+          </article>
         }
       </section>
 
@@ -174,21 +330,52 @@ const STATS_FETCH_LIMIT = 1000;
       >
         <ng-template dataTableCell="player_name" let-row>
           <div class="flex flex-col gap-0.5">
-            <span class="font-bold text-sm text-[var(--color-text)]">{{ row.player_name }}</span>
+            <span class="font-bold text-sm text-white hover:underline cursor-pointer">{{ row.player_name }}</span>
             @if (row.primary_build_name) {
-              <span class="text-xs text-[var(--color-text-secondary)] font-medium">{{ row.primary_build_name }}</span>
+              <span class="text-xs text-[var(--color-text-secondary)] font-medium inline-flex items-center gap-1">
+                <app-icon name="shield" size="0.75rem" class="text-[var(--color-text-tertiary)]" />
+                {{ row.primary_build_name }}
+              </span>
             }
           </div>
         </ng-template>
+
         <ng-template dataTableCell="event" let-row>
-          <span class="font-medium text-sm text-[var(--color-text)]">{{ row.event_title }}</span>
+          <span class="font-medium text-xs text-[var(--color-text)]">{{ row.event_title }}</span>
         </ng-template>
+
         <ng-template dataTableCell="status" let-row>
-          <span class="chip" [class]="statusChipClass(row.status)">{{ statusLabel(row.status) }}</span>
+          @switch (row.status) {
+            @case ('approved') {
+              <span class="status-pill status-pill--approved">
+                <app-icon name="check" size="0.75rem" />
+                {{ statusLabel(row.status) }}
+              </span>
+            }
+            @case ('pending') {
+              <span class="status-pill status-pill--pending">
+                <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                {{ statusLabel(row.status) }}
+              </span>
+            }
+            @case ('rejected') {
+              <span class="status-pill status-pill--rejected">
+                <app-icon name="close" size="0.75rem" />
+                {{ statusLabel(row.status) }}
+              </span>
+            }
+            @default {
+              <span class="status-pill status-pill--pending">
+                {{ statusLabel(row.status) }}
+              </span>
+            }
+          }
         </ng-template>
+
         <ng-template dataTableCell="estimate" let-row>
-          <span class="font-bold font-mono text-sm text-[var(--color-text)]">{{ formatSilver(row.auto_estimate_total) }}</span>
+          <span class="font-mono text-sm font-semibold text-emerald-400">{{ formatSilver(row.auto_estimate_total) }}</span>
         </ng-template>
+
         <ng-template dataTableCell="actions" let-row>
           @if (canRequest(row)) {
             <button
@@ -200,7 +387,10 @@ const STATS_FETCH_LIMIT = 1000;
               {{ t('regears.request') }}
             </button>
           } @else {
-            <span class="btn btn--ghost btn--sm text-xs">{{ t('common.open') }}</span>
+            <span class="btn btn--ghost btn--sm text-xs inline-flex items-center gap-1">
+              <span>{{ t('common.open') }}</span>
+              &rarr;
+            </span>
           }
         </ng-template>
       </app-data-table>

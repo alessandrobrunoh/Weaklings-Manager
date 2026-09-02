@@ -106,6 +106,28 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
       background-color: var(--color-surface-1);
       border-bottom: 2px solid var(--color-border);
     }
+
+    .kpi-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius-cards);
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      padding: 1.125rem 1.25rem;
+      transition: border-color var(--motion-fast), transform var(--motion-fast);
+    }
+    .kpi-card:hover {
+      border-color: var(--color-border-hover);
+    }
+    .icon-capsule {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 0.5rem;
+      flex-shrink: 0;
+    }
   `,
   template: `
     <app-page-header
@@ -117,8 +139,68 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
       <app-loading />
     } @else if (matrix(); as data) {
       <app-page-stack>
-      <!-- Filter & Search Toolbar -->
-      <section class="card p-4">
+        <!-- KPI Cards -->
+        <section class="grid gap-3.5 sm:grid-cols-3" aria-label="Permissions summary">
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('admin.permissions.permission') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ totalPermissionsCount() }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Available permission nodes
+                </p>
+              </div>
+              <div class="icon-capsule bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                <app-icon name="shield" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('admin.permissions.roles') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-emerald-400 mt-1">
+                  {{ data.roles.length }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Active authorization roles
+                </p>
+              </div>
+              <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <app-icon name="users" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  Modules
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-amber-400 mt-1">
+                  {{ allModules().length }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Feature resource groups
+                </p>
+              </div>
+              <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <app-icon name="list" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <!-- Filter & Search Toolbar -->
+        <section class="card p-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <!-- Left filters -->
           <div class="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">

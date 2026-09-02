@@ -52,7 +52,91 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
 @Component({
   selector: 'app-events',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DataTable, DataTableCell, Dialog, Icon, PageHeader, PageStack, StatCard, StatusChip, TooltipDirective],
+  imports: [DataTable, DataTableCell, Dialog, Icon, PageHeader, PageStack, TooltipDirective],
+  styles: `
+    .kpi-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius-cards);
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      padding: 1.125rem 1.25rem;
+      transition: border-color var(--motion-fast), transform var(--motion-fast);
+    }
+    .kpi-card:hover {
+      border-color: var(--color-border-hover);
+    }
+    .icon-capsule {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 0.5rem;
+      flex-shrink: 0;
+    }
+    .status-tab-group {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      overflow-x: auto;
+      padding: 0.25rem 0;
+    }
+    .status-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.375rem 0.75rem;
+      border-radius: 0.5rem;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--color-text-secondary);
+      border: 1px solid transparent;
+      background: transparent;
+      transition: all var(--motion-fast);
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .status-tab:hover {
+      color: var(--color-text);
+      background: var(--color-surface-hover);
+    }
+    .status-tab--active {
+      color: var(--color-text);
+      background: var(--color-surface-1);
+      border-color: var(--color-border);
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.25rem 0.625rem;
+      border-radius: 9999px;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .status-pill--live {
+      background: rgba(34, 197, 94, 0.12);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.25);
+    }
+    .status-pill--scheduled {
+      background: rgba(56, 189, 248, 0.12);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.25);
+    }
+    .status-pill--stopped {
+      background: rgba(148, 163, 184, 0.12);
+      color: #94a3b8;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+    .status-pill--cancelled {
+      background: rgba(239, 68, 68, 0.12);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.25);
+    }
+  `,
   template: `
     <app-page-header [title]="t('events.title')" [subtitle]="t('events.subtitle')">
       <button
@@ -82,31 +166,92 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
     </app-page-header>
 
     <app-page-stack>
-      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Events summary">
-        <app-stat-card
-          [label]="t('events.stat.total')"
-          [value]="totalItems()"
-          icon="calendar"
-          tone="neutral"
-        />
-        <app-stat-card
-          [label]="t('events.stat.live')"
-          [value]="liveCount()"
-          icon="sparkles"
-          tone="success"
-        />
-        <app-stat-card
-          [label]="t('events.stat.scheduled')"
-          [value]="scheduledCount()"
-          icon="calendar"
-          tone="primary"
-        />
-        <app-stat-card
-          [label]="t('events.stat.cta')"
-          [value]="ctaCount()"
-          icon="alert"
-          tone="warning"
-        />
+      <!-- KPI Row: 4 Modern Cards -->
+      <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Events summary">
+        <!-- Card 1: Total -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('events.stat.total') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                {{ totalItems() }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                All scheduled & past events
+              </p>
+            </div>
+            <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <app-icon name="calendar" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 2: Live Now -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('events.stat.live') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                {{ liveCount() }}
+              </p>
+              <p class="text-xs text-emerald-400/90 mt-1 truncate flex items-center gap-1.5">
+                @if (liveCount() > 0) {
+                  <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  Active war rooms
+                } @else {
+                  No events live
+                }
+              </p>
+            </div>
+            <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <app-icon name="sparkles" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 3: Scheduled -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('events.stat.scheduled') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                {{ scheduledCount() }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                Upcoming deployments
+              </p>
+            </div>
+            <div class="icon-capsule bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <app-icon name="calendar" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 4: Call To Arms -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('events.stat.cta') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                {{ ctaCount() }}
+              </p>
+              <p class="text-xs text-amber-400/90 mt-1 truncate flex items-center gap-1">
+                Mandatory guild CTA
+              </p>
+            </div>
+            <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <app-icon name="alert" size="1.25rem" />
+            </div>
+          </div>
+        </article>
       </section>
 
       <!-- LIVE / CTA HIGHLIGHT BANNER -->
@@ -114,26 +259,33 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
         <div class="grid gap-3" aria-label="Live events">
           @for (liveEvent of liveEvents(); track liveEvent.id) {
             <div
-              class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl border border-[var(--color-success)] bg-[var(--color-surface)] shadow-lg hover:bg-[var(--color-surface-hover)] cursor-pointer transition-all"
+              class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl border border-emerald-500/40 bg-gradient-to-r from-emerald-950/25 via-[var(--color-surface)] to-[var(--color-surface)] shadow-lg hover:border-emerald-500/70 cursor-pointer transition-all"
               (click)="openEventDetail(liveEvent.id)"
             >
-              <div class="flex items-center gap-3">
-                <span class="relative flex h-3 w-3">
-                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--color-success)] opacity-75"></span>
-                  <span class="relative inline-flex rounded-full h-3 w-3 bg-[var(--color-success)]"></span>
+              <div class="flex items-center gap-3.5">
+                <span class="relative flex h-3.5 w-3.5 flex-shrink-0">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500"></span>
                 </span>
                 <div>
-                  <div class="flex items-center gap-2">
-                    <span class="font-bold text-base text-[var(--color-text)]">{{ liveEvent.title }}</span>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="font-bold text-base text-white">{{ liveEvent.title }}</span>
                     @if (liveEvent.call_to_arms) {
-                      <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-[var(--color-warning-subtle)] text-[var(--color-warning)] border border-[var(--color-warning)]">
-                        CALL TO ARMS
+                      <span class="px-2 py-0.5 rounded-full text-[0.6875rem] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        ★ CALL TO ARMS
                       </span>
                     }
-                    <app-status-chip [value]="liveEvent.status" />
+                    <span class="status-pill status-pill--live">
+                      LIVE NOW
+                    </span>
                   </div>
-                  <div class="text-xs text-[var(--color-text-secondary)] mt-0.5">
-                    Comp: {{ liveEvent.comp_name }} · {{ formatDate(liveEvent.event_date_utc) }}
+                  <div class="text-xs text-[var(--color-text-secondary)] mt-1 flex flex-wrap items-center gap-2">
+                    <span class="inline-flex items-center gap-1 text-[var(--color-text)]">
+                      <app-icon name="swords" size="0.75rem" />
+                      {{ liveEvent.comp_name }}
+                    </span>
+                    <span>&middot;</span>
+                    <span>{{ formatDate(liveEvent.event_date_utc) }}</span>
                   </div>
                 </div>
               </div>
@@ -141,17 +293,85 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
               <div class="flex items-center gap-2">
                 <button
                   type="button"
-                  class="btn btn--primary btn--sm"
+                  class="btn btn--primary btn--sm inline-flex items-center gap-1.5 font-semibold"
                   (click)="$event.stopPropagation(); openEventDetail(liveEvent.id)"
                 >
                   <app-icon name="swords" size="0.75rem" />
-                  Enter Roster War Room
+                  Enter War Room &rarr;
                 </button>
               </div>
             </div>
           }
         </div>
       }
+
+      <!-- Status Filter Tabs -->
+      <section class="flex flex-wrap items-center justify-between gap-3 pt-1">
+        <nav class="status-tab-group" aria-label="Events status filter">
+          <button
+            type="button"
+            class="status-tab"
+            [class.status-tab--active]="statusFilter() === ''"
+            (click)="setStatusFilter('')"
+          >
+            <span>{{ t('common.all') }}</span>
+            <span class="rounded-full bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[0.6875rem] font-mono">
+              {{ totalItems() }}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            class="status-tab"
+            [class.status-tab--active]="statusFilter() === 'live'"
+            (click)="setStatusFilter('live')"
+          >
+            <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>{{ t('events.stat.live') }}</span>
+            @if (liveCount() > 0) {
+              <span class="rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 text-[0.6875rem] font-mono">
+                {{ liveCount() }}
+              </span>
+            }
+          </button>
+
+          <button
+            type="button"
+            class="status-tab"
+            [class.status-tab--active]="statusFilter() === 'scheduled'"
+            (click)="setStatusFilter('scheduled')"
+          >
+            <span class="h-1.5 w-1.5 rounded-full bg-sky-400"></span>
+            <span>{{ t('events.stat.scheduled') }}</span>
+            @if (scheduledCount() > 0) {
+              <span class="rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30 px-1.5 py-0.5 text-[0.6875rem] font-mono">
+                {{ scheduledCount() }}
+              </span>
+            }
+          </button>
+
+          <button
+            type="button"
+            class="status-tab"
+            [class.status-tab--active]="statusFilter() === 'stopped'"
+            (click)="setStatusFilter('stopped')"
+          >
+            <span class="h-1.5 w-1.5 rounded-full bg-neutral-400"></span>
+            <span>Finished</span>
+          </button>
+        </nav>
+
+        @if (statusFilter() !== '') {
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm text-xs py-1 px-2 text-[var(--color-text-secondary)] hover:text-white inline-flex items-center gap-1"
+            (click)="setStatusFilter('')"
+          >
+            <app-icon name="close" size="0.75rem" />
+            <span>{{ t('common.clear') }}</span>
+          </button>
+        }
+      </section>
 
       <app-data-table
         [columns]="columns()"
@@ -169,33 +389,81 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
         (pageChange)="onPageChange($event)"
       >
         <ng-template dataTableCell="title" let-row>
-          <span class="font-medium" style="color: var(--color-text)">
+          <div class="flex items-center gap-2">
             @if (row.call_to_arms) {
-              <span class="cta-star" [title]="t('events.call_to_arms')">★</span>
+              <span class="cta-star text-amber-400" [title]="t('events.call_to_arms')">★</span>
             }
-            {{ row.title }}
-          </span>
+            <span class="font-medium text-white hover:underline cursor-pointer">
+              {{ row.title }}
+            </span>
+            @if (row.regear) {
+              <span class="inline-flex items-center text-sky-400" title="Regear active">
+                <app-icon name="shield" size="0.75rem" />
+              </span>
+            }
+          </div>
         </ng-template>
+
         <ng-template dataTableCell="date" let-row>
-          <div class="flex flex-col gap-0.5" style="color: var(--color-text-secondary)">
-            <span>{{ formatDate(row.start_time_utc ?? row.event_date_utc) }}</span>
+          <div class="flex flex-col gap-0.5 text-xs text-[var(--color-text-secondary)]">
+            <span class="text-[var(--color-text)] font-medium">{{ formatDate(row.start_time_utc ?? row.event_date_utc) }}</span>
             <span class="text-[var(--color-text-tertiary)]">Mass: {{ formatTime(row.mass_time_utc ?? row.event_date_utc) }}</span>
           </div>
         </ng-template>
+
         <ng-template dataTableCell="comp" let-row>
-          {{ row.comp_name }}
+          <span class="inline-flex items-center gap-1.5 text-xs text-[var(--color-text)]">
+            <app-icon name="swords" size="0.75rem" class="text-[var(--color-text-secondary)]" />
+            {{ row.comp_name }}
+          </span>
         </ng-template>
+
         <ng-template dataTableCell="status" let-row>
-          <app-status-chip [value]="row.status" />
+          @switch (row.status) {
+            @case ('live') {
+              <span class="status-pill status-pill--live">
+                <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                LIVE
+              </span>
+            }
+            @case ('scheduled') {
+              <span class="status-pill status-pill--scheduled">
+                <app-icon name="calendar" size="0.75rem" />
+                Scheduled
+              </span>
+            }
+            @case ('stopped') {
+              <span class="status-pill status-pill--stopped">
+                Stopped
+              </span>
+            }
+            @case ('auto_stopped') {
+              <span class="status-pill status-pill--stopped">
+                Ended
+              </span>
+            }
+            @case ('cancelled') {
+              <span class="status-pill status-pill--cancelled">
+                <app-icon name="close" size="0.75rem" />
+                Cancelled
+              </span>
+            }
+            @default {
+              <span class="status-pill status-pill--stopped">
+                {{ row.status }}
+              </span>
+            }
+          }
         </ng-template>
+
         <ng-template dataTableCell="actions" let-row>
-          <div class="flex flex-wrap justify-end gap-1">
+          <div class="flex flex-wrap justify-end gap-1.5">
             <button
               type="button"
               class="btn btn--primary btn--sm"
               (click)="$event.stopPropagation(); openEventDetail(row.id)"
             >
-              {{ t('common.open') }}
+              {{ t('common.open') }} &rarr;
             </button>
             @if (row.status === 'scheduled') {
               <button
@@ -641,6 +909,12 @@ export class Events {
     } finally {
       this.deleting.set(false);
     }
+  }
+
+  protected setStatusFilter(status: string): void {
+    this.statusFilter.set(status);
+    this.page.set(1);
+    void this.load();
   }
 
   protected onPageChange(change: DataTablePageChange): void {

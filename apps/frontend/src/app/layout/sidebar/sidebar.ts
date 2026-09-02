@@ -43,19 +43,21 @@ export type { NavItem, NavSection } from '../nav';
         @for (section of visibleSections(); track section.headingKey) {
           <div class="mb-2">
             @if (!collapsed()) {
-              <p
-                [id]="section.headingKey"
-                class="eyebrow px-2 pb-1 pt-3 text-[10px]"
-              >
-                {{ t(section.headingKey) }}
-              </p>
+              @if (section.headingKey !== 'nav.section.main') {
+                <p
+                  [id]="section.headingKey"
+                  class="px-2 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-disabled)]"
+                >
+                  {{ t(section.headingKey) }}
+                </p>
+              }
             } @else {
               <div class="my-2 mx-auto w-6 border-t" style="border-color: var(--color-border)"></div>
             }
             <ul
               class="flex flex-col gap-0.5"
               role="list"
-              [attr.aria-labelledby]="collapsed() ? null : section.headingKey"
+              [attr.aria-labelledby]="collapsed() || section.headingKey === 'nav.section.main' ? null : section.headingKey"
               [attr.aria-label]="collapsed() ? t(section.headingKey) : null"
             >
               @for (item of section.items; track item.path) {
@@ -88,14 +90,14 @@ export type { NavItem, NavSection } from '../nav';
       <div class="hidden md:flex px-2 pt-2 border-t" style="border-color: var(--color-border)">
         <button
           type="button"
-          class="btn btn--ghost btn--sm w-full flex items-center gap-2 text-xs"
+          class="btn btn--ghost btn--sm w-full flex items-center gap-2 text-xs text-[var(--color-text-tertiary)] hover:text-white"
           [class.justify-center]="collapsed()"
           (click)="toggleCollapse.emit()"
           [appTooltip]="collapsed() ? t('nav.expand') : t('nav.collapse')"
           tooltipPosition="right"
           [attr.aria-label]="collapsed() ? t('nav.expand') : t('nav.collapse')"
         >
-          <app-icon [name]="collapsed() ? 'chevron-right' : 'chevron-left'" size="1rem" />
+          <app-icon [name]="collapsed() ? 'chevron-right' : 'chevrons-left'" size="1rem" />
           @if (!collapsed()) {
             <span class="truncate">{{ t('nav.collapse') }}</span>
           }

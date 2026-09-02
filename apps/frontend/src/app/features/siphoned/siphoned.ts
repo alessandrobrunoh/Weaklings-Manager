@@ -77,10 +77,30 @@ const STATS_FETCH_LIMIT = 1000;
     Icon,
     PageHeader,
     PageStack,
-    StatCard,
     ViewToggle,
   ],
   styles: `
+    .kpi-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius-cards);
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      padding: 1.125rem 1.25rem;
+      transition: border-color var(--motion-fast), transform var(--motion-fast);
+    }
+    .kpi-card:hover {
+      border-color: var(--color-border-hover);
+    }
+    .icon-capsule {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 0.5rem;
+      flex-shrink: 0;
+    }
     .siphoned-permission-note { margin: 0; padding: 0.75rem 0.875rem; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text-secondary); font-size: 0.75rem; line-height: 1.5; }
   `,
   template: `
@@ -119,32 +139,90 @@ const STATS_FETCH_LIMIT = 1000;
       @if (!canIngest()) {
         <p class="siphoned-permission-note" role="status">{{ t('siphoned.missingManagePermission') }}</p>
       }
-      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Siphoned summary">
-        <app-stat-card
-          [label]="t('siphoned.stat.deposited')"
-          [value]="formatAmount(totalDeposited())"
-          icon="bank"
-          tone="success"
-        />
-        <app-stat-card
-          [label]="t('siphoned.stat.withdrawn')"
-          [value]="formatAmount(totalWithdrawn())"
-          icon="bank"
-          tone="warning"
-        />
-        <app-stat-card
-          [label]="t('siphoned.stat.net')"
-          [value]="formatAmount(netTotal())"
-          [sub]="t('siphoned.lastUpdated') + ': ' + lastUpdatedLabel()"
-          icon="chart"
-          [tone]="netTotal() >= 0 ? 'success' : 'danger'"
-        />
-        <app-stat-card
-          [label]="t('siphoned.stat.entries')"
-          [value]="tab() === 'balances' ? balanceTotal() : tab() === 'entries' ? entryTotal() : batches().length"
-          icon="list"
-          tone="neutral"
-        />
+      <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Siphoned summary">
+        <!-- Card 1: Deposited -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('siphoned.stat.deposited') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-emerald-400 mt-1">
+                {{ formatAmount(totalDeposited()) }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                Total energy banked
+              </p>
+            </div>
+            <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <app-icon name="bank" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 2: Withdrawn -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('siphoned.stat.withdrawn') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-amber-400 mt-1">
+                {{ formatAmount(totalWithdrawn()) }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                Distributed energy
+              </p>
+            </div>
+            <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <app-icon name="bank" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 3: Net Total -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('siphoned.stat.net') }}
+              </p>
+              <p
+                class="font-mono text-2xl font-bold tracking-tight mt-1"
+                [class.text-emerald-400]="netTotal() >= 0"
+                [class.text-red-400]="netTotal() < 0"
+              >
+                {{ formatAmount(netTotal()) }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                {{ t('siphoned.lastUpdated') }}: {{ lastUpdatedLabel() }}
+              </p>
+            </div>
+            <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+              <app-icon name="chart" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 4: Active Records -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('siphoned.stat.entries') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                {{ tab() === 'balances' ? balanceTotal() : tab() === 'entries' ? entryTotal() : batches().length }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                Logged transactions
+              </p>
+            </div>
+            <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <app-icon name="list" size="1.25rem" />
+            </div>
+          </div>
+        </article>
       </section>
 
       @if (tab() === 'balances') {

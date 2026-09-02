@@ -1,6 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { provideZonelessChangeDetection } from '@angular/core';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+import { of } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
+import { ToastService } from '../../core/services/toast.service';
+import { TranslateService } from '../../core/services/translate.service';
 import {
+  Splits,
   addCurrentUserToParticipants,
   isSplitAwaitingEvent,
   isSplitBatchSelectable,
@@ -50,5 +59,114 @@ describe('linked event split actions', () => {
   it('identifies the state that must show the event-waiting message', () => {
     expect(isSplitAwaitingEvent('awaiting_event')).toBe(true);
     expect(isSplitAwaitingEvent('pending')).toBe(false);
+  });
+});
+
+describe('Splits Component', () => {
+  let fixture: ComponentFixture<Splits>;
+
+  const mockApiService = {
+    get: vi.fn().mockImplementation((url: string) => {
+      if (url.includes('summary')) {
+        return of({
+          total_net_distributed: 24_500_000,
+          completed_count: 12,
+          pending_count: 3,
+          total_estimated_volume: 32_000_000,
+          total_participants: 28,
+        });
+      }
+      if (url.includes('islands')) {
+        return of([]);
+      }
+      return of({
+        items: [
+          {
+            id: 1,
+            note: 'Castle Fight & Outpost Loot',
+            status: 'pending',
+            estimated_market_value: 10_000_000,
+            fee: 20,
+            repair_value: 0,
+            bags_value: 0,
+            net_value: 8_000_000,
+            participant_count: 10,
+            created_at: new Date().toISOString(),
+          },
+        ],
+        total_items: 1,
+        total_pages: 1,
+        current_page: 1,
+        limit: 10,
+      });
+    }),
+    post: vi.fn().mockReturnValue(of({})),
+    delete: vi.fn().mockReturnValue(of({})),
+  };
+
+  const mockAuthService = {
+    profile: vi.fn().mockReturnValue({
+      id: '123',
+      user_id: 123,
+      username: 'Galvdon',
+      permissions: ['splits.create', 'splits.edit', 'splits.delete', 'splits.islands.manage'],
+    }),
+    hasPermission: vi.fn().mockReturnValue(true),
+  };
+
+  const mockToastService = {
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    warning: vi.fn(),
+  };
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [Splits],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideRouter([]),
+        { provide: ApiService, useValue: mockApiService },
+        { provide: AuthService, useValue: mockAuthService },
+        { provide: ToastService, useValue: mockToastService },
+        TranslateService,
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(Splits);
+    await (fixture.componentInstance as unknown as { refreshNow: () => Promise<void> }).refreshNow();
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  afterEach(() => {
+    fixture.destroy();
+  });
+
+  it('renders all 4 modern KPI cards with formatted values', () => {
+    const text = fixture.nativeElement.textContent;
+    expect(text).toContain('Total Net Distributed');
+    expect(text).toContain('24.50M');
+    expect(text).toContain('Pending splits');
+    expect(text).toContain('3');
+    expect(text).toContain('Total Silver Volume');
+    expect(text).toContain('32.00M');
+    expect(text).toContain('Participants');
+    expect(text).toContain('28');
+  });
+
+  it('renders the status filter tabs and quick actions', () => {
+    const text = fixture.nativeElement.textContent;
+    expect(text).toContain('All');
+    expect(text).toContain('Pending');
+    expect(text).toContain('Awaiting event');
+    expect(text).toContain('Completed');
+  });
+
+  it('renders the batch selection action strip when pending splits exist', () => {
+    const text = fixture.nativeElement.textContent;
+    expect(text).toContain('Select all pending');
+    expect(text).toContain('Complete selected');
   });
 });

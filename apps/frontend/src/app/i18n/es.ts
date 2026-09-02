@@ -83,6 +83,8 @@ export const es: TranslationDict = {
   'nav.profile': 'Perfil',
   'nav.logout': 'Salir',
   'nav.section.main': 'Principal',
+  'nav.section.operations': 'Operaciones',
+  'nav.section.economy': 'Economía',
   'nav.openMenu': 'Abrir menú',
   'nav.section.guild': 'Hermandad',
   'nav.section.system': 'Sistema',
@@ -306,6 +308,7 @@ export const es: TranslationDict = {
   'splits.city.thetford': 'Thetford',
   'splits.city.caerleon': 'Caerleon',
   'splits.city.brecilien': 'Brecilien',
+  'splits.all_islands': 'Todas las islas',
   'admin.link.splits': 'Islas de split',
   'admin.link.splitsHint': 'Catálogo de islas y pestañas para localizar los splits.',
 

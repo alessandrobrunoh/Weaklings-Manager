@@ -91,6 +91,27 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
     .intel-trend-chart__table th, .intel-trend-chart__table td { padding: 0.375rem 0.5rem; border-block-end: 1px solid var(--color-border); text-align: end; }
     .intel-trend-chart__table th:first-child, .intel-trend-chart__table td:first-child { text-align: start; }
     @media (max-width: 32rem) { .intel-trend-chart__bars { gap: 0.1rem; } .intel-trend-chart__sample { white-space: normal; } }
+    .kpi-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius-cards);
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      padding: 1.125rem 1.25rem;
+      transition: border-color var(--motion-fast), transform var(--motion-fast);
+    }
+    .kpi-card:hover {
+      border-color: var(--color-border-hover);
+    }
+    .icon-capsule {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 0.5rem;
+      flex-shrink: 0;
+    }
   `,
   template: `
     <app-page-header [title]="t('intel.title')" [subtitle]="t('intel.subtitle')">
@@ -121,34 +142,82 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
     } @else {
       <app-page-stack>
         <!-- Top KPI headline strip -->
-        <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Intel summary">
-          <app-stat-card
-            [label]="t('intel.stat.scouts')"
-            [value]="headlineTotal().toString()"
-            icon="search"
-            tone="neutral"
-          />
-          <app-stat-card
-            [label]="t('intel.stat.topThreat')"
-            [value]="topThreat()?.opponent_guild_name ?? '—'"
-            [sub]="topThreat() ? t('intel.stat.threatScore') + ' ' + topThreat()!.threat_score : ''"
-            icon="alert"
-            tone="danger"
-          />
-          <app-stat-card
-            [label]="t('intel.stat.record')"
-            [value]="recordLabel()"
-            [sub]="t('intel.stat.acrossFights')"
-            icon="swords"
-            [tone]="recordTone()"
-          />
-          <app-stat-card
-            [label]="t('intel.stat.coverage')"
-            [value]="coverageLabel()"
-            [sub]="t('intel.stat.coverageSub')"
-            icon="shield"
-            [tone]="coverageTone()"
-          />
+        <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Intel summary">
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('intel.stat.scouts') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ headlineTotal() }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Profiles tracked
+                </p>
+              </div>
+              <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                <app-icon name="search" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('intel.stat.topThreat') }}
+                </p>
+                <p class="font-bold text-base text-white mt-1 truncate max-w-[170px]" [title]="topThreat()?.opponent_guild_name ?? '—'">
+                  {{ topThreat()?.opponent_guild_name ?? '—' }}
+                </p>
+                <p class="text-xs text-red-400 mt-1 truncate">
+                  {{ topThreat() ? t('intel.stat.threatScore') + ' ' + topThreat()!.threat_score : 'No active threat' }}
+                </p>
+              </div>
+              <div class="icon-capsule bg-red-500/10 text-red-400 border border-red-500/20">
+                <app-icon name="alert" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('intel.stat.record') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-emerald-400 mt-1">
+                  {{ recordLabel() }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  {{ t('intel.stat.acrossFights') }}
+                </p>
+              </div>
+              <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <app-icon name="swords" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('intel.stat.coverage') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-purple-400 mt-1">
+                  {{ coverageLabel() }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  {{ t('intel.stat.coverageSub') }}
+                </p>
+              </div>
+              <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                <app-icon name="shield" size="1.25rem" />
+              </div>
+            </div>
+          </article>
         </section>
 
         @switch (tab()) {
