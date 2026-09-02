@@ -29,6 +29,16 @@ export interface ProblemDetails {
   status?: number;
   detail?: string;
   instance?: string;
+  invalid_params?: unknown;
+}
+
+/** One row blocking a delete/update, e.g. an event still using a comp being deleted. */
+export interface BlockingReference {
+  /** The kind of thing blocking the action, e.g. `'event'`. */
+  resource: string;
+  id: number;
+  /** Human-readable label for that row (its title/name), for display. */
+  label: string;
 }
 
 /* ------------------------------ Auth -------------------------------- */

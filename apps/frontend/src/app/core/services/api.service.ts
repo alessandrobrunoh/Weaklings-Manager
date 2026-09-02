@@ -4,7 +4,7 @@ import { Observable, throwError } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 
 import { API_BASE_URL } from '../tokens/api-base.token';
-import type { ApiResponse, ProblemDetails } from '../models/api.models';
+import type { ApiResponse, BlockingReference, ProblemDetails } from '../models/api.models';
 
 /**
  * Generic typed HTTP client for the Albion Guild Manager backend.
@@ -25,6 +25,21 @@ export class ApiError extends Error {
   ) {
     super(message);
     this.name = 'ApiError';
+  }
+
+  /**
+   * The specific rows blocking a delete/update (e.g. events still using a
+   * comp), when the backend returned them — `null` for every other error.
+   * Callers that want a rich "here's what's in the way" dialog instead of a
+   * plain toast should check this before falling back to `.message`.
+   */
+  blockingReferences(): BlockingReference[] | null {
+    const params = this.problem?.invalid_params;
+    if (!params || typeof params !== 'object' || !('blocking_references' in params)) {
+      return null;
+    }
+    const refs = (params as { blocking_references: unknown }).blocking_references;
+    return Array.isArray(refs) ? (refs as BlockingReference[]) : null;
   }
 }
 

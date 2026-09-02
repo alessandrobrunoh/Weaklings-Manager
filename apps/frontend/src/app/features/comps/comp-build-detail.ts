@@ -33,7 +33,8 @@ import { VersionSwitcher } from '../../shared/components/version-switcher/versio
 import { VersionDiffList } from '../../shared/components/version-diff-list/version-diff-list';
 import { abilityNameLookup, diffBuildVersions } from './version-diff';
 import type { VersionDiffEntry } from './version-diff';
-import { ApiService } from '../../core/services/api.service';
+import { ApiError, ApiService } from '../../core/services/api.service';
+import type { BlockingReference } from '../../core/models/api.models';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
@@ -479,23 +480,45 @@ const ITEM_TIERS = [
 
       @if (pendingDelete(); as pending) {
         <app-dialog [title]="t('common.confirm')" size="sm" (closed)="closeDelete()">
-          <p>{{ pending.kind === 'slot' ? t('comps.deleteItem') : t('comps.delete.confirm') }}</p>
-          <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
-            {{ pending.kind === 'slot' ? slotLabel(pending.slot) : current.name }}
-          </p>
-          <div dialogFooter>
-            <button type="button" class="btn btn--ghost" (click)="closeDelete()">
-              {{ t('common.cancel') }}
-            </button>
-            <button
-              type="button"
-              class="btn btn--danger"
-              [disabled]="saving()"
-              (click)="confirmPendingDelete()"
-            >
-              {{ t('common.delete') }}
-            </button>
-          </div>
+          @if (blockedByRefs(); as refs) {
+            <p>Impossibile eliminare "{{ current.name }}": è ancora in uso.</p>
+            <ul class="mt-2 grid gap-1 text-sm">
+              @for (ref of refs; track ref.resource + ':' + ref.id) {
+                <li>
+                  @if (ref.resource === 'event') {
+                    <a class="text-primary no-underline hover:underline" [routerLink]="['/events', ref.id]">
+                      {{ ref.label }}
+                    </a>
+                  } @else {
+                    <span style="color: var(--color-text-secondary)">{{ ref.label }}</span>
+                  }
+                </li>
+              }
+            </ul>
+            <div dialogFooter>
+              <button type="button" class="btn btn--ghost" (click)="closeDelete()">
+                {{ t('common.close') }}
+              </button>
+            </div>
+          } @else {
+            <p>{{ pending.kind === 'slot' ? t('comps.deleteItem') : t('comps.delete.confirm') }}</p>
+            <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
+              {{ pending.kind === 'slot' ? slotLabel(pending.slot) : current.name }}
+            </p>
+            <div dialogFooter>
+              <button type="button" class="btn btn--ghost" (click)="closeDelete()">
+                {{ t('common.cancel') }}
+              </button>
+              <button
+                type="button"
+                class="btn btn--danger"
+                [disabled]="saving()"
+                (click)="confirmPendingDelete()"
+              >
+                {{ t('common.delete') }}
+              </button>
+            </div>
+          }
         </app-dialog>
       }
     } @else if (loadFailed()) {
@@ -555,6 +578,8 @@ export class CompBuildDetailPage {
   protected readonly pendingDelete = signal<
     { kind: 'build' } | { kind: 'slot'; loadout: BuildLoadout; slot: BuildSlot } | null
   >(null);
+  /** Set when a build-delete attempt was rejected because other rows still reference it. */
+  protected readonly blockedByRefs = signal<BlockingReference[] | null>(null);
   protected readonly editName = signal('');
   protected readonly editDescription = signal('');
   protected readonly editCategoryId = signal('');
@@ -845,11 +870,13 @@ export class CompBuildDetailPage {
   }
 
   protected askDeleteBuild(): void {
+    this.blockedByRefs.set(null);
     this.pendingDelete.set({ kind: 'build' });
   }
 
   protected closeDelete(): void {
     this.pendingDelete.set(null);
+    this.blockedByRefs.set(null);
   }
 
   protected async confirmPendingDelete(): Promise<void> {
@@ -876,7 +903,13 @@ export class CompBuildDetailPage {
       this.toasts.success(this.t('common.delete'));
       await this.router.navigate(['/comps']);
     } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      const references = error instanceof ApiError ? error.blockingReferences() : null;
+      if (references) {
+        // Keep the dialog open — swap it to the "here's what's blocking it" view.
+        this.blockedByRefs.set(references);
+      } else {
+        this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      }
     } finally {
       this.saving.set(false);
     }
