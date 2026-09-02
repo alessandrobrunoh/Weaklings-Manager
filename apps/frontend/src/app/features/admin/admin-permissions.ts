@@ -462,7 +462,11 @@ export class AdminPermissions {
   constructor() {
     effect(() => {
       const data = this.matrix();
-      if (data && this.selectedRoleIds().size === 0) {
+      // Guard on `data.roles.length` too: with zero roles the "select all"
+      // set built below would itself be empty, so `selectedRoleIds().size`
+      // would stay 0 and this effect — which both reads and writes that
+      // same signal — would set a new (still-empty) Set forever.
+      if (data && data.roles.length > 0 && this.selectedRoleIds().size === 0) {
         this.selectedRoleIds.set(new Set(data.roles.map((r) => r.role_id)));
       }
     });

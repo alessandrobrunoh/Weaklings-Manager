@@ -187,9 +187,12 @@ export const it: TranslationDict = {
   'bank.finance.regearPaid': 'Regear pagato',
   'bank.finance.siphonedNet': 'Energia Siphoned netta',
   'bank.finance.siphonedDetail': 'Unità di risorsa, non valutazione in argento',
-  'bank.finance.reportPermission': 'Il tuo ruolo può vedere i totali del registro. Il report intersistema degli ultimi 30 giorni richiede il permesso aggiuntivo per i report finanziari.',
-  'bank.finance.ledgerNote': 'La Banca della Gilda è attualmente una controparte virtuale del registro. Questi totali non rappresentano l’argento fisico detenuto in gioco. L’Energia Siphoned viene registrata come quantità di risorsa; per il valore di mercato sono necessari un livello di oggetto e una città espliciti.',
-  'bank.finance.unavailable': 'Impossibile caricare i dati finanziari della gilda. Controlla i permessi da ufficiale per il registro bancario e riprova.',
+  'bank.finance.reportPermission':
+    'Il tuo ruolo può vedere i totali del registro. Il report intersistema degli ultimi 30 giorni richiede il permesso aggiuntivo per i report finanziari.',
+  'bank.finance.ledgerNote':
+    'La Banca della Gilda è attualmente una controparte virtuale del registro. Questi totali non rappresentano l’argento fisico detenuto in gioco. L’Energia Siphoned viene registrata come quantità di risorsa; per il valore di mercato sono necessari un livello di oggetto e una città espliciti.',
+  'bank.finance.unavailable':
+    'Impossibile caricare i dati finanziari della gilda. Controlla i permessi da ufficiale per il registro bancario e riprova.',
   'bank.finance.analytics': 'Analisi finanziaria',
   'bank.finance.liabilityMix': 'Composizione delle passività',
   'bank.finance.currentLedger': 'Posizione corrente del registro',
@@ -200,7 +203,8 @@ export const it: TranslationDict = {
   'bank.finance.weeklyFlow': 'Flusso d’argento settimanale',
   'bank.finance.weeklyFlowDescription': 'Bottino creato rispetto alle uscite dei membri.',
   'bank.finance.weeklyActivity': 'Operazioni settimanali',
-  'bank.finance.weeklyActivityDescription': 'Fight ed eventi della gilda nella finestra del report.',
+  'bank.finance.weeklyActivityDescription':
+    'Fight ed eventi della gilda nella finestra del report.',
   'bank.finance.fights': 'Fight',
   'bank.finance.events': 'Eventi',
   'bank.finance.splitOutflow': 'Pagamenti split',
@@ -266,6 +270,7 @@ export const it: TranslationDict = {
   'splits.net_formula': 'Stimato − Fee − Riparazioni + Borse',
   'splits.roster_hint': 'Regola le quote in percentuale',
   'splits.fee_invalid': 'La fee deve essere tra 0 e 100%.',
+  'splits.weight_sum_invalid': 'La somma dei pesi dei partecipanti deve essere 100%.',
   'splits.roster_empty': 'Nessun partecipante nel roster',
   'splits.remove_participant': 'Rimuovi partecipante',
   'splits.pending_payout': 'Pagamento in attesa',
@@ -308,7 +313,8 @@ export const it: TranslationDict = {
   'events.create.playerCap': 'Cap giocatori',
   'events.create.playerCapHint':
     "Soglia di pianificazione opzionale. Al raggiungimento l'evento passa automaticamente alla prossima espansione della comp e non blocca mai le iscrizioni.",
-  'events.create.playerCapInvalid': 'Il cap giocatori deve essere un numero intero maggiore di zero.',
+  'events.create.playerCapInvalid':
+    'Il cap giocatori deve essere un numero intero maggiore di zero.',
   'events.discordRoles.label': 'Ruoli Discord da pingare',
   'events.discordRoles.hint': 'Seleziona uno o più ruoli per l’annuncio dell’evento.',
   'events.discordRoles.search': 'Cerca ruoli',
@@ -370,6 +376,7 @@ export const it: TranslationDict = {
   'events.detail.comp_capacity': 'Capacità',
   'events.detail.primary_build': 'Build primaria',
   'events.detail.secondary_build': 'Build secondaria',
+  'events.detail.fill_option': 'Fill — qualsiasi ruolo / build',
   'events.detail.no_opponents': 'Nessun dato avversari.',
   'events.detail.no_battles': 'Nessuna battaglia collegata.',
   'events.detail.manage_battles': 'Gestisci battaglie',
@@ -609,10 +616,13 @@ export const it: TranslationDict = {
   'comps.createVariantTooltip': 'Crea una variante figlia per questa composizione',
   'comps.derivedFrom': 'Derivata da',
   'comps.expansionAdditions': 'Build e quantità aggiuntive',
-  'comps.expansionHint': 'Le build della comp padre vengono ereditate automaticamente. Aggiungi qui solo nuove build o quantità aggiuntive.',
+  'comps.expansionHint':
+    'Le build della comp padre vengono ereditate automaticamente. Aggiungi qui solo nuove build o quantità aggiuntive.',
   'comps.expandAll': 'Espandi tutto',
   'comps.collapseAll': 'Comprimi tutto',
   'comps.noCompsMatch': 'Nessuna composizione corrisponde ai criteri di ricerca o filtro.',
+  'comps.showingCount': 'Visualizzate {shown} di {total}',
+  'comps.loadMore': 'Carica altro',
 
   'albion.title': 'Collegamento Albion',
   'albion.subtitle': 'Collega Discord al tuo personaggio di gioco.',
@@ -641,7 +651,8 @@ export const it: TranslationDict = {
   'siphoned.weeklyHint':
     "Aggiorna questo registro manualmente almeno una volta a settimana importando l'ultimo export di Albion.",
   'siphoned.addEntry': 'Aggiungi voce manuale',
-  'siphoned.missingManagePermission': 'Puoi visualizzare questo registro, ma per importare o modificare le voci serve il permesso siphoned.ingest.',
+  'siphoned.missingManagePermission':
+    'Puoi visualizzare questo registro, ma per importare o modificare le voci serve il permesso siphoned.ingest.',
   'siphoned.editEntry': 'Modifica voce',
   'siphoned.saveEntry': 'Salva voce',
   'siphoned.entryAdded': 'Voce aggiunta',
@@ -683,6 +694,7 @@ export const it: TranslationDict = {
   'regears.rejectTitle': 'Rifiuta regear',
   'regears.acceptHint':
     'Modifica i prezzi e i slot inclusi. Il totale si ricalcola in tempo reale.',
+  'regears.negativePrice': 'Il prezzo unitario non può essere negativo.',
   'regears.rejectWarning':
     'Il rifiuto è definitivo. Il membro non può richiedere di nuovo questa morte.',
   'regears.rejectReason': 'Motivo',
@@ -757,10 +769,12 @@ export const it: TranslationDict = {
 
   // Season Overview
   'season.title': 'Panoramica Stagione',
-  'season.subtitle': 'Progresso della stagione attiva di gilda, traguardi e classifiche competitive.',
+  'season.subtitle':
+    'Progresso della stagione attiva di gilda, traguardi e classifiche competitive.',
   'season.hero.active': 'Stagione Attiva',
   'season.hero.noActive': 'Nessuna Stagione Attiva',
-  'season.hero.noActiveDesc': 'Nessuna stagione di gilda è attualmente in corso. Gli XP e le attività continuano ad accumularsi nei totali globali.',
+  'season.hero.noActiveDesc':
+    'Nessuna stagione di gilda è attualmente in corso. Gli XP e le attività continuano ad accumularsi nei totali globali.',
   'season.hero.status.live': 'In corso',
   'season.hero.status.upcoming': 'In arrivo',
   'season.hero.status.ended': 'Conclusa',
@@ -791,7 +805,8 @@ export const it: TranslationDict = {
   'season.tabs.siphoned': 'Energia Siphonata',
   'season.tabs.deathfame': 'Death Fame',
   'season.rankings.title': 'Classifiche di Categoria',
-  'season.rankings.subtitle': 'Confronta le prestazioni dei membri della gilda nelle categorie della stagione.',
+  'season.rankings.subtitle':
+    'Confronta le prestazioni dei membri della gilda nelle categorie della stagione.',
   'season.podium.champion': '1° Posto',
   'season.podium.runnerUp': '2° Posto',
   'season.podium.thirdPlace': '3° Posto',
@@ -846,16 +861,20 @@ export const it: TranslationDict = {
   'splits.batch.complete': 'Completa selezionati',
   'splits.batch.completed': 'split completati',
   'splits.batch.confirmTitle': 'Conferma Liquidazione Batch Split',
-  'splits.batch.confirmSubtitle': 'Riepilogo delle transazioni e delle quote che verranno accreditate ai membri',
+  'splits.batch.confirmSubtitle':
+    'Riepilogo delle transazioni e delle quote che verranno accreditate ai membri',
   'splits.batch.selectedSplits': 'Split Selezionati',
   'splits.batch.totalNetPayout': 'Valore Netto Totale',
   'splits.batch.totalRecipients': 'Partecipanti Totali',
   'splits.batch.splitsList': 'Elenco Split nel Batch',
-  'splits.batch.confirmWarning': 'Completando questo batch verranno generate le transazioni di credito bancario individuali per ogni partecipante.',
+  'splits.batch.confirmWarning':
+    'Completando questo batch verranno generate le transazioni di credito bancario individuali per ogni partecipante.',
   'splits.batch.acceptAndPay': 'Accetta e Liquida Batch',
   'splits.detail.confirmCompleteTitle': 'Conferma Liquidazione Split',
-  'splits.detail.confirmCompleteSubtitle': 'Riepilogo delle quote che verranno accreditate ai membri',
-  'splits.detail.confirmCompleteWarning': 'Questa operazione accrediterà immediatamente le quote nel conto banca di ciascun partecipante.',
+  'splits.detail.confirmCompleteSubtitle':
+    'Riepilogo delle quote che verranno accreditate ai membri',
+  'splits.detail.confirmCompleteWarning':
+    'Questa operazione accrediterà immediatamente le quote nel conto banca di ciascun partecipante.',
   'splits.detail.confirmCompleteAction': 'Accetta e Liquida Split',
   'splits.detail.transactionsTitle': 'Transazioni',
   'splits.detail.transactionsEmpty': 'Nessuna transazione collegata a questo split.',
@@ -864,7 +883,8 @@ export const it: TranslationDict = {
   'bank.withdraw.confirmSubtitle': 'Riepilogo delle transazioni richieste da liquidare',
   'bank.withdraw.transactionsList': 'Transazioni da Liquidare',
   'bank.withdraw.totalPayout': 'Importo Totale da Liquidare',
-  'bank.withdraw.confirmWarning': 'Questa operazione sposterà le transazioni selezionate in stato Prelevato e registrerà l avvenuto pagamento.',
+  'bank.withdraw.confirmWarning':
+    'Questa operazione sposterà le transazioni selezionate in stato Prelevato e registrerà l avvenuto pagamento.',
   'bank.withdraw.confirmAction': 'Accetta e Paga',
   'bank.withdraw.playerDialogTitle': 'Richieste di Prelievo · {player}',
   'bank.withdraw.playerDialogSubtitle': 'Seleziona le singole transazioni da accettare o rifiutare',
@@ -892,7 +912,8 @@ export const it: TranslationDict = {
   'admin.hub.islandsHint': 'Città, isole e tab loot usati per localizzare gli split.',
   'admin.hub.financeHint': 'Passività, pagamenti, fonti e destinazioni dell’intero registro.',
   'admin.hub.withdrawalsHint': 'Rivedi e liquida i prelievi richiesti dai membri.',
-  'admin.hub.transactionsHint': 'Registro completo della gilda: crea, modifica o elimina qualsiasi transazione.',
+  'admin.hub.transactionsHint':
+    'Registro completo della gilda: crea, modifica o elimina qualsiasi transazione.',
   'admin.hub.usersHint': 'Elenco membri della gilda, gestione ruoli e collegamenti Albion.',
   'admin.regears.title': 'Impostazioni regear',
   'admin.regears.hint':
@@ -940,7 +961,8 @@ export const it: TranslationDict = {
   'admin.islands.detail.notFound': 'Questa isola non è stata trovata.',
   'admin.islands.detail.overview': 'Dettagli isola',
   'admin.islands.detail.tabsTitle': 'Gestione tab casse',
-  'admin.islands.detail.tabsHint': 'Casse disponibili per depositare i bottini degli split su quest isola.',
+  'admin.islands.detail.tabsHint':
+    'Casse disponibili per depositare i bottini degli split su quest isola.',
   'admin.islands.detail.tabName': 'Nome tab',
   'admin.islands.detail.sortOrder': 'Ordinamento',
   'admin.islands.detail.moveUp': 'Sposta su',
@@ -949,11 +971,14 @@ export const it: TranslationDict = {
   'admin.islands.detail.deleteTab': 'Elimina tab',
   'admin.islands.detail.tabUpdated': 'Tab aggiornata.',
   'admin.islands.detail.tabDeleted': 'Tab eliminata.',
-  'admin.islands.detail.confirmDelete': 'Eliminare quest isola? Non sarà più possibile localizzare split qui.',
-  'admin.islands.detail.confirmDeleteTab': 'Eliminare questa tab? Gli split già collegati rimarranno invariati.',
+  'admin.islands.detail.confirmDelete':
+    'Eliminare quest isola? Non sarà più possibile localizzare split qui.',
+  'admin.islands.detail.confirmDeleteTab':
+    'Eliminare questa tab? Gli split già collegati rimarranno invariati.',
   'admin.islands.detail.noTabs': 'Nessuna tab configurata per quest isola.',
   'admin.transactions.title': 'Transazioni',
-  'admin.transactions.hint': 'Il registro completo della gilda. Crea, modifica o elimina qualsiasi transazione.',
+  'admin.transactions.hint':
+    'Il registro completo della gilda. Crea, modifica o elimina qualsiasi transazione.',
   'admin.transactions.empty': 'Nessuna transazione ancora.',
   'admin.transactions.create': 'Nuova transazione',
   'admin.transactions.created': 'Transazione creata.',
@@ -1028,7 +1053,8 @@ export const it: TranslationDict = {
   'admin.discord.ctaChannelHint':
     'Gli eventi call-to-arms urgenti ricevono qui un annuncio separato.',
   'admin.discord.splitsForumChannel': 'Forum Channel degli split',
-  'admin.discord.splitsForumChannelHint': 'Qui il bot crea un thread Forum dedicato per ogni split.',
+  'admin.discord.splitsForumChannelHint':
+    'Qui il bot crea un thread Forum dedicato per ogni split.',
   'admin.discord.auditLogChannel': 'Canale audit log',
   'admin.discord.auditLogChannelHint': 'Riceve una copia di ogni voce dell\u2019audit log.',
   'admin.discord.transactionSpamChannel': 'Canale attivit\u00e0 transazioni',
@@ -1198,15 +1224,20 @@ export const it: TranslationDict = {
   'intel.record': 'V / S',
   'intel.winRate': 'Percentuale vittorie',
   'intel.performanceEvidence': 'Evidenze di rendimento',
-  'intel.performanceEvidenceHint': 'Le classifiche usano solo dati registrati nel report. Ogni pannello dichiara la propria copertura.',
+  'intel.performanceEvidenceHint':
+    'Le classifiche usano solo dati registrati nel report. Ogni pannello dichiara la propria copertura.',
   'intel.reportWindow': 'Intervallo del report:',
   'intel.playerPerformance': 'Rendimento giocatori',
-  'intel.playerPerformanceUnavailable': 'Nessun record di combattimento dei giocatori in questo intervallo.',
+  'intel.playerPerformanceUnavailable':
+    'Nessun record di combattimento dei giocatori in questo intervallo.',
   'intel.compPerformance': 'Rendimento composizioni',
-  'intel.compPerformanceUnavailable': 'Nessun record di composizione attribuito in questo intervallo.',
+  'intel.compPerformanceUnavailable':
+    'Nessun record di composizione attribuito in questo intervallo.',
   'intel.buildPerformance': 'Rendimento build',
-  'intel.buildPerformanceUnavailable': 'I dati sugli esiti per build non sono disponibili. Sono selezioni pianificate, non risultati di rendimento.',
-  'intel.buildCoverageUnavailable': 'Nessuna assegnazione di build pianificata disponibile per la finestra tendenze corrente di 30 giorni.',
+  'intel.buildPerformanceUnavailable':
+    'I dati sugli esiti per build non sono disponibili. Sono selezioni pianificate, non risultati di rendimento.',
+  'intel.buildCoverageUnavailable':
+    'Nessuna assegnazione di build pianificata disponibile per la finestra tendenze corrente di 30 giorni.',
   'intel.assignments': 'assegnazioni',
   'intel.coverageNote': 'Battaglie attribuite:',
   'intel.coverageNoteHint':
@@ -1265,7 +1296,8 @@ export const it: TranslationDict = {
   'warns.ack': 'Conferma',
   'warns.acked': 'Gestita',
   'warns.issue': 'Emetti warn',
-  'warns.missingManagePermission': 'Puoi visualizzare questo registro, ma per emettere o revocare warn serve il permesso warns.issue.',
+  'warns.missingManagePermission':
+    'Puoi visualizzare questo registro, ma per emettere o revocare warn serve il permesso warns.issue.',
   'warns.issueSuccess': 'Warn emesso.',
   'warns.reason': 'Motivo',
   'warns.severity': 'Gravità',

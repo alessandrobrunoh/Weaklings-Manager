@@ -1,5 +1,14 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+  untracked,
+} from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
 
@@ -543,10 +552,12 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
 export class UserDetailPage {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
-  private readonly route = inject(ActivatedRoute);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
   private readonly albionCatalog = inject(AlbionCatalogService);
+
+  /** Bound from the route via `withComponentInputBinding`. */
+  readonly userId = input.required<string>();
 
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
@@ -621,8 +632,26 @@ export class UserDetailPage {
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
+  /**
+   * `userId` is a route-bound input, not a one-time constructor param.
+   * Angular's default route-reuse strategy keeps this component instance
+   * alive across navigations within the same route config (e.g. clicking
+   * from one member's roster row to another's) — without watching the
+   * signal here, the URL and `userId()` change but the page keeps showing
+   * the previous member until a hard refresh.
+   */
   constructor() {
-    void this.load();
+    effect(() => {
+      this.userId();
+      untracked(() => {
+        this.editing.set(false);
+        this.closeConfirm();
+        this.specializationEditing.set(false);
+        this.linkDialogOpen.set(false);
+        this.unlinkConfirmOpen.set(false);
+        void this.load();
+      });
+    });
   }
 
   protected roleChip(role: Role): string {
@@ -925,7 +954,7 @@ export class UserDetailPage {
     this.specializationNodes.set(nodes);
   }
 
-  protected async loadSpecializations(userId = Number(this.route.snapshot.paramMap.get('userId'))): Promise<void> {
+  protected async loadSpecializations(userId = Number(this.userId())): Promise<void> {
     if (!Number.isFinite(userId) || userId <= 0) return;
     this.specLoading.set(true);
     this.specLoadFailed.set(false);
@@ -944,7 +973,7 @@ export class UserDetailPage {
   }
 
   protected async load(): Promise<void> {
-    const userId = Number(this.route.snapshot.paramMap.get('userId'));
+    const userId = Number(this.userId());
     if (!Number.isFinite(userId) || userId <= 0) {
       this.member.set(null);
       return;

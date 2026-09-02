@@ -80,6 +80,13 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 
+/**
+ * Sentinel `<select>` value for the virtual Fill role — a participation with no build. The wire
+ * format is a `null` `primary_build_id`; an empty option value already means "nothing picked".
+ * Mirrors `FILL_SIGNUP_VALUE` in the Discord bot's signup menu.
+ */
+const FILL_BUILD_VALUE = 'fill';
+
 type EventDetailTab = 'roster' | 'overview' | 'battles' | 'splits';
 
 type PendingConfirm =
@@ -229,7 +236,9 @@ interface EventRosterParty {
 
               <!-- Countdown Badge -->
               @if (detail.status === 'live') {
-                <span class="chip chip--success font-mono text-xs font-semibold inline-flex items-center gap-1.5 animate-pulse">
+                <span
+                  class="chip chip--success font-mono text-xs font-semibold inline-flex items-center gap-1.5 animate-pulse"
+                >
                   <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
                   {{ t('events.detail.countdown_live') }}
                 </span>
@@ -245,7 +254,9 @@ interface EventRosterParty {
               }
             </div>
 
-            <div class="flex flex-wrap items-center gap-3 text-xs text-[var(--color-text-secondary)]">
+            <div
+              class="flex flex-wrap items-center gap-3 text-xs text-[var(--color-text-secondary)]"
+            >
               <span class="inline-flex items-center gap-1.5 font-medium text-[var(--color-text)]">
                 <app-icon name="calendar" size="0.875rem" />
                 {{ formatDate(detail.event_date_utc) }}
@@ -263,7 +274,9 @@ interface EventRosterParty {
               <span class="text-[var(--color-text-tertiary)]">&bull;</span>
 
               <!-- Capacity Progress Pill -->
-              <div class="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-[var(--color-surface-2)] border border-[var(--color-border)]">
+              <div
+                class="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-[var(--color-surface-2)] border border-[var(--color-border)]"
+              >
                 <span>{{ t('events.detail.comp_capacity') }}:</span>
                 <span class="font-mono font-bold text-[var(--color-text)]">
                   {{ rosterFilledSeats() }}/{{ rosterSeatCount() }}
@@ -271,7 +284,9 @@ interface EventRosterParty {
                 <div class="h-1.5 w-12 bg-[var(--color-border)] rounded-full overflow-hidden">
                   <div
                     class="h-full bg-[var(--color-success)] rounded-full transition-all"
-                    [style.width.%]="rosterSeatCount() > 0 ? (rosterFilledSeats() / rosterSeatCount()) * 100 : 0"
+                    [style.width.%]="
+                      rosterSeatCount() > 0 ? (rosterFilledSeats() / rosterSeatCount()) * 100 : 0
+                    "
                   ></div>
                 </div>
               </div>
@@ -287,22 +302,39 @@ interface EventRosterParty {
           <!-- Right Participation Card -->
           <div class="flex-shrink-0">
             @if (currentParticipant(); as participation) {
-              <div class="rounded-xl p-3.5 border border-emerald-500/30 bg-emerald-500/5 min-w-[280px] space-y-2">
+              <div
+                class="rounded-xl p-3.5 border border-emerald-500/30 bg-emerald-500/5 min-w-[280px] space-y-2"
+              >
                 <div class="flex items-center justify-between gap-2">
                   <div class="flex items-center gap-2">
                     <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span class="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                    <span
+                      class="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400"
+                    >
                       {{ t('events.detail.registered_as') }}
                     </span>
                   </div>
                   <span class="chip chip--success text-[10px] font-bold uppercase px-1.5 py-0.5">
-                    {{ ownRosterSeat() ? 'Titolare' : (isCurrentUserOnRosterBench() ? 'Bench' : 'Iscritto') }}
+                    {{
+                      ownRosterSeat()
+                        ? 'Titolare'
+                        : isCurrentUserOnRosterBench()
+                          ? 'Bench'
+                          : 'Iscritto'
+                    }}
                   </span>
                 </div>
 
                 <div class="text-xs">
                   <p class="font-semibold text-sm text-[var(--color-text)] truncate">
-                    {{ participation.primary_build_name || 'Build #' + participation.primary_build_id }}
+                    @if (participation.primary_build_id === null) {
+                      {{ t('events.detail.fill_option') }}
+                    } @else {
+                      {{
+                        participation.primary_build_name ||
+                          'Build #' + participation.primary_build_id
+                      }}
+                    }
                   </p>
                   @if (participation.secondary_build_name) {
                     <p class="text-[11px] text-[var(--color-text-secondary)] truncate">
@@ -329,7 +361,9 @@ interface EventRosterParty {
                 </div>
               </div>
             } @else {
-              <div class="rounded-xl p-4 border border-[var(--color-border)] bg-[var(--color-surface-2)] min-w-[260px] flex flex-col items-start gap-2.5">
+              <div
+                class="rounded-xl p-4 border border-[var(--color-border)] bg-[var(--color-surface-2)] min-w-[260px] flex flex-col items-start gap-2.5"
+              >
                 <div class="flex items-center gap-2">
                   <app-icon name="users" size="1rem" />
                   <span class="text-xs font-medium text-[var(--color-text)]">
@@ -364,15 +398,14 @@ interface EventRosterParty {
                 </p>
 
                 <!-- 1. MY ASSIGNMENT SPOTLIGHT CARD -->
-                <section
-                  class="card p-4 sm:p-5 shadow-sm"
-                  aria-labelledby="my-assignment-heading"
-                >
+                <section class="card p-4 sm:p-5 shadow-sm" aria-labelledby="my-assignment-heading">
                   <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
                       <div class="flex items-center gap-2">
                         <span class="h-2 w-2 rounded-full bg-[var(--color-primary)]"></span>
-                        <p class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]">
+                        <p
+                          class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
+                        >
                           Roster Room
                         </p>
                       </div>
@@ -390,32 +423,44 @@ interface EventRosterParty {
                           class="flex items-center gap-3 rounded-xl border-2 px-4 py-2.5"
                           [class]="roleSpotlightClass(seat.role)"
                         >
-                          <span class="font-mono text-2xl sm:text-3xl font-black leading-none" aria-hidden="true">
+                          <span
+                            class="font-mono text-2xl sm:text-3xl font-black leading-none"
+                            aria-hidden="true"
+                          >
                             {{ roleGlyph(seat.role) }}
                           </span>
                           <div class="flex flex-col leading-tight">
-                            <span class="text-xl sm:text-2xl font-extrabold uppercase tracking-wide">
+                            <span
+                              class="text-xl sm:text-2xl font-extrabold uppercase tracking-wide"
+                            >
                               {{ rosterSeatRoleLabel(seat) }}
                             </span>
                             <span class="font-mono text-[11px] font-semibold opacity-80">
-                              Party {{ rosterSeatPartyNumber(seat) }} &middot; Posizione {{ rosterSeatPosition(seat) }}
+                              Party {{ rosterSeatPartyNumber(seat) }} &middot; Posizione
+                              {{ rosterSeatPosition(seat) }}
                             </span>
                           </div>
                         </div>
                         <span class="font-semibold text-sm text-[var(--color-text)]">
                           {{ rosterSeatBuildName(seat) }}
                           @if (rosterSeatBuildVersion(seat)) {
-                            <span class="text-xs text-[var(--color-text-secondary)] font-mono">v{{ rosterSeatBuildVersion(seat) }}</span>
+                            <span class="text-xs text-[var(--color-text-secondary)] font-mono"
+                              >v{{ rosterSeatBuildVersion(seat) }}</span
+                            >
                           }
                         </span>
                       </div>
                     } @else if (isCurrentUserOnRosterBench()) {
-                      <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs font-semibold">
+                      <div
+                        class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs font-semibold"
+                      >
                         <app-icon name="alert" size="0.875rem" />
                         <span>Sei in Bench (in attesa di assegnazione posto da un ufficiale).</span>
                       </div>
                     } @else {
-                      <div class="flex items-center gap-2 text-xs text-[var(--color-text-secondary)]">
+                      <div
+                        class="flex items-center gap-2 text-xs text-[var(--color-text-secondary)]"
+                      >
                         <span>Nessun incarico assegnato. Iscriviti per partecipare.</span>
                       </div>
                     }
@@ -425,11 +470,16 @@ interface EventRosterParty {
                   @if (ownRosterSeat(); as seat) {
                     @if (rosterSeatBuildItems(seat).length > 0) {
                       <div class="mt-4 pt-4 border-t border-[var(--color-border)]">
-                        <p class="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider mb-2">
+                        <p
+                          class="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider mb-2"
+                        >
                           Equipaggiamento per questo ruolo:
                         </p>
                         <div class="flex flex-wrap gap-2">
-                          @for (item of rosterSeatBuildItems(seat); track item.slot + ':' + item.loadout) {
+                          @for (
+                            item of rosterSeatBuildItems(seat);
+                            track item.slot + ':' + item.loadout
+                          ) {
                             <div
                               class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--color-surface-2)] border border-[var(--color-border)] text-xs"
                               [appTooltip]="slotLabel(item.slot)"
@@ -442,11 +492,15 @@ interface EventRosterParty {
                                   loading="lazy"
                                 />
                               } @else {
-                                <span class="font-mono text-[10px] text-[var(--color-text-secondary)]">
+                                <span
+                                  class="font-mono text-[10px] text-[var(--color-text-secondary)]"
+                                >
                                   {{ slotGlyph(item.slot) }}
                                 </span>
                               }
-                              <span class="font-medium text-[var(--color-text)] truncate max-w-[140px]">
+                              <span
+                                class="font-medium text-[var(--color-text)] truncate max-w-[140px]"
+                              >
                                 {{ item.openalbion_item_name }}
                               </span>
                             </div>
@@ -459,12 +513,18 @@ interface EventRosterParty {
                     @if (rosterSeatAbilityRows(seat); as abilityRows) {
                       @if (abilityRows.length > 0) {
                         <div class="mt-4 pt-4 border-t border-[var(--color-border)] grid gap-3">
-                          <p class="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                          <p
+                            class="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider"
+                          >
                             Abilità e passive
                           </p>
                           @for (row of abilityRows; track row.slot) {
-                            <div class="p-3 bg-[var(--color-surface-2)] rounded-lg grid gap-1.5 border border-[var(--color-border)]">
-                              <span class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                            <div
+                              class="p-3 bg-[var(--color-surface-2)] rounded-lg grid gap-1.5 border border-[var(--color-border)]"
+                            >
+                              <span
+                                class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
+                              >
                                 {{ row.itemName }}
                               </span>
                               <app-ability-bar [slots]="row.slots" />
@@ -482,19 +542,27 @@ interface EventRosterParty {
                     <!-- Left: Posti & Ruoli counts -->
                     <div class="flex flex-wrap items-center gap-3">
                       <div class="flex items-center gap-2">
-                        <span class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]">
+                        <span
+                          class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
+                        >
                           Posti:
                         </span>
-                        <span class="font-mono text-xs px-2.5 py-1 rounded-full bg-[var(--color-surface-2)] border border-[var(--color-border)] font-bold text-[var(--color-text)]">
+                        <span
+                          class="font-mono text-xs px-2.5 py-1 rounded-full bg-[var(--color-surface-2)] border border-[var(--color-border)] font-bold text-[var(--color-text)]"
+                        >
                           {{ rosterFilledSeats() }} / {{ rosterSeatCount() }}
                         </span>
                       </div>
 
                       <div class="flex items-center gap-2">
-                        <span class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]">
+                        <span
+                          class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
+                        >
                           Bench:
                         </span>
-                        <span class="font-mono text-xs px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold border border-amber-500/30">
+                        <span
+                          class="font-mono text-xs px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold border border-amber-500/30"
+                        >
                           {{ roster.bench.length }} in attesa
                         </span>
                       </div>
@@ -504,7 +572,10 @@ interface EventRosterParty {
                     <div class="flex flex-wrap items-center gap-2">
                       <!-- Weapon Spec Filter -->
                       <div class="flex items-center gap-2">
-                        <span class="text-xs text-[var(--color-text-secondary)] font-medium whitespace-nowrap">Spec:</span>
+                        <span
+                          class="text-xs text-[var(--color-text-secondary)] font-medium whitespace-nowrap"
+                          >Spec:</span
+                        >
                         <select
                           class="select select--sm text-xs py-1 px-2.5 h-8 w-44"
                           aria-label="Filtro spec arma"
@@ -561,12 +632,16 @@ interface EventRosterParty {
 
                 <!-- 3. ACTIVE COMMAND NOTICE BANNER (Swap or Assign mode) -->
                 @if (rosterSwapSource(); as source) {
-                  <div class="card p-3.5 border-2 border-[var(--color-primary)] bg-[var(--color-surface-2)] flex items-center justify-between gap-3 shadow-md animate-pulse">
+                  <div
+                    class="card p-3.5 border-2 border-[var(--color-primary)] bg-[var(--color-surface-2)] flex items-center justify-between gap-3 shadow-md animate-pulse"
+                  >
                     <div class="flex items-center gap-2.5">
                       <app-icon name="refresh" size="1.125rem" />
                       <span class="text-xs font-semibold text-[var(--color-text)]">
                         Modalità Scambio attiva: seleziona il posto di destinazione per
-                        <strong class="text-[var(--color-primary)]">{{ source.participant?.username }}</strong>
+                        <strong class="text-[var(--color-primary)]">{{
+                          source.participant?.username
+                        }}</strong>
                         ({{ source.build_name }}).
                       </span>
                     </div>
@@ -579,12 +654,16 @@ interface EventRosterParty {
                     </button>
                   </div>
                 } @else if (rosterAssignTarget(); as target) {
-                  <div class="card p-3.5 border-2 border-[var(--color-primary)] bg-[var(--color-surface-2)] flex items-center justify-between gap-3 shadow-md animate-pulse">
+                  <div
+                    class="card p-3.5 border-2 border-[var(--color-primary)] bg-[var(--color-surface-2)] flex items-center justify-between gap-3 shadow-md animate-pulse"
+                  >
                     <div class="flex items-center gap-2.5">
                       <app-icon name="plus" size="1.125rem" />
                       <span class="text-xs font-semibold text-[var(--color-text)]">
                         Modalità Assegnazione attiva: seleziona un membro dalla panchina per
-                        <strong>Party {{ target.party_number }}, posizione {{ target.position }}</strong>
+                        <strong
+                          >Party {{ target.party_number }}, posizione {{ target.position }}</strong
+                        >
                         ({{ target.build_name }}).
                       </span>
                     </div>
@@ -599,7 +678,9 @@ interface EventRosterParty {
                 }
 
                 <!-- 4. MAIN ROSTER LAYOUT: PARTIES GRID + BENCH TRAY -->
-                <div class="grid gap-5 lg:grid-cols-[1fr_22rem] xl:grid-cols-[1fr_24rem] items-start">
+                <div
+                  class="grid gap-5 lg:grid-cols-[1fr_22rem] xl:grid-cols-[1fr_24rem] items-start"
+                >
                   <!-- PARTIES SECTION -->
                   <div class="space-y-4">
                     <div class="grid gap-4 md:grid-cols-2">
@@ -609,7 +690,9 @@ interface EventRosterParty {
                           [attr.aria-labelledby]="'party-heading-' + party.partyNumber"
                         >
                           <!-- Party Header -->
-                          <header class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface-1)] px-4 py-3">
+                          <header
+                            class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface-1)] px-4 py-3"
+                          >
                             <div class="flex items-center gap-2">
                               <h3
                                 [id]="'party-heading-' + party.partyNumber"
@@ -623,10 +706,14 @@ interface EventRosterParty {
                             </div>
 
                             <div class="flex items-center gap-2">
-                              <div class="h-1.5 w-16 bg-[var(--color-surface-2)] rounded-full overflow-hidden">
+                              <div
+                                class="h-1.5 w-16 bg-[var(--color-surface-2)] rounded-full overflow-hidden"
+                              >
                                 <div
                                   class="h-full bg-[var(--color-success)] rounded-full transition-all"
-                                  [style.width.%]="(rosterPartyFilledSeats(party) / party.seats.length) * 100"
+                                  [style.width.%]="
+                                    (rosterPartyFilledSeats(party) / party.seats.length) * 100
+                                  "
                                 ></div>
                               </div>
                               <span class="font-mono text-xs font-bold text-[var(--color-text)]">
@@ -636,18 +723,38 @@ interface EventRosterParty {
                           </header>
 
                           <!-- Seats List -->
-                          <ol class="divide-y divide-[var(--color-border)]" [attr.aria-label]="rosterPartyName(party)">
-                            @for (seat of party.seats; track seat.party_number + ':' + seat.position) {
+                          <ol
+                            class="divide-y divide-[var(--color-border)]"
+                            [attr.aria-label]="rosterPartyName(party)"
+                          >
+                            @for (
+                              seat of party.seats;
+                              track seat.party_number + ':' + seat.position
+                            ) {
                               <li
                                 class="p-3 transition-all flex items-center justify-between gap-3 hover:bg-[var(--color-surface-hover)] select-none"
                                 [class]="roleBorderClass(seat.role)"
-                                [class.bg-[var(--color-surface-2)]]="rosterSwapSource()?.key === rosterSeatKey(seat)"
-                                [class.ring-2]="rosterSwapSource()?.key === rosterSeatKey(seat) || dropTargetSeatKey() === rosterSeatKey(seat)"
-                                [class.ring-[var(--color-primary)]]="rosterSwapSource()?.key === rosterSeatKey(seat) || dropTargetSeatKey() === rosterSeatKey(seat)"
-                                [class.bg-[var(--color-primary)]/10]="dropTargetSeatKey() === rosterSeatKey(seat)"
+                                [class.bg-[var(--color-surface-2)]]="
+                                  rosterSwapSource()?.key === rosterSeatKey(seat)
+                                "
+                                [class.ring-2]="
+                                  rosterSwapSource()?.key === rosterSeatKey(seat) ||
+                                  dropTargetSeatKey() === rosterSeatKey(seat)
+                                "
+                                [class.ring-[var(--color-primary)]]="
+                                  rosterSwapSource()?.key === rosterSeatKey(seat) ||
+                                  dropTargetSeatKey() === rosterSeatKey(seat)
+                                "
+                                [class.bg-[var(--color-primary)]/10]="
+                                  dropTargetSeatKey() === rosterSeatKey(seat)
+                                "
                                 [class.border-dashed]="dropTargetSeatKey() === rosterSeatKey(seat)"
                                 [class.opacity-40]="draggedSeat()?.key === rosterSeatKey(seat)"
-                                [attr.draggable]="canManageParticipants() && seat.participant !== null && !rosterCommandSaving()"
+                                [attr.draggable]="
+                                  canManageParticipants() &&
+                                  seat.participant !== null &&
+                                  !rosterCommandSaving()
+                                "
                                 (dragstart)="onSeatDragStart($event, seat)"
                                 (dragend)="onDragEnd()"
                                 (dragover)="onSeatDragOver($event, seat)"
@@ -681,7 +788,9 @@ interface EventRosterParty {
                                         loading="lazy"
                                       />
                                     } @else {
-                                      <span class="text-xs font-mono font-bold text-[var(--color-text-secondary)]">
+                                      <span
+                                        class="text-xs font-mono font-bold text-[var(--color-text-secondary)]"
+                                      >
                                         {{ roleGlyph(seat.role) }}
                                       </span>
                                     }
@@ -695,10 +804,14 @@ interface EventRosterParty {
                                       >
                                         {{ rosterSeatRoleLabel(seat) }}
                                       </span>
-                                      <span class="text-xs font-bold text-[var(--color-text)] truncate max-w-[12rem]">
+                                      <span
+                                        class="text-xs font-bold text-[var(--color-text)] truncate max-w-[12rem]"
+                                      >
                                         {{ seat.build_name }}
                                       </span>
-                                      <span class="text-[10px] font-mono text-[var(--color-text-secondary)]">
+                                      <span
+                                        class="text-[10px] font-mono text-[var(--color-text-secondary)]"
+                                      >
                                         #{{ seat.position }}
                                       </span>
                                     </div>
@@ -707,13 +820,12 @@ interface EventRosterParty {
                                     <div class="mt-1 flex items-center gap-2 min-w-0">
                                       @if (seat.participant; as participant) {
                                         <div class="flex items-center gap-1.5 min-w-0">
-                                          <app-avatar
-                                            [username]="participant.username"
-                                            size="xs"
-                                          />
+                                          <app-avatar [username]="participant.username" size="xs" />
                                           <span
                                             class="text-xs font-semibold truncate"
-                                            [class.text-[var(--color-primary)]]="participant.user_id === currentParticipant()?.user_id"
+                                            [class.text-[var(--color-primary)]]="
+                                              participant.user_id === currentParticipant()?.user_id
+                                            "
                                           >
                                             {{ participant.username }}
                                           </span>
@@ -722,19 +834,35 @@ interface EventRosterParty {
                                           @if (selectedSpecializationKey()) {
                                             <span
                                               class="font-mono text-[10px] font-bold px-1 py-0.2 rounded"
-                                              [class.bg-emerald-500/10]="participantSpecLevel(participant) >= 100"
-                                              [class.text-emerald-600]="participantSpecLevel(participant) >= 100"
-                                              [class.dark:text-emerald-400]="participantSpecLevel(participant) >= 100"
-                                              [class.bg-amber-500/10]="participantSpecLevel(participant) > 0 && participantSpecLevel(participant) < 100"
-                                              [class.text-amber-600]="participantSpecLevel(participant) > 0 && participantSpecLevel(participant) < 100"
-                                              [class.text-[var(--color-text-disabled)]]="participantSpecLevel(participant) === 0"
+                                              [class.bg-emerald-500/10]="
+                                                participantSpecLevel(participant) >= 100
+                                              "
+                                              [class.text-emerald-600]="
+                                                participantSpecLevel(participant) >= 100
+                                              "
+                                              [class.dark:text-emerald-400]="
+                                                participantSpecLevel(participant) >= 100
+                                              "
+                                              [class.bg-amber-500/10]="
+                                                participantSpecLevel(participant) > 0 &&
+                                                participantSpecLevel(participant) < 100
+                                              "
+                                              [class.text-amber-600]="
+                                                participantSpecLevel(participant) > 0 &&
+                                                participantSpecLevel(participant) < 100
+                                              "
+                                              [class.text-[var(--color-text-disabled)]]="
+                                                participantSpecLevel(participant) === 0
+                                              "
                                             >
                                               {{ participantSpecLevel(participant) }}/120
                                             </span>
                                           }
                                         </div>
                                       } @else {
-                                        <span class="text-xs italic text-[var(--color-text-disabled)]">
+                                        <span
+                                          class="text-xs italic text-[var(--color-text-disabled)]"
+                                        >
                                           + {{ t('events.detail.seat_empty') }}
                                         </span>
                                       }
@@ -796,7 +924,9 @@ interface EventRosterParty {
                           </ol>
                         </section>
                       } @empty {
-                        <p class="event-detail__empty text-center py-8">Nessuna party configurata.</p>
+                        <p class="event-detail__empty text-center py-8">
+                          Nessuna party configurata.
+                        </p>
                       }
                     </div>
                   </div>
@@ -815,11 +945,15 @@ interface EventRosterParty {
                     (drop)="onBenchDrop($event)"
                   >
                     <!-- Bench Header -->
-                    <div class="bg-[var(--color-surface-1)] px-4 py-3.5 border-b border-[var(--color-border)] space-y-2.5">
+                    <div
+                      class="bg-[var(--color-surface-1)] px-4 py-3.5 border-b border-[var(--color-border)] space-y-2.5"
+                    >
                       <div class="flex items-center justify-between">
                         <div class="flex items-center gap-2">
                           <app-icon name="users" size="1rem" />
-                          <h2 class="font-bold text-xs uppercase tracking-wider text-[var(--color-text)]">
+                          <h2
+                            class="font-bold text-xs uppercase tracking-wider text-[var(--color-text)]"
+                          >
                             {{ t('events.detail.unassigned_signups') }}
                           </h2>
                         </div>
@@ -829,7 +963,8 @@ interface EventRosterParty {
                       </div>
 
                       <p class="text-[11px] text-[var(--color-text-secondary)]">
-                        Membri iscritti in attesa di assegnazione a un posto. Trascina sui posti o trascina qui per liberare un posto.
+                        Membri iscritti in attesa di assegnazione a un posto. Trascina sui posti o
+                        trascina qui per liberare un posto.
                       </p>
 
                       <!-- Search in Bench -->
@@ -845,7 +980,9 @@ interface EventRosterParty {
                     </div>
 
                     @if (isDropTargetBench()) {
-                      <div class="m-3 p-3 rounded-xl border-2 border-dashed border-amber-500 bg-amber-500/15 text-amber-600 dark:text-amber-400 text-xs font-bold text-center animate-pulse flex items-center justify-center gap-2">
+                      <div
+                        class="m-3 p-3 rounded-xl border-2 border-dashed border-amber-500 bg-amber-500/15 text-amber-600 dark:text-amber-400 text-xs font-bold text-center animate-pulse flex items-center justify-center gap-2"
+                      >
                         <app-icon name="users" size="1rem" />
                         Rilascia qui per spostare in panchina
                       </div>
@@ -895,14 +1032,18 @@ interface EventRosterParty {
                           <div class="text-[11px] space-y-0.5 text-[var(--color-text-secondary)]">
                             <div class="flex items-center justify-between gap-1">
                               <span class="text-[var(--color-text-tertiary)]">1ª Build:</span>
-                              <span class="font-medium text-[var(--color-text)] truncate max-w-[13rem]">
+                              <span
+                                class="font-medium text-[var(--color-text)] truncate max-w-[13rem]"
+                              >
                                 {{ member.primary_build_name || 'Non specificata' }}
                               </span>
                             </div>
                             @if (member.secondary_build_name) {
                               <div class="flex items-center justify-between gap-1">
                                 <span class="text-[var(--color-text-tertiary)]">2ª Build:</span>
-                                <span class="text-[var(--color-text-secondary)] truncate max-w-[13rem]">
+                                <span
+                                  class="text-[var(--color-text-secondary)] truncate max-w-[13rem]"
+                                >
                                   {{ member.secondary_build_name }}
                                 </span>
                               </div>
@@ -910,7 +1051,9 @@ interface EventRosterParty {
                           </div>
                         </div>
                       } @empty {
-                        <div class="py-8 text-center text-xs text-[var(--color-text-secondary)] space-y-1">
+                        <div
+                          class="py-8 text-center text-xs text-[var(--color-text-secondary)] space-y-1"
+                        >
                           <p>{{ t('events.detail.bench_empty') }}</p>
                           <p class="text-[11px] text-[var(--color-text-tertiary)]">
                             Tutti gli iscritti hanno un posto assegnato nel roster.
@@ -929,7 +1072,9 @@ interface EventRosterParty {
               <section class="card p-6 border-[var(--color-error)] text-center space-y-2">
                 <app-icon name="alert" size="2rem" color="var(--color-danger)" />
                 <h2 class="text-sm font-bold text-[var(--color-text)]">Roster non disponibile</h2>
-                <p class="text-xs text-[var(--color-text-secondary)]">{{ rosterSnapshotError() }}</p>
+                <p class="text-xs text-[var(--color-text-secondary)]">
+                  {{ rosterSnapshotError() }}
+                </p>
                 <button type="button" class="btn btn--outline btn--sm mt-2" (click)="load()">
                   Riprova
                 </button>
@@ -1041,7 +1186,8 @@ interface EventRosterParty {
                               {{ player.player_name }}
                             </p>
                             <p class="text-[11px] text-[var(--color-text-secondary)]">
-                              {{ player.deaths }} {{ player.deaths === 1 ? 'morte' : 'morti' }} &middot;
+                              {{ player.deaths }}
+                              {{ player.deaths === 1 ? 'morte' : 'morti' }} &middot;
                               {{ player.priced_items }}/{{ player.total_items }} item
                             </p>
                           </div>
@@ -1051,7 +1197,9 @@ interface EventRosterParty {
                           <span class="font-mono text-xs font-bold text-[var(--color-danger)]">
                             -{{ formatAmount(player.estimated_loss) }}
                           </span>
-                          <span class="block text-[10px] font-mono text-[var(--color-text-secondary)]">
+                          <span
+                            class="block text-[10px] font-mono text-[var(--color-text-secondary)]"
+                          >
                             silver
                           </span>
                         </div>
@@ -1059,7 +1207,9 @@ interface EventRosterParty {
                     }
                   </div>
                 } @else {
-                  <p class="event-detail__empty text-center py-8">{{ t('events.detail.no_opponents') }}</p>
+                  <p class="event-detail__empty text-center py-8">
+                    {{ t('events.detail.no_opponents') }}
+                  </p>
                 }
               </section>
 
@@ -1086,18 +1236,28 @@ interface EventRosterParty {
                           <span class="text-xs font-bold text-[var(--color-text)] truncate">
                             {{ opponent.guild_name || 'Gilda sconosciuta' }}
                           </span>
-                          <span class="text-xs font-mono font-medium text-[var(--color-text-secondary)]">
-                            {{ opponent.wins }}W / {{ opponent.losses }}L ({{ opponent.battles }} btl)
+                          <span
+                            class="text-xs font-mono font-medium text-[var(--color-text-secondary)]"
+                          >
+                            {{ opponent.wins }}W / {{ opponent.losses }}L ({{
+                              opponent.battles
+                            }}
+                            btl)
                           </span>
                         </div>
 
                         <div class="space-y-1">
-                          <div class="flex items-center justify-between text-[11px] font-mono text-[var(--color-text-secondary)]">
+                          <div
+                            class="flex items-center justify-between text-[11px] font-mono text-[var(--color-text-secondary)]"
+                          >
                             <span>Gilda: {{ formatCompact(opponent.guild_kill_fame) }}</span>
                             <span>Nemici: {{ formatCompact(opponent.opponent_kill_fame) }}</span>
                           </div>
                           @if (opponent.guild_kill_fame + opponent.opponent_kill_fame > 0) {
-                            <div class="event-detail__fill-bar" style="background: var(--color-danger)">
+                            <div
+                              class="event-detail__fill-bar"
+                              style="background: var(--color-danger)"
+                            >
                               <span
                                 [style.width.%]="
                                   (opponent.guild_kill_fame /
@@ -1113,7 +1273,9 @@ interface EventRosterParty {
                     }
                   </div>
                 } @else {
-                  <p class="event-detail__empty text-center py-8">{{ t('events.detail.no_opponents') }}</p>
+                  <p class="event-detail__empty text-center py-8">
+                    {{ t('events.detail.no_opponents') }}
+                  </p>
                 }
               </section>
             </div>
@@ -1131,7 +1293,9 @@ interface EventRosterParty {
                         detail.battles.length
                       }})
                     </h2>
-                    <span class="font-mono text-xs font-semibold text-[var(--color-text-secondary)]">
+                    <span
+                      class="font-mono text-xs font-semibold text-[var(--color-text-secondary)]"
+                    >
                       {{ detail.stats.wins }}W / {{ detail.stats.losses }}L
                     </span>
                     <span class="font-mono text-xs font-semibold text-[var(--color-danger)]">
@@ -1186,7 +1350,8 @@ interface EventRosterParty {
                           <p class="text-xs text-[var(--color-text-secondary)]">
                             {{ formatDate(fight.started_at) }} &middot; {{ fight.grouping_method }}
                             @if (fight.needs_review) {
-                              &middot; <span class="text-amber-500 font-semibold">necessita revisione</span>
+                              &middot;
+                              <span class="text-amber-500 font-semibold">necessita revisione</span>
                             }
                           </p>
                         </div>
@@ -1200,7 +1365,9 @@ interface EventRosterParty {
                         </button>
                       </div>
 
-                      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6 pt-3 border-t border-[var(--color-border)]">
+                      <div
+                        class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6 pt-3 border-t border-[var(--color-border)]"
+                      >
                         <div class="surface p-3">
                           <p class="event-detail__label">{{ t('battles.outcome') }}</p>
                           <p class="text-xs font-bold mt-1 uppercase">{{ metrics.outcome }}</p>
@@ -1218,19 +1385,25 @@ interface EventRosterParty {
                         @if (metrics.players !== null) {
                           <div class="surface p-3">
                             <p class="event-detail__label">{{ t('battles.players') }}</p>
-                            <p class="event-detail__value-sm mt-1">{{ formatNumber(metrics.players) }}</p>
+                            <p class="event-detail__value-sm mt-1">
+                              {{ formatNumber(metrics.players) }}
+                            </p>
                           </div>
                         }
                         @if (metrics.kills !== null) {
                           <div class="surface p-3">
                             <p class="event-detail__label">{{ t('battles.kills') }}</p>
-                            <p class="event-detail__value-sm mt-1 text-[var(--color-success)]">{{ formatNumber(metrics.kills) }}</p>
+                            <p class="event-detail__value-sm mt-1 text-[var(--color-success)]">
+                              {{ formatNumber(metrics.kills) }}
+                            </p>
                           </div>
                         }
                         @if (metrics.fame !== null) {
                           <div class="surface p-3">
                             <p class="event-detail__label">{{ t('battles.kill_fame') }}</p>
-                            <p class="event-detail__value-sm mt-1 text-[var(--color-success)]">{{ formatCompact(metrics.fame) }}</p>
+                            <p class="event-detail__value-sm mt-1 text-[var(--color-success)]">
+                              {{ formatCompact(metrics.fame) }}
+                            </p>
                           </div>
                         }
                       </div>
@@ -1244,7 +1417,9 @@ interface EventRosterParty {
                 <div class="space-y-3">
                   @for (battle of detail.battles; track battle.id) {
                     <article class="card p-5 shadow-sm space-y-3">
-                      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[var(--color-border)]">
+                      <div
+                        class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[var(--color-border)]"
+                      >
                         <div class="flex items-center gap-2.5 flex-wrap">
                           <span
                             class="chip font-mono text-xs font-bold"
@@ -1272,7 +1447,9 @@ interface EventRosterParty {
                         <div class="flex items-center gap-2">
                           <a
                             class="btn btn--ghost btn--sm text-xs"
-                            [href]="'https://albionbattles.com/battles/' + battle.albionbb_battle_id"
+                            [href]="
+                              'https://albionbattles.com/battles/' + battle.albionbb_battle_id
+                            "
                             target="_blank"
                             rel="noopener noreferrer"
                           >
@@ -1302,9 +1479,13 @@ interface EventRosterParty {
                         <div class="surface p-3">
                           <span class="event-detail__label">Kill / Morti</span>
                           <p class="font-mono text-sm font-bold text-[var(--color-text)] mt-0.5">
-                            <span class="text-[var(--color-success)]">{{ battle.guild_kills }}</span>
+                            <span class="text-[var(--color-success)]">{{
+                              battle.guild_kills
+                            }}</span>
                             /
-                            <span class="text-[var(--color-danger)]">{{ battle.guild_deaths }}</span>
+                            <span class="text-[var(--color-danger)]">{{
+                              battle.guild_deaths
+                            }}</span>
                           </p>
                         </div>
 
@@ -1350,7 +1531,9 @@ interface EventRosterParty {
 
                   <div class="flex items-center gap-3">
                     <div class="text-right">
-                      <span class="text-xs text-[var(--color-text-secondary)] block">Totale Netto:</span>
+                      <span class="text-xs text-[var(--color-text-secondary)] block"
+                        >Totale Netto:</span
+                      >
                       <strong class="text-sm font-mono font-bold text-[var(--color-success)]">
                         {{ formatAmount(detail.split_stats.completed_net_value) }} silver
                       </strong>
@@ -1369,10 +1552,14 @@ interface EventRosterParty {
                 </div>
 
                 @if (detail.split_stats.total_splits > 0) {
-                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-[var(--color-border)]">
+                  <div
+                    class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-[var(--color-border)]"
+                  >
                     <div class="surface p-3">
                       <p class="event-detail__label">{{ t('events.detail.split_total') }}</p>
-                      <p class="event-detail__value-sm mt-1 font-bold">{{ detail.split_stats.total_splits }}</p>
+                      <p class="event-detail__value-sm mt-1 font-bold">
+                        {{ detail.split_stats.total_splits }}
+                      </p>
                     </div>
                     <div class="surface p-3">
                       <p class="event-detail__label">{{ t('events.detail.split_completed') }}</p>
@@ -1388,7 +1575,9 @@ interface EventRosterParty {
                     </div>
                     <div class="surface p-3">
                       <p class="event-detail__label">{{ t('events.detail.split_net') }}</p>
-                      <p class="event-detail__value-sm mt-1 text-[var(--color-success)] font-mono font-bold">
+                      <p
+                        class="event-detail__value-sm mt-1 text-[var(--color-success)] font-mono font-bold"
+                      >
                         {{ formatAmount(detail.split_stats.completed_net_value) }}
                       </p>
                     </div>
@@ -1401,7 +1590,9 @@ interface EventRosterParty {
                 <div class="space-y-3">
                   @for (split of detail.splits; track split.id) {
                     <article class="card p-5 shadow-sm space-y-3">
-                      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[var(--color-border)]">
+                      <div
+                        class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[var(--color-border)]"
+                      >
                         <div class="flex items-center gap-2.5 flex-wrap">
                           <app-status-chip [value]="split.status" />
                           <a
@@ -1520,8 +1711,12 @@ interface EventRosterParty {
             <div>
               <span class="label">{{ t('events.detail.comp') }}</span>
               <div class="flex items-center gap-2">
-                <div class="flex-1 input flex items-center bg-[var(--color-surface-2)] text-xs truncate">
-                  <span class="truncate">{{ draftCompTitle() || t('events.detail.no_comp_linked') }}</span>
+                <div
+                  class="flex-1 input flex items-center bg-[var(--color-surface-2)] text-xs truncate"
+                >
+                  <span class="truncate">{{
+                    draftCompTitle() || t('events.detail.no_comp_linked')
+                  }}</span>
                 </div>
                 <button
                   type="button"
@@ -1548,7 +1743,8 @@ interface EventRosterParty {
               <input
                 class="input"
                 type="datetime-local"
-                [attr.min]="minScheduledAt"
+                required
+                [attr.min]="minScheduledAt()"
                 [value]="draftScheduledAt()"
                 (input)="onScheduledAtChange($event)"
               />
@@ -1598,22 +1794,26 @@ interface EventRosterParty {
         <form class="grid gap-4" (submit)="onJoinSubmit($event)">
           @if (compLoading()) {
             <app-loading [label]="t('common.loading')" />
-          } @else if (availableBuilds().length === 0) {
-            <p class="text-xs text-[var(--color-text-secondary)]">
-              {{ t('events.detail.no_builds') }}
-            </p>
           } @else {
+            @if (availableBuilds().length === 0) {
+              <p class="text-xs text-[var(--color-text-secondary)]">
+                {{ t('events.detail.no_builds') }}
+              </p>
+            }
             <label>
               <span class="label">{{ t('events.detail.primary_build') }} *</span>
-              <select
-                class="select"
-                required
-                [value]="draftPrimaryBuildId()"
-                (change)="onPrimaryBuildChange($event)"
-              >
-                <option value="">— Seleziona Build Primaria —</option>
+              <select class="select" required (change)="onPrimaryBuildChange($event)">
+                <option value="" [selected]="!draftPrimaryBuildId()">
+                  — Seleziona Build Primaria —
+                </option>
+                <option [value]="fillValue" [selected]="isFillSelected()">
+                  {{ t('events.detail.fill_option') }}
+                </option>
                 @for (entry of availableBuilds(); track entry.build_id) {
-                  <option [value]="entry.build_id">
+                  <option
+                    [value]="entry.build_id"
+                    [selected]="isSelectedBuild(draftPrimaryBuildId(), entry.build_id)"
+                  >
                     {{ entry.build.name }} &middot; {{ roleLabelName(entry.build.role) }}
                     @if (entry.build.category_name) {
                       ({{ entry.build.category_name }})
@@ -1623,21 +1823,24 @@ interface EventRosterParty {
               </select>
             </label>
 
-            <label>
-              <span class="label">{{ t('events.detail.secondary_build') }}</span>
-              <select
-                class="select"
-                [value]="draftSecondaryBuildId()"
-                (change)="onSecondaryBuildChange($event)"
-              >
-                <option value="">— Nessuna (Opzionale) —</option>
-                @for (entry of availableBuilds(); track entry.build_id) {
-                  <option [value]="entry.build_id">
-                    {{ entry.build.name }} &middot; {{ roleLabelName(entry.build.role) }}
+            @if (!isFillSelected()) {
+              <label>
+                <span class="label">{{ t('events.detail.secondary_build') }}</span>
+                <select class="select" (change)="onSecondaryBuildChange($event)">
+                  <option value="" [selected]="!draftSecondaryBuildId()">
+                    — Nessuna (Opzionale) —
                   </option>
-                }
-              </select>
-            </label>
+                  @for (entry of availableBuilds(); track entry.build_id) {
+                    <option
+                      [value]="entry.build_id"
+                      [selected]="isSelectedBuild(draftSecondaryBuildId(), entry.build_id)"
+                    >
+                      {{ entry.build.name }} &middot; {{ roleLabelName(entry.build.role) }}
+                    </option>
+                  }
+                </select>
+              </label>
+            }
 
             @if (joinError()) {
               <p class="text-xs text-[var(--color-danger)] font-semibold">{{ joinError() }}</p>
@@ -1647,11 +1850,7 @@ interface EventRosterParty {
               <button type="button" class="btn btn--ghost btn--sm" (click)="toggleJoinForm()">
                 {{ t('common.cancel') }}
               </button>
-              <button
-                type="submit"
-                class="btn btn--primary btn--sm"
-                [disabled]="joinSubmitting()"
-              >
+              <button type="submit" class="btn btn--primary btn--sm" [disabled]="joinSubmitting()">
                 {{ currentParticipant() ? t('common.save') : t('events.participate') }}
               </button>
             </div>
@@ -1662,7 +1861,11 @@ interface EventRosterParty {
 
     <!-- 3. MANAGE BATTLES DIALOG -->
     @if (showBattleLinkForm()) {
-      <app-dialog [title]="t('events.detail.manage_battles')" size="md" (closed)="toggleBattleLinkForm()">
+      <app-dialog
+        [title]="t('events.detail.manage_battles')"
+        size="md"
+        (closed)="toggleBattleLinkForm()"
+      >
         <form class="grid gap-4" (submit)="onBattleLinksSubmit($event)">
           <div>
             <div class="flex justify-between items-center mb-2">
@@ -1680,7 +1883,9 @@ interface EventRosterParty {
             <div class="flex flex-col gap-2 max-h-60 overflow-y-auto pr-1">
               @for (link of draftBattleLinks(); track link.id) {
                 <div class="flex items-center gap-2">
-                  <div class="flex-1 input flex items-center bg-[var(--color-surface-2)] text-xs truncate">
+                  <div
+                    class="flex-1 input flex items-center bg-[var(--color-surface-2)] text-xs truncate"
+                  >
                     <span class="truncate">{{ link.title }}</span>
                   </div>
                   <button
@@ -1704,11 +1909,7 @@ interface EventRosterParty {
             <button type="button" class="btn btn--ghost btn--sm" (click)="toggleBattleLinkForm()">
               {{ t('common.cancel') }}
             </button>
-            <button
-              type="submit"
-              class="btn btn--primary btn--sm"
-              [disabled]="battleLinksSaving()"
-            >
+            <button type="submit" class="btn btn--primary btn--sm" [disabled]="battleLinksSaving()">
               {{ t('common.save') }}
             </button>
           </div>
@@ -1724,7 +1925,10 @@ interface EventRosterParty {
             aria-labelledby="fill-role-heading"
             class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3.5"
           >
-            <h2 id="fill-role-heading" class="text-xs font-bold uppercase tracking-wider text-[var(--color-text)]">
+            <h2
+              id="fill-role-heading"
+              class="text-xs font-bold uppercase tracking-wider text-[var(--color-text)]"
+            >
               Fill Automatico
             </h2>
             <p class="mt-1 text-xs text-[var(--color-text-secondary)]">
@@ -1769,10 +1973,10 @@ interface EventRosterParty {
             <h2 id="extra-roles-heading" class="label">Ruoli extra attivi</h2>
             <div class="mt-2 grid gap-2">
               @for (role of extraRosterRoles(); track role.id) {
-                <div
-                  class="surface flex min-h-11 items-center justify-between gap-3 px-3.5 py-2"
-                >
-                  <span class="text-xs font-semibold text-[var(--color-text)]">{{ role.name }}</span>
+                <div class="surface flex min-h-11 items-center justify-between gap-3 px-3.5 py-2">
+                  <span class="text-xs font-semibold text-[var(--color-text)]">{{
+                    role.name
+                  }}</span>
                   <button
                     type="button"
                     class="btn btn--danger btn--sm text-xs py-0.5 px-2"
@@ -1783,7 +1987,9 @@ interface EventRosterParty {
                   </button>
                 </div>
               } @empty {
-                <p class="text-xs text-[var(--color-text-secondary)] py-2">Nessun ruolo extra configurato.</p>
+                <p class="text-xs text-[var(--color-text-secondary)] py-2">
+                  Nessun ruolo extra configurato.
+                </p>
               }
             </div>
           </section>
@@ -1946,13 +2152,20 @@ export class EventDetailPage {
   private readonly albionAbilities = inject(AlbionAbilitiesService);
   private readonly destroyRef = inject(DestroyRef);
   private eventId = 0;
+  /**
+   * Bumped on every `load()` call (route navigation or explicit refresh) so a
+   * response from a superseded load can detect it's stale and discard itself
+   * instead of overwriting newer state or rebinding the roster socket to the
+   * wrong event.
+   */
+  private loadGeneration = 0;
 
   protected readonly event = signal<EventDetailView | null>(null);
   protected readonly eventLossEstimate = signal<BattleLossEstimate>(emptyLossEstimate());
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
-  protected readonly canEdit = signal(false);
-  protected readonly canDelete = signal(false);
+  protected readonly canEdit = computed(() => this.auth.hasPermission('events.edit'));
+  protected readonly canDelete = computed(() => this.auth.hasPermission('events.delete'));
   protected readonly showEditForm = signal(false);
   protected readonly tab = signal<EventDetailTab>('roster');
   protected readonly pendingConfirm = signal<PendingConfirm | null>(null);
@@ -2054,11 +2267,11 @@ export class EventDetailPage {
   protected readonly draftCallToArms = signal(false);
   protected readonly draftRegear = signal(false);
   protected readonly draftScheduledAt = signal('');
-  protected readonly minScheduledAt = (() => {
-    const now = new Date();
+  protected readonly minScheduledAt = computed(() => {
+    const now = new Date(this.currentTime());
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     return now.toISOString().slice(0, 16);
-  })();
+  });
   protected readonly showJoinForm = signal(false);
   protected readonly joinFormLoading = signal(false);
   protected readonly compLoading = signal(false);
@@ -2072,6 +2285,11 @@ export class EventDetailPage {
   protected readonly draftRosterRoleBuildId = signal('');
   protected readonly draftPrimaryBuildId = signal('');
   protected readonly draftSecondaryBuildId = signal('');
+  /** Sentinel `<option>` value standing for the virtual, build-less Fill role. */
+  protected readonly fillValue = FILL_BUILD_VALUE;
+  protected readonly isFillSelected = computed(
+    () => this.draftPrimaryBuildId() === FILL_BUILD_VALUE,
+  );
 
   protected readonly canManageParticipants = computed(() => {
     const detail = this.event();
@@ -2591,8 +2809,6 @@ export class EventDetailPage {
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   constructor() {
-    this.canEdit.set(this.auth.hasPermission('events.edit'));
-    this.canDelete.set(this.auth.hasPermission('events.delete'));
     this.route.paramMap.subscribe((params) => {
       const id = params.get('eventId');
       if (id) {
@@ -2963,7 +3179,10 @@ export class EventDetailPage {
     );
   }
 
-  protected async assignBenchMemberToSeatDirect(userId: number, target: EventRosterSeat): Promise<void> {
+  protected async assignBenchMemberToSeatDirect(
+    userId: number,
+    target: EventRosterSeat,
+  ): Promise<void> {
     const roster = this.rosterSnapshot();
     const targetKey = this.rosterSeatKey(target);
     if (!roster) return;
@@ -3445,6 +3664,12 @@ export class EventDetailPage {
       return;
     }
 
+    const scheduledAt = this.draftScheduledAt();
+    if (!scheduledAt) {
+      this.toasts.error(this.t('validation.required'));
+      return;
+    }
+
     const request: UpdateEventRequest = { title };
     const description = this.draftDescription().trim();
     request.description = description || undefined;
@@ -3454,10 +3679,7 @@ export class EventDetailPage {
     if (compId > 0) {
       request.comp_id = compId;
     }
-    const scheduledAt = this.draftScheduledAt();
-    if (scheduledAt) {
-      request.event_date_utc = new Date(scheduledAt).toISOString();
-    }
+    request.event_date_utc = new Date(scheduledAt).toISOString();
 
     this.saving.set(true);
     try {
@@ -3525,7 +3747,13 @@ export class EventDetailPage {
       return;
     }
     const participation = this.currentParticipant();
-    this.draftPrimaryBuildId.set(participation ? String(participation.primary_build_id) : '');
+    this.draftPrimaryBuildId.set(
+      participation
+        ? participation.primary_build_id === null
+          ? FILL_BUILD_VALUE
+          : String(participation.primary_build_id)
+        : '',
+    );
     this.draftSecondaryBuildId.set(
       participation?.secondary_build_id ? String(participation.secondary_build_id) : '',
     );
@@ -3537,8 +3765,21 @@ export class EventDetailPage {
   }
 
   protected onPrimaryBuildChange(event: Event): void {
-    this.draftPrimaryBuildId.set((event.target as HTMLSelectElement).value);
+    const value = (event.target as HTMLSelectElement).value;
+    this.draftPrimaryBuildId.set(value);
+    if (value === FILL_BUILD_VALUE) {
+      this.draftSecondaryBuildId.set('');
+    }
     this.joinError.set(null);
+  }
+
+  /**
+   * Build options load asynchronously, so a `[value]` binding on the `<select>` is applied while
+   * the list is still empty and the browser silently resets it. Marking the matching `<option>`
+   * selected instead keeps the current choice visible once the options arrive.
+   */
+  protected isSelectedBuild(selected: string, buildId: number): boolean {
+    return selected === String(buildId);
   }
 
   protected onSecondaryBuildChange(event: Event): void {
@@ -3550,15 +3791,17 @@ export class EventDetailPage {
     const detail = this.event();
     if (!detail) return;
 
-    const primaryBuildId = Number(this.draftPrimaryBuildId());
-    if (primaryBuildId <= 0) {
+    // `null` is the virtual Fill role: the backend accepts a participation without a build.
+    const isFill = this.isFillSelected();
+    const primaryBuildId = isFill ? null : Number(this.draftPrimaryBuildId());
+    if (primaryBuildId !== null && primaryBuildId <= 0) {
       this.joinError.set(this.t('events.detail.primary_required'));
       return;
     }
 
     const request: ParticipateEventRequest = { primary_build_id: primaryBuildId };
     const secondaryRaw = this.draftSecondaryBuildId();
-    if (secondaryRaw) {
+    if (primaryBuildId !== null && secondaryRaw) {
       const secondaryBuildId = Number(secondaryRaw);
       if (secondaryBuildId > 0 && secondaryBuildId !== primaryBuildId) {
         request.secondary_build_id = secondaryBuildId;
@@ -3781,6 +4024,10 @@ export class EventDetailPage {
 
   protected async load(silent = false): Promise<void> {
     if (!this.eventId) return;
+    const eventId = this.eventId;
+    // Bump the generation for this navigation/refresh attempt so a response
+    // from an already-superseded load can recognize itself as stale below.
+    const generation = ++this.loadGeneration;
     // Silent reloads (e.g. a realtime roster event) keep the current view mounted
     // and refresh its data in place, instead of flashing the full-page loading state.
     if (!silent) {
@@ -3788,30 +4035,39 @@ export class EventDetailPage {
     }
     this.loadFailed.set(false);
     try {
-      const detail = await firstValueFrom(
-        this.api.get<EventDetailView>(`api/events/${this.eventId}`),
-      );
+      const detail = await firstValueFrom(this.api.get<EventDetailView>(`api/events/${eventId}`));
+      if (this.isStaleLoad(generation, eventId)) return;
       this.event.set(detail);
-      this.realtimeRoster.connect(this.eventId);
+      this.realtimeRoster.connect(eventId);
       this.eventLossEstimate.set(detail.estimated_losses ?? emptyLossEstimate());
       void this.loadSpecializationCatalog();
       void this.loadAbilityCatalog();
       await Promise.all([
-        this.loadRosterSnapshot(silent),
+        this.loadRosterSnapshot(silent, generation, eventId),
         this.loadActiveComp(),
         this.loadLinkedBattleLosses(detail),
       ]);
     } catch (error) {
+      if (this.isStaleLoad(generation, eventId)) return;
       this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
-      if (!silent) {
+      if (!silent && !this.isStaleLoad(generation, eventId)) {
         this.loading.set(false);
       }
     }
   }
 
-  private async loadRosterSnapshot(silent = false): Promise<void> {
+  /** True when a newer load (a later navigation or refresh) has since started. */
+  private isStaleLoad(generation: number, eventId: number): boolean {
+    return generation !== this.loadGeneration || eventId !== this.eventId;
+  }
+
+  private async loadRosterSnapshot(
+    silent = false,
+    generation = this.loadGeneration,
+    eventId = this.eventId,
+  ): Promise<void> {
     // Silent reloads keep the roster panel mounted and swap the data in place,
     // instead of flashing it to a loading state on every realtime update.
     if (!silent) {
@@ -3820,8 +4076,9 @@ export class EventDetailPage {
     }
     try {
       const roster = await firstValueFrom(
-        this.api.get<EventRosterView>(`api/events/${this.eventId}/roster`),
+        this.api.get<EventRosterView>(`api/events/${eventId}/roster`),
       );
+      if (this.isStaleLoad(generation, eventId)) return;
       this.rosterSnapshot.set(roster);
       this.rosterSnapshotState.set('ready');
       // A silent refresh comes from someone else's action; don't clobber the
@@ -3830,6 +4087,7 @@ export class EventDetailPage {
         this.clearLegacyRosterInteractionState();
       }
       await this.preloadRosterBuildDetails(roster.seats.map((seat) => seat.build_id));
+      if (this.isStaleLoad(generation, eventId)) return;
       const ownSeat = this.ownRosterSeat();
       this.rosterAnnouncement.set(
         ownSeat
@@ -3839,6 +4097,7 @@ export class EventDetailPage {
             : 'Roster aggiornato.',
       );
     } catch (error) {
+      if (this.isStaleLoad(generation, eventId)) return;
       this.rosterSnapshot.set(null);
       this.rosterSnapshotState.set('error');
       this.rosterSnapshotError.set(

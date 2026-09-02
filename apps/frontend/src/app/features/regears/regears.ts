@@ -39,6 +39,15 @@ function isRegearTab(value: string): value is RegearTab {
 const PAGE_SIZE = 10;
 
 /**
+ * Backend exposes no guild-wide regear stats/summary endpoint (only the
+ * paginated `/deaths` list and the per-user `/me/summary` budget). The stat
+ * cards need a full, unfiltered-by-status picture, so a separate fetch pulls
+ * a large enough page of the same tab-scoped dataset — independent of the
+ * table's own small page size — to aggregate from.
+ */
+const STATS_FETCH_LIMIT = 1000;
+
+/**
  * Regears list: Mine / Queue / History tables of Call-To-Arms deaths.
  *
  * Item breakdown and officer adjudication live on `/regears/:deathId`. Guild
@@ -214,17 +223,25 @@ export class Regears {
   protected readonly totalItems = signal(0);
   protected readonly summary = signal<RegearBudgetSummary | null>(null);
 
+  /**
+   * Full (unpaginated, up to `STATS_FETCH_LIMIT`) dataset for the current
+   * tab's scope, used only to aggregate the stat cards below — kept separate
+   * from `deaths()`, which holds just the table's current page.
+   */
+  private readonly statsDeaths = signal<RegearDeathView[]>([]);
+
   protected readonly pendingMineCount = computed(
-    () => this.deaths().filter((d) => d.status === 'pending').length,
+    () => this.statsDeaths().filter((d) => d.status === 'pending').length,
   );
   protected readonly approvedMineCount = computed(
-    () => this.deaths().filter((d) => d.status === 'approved').length,
+    () => this.statsDeaths().filter((d) => d.status === 'approved').length,
   );
   protected readonly rejectedMineCount = computed(
-    () => this.deaths().filter((d) => d.status === 'rejected').length,
+    () => this.statsDeaths().filter((d) => d.status === 'rejected').length,
   );
+  /** Sums `final_amount` (the officer-approved payout), not the pre-adjudication estimate. */
   protected readonly totalEstimatedValue = computed(() =>
-    this.deaths().reduce((sum, d) => sum + (Number(d.auto_estimate_total) || 0), 0),
+    this.statsDeaths().reduce((sum, d) => sum + (Number(d.final_amount) || 0), 0),
   );
 
   protected async refreshNow(): Promise<void> {
@@ -428,6 +445,8 @@ export class Regears {
         );
         this.summary.set(summary);
       }
+
+      await this.loadStats(params);
     } catch (error) {
       this.loadFailed.set(true);
       this.toasts.error(this.errorMessage(error));
@@ -435,6 +454,30 @@ export class Regears {
       this.totalItems.set(0);
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  /**
+   * Fetches the full (well beyond one table page) dataset for the current
+   * tab's scope so the stat cards aggregate across every matching death, not
+   * just the page currently shown in the table. Reuses the same `global`
+   * scope as the table fetch (own deaths for "mine", guild-wide otherwise)
+   * but drops the status/search/sort narrowing so every status is counted.
+   */
+  private async loadStats(
+    tableParams: Record<string, string | number | boolean | undefined>,
+  ): Promise<void> {
+    try {
+      const page = await firstValueFrom(
+        this.api.get<PaginatedData<RegearDeathView>>('api/regear/deaths', {
+          page: 1,
+          limit: STATS_FETCH_LIMIT,
+          global: tableParams['global'],
+        }),
+      );
+      this.statsDeaths.set(page.items);
+    } catch {
+      // Stat cards are supplementary; the table fetch above already surfaced any error.
     }
   }
 

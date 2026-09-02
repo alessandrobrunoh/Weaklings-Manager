@@ -8,6 +8,7 @@ import type {
   ProgressionMeView,
   ProgressionSeasonView,
   ReportLeaderboards,
+  ReportOperations,
   ReportOverview,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
@@ -119,6 +120,7 @@ const PODIUM_SIZE = 3;
       <button
         type="button"
         class="btn btn--outline btn--sm"
+        [disabled]="refreshing()"
         (click)="reloadAll()"
       >
         <app-icon name="sparkles" size="0.875rem" />
@@ -1145,6 +1147,9 @@ export class SeasonOverview {
   /** Overview combat data from guild report if accessible. */
   protected readonly reportOverview = signal<ReportOverview | null>(null);
 
+  /** Roster/attendance/event-count data from the same guild report, used as a fallback source. */
+  protected readonly reportOperations = signal<ReportOperations | null>(null);
+
   /** Total participant count recorded for season XP. */
   protected readonly seasonTotalCount = signal<number>(0);
 
@@ -1232,6 +1237,12 @@ export class SeasonOverview {
 
   private readonly loadedIntel = signal(false);
   private readonly loadedSeason = signal(false);
+
+  /** In-flight guard for the header refresh button; also blocks a double-click race. */
+  protected readonly refreshing = signal(false);
+  /** Bumped on every `loadSeason`/`loadIntel` call so a superseded batch's results are discarded. */
+  private seasonGeneration = 0;
+  private intelGeneration = 0;
 
   /** Active category tab, defaults to Season XP. */
   protected readonly activeTab = signal<LeaderboardKey>('season');
@@ -1343,8 +1354,14 @@ export class SeasonOverview {
     if (rep && rep.fights !== undefined && rep.fights > 0) {
       return rep.fights;
     }
-    const attendanceEntries = this.stateByTab().attendance.entries;
-    return attendanceEntries.reduce((acc, row) => acc + (row.value || 0), 0);
+    // Fallback: the attendance board is per-player attendance counts, so
+    // summing it overcounts every event by however many members showed up.
+    // `events_total` from the same guild report is the actual distinct count.
+    const ops = this.reportOperations();
+    if (ops && ops.events_total !== undefined) {
+      return ops.events_total;
+    }
+    return 0;
   });
 
   /** Total fame gained by guild members. */
@@ -1441,8 +1458,16 @@ export class SeasonOverview {
   }
 
   protected reloadAll(): void {
-    void this.loadSeason({ force: true });
-    void this.loadIntel({ force: true });
+    // Guards the button and prevents a double-click from racing two
+    // Promise.allSettled batches against each other.
+    if (this.refreshing()) {
+      return;
+    }
+    this.refreshing.set(true);
+    void Promise.allSettled([
+      this.loadSeason({ force: true }),
+      this.loadIntel({ force: true }),
+    ]).finally(() => this.refreshing.set(false));
   }
 
   protected reloadActive(): void {
@@ -1450,7 +1475,8 @@ export class SeasonOverview {
       void this.loadSeason({ force: true });
       return;
     }
-    void this.loadIntel({ force: true });
+    // Retry a single failed tab without disturbing the other, already-loaded tabs.
+    void this.loadIntel({ force: true, only: this.activeTab() as IntelLeaderboardKey });
   }
 
   protected formatValue(value: number): string {
@@ -1475,6 +1501,7 @@ export class SeasonOverview {
     if (!opts.force && this.loadedSeason()) {
       return;
     }
+    const generation = ++this.seasonGeneration;
     this.patchState('season', LOADING_STATE);
     try {
       const [seasonsRes, meRes, leaderboardRes] = await Promise.allSettled([
@@ -1487,6 +1514,10 @@ export class SeasonOverview {
           }),
         ),
       ]);
+      // A newer call to loadSeason() has since started; let its own batch win.
+      if (generation !== this.seasonGeneration) {
+        return;
+      }
 
       if (seasonsRes.status === 'fulfilled') {
         const seasons = seasonsRes.value ?? [];
@@ -1519,17 +1550,28 @@ export class SeasonOverview {
         this.loadedSeason.set(false);
       }
     } catch {
+      if (generation !== this.seasonGeneration) {
+        return;
+      }
       this.patchState('season', ERROR_STATE);
       this.loadedSeason.set(false);
     }
   }
 
-  /** Loads intel category boards and summary metrics. */
-  private async loadIntel(opts: { force?: boolean } = {}): Promise<void> {
+  /**
+   * Loads intel category boards and summary metrics. Pass `only` to retry a
+   * single failed tab without flipping the other, already-loaded tabs back
+   * to a loading/error state.
+   */
+  private async loadIntel(
+    opts: { force?: boolean; only?: IntelLeaderboardKey } = {},
+  ): Promise<void> {
     if (!opts.force && this.loadedIntel()) {
       return;
     }
-    for (const key of INTEL_KEYS) {
+    const generation = ++this.intelGeneration;
+    const targetKeys: readonly IntelLeaderboardKey[] = opts.only ? [opts.only] : INTEL_KEYS;
+    for (const key of targetKeys) {
       this.patchState(key, LOADING_STATE);
     }
     try {
@@ -1537,9 +1579,16 @@ export class SeasonOverview {
         firstValueFrom(this.intel.leaderboards()),
         firstValueFrom(this.intel.report()),
       ]);
+      // A newer call to loadIntel() has since started; let its own batch win.
+      if (generation !== this.intelGeneration) {
+        return;
+      }
 
       if (boardsRes.status === 'fulfilled') {
         const boards = boardsRes.value;
+        // The API returns every board in one payload: a scoped retry still
+        // gets fresh data for all tabs, it just doesn't reset the other
+        // tabs' state to loading/error around the request.
         for (const key of INTEL_KEYS) {
           this.patchState(key, {
             entries: (BOARD_FOR_TAB[key](boards) ?? []).map((row) => ({
@@ -1552,7 +1601,7 @@ export class SeasonOverview {
         }
         this.loadedIntel.set(true);
       } else {
-        for (const key of INTEL_KEYS) {
+        for (const key of targetKeys) {
           this.patchState(key, ERROR_STATE);
         }
         this.loadedIntel.set(false);
@@ -1560,9 +1609,13 @@ export class SeasonOverview {
 
       if (reportRes.status === 'fulfilled') {
         this.reportOverview.set(reportRes.value?.overview ?? null);
+        this.reportOperations.set(reportRes.value?.operations ?? null);
       }
     } catch {
-      for (const key of INTEL_KEYS) {
+      if (generation !== this.intelGeneration) {
+        return;
+      }
+      for (const key of targetKeys) {
         this.patchState(key, ERROR_STATE);
       }
       this.loadedIntel.set(false);

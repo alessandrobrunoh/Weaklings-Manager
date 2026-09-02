@@ -51,6 +51,15 @@ function emptyPageChange(): DataTablePageChange {
 }
 
 /**
+ * The backend exposes no single guild-wide balance/aggregate endpoint for
+ * siphoned energy (only per-player balances via `GET /balances`, paginated).
+ * The KPI cards need the true guild-wide totals, so a separate fetch pulls a
+ * large enough page of every player's balance — independent of the table's
+ * own small page size — to sum from.
+ */
+const STATS_FETCH_LIMIT = 1000;
+
+/**
  * Siphoned Energy operations page.
  *
  * Officers can paste Albion export rows and import them as immutable batches;
@@ -373,18 +382,25 @@ export class Siphoned {
   protected readonly batches = signal<SiphonedBatchSummary[]>([]);
   protected readonly lastUpdatedAt = signal<string | null>(null);
 
+  /**
+   * Every player's balance (up to `STATS_FETCH_LIMIT`), fetched independently
+   * of the `balances()` table page so the KPI cards below reflect the whole
+   * guild instead of whichever page — or tab — happens to be on screen.
+   */
+  private readonly statsBalances = signal<SiphonedPlayerBalance[]>([]);
+
   protected readonly totalDeposited = computed(() =>
-    this.balances().reduce((sum, b) => sum + this.toNumber(b.total_deposited || 0), 0),
+    this.statsBalances().reduce((sum, b) => sum + this.toNumber(b.total_deposited || 0), 0),
   );
   protected readonly totalWithdrawn = computed(() =>
-    this.balances().reduce((sum, b) => sum + this.toNumber(b.total_withdrawn || 0), 0),
+    this.statsBalances().reduce((sum, b) => sum + this.toNumber(b.total_withdrawn || 0), 0),
   );
   protected readonly netTotal = computed(() =>
-    this.balances().reduce((sum, b) => sum + this.toNumber(b.net || 0), 0),
+    this.statsBalances().reduce((sum, b) => sum + this.toNumber(b.net || 0), 0),
   );
 
   protected async refreshNow(): Promise<void> {
-    await Promise.all([this.refreshLastUpdated(), this.load()]);
+    await Promise.all([this.refreshLastUpdated(), this.load(), this.loadStats()]);
   }
   protected readonly editingEntryId = signal<number | null>(null);
   protected readonly entryDraft = signal<EntryDraft>(emptyEntryDraft());
@@ -535,6 +551,7 @@ export class Siphoned {
   constructor() {
     void this.refreshLastUpdated();
     void this.load();
+    void this.loadStats();
   }
 
   protected entryDialogTitle(): string {
@@ -653,7 +670,7 @@ export class Siphoned {
         this.translate.t('siphoned.ingestSuccess', { count: response.ingested_count }),
       );
       await this.refreshLastUpdated();
-      await this.load();
+      await Promise.all([this.load(), this.loadStats()]);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -680,7 +697,7 @@ export class Siphoned {
         this.toasts.success(this.t('siphoned.entryUpdated'));
       }
       this.closeEntryForm();
-      await this.load();
+      await Promise.all([this.load(), this.loadStats()]);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -692,7 +709,7 @@ export class Siphoned {
     try {
       await firstValueFrom(this.api.delete(`api/siphoned/entries/${entryId}`));
       this.toasts.success(this.t('common.delete'));
-      await this.load();
+      await Promise.all([this.load(), this.loadStats()]);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     }
@@ -702,7 +719,7 @@ export class Siphoned {
     try {
       await firstValueFrom(this.api.delete(`api/siphoned/batches/${encodeURIComponent(batchId)}`));
       await this.refreshLastUpdated();
-      await this.load();
+      await Promise.all([this.load(), this.loadStats()]);
       this.toasts.success(this.t('common.delete'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -931,6 +948,26 @@ export class Siphoned {
       throw new Error(`Invalid date at line ${lineNumber}: ${value}`);
     }
     return date.toISOString();
+  }
+
+  /**
+   * Fetches every player's balance (up to `STATS_FETCH_LIMIT`) so the
+   * Deposited/Withdrawn/Net KPI cards reflect the whole guild ledger. Kept
+   * separate from `load()`, which only ever holds one page of whichever tab
+   * is active.
+   */
+  private async loadStats(): Promise<void> {
+    try {
+      const data = await firstValueFrom(
+        this.api.get<PaginatedData<SiphonedPlayerBalance>>('api/siphoned/balances', {
+          page: 1,
+          limit: STATS_FETCH_LIMIT,
+        }),
+      );
+      this.statsBalances.set(data.items);
+    } catch {
+      // KPI cards are supplementary; load() already surfaces errors to the user.
+    }
   }
 
   private async refreshLastUpdated(): Promise<void> {

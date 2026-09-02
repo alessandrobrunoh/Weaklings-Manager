@@ -26,6 +26,8 @@ interface QuickAction {
   readonly icon: IconName;
   readonly labelKey: TranslationKey;
   readonly desc: string;
+  /** When set, the shortcut is hidden unless the caller holds this permission. */
+  readonly permission?: string;
 }
 
 type StatTone = 'primary' | 'warning' | 'success' | 'neutral';
@@ -163,7 +165,7 @@ interface DashboardStat {
           {{ t('dashboard.quick_actions') }}
         </h2>
         <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          @for (action of actions; track action.path) {
+          @for (action of visibleActions(); track action.path) {
             <a
               [routerLink]="action.path"
               class="dashboard-shortcut"
@@ -326,8 +328,18 @@ export class Dashboard {
     { path: '/events', icon: 'calendar', labelKey: 'nav.events', desc: 'Attività & CTA' },
     { path: '/battles', icon: 'shield', labelKey: 'nav.battles', desc: 'Registro PvP' },
     { path: '/comps', icon: 'package', labelKey: 'nav.comps', desc: 'Build & setup' },
-    { path: '/siphoned', icon: 'activity', labelKey: 'nav.siphoned', desc: 'Monitor energia' },
+    {
+      path: '/siphoned',
+      icon: 'activity',
+      labelKey: 'nav.siphoned',
+      desc: 'Monitor energia',
+      permission: 'siphoned.view',
+    },
   ];
+
+  protected readonly visibleActions = computed(() =>
+    this.actions.filter((action) => !action.permission || this.auth.hasPermission(action.permission)),
+  );
 
   protected readonly stats: ReadonlyArray<DashboardStat> = [
     {

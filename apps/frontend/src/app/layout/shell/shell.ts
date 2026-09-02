@@ -112,10 +112,7 @@ export class Shell {
 
   private shouldUseAdminNavigation(url: string): boolean {
     const path = url.split('?')[0].split('#')[0];
-    if (path === '/users' || path === '/users/') {
-      return true;
-    }
-    if (path.startsWith('/users/')) {
+    if (path === '/users' || path === '/users/' || path.startsWith('/users/')) {
       return ADMIN_ACCESS_PERMISSIONS.some((permission) => this.auth.hasPermission(permission));
     }
     return isAdminUrl(path);

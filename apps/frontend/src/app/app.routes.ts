@@ -112,6 +112,7 @@ export const routes: Routes = [
       },
       {
         path: 'siphoned',
+        canActivate: [permissionGuard('siphoned.view')],
         loadComponent: () => import('./features/siphoned/siphoned').then((m) => m.Siphoned),
       },
       {

@@ -36,6 +36,7 @@ import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-
 
 import { Icon } from '../../shared/components/icon/icon';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { resolveBattleOutcome } from './battle-outcome';
 
 const PAGE_SIZE = 10;
 const BATTLE_REFRESH_INTERVAL_SECONDS = 5 * 60;
@@ -250,6 +251,13 @@ export class Battles {
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
+  /**
+   * Bumped on every `load()` call so a stale response — from a tab switch,
+   * sort/page change, or the auto-refresh timer racing a manual refresh —
+   * can detect it's superseded and discard itself instead of overwriting the
+   * table with a different tab's mismatched row shape.
+   */
+  private loadGeneration = 0;
 
   protected readonly PAGE_SIZE = PAGE_SIZE;
   protected readonly battles = signal<BattleListRow[]>([]);
@@ -488,19 +496,24 @@ export class Battles {
     return battle.guilds.reduce((sum, guild) => sum + guild.deaths, 0);
   }
 
+  /** Shares `resolveBattleOutcome` with the battle detail page's own verdict badge. */
   protected battleOutcome(battle: BattleSummary): { label: string; type: BattleOutcomeType } {
     const ourG = battle.guilds.find((g) => g.name.toLowerCase() === 'weaklings');
     if (!ourG) {
       const top = this.winnerGuild(battle);
       return { label: top?.name ?? 'BATTLE', type: 'contested' };
     }
-    if (ourG.winner || (ourG.kills > ourG.deaths && ourG.kill_fame >= battle.total_fame * 0.35)) {
-      return { label: this.t('battles.victory'), type: 'victory' };
-    }
-    if (ourG.deaths > ourG.kills && ourG.kill_fame < battle.total_fame * 0.25) {
-      return { label: this.t('battles.defeat'), type: 'defeat' };
-    }
-    return { label: this.t('battles.contested'), type: 'contested' };
+    const type = resolveBattleOutcome({
+      guilds: battle.guilds,
+      totalFame: battle.total_fame,
+      ourGuildName: 'weaklings',
+    });
+    const labels: Record<'victory' | 'defeat' | 'contested', TranslationKey> = {
+      victory: 'battles.victory',
+      defeat: 'battles.defeat',
+      contested: 'battles.contested',
+    };
+    return { label: this.t(labels[type]), type };
   }
 
   private winnerGuild(battle: Pick<BattleSummary, 'guilds'>): BattleGuildSummary | null {
@@ -539,6 +552,7 @@ export class Battles {
   }
 
   private async load(): Promise<void> {
+    const generation = ++this.loadGeneration;
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
@@ -567,6 +581,7 @@ export class Battles {
         const response = await firstValueFrom(
           this.api.get<PaginatedData<FightListItem>>(path, params),
         );
+        if (generation !== this.loadGeneration) return;
         this.battles.set(response.items);
         this.totalItems.set(response.total_items);
         this.scopeStats.set(this.buildGuildScopeStats(response.items));
@@ -574,15 +589,21 @@ export class Battles {
         const response = await firstValueFrom(
           this.api.get<PaginatedData<BattleSummary>>(path, params),
         );
+        if (generation !== this.loadGeneration) return;
         this.battles.set(response.items);
         this.totalItems.set(response.total_items);
-        this.scopeStats.set(await this.buildPersonalScopeStats(response.items));
+        const scopeStats = await this.buildPersonalScopeStats(response.items);
+        if (generation !== this.loadGeneration) return;
+        this.scopeStats.set(scopeStats);
       }
     } catch (error) {
+      if (generation !== this.loadGeneration) return;
       this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
-      this.loading.set(false);
+      if (generation === this.loadGeneration) {
+        this.loading.set(false);
+      }
     }
   }
 

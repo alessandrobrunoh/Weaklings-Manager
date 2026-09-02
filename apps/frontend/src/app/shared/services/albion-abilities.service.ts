@@ -15,12 +15,13 @@ import { ApiService } from '../../core/services/api.service';
 export class AlbionAbilitiesService {
   private readonly api = inject(ApiService);
   private readonly abilities = signal<Record<string, OpenAlbionItemAbilities>>({});
+  /** True once the first successful response (even an empty one) has been received. */
+  private readonly loaded = signal(false);
   private loading: Promise<Readonly<Record<string, OpenAlbionItemAbilities>>> | null = null;
 
   async load(): Promise<Readonly<Record<string, OpenAlbionItemAbilities>>> {
-    const cached = this.abilities();
-    if (Object.keys(cached).length > 0) {
-      return cached;
+    if (this.loaded()) {
+      return this.abilities();
     }
     if (!this.loading) {
       this.loading = firstValueFrom(
@@ -28,6 +29,7 @@ export class AlbionAbilitiesService {
       )
         .then((abilities) => {
           this.abilities.set(abilities);
+          this.loaded.set(true);
           return abilities;
         })
         .finally(() => {

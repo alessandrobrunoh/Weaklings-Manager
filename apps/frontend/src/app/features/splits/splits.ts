@@ -609,7 +609,11 @@ interface SplitParticipantDraft {
             form="create-split-form"
             class="btn btn--primary btn--sm"
             [disabled]="
-              saving() || participants().length === 0 || !draftTitle().trim() || !draftTabId()
+              saving() ||
+              participants().length === 0 ||
+              !draftTitle().trim() ||
+              !draftTabId() ||
+              totalWeight() !== 100
             "
           >
             {{ saving() ? t('common.loading') : t('common.create') }}
@@ -1058,7 +1062,7 @@ export class Splits {
   }
 
   protected onWeightChange(userId: number, event: Event): void {
-    const weight = Math.max(1, Number((event.target as HTMLInputElement).value) || 1);
+    const weight = Math.min(100, Math.max(1, Number((event.target as HTMLInputElement).value) || 1));
     this.weightsCustomized.set(true);
     this.participants.update((list) =>
       list.map((participant) =>
@@ -1368,6 +1372,10 @@ export class Splits {
     }
     if (fee === null || fee < 0 || fee > 100) {
       this.toasts.error(this.t('splits.fee_invalid'));
+      return;
+    }
+    if (Math.abs(this.totalWeight() - 100) > 0.01) {
+      this.toasts.error(this.t('splits.weight_sum_invalid'));
       return;
     }
     this.saving.set(true);

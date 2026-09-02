@@ -236,6 +236,11 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
           <span style="color: var(--color-text-secondary)">{{ t('common.total') }}</span>
           <strong class="text-lg">{{ formatSilver(acceptTotal()) }}</strong>
         </div>
+        @if (acceptHasNegativePrice()) {
+          <p class="mb-3 text-xs" style="color: var(--color-error)">
+            {{ t('regears.negativePrice') }}
+          </p>
+        }
         <label class="mb-1 block">
           <span class="label">{{ t('regears.note') }} ({{ t('common.optional') }})</span>
           <input class="input" type="text" [value]="acceptNote()" (input)="onAcceptNote($event)" />
@@ -248,7 +253,7 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
             type="button"
             class="btn btn--primary"
             (click)="confirmAccept()"
-            [disabled]="acting()"
+            [disabled]="acting() || acceptHasNegativePrice()"
           >
             {{ t('regears.confirmAccept') }}
           </button>
@@ -316,6 +321,11 @@ export class RegearDetailPage {
   });
 
   protected readonly acceptTotal = computed(() => this.computeEditableTotal(this.acceptRows()));
+
+  /** Zero is a legitimate unit price (e.g. a worthless slot); only negatives are rejected. */
+  protected readonly acceptHasNegativePrice = computed(() =>
+    this.acceptRows().some((row) => Number(row.unit_price) < 0),
+  );
 
   protected itemIconUrl(itemId: string): string {
     return `https://render.albiononline.com/v1/item/${itemId}.png`;
@@ -424,6 +434,10 @@ export class RegearDetailPage {
   protected async confirmAccept(): Promise<void> {
     const death = this.death();
     if (!death || this.acting()) {
+      return;
+    }
+    if (this.acceptHasNegativePrice()) {
+      this.toasts.error(this.t('regears.negativePrice'));
       return;
     }
     this.acting.set(true);

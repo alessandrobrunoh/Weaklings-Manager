@@ -9,10 +9,12 @@ import { normalizeAlbionEquipmentName } from '../data/albion-equipment-catalog';
 export class AlbionCatalogService {
   private readonly api = inject(ApiService);
   private readonly items = signal<OpenAlbionItem[]>([]);
+  /** True once the first successful response (even an empty one) has been received. */
+  private readonly loaded = signal(false);
   private loading: Promise<readonly OpenAlbionItem[]> | null = null;
 
   async load(): Promise<readonly OpenAlbionItem[]> {
-    if (this.items().length > 0) {
+    if (this.loaded()) {
       return this.items();
     }
     if (!this.loading) {
@@ -25,6 +27,7 @@ export class AlbionCatalogService {
               : item.name,
           }));
           this.items.set(normalizedItems);
+          this.loaded.set(true);
           return normalizedItems;
         })
         .finally(() => {
