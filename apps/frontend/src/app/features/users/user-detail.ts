@@ -9,7 +9,7 @@ import {
   untracked,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { DatePipe } from '@angular/common';
+import { DatePipe, DecimalPipe } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -17,7 +17,9 @@ import type {
   AlbionCombatCategory,
   AlbionGuildMember,
   AlbionLinkStatus,
+  LeaderboardEntry,
   PaginatedData,
+  PlayerReport,
   ProgressionMeView,
   Role,
   UserProfile,
@@ -28,6 +30,7 @@ import type {
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
+import { IntelService } from '../../core/services/intel.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
@@ -86,6 +89,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
   imports: [
     Avatar,
     DatePipe,
+    DecimalPipe,
     Dialog,
     EmptyState,
     ErrorState,
@@ -232,6 +236,128 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
             tone="success"
           />
         </section>
+
+        <!-- Combat Intel -->
+        @if (canViewPlayerIntel()) {
+          <section class="card p-6" aria-labelledby="player-intel-heading">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div>
+                <h2 id="player-intel-heading" class="text-base font-semibold" style="color: var(--color-text)">
+                  {{ t('intel.player.title') }}
+                </h2>
+                <p class="text-xs mt-1" style="color: var(--color-text-secondary)">{{ t('intel.player.hint') }}</p>
+              </div>
+              <a class="btn btn--ghost btn--sm" routerLink="/intel">{{ t('intel.player.viewFullReport') }}</a>
+            </div>
+
+            @if (playerIntelLoading()) {
+              <div class="p-8 flex justify-center"><app-loading [label]="t('common.loading')" /></div>
+            } @else if (playerIntel(); as pi) {
+              <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-5">
+                <app-stat-card [label]="t('intel.fights')" [value]="pi.member.fights.toString()" icon="swords" />
+                <app-stat-card
+                  label="K/D"
+                  [value]="pi.member.kill_death_ratio | number: '1.2-2'"
+                  [sub]="pi.member.kills + ' / ' + pi.member.deaths"
+                />
+                <app-stat-card [label]="t('intel.killFame')" [value]="formatAmount(pi.member.kill_fame)" icon="sparkles" />
+                <app-stat-card
+                  [label]="t('intel.streak')"
+                  [value]="pi.win_streak.toString()"
+                  [tone]="pi.win_streak > 0 ? 'success' : 'neutral'"
+                />
+                <app-stat-card [label]="t('intel.silverLost')" [value]="formatAmount(pi.member.silver_lost)" tone="warning" />
+                <app-stat-card [label]="t('intel.splitEarnings')" [value]="formatAmount(pi.member.split_earnings)" tone="success" />
+                <app-stat-card
+                  [label]="t('intel.fillRate')"
+                  [value]="(pi.member.fill_rate | number: '1.0-0') + '%'"
+                  [sub]="pi.member.events_signed + ' ' + t('intel.events')"
+                />
+                @if (!pi.linked) {
+                  <app-stat-card [label]="t('common.status')" [value]="t('intel.notLinked')" tone="warning" />
+                }
+              </div>
+
+              @if (pi.weekly.length > 0) {
+                <div class="overflow-x-auto mb-5">
+                  <h3 class="text-sm font-medium mb-2" style="color: var(--color-text)">{{ t('intel.player.weekly') }}</h3>
+                  <table class="w-full text-xs" style="border-collapse: collapse">
+                    <thead>
+                      <tr style="border-block-end: 1px solid var(--color-border)">
+                        <th class="text-start py-1.5 pe-3" style="color: var(--color-text-secondary)">{{ t('intel.trends.week') }}</th>
+                        <th class="text-end py-1.5 px-3" style="color: var(--color-text-secondary)">{{ t('intel.fights') }}</th>
+                        <th class="text-end py-1.5 px-3" style="color: var(--color-text-secondary)">{{ t('intel.record') }}</th>
+                        <th class="text-end py-1.5 px-3" style="color: var(--color-text-secondary)">{{ t('intel.winRate') }}</th>
+                        <th class="text-end py-1.5 px-3" style="color: var(--color-text-secondary)">{{ t('intel.kills') }}</th>
+                        <th class="text-end py-1.5 ps-3" style="color: var(--color-text-secondary)">{{ t('intel.silverLost') }}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (week of pi.weekly; track week.week_start) {
+                        <tr style="border-block-end: 1px solid var(--color-border)">
+                          <td class="mono py-1.5 pe-3">{{ week.week_start | date: 'mediumDate' }}</td>
+                          <td class="mono text-end py-1.5 px-3">{{ week.fights }}</td>
+                          <td class="mono text-end py-1.5 px-3">{{ week.wins }}–{{ week.losses }}</td>
+                          <td class="mono text-end py-1.5 px-3">{{ week.win_rate | number: '1.0-0' }}%</td>
+                          <td class="mono text-end py-1.5 px-3">{{ week.kills }}</td>
+                          <td class="mono text-end py-1.5 ps-3">{{ formatAmount(week.silver_lost) }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+
+              @if (pi.recent_fights.length > 0) {
+                <div>
+                  <h3 class="text-sm font-medium mb-2" style="color: var(--color-text)">{{ t('intel.player.recentFights') }}</h3>
+                  <ul class="grid gap-1.5">
+                    @for (fight of pi.recent_fights; track fight.battle_id) {
+                      <li>
+                        <a
+                          class="flex items-center justify-between gap-3 rounded-lg px-3 py-2 no-underline transition-colors hover:opacity-90"
+                          [style.background-color]="fight.is_win ? 'var(--color-success-container)' : 'var(--color-error-container)'"
+                          [routerLink]="['/battles', fight.battle_id]"
+                        >
+                          <span class="text-xs font-semibold" [style.color]="fight.is_win ? 'var(--color-success)' : 'var(--color-error)'">
+                            {{ fight.is_win ? t('common.win') : t('common.loss') }}
+                          </span>
+                          <span class="min-w-0 flex-1 truncate text-sm px-2" style="color: var(--color-text)">
+                            {{ fight.opponent ?? t('intel.unknownOpponent') }}
+                          </span>
+                          <span class="mono shrink-0 text-xs" style="color: var(--color-text-secondary)">
+                            {{ fight.kills }}k / {{ fight.deaths }}d
+                          </span>
+                          <span class="mono shrink-0 text-xs" style="color: var(--color-text-secondary)">
+                            {{ fight.started_at | date: 'MMM d' }}
+                          </span>
+                        </a>
+                      </li>
+                    }
+                  </ul>
+                </div>
+              } @else {
+                <p class="text-sm" style="color: var(--color-text-secondary)">{{ t('intel.player.noFights') }}</p>
+              }
+            }
+          </section>
+        } @else if (ownStanding(); as standing) {
+          <section class="card p-6" aria-labelledby="own-standing-heading">
+            <h2 id="own-standing-heading" class="text-base font-semibold" style="color: var(--color-text)">
+              {{ t('intel.player.ownStanding.title') }}
+            </h2>
+            <p class="text-xs mt-1 mb-4" style="color: var(--color-text-secondary)">{{ t('intel.player.ownStanding.hint') }}</p>
+            @if (standing.length > 0) {
+              <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                @for (board of standing; track board.key) {
+                  <app-stat-card [label]="board.label" [value]="'#' + board.rank" [sub]="formatAmount(board.value)" />
+                }
+              </div>
+            } @else {
+              <p class="text-sm" style="color: var(--color-text-secondary)">{{ t('intel.player.ownStanding.unranked') }}</p>
+            }
+          </section>
+        }
 
         <!-- Adjust Progression Form (if active) -->
         @if (editing()) {
@@ -552,6 +678,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
 export class UserDetailPage {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly intel = inject(IntelService);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
   private readonly albionCatalog = inject(AlbionCatalogService);
@@ -569,6 +696,12 @@ export class UserDetailPage {
   protected readonly warns = signal<WarnView[]>([]);
   protected readonly albionLink = signal<AlbionLinkStatus | null>(null);
   protected readonly draft = signal<AdjustDraft>(emptyAdjustDraft());
+
+  protected readonly playerIntel = signal<PlayerReport | null>(null);
+  protected readonly playerIntelLoading = signal(false);
+  protected readonly ownStanding = signal<
+    { key: string; label: string; rank: number; value: number }[] | null
+  >(null);
 
   protected readonly specLoading = signal(false);
   protected readonly specLoadFailed = signal(false);
@@ -607,6 +740,12 @@ export class UserDetailPage {
 
   protected readonly canAdjust = computed(() => this.auth.hasPermission('progression.adjust'));
   protected readonly canViewWarns = computed(() => this.auth.hasPermission('warns.view'));
+  /**
+   * Same gate as `/intel` itself (`intel.report.view`): the per-player report
+   * surfaces the identical silver/split figures the guild report's roster
+   * table already shows for every member, just isolated to one row.
+   */
+  protected readonly canViewPlayerIntel = computed(() => this.auth.hasPermission('intel.report.view'));
   protected readonly canManageSpecializations = computed(() => {
     const target = this.member()?.id;
     const ownId = this.auth.profile()?.user_id;
@@ -649,6 +788,8 @@ export class UserDetailPage {
         this.specializationEditing.set(false);
         this.linkDialogOpen.set(false);
         this.unlinkConfirmOpen.set(false);
+        this.playerIntel.set(null);
+        this.ownStanding.set(null);
         void this.load();
       });
     });
@@ -972,6 +1113,51 @@ export class UserDetailPage {
     }
   }
 
+  protected async loadPlayerIntel(userId: number): Promise<void> {
+    this.playerIntelLoading.set(true);
+    try {
+      const report = await firstValueFrom(this.intel.playerReport(userId));
+      this.playerIntel.set(report);
+    } catch {
+      // No combat record for this member in the window (404), or the caller
+      // lost the permission mid-session — either way, just hide the section.
+      this.playerIntel.set(null);
+    } finally {
+      this.playerIntelLoading.set(false);
+    }
+  }
+
+  /**
+   * A lighter standing panel for a member looking at their own profile
+   * without `intel.report.view`. Backed by `/api/intel/leaderboards`, gated
+   * only at `intel.view` deliberately, so every member can see where they
+   * rank even without officer permissions.
+   */
+  protected async loadOwnStanding(): Promise<void> {
+    const ownId = this.auth.profile()?.user_id;
+    if (ownId == null || !this.auth.hasPermission('intel.view')) {
+      this.ownStanding.set(null);
+      return;
+    }
+    try {
+      const leaderboards = await firstValueFrom(this.intel.leaderboards());
+      const boards: { key: string; label: string; entries: LeaderboardEntry[] }[] = [
+        { key: 'attendance', label: this.t('intel.trends.attendance'), entries: leaderboards.attendance },
+        { key: 'kills', label: this.t('intel.kills'), entries: leaderboards.kills },
+        { key: 'kill_fame', label: this.t('intel.killFame'), entries: leaderboards.kill_fame },
+      ];
+      const standing = boards
+        .map(({ key, label, entries }) => {
+          const rank = entries.findIndex((entry) => entry.user_id === ownId);
+          return rank < 0 ? null : { key, label, rank: rank + 1, value: entries[rank].value };
+        })
+        .filter((row): row is { key: string; label: string; rank: number; value: number } => row !== null);
+      this.ownStanding.set(standing);
+    } catch {
+      this.ownStanding.set(null);
+    }
+  }
+
   protected async load(): Promise<void> {
     const userId = Number(this.userId());
     if (!Number.isFinite(userId) || userId <= 0) {
@@ -1006,6 +1192,15 @@ export class UserDetailPage {
           }),
         ).catch((): WarnView[] => []);
         this.warns.set(asPaginated(warns));
+      }
+
+      if (this.canViewPlayerIntel()) {
+        void this.loadPlayerIntel(userId);
+      } else if (this.auth.profile()?.user_id === userId) {
+        void this.loadOwnStanding();
+      } else {
+        this.playerIntel.set(null);
+        this.ownStanding.set(null);
       }
     } catch (error) {
       this.member.set(null);

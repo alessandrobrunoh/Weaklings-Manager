@@ -1763,6 +1763,37 @@ export interface GuildReport {
   data_quality: ReportDataQuality;
 }
 
+/** One member's activity in a single week — the per-player counterpart to {@link TrendBucket}. */
+export interface PlayerTrendBucket {
+  week_start: string;
+  fights: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  kills: number;
+  deaths: number;
+  kill_fame: number;
+  silver_lost: number;
+}
+
+/** One member's combat record for a window: their roster row, a weekly breakdown, and recent fights. */
+export interface PlayerReport {
+  user_id: number;
+  username: string;
+  albion_name: string | null;
+  role: string;
+  is_officer: boolean;
+  linked: boolean;
+  from: string;
+  to: string;
+  member: ReportMemberRow;
+  /** One entry per week in the window, oldest first, including quiet weeks. */
+  weekly: PlayerTrendBucket[];
+  /** This member's fights, newest first. */
+  recent_fights: FightSummary[];
+  win_streak: number;
+}
+
 /** One split that could not be completed in a batch, and why. */
 export interface BatchFailure {
   split_id: number;

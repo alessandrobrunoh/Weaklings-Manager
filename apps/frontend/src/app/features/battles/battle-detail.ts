@@ -6,6 +6,7 @@ import {
   signal,
 } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import type { EChartsOption } from 'echarts';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -18,10 +19,13 @@ import type {
   BuildSlot,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
+import { ThemeService } from '../../core/services/theme.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { resolveBattleOutcome, type BattleOutcomeType } from './battle-outcome';
+import { Chart, type ChartClickEvent, type ChartTableRow } from '../../shared/components/chart/chart';
+import { chartChrome, chartPalette } from '../../shared/components/chart/chart-theme';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
@@ -84,6 +88,8 @@ export interface TimelineMinuteBucket {
   readonly enemyKills: number;
   readonly totalKills: number;
   readonly fame: number;
+  readonly ourFame: number;
+  readonly enemyFame: number;
 }
 
 export interface WeaponUsageStat {
@@ -124,6 +130,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
   selector: 'app-battle-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    Chart,
     DataTable,
     DataTableCell,
     EquipmentGrid,
@@ -368,104 +375,66 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
             }
           </div>
 
-          <div class="battle-detail__timeline-container scrollbar-thin">
-            <div class="battle-detail__timeline-bars">
-              @for (bucket of timelineBuckets(); track bucket.minute) {
-                <div
-                  class="battle-detail__timeline-col"
-                  [class.battle-detail__timeline-col--active]="selectedTimelineMinute() === bucket.minute"
-                  (click)="toggleTimelineMinute(bucket.minute)"
-                  tabindex="0"
-                  role="button"
-                  [attr.aria-label]="'Minute ' + bucket.minute + ': ' + bucket.totalKills + ' kills'"
-                >
-                  <div class="battle-detail__timeline-bar-wrapper">
-                    <!-- Our Kills Stack -->
-                    @if (bucket.ourKills > 0) {
-                      <div
-                        class="battle-detail__timeline-stack battle-detail__timeline-stack--allies"
-                        [style.height.%]="percentage(bucket.ourKills, maxTimelineKills())"
-                        [title]="'Our Kills: ' + bucket.ourKills"
-                      ></div>
-                    }
-                    <!-- Enemy Kills Stack -->
-                    @if (bucket.enemyKills > 0) {
-                      <div
-                        class="battle-detail__timeline-stack battle-detail__timeline-stack--enemies"
-                        [style.height.%]="percentage(bucket.enemyKills, maxTimelineKills())"
-                        [title]="'Enemy Kills: ' + bucket.enemyKills"
-                      ></div>
-                    }
-                  </div>
-                  <span class="battle-detail__timeline-label mono">{{ bucket.label }}</span>
-                  <span class="battle-detail__timeline-value mono">{{ bucket.totalKills }}</span>
-                </div>
-              } @empty {
-                <p class="text-sm text-secondary">No kill timestamps recorded.</p>
-              }
-            </div>
-          </div>
-          <div class="mt-3 flex items-center justify-between text-xs text-secondary border-t pt-2" style="border-color: var(--color-border)">
-            <div class="flex items-center gap-4">
-              <span class="inline-flex items-center gap-1.5">
-                <span class="inline-block w-3 h-3 rounded-full bg-success"></span>
-                Our Guild / Alliance Kills
-              </span>
-              <span class="inline-flex items-center gap-1.5">
-                <span class="inline-block w-3 h-3 rounded-full bg-error"></span>
-                Enemy Kills
-              </span>
-            </div>
-            <span>Total Kills: <strong class="mono">{{ detail.total_kills }}</strong></span>
-          </div>
+          <app-chart
+            [option]="timelineDensityOption()"
+            height="16rem"
+            [label]="t('battles.timeline_density')"
+            [tableHead]="timelineDensityTableHead()"
+            [tableRows]="timelineDensityTableRows()"
+            (chartClick)="onTimelineChartClick($event)"
+          />
+        </section>
+
+        <!-- Battle Momentum -->
+        <section class="mt-5 surface p-5">
+          <h2 class="battle-detail__panel-title mb-0">{{ t('battles.momentum') }}</h2>
+          <p class="text-xs text-secondary mb-4">{{ t('battles.momentum_hint') }}</p>
+          <app-chart
+            [option]="momentumOption()"
+            height="15rem"
+            [label]="t('battles.momentum')"
+            [tableHead]="momentumTableHead()"
+            [tableRows]="momentumTableRows()"
+          />
         </section>
 
         <!-- Charts Row -->
         <section class="mt-5 grid gap-4 lg:grid-cols-3">
           <!-- Alliance & Guild Fame Distribution -->
           <article class="surface p-5">
-            <h2 class="battle-detail__panel-title">Fame Distribution by Alliance</h2>
-            @for (ally of alliances(); track ally.name) {
-              <div class="battle-detail__bar-row">
-                <span class="truncate font-medium" [class.text-success]="ally.isOurAlliance">
-                  {{ ally.isSolo ? ally.name : '[' + ally.name + ']' }}
-                </span>
-                <div class="battle-detail__bar" [class.battle-detail__bar--allies]="ally.isOurAlliance">
-                  <span [style.width.%]="percentage(ally.killFame, detail.total_fame)"></span>
-                </div>
-                <strong class="mono">{{ formatCompact(ally.killFame) }}</strong>
-              </div>
-            }
+            <h2 class="battle-detail__panel-title">{{ t('battles.fame_by_alliance') }}</h2>
+            <app-chart
+              [option]="allianceFameOption()"
+              height="16rem"
+              [label]="t('battles.fame_by_alliance')"
+              [tableHead]="allianceFameTableHead()"
+              [tableRows]="allianceFameTableRows()"
+            />
           </article>
 
           <!-- Top Guilds K/D Leaders -->
           <article class="surface p-5">
-            <h2 class="battle-detail__panel-title">Top Guilds by K/D Ratio</h2>
-            @for (guild of topKdGuilds(); track guild.id || guild.name) {
-              <div class="battle-detail__bar-row">
-                <span class="truncate" [class.font-bold]="guild.isOurGuild">
-                  {{ guild.name }}
-                </span>
-                <div class="battle-detail__bar battle-detail__bar--kills">
-                  <span [style.width.%]="percentage(guild.kdRatio, maxGuildKd())"></span>
-                </div>
-                <strong class="mono">{{ formatDecimal(guild.kdRatio) }}</strong>
-              </div>
-            }
+            <h2 class="battle-detail__panel-title">{{ t('battles.top_guilds_kd') }}</h2>
+            <app-chart
+              [option]="topGuildsKdOption()"
+              height="16rem"
+              [label]="t('battles.top_guilds_kd')"
+              [tableHead]="topGuildsKdTableHead()"
+              [tableRows]="topGuildsKdTableRows()"
+            />
           </article>
 
-          <!-- Weapon Role Distribution -->
+          <!-- Composition by Side -->
           <article class="surface p-5">
-            <h2 class="battle-detail__panel-title">{{ t('battles.class_breakdown') }}</h2>
-            @for (roleStat of roleDistribution(); track roleStat.role) {
-              <div class="battle-detail__bar-row">
-                <span class="capitalize">{{ formatRoleName(roleStat.role) }}</span>
-                <div class="battle-detail__bar battle-detail__bar--players">
-                  <span [style.width.%]="percentage(roleStat.count, detail.players.length)"></span>
-                </div>
-                <strong class="mono">{{ roleStat.count }} ({{ formatDecimal(percentage(roleStat.count, detail.players.length)) }}%)</strong>
-              </div>
-            }
+            <h2 class="battle-detail__panel-title mb-0">{{ t('battles.composition_by_side') }}</h2>
+            <p class="text-xs text-secondary mb-3">{{ t('battles.composition_by_side_hint') }}</p>
+            <app-chart
+              [option]="roleCompositionOption()"
+              height="14rem"
+              [label]="t('battles.composition_by_side')"
+              [tableHead]="roleCompositionTableHead()"
+              [tableRows]="roleCompositionTableRows()"
+            />
           </article>
         </section>
       }
@@ -524,29 +493,21 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
               </div>
             </article>
 
-            <!-- Alliance Share Donut / Gauge -->
+            <!-- Alliance Share Meter -->
             <article class="surface p-5 flex flex-col justify-between">
-              <h2 class="battle-detail__panel-title mb-2">Our Alliance Battle Share</h2>
-              <div class="flex items-center justify-center my-auto py-2">
-                <svg class="battle-detail__donut" viewBox="0 0 42 42" role="img" aria-label="Alliance fame share">
-                  <circle cx="21" cy="21" r="15.9" fill="transparent" stroke="var(--color-surface-2)" stroke-width="6"></circle>
-                  <circle
-                    cx="21"
-                    cy="21"
-                    r="15.9"
-                    fill="transparent"
-                    stroke="var(--color-primary)"
-                    stroke-width="6"
-                    [attr.stroke-dasharray]="allianceDonutDashArray()"
-                    stroke-dashoffset="25"
-                  ></circle>
-                  <text x="21" y="22.5" text-anchor="middle" class="font-bold">
-                    {{ formatDecimal(ourAllianceFameShare()) }}%
-                  </text>
-                </svg>
+              <h2 class="battle-detail__panel-title mb-2">{{ t('battles.alliance_fame_share') }}</h2>
+              <div class="my-auto py-2">
+                <div class="battle-detail__bar-row" style="grid-template-columns: 1fr;">
+                  <div class="battle-detail__bar battle-detail__bar--allies" style="height: 1.1rem;">
+                    <span [style.width.%]="ourAllianceFameShare()"></span>
+                  </div>
+                </div>
+                <p class="text-sm font-bold mono text-center mt-2" style="color: var(--color-text)">
+                  {{ formatDecimal(ourAllianceFameShare()) }}%
+                </p>
               </div>
               <p class="text-xs text-center text-secondary mt-2">
-                [{{ ourGuildAllianceName() || 'Allies' }}] accounted for {{ formatDecimal(ourAllianceFameShare()) }}% of total battle kill fame.
+                {{ t('battles.alliance_fame_share_meter', { share: formatDecimal(ourAllianceFameShare()), alliance: ourGuildAllianceName() || t('battles.allies') }) }}
               </p>
             </article>
           </section>
@@ -854,6 +815,19 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
           </div>
         </div>
 
+        <!-- IP vs. Net Fame Performance -->
+        <article class="mt-4 surface p-5">
+          <h2 class="battle-detail__panel-title mb-0">{{ t('battles.ip_performance') }}</h2>
+          <p class="text-xs text-secondary mb-3">{{ t('battles.ip_performance_hint') }}</p>
+          <app-chart
+            [option]="ipPerformanceOption()"
+            height="18rem"
+            [label]="t('battles.ip_performance')"
+            [tableHead]="ipPerformanceTableHead()"
+            [tableRows]="ipPerformanceTableRows()"
+          />
+        </article>
+
         <!-- Full Players Data Table -->
         <article class="mt-4 surface overflow-hidden">
           <app-data-table
@@ -1148,18 +1122,6 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
         font-size: 0.8rem;
         border: 1px solid var(--color-border-strong);
       }
-      .battle-detail__donut {
-        display: block;
-        height: 12rem;
-        max-width: 12rem;
-        width: 100%;
-        margin: 0 auto;
-      }
-      .battle-detail__donut text {
-        fill: var(--color-text);
-        font-size: 0.35rem;
-        font-family: var(--font-mono);
-      }
       .battle-detail__bar-row {
         align-items: center;
         display: grid;
@@ -1193,69 +1155,6 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
         background: var(--color-primary);
       }
 
-      /* Interactive Timeline Skirmish Graph */
-      .battle-detail__timeline-container {
-        overflow-x: auto;
-        padding-bottom: 0.5rem;
-      }
-      .battle-detail__timeline-bars {
-        display: flex;
-        align-items: flex-end;
-        gap: 0.5rem;
-        height: 9rem;
-        min-width: max-content;
-        padding-top: 1rem;
-      }
-      .battle-detail__timeline-col {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        width: 2.2rem;
-        cursor: pointer;
-        padding: 0.25rem;
-        border-radius: var(--radius-sm);
-        transition: background-color 120ms ease;
-      }
-      .battle-detail__timeline-col:hover {
-        background: var(--color-surface-hover);
-      }
-      .battle-detail__timeline-col--active {
-        background: var(--color-surface-2);
-        outline: 1px solid var(--color-primary);
-      }
-      .battle-detail__timeline-bar-wrapper {
-        display: flex;
-        flex-direction: column;
-        justify-content: flex-end;
-        width: 100%;
-        height: 6rem;
-        background: var(--color-surface-2);
-        border-radius: var(--radius-sm);
-        overflow: hidden;
-        gap: 1px;
-      }
-      .battle-detail__timeline-stack {
-        width: 100%;
-        min-height: 2px;
-        transition: height 150ms ease;
-      }
-      .battle-detail__timeline-stack--allies {
-        background: var(--color-success);
-      }
-      .battle-detail__timeline-stack--enemies {
-        background: var(--color-error);
-      }
-      .battle-detail__timeline-label {
-        font-size: 0.65rem;
-        color: var(--color-text-secondary);
-        margin-top: 0.25rem;
-      }
-      .battle-detail__timeline-value {
-        font-size: 0.7rem;
-        font-weight: 700;
-        color: var(--color-text);
-      }
-
       /* Kill Feed Cards */
       .battle-detail__kill-card {
         border-left: 3px solid transparent;
@@ -1276,8 +1175,13 @@ export class BattleDetailPage {
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly theme = inject(ThemeService);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
+
+  // Chart palette/chrome, theme-reactive
+  private readonly palette = computed(() => chartPalette(this.theme.isDark()));
+  private readonly chrome = computed(() => chartChrome(this.theme.isDark()));
 
   protected readonly battle = signal<BattleDetail | null>(null);
   protected readonly loading = signal(false);
@@ -1529,7 +1433,10 @@ export class BattleDetailPage {
     const ourGuildName = this.ourGuild()?.name.toLowerCase();
     const ourAllyName = this.ourGuildAllianceName()?.toLowerCase();
 
-    const minuteMap = new Map<number, { ourKills: number; ourDeaths: number; enemyKills: number; fame: number }>();
+    const minuteMap = new Map<
+      number,
+      { ourKills: number; ourDeaths: number; enemyKills: number; fame: number; ourFame: number; enemyFame: number }
+    >();
 
     for (const kill of detail.kills) {
       const killTime = new Date(kill.time).getTime();
@@ -1542,11 +1449,20 @@ export class BattleDetailPage {
       const isOurVictim = (kill.victim.guild_name?.toLowerCase() === ourGuildName) ||
         (Boolean(ourAllyName) && victimAlly === ourAllyName);
 
-      const bucket = minuteMap.get(minute) ?? { ourKills: 0, ourDeaths: 0, enemyKills: 0, fame: 0 };
+      const bucket = minuteMap.get(minute) ?? {
+        ourKills: 0,
+        ourDeaths: 0,
+        enemyKills: 0,
+        fame: 0,
+        ourFame: 0,
+        enemyFame: 0,
+      };
       if (isOurKiller) {
         bucket.ourKills += 1;
+        bucket.ourFame += kill.total_kill_fame;
       } else {
         bucket.enemyKills += 1;
+        bucket.enemyFame += kill.total_kill_fame;
       }
       if (isOurVictim) {
         bucket.ourDeaths += 1;
@@ -1559,7 +1475,14 @@ export class BattleDetailPage {
     const result: TimelineMinuteBucket[] = [];
 
     for (let m = 0; m <= durationMinutes; m++) {
-      const data = minuteMap.get(m) ?? { ourKills: 0, ourDeaths: 0, enemyKills: 0, fame: 0 };
+      const data = minuteMap.get(m) ?? {
+        ourKills: 0,
+        ourDeaths: 0,
+        enemyKills: 0,
+        fame: 0,
+        ourFame: 0,
+        enemyFame: 0,
+      };
       result.push({
         minute: m,
         label: `${m}m`,
@@ -1568,14 +1491,12 @@ export class BattleDetailPage {
         enemyKills: data.enemyKills,
         totalKills: data.ourKills + data.enemyKills,
         fame: data.fame,
+        ourFame: data.ourFame,
+        enemyFame: data.enemyFame,
       });
     }
 
     return result;
-  });
-
-  protected readonly maxTimelineKills = computed(() => {
-    return Math.max(...this.timelineBuckets().map((b) => b.totalKills), 1);
   });
 
   // Top Guilds sorted by KD
@@ -1583,34 +1504,6 @@ export class BattleDetailPage {
     return [...this.enrichedGuildRows()]
       .sort((a, b) => b.kdRatio - a.kdRatio)
       .slice(0, 8);
-  });
-
-  protected readonly maxGuildKd = computed(() => {
-    return Math.max(...this.topKdGuilds().map((g) => (Number.isFinite(g.kdRatio) ? g.kdRatio : 0)), 1);
-  });
-
-  // Role distribution across all players
-  protected readonly roleDistribution = computed<Array<{ role: CombatRole; count: number }>>(() => {
-    const detail = this.battle();
-    if (!detail) return [];
-    const counts: Record<CombatRole, number> = {
-      tank: 0,
-      healer: 0,
-      support: 0,
-      melee_dps: 0,
-      ranged_dps: 0,
-      other: 0,
-    };
-
-    for (const player of detail.players) {
-      const role = this.inferPlayerRole(player.name, detail.kills);
-      counts[role] = (counts[role] ?? 0) + 1;
-    }
-
-    return (Object.entries(counts) as Array<[CombatRole, number]>)
-      .filter(([_, count]) => count > 0)
-      .map(([role, count]) => ({ role, count }))
-      .sort((a, b) => b.count - a.count);
   });
 
   // Enriched Guild Rows
@@ -1856,6 +1749,399 @@ export class BattleDetailPage {
     return this.battle()?.kills.filter((k) => this.isOurGuildParticipant(k.victim)).length ?? 0;
   });
 
+  /* ------------------------------ Chart option builders ------------------------------ */
+
+  /** Shared grid skeleton so every plot on this page lines up the same way. */
+  private baseGrid(bottom: number): EChartsOption['grid'] {
+    return { left: 4, right: 16, top: 24, bottom, containLabel: true };
+  }
+
+  private valueAxisLabel(): Record<string, unknown> {
+    return { formatter: (value: number) => this.formatCompact(value), hideOverlap: true };
+  }
+
+  /** Vertical gradient under a line, fading to nothing at the baseline. */
+  private areaFill(color: string): Record<string, unknown> {
+    return {
+      color: {
+        type: 'linear',
+        x: 0,
+        y: 0,
+        x2: 0,
+        y2: 1,
+        colorStops: [
+          { offset: 0, color: `${color}3d` },
+          { offset: 1, color: `${color}00` },
+        ],
+      },
+    };
+  }
+
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // Fame Distribution by Alliance — horizontal bar, our alliance emphasised
+  protected readonly allianceFameOption = computed<EChartsOption>(() => {
+    const palette = this.palette();
+    const chrome = this.chrome();
+    const rows = [...this.alliances()].sort((a, b) => a.killFame - b.killFame);
+
+    return {
+      aria: { enabled: true },
+      grid: this.baseGrid(4),
+      tooltip: { trigger: 'item' },
+      xAxis: { type: 'value', splitNumber: 3, axisLabel: this.valueAxisLabel() },
+      yAxis: {
+        type: 'category',
+        data: rows.map((a) => (a.isSolo ? a.name : `[${a.name}]`)),
+        axisLabel: { width: 110, overflow: 'truncate' },
+      },
+      series: [
+        {
+          type: 'bar',
+          data: rows.map((a) => ({
+            value: a.killFame,
+            itemStyle: {
+              color: a.isOurAlliance ? palette.ally : chrome.axis,
+              borderRadius: [0, 4, 4, 0],
+            },
+          })),
+          barMaxWidth: 16,
+          barCategoryGap: '42%',
+        },
+      ],
+    };
+  });
+
+  protected readonly allianceFameTableHead = computed(() => [
+    this.t('battles.alliance'),
+    this.t('battles.kill_fame'),
+    this.t('battles.fame_share'),
+  ]);
+
+  protected readonly allianceFameTableRows = computed<ChartTableRow[]>(() => {
+    const totalFame = this.battle()?.total_fame ?? 0;
+    return this.alliances().map((a) => [
+      a.isSolo ? a.name : `[${a.name}]`,
+      this.formatAmount(a.killFame),
+      `${this.formatDecimal(this.percentage(a.killFame, totalFame))}%`,
+    ]);
+  });
+
+  // Top Guilds by K/D — horizontal bar, our guild emphasised
+  protected readonly topGuildsKdOption = computed<EChartsOption>(() => {
+    const palette = this.palette();
+    const chrome = this.chrome();
+    const rows = [...this.topKdGuilds()].sort((a, b) => a.kdRatio - b.kdRatio);
+
+    return {
+      aria: { enabled: true },
+      grid: this.baseGrid(4),
+      tooltip: { trigger: 'item' },
+      xAxis: { type: 'value', splitNumber: 3, axisLabel: this.valueAxisLabel() },
+      yAxis: {
+        type: 'category',
+        data: rows.map((g) => g.name),
+        axisLabel: { width: 110, overflow: 'truncate' },
+      },
+      series: [
+        {
+          type: 'bar',
+          data: rows.map((g) => ({
+            value: Math.round(g.kdRatio * 100) / 100,
+            itemStyle: {
+              color: g.isOurGuild ? palette.ally : chrome.axis,
+              borderRadius: [0, 4, 4, 0],
+            },
+          })),
+          barMaxWidth: 16,
+          barCategoryGap: '42%',
+        },
+      ],
+    };
+  });
+
+  protected readonly topGuildsKdTableHead = computed(() => [
+    this.t('common.name'),
+    this.t('battles.kill_death'),
+    this.t('battles.kills'),
+    this.t('battles.deaths'),
+  ]);
+
+  protected readonly topGuildsKdTableRows = computed<ChartTableRow[]>(() =>
+    this.topKdGuilds().map((g) => [
+      g.name,
+      this.formatDecimal(g.kdRatio),
+      this.formatAmount(g.kills),
+      this.formatAmount(g.deaths),
+    ]),
+  );
+
+  // Timeline density — stacked bar, ours vs enemy kills per minute
+  protected readonly timelineDensityOption = computed<EChartsOption>(() => {
+    const palette = this.palette();
+    const buckets = this.timelineBuckets();
+    const zoomable = buckets.length > 20;
+
+    return {
+      aria: { enabled: true },
+      grid: this.baseGrid(zoomable ? 46 : 8),
+      legend: { top: 0, left: 0 },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+      xAxis: { type: 'category', data: buckets.map((b) => b.label) },
+      yAxis: { type: 'value', minInterval: 1, axisLabel: this.valueAxisLabel() },
+      dataZoom: zoomable
+        ? [
+            { type: 'inside', filterMode: 'none' },
+            { type: 'slider', height: 16, bottom: 6, filterMode: 'none' },
+          ]
+        : undefined,
+      series: [
+        {
+          name: this.t('battles.filter_our_kills'),
+          type: 'bar',
+          stack: 'kills',
+          data: buckets.map((b) => b.ourKills),
+          itemStyle: { color: palette.ally },
+          barMaxWidth: 22,
+        },
+        {
+          name: this.t('battles.enemy_kills'),
+          type: 'bar',
+          stack: 'kills',
+          data: buckets.map((b) => b.enemyKills),
+          itemStyle: { color: palette.enemy },
+          barMaxWidth: 22,
+        },
+      ],
+    };
+  });
+
+  protected readonly timelineDensityTableHead = computed(() => [
+    this.t('battles.minute'),
+    this.t('battles.filter_our_kills'),
+    this.t('battles.enemy_kills'),
+    this.t('battles.kills'),
+  ]);
+
+  protected readonly timelineDensityTableRows = computed<ChartTableRow[]>(() =>
+    this.timelineBuckets().map((b) => [
+      b.label,
+      this.formatAmount(b.ourKills),
+      this.formatAmount(b.enemyKills),
+      this.formatAmount(b.totalKills),
+    ]),
+  );
+
+  /** Click on a timeline column: filters the kill feed by that minute. */
+  protected onTimelineChartClick(event: ChartClickEvent): void {
+    const bucket = this.timelineBuckets()[event.dataIndex];
+    if (bucket) {
+      this.toggleTimelineMinute(bucket.minute);
+    }
+  }
+
+  // Battle momentum — cumulative fame swing per minute, diverging area
+  protected readonly momentumOption = computed<EChartsOption>(() => {
+    const palette = this.palette();
+    const chrome = this.chrome();
+    const buckets = this.timelineBuckets();
+    let running = 0;
+    const cumulative = buckets.map((b) => (running += b.ourFame - b.enemyFame));
+    const above = cumulative.map((v) => (v >= 0 ? v : null));
+    const below = cumulative.map((v) => (v <= 0 ? v : null));
+
+    return {
+      aria: { enabled: true },
+      grid: this.baseGrid(8),
+      tooltip: { trigger: 'axis' },
+      xAxis: { type: 'category', boundaryGap: false, data: buckets.map((b) => b.label) },
+      yAxis: { type: 'value', axisLabel: this.valueAxisLabel() },
+      series: [
+        {
+          name: this.t('battles.momentum_ally_lead'),
+          type: 'line',
+          data: above,
+          symbol: 'none',
+          connectNulls: false,
+          lineStyle: { width: 2, color: palette.ally },
+          itemStyle: { color: palette.ally },
+          areaStyle: this.areaFill(palette.ally),
+          markLine: {
+            silent: true,
+            symbol: 'none',
+            lineStyle: { color: chrome.axis, type: 'dashed' },
+            data: [{ yAxis: 0 }],
+          },
+        },
+        {
+          name: this.t('battles.momentum_enemy_lead'),
+          type: 'line',
+          data: below,
+          symbol: 'none',
+          connectNulls: false,
+          lineStyle: { width: 2, color: palette.enemy },
+          itemStyle: { color: palette.enemy },
+          areaStyle: this.areaFill(palette.enemy),
+        },
+      ],
+    };
+  });
+
+  protected readonly momentumTableHead = computed(() => [
+    this.t('battles.minute'),
+    this.t('battles.allies'),
+    this.t('battles.enemies'),
+    this.t('battles.net_fame'),
+  ]);
+
+  protected readonly momentumTableRows = computed<ChartTableRow[]>(() => {
+    let running = 0;
+    return this.timelineBuckets().map((b) => {
+      running += b.ourFame - b.enemyFame;
+      return [
+        b.label,
+        this.formatAmount(b.ourFame),
+        this.formatAmount(b.enemyFame),
+        `${running >= 0 ? '+' : ''}${this.formatAmount(running)}`,
+      ];
+    });
+  });
+
+  // Composition by side — allies vs enemies, stacked by role
+  protected readonly roleDistributionBySide = computed<
+    Array<{ role: CombatRole; allies: number; enemies: number }>
+  >(() => {
+    const roles: CombatRole[] = ['tank', 'healer', 'support', 'melee_dps', 'ranged_dps', 'other'];
+    const counts = new Map<CombatRole, { allies: number; enemies: number }>(
+      roles.map((role) => [role, { allies: 0, enemies: 0 }]),
+    );
+    for (const p of this.enrichedPlayerRows()) {
+      const bucket = counts.get(p.role);
+      if (!bucket) continue;
+      if (p.isOurAlliance || p.isOurGuild) {
+        bucket.allies += 1;
+      } else {
+        bucket.enemies += 1;
+      }
+    }
+    return roles
+      .map((role) => ({ role, ...counts.get(role)! }))
+      .filter((r) => r.allies > 0 || r.enemies > 0);
+  });
+
+  protected readonly roleCompositionOption = computed<EChartsOption>(() => {
+    const rows = this.roleDistributionBySide();
+    const categories = [this.t('battles.allies'), this.t('battles.enemies')];
+
+    return {
+      aria: { enabled: true },
+      grid: this.baseGrid(8),
+      legend: { top: 0, left: 0 },
+      tooltip: { trigger: 'item' },
+      xAxis: { type: 'value', minInterval: 1, axisLabel: this.valueAxisLabel() },
+      yAxis: { type: 'category', data: categories },
+      series: rows.map((r) => ({
+        name: this.formatRoleName(r.role),
+        type: 'bar' as const,
+        stack: 'roles',
+        data: [r.allies, r.enemies],
+        barMaxWidth: 32,
+      })),
+    };
+  });
+
+  protected readonly roleCompositionTableHead = computed(() => [
+    this.t('battles.role'),
+    this.t('battles.allies'),
+    this.t('battles.enemies'),
+  ]);
+
+  protected readonly roleCompositionTableRows = computed<ChartTableRow[]>(() =>
+    this.roleDistributionBySide().map((r) => [
+      this.formatRoleName(r.role),
+      this.formatAmount(r.allies),
+      this.formatAmount(r.enemies),
+    ]),
+  );
+
+  // IP vs. net-fame performance — one scatter point per player
+  protected readonly ipPerformanceOption = computed<EChartsOption>(() => {
+    const palette = this.palette();
+    const rows = this.enrichedPlayerRows();
+    const allies = rows.filter((p) => p.isOurAlliance || p.isOurGuild);
+    const enemies = rows.filter((p) => !p.isOurAlliance && !p.isOurGuild);
+    const toPoint = (p: PlayerEnrichedRow) => ({ value: [p.item_power, p.netFame], name: p.name });
+
+    return {
+      aria: { enabled: true },
+      grid: this.baseGrid(8),
+      legend: { top: 0, left: 0 },
+      tooltip: {
+        trigger: 'item',
+        formatter: (input: unknown) => {
+          const param = input as { name?: string; value?: unknown };
+          const value = Array.isArray(param.value) ? param.value : [0, 0];
+          const name = this.escapeHtml(param.name ?? '');
+          return `<strong>${name}</strong><br/>${this.t('battles.item_power')}: ${this.formatDecimal(
+            Number(value[0]),
+          )}<br/>${this.t('battles.net_fame')}: ${this.formatCompact(Number(value[1]))}`;
+        },
+      },
+      xAxis: {
+        type: 'value',
+        name: this.t('battles.item_power'),
+        nameLocation: 'middle',
+        nameGap: 28,
+        axisLabel: this.valueAxisLabel(),
+      },
+      yAxis: {
+        type: 'value',
+        name: this.t('battles.net_fame'),
+        nameLocation: 'middle',
+        nameGap: 48,
+        axisLabel: this.valueAxisLabel(),
+      },
+      series: [
+        {
+          name: this.t('battles.allies'),
+          type: 'scatter',
+          data: allies.map(toPoint),
+          symbolSize: 10,
+          itemStyle: { color: palette.ally },
+        },
+        {
+          name: this.t('battles.enemies'),
+          type: 'scatter',
+          data: enemies.map(toPoint),
+          symbolSize: 10,
+          itemStyle: { color: palette.enemy },
+        },
+      ],
+    };
+  });
+
+  protected readonly ipPerformanceTableHead = computed(() => [
+    this.t('common.name'),
+    this.t('battles.side'),
+    this.t('battles.item_power'),
+    this.t('battles.net_fame'),
+  ]);
+
+  protected readonly ipPerformanceTableRows = computed<ChartTableRow[]>(() =>
+    this.enrichedPlayerRows().map((p) => [
+      p.name,
+      p.isOurAlliance || p.isOurGuild ? this.t('battles.allies') : this.t('battles.enemies'),
+      this.formatDecimal(p.item_power),
+      `${p.netFame >= 0 ? '+' : ''}${this.formatAmount(p.netFame)}`,
+    ]),
+  );
+
   // Table Columns
   protected readonly guildRosterColumns: readonly DataTableColumn<PlayerEnrichedRow>[] = [
     {
@@ -2021,7 +2307,8 @@ export class BattleDetailPage {
   protected readonly trackPlayerRow = (p: PlayerEnrichedRow): unknown => p.id || p.name;
   protected readonly trackGuildRow = (g: GuildEnrichedRow): unknown => g.id || g.name;
 
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
 
   constructor() {
     void this.load();
@@ -2072,11 +2359,6 @@ export class BattleDetailPage {
     } catch {
       this.toasts.error('Failed to copy link.');
     }
-  }
-
-  protected allianceDonutDashArray(): string {
-    const share = this.ourAllianceFameShare();
-    return `${share} ${100 - share}`;
   }
 
   // Formatters
