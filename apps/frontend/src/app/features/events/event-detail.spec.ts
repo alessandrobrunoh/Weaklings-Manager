@@ -67,7 +67,15 @@ describe('EventDetailPage roster room', () => {
     TestBed.configureTestingModule({
       imports: [EventDetailPage],
       providers: [
-        { provide: ApiService, useValue: { get: () => of({ items: [] }), post: () => of({}), put: () => of({}), delete: () => of({}) } },
+        {
+          provide: ApiService,
+          useValue: {
+            get: () => of({ items: [] }),
+            post: () => of({}),
+            put: () => of({}),
+            delete: () => of({}),
+          },
+        },
         {
           provide: AuthService,
           useValue: { hasPermission: () => true, profile: () => ({ user_id: 42 }) },
@@ -288,5 +296,54 @@ describe('EventDetailPage roster room', () => {
       `api/events/10/roster/seats/${encodeURIComponent(seat2.key)}`,
       { user_id: 201, expected_roster_version: 1 },
     );
+  });
+});
+
+interface EventDetailLoadAccess {
+  readonly loading: Signal<boolean>;
+  load(silent?: boolean): Promise<void>;
+}
+
+describe('EventDetailPage page spinner', () => {
+  it('lowers the spinner when a silent realtime reload supersedes the initial load', async () => {
+    TestBed.configureTestingModule({
+      imports: [EventDetailPage],
+      providers: [
+        { provide: ApiService, useValue: { get: () => of({ items: [] }) } },
+        {
+          provide: AuthService,
+          useValue: { hasPermission: () => true, profile: () => ({ user_id: 1 }) },
+        },
+        {
+          provide: ActivatedRoute,
+          useValue: { paramMap: of(convertToParamMap({ eventId: '1' })) },
+        },
+        { provide: Router, useValue: { navigate: () => Promise.resolve(true) } },
+        { provide: ToastService, useValue: { error: () => undefined, success: () => undefined } },
+        { provide: TranslateService, useValue: { t: (key: string) => key } },
+        { provide: AlbionCatalogService, useValue: { load: () => Promise.resolve([]) } },
+        {
+          provide: RealtimeRosterService,
+          useValue: {
+            close: () => undefined,
+            connect: () => undefined,
+            messages: NEVER,
+            connectionState: signal('disconnected'),
+          },
+        },
+      ],
+    });
+
+    const fixture = TestBed.createComponent(EventDetailPage);
+    const page = fixture.componentInstance as unknown as EventDetailLoadAccess;
+
+    // The roster socket pushes its first message while the initial load is still in flight, so a
+    // silent reload starts and bumps the load generation. The silent path never touches the
+    // spinner, so the load that raised it must still lower it.
+    const initial = page.load();
+    void page.load(true);
+    await initial;
+
+    expect(page.loading()).toBe(false);
   });
 });
