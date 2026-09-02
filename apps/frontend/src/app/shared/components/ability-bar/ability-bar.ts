@@ -41,19 +41,40 @@ export interface AbilityChoiceChange {
             <span class="ability-bar__key" aria-hidden="true">{{ slot.label }}</span>
 
             @if (canManage()) {
-              <label class="ability-bar__control">
-                <span class="sr-only">{{ slot.label }}</span>
-                <select
-                  class="select select--sm"
-                  [value]="slot.selected ?? ''"
-                  (change)="onSelect(slot, $event)"
+              <div class="ability-bar__choices" role="group" [attr.aria-label]="slot.label">
+                <button
+                  type="button"
+                  class="ability-bar__choice ability-bar__choice--empty"
+                  [class.ability-bar__choice--selected]="!slot.selected"
+                  [attr.aria-pressed]="!slot.selected"
+                  [attr.aria-label]="slot.label + ': ' + emptyLabel()"
+                  [title]="emptyLabel()"
+                  (click)="clearChoice(slot)"
                 >
-                  <option value="">{{ emptyLabel() }}</option>
-                  @for (choice of slot.choices; track choice.id) {
-                    <option [value]="choice.id">{{ choice.name }}</option>
-                  }
-                </select>
-              </label>
+                  <span aria-hidden="true">×</span>
+                </button>
+                @for (choice of slot.choices; track choice.id) {
+                  <button
+                    type="button"
+                    class="ability-bar__choice"
+                    [class.ability-bar__choice--selected]="choice.id === slot.selected"
+                    [attr.aria-pressed]="choice.id === slot.selected"
+                    [attr.aria-label]="slot.label + ': ' + choice.name"
+                    [title]="choice.name"
+                    (click)="selectChoice(slot, choice.id)"
+                  >
+                    <img
+                      class="ability-bar__icon"
+                      [src]="iconUrl(choice.id)"
+                      alt=""
+                      width="36"
+                      height="36"
+                      loading="lazy"
+                      (error)="onIconError($event)"
+                    />
+                  </button>
+                }
+              </div>
             } @else if (chosen) {
               <span class="ability-bar__chosen">
                 <img
@@ -87,9 +108,47 @@ export interface AbilityChoiceChange {
 
     .ability-bar__slot {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 0.5rem;
       min-width: 0;
+    }
+
+    .ability-bar__choices {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.375rem;
+      min-width: 0;
+    }
+
+    .ability-bar__choice {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      padding: 0.125rem;
+      border: 1px solid var(--color-border);
+      border-radius: 0.375rem;
+      background: var(--color-surface-1, transparent);
+      cursor: pointer;
+      transition: border-color 120ms ease-out, background-color 120ms ease-out;
+    }
+
+    .ability-bar__choice:hover,
+    .ability-bar__choice:focus-visible {
+      border-color: var(--color-primary);
+    }
+
+    .ability-bar__choice--selected {
+      border-color: var(--color-primary);
+      background: var(--color-primary-subtle);
+      box-shadow: 0 0 0 1px var(--color-primary);
+    }
+
+    .ability-bar__choice--empty {
+      color: var(--color-text-secondary);
+      font-size: 1.25rem;
+      line-height: 1;
     }
 
     .ability-bar__key {
@@ -150,13 +209,12 @@ export class AbilityBar {
     return slot.choices.find((choice) => choice.id === slot.selected) ?? null;
   }
 
-  protected onSelect(slot: AbilitySlotView, event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
-    this.choiceChange.emit({
-      kind: slot.kind,
-      index: slot.index,
-      spellId: value === '' ? null : value,
-    });
+  protected selectChoice(slot: AbilitySlotView, spellId: string): void {
+    this.choiceChange.emit({ kind: slot.kind, index: slot.index, spellId });
+  }
+
+  protected clearChoice(slot: AbilitySlotView): void {
+    this.choiceChange.emit({ kind: slot.kind, index: slot.index, spellId: null });
   }
 
   /**
