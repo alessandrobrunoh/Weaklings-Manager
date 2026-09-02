@@ -18,6 +18,7 @@ import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { groupPermissions, type PermissionGroup } from './permission-groups';
 
@@ -28,7 +29,7 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
 @Component({
   selector: 'app-admin-permissions',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EmptyState, ErrorState, Icon, Loading, PageHeader, TooltipDirective],
+  imports: [EmptyState, ErrorState, Icon, Loading, PageHeader, PageStack, TooltipDirective],
   styles: `
     :host {
       display: block;
@@ -115,8 +116,9 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
     @if (loading()) {
       <app-loading />
     } @else if (matrix(); as data) {
+      <app-page-stack>
       <!-- Filter & Search Toolbar -->
-      <section class="card p-4 mb-4">
+      <section class="card p-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <!-- Left filters -->
           <div class="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
@@ -381,6 +383,7 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
           </table>
         </div>
       }
+      </app-page-stack>
     } @else {
       <app-error-state
         [message]="t('admin.loadError')"

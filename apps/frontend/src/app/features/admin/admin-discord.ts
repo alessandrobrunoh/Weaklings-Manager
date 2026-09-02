@@ -15,6 +15,7 @@ import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 
 const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
   discord_events_channel_id: '',
@@ -34,12 +35,13 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
 @Component({
   selector: 'app-admin-discord',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Loading, PageHeader],
+  imports: [Loading, PageHeader, PageStack],
   template: `
     <app-page-header [title]="t('admin.discord.title')" [subtitle]="t('admin.discord.hint')" />
 
+    <app-page-stack>
     @if (canManageDiscordSettings()) {
-      <section class="card mb-6 p-5">
+      <section class="card p-5">
         <h2 class="eyebrow mb-1">{{ t('admin.discord.title') }}</h2>
         <p class="mb-4 max-w-2xl text-xs" style="color: var(--color-text-secondary)">
           {{ t('admin.discord.hint') }}
@@ -204,6 +206,7 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
         }
       </section>
     }
+    </app-page-stack>
   `,
 })
 export class AdminDiscord {
