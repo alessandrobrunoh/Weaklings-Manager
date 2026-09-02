@@ -26,6 +26,32 @@ where
     Option::<T>::deserialize(deserializer).map(Some)
 }
 
+/// Deserializes an optional integer from either a numeric value or its string representation.
+///
+/// Query-string extractors expose every value as a string, while JSON request bodies commonly
+/// use a number. Keeping this compatibility at the boundary avoids making the domain model
+/// stringly typed just because one endpoint is consumed through both representations.
+pub fn optional_i64_from_string_or_number<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum IntegerValue {
+        Number(i64),
+        String(String),
+    }
+
+    Option::<IntegerValue>::deserialize(deserializer)?
+        .map(|value| match value {
+            IntegerValue::Number(value) => Ok(value),
+            IntegerValue::String(value) => value
+                .parse::<i64>()
+                .map_err(|_| serde::de::Error::custom(format!("invalid integer value: {value:?}"))),
+        })
+        .transpose()
+}
+
 #[cfg(test)]
 mod tests {
     #[derive(Debug, serde::Deserialize, PartialEq)]
@@ -54,5 +80,19 @@ mod tests {
     fn explicit_value_means_set() {
         let p: Probe = serde_json::from_str(r#"{"field": 42}"#).unwrap();
         assert_eq!(p.field, Some(Some(42)));
+    }
+
+    #[derive(Debug, serde::Deserialize, PartialEq)]
+    struct OptionalIntegerProbe {
+        #[serde(deserialize_with = "super::optional_i64_from_string_or_number")]
+        field: Option<i64>,
+    }
+
+    #[test]
+    fn optional_integer_accepts_json_number_and_string() {
+        let number: OptionalIntegerProbe = serde_json::from_str(r#"{"field": 23}"#).unwrap();
+        let string: OptionalIntegerProbe = serde_json::from_str(r#"{"field": "23"}"#).unwrap();
+        assert_eq!(number.field, Some(23));
+        assert_eq!(string.field, Some(23));
     }
 }

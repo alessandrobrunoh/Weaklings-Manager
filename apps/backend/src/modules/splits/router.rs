@@ -125,7 +125,7 @@ pub async fn split_kpi_summary(
         officer closes it out with one of `POST /splits/{id}/complete`, `.../not-completed`, or \
         `.../lost` — see the `splits` tag description for the full lifecycle. `net_value` is `null` \
         until completed; the preview formula the frontend can show before that is \
-        `estimated_market_value - (estimated_market_value * fee / 100) - repair_value + bags_value`, with a default fee of 20%.",
+        `(estimated_market_value - repair_value + bags_value) - ((estimated_market_value - repair_value + bags_value) * fee / 100)`, with a configurable default fee of 20%.",
     security(("session_cookie" = [])),
     request_body(content = CreateSplitRequest, description = "Loot values plus the full participant list up front."),
     responses(

@@ -450,6 +450,7 @@ async fn create_event_roster_role(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(hub): Extension<RosterHub>,
     Path(id): Path<i64>,
     Json(request): Json<CreateEventRosterRoleRequest>,
 ) -> Result<Json<ApiResponse<EventRosterRoleView>>, AppError> {
@@ -457,6 +458,7 @@ async fn create_event_roster_role(
     let role = EventService::new()
         .create_event_roster_role(&db, id, request)
         .await?;
+    notify_roster_roles_changed(&db, &hub, id).await;
     Ok(Json(ApiResponse::new(role)))
 }
 
@@ -482,13 +484,39 @@ async fn delete_event_roster_role(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(hub): Extension<RosterHub>,
     Path((id, role_id)): Path<(i64, i64)>,
 ) -> Result<StatusCode, AppError> {
     user.require(&perms, Permission::EventsEdit).await?;
     EventService::new()
         .delete_event_roster_role(&db, id, role_id)
         .await?;
+    notify_roster_roles_changed(&db, &hub, id).await;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Tells every live-roster subscriber that the seat layout itself changed.
+///
+/// Adding or removing an extra role adds or removes seats for everyone looking at the roster, so it
+/// belongs on the socket alongside the seat commands. The roster version is unchanged — no seat
+/// assignment moved — and clients only skip notifications *older* than their snapshot, so echoing
+/// the current version is enough to make them refetch. A missing event or a read failure only costs
+/// the other viewers a manual refresh, so it is not worth failing the request that already
+/// succeeded.
+async fn notify_roster_roles_changed(
+    db: &sea_orm::DatabaseConnection,
+    hub: &RosterHub,
+    event_id: i64,
+) {
+    let version = super::entities::event::Entity::find_by_id(event_id)
+        .one(db)
+        .await
+        .ok()
+        .flatten()
+        .map(|event| event.roster_version);
+    if let Some(version) = version {
+        hub.publish(event_id, version, "roles_changed", Vec::new());
+    }
 }
 
 /// Creates a new event.

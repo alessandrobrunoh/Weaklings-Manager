@@ -269,7 +269,7 @@ export const es: TranslationDict = {
   'splits.create_hint':
     'Sube una captura del grupo, empareja nombres o busca en la lista del gremio.',
   'splits.net_preview': 'Vista previa',
-  'splits.net_formula': 'Estimado − Comisión − Reparaciones + Bolsas',
+  'splits.net_formula': '(Estimado − Reparaciones + Bolsas) − Comisión',
   'splits.roster_hint': 'Ajusta las cuotas en porcentaje',
   'splits.fee_invalid': 'La comisión debe estar entre 0 y 100%.',
   'splits.weight_sum_invalid': 'Los pesos de los participantes deben sumar 100%.',
@@ -1113,6 +1113,8 @@ export const es: TranslationDict = {
   'admin.discord.placeholder': 'No configurado',
   'admin.discord.save': 'Guardar',
   'admin.discord.saved': 'Ajustes de Discord guardados.',
+  'admin.split.defaultFee': 'Comisión predeterminada de splits',
+  'admin.split.defaultFeeHint': 'Se aplica a los splits nuevos cuando no se introduce una comisión. Rango permitido: 0–100%.',
   'admin.autorole.title': 'Rol base de gremio',
   'admin.autorole.hint':
     'Este rol se asigna solo cuando un personaje de Albion vinculado pertenece al gremio configurado. No se asigna al entrar simplemente en Discord.',

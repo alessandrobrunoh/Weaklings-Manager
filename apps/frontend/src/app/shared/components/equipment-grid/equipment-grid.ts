@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 
 import type { BuildItemSlot, BuildSlot, OpenAlbionItem } from '../../../core/models/api.models';
+import type { AbilitySlotView } from '../../data/albion-abilities';
+import { AbilityBar, type AbilityChoiceChange } from '../ability-bar/ability-bar';
 
 /**
  * Canonical character-sheet slot order.
@@ -66,12 +68,15 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
  *   (saveSlot)="onSaveSlot()"
  *   (cancelEdit)="onCancelEdit()"
  *   (removeItem)="onRemoveItem($event)"
+ *   [draftAbilitySlots]="draftAbilitySlots()"
+ *   (abilityChoice)="onDraftAbilityChange($event)"
  * />
  * ```
  */
 @Component({
   selector: 'app-equipment-grid',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [AbilityBar],
   template: `
     <div class="equipment-grid equipment-grid--paperdoll" role="group" aria-label="Equipment">
       @for (slot of slots; track slot) {
@@ -197,6 +202,17 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
                     }
                   </div>
                 </div>
+
+                @if (draftAbilitySlots().length > 0) {
+                  <div class="text-left">
+                    <span class="label">Abilities</span>
+                    <app-ability-bar
+                      [slots]="draftAbilitySlots()"
+                      [canManage]="true"
+                      (choiceChange)="abilityChoice.emit($event)"
+                    />
+                  </div>
+                }
               </div>
 
               <div class="flex justify-between gap-2">
@@ -247,6 +263,13 @@ export class EquipmentGrid {
   /** Tier options shown in the popover's tier select. */
   readonly tiers = input<readonly string[]>(['T4', 'T5', 'T6', 'T7', 'T8']);
 
+  /**
+   * Ability slots the currently drafted item offers, already resolved against the ability catalog
+   * and the draft's in-progress choices. Empty for an item with nothing to pick — off-hands,
+   * capes, bags, consumables, mounts — or before any item is selected, so no bar renders.
+   */
+  readonly draftAbilitySlots = input<readonly AbilitySlotView[]>([]);
+
   /** Fired when the user clicks anywhere on a slot card. */
   readonly slotToggle = output<BuildSlot>();
 
@@ -267,6 +290,9 @@ export class EquipmentGrid {
 
   /** Fired when the user clicks the inline clear (×) button on a filled slot. */
   readonly removeItem = output<BuildSlot>();
+
+  /** Fired when the user picks an ability in the draft item's bar, before the slot is saved. */
+  readonly abilityChoice = output<AbilityChoiceChange>();
 
   protected readonly slots = SLOT_ORDER;
 

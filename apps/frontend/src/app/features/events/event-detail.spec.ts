@@ -299,6 +299,101 @@ describe('EventDetailPage roster room', () => {
   });
 });
 
+interface EventDetailCommandAccess {
+  readonly rosterSnapshot: WritableSignal<EventRosterView | null>;
+  readonly rosterSnapshotState: Signal<'loading' | 'ready' | 'error'>;
+  clearServerRosterSeat(seat: EventRosterSeat): Promise<void>;
+}
+
+describe('EventDetailPage seat commands', () => {
+  it('folds the command response in without ever leaving the ready state', async () => {
+    const seated = seat(1, 1, 101);
+    const cleared = { ...seated, participant: null };
+    const before: EventRosterView = {
+      event_id: 10,
+      roster_version: 4,
+      active_comp_id: 1,
+      seats: [seated],
+      bench: [],
+    };
+    const after: EventRosterView = {
+      ...before,
+      roster_version: 5,
+      seats: [cleared],
+      bench: [seated.participant as EventRosterParticipant],
+    };
+
+    const getSpy = vi.fn((path: string) => {
+      if (path === 'api/events/10') {
+        return of({
+          id: 10,
+          title: 'Event',
+          status: 'scheduled',
+          event_date_utc: new Date().toISOString(),
+          battles: [],
+          participants: [],
+          roster_roles: [],
+          splits: [],
+          fights: [],
+        });
+      }
+      if (path === 'api/events/10/roster') {
+        return of(before);
+      }
+      return of({ items: [] });
+    });
+    const deleteSpy = vi.fn().mockReturnValue(of(after));
+
+    TestBed.configureTestingModule({
+      imports: [EventDetailPage],
+      providers: [
+        {
+          provide: ApiService,
+          useValue: { get: getSpy, post: () => of({}), put: () => of({}), delete: deleteSpy },
+        },
+        {
+          provide: AuthService,
+          useValue: { hasPermission: () => true, profile: () => ({ user_id: 1 }) },
+        },
+        {
+          provide: ActivatedRoute,
+          useValue: { paramMap: of(convertToParamMap({ eventId: '10' })) },
+        },
+        { provide: Router, useValue: { navigate: () => Promise.resolve(true) } },
+        { provide: ToastService, useValue: { error: () => undefined, success: () => undefined } },
+        { provide: TranslateService, useValue: { t: (key: string) => key } },
+        { provide: AlbionCatalogService, useValue: { load: () => Promise.resolve([]) } },
+        {
+          provide: RealtimeRosterService,
+          useValue: {
+            close: () => undefined,
+            connect: () => undefined,
+            messages: NEVER,
+            connectionState: signal('disconnected'),
+          },
+        },
+      ],
+    });
+
+    const fixture = TestBed.createComponent(EventDetailPage);
+    const page = fixture.componentInstance as unknown as EventDetailCommandAccess;
+    // Let the constructor's initial load settle so it cannot land on top of the assertions.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    page.rosterSnapshot.set(before);
+    getSpy.mockClear();
+
+    await page.clearServerRosterSeat(seated);
+
+    // The roster panel must stay mounted: dropping to 'loading' unmounts it, collapsing the page
+    // and throwing the officer back to the top on every assignment.
+    expect(page.rosterSnapshotState()).toBe('ready');
+    expect(page.rosterSnapshot()?.roster_version).toBe(5);
+    expect(page.rosterSnapshot()?.bench.length).toBe(1);
+    // The response is already the fresh snapshot, so no roster refetch should follow.
+    expect(getSpy.mock.calls.map(([path]) => path)).not.toContain('api/events/10/roster');
+  });
+});
+
 interface EventDetailLoadAccess {
   readonly loading: Signal<boolean>;
   load(silent?: boolean): Promise<void>;

@@ -74,6 +74,16 @@ impl AdminService {
         if let Some(value) = &req.discord_event_voice_category_id {
             active.discord_event_voice_category_id = Set(normalize_discord_snowflake(value)?);
         }
+        if let Some(value) = req.default_split_fee {
+            if !(sea_orm::prelude::Decimal::ZERO..=sea_orm::prelude::Decimal::from(100))
+                .contains(&value)
+            {
+                return Err(AppError::Validation(
+                    "default split fee must be between 0 and 100".to_string(),
+                ));
+            }
+            active.default_split_fee = Set(value);
+        }
         active.updated_at = Set(chrono::Utc::now().into());
         active.updated_by_user_id = Set(Some(editor_user_id));
         let updated = active.update(db).await.map_err(AppError::Database)?;
@@ -93,6 +103,7 @@ impl AdminService {
                 "discord_event_role_id": req.discord_event_role_id,
                 "discord_splits_forum_channel_id": req.discord_splits_forum_channel_id,
                 "discord_event_voice_category_id": req.discord_event_voice_category_id,
+                "default_split_fee": req.default_split_fee,
             })),
         )
         .await;

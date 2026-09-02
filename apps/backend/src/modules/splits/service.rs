@@ -15,6 +15,7 @@ use sea_orm::{
 };
 
 use crate::errors::AppError;
+use crate::modules::admin::entities::Entity as GuildSettingsEntity;
 use crate::modules::albion::entities::albion_link::Entity as AlbionLinkEntity;
 use crate::modules::bank::entities::ActiveModel as TransactionActiveModel;
 use crate::modules::bank::service::TYPE_SPLIT_CREDIT;
@@ -95,7 +96,7 @@ async fn validate_event_link(
     Err(AppError::NotFound(format!("Event {event_id} not found")))
 }
 
-/// Default fee percentage retained from the estimated market value.
+/// Fallback fee percentage used when guild settings are unavailable.
 const DEFAULT_SPLIT_FEE_PERCENT: i32 = 20;
 
 /// Default weight assigned to split participants imported from a linked event.
@@ -124,9 +125,8 @@ fn calculate_net_value(
     repair_value: Decimal,
     bags_value: Decimal,
 ) -> Decimal {
-    (estimated_market_value - (estimated_market_value * fee / Decimal::from(100)) - repair_value
-        + bags_value)
-        .round_dp(2)
+    let value_before_fee = estimated_market_value - repair_value + bags_value;
+    (value_before_fee - (value_before_fee * fee / Decimal::from(100))).round_dp(2)
 }
 
 /// Resolves the user ids of every player signed up to `event_id`.
@@ -481,7 +481,14 @@ impl SplitService {
                 "a split must be requested with at least one participant".to_string(),
             ));
         }
-        let fee = req.fee.unwrap_or_else(default_split_fee);
+        let fee = match req.fee {
+            Some(fee) => fee,
+            None => GuildSettingsEntity::find_by_id(1)
+                .one(db)
+                .await?
+                .map(|settings| settings.default_split_fee)
+                .unwrap_or_else(default_split_fee),
+        };
         validate_fee(fee)?;
         if req.estimated_market_value < Decimal::ZERO {
             return Err(AppError::Validation(
@@ -852,12 +859,18 @@ impl SplitService {
             }
         }
         let total_participants = ParticipantEntity::find().count(db).await?;
+        let default_split_fee = GuildSettingsEntity::find_by_id(1)
+            .one(db)
+            .await?
+            .map(|settings| settings.default_split_fee)
+            .unwrap_or_else(default_split_fee);
         Ok(SplitKpiSummary {
             pending_count,
             completed_count,
             total_net_distributed,
             total_estimated_volume,
             total_participants,
+            default_split_fee,
         })
     }
 

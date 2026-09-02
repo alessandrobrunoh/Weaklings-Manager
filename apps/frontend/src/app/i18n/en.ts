@@ -274,7 +274,7 @@ export const en = {
   'splits.ocr_names': 'Albion names (one per line)',
   'splits.create_hint': 'Upload a party screenshot, match names, or search the guild roster.',
   'splits.net_preview': 'Preview',
-  'splits.net_formula': 'Estimated − Fee − Repairs + Bags',
+  'splits.net_formula': '(Estimated − Repairs + Bags) − Fee',
   'splits.roster_hint': 'Adjust percentage shares',
   'splits.fee_invalid': 'Fee must be between 0 and 100%.',
   'splits.weight_sum_invalid': 'Participant weights must sum to 100%.',
@@ -808,7 +808,7 @@ export const en = {
   'admin.loadError': "Couldn't load the permission matrix. Try reloading the page.",
   'admin.subtitle': 'Authorization, and where the rest of the settings live.',
   'admin.hub.subtitle':
-    'Pick a panel to configure authorization, Discord, season XP, regears, and islands.',
+    'Pick a panel to configure authorization, Discord, season XP, regears, and islands.'
   'admin.hub.panels': 'Admin panels',
   'admin.hub.rolesHint': 'Create gestionale roles and link them to Discord.',
   'admin.hub.permissionsHint': 'Grant or revoke capabilities per role.',
@@ -1291,6 +1291,8 @@ export const en = {
   'admin.discord.placeholder': 'Not set',
   'admin.discord.save': 'Save',
   'admin.discord.saved': 'Discord settings saved.',
+  'admin.split.defaultFee': 'Default split fee',
+  'admin.split.defaultFeeHint': 'Applied to new splits when no fee is entered. Allowed range: 0–100%.',
   'admin.autorole.title': 'Base guild role',
   'admin.autorole.hint':
     'This role is assigned only when a linked Albion character belongs to the configured guild. It is not assigned when a member simply joins Discord.',

@@ -851,7 +851,7 @@ export class Splits {
   protected readonly draftNetPreview = computed(() =>
     Math.max(
       0,
-      this.draftEstimated() - (this.draftEstimated() * this.draftFee()) / 100 - this.draftRepair() + this.draftBags(),
+      (this.draftEstimated() - this.draftRepair() + this.draftBags()) * (1 - this.draftFee() / 100),
     ),
   );
   protected readonly perParticipantShare = computed(() => {
@@ -958,10 +958,8 @@ export class Splits {
     const estimated = Number(split.estimated_market_value);
     return Math.max(
       0,
-      estimated -
-        (estimated * Number(split.fee ?? DEFAULT_SPLIT_FEE)) / 100 -
-        Number(split.repair_value) +
-        Number(split.bags_value),
+      (estimated - Number(split.repair_value) + Number(split.bags_value)) *
+        (1 - Number(split.fee ?? DEFAULT_SPLIT_FEE) / 100),
     );
   }
 
@@ -977,6 +975,7 @@ export class Splits {
   }
 
   protected openCreateDialog(): void {
+    this.draftFeeInput.set(String(this.kpi()?.default_split_fee ?? DEFAULT_SPLIT_FEE));
     this.showCreateForm.set(true);
   }
 
@@ -1409,7 +1408,7 @@ export class Splits {
     this.draftEventId.set('');
     this.draftEventTitle.set('');
     this.draftEstimated.set(0);
-    this.draftFeeInput.set(String(DEFAULT_SPLIT_FEE));
+    this.draftFeeInput.set(String(this.kpi()?.default_split_fee ?? DEFAULT_SPLIT_FEE));
     this.draftRepair.set(0);
     this.draftBags.set(0);
     this.draftIslandId.set('');
