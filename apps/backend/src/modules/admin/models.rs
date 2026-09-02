@@ -104,6 +104,14 @@ pub struct GuildSettingsView {
     pub discord_auto_role_id: Option<String>,
     /// Forum Channel where the bot creates one thread per loot split.
     pub discord_splits_forum_channel_id: Option<String>,
+    /// Forum tag applied to pending split posts.
+    pub discord_split_pending_tag_id: Option<String>,
+    /// Forum tag applied to completed split posts.
+    pub discord_split_completed_tag_id: Option<String>,
+    /// Forum tag applied to not-completed split posts.
+    pub discord_split_not_completed_tag_id: Option<String>,
+    /// Forum tag applied to lost split posts.
+    pub discord_split_lost_tag_id: Option<String>,
     /// Category where the bot creates live event voice channels.
     pub discord_event_voice_category_id: Option<String>,
 }
@@ -121,6 +129,10 @@ impl GuildSettingsView {
             discord_event_role_id: model.discord_event_role_id,
             discord_auto_role_id: model.discord_auto_role_id,
             discord_splits_forum_channel_id: model.discord_splits_forum_channel_id,
+            discord_split_pending_tag_id: model.discord_split_pending_tag_id,
+            discord_split_completed_tag_id: model.discord_split_completed_tag_id,
+            discord_split_not_completed_tag_id: model.discord_split_not_completed_tag_id,
+            discord_split_lost_tag_id: model.discord_split_lost_tag_id,
             discord_event_voice_category_id: model.discord_event_voice_category_id,
         }
     }
@@ -178,6 +190,14 @@ pub struct UpdateGuildSettingsRequest {
     pub discord_event_role_id: Option<String>,
     /// New value. Omit to leave unchanged; send `""` to clear.
     pub discord_splits_forum_channel_id: Option<String>,
+    /// New value. Omit to leave unchanged; send `""` to clear.
+    pub discord_split_pending_tag_id: Option<String>,
+    /// New value. Omit to leave unchanged; send `""` to clear.
+    pub discord_split_completed_tag_id: Option<String>,
+    /// New value. Omit to leave unchanged; send `""` to clear.
+    pub discord_split_not_completed_tag_id: Option<String>,
+    /// New value. Omit to leave unchanged; send `""` to clear.
+    pub discord_split_lost_tag_id: Option<String>,
     /// New value. Omit to leave unchanged; send `""` to clear.
     pub discord_event_voice_category_id: Option<String>,
 }

@@ -563,12 +563,30 @@ pub struct ParticipateEventRequest {
     pub secondary_build_id: Option<i64>,
 }
 
-/// Request body used by event creators / officers with `events.manage` to
+/// Request body used by event creators / officers with `events.edit` to add
+/// an arbitrary guild member to an event.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[schema(example = json!({
+    "user_id": 42,
+    "primary_build_id": 5,
+    "secondary_build_id": 7
+}))]
+pub struct AddEventMemberRequest {
+    /// Internal database ID of the member to add.
+    pub user_id: i64,
+    /// The primary build ID to assign (must have a slot in the active comp or an extra roster
+    /// role), or `None` for the unlimited virtual `Fill` role.
+    pub primary_build_id: Option<i64>,
+    /// The optional backup/secondary build ID to assign (must be in the active comp or extra roster roles).
+    pub secondary_build_id: Option<i64>,
+}
+
+/// Request body used by event creators / officers with `events.edit` to
 /// forcibly set the build assignment of an arbitrary guild member.
 ///
 /// Mirrors [`ParticipateEventRequest`] but is intended for the
-/// `PUT /api/events/{id}/participants/{user_id}` route, so the target user is
-/// picked from the URL instead of being inferred from the session.
+/// `PUT /api/events/{id}/participants/{user_id}` compatibility route, so the
+/// target user is picked from the URL instead of the session.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[schema(example = json!({
     "primary_build_id": 5,

@@ -559,7 +559,9 @@ pub async fn leaderboards(
     // Silver flow is officer business (same gate as `/report`); a caller with
     // only `intel.view` gets the combat/attendance boards but not the
     // financial ones.
-    let can_see_financials = user.has_permission(&perms, Permission::IntelReportView).await;
+    let can_see_financials = user
+        .has_permission(&perms, Permission::IntelReportView)
+        .await;
     let range = DateRange::resolve(params.from.as_deref(), params.to.as_deref())?;
     // Shares the report's cache: an officer who already opened the dashboard
     // has paid for this computation, and vice versa.

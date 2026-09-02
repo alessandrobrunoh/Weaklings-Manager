@@ -38,13 +38,42 @@ import type { NavSection } from '../sidebar/sidebar';
       top: 0;
       z-index: 30;
     }
+    .topbar {
+      min-block-size: 3.25rem;
+      background: var(--color-surface-1);
+      border-block-end: 1px solid var(--color-border-strong);
+      box-shadow: 0 0.25rem 1rem color-mix(in srgb, var(--color-void) 28%, transparent);
+    }
+    .topbar__context {
+      color: var(--color-text-secondary);
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      line-height: 1;
+      text-transform: uppercase;
+    }
+    .topbar__utilities {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      gap: 0.375rem;
+    }
+    .topbar .btn--ghost:hover:not(:disabled) {
+      background: var(--color-surface-hover);
+      color: var(--color-text);
+    }
+    .topbar .select {
+      min-block-size: 2rem;
+      border-color: var(--color-border-strong);
+      color: var(--color-text);
+    }
   `,
   template: `
     <header
-      class="flex h-12 items-center justify-between gap-2 px-3 sm:px-4 transition-colors"
-      style="background-color: var(--color-surface); border-bottom: 1px solid var(--color-border)"
+      class="topbar flex items-center justify-between gap-2 px-3 sm:px-4 transition-colors"
+      aria-label="Application toolbar"
     >
-      <div class="flex min-w-0 items-center gap-1.5">
+      <div class="flex min-w-0 items-center gap-2">
         <!-- Mobile menu toggle -->
         <button
           type="button"
@@ -56,12 +85,13 @@ import type { NavSection } from '../sidebar/sidebar';
         >
           <app-icon name="menu" size="1.125rem" />
         </button>
+        <span class="topbar__context hidden md:inline">Weaklings Manager</span>
       </div>
 
-      <div class="flex shrink-0 items-center gap-1.5">
+      <div class="topbar__utilities">
         <div class="relative hidden items-center lg:flex">
           <select
-            class="select select--sm w-auto cursor-pointer font-medium text-xs bg-[var(--color-surface-2)]"
+            class="select select--sm w-auto cursor-pointer font-medium text-xs bg-(--color-surface-2)"
             [value]="translate.language()"
             (change)="onLanguageChange($event)"
             [appTooltip]="t('language.label')"

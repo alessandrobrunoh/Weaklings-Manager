@@ -283,6 +283,8 @@ export class Bank {
       const params: Record<string, string | number | boolean> = {
         page: query.page,
         limit: query.pageSize,
+        // Keep the optional flattened filter visible to older query deserializers.
+        split_id: '',
       };
       if (query.search.trim()) {
         params['search'] = query.search.trim();

@@ -16,12 +16,13 @@ use super::entities::{
     event_roster_role, fight, fight_battle,
 };
 use super::models::{
-    AssignRosterSeatRequest, BattlePerformanceStats, BuildBattleStats, BuildPerformanceView,
-    CompPerformanceView, CreateEventRequest, CreateEventRosterRoleRequest, EventBattleView,
-    EventCompBuildView, EventDetailView, EventFightView, EventParticipantView, EventRosterRoleView,
-    EventRosterSeatView, EventRosterView, EventSignupBuildView, EventSignupOptionsView,
-    EventSplitStats, EventView, OpponentPerformanceView, ParticipateEventRequest,
-    RosterVersionRequest, SwapRosterSeatsRequest, UpdateEventBattlesRequest, UpdateEventRequest,
+    AddEventMemberRequest, AssignRosterSeatRequest, BattlePerformanceStats, BuildBattleStats,
+    BuildPerformanceView, CompPerformanceView, CreateEventRequest, CreateEventRosterRoleRequest,
+    EventBattleView, EventCompBuildView, EventDetailView, EventFightView, EventParticipantView,
+    EventRosterRoleView, EventRosterSeatView, EventRosterView, EventSignupBuildView,
+    EventSignupOptionsView, EventSplitStats, EventView, OpponentPerformanceView,
+    ParticipateEventRequest, RosterVersionRequest, SwapRosterSeatsRequest,
+    UpdateEventBattlesRequest, UpdateEventRequest,
 };
 
 use super::fight_grouping::{
@@ -54,10 +55,16 @@ const MAX_SESSION_DURATION: ChronoDuration = ChronoDuration::hours(3);
 /// re-fetching AlbionBB to absorb the upstream's slow ingestion (~30 minutes).
 const LINK_GRACE_PERIOD: ChronoDuration = ChronoDuration::minutes(45);
 
-/// Returns the comp capacity to resolve for a roster of this size.
+/// Returns the roster size at which an expansion becomes visible.
 ///
-/// A configured player cap is a planning threshold, not a hard maximum: once
-/// reached, resolve the next available expansion so signups are never blocked.
+/// The existing roster model treats a participant as a concrete slot reservation. Using integer
+/// division deliberately floors the percentage: a ten-slot comp expands at `7/10`, matching the
+/// product rule and avoiding a surprising extra signup at `8/10`.
+fn expansion_threshold(capacity: i64) -> i64 {
+    (capacity.max(1).saturating_mul(3) / 4).max(1)
+}
+
+/// Returns the comp resolution target while retaining the event's explicit planning override.
 fn comp_resolution_target(participant_count: usize, player_cap: Option<i64>) -> usize {
     let cap_reached = player_cap
         .and_then(|cap| usize::try_from(cap).ok())
@@ -857,7 +864,7 @@ fn build_split_stats(splits: &[split::Model], participant_entries: i64) -> Event
         }
 
         match SplitStatus::from_str(&split.status) {
-            Ok(SplitStatus::Pending) => stats.pending_splits += 1,
+            Ok(SplitStatus::Pending | SplitStatus::AwaitingEvent) => stats.pending_splits += 1,
             Ok(SplitStatus::Completed) => stats.completed_splits += 1,
             Ok(SplitStatus::NotCompleted) => stats.not_completed_splits += 1,
             Ok(SplitStatus::Lost) => stats.lost_splits += 1,
@@ -929,7 +936,13 @@ impl EventService {
             .await
             .map_err(AppError::Database)? as usize;
         let (active_comp, _) = self
-            .resolve_active_comp_with_extra_slots(db, event_model.comp_id, concrete, extras)
+            .resolve_active_comp_with_extra_slots(
+                db,
+                event_model.comp_id,
+                concrete,
+                extras,
+                event_model.player_cap,
+            )
             .await?;
         let mut seats = self.canonical_roster_seats(db, active_comp.id).await?;
         let assignments = event_roster_assignment::Entity::find()
@@ -1103,7 +1116,13 @@ impl EventService {
             .filter(|entry| entry.primary_build_id.is_some())
             .count();
         let (active_comp, _) = self
-            .resolve_active_comp_with_extra_slots(&txn, event_model.comp_id, concrete, extra_slots)
+            .resolve_active_comp_with_extra_slots(
+                &txn,
+                event_model.comp_id,
+                concrete,
+                extra_slots,
+                event_model.player_cap,
+            )
             .await?;
         if !self
             .canonical_roster_seats(&txn, active_comp.id)
@@ -1172,7 +1191,13 @@ impl EventService {
             .filter(|entry| entry.primary_build_id.is_some())
             .count();
         let (active_comp, _) = self
-            .resolve_active_comp_with_extra_slots(&txn, event_model.comp_id, concrete, extra_slots)
+            .resolve_active_comp_with_extra_slots(
+                &txn,
+                event_model.comp_id,
+                concrete,
+                extra_slots,
+                event_model.player_cap,
+            )
             .await?;
         if !self
             .canonical_roster_seats(&txn, active_comp.id)
@@ -1236,7 +1261,13 @@ impl EventService {
             .filter(|entry| entry.primary_build_id.is_some())
             .count();
         let (active_comp, _) = self
-            .resolve_active_comp_with_extra_slots(&txn, event_model.comp_id, concrete, extra_slots)
+            .resolve_active_comp_with_extra_slots(
+                &txn,
+                event_model.comp_id,
+                concrete,
+                extra_slots,
+                event_model.player_cap,
+            )
             .await?;
         let seats = self.canonical_roster_seats(&txn, active_comp.id).await?;
         if !seats.iter().any(|seat| seat.key == request.source_seat_key)
@@ -1317,7 +1348,13 @@ impl EventService {
             .filter(|entry| entry.primary_build_id.is_some())
             .count();
         let (active_comp, _) = self
-            .resolve_active_comp_with_extra_slots(&txn, event_model.comp_id, concrete, extra_slots)
+            .resolve_active_comp_with_extra_slots(
+                &txn,
+                event_model.comp_id,
+                concrete,
+                extra_slots,
+                event_model.player_cap,
+            )
             .await?;
         let assignments = event_roster_assignment::Entity::find()
             .filter(event_roster_assignment::Column::EventId.eq(event_id))
@@ -1461,24 +1498,26 @@ impl EventService {
         Ok(())
     }
 
-    /// Resolves the active composition (base or variant) for a given target size.
+    /// Resolves the active composition (base or variant) using the 75% expansion threshold.
     pub async fn resolve_active_comp<C: ConnectionTrait>(
         &self,
         db: &C,
         base_comp_id: i64,
         target_size: usize,
     ) -> Result<(comp::Model, i64), AppError> {
-        self.resolve_active_comp_with_extra_slots(db, base_comp_id, target_size, 0)
+        self.resolve_active_comp_with_extra_slots(db, base_comp_id, target_size, 0, None)
             .await
     }
 
-    /// Resolves the active composition while accounting for fixed-capacity extra roster roles.
+    /// Resolves the active composition using parent-linked expansions and fixed-capacity extra
+    /// roster roles.
     async fn resolve_active_comp_with_extra_slots<C: ConnectionTrait>(
         &self,
         db: &C,
         base_comp_id: i64,
         target_size: usize,
         extra_roster_slots: usize,
+        player_cap: Option<i64>,
     ) -> Result<(comp::Model, i64), AppError> {
         // Fetch base comp
         let base_comp = comp::Entity::find_by_id(base_comp_id)
@@ -1554,21 +1593,30 @@ impl EventService {
 
         reachable.sort_by_key(|(candidate, capacity)| (*capacity, candidate.id));
         let target_size = target_size as i64;
-        if let Some((active_comp, capacity)) = reachable
-            .iter()
-            .find(|(_, capacity)| *capacity + extra_roster_slots as i64 >= target_size)
-        {
-            return Ok((active_comp.clone(), *capacity));
-        }
-
-        // A configured chain may not yet have a tier large enough. Keep its largest valid tier
-        // active so the roster remains readable; concrete build-slot validation still prevents
-        // overfilling individual required builds.
-        let (active_comp, capacity) = reachable
-            .into_iter()
-            .max_by_key(|(candidate, capacity)| (*capacity, candidate.id))
+        let extra_roster_slots = extra_roster_slots as i64;
+        let mut active = reachable
+            .first()
+            .cloned()
             .expect("the base comp always provides one reachable comp");
-        Ok((active_comp, capacity))
+        let mut forced = player_cap.is_some_and(|cap| target_size >= cap);
+
+        // Expand one link at a time. This makes a chain deterministic and means that an event
+        // configured on Comp2 can expose Comp3 without requiring the event to use Comp1.
+        loop {
+            let threshold = expansion_threshold(active.1 + extra_roster_slots);
+            let should_expand = forced || target_size >= threshold;
+            let next = reachable
+                .iter()
+                .filter(|(candidate, _)| candidate.parent_id == Some(active.0.id))
+                .min_by_key(|(candidate, capacity)| (*capacity, candidate.id));
+            let Some(next) = next else { break };
+            if !should_expand {
+                break;
+            }
+            active = next.clone();
+            forced = false;
+        }
+        Ok((active.0, active.1))
     }
 
     /// Returns the server-authoritative concrete build choices for a member's next signup.
@@ -1611,6 +1659,7 @@ impl EventService {
                 event.comp_id,
                 prospective_target,
                 extra_roster_roles.len(),
+                event.player_cap,
             )
             .await?;
 
@@ -1859,6 +1908,7 @@ impl EventService {
                 event_model.comp_id,
                 comp_resolution_target(participations.len(), event_model.player_cap),
                 extra_roster_slots,
+                event_model.player_cap,
             )
             .await?;
         let active_comp_builds = comp_build::Entity::find()
@@ -2702,6 +2752,9 @@ impl EventService {
 
         let updated = active.update(db).await.map_err(AppError::Database)?;
 
+        // Keep linked splits' roster and lifecycle condition current as soon as the event ends.
+        SplitService::new().sync_event_participants(db, id).await?;
+
         let roster = event_participation::Entity::find()
             .filter(event_participation::Column::EventId.eq(id))
             .all(db)
@@ -3021,6 +3074,26 @@ impl EventService {
         .await
     }
 
+    /// Adds an existing member to an event on behalf of the member making the request.
+    ///
+    /// This is the service entry point for the admin `Add a Member` action. It deliberately
+    /// delegates to the same participation pipeline as self-service signup, so build membership,
+    /// slot capacity, comp expansion, roster versioning, and XP idempotency cannot diverge.
+    pub async fn add_member_with_roster_version(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+        request: AddEventMemberRequest,
+    ) -> Result<(EventDetailView, i64), AppError> {
+        let target_user_id = request.user_id;
+        let payload = super::models::SetParticipantRequest {
+            primary_build_id: request.primary_build_id,
+            secondary_build_id: request.secondary_build_id,
+        };
+        self.set_participant_with_roster_version(db, event_id, target_user_id, payload)
+            .await
+    }
+
     /// Officer/creator endpoint payload: same shape as `ParticipateEventRequest`
     /// but the target user is supplied by the route rather than the session.
     pub async fn set_participant(
@@ -3145,6 +3218,7 @@ impl EventService {
                 event_model.comp_id,
                 target_size,
                 extra_roster_build_ids.len(),
+                event_model.player_cap,
             )
             .await?;
 
@@ -3313,6 +3387,11 @@ impl EventService {
             .roster_version;
         txn.commit().await.map_err(AppError::Database)?;
 
+        // A linked split mirrors event sign-ups, including late joiners.
+        SplitService::new()
+            .sync_event_participants(db, event_id)
+            .await?;
+
         if is_new {
             try_award_event_xp(
                 db,
@@ -3374,6 +3453,9 @@ impl EventService {
             .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?
             .roster_version;
         txn.commit().await.map_err(AppError::Database)?;
+        SplitService::new()
+            .sync_event_participants(db, event_id)
+            .await?;
         Ok((
             self.get_event_detail(db, event_id).await?,
             roster_version,
@@ -3636,6 +3718,93 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn admin_add_member_uses_the_participation_invariants() {
+        let db = seed_db().await;
+        let creator = insert_user(&db, "creator", "creator@example.com").await;
+        let member = insert_user(&db, "member", "member@example.com").await;
+        let second_member = insert_user(&db, "second", "second@example.com").await;
+        let build_category = create_build_category(&db, "Roster builds").await;
+        let build_id = create_build(&db, "Main Tank", build_category).await;
+        let unrelated_build = create_build(&db, "Unrelated Healer", build_category).await;
+        let comp_category = create_comp_category(&db, "Roster comps").await;
+        let comp_id = create_comp(
+            &db,
+            "One-slot comp",
+            comp_category,
+            None,
+            vec![(build_id, 1)],
+        )
+        .await;
+        let event_id = event::ActiveModel {
+            title: Set("Admin add event".to_string()),
+            comp_id: Set(comp_id),
+            created_by: Set(creator),
+            event_date_utc: Set(ts()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("event should be created")
+        .id;
+        let service = EventService::new();
+
+        let (detail, version) = service
+            .add_member_with_roster_version(
+                &db,
+                event_id,
+                AddEventMemberRequest {
+                    user_id: member,
+                    primary_build_id: Some(build_id),
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .expect("admin should be able to add a valid member");
+        assert_eq!(version, 1);
+        assert_eq!(detail.participants.len(), 1);
+        assert_eq!(detail.participants[0].user_id, member);
+
+        let rejected = service
+            .add_member_with_roster_version(
+                &db,
+                event_id,
+                AddEventMemberRequest {
+                    user_id: second_member,
+                    primary_build_id: Some(unrelated_build),
+                    secondary_build_id: None,
+                },
+            )
+            .await;
+        assert!(
+            matches!(rejected, Err(AppError::Validation(message)) if message.contains("not allowed"))
+        );
+        assert_eq!(
+            service
+                .get_event_detail(&db, event_id)
+                .await
+                .expect("event should load")
+                .participants
+                .len(),
+            1
+        );
+
+        let rejected_full = service
+            .add_member_with_roster_version(
+                &db,
+                event_id,
+                AddEventMemberRequest {
+                    user_id: second_member,
+                    primary_build_id: Some(build_id),
+                    secondary_build_id: None,
+                },
+            )
+            .await;
+        assert!(
+            matches!(rejected_full, Err(AppError::Validation(message)) if message.contains("already full"))
+        );
+    }
+
+    #[tokio::test]
     async fn signup_options_use_the_prospective_comp_without_double_counting_members() {
         let db = seed_db().await;
         let author = insert_user(&db, "author", "author@example.com").await;
@@ -3702,7 +3871,8 @@ mod tests {
             )
             .await
             .expect("an existing member must not force the next tier");
-        assert_eq!(existing_options.active_comp_id, base);
+        assert_eq!(existing_options.active_comp_id, expansion);
+        assert_eq!(existing_options.active_comp_capacity, 15);
         assert!(existing_options.is_already_registered);
     }
 
@@ -3733,8 +3903,9 @@ mod tests {
         let service = EventService::new();
 
         for (target_size, expected_id, expected_capacity) in [
-            (10, base, 10),
-            (11, expansion, 15),
+            (7, expansion, 15),
+            (10, expansion, 15),
+            (11, final_expansion, 20),
             (16, final_expansion, 20),
             (21, final_expansion, 20),
         ] {
@@ -3748,6 +3919,14 @@ mod tests {
             );
             assert_eq!(capacity, expected_capacity);
         }
+
+        // An event configured directly on the middle tier must still follow its own child chain.
+        let (active, capacity) = service
+            .resolve_active_comp(&db, expansion, 11)
+            .await
+            .expect("a middle-tier event should resolve its next expansion");
+        assert_eq!(active.id, final_expansion);
+        assert_eq!(capacity, 20);
     }
 
     #[tokio::test]
@@ -3959,7 +4138,7 @@ mod tests {
             )
             .await
             .expect("first Fill should be accepted");
-        assert_eq!(first_detail.active_comp_id, base);
+        assert_eq!(first_detail.active_comp_id, expansion);
 
         let signup_options = service
             .get_event_signup_options(&db, event_id, concrete_member)
@@ -4695,6 +4874,14 @@ mod tests {
     }
 
     #[test]
+    fn expansion_threshold_uses_the_requested_seven_of_ten_boundary() {
+        assert_eq!(expansion_threshold(1), 1);
+        assert_eq!(expansion_threshold(10), 7);
+        assert_eq!(expansion_threshold(15), 11);
+        assert_eq!(expansion_threshold(20), 15);
+    }
+
+    #[test]
     fn player_cap_advances_to_the_next_expansion_without_becoming_a_hard_limit() {
         assert_eq!(comp_resolution_target(9, Some(10)), 9);
         assert_eq!(comp_resolution_target(10, Some(10)), 11);
@@ -4970,7 +5157,7 @@ mod tests {
             .await
             .unwrap();
 
-        // 1st participant signs up as Tank. Matches base comp.
+        // 1st participant signs up as Tank. The one-slot base reaches its minimum threshold.
         let detail = service
             .participate(
                 &db,
@@ -4984,12 +5171,11 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(detail.active_comp_id, base_comp);
-        assert_eq!(detail.active_comp_capacity, 1);
+        assert_eq!(detail.active_comp_id, variant_comp);
+        assert_eq!(detail.active_comp_capacity, 2);
         assert_eq!(detail.participants.len(), 1);
 
-        // 2nd participant signs up as Healer. Since total participants = 2,
-        // it exceeds base comp capacity (1) and should scale up to variant comp (capacity 2).
+        // 2nd participant signs up as Healer; the expanded comp remains active.
         let detail = service
             .participate(
                 &db,
@@ -5373,7 +5559,7 @@ async fn create_linked_split(
 
     split::ActiveModel {
         created_by: Set(creator_id),
-        status: Set(SplitStatus::Pending.to_string()),
+        status: Set(SplitStatus::AwaitingEvent.to_string()),
         estimated_market_value: Set(Decimal::ZERO),
         repair_value: Set(Decimal::ZERO),
         bags_value: Set(Decimal::ZERO),

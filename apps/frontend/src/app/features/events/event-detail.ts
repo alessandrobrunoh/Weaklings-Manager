@@ -113,6 +113,12 @@ interface EventRosterParty {
   readonly seats: readonly EventRosterSeat[];
 }
 
+interface AddEventMemberRequest {
+  user_id: number;
+  primary_build_id: number | null;
+  secondary_build_id?: number;
+}
+
 @Component({
   selector: 'app-event-detail-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -603,6 +609,15 @@ interface EventRosterParty {
                       }
 
                       @if (canManageParticipants()) {
+                        <button
+                          type="button"
+                          class="btn btn--outline btn--sm"
+                          [disabled]="memberSaving() || rosterCommandSaving()"
+                          (click)="openMemberPicker()"
+                        >
+                          <app-icon name="plus" size="0.75rem" />
+                          Add a Member
+                        </button>
                         <button
                           type="button"
                           class="btn btn--tonal btn--sm"
@@ -1824,6 +1839,19 @@ interface EventRosterParty {
             </label>
 
             @if (!isFillSelected()) {
+              <div
+                class="surface flex items-center gap-3 p-3 border border-[var(--color-border)]"
+                aria-live="polite"
+              >
+                <app-icon name="swords" size="1rem" />
+                <div class="min-w-0">
+                  <p class="label mb-0.5">Arma principale</p>
+                  <p class="text-sm font-semibold text-[var(--color-text)] truncate">
+                    {{ selectedJoinWeapon()?.openalbion_item_name || 'Arma non disponibile' }}
+                  </p>
+                </div>
+              </div>
+
               <label>
                 <span class="label">{{ t('events.detail.secondary_build') }}</span>
                 <select class="select" (change)="onSecondaryBuildChange($event)">
@@ -1859,7 +1887,70 @@ interface EventRosterParty {
       </app-dialog>
     }
 
-    <!-- 3. MANAGE BATTLES DIALOG -->
+    <!-- 3. JOIN CONFIRMATION DIALOG -->
+    @if (showJoinConfirm()) {
+      <app-dialog
+        [title]="t('events.participate')"
+        [subtitle]="'Controlla la build prima di confermare la partecipazione.'"
+        size="sm"
+        (closed)="cancelJoinConfirm()"
+      >
+        <div class="space-y-3">
+          @if (isFillSelected()) {
+            <div class="surface p-3">
+              <p class="label">Ruolo</p>
+              <p class="text-sm font-semibold text-[var(--color-text)]">
+                {{ t('events.detail.fill_option') }}
+              </p>
+              <p class="mt-1 text-xs text-[var(--color-text-secondary)]">
+                Nessuna build o arma principale selezionata.
+              </p>
+            </div>
+          } @else {
+            <div class="surface p-3 space-y-2">
+              <div>
+                <p class="label">Build / slot</p>
+                <p class="text-sm font-semibold text-[var(--color-text)]">
+                  {{ selectedJoinBuild()?.build?.name || 'Build selezionata' }}
+                  @if (selectedJoinBuild()?.build?.role; as role) {
+                    <span class="text-xs text-[var(--color-text-secondary)]">
+                      &middot; {{ roleLabelName(role) }}
+                    </span>
+                  }
+                </p>
+              </div>
+              <div class="pt-2 border-t border-[var(--color-border)]">
+                <p class="label">Weapon principale</p>
+                <p class="text-sm font-semibold text-[var(--color-text)]">
+                  {{ selectedJoinWeapon()?.openalbion_item_name || 'Arma non disponibile' }}
+                </p>
+              </div>
+            </div>
+          }
+
+          @if (draftSecondaryBuildId() && !isFillSelected()) {
+            <p class="text-xs text-[var(--color-text-secondary)]">
+              Build secondaria inclusa: {{ selectedJoinSecondaryBuild()?.build?.name || 'Selezionata' }}
+            </p>
+          }
+        </div>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost btn--sm" (click)="cancelJoinConfirm()">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn--primary btn--sm"
+            [disabled]="joinSubmitting()"
+            (click)="confirmJoin()"
+          >
+            {{ t('common.confirm') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
+
+    <!-- 4. MANAGE BATTLES DIALOG -->
     @if (showBattleLinkForm()) {
       <app-dialog
         [title]="t('events.detail.manage_battles')"
@@ -1997,7 +2088,91 @@ interface EventRosterParty {
       </app-dialog>
     }
 
-    <!-- 5. SEARCH DIALOGS -->
+    <!-- 5. ADD MEMBER DIALOGS -->
+    @if (draftMember(); as member) {
+      <app-dialog title="Add a Member" size="md" (closed)="closeMemberForm()">
+        <form class="grid gap-4" (submit)="onMemberSubmit($event)">
+          <div class="surface flex items-center gap-3 p-3">
+            <app-avatar [username]="member.title" size="sm" />
+            <div class="min-w-0">
+              <p class="label">Membro</p>
+              <p class="text-sm font-semibold text-[var(--color-text)] truncate">{{ member.title }}</p>
+            </div>
+          </div>
+
+          @if (compLoading()) {
+            <app-loading [label]="t('common.loading')" />
+          } @else {
+            <label>
+              <span class="label">Build / slot primaria *</span>
+              <select
+                class="select"
+                required
+                [value]="draftMemberPrimaryBuildId()"
+                (change)="onMemberPrimaryBuildChange($event)"
+              >
+                <option value="">Seleziona build / slot</option>
+                <option [value]="fillValue">{{ t('events.detail.fill_option') }}</option>
+                @for (entry of availableBuilds(); track entry.build_id) {
+                  <option [value]="entry.build_id">
+                    {{ entry.build.name }} &middot; {{ roleLabelName(entry.build.role) }}
+                    @if (entry.build.category_name) {
+                      ({{ entry.build.category_name }})
+                    }
+                  </option>
+                }
+              </select>
+            </label>
+
+            @if (draftMemberPrimaryBuildId() && draftMemberPrimaryBuildId() !== fillValue) {
+              <label>
+                <span class="label">Build / slot secondaria</span>
+                <select
+                  class="select"
+                  [value]="draftMemberSecondaryBuildId()"
+                  (change)="onMemberSecondaryBuildChange($event)"
+                >
+                  <option value="">Nessuna (opzionale)</option>
+                  @for (entry of availableBuilds(); track entry.build_id) {
+                    <option [value]="entry.build_id">
+                      {{ entry.build.name }} &middot; {{ roleLabelName(entry.build.role) }}
+                    </option>
+                  }
+                </select>
+              </label>
+            }
+
+            @if (memberError()) {
+              <p class="text-xs font-semibold text-[var(--color-danger)]" aria-live="polite">
+                {{ memberError() }}
+              </p>
+            }
+
+            <div class="flex justify-end gap-2 pt-3 border-t border-[var(--color-border)]">
+              <button type="button" class="btn btn--ghost btn--sm" (click)="closeMemberForm()">
+                {{ t('common.cancel') }}
+              </button>
+              <button type="submit" class="btn btn--primary btn--sm" [disabled]="memberSaving()">
+                {{ t('common.confirm') }}
+              </button>
+            </div>
+          }
+        </form>
+      </app-dialog>
+    }
+
+    <!-- 6. SEARCH DIALOGS -->
+    @if (showMemberSearch()) {
+      <app-search-dialog
+        title="Add a Member"
+        [options]="memberSearchOptions()"
+        [loading]="memberSearchLoading()"
+        [showDateFilters]="false"
+        (filterChange)="onMemberSearchFilter($event)"
+        (select)="onMemberSelected($event)"
+        (close)="closeMemberSearch()"
+      />
+    }
     @if (showCompSearch()) {
       <app-search-dialog
         [title]="t('events.detail.link_comp')"
@@ -2034,7 +2209,7 @@ interface EventRosterParty {
       />
     }
 
-    <!-- 6. CONFIRMATION DIALOG -->
+    <!-- 7. CONFIRMATION DIALOG -->
     @if (visiblePendingConfirm(); as confirm) {
       <app-dialog [title]="confirmTitle(confirm)" size="sm" (closed)="cancelConfirm()">
         <p class="text-sm text-[var(--color-text)]">{{ confirmMessage(confirm) }}</p>
@@ -2273,6 +2448,7 @@ export class EventDetailPage {
     return now.toISOString().slice(0, 16);
   });
   protected readonly showJoinForm = signal(false);
+  protected readonly showJoinConfirm = signal(false);
   protected readonly joinFormLoading = signal(false);
   protected readonly compLoading = signal(false);
   protected readonly joinSubmitting = signal(false);
@@ -2290,6 +2466,18 @@ export class EventDetailPage {
   protected readonly isFillSelected = computed(
     () => this.draftPrimaryBuildId() === FILL_BUILD_VALUE,
   );
+  protected readonly selectedJoinBuild = computed<CompBuildEntry | null>(() => {
+    const buildId = Number(this.draftPrimaryBuildId());
+    return buildId > 0 ? (this.buildIndex().get(buildId) ?? null) : null;
+  });
+  protected readonly selectedJoinWeapon = computed<BuildItemSlot | null>(() => {
+    const buildId = this.selectedJoinBuild()?.build_id;
+    return buildId ? (this.buildWeaponByBuildId().get(buildId) ?? null) : null;
+  });
+  protected readonly selectedJoinSecondaryBuild = computed<CompBuildEntry | null>(() => {
+    const buildId = Number(this.draftSecondaryBuildId());
+    return buildId > 0 ? (this.buildIndex().get(buildId) ?? null) : null;
+  });
 
   protected readonly canManageParticipants = computed(() => {
     const detail = this.event();
@@ -2334,7 +2522,9 @@ export class EventDetailPage {
   protected readonly buildWeaponByBuildId = computed<Map<number, BuildItemSlot>>(() => {
     const map = new Map<number, BuildItemSlot>();
     for (const [buildId, detail] of this.buildDetails()) {
-      const weapon = detail.items.find((item) => item.slot === 'weapon');
+      const weapon =
+        detail.items.find((item) => item.slot === 'weapon' && item.loadout === 'main') ??
+        detail.items.find((item) => item.slot === 'weapon');
       if (weapon) {
         map.set(buildId, weapon);
       }
@@ -3398,8 +3588,109 @@ export class EventDetailPage {
     return `https://render.albiononline.com/v1/item/${encodeURIComponent(identifier)}.png?quality=1&size=96`;
   }
 
+  protected openMemberPicker(): void {
+    this.closeMemberForm();
+    this.memberSearchOptions.set([]);
+    this.memberError.set(null);
+    this.showMemberSearch.set(true);
+    void this.loadMemberSearch('');
+  }
+
   protected closeMemberSearch(): void {
     this.showMemberSearch.set(false);
+  }
+
+  protected async onMemberSearchFilter(filter: {
+    search: string;
+    dateFrom: string;
+    dateTo: string;
+  }): Promise<void> {
+    await this.loadMemberSearch(filter.search);
+  }
+
+  private async loadMemberSearch(search: string): Promise<void> {
+    this.memberSearchLoading.set(true);
+    try {
+      const data = await firstValueFrom(
+        this.api.get<PaginatedData<UserProfile>>('api/users', {
+          page: 1,
+          limit: 50,
+          username: search.trim() || undefined,
+        }),
+      );
+      this.memberSearchOptions.set(
+        data.items.map((user) => ({ id: String(user.id), title: user.username })),
+      );
+    } catch (error) {
+      this.memberError.set(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.memberSearchLoading.set(false);
+    }
+  }
+
+  protected onMemberSelected(option: SearchDialogOption): void {
+    this.showMemberSearch.set(false);
+    this.draftMember.set(option);
+    this.draftMemberPrimaryBuildId.set('');
+    this.draftMemberSecondaryBuildId.set('');
+    this.memberError.set(null);
+    if (this.availableBuilds().length === 0) {
+      void this.loadActiveComp();
+    }
+  }
+
+  protected onMemberPrimaryBuildChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.draftMemberPrimaryBuildId.set(value);
+    if (value === FILL_BUILD_VALUE) {
+      this.draftMemberSecondaryBuildId.set('');
+    }
+    this.memberError.set(null);
+  }
+
+  protected onMemberSecondaryBuildChange(event: Event): void {
+    this.draftMemberSecondaryBuildId.set((event.target as HTMLSelectElement).value);
+    this.memberError.set(null);
+  }
+
+  protected async onMemberSubmit(submit: SubmitEvent): Promise<void> {
+    submit.preventDefault();
+    const detail = this.event();
+    const member = this.draftMember();
+    if (!detail || !member) return;
+
+    const primaryRaw = this.draftMemberPrimaryBuildId();
+    const primaryBuildId = primaryRaw === FILL_BUILD_VALUE ? null : Number(primaryRaw);
+    if (primaryBuildId !== null && primaryBuildId <= 0) {
+      this.memberError.set('Seleziona una build o uno slot primario.');
+      return;
+    }
+
+    const request: AddEventMemberRequest = {
+      user_id: Number(member.id),
+      primary_build_id: primaryBuildId,
+    };
+    const secondaryBuildId = Number(this.draftMemberSecondaryBuildId());
+    if (primaryBuildId !== null && secondaryBuildId > 0 && secondaryBuildId !== primaryBuildId) {
+      request.secondary_build_id = secondaryBuildId;
+    }
+
+    this.memberSaving.set(true);
+    this.memberError.set(null);
+    try {
+      const updated = await firstValueFrom(
+        this.api.post<EventDetailView>(`api/events/${detail.id}/participants`, request),
+      );
+      this.event.set(updated);
+      await this.loadRosterSnapshot();
+      this.closeMemberForm();
+      this.toasts.success('Member added to the event.');
+    } catch (error) {
+      this.memberError.set(error instanceof Error ? error.message : this.t('common.error'));
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.memberSaving.set(false);
+    }
   }
 
   protected closeMemberForm(): void {
@@ -3788,13 +4079,33 @@ export class EventDetailPage {
 
   protected async onJoinSubmit(submit: SubmitEvent): Promise<void> {
     submit.preventDefault();
+
+    // `null` is the virtual Fill role: the backend accepts a participation without a build.
+    if (!this.isFillSelected() && Number(this.draftPrimaryBuildId()) <= 0) {
+      this.joinError.set(this.t('events.detail.primary_required'));
+      return;
+    }
+
+    // Keep the selection dialog open only long enough to choose a build. The API is called from the
+    // explicit confirmation dialog so the selected build and its main-hand weapon can be reviewed.
+    this.showJoinForm.set(false);
+    this.showJoinConfirm.set(true);
+  }
+
+  protected cancelJoinConfirm(): void {
+    this.showJoinConfirm.set(false);
+    this.showJoinForm.set(true);
+  }
+
+  protected async confirmJoin(): Promise<void> {
     const detail = this.event();
     if (!detail) return;
 
-    // `null` is the virtual Fill role: the backend accepts a participation without a build.
     const isFill = this.isFillSelected();
     const primaryBuildId = isFill ? null : Number(this.draftPrimaryBuildId());
     if (primaryBuildId !== null && primaryBuildId <= 0) {
+      this.showJoinConfirm.set(false);
+      this.showJoinForm.set(true);
       this.joinError.set(this.t('events.detail.primary_required'));
       return;
     }
@@ -3815,7 +4126,7 @@ export class EventDetailPage {
       );
       this.event.set(updated);
       await this.loadRosterSnapshot();
-      this.showJoinForm.set(false);
+      this.showJoinConfirm.set(false);
       this.toasts.success(this.t('events.detail.joined'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -4149,7 +4460,7 @@ export class EventDetailPage {
         .map((build) => ({ build_id: build.id, build, quantity: 1 }));
       const rosterBuilds = [...(comp.builds ?? []), ...extraEntries];
       this.availableBuilds.set(rosterBuilds);
-      void this.preloadBuildDetails(rosterBuilds);
+      await this.preloadBuildDetails(rosterBuilds);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {

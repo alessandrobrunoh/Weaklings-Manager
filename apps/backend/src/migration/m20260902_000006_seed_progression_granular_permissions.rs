@@ -66,10 +66,8 @@ impl MigrationTrait for Migration {
                 &Query::delete()
                     .from_table(RolePermissions::Table)
                     .and_where(
-                        Expr::col(RolePermissions::Permission).is_in([
-                            "progression.settings.create",
-                            "progression.settings.edit",
-                        ]),
+                        Expr::col(RolePermissions::Permission)
+                            .is_in(["progression.settings.create", "progression.settings.edit"]),
                     )
                     .to_owned(),
             ),

@@ -16,9 +16,8 @@ use sea_orm::sea_query::{Expr, Func};
 
 use crate::errors::{AppError, BlockingReference};
 use crate::modules::events::entities::{
-    event, event_participation, event_roster_role,
-    event_participation::Column as EventParticipationColumn,
-    event_roster_role::Column as EventRosterRoleColumn,
+    event, event_participation, event_participation::Column as EventParticipationColumn,
+    event_roster_role, event_roster_role::Column as EventRosterRoleColumn,
 };
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
@@ -1843,7 +1842,9 @@ impl CompService {
             .await?;
 
         let current_capacity = self.get_comp_capacity(db, comp_id).await?;
-        let old_quantity = existing.as_ref().map_or(0, |model| i64::from(model.quantity));
+        let old_quantity = existing
+            .as_ref()
+            .map_or(0, |model| i64::from(model.quantity));
         let prospective_capacity = current_capacity - old_quantity + i64::from(req.quantity);
         self.check_expansion_capacity_invariant(db, comp_id, prospective_capacity)
             .await?;

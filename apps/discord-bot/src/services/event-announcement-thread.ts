@@ -1,4 +1,4 @@
-import { Message, ThreadAutoArchiveDuration } from "discord.js";
+import { Message, ThreadAutoArchiveDuration, type ThreadChannel } from "discord.js";
 import type { EventView } from "../api/types.js";
 import {
   buildEventEmbed,
@@ -58,6 +58,23 @@ export async function createEventAnnouncementThread(
       error,
     );
     return null;
+  }
+}
+
+/** Archives and locks an event discussion thread without deleting its history. */
+export async function closeEventAnnouncementThread(
+  thread: ThreadChannel,
+  eventId: number,
+  sourceLabel: string,
+): Promise<boolean> {
+  try {
+    await thread.setLocked(true, `Event #${eventId} closed (${sourceLabel})`);
+    await thread.setArchived(true, `Event #${eventId} closed (${sourceLabel})`);
+    console.log(`[${sourceLabel}] Closed Discord thread for event #${eventId}`);
+    return true;
+  } catch (error: unknown) {
+    console.warn(`[${sourceLabel}] Failed to close Discord thread for event #${eventId}:`, error);
+    return false;
   }
 }
 

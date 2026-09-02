@@ -16,6 +16,8 @@ use utoipa::ToSchema;
 pub enum SplitStatus {
     /// Requested with its participants; awaiting an officer to close it out.
     Pending,
+    /// Linked to an event that has not finished yet; payout is blocked until it ends.
+    AwaitingEvent,
     /// An officer distributed the loot; Guild Bank transactions have been generated.
     Completed,
     /// An officer marked the split as not completed (no transactions generated). Terminal.
@@ -29,6 +31,7 @@ impl SplitStatus {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",
+            Self::AwaitingEvent => "awaiting_event",
             Self::Completed => "completed",
             Self::NotCompleted => "not_completed",
             Self::Lost => "lost",
@@ -48,6 +51,7 @@ impl FromStr for SplitStatus {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "pending" => Ok(Self::Pending),
+            "awaiting_event" => Ok(Self::AwaitingEvent),
             "completed" => Ok(Self::Completed),
             "not_completed" => Ok(Self::NotCompleted),
             "lost" => Ok(Self::Lost),

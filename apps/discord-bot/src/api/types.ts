@@ -141,7 +141,7 @@ export interface WithdrawRequest {
 
 /* ----------------------------- Splits ------------------------------- */
 
-export type SplitStatus = 'pending' | 'completed' | 'not_completed' | 'lost';
+export type SplitStatus = 'pending' | 'awaiting_event' | 'completed' | 'not_completed' | 'lost';
 export type SplitParticipantCreditStatus = TransactionStatus;
 
 /** Detail returned by the bot split-sync endpoint. Financial values are authoritative backend data. */
@@ -386,6 +386,10 @@ export interface GuildSettingsView {
   discord_event_role_id: string | null;
   discord_auto_role_id: string | null;
   discord_splits_forum_channel_id: string | null;
+  discord_split_pending_tag_id: string | null;
+  discord_split_completed_tag_id: string | null;
+  discord_split_not_completed_tag_id: string | null;
+  discord_split_lost_tag_id: string | null;
   discord_event_voice_category_id: string | null;
 }
 

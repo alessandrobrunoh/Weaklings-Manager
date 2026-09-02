@@ -81,14 +81,12 @@ impl MigrationTrait for Migration {
             backend.build(
                 &Query::delete()
                     .from_table(RolePermissions::Table)
-                    .and_where(
-                        Expr::col(RolePermissions::Permission).is_in([
-                            "events.view",
-                            "events.create",
-                            "events.edit",
-                            "events.delete",
-                        ]),
-                    )
+                    .and_where(Expr::col(RolePermissions::Permission).is_in([
+                        "events.view",
+                        "events.create",
+                        "events.edit",
+                        "events.delete",
+                    ]))
                     .to_owned(),
             ),
         )

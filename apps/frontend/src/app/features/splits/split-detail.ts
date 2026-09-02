@@ -118,8 +118,15 @@ function parsePercentageInput(raw: string): number | null {
         <app-page-stack>
           <section class="card p-4 sm:p-5">
             <div class="mb-1.5 flex flex-wrap items-center gap-2">
-              <app-status-chip [value]="detail.status" />
+              <span class="chip" [class]="'chip chip--' + statusTone(detail.status)">
+                <span class="status-dot"></span>{{ statusLabel(detail.status) }}
+              </span>
             </div>
+            @if (detail.status === 'awaiting_event') {
+              <p class="text-xs text-[var(--color-warning)]" role="status">
+                {{ t('splits.awaiting_event.message') }}
+              </p>
+            }
             <p class="text-xs text-[var(--color-text-secondary)]">
               {{ t('splits.created_by', { name: detail.created_by_username }) }}
               &middot; {{ formatDate(detail.created_at) }}
@@ -461,11 +468,16 @@ function parsePercentageInput(raw: string): number | null {
                 <span
                   class="font-mono text-xs"
                   [class.text-[var(--color-warning)]]="detail.status === 'pending'"
-                  [class.text-[var(--color-success)]]="detail.status !== 'pending'"
+                  [class.text-[var(--color-success)]]="detail.status === 'completed'"
+                  [class.text-[var(--color-warning)]]="detail.status === 'awaiting_event'"
                 >
-                  {{
-                    detail.status === 'pending' ? t('splits.pending_payout') : t('splits.paid_out')
-                  }}
+                  @if (detail.status === 'pending') {
+                    {{ t('splits.pending_payout') }}
+                  } @else if (detail.status === 'awaiting_event') {
+                    {{ t('splits.awaiting_event.label') }}
+                  } @else {
+                    {{ t('splits.paid_out') }}
+                  }
                 </span>
               </header>
               <app-data-table
@@ -812,9 +824,29 @@ export class SplitDetailPage {
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);
 
+  protected statusLabel(status: SplitDetail['status']): string {
+    return this.t(`splits.status.${status}` as TranslationKey);
+  }
+
+  protected statusTone(status: SplitDetail['status']): 'warning' | 'success' | 'neutral' | 'error' {
+    switch (status) {
+      case 'pending':
+      case 'awaiting_event':
+        return 'warning';
+      case 'completed':
+        return 'success';
+      case 'lost':
+        return 'error';
+      default:
+        return 'neutral';
+    }
+  }
+
   protected readonly canAct = computed(() => this.auth.hasPermission('splits.edit'));
   protected readonly canDelete = computed(() => this.auth.hasPermission('splits.delete'));
-  protected readonly canEdit = computed(() => this.canAct() && this.split()?.status === 'pending');
+  protected readonly canEdit = computed(
+    () => this.canAct() && ['pending', 'awaiting_event'].includes(this.split()?.status ?? ''),
+  );
   protected readonly canViewSplitTransactions = computed(
     () => this.auth.hasPermission('bank.view_others') || this.auth.hasPermission('bank.withdraw.accept'),
   );

@@ -873,7 +873,11 @@ impl BankService {
             )));
         }
         if let Some(from_user_id) = req.from_user_id {
-            if UserEntity::find_by_id(from_user_id).one(db).await?.is_none() {
+            if UserEntity::find_by_id(from_user_id)
+                .one(db)
+                .await?
+                .is_none()
+            {
                 return Err(AppError::NotFound(format!("User {from_user_id} not found")));
             }
         }
@@ -963,7 +967,11 @@ impl BankService {
             }
         }
         if let Some(Some(from_user_id)) = req.from_user_id {
-            if UserEntity::find_by_id(from_user_id).one(db).await?.is_none() {
+            if UserEntity::find_by_id(from_user_id)
+                .one(db)
+                .await?
+                .is_none()
+            {
                 return Err(AppError::NotFound(format!("User {from_user_id} not found")));
             }
         }
@@ -1630,10 +1638,22 @@ mod tests {
         let old = chrono::Utc::now() - chrono::Duration::days(1);
         let split_a = insert_completed_split(&db, officer, old).await;
         let split_b = insert_completed_split(&db, officer, old).await;
-        insert_split_transaction(&db, alice, "10.00", TransactionStatus::Pending, Some(split_a))
-            .await;
-        insert_split_transaction(&db, alice, "5.00", TransactionStatus::Pending, Some(split_b))
-            .await;
+        insert_split_transaction(
+            &db,
+            alice,
+            "10.00",
+            TransactionStatus::Pending,
+            Some(split_a),
+        )
+        .await;
+        insert_split_transaction(
+            &db,
+            alice,
+            "5.00",
+            TransactionStatus::Pending,
+            Some(split_b),
+        )
+        .await;
 
         let filtered = BankService::new()
             .list_transactions(
@@ -1767,9 +1787,14 @@ mod tests {
         let admin = insert_user(&db, "admin", "admin@example.com").await;
         let old = chrono::Utc::now() - chrono::Duration::days(1);
         let split_id = insert_completed_split(&db, admin, old).await;
-        let id =
-            insert_split_transaction(&db, alice, "10.00", TransactionStatus::Pending, Some(split_id))
-                .await;
+        let id = insert_split_transaction(
+            &db,
+            alice,
+            "10.00",
+            TransactionStatus::Pending,
+            Some(split_id),
+        )
+        .await;
 
         let updated = BankService::new()
             .update_transaction(
@@ -1851,9 +1876,14 @@ mod tests {
         let admin = insert_user(&db, "admin", "admin@example.com").await;
         let old = chrono::Utc::now() - chrono::Duration::days(1);
         let split_id = insert_completed_split(&db, admin, old).await;
-        let id =
-            insert_split_transaction(&db, alice, "10.00", TransactionStatus::Pending, Some(split_id))
-                .await;
+        let id = insert_split_transaction(
+            &db,
+            alice,
+            "10.00",
+            TransactionStatus::Pending,
+            Some(split_id),
+        )
+        .await;
 
         BankService::new()
             .delete_transaction(&db, id, admin)

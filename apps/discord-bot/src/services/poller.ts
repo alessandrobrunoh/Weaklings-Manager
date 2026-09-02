@@ -16,6 +16,7 @@ import { config } from "../config.js";
 import type { SettingsService } from "./settings.js";
 import {
   buildEventThreadName,
+  closeEventAnnouncementThread,
   createEventAnnouncementThread,
   sendEventSignupMessage,
 } from "./event-announcement-thread.js";
@@ -191,6 +192,7 @@ export class Poller {
       // Event announcements must complete before checking reminders so a newly
       // created event already has its discussion thread recorded.
       await this.checkNewEvents();
+      await this.checkClosedEvents();
       await Promise.allSettled([
         this.checkNewBattles(),
         this.checkUpcomingEvents(),
@@ -289,6 +291,44 @@ export class Poller {
       }
     } catch (err) {
       console.error("[Poller] Failed to check events:", err);
+    }
+  }
+
+  /** Closes a known event discussion thread immediately after a Discord stop command. */
+  async closeEventThread(eventId: number): Promise<boolean> {
+    const threadId = this.state.eventThreadIds[String(eventId)];
+    if (!threadId) return false;
+
+    try {
+      const channel = await this.client.channels.fetch(threadId);
+      if (!channel?.isThread()) return false;
+      const closed = await closeEventAnnouncementThread(channel, eventId, "Poller");
+      if (closed) {
+        delete this.state.eventThreadIds[String(eventId)];
+        saveState(this.stateDirectory, this.state);
+      }
+      return closed;
+    } catch (error) {
+      console.warn(`[Poller] Could not close event thread for #${eventId}:`, error);
+      return false;
+    }
+  }
+
+  /** Closes persisted event discussion threads when the backend event reaches a terminal status. */
+  private async checkClosedEvents(): Promise<void> {
+    const terminalStatuses = new Set(["stopped", "auto_stopped"]);
+    for (const [eventId, threadId] of Object.entries(this.state.eventThreadIds)) {
+      try {
+        const event = await this.api.get<EventView>(`api/events/${eventId}`);
+        if (!terminalStatuses.has(event.status)) continue;
+
+        if (threadId && await this.closeEventThread(event.id)) {
+          continue;
+        }
+      } catch (error) {
+        // Keep the mapping so a temporary Discord/API failure is retried on the next poll.
+        console.warn(`[Poller] Could not close event thread for #${eventId}:`, error);
+      }
     }
   }
 
