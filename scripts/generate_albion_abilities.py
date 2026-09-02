@@ -96,14 +96,29 @@ def main() -> int:
                 items[item["@uniquename"]] = item
 
     def spell_list(unique_name: str, depth: int = 0) -> list[dict]:
-        """Resolves an item's spell list, following `@reference` down to the tier that owns it."""
+        """Resolves an item's spell list, following `@reference` down to the tier or family that
+        owns it. A `@reference` entry can carry its own `removespell`/`craftspell` diff alongside
+        it — e.g. a shapeshifter staff's other elemental variants all reference the Panther
+        staff's base list, then swap `SHAPESHIFT_PANTHER` for their own transformation. Skipping
+        that diff (as a plain recurse would) silently gives every variant the referenced item's
+        unmodified spells."""
         if depth > 10 or unique_name not in items:
             return []
         listing = items[unique_name].get("craftingspelllist")
         if not listing:
             return []
         if "@reference" in listing:
-            return spell_list(listing["@reference"], depth + 1)
+            entries = spell_list(listing["@reference"], depth + 1)
+            removed = listing.get("removespell")
+            if removed:
+                removed_names = {
+                    r["@uniquename"] for r in (removed if isinstance(removed, list) else [removed])
+                }
+                entries = [e for e in entries if e["@uniquename"] not in removed_names]
+            added = listing.get("craftspell")
+            if added:
+                entries = entries + (added if isinstance(added, list) else [added])
+            return entries
         entries = listing.get("craftspell")
         if entries is None:
             return []
