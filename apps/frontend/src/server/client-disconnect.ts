@@ -1,8 +1,17 @@
 /**
- * Socket error codes a browser produces by walking away mid-request: a reload
- * during server-side rendering, a closed tab, a cancelled navigation.
+ * Error codes a browser produces by walking away mid-request: a reload during
+ * server-side rendering, a closed tab, a cancelled navigation.
+ *
+ * `ERR_STREAM_WRITE_AFTER_END` is the same event seen from the API proxy rather
+ * than from the socket: `httpxy` finishes relaying a response into a client
+ * stream that has already ended.
  */
-const CLIENT_DISCONNECT_CODES = new Set(['ECONNRESET', 'ECONNABORTED', 'EPIPE']);
+const CLIENT_DISCONNECT_CODES = new Set([
+  'ECONNRESET',
+  'ECONNABORTED',
+  'EPIPE',
+  'ERR_STREAM_WRITE_AFTER_END',
+]);
 
 /**
  * The disconnect code behind a rejection reason, or `null` when it is a real

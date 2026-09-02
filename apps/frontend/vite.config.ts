@@ -107,6 +107,13 @@ export default defineConfig(({ mode }) => {
       }),
     ],
     server: {
+      // Nitro's `experimental.websocket` installs its own `upgrade` handler on this same HTTP
+      // server, and it answers Vite's HMR socket before Vite does. The HMR client then falls back
+      // to a tokenless `ws://host/`, is refused, and reloads the page to get a fresh token — over
+      // and over, every reload tearing down an in-flight server render. Giving HMR its own port
+      // keeps the two off each other's upgrades without disabling the websocket support the live
+      // roster route needs.
+      hmr: { port: 5174 },
       proxy: {
         '/api': { target: backendTarget, changeOrigin: true, secure: false },
         '/scalar': { target: backendTarget, changeOrigin: true, secure: false },

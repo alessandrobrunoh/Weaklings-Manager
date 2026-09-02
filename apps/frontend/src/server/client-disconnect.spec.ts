@@ -8,6 +8,10 @@ describe('clientDisconnectCode', () => {
     expect(clientDisconnectCode(reset)).toBe('ECONNRESET');
     expect(clientDisconnectCode({ code: 'ECONNABORTED' })).toBe('ECONNABORTED');
     expect(clientDisconnectCode({ code: 'EPIPE' })).toBe('EPIPE');
+    const afterEnd = Object.assign(new Error('write after end'), {
+      code: 'ERR_STREAM_WRITE_AFTER_END',
+    });
+    expect(clientDisconnectCode(afterEnd)).toBe('ERR_STREAM_WRITE_AFTER_END');
   });
 
   it('leaves genuine failures to crash the process', () => {
