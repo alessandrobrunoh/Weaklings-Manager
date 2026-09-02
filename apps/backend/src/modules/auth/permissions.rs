@@ -44,8 +44,25 @@ pub enum Permission {
     #[strum(serialize = "bank.view_others")]
     BankViewOthers,
     /// Create / edit participants / close out a loot split. Officer-or-above today.
+    /// Superseded by splits.view/.create/.edit/.delete below — kept so
+    /// existing role_permissions rows keep resolving.
     #[strum(serialize = "splits.manage")]
     SplitsManage,
+    /// View splits and the KPI summary. Member+.
+    #[strum(serialize = "splits.view")]
+    SplitsView,
+    /// Request a new split. Member+ (unchanged — was already open to any
+    /// authenticated user; this key exists so it can be restricted later).
+    #[strum(serialize = "splits.create")]
+    SplitsCreate,
+    /// Edit a split: participants, fee, location, and closing it out
+    /// (complete/not-completed/lost, including the batch-complete action).
+    /// Officer+.
+    #[strum(serialize = "splits.edit")]
+    SplitsEdit,
+    /// Delete a split. Officer+.
+    #[strum(serialize = "splits.delete")]
+    SplitsDelete,
     /// Manually merge, split, or move canonical Fight segments. Officer-or-above.
     /// Superseded by fights.view/.edit below — kept so existing
     /// role_permissions rows keep resolving.
