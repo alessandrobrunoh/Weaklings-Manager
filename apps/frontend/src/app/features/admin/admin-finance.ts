@@ -123,7 +123,7 @@ interface ActivityTrendPoint {
     .finance-svg__node-loot:hover { transform: scale(1.4); }
     .finance-svg__node-outflow { fill: var(--color-surface); stroke: var(--color-primary); stroke-width: 2.5; cursor: pointer; transition: transform 0.15s ease; }
     .finance-svg__node-outflow:hover { transform: scale(1.4); }
-    .finance-svg__bar-loss { fill: #ef4444; opacity: 0.85; transition: opacity 0.15s ease; }
+    .finance-svg__bar-loss { fill: var(--color-error); opacity: 0.85; transition: opacity 0.15s ease; }
     .finance-svg__bar-loss:hover { opacity: 1; }
     .finance-svg__bar-regear { fill: var(--color-success); opacity: 0.9; transition: opacity 0.15s ease; }
     .finance-svg__bar-regear:hover { opacity: 1; }
@@ -137,7 +137,7 @@ interface ActivityTrendPoint {
     .finance-chart-legend__key { inline-size: 0.75rem; block-size: 0.25rem; border-radius: 1px; }
     .finance-chart-legend__key--loot { background: var(--color-success); }
     .finance-chart-legend__key--outflow { background: var(--color-primary); }
-    .finance-chart-legend__key--loss { background: #ef4444; }
+    .finance-chart-legend__key--loss { background: var(--color-error); }
     .finance-chart-legend__key--regear { background: var(--color-success); }
     .finance-chart-legend__key--fight { background: #38bdf8; }
     .finance-chart-legend__key--event { background: var(--color-warning); }
@@ -211,7 +211,7 @@ interface ActivityTrendPoint {
                 <div class="flex items-center gap-3 text-xs">
                   <span class="text-[var(--color-text-secondary)]">
                     {{ t('bank.finance.netCashFlow') }}:
-                    <strong class="font-mono" [style.color]="econ.net >= 0 ? 'var(--color-success)' : '#ef4444'">
+                    <strong class="font-mono" [style.color]="econ.net >= 0 ? 'var(--color-success)' : 'var(--color-error)'">
                       {{ econ.net >= 0 ? '+' : '' }}{{ formatAmount(econ.net) }}
                     </strong>
                   </span>
