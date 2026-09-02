@@ -418,7 +418,7 @@ function parsePercentageInput(raw: string): number | null {
                   {{ t('splits.fee') }}
                 </p>
                 <p class="font-mono text-base font-medium text-[var(--color-danger)] mt-1">
-                  {{ formatAmount(toNumber(detail.estimated_market_value) * toNumber(detail.fee ?? defaultFee) / 100) }} ({{ detail.fee ?? defaultFee }}%)
+                  {{ formatAmount((toNumber(detail.estimated_market_value) - toNumber(detail.repair_value) + toNumber(detail.bags_value)) * toNumber(detail.fee ?? defaultFee) / 100) }} ({{ detail.fee ?? defaultFee }}%)
                 </p>
               </article>
               <article class="surface p-3.5">

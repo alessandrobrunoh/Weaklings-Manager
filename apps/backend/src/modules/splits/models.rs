@@ -39,7 +39,7 @@ pub struct SplitKpiSummary {
     pub pending_count: u64,
     /// Splits that have been paid out.
     pub completed_count: u64,
-    /// Sum of completed net values (falls back to estimated − fee − repair + bags).
+    /// Sum of completed net values (falls back to (estimated − repair + bags) − fee).
     #[schema(value_type = String, example = "125000")]
     pub total_net_distributed: Decimal,
     /// Sum of estimated market value across every split.
