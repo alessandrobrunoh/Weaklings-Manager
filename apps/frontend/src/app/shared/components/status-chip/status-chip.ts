@@ -17,6 +17,54 @@ type ChipTone = 'neutral' | 'success' | 'warning' | 'error' | 'info';
 @Component({
   selector: 'app-status-chip',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: `
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      min-height: 1.375rem;
+      padding: 0.125rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+    .status-dot {
+      display: inline-block;
+      width: 0.375rem;
+      height: 0.375rem;
+      border-radius: 9999px;
+      background-color: currentColor;
+      flex-shrink: 0;
+    }
+    .chip--success {
+      background: rgba(74, 222, 128, 0.12);
+      color: #4ade80;
+      border-color: rgba(74, 222, 128, 0.25);
+    }
+    .chip--warning {
+      background: rgba(250, 204, 21, 0.12);
+      color: #facc15;
+      border-color: rgba(250, 204, 21, 0.25);
+    }
+    .chip--error {
+      background: rgba(248, 113, 113, 0.12);
+      color: #f87171;
+      border-color: rgba(248, 113, 113, 0.25);
+    }
+    .chip--info {
+      background: rgba(56, 189, 248, 0.12);
+      color: #38bdf8;
+      border-color: rgba(56, 189, 248, 0.25);
+    }
+    .chip--neutral {
+      background: rgba(148, 163, 184, 0.1);
+      color: #94a3b8;
+      border-color: rgba(148, 163, 184, 0.2);
+    }
+  `,
   template: `<span class="chip" [class]="'chip--' + tone()"><span class="status-dot"></span>{{ display() }}</span>`,
 })
 export class StatusChip {

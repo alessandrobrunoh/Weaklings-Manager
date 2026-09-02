@@ -51,10 +51,10 @@ const BODY_MAX = 2000;
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      border-radius: 8px;
+      border-radius: var(--radius-cards);
       background: var(--color-surface);
       border: 1px solid var(--color-border);
-      box-shadow: var(--shadow-xl);
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.6);
     }
     .inbox-list {
       overflow-y: auto;
@@ -101,17 +101,17 @@ const BODY_MAX = 2000;
         [attr.aria-labelledby]="titleId"
       >
         <header
-          class="flex items-center justify-between gap-2 px-3 py-2"
+          class="flex items-center justify-between gap-2 px-3.5 py-2.5"
           style="border-bottom: 1px solid var(--color-border)"
         >
-          <h2 [id]="titleId" class="text-sm font-semibold" style="color: var(--color-text)">
+          <h2 [id]="titleId" class="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">
             {{ t('notifications.title') }}
           </h2>
           @if (unreadCount() > 0) {
             <button
               type="button"
               class="btn btn--ghost text-xs"
-              style="min-width: auto; height: 28px; padding: 0 0.5rem"
+              style="min-width: auto; height: 26px; padding: 0 0.5rem"
               (click)="onMarkAllRead()"
             >
               {{ t('notifications.markAllRead') }}
@@ -143,17 +143,22 @@ const BODY_MAX = 2000;
                 <li style="border-bottom: 1px solid var(--color-border)">
                   <button
                     type="button"
-                    class="w-full text-left px-3 py-2.5"
+                    class="w-full text-left px-3.5 py-2.5 transition-colors hover:bg-[var(--color-surface-hover)] focus-visible:bg-[var(--color-surface-hover)] block"
                     style="background: none; border: none; cursor: pointer"
                     (click)="onOpenRow(row)"
                   >
-                    <span
-                      class="block text-sm"
-                      [style.font-weight]="row.read_at ? '400' : '600'"
-                      style="color: var(--color-text)"
-                    >
-                      {{ row.title }}
-                    </span>
+                    <div class="flex items-start justify-between gap-2">
+                      <span
+                        class="block text-xs truncate"
+                        [style.font-weight]="row.read_at ? '400' : '600'"
+                        [style.color]="row.read_at ? 'var(--color-text-secondary)' : '#ffffff'"
+                      >
+                        {{ row.title }}
+                      </span>
+                      @if (!row.read_at) {
+                        <span class="h-1.5 w-1.5 rounded-full bg-sky-400 shrink-0 mt-1" aria-hidden="true"></span>
+                      }
+                    </div>
                     <span
                       class="mt-0.5 block text-xs line-clamp-2"
                       style="color: var(--color-text-secondary)"
@@ -162,7 +167,7 @@ const BODY_MAX = 2000;
                     </span>
                     <span
                       class="mt-1 block text-[10px] mono"
-                      style="color: var(--color-text-secondary)"
+                      style="color: var(--color-text-tertiary)"
                     >
                       {{ row.created_at | date: 'MMM d, HH:mm' }}
                     </span>

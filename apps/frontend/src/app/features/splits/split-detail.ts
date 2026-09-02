@@ -411,48 +411,86 @@ function parsePercentageInput(raw: string): number | null {
               </div>
             </form>
           } @else {
-            <section class="grid grid-cols-2 gap-3 sm:grid-cols-5">
-              <article class="surface p-3.5">
-                <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
-                  {{ t('splits.estimated') }}
-                </p>
-                <p class="font-mono text-base font-medium text-[var(--color-warning)] mt-1">
-                  {{ formatAmount(detail.estimated_market_value) }}
-                </p>
+            <section class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              <article class="kpi-card flex flex-col justify-between">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
+                    {{ t('splits.estimated') }}
+                  </span>
+                  <span class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    <app-icon name="coins" size="1rem" />
+                  </span>
+                </div>
+                <div class="mt-3">
+                  <span class="font-mono text-lg font-bold text-amber-400">
+                    {{ formatAmount(detail.estimated_market_value) }}
+                  </span>
+                </div>
               </article>
-              <article class="surface p-3.5">
-                <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
-                  {{ t('splits.fee') }}
-                </p>
-                <p class="font-mono text-base font-medium text-[var(--color-danger)] mt-1">
-                  {{ formatAmount((toNumber(detail.estimated_market_value) - toNumber(detail.repair_value) + toNumber(detail.bags_value)) * toNumber(detail.fee ?? defaultFee) / 100) }} ({{ detail.fee ?? defaultFee }}%)
-                </p>
+
+              <article class="kpi-card flex flex-col justify-between">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
+                    {{ t('splits.fee') }}
+                  </span>
+                  <span class="icon-capsule bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                    <app-icon name="shield" size="1rem" />
+                  </span>
+                </div>
+                <div class="mt-3">
+                  <span class="font-mono text-lg font-bold text-rose-400">
+                    {{ formatAmount((toNumber(detail.estimated_market_value) - toNumber(detail.repair_value) + toNumber(detail.bags_value)) * toNumber(detail.fee ?? defaultFee) / 100) }}
+                  </span>
+                  <span class="ml-1 text-xs text-[var(--color-text-secondary)]">({{ detail.fee ?? defaultFee }}%)</span>
+                </div>
               </article>
-              <article class="surface p-3.5">
-                <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
-                  {{ t('splits.repair_cost') }}
-                </p>
-                <p class="font-mono text-base font-medium text-[var(--color-danger)] mt-1">
-                  -{{ formatAmount(detail.repair_value) }}
-                </p>
+
+              <article class="kpi-card flex flex-col justify-between">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
+                    {{ t('splits.repair_cost') }}
+                  </span>
+                  <span class="icon-capsule bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                    <app-icon name="hammer" size="1rem" />
+                  </span>
+                </div>
+                <div class="mt-3">
+                  <span class="font-mono text-lg font-bold text-orange-400">
+                    -{{ formatAmount(detail.repair_value) }}
+                  </span>
+                </div>
               </article>
-              <article class="surface p-3.5">
-                <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
-                  {{ t('splits.bags_value') }}
-                </p>
-                <p class="font-mono text-base font-medium text-[var(--color-text)] mt-1">
-                  +{{ formatAmount(detail.bags_value) }}
-                </p>
+
+              <article class="kpi-card flex flex-col justify-between">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
+                    {{ t('splits.bags_value') }}
+                  </span>
+                  <span class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                    <app-icon name="package" size="1rem" />
+                  </span>
+                </div>
+                <div class="mt-3">
+                  <span class="font-mono text-lg font-bold text-sky-400">
+                    +{{ formatAmount(detail.bags_value) }}
+                  </span>
+                </div>
               </article>
-              <article
-                class="surface p-3.5 border-[var(--color-success)]"
-              >
-                <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
-                  {{ t('splits.net_value') }}
-                </p>
-                <p class="font-mono text-base font-medium text-[var(--color-success)] mt-1">
-                  {{ formatAmount(netOf(detail)) }}
-                </p>
+
+              <article class="kpi-card flex flex-col justify-between col-span-2 sm:col-span-1 border-emerald-500/30">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
+                    {{ t('splits.net_value') }}
+                  </span>
+                  <span class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <app-icon name="sparkles" size="1rem" />
+                  </span>
+                </div>
+                <div class="mt-3">
+                  <span class="font-mono text-lg font-bold text-emerald-400">
+                    {{ formatAmount(netOf(detail)) }}
+                  </span>
+                </div>
               </article>
             </section>
 
