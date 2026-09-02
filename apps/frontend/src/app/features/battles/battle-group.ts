@@ -10,6 +10,8 @@ import type { TranslationKey } from '../../i18n/en';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
+import { PageHeader } from '../../shared/components/page-header/page-header';
+import { PageStack } from '../../shared/components/page-stack/page-stack';
 
 interface AggregatedGuildStats {
   readonly name: string;
@@ -32,36 +34,31 @@ interface AggregatedGuildStats {
 @Component({
   selector: 'app-battle-group-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Loading, ErrorState, DataTable],
+  imports: [Loading, ErrorState, DataTable, PageHeader, PageStack],
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
     } @else if (loadFailed()) {
       <app-error-state [message]="t('common.error')" [retryLabel]="t('common.retry')" (retry)="load()" />
     } @else {
-      <header class="card p-5">
+      <app-page-header
+        [title]="t('battles.group_title')"
+        [subtitle]="'Aggregated analytics across ' + battleDetails().length + ' ' + t('battles.visible_battles')"
+      >
         <button type="button" class="btn btn--ghost btn--sm" (click)="backToBattles()">
           ← {{ t('nav.battles') }}
         </button>
-        <div class="mt-4 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h1 class="text-3xl font-bold tracking-tight" style="color: var(--color-text)">
-              {{ t('battles.group_title') }}
-            </h1>
-            <p class="text-sm text-secondary">
-              Aggregated analytics across {{ battleDetails().length }} {{ t('battles.visible_battles') }}
-            </p>
-          </div>
-          <div class="flex flex-wrap gap-1">
-            @for (id of battleIds(); track id) {
-              <span class="chip font-mono text-xs">#{{ id }}</span>
-            }
-          </div>
-        </div>
-      </header>
+      </app-page-header>
 
+      <div class="mb-5 flex flex-wrap gap-1">
+        @for (id of battleIds(); track id) {
+          <span class="chip font-mono text-xs">#{{ id }}</span>
+        }
+      </div>
+
+      <app-page-stack>
       <!-- Aggregate KPIs -->
-      <section class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Group KPIs">
+      <section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Group KPIs">
         <article class="surface p-4">
           <p class="battle-group__label">{{ t('battles.total_fame') }}</p>
           <p class="battle-group__value mono text-warning">{{ formatCompact(totalFame()) }}</p>
@@ -87,7 +84,7 @@ interface AggregatedGuildStats {
       </section>
 
       <!-- Comparative Bar Charts -->
-      <section class="mt-5 grid gap-4 xl:grid-cols-2">
+      <section class="grid gap-4 xl:grid-cols-2">
         <article class="surface p-5">
           <h2 class="battle-group__panel-title">{{ t('battles.fame_chart') }}</h2>
           @for (guild of aggregatedGuilds().slice(0, 8); track guild.name) {
@@ -123,7 +120,7 @@ interface AggregatedGuildStats {
       </section>
 
       <!-- Guild Breakdown Table -->
-      <article class="mt-5 surface overflow-hidden">
+      <article class="surface overflow-hidden">
         <header class="battle-group__table-header">
           <h2 class="font-bold text-base" style="color: var(--color-text)">{{ t('battles.guild_breakdown') }}</h2>
         </header>
@@ -172,6 +169,7 @@ interface AggregatedGuildStats {
           </ng-template>
         </app-data-table>
       </article>
+      </app-page-stack>
     }
   `,
   styles: `
