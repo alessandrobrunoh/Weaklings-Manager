@@ -18,17 +18,19 @@ import { Icon, type IconName } from '../icon/icon';
     >
       @if (icon()) {
         <div
-          class="flex h-12 w-12 items-center justify-center rounded-full"
-          style="background-color: var(--color-primary-container); color: var(--color-primary)"
+          class="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sky-400 shadow-sm"
+          style="box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.02)"
           aria-hidden="true"
         >
           <app-icon [name]="icon()" size="1.5rem" />
         </div>
       }
-      <p class="text-sm font-medium" style="color: var(--color-text)">{{ message() }}</p>
-      @if (hint()) {
-        <p class="text-xs" style="color: var(--color-text-secondary)">{{ hint() }}</p>
-      }
+      <div class="max-w-sm">
+        <p class="text-sm font-semibold tracking-tight text-white">{{ message() }}</p>
+        @if (hint()) {
+          <p class="mt-1 text-xs text-[var(--color-text-secondary)] leading-relaxed">{{ hint() }}</p>
+        }
+      </div>
       <ng-content />
     </div>
   `,

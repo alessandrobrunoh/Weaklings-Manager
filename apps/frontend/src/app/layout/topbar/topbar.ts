@@ -156,22 +156,29 @@ import type { NavSection } from '../sidebar/sidebar';
 
     <!-- Toasts -->
     <div
-      class="pointer-events-none fixed right-4 top-4 z-50 flex flex-col gap-2"
+      class="pointer-events-none fixed right-4 top-4 z-50 flex flex-col gap-2 max-w-sm w-full"
       role="region"
       aria-live="polite"
       aria-label="Notifications"
     >
       @for (toast of toasts.toasts(); track toast.id) {
         <div
-          class="pointer-events-auto flex items-center gap-3 rounded-md px-3 py-2.5 text-sm"
-          style="background-color: var(--color-surface); border: 1px solid var(--color-border-strong); box-shadow: var(--shadow-xl)"
+          class="pointer-events-auto flex items-center justify-between gap-3 rounded-xl px-3.5 py-2.5 shadow-2xl border transition-all"
+          style="background: rgba(15, 16, 17, 0.95); backdrop-filter: blur(12px);"
+          [style.borderColor]="toastBorderColor(toast.kind)"
         >
-          <app-icon [name]="iconFor(toast.kind)" size="1rem" />
-          <span style="color: var(--color-text)">{{ toast.message }}</span>
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span
+              class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs"
+              [class]="toastIconClasses(toast.kind)"
+            >
+              <app-icon [name]="iconFor(toast.kind)" size="0.875rem" />
+            </span>
+            <span class="text-xs font-medium text-white truncate">{{ toast.message }}</span>
+          </div>
           <button
             type="button"
-            class="ml-2 text-xs opacity-60 hover:opacity-100"
-            style="background: none; border: none; cursor: pointer; color: var(--color-text-secondary)"
+            class="text-xs text-[var(--color-text-tertiary)] hover:text-white transition-colors p-1"
             (click)="toasts.dismiss(toast.id)"
             aria-label="Dismiss"
           >
@@ -220,6 +227,18 @@ export class Topbar {
       return 'alert';
     }
     return 'info';
+  }
+
+  protected toastBorderColor(kind: 'success' | 'error' | 'info'): string {
+    if (kind === 'success') return 'rgba(74, 222, 128, 0.3)';
+    if (kind === 'error') return 'rgba(248, 113, 113, 0.3)';
+    return 'rgba(56, 189, 248, 0.3)';
+  }
+
+  protected toastIconClasses(kind: 'success' | 'error' | 'info'): string {
+    if (kind === 'success') return 'bg-emerald-500/15 text-emerald-400';
+    if (kind === 'error') return 'bg-red-500/15 text-red-400';
+    return 'bg-sky-500/15 text-sky-400';
   }
 
   protected onLanguageChange(event: Event): void {

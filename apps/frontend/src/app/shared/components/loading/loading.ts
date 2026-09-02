@@ -21,7 +21,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
         aria-hidden="true"
       ></span>
       @if (label()) {
-        <span class="text-sm" style="color: var(--color-text-secondary)">{{ label() }}</span>
+        <span class="text-xs font-medium tracking-wide text-[var(--color-text-secondary)]">{{ label() }}</span>
       }
     </div>
   `,
@@ -30,10 +30,10 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
       .spinner {
         display: inline-block;
         border-style: solid;
-        border-color: var(--color-surface-hover);
-        border-top-color: var(--color-primary);
+        border-color: rgba(255, 255, 255, 0.08);
+        border-top-color: #38bdf8;
         border-radius: 50%;
-        animation: spin 0.8s linear infinite;
+        animation: spin 0.75s cubic-bezier(0.4, 0, 0.2, 1) infinite;
       }
       @keyframes spin {
         to {

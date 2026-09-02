@@ -86,21 +86,21 @@ export interface SearchDialogOption {
               <li>
                 <button
                   type="button"
-                  class="w-full text-left p-3 rounded-lg flex items-center justify-between gap-3 hover-surface transition-colors"
-                  style="border: 1px solid var(--color-border)"
+                  class="search-item-btn"
                   (click)="select.emit(opt)"
                 >
-                  <div>
-                    <p class="font-medium" style="color: var(--color-text)">{{ opt.title }}</p>
+                  <div class="min-w-0 flex-1">
+                    <p class="font-medium text-white truncate text-sm">{{ opt.title }}</p>
                     @if (opt.subtitle) {
-                      <p class="text-xs mt-1" style="color: var(--color-text-secondary)">
+                      <p class="text-xs mt-0.5 text-[var(--color-text-secondary)] truncate">
                         {{ opt.subtitle }}
                       </p>
                     }
                   </div>
                   @if (opt.chip) {
-                    <span class="chip">{{ opt.chip }}</span>
+                    <span class="chip chip--neutral font-mono text-[10px]">{{ opt.chip }}</span>
                   }
+                  <app-icon name="chevron-right" size="0.875rem" class="text-[var(--color-text-tertiary)] shrink-0" />
                 </button>
               </li>
             }
@@ -110,8 +110,24 @@ export interface SearchDialogOption {
     </app-dialog>
   `,
   styles: `
-    .hover-surface:hover {
-      background: var(--color-surface-2);
+    .search-item-btn {
+      width: 100%;
+      text-align: left;
+      padding: 0.75rem 0.875rem;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      transition: border-color var(--motion-fast), background-color var(--motion-fast);
+      cursor: pointer;
+    }
+    .search-item-btn:hover,
+    .search-item-btn:focus-visible {
+      border-color: var(--color-border-hover);
+      background: var(--color-surface-hover);
     }
   `,
 })

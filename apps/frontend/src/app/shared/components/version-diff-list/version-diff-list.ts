@@ -32,7 +32,9 @@ import type { VersionDiffEntry } from '../../../features/comps/version-diff';
                 <th scope="row" class="font-medium">{{ entry.subject }}</th>
                 <td>{{ entry.before ?? '—' }}</td>
                 <td>{{ entry.after ?? '—' }}</td>
-                <td>{{ changeText(entry.change) }}</td>
+                <td>
+                  <span class="chip" [class]="changeChipClass(entry.change)">{{ changeText(entry.change) }}</span>
+                </td>
               </tr>
             }
           </tbody>
@@ -61,6 +63,17 @@ export class VersionDiffList {
         return this.removedLabel();
       case 'changed':
         return this.changedLabel();
+    }
+  }
+
+  protected changeChipClass(change: VersionDiffEntry['change']): string {
+    switch (change) {
+      case 'added':
+        return 'chip--success';
+      case 'removed':
+        return 'chip--error';
+      case 'changed':
+        return 'chip--warning';
     }
   }
 }

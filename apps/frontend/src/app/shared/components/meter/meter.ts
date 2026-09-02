@@ -13,12 +13,25 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
 @Component({
   selector: 'app-meter',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: `
+    .meter-track {
+      background-color: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      height: 0.4375rem;
+      border-radius: 9999px;
+      overflow: hidden;
+    }
+    .meter-fill {
+      height: 100%;
+      border-radius: 9999px;
+      transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+  `,
   template: `
     <div class="grid grid-cols-[minmax(5rem,1fr)_minmax(4rem,2fr)_auto] items-center gap-3 py-1">
-      <span class="truncate text-xs" style="color: var(--color-text-secondary)">{{ label() }}</span>
+      <span class="truncate text-xs font-medium" style="color: var(--color-text-secondary)">{{ label() }}</span>
       <span
-        class="h-1.5 overflow-hidden rounded-full"
-        style="background-color: var(--color-surface-2)"
+        class="meter-track block"
         role="progressbar"
         [attr.aria-label]="ariaLabel()"
         [attr.aria-valuemin]="0"
@@ -26,12 +39,12 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
         [attr.aria-valuenow]="clampedValue()"
       >
         <span
-          class="block h-full rounded-full"
+          class="meter-fill block"
           [style.width.%]="percent()"
           [style.background-color]="barColor()"
         ></span>
       </span>
-      <span class="mono text-xs" style="color: var(--color-text)">{{ display() || percent() + '%' }}</span>
+      <span class="mono text-xs font-semibold" style="color: var(--color-text)">{{ display() || percent() + '%' }}</span>
     </div>
   `,
 })
@@ -68,13 +81,13 @@ export class Meter {
   protected barColor(): string {
     switch (this.tone()) {
       case 'success':
-        return 'var(--color-success)';
+        return '#4ade80';
       case 'danger':
-        return 'var(--color-error)';
+        return '#f87171';
       case 'neutral':
-        return 'var(--color-border-strong)';
+        return 'rgba(148, 163, 184, 0.6)';
       default:
-        return 'var(--color-primary)';
+        return '#38bdf8';
     }
   }
 }

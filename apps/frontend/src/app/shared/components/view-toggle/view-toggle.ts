@@ -38,11 +38,47 @@ export interface ViewToggleOption {
   selector: 'app-view-toggle',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Icon],
+  styles: `
+    .toggle-container {
+      background-color: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      padding: 3px;
+      display: inline-flex;
+      gap: 3px;
+    }
+    .toggle-btn {
+      display: inline-flex;
+      min-height: 1.75rem;
+      align-items: center;
+      gap: 0.375rem;
+      white-space: nowrap;
+      border-radius: 6px;
+      padding: 0.25rem 0.625rem;
+      font-size: 0.75rem;
+      font-weight: 500;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all var(--motion-fast);
+      color: var(--color-text-secondary);
+      background: transparent;
+    }
+    .toggle-btn:hover:not([aria-selected="true"]) {
+      color: var(--color-text);
+      background: var(--color-surface-hover);
+    }
+    .toggle-btn[aria-selected="true"] {
+      background: var(--color-surface-hover);
+      color: #ffffff;
+      font-weight: 600;
+      border-color: var(--color-border-hover);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    }
+  `,
   template: `
     <div class="overflow-x-auto scrollbar-thin">
       <div
-        class="inline-flex gap-0.5 rounded-md border p-0.5"
-        style="background-color: var(--color-surface-2); border-color: var(--color-border)"
+        class="toggle-container"
         role="tablist"
         (keydown)="onKeydown($event)"
       >
@@ -51,11 +87,9 @@ export interface ViewToggleOption {
             #tab
             type="button"
             role="tab"
-            class="inline-flex min-h-7 items-center gap-1.5 whitespace-nowrap rounded px-2.5 py-1 text-xs font-medium"
+            class="toggle-btn"
             [attr.aria-selected]="option.id === active()"
             [attr.tabindex]="option.id === active() ? 0 : -1"
-            [style.background-color]="option.id === active() ? 'var(--color-surface-3)' : 'transparent'"
-            [style.color]="option.id === active() ? 'var(--color-text)' : 'var(--color-text-tertiary)'"
             (click)="select(i)"
           >
             @if (option.icon) {

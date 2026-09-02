@@ -25,17 +25,24 @@ import { Icon } from '../icon/icon';
       role="alert"
     >
       <div
-        class="flex h-12 w-12 items-center justify-center rounded-full"
-        style="background-color: var(--color-error-container); color: var(--color-error)"
+        class="flex h-12 w-12 items-center justify-center rounded-xl bg-red-500/10 text-red-400 border border-red-500/20 shadow-sm"
+        style="box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.05)"
         aria-hidden="true"
       >
         <app-icon name="alert" size="1.5rem" />
       </div>
-      <p class="text-sm font-medium" style="color: var(--color-text)">{{ message() }}</p>
-      @if (hint()) {
-        <p class="text-xs" style="color: var(--color-text-secondary)">{{ hint() }}</p>
-      }
-      <button type="button" class="btn btn--outline btn--sm" (click)="retry.emit()">
+      <div class="max-w-sm">
+        <p class="text-sm font-semibold tracking-tight text-white">{{ message() }}</p>
+        @if (hint()) {
+          <p class="mt-1 text-xs text-[var(--color-text-secondary)] leading-relaxed">{{ hint() }}</p>
+        }
+      </div>
+      <button
+        type="button"
+        class="btn btn--outline btn--sm mt-1 inline-flex items-center gap-1.5"
+        (click)="retry.emit()"
+      >
+        <app-icon name="refresh" size="0.875rem" />
         {{ retryLabel() }}
       </button>
     </div>
