@@ -312,7 +312,7 @@ pub async fn list_guild_discord_roles(
     get,
     path = "/api/admin/settings",
     tag = "admin",
-    summary = "Read the guild's Discord integration settings",
+    summary = "Read the guild's integration and split settings",
     description = "Returns the singleton `guild_settings` row: the channel/role IDs that used to \
         live only in deployment env vars (events/battles/CTA/audit-log/transaction-spam channels, \
         and the event-ping role). The bot reads this same endpoint at startup and on a refresh \
@@ -345,7 +345,7 @@ pub async fn get_guild_settings(
     put,
     path = "/api/admin/settings",
     tag = "admin",
-    summary = "Update the guild's Discord integration settings",
+    summary = "Update the guild's integration and split settings",
     description = "Partial update: only the fields present in the body are changed; a present but \
         empty string clears that field. Requires `admin.settings.manage`.",
     security(("session_cookie" = ["admin.settings.manage"])),
