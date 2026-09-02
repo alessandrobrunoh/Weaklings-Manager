@@ -97,138 +97,27 @@
    Light theme is default; .dark block provides the tonal inversion.
    ----------------------------------------------------------------- */
 @layer base {
+  /* Everything theme-related (colors, radii, shadows, fonts) now lives in the
+     unlayered `:root, .dark` / `.light` block further down this file, which
+     always wins the cascade over anything in @layer — so it's the single
+     source of truth for those tokens. This block keeps only what that block
+     does NOT redefine: layout constants, and the two accent-gold values
+     (still consumed by the equipment picker and battle-detail highlights). */
   :root {
-    /* System Tokens from DESIGN.md */
-    --color-jet-ink: #0a0a0a;
-    --color-charcoal: #151515;
-    --color-fog: #858585;
-    --color-pewter: #9d9d9d;
-    --color-steel: #545454;
-    --color-dove: #d5d9e2;
-    --color-cream: #f9f8f6;
-    --color-paper: #ffffff;
-    --color-sand: #f2ede5;
-    --color-slate: #3b3b3b;
-    --color-ember: #ff5f57;
-    --color-sunbeam: #ffbd2e;
-    --color-sprout: #28c840;
-
-    /* Semantic Aliases for UI - Minimal, clean, refined */
-    --color-bg: #fafaf9;
-    --color-surface: #ffffff;
-    --color-surface-1: #ffffff;
-    --color-surface-2: #f5f5f4;
-    --color-surface-hover: #f0efee;
-    --color-surface-charcoal: #18181b;
-    --color-border: rgba(0, 0, 0, 0.07);
-    --color-border-strong: rgba(0, 0, 0, 0.14);
-
-    /* Typography ink */
-    --color-text: #09090b;
-    --color-text-secondary: #71717a;
-    --color-text-tertiary: #a1a1aa;
-    --color-text-steel: #52525b;
-    --color-text-disabled: #d4d4d8;
-    --color-text-heading: #18181b;
-
-    /* Primary filled pill action: near-black #09090b */
-    --color-primary: #09090b;
-    --color-primary-hover: #27272a;
-    --color-primary-container: #f4f4f5;
-    --color-on-primary: #ffffff;
-    --color-logo-glow: rgba(0, 0, 0, 0.04);
-
-    /* Accents & Statuses */
-    --color-accent-beta: #f4f4f5;
-    --color-accent-gold: #f59e0b;
-    --color-success: #16a34a;
-    --color-success-container: rgba(22, 163, 74, 0.1);
-    --color-warning: #d97706;
-    --color-warning-container: rgba(217, 119, 6, 0.1);
-    --color-error: #dc2626;
-    --color-error-container: rgba(220, 38, 38, 0.1);
-    --color-danger: var(--color-error);
-    --color-info: #09090b;
-
-    /* Radius Tokens */
-    --radius-sm: 4px;
-    --radius-md: 8px;
-    --radius-xl: 12px;
-    --radius-2xl: 14px;
-    --radius-full: 9999px;
-    --radius-cards: 12px;
-    --radius-pills: 9999px;
-    --radius-inputs: 8px;
-    --radius-buttons: 9999px;
-    --radius-smallcards: 8px;
-
-    /* Shadows & Elevation - Ultra subtle and clean */
-    --shadow-subtle: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
-    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
-    --shadow-subtle-2: 0 4px 6px -1px rgba(0, 0, 0, 0.03);
-    --shadow-1: var(--shadow-subtle);
-    --shadow-2: var(--shadow-subtle-2);
-    --shadow-3: var(--shadow-xl);
-
-    /* Fonts */
-    --font-sans: var(--font-universalsans);
-    --font-display: var(--font-universalsansdisplay);
-    --font-mono: var(--font-geistmono);
     --font-wordmark: 'Cinzel', 'Times New Roman', serif;
-
-    /* Layout Tokens */
     --page-max-width: 1200px;
     --section-gap: 80px;
     --card-padding: 40px;
     --element-gap: 12px;
-    --page-gap: 1.5rem;
-
-    color-scheme: light;
-  }
-
-  /* Dark mode: minimal, sleek slate/ink, hairline borders */
-  .dark {
-    --color-bg: #09090b;
-    --color-surface: #111114;
-    --color-surface-1: #111114;
-    --color-surface-2: #18181c;
-    --color-surface-hover: #1f1f25;
-    --color-surface-charcoal: #0c0c0e;
-    --color-border: rgba(255, 255, 255, 0.08);
-    --color-border-strong: rgba(255, 255, 255, 0.16);
-
-    --color-text: #f4f4f5;
-    --color-text-secondary: #a1a1aa;
-    --color-text-tertiary: #71717a;
-    --color-text-steel: #a1a1aa;
-    --color-text-disabled: #52525b;
-    --color-text-heading: #fafafa;
-
-    --color-primary: #ffffff;
-    --color-primary-hover: #e4e4e7;
-    --color-primary-container: #18181c;
-    --color-on-primary: #09090b;
-    --color-logo-glow: rgba(255, 255, 255, 0.06);
-
-    --color-accent-beta: #18181c;
-    --color-accent-gold: #fbbf24;
-    --color-success: #22c55e;
-    --color-success-container: rgba(34, 197, 94, 0.12);
-    --color-warning: #f59e0b;
-    --color-warning-container: rgba(245, 158, 11, 0.12);
-    --color-error: #ef4444;
-    --color-error-container: rgba(239, 68, 68, 0.12);
-    --color-danger: var(--color-error);
-    --color-info: #ffffff;
-
-    --shadow-subtle: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
-    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
-    --shadow-subtle-2: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
     --shadow-1: var(--shadow-subtle);
     --shadow-2: var(--shadow-subtle-2);
     --shadow-3: var(--shadow-xl);
 
-    color-scheme: dark;
+    --color-accent-gold: #f59e0b;
+  }
+
+  .dark {
+    --color-accent-gold: #fbbf24;
   }
 
   html,
@@ -659,36 +548,8 @@
     }
   }
 
-  /* Status Chips and Pills */
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.25rem 0.625rem;
-    border-radius: var(--radius-pills);
-    background-color: var(--color-surface-2);
-    color: var(--color-text-secondary);
-    font-family: var(--font-universalsans);
-    font-size: 0.75rem;
-    font-weight: 500;
-  }
-
-  .chip--info {
-    background-color: var(--color-surface-2);
-    color: var(--color-text);
-  }
-  .chip--success {
-    background-color: var(--color-success-container);
-    color: var(--color-success);
-  }
-  .chip--warning {
-    background-color: var(--color-warning-container);
-    color: var(--color-warning);
-  }
-  .chip--error {
-    background-color: var(--color-error-container);
-    color: var(--color-error);
-  }
+  /* .chip / .chip--* have a single definition further down this file (in the
+     Linear-inspired unlayered block), which already superseded this one. */
 
   /* Beta Tag Pill: #f2ede5 background, #0a0a0a text, 12px weight 500 */
   .pill-beta,
@@ -724,29 +585,32 @@
     background-color: color-mix(in srgb, var(--color-error-container) 75%, var(--color-surface-1));
   }
 
-  /* Table: Clean editorial layout with hairline dividers */
+  /* Table: Clean editorial layout with hairline dividers.
+     Sizing/colors here match what previously lived as a second, later
+     `.table` override further down this file — merged into one definition. */
   .table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
   }
 
   .table thead th {
     text-align: left;
-    padding: 0.75rem 1rem;
-    color: var(--color-text-secondary);
+    padding: 0.5625rem 0.75rem;
+    background: var(--color-surface-2);
+    color: var(--color-text-tertiary);
     font-family: var(--font-universalsans);
-    font-weight: 500;
+    font-weight: 510;
     border-bottom: 1px solid var(--color-border);
-    font-size: 0.8125rem;
+    font-size: 0.6875rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
 
   .table tbody td {
-    padding: 0.875rem 1rem;
+    padding: 0.625rem 0.75rem;
     border-bottom: 1px solid var(--color-border);
-    color: var(--color-text);
+    color: var(--color-text-secondary);
   }
 
   .table tbody tr:hover {
@@ -1404,18 +1268,10 @@
     outline-offset: 2px;
   }
 
-  .surface,
-  .card,
-  .card--flat,
-  .card--elevated {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-cards);
-    box-shadow: none;
-  }
-
-  .card--flat { background: var(--color-surface); }
-  .card:hover { border-color: var(--color-border-strong); }
+  /* .card/.surface/.card--flat/.card--elevated have a single definition
+     earlier in this file (Reusable Component Layer) — this used to
+     redundantly redefine them (and force .card--elevated's shadow to
+     `none`, silently overriding its intended elevation). */
 
   .btn {
     min-height: 2.25rem;
@@ -1497,10 +1353,8 @@
   .nav-link:hover { background: var(--color-surface-hover); color: var(--color-text); }
   .nav-link--active, .nav-link--active:hover { background: color-mix(in oklab, var(--color-primary) 14%, var(--color-surface)); color: var(--color-text); font-weight: 510; box-shadow: inset 2px 0 var(--color-primary); }
 
-  .table { font-size: 0.8125rem; }
-  .table thead th { padding: 0.5625rem 0.75rem; background: var(--color-surface-2); color: var(--color-text-tertiary); font-size: 0.6875rem; font-weight: 510; letter-spacing: 0.04em; }
-  .table tbody td { padding: 0.625rem 0.75rem; color: var(--color-text-secondary); }
-  .table tbody tr:hover { background: var(--color-surface-hover); }
+  /* .table already carries these exact values from its single definition
+     earlier in this file (Reusable Component Layer). */
 
   .mono, .tabular { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.013em; }
   .eyebrow { color: var(--color-text-tertiary); font-family: var(--font-sans); font-size: 0.6875rem; font-weight: 510; letter-spacing: 0.04em; }
