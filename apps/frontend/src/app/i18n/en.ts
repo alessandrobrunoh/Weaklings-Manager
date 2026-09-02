@@ -72,6 +72,7 @@ export const en = {
   'nav.admin.back': 'Back to app',
   'nav.admin.overview': 'Overview',
   'nav.admin.finance': 'Finance',
+  'nav.admin.withdrawals': 'Withdrawals',
   'nav.admin.roles': 'Roles',
   'nav.admin.permissions': 'Permissions',
   'nav.admin.discord': 'Discord',
@@ -148,8 +149,8 @@ export const en = {
   'bank.withdraw.confirmRejectAll':
     'Reject every requested withdrawal — {amount} silver total? This cannot be undone.',
   'bank.withdraw.reject': 'Reject payouts',
-  'bank.view.personal': 'My Ledger',
-  'bank.view.guild': 'Guild Requests',
+  'bank.reviewRequests': 'Review guild requests',
+  'bank.reviewRequestsTooltip': 'Open the officer withdrawal review queue',
   'bank.transactions.title': 'Transaction history',
   'bank.transactions.empty': 'No transactions yet.',
   'bank.status.pending': 'Pending',
@@ -756,6 +757,7 @@ export const en = {
   'admin.hub.regearsHint': 'Caps, pricing location, and reimbursable slots.',
   'admin.hub.islandsHint': 'Cities, islands, and loot tabs used when locating splits.',
   'admin.hub.financeHint': 'Whole-ledger liabilities, payouts, sources and destinations.',
+  'admin.hub.withdrawalsHint': 'Review and pay out requested member withdrawals.',
   'admin.hub.usersHint': 'Directory of guild members, roles, and Albion character links.',
   'admin.regears.title': 'Regear settings',
   'admin.regears.hint':
@@ -779,6 +781,7 @@ export const en = {
   'admin.regears.slot.potion': 'Potion',
   'admin.regears.slot.food': 'Food',
   'admin.regears.slot.mount': 'Mount',
+  'admin.withdrawals.title': 'Withdrawal requests',
   'admin.islands.title': 'Island catalog',
   'admin.islands.hint': 'Cities, islands, and loot tabs used when locating splits.',
   'admin.islands.empty': 'Add an island before anyone can locate a split.',
@@ -956,6 +959,9 @@ export const en = {
   'bank.withdraw.acceptSelected': 'Accept selected',
   'bank.withdraw.rejectSelected': 'Reject selected',
   'bank.withdraw.requestCount': '{count} requests',
+  'bank.withdraw.requestConfirmSubtitle': 'Confirm the withdrawal request',
+  'bank.withdraw.requestConfirmBody': 'You are about to request a withdrawal of',
+  'bank.withdraw.requestConfirmHint': 'An authorized officer will complete the in-game transfer.',
 
   // Albion settings
   'albionSettings.title': 'Albion account',
