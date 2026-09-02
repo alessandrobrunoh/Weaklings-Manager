@@ -1,807 +1,1035 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import type { EChartsOption } from 'echarts';
 import { firstValueFrom } from 'rxjs';
 
-import type { BankAnalyticsSummary, BankBreakdown, GuildReport, TrendBucket } from '../../core/models/api.models';
+import type {
+  BankAnalyticsSummary,
+  BankBreakdown,
+  GuildReport,
+  ReportMemberRow,
+  TrendBucket,
+} from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
+import { ThemeService } from '../../core/services/theme.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import { Chart, type ChartTableRow } from '../../shared/components/chart/chart';
+import { chartChrome, chartPalette } from '../../shared/components/chart/chart-theme';
 import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
-interface FinanceBar {
-  readonly label: string;
-  readonly value: number;
-  readonly width: number;
-  readonly tone: 'primary' | 'success' | 'warning' | 'neutral';
+/** Preset windows, plus the escape hatch to arbitrary dates. */
+type PeriodId = '7' | '30' | '90' | 'custom';
+
+const PRESET_DAYS: Readonly<Record<Exclude<PeriodId, 'custom'>, number>> = {
+  '7': 7,
+  '30': 30,
+  '90': 90,
+};
+
+const MS_PER_DAY = 86_400_000;
+
+/** A resolved reporting window, plus the comparable window right before it. */
+interface ResolvedRange {
+  readonly from: Date;
+  readonly to: Date;
+  readonly days: number;
+  readonly previousFrom: Date;
+  readonly previousTo: Date;
 }
 
-interface FlowTrendPoint {
+/** One KPI tile: a figure, its context, and where to go to verify it. */
+interface FinanceKpi {
+  readonly key: string;
   readonly label: string;
-  readonly fullDate: string;
-  readonly x: number;
-  readonly lootY: number;
-  readonly outflowY: number;
-  readonly lootValue: number;
-  readonly outflowValue: number;
-  readonly netValue: number;
+  readonly value: string;
+  readonly detail: string;
+  readonly tone: 'default' | 'success' | 'warning' | 'danger';
+  readonly delta?: FinanceDelta;
+  readonly link?: readonly [string, Record<string, string>];
+  readonly hint?: string;
 }
 
-interface LossRegearTrendPoint {
+/** Period-over-period movement, already resolved to a direction and a label. */
+interface FinanceDelta {
   readonly label: string;
-  readonly fullDate: string;
-  readonly x: number;
-  readonly lossX: number;
-  readonly lossY: number;
-  readonly lossHeight: number;
-  readonly lossValue: number;
-  readonly regearX: number;
-  readonly regearY: number;
-  readonly regearHeight: number;
-  readonly regearValue: number;
-  readonly barWidth: number;
+  readonly direction: 'up' | 'down' | 'flat';
+  /** Whether the movement is a good thing, which is not the same as "up". */
+  readonly good: boolean;
 }
 
-interface ActivityTrendPoint {
-  readonly label: string;
-  readonly fullDate: string;
-  readonly x: number;
-  readonly fightX: number;
-  readonly fightY: number;
-  readonly fightHeight: number;
-  readonly fights: number;
-  readonly eventX: number;
-  readonly eventY: number;
-  readonly eventHeight: number;
-  readonly events: number;
-  readonly barWidth: number;
+/** Minimal shape of an ECharts tooltip callback payload. */
+interface TooltipParam {
+  readonly seriesName?: string;
+  readonly name?: string;
+  readonly axisValueLabel?: string;
+  readonly value?: unknown;
+  readonly color?: string;
 }
 
-/** Whole-ledger finance workspace for officers with bank reporting access. */
+function toParamList(input: unknown): TooltipParam[] {
+  return Array.isArray(input) ? (input as TooltipParam[]) : [input as TooltipParam];
+}
+
+/** Series and category names come from the API — never interpolate them raw. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function toNumber(value: number | string | null | undefined): number {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function toDateInput(date: Date): string {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+/**
+ * Finance workspace for officers with bank reporting access.
+ *
+ * Two data sources meet on this page and they answer different questions, so
+ * every block says which one it is reading:
+ *
+ * - `GET /api/bank/admin/summary` is the **whole ledger**, every row ever
+ *   written, and ignores the period filter. It answers "what does the bank owe
+ *   and what has it settled".
+ * - `GET /api/intel/report?from&to` is **window-scoped** silver flow. It
+ *   answers "what happened in this period", and is fetched twice — once for
+ *   the selected window and once for the window immediately before it, which
+ *   is what makes the period-over-period deltas possible.
+ *
+ * Mixing the two silently is how a finance page starts lying, hence the
+ * explicit scope chips on each section heading.
+ */
 @Component({
   selector: 'app-admin-finance',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, PageHeader, PageStack, TooltipDirective],
+  imports: [
+    Chart,
+    Icon,
+    NgTemplateOutlet,
+    PageHeader,
+    PageStack,
+    RouterLink,
+    TooltipDirective,
+    ViewToggle,
+  ],
   styles: `
-    .finance-overview, .finance-analytics { display: grid; gap: 0.875rem; }
-    .finance-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--color-border); border-radius: 8px; overflow: clip; background: var(--color-surface); }
-    .finance-metric { min-inline-size: 0; padding: 0.875rem 1rem; border-inline-end: 1px solid var(--color-border); }
-    .finance-metric:last-child { border-inline-end: 0; }
-    .finance-metric__label, .finance-section-label { margin: 0; color: var(--color-text-tertiary); font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.035em; text-transform: uppercase; }
-    .finance-metric__value { margin: 0.375rem 0 0; color: var(--color-text); font-family: var(--font-mono); font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; }
-    .finance-metric__detail { margin: 0.25rem 0 0; color: var(--color-text-secondary); font-size: 0.6875rem; }
-    .finance-chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.875rem; }
-    .finance-chart { min-inline-size: 0; padding: 1rem; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); display: flex; flex-direction: column; justify-content: space-between; }
-    .finance-chart--full { grid-column: 1 / -1; }
-    .finance-chart__header { display: flex; align-items: safe center; justify-content: space-between; gap: 0.75rem; margin-block-end: 1rem; }
-    .finance-chart__title { margin: 0; color: var(--color-text); font-size: 0.875rem; font-weight: 600; }
-    .finance-chart__sub { margin: 0.125rem 0 0; color: var(--color-text-tertiary); font-size: 0.6875rem; }
-    .finance-bars { display: grid; gap: 0.75rem; margin: 0; padding: 0; list-style: none; }
-    .finance-bar { display: grid; grid-template-columns: minmax(6rem, 1fr) auto; align-items: safe center; gap: 0.5rem; }
-    .finance-bar__label { overflow: hidden; color: var(--color-text-secondary); font-size: 0.75rem; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-    .finance-bar__amount { color: var(--color-text); font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; text-align: end; }
-    .finance-bar__track { grid-column: 1 / -1; block-size: 0.375rem; overflow: hidden; border-radius: 999px; background: var(--color-surface-2); }
-    .finance-bar__fill { display: block; block-size: 100%; min-inline-size: 2px; border-radius: inherit; transition: width 0.3s ease; }
-    .finance-bar__fill--primary { background: var(--color-primary); }
-    .finance-bar__fill--success { background: var(--color-success); }
-    .finance-bar__fill--warning { background: var(--color-warning); }
-    .finance-bar__fill--neutral { background: var(--color-text-tertiary); }
-    
-    .finance-donut-container { display: grid; grid-template-columns: 10rem minmax(0, 1fr); align-items: center; gap: 1.25rem; }
-    .finance-donut-svg { inline-size: 10rem; block-size: 10rem; overflow: visible; }
-    .finance-donut__ring { fill: none; stroke: var(--color-surface-2); stroke-width: 14; }
-    .finance-donut__segment { fill: none; stroke-width: 14; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dasharray 0.3s ease, stroke-dashoffset 0.3s ease; }
-    .finance-donut__segment--primary { stroke: var(--color-primary); }
-    .finance-donut__segment--success { stroke: var(--color-success); }
-    .finance-donut__segment--warning { stroke: var(--color-warning); }
-    .finance-donut__segment--neutral { stroke: var(--color-text-tertiary); }
-    .finance-donut__center-label { fill: var(--color-text-tertiary); font-size: 0.5rem; text-anchor: middle; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
-    .finance-donut__center-val { fill: var(--color-text); font-family: var(--font-mono); font-size: 0.8125rem; font-weight: 700; text-anchor: middle; }
-    
-    .finance-legend { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
-    .finance-legend__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0.5rem; color: var(--color-text-secondary); font-size: 0.75rem; }
-    .finance-legend__dot { inline-size: 0.625rem; block-size: 0.625rem; border-radius: 50%; }
-    .finance-legend__dot--primary { background: var(--color-primary); }
-    .finance-legend__dot--success { background: var(--color-success); }
-    .finance-legend__dot--warning { background: var(--color-warning); }
-    .finance-legend__dot--neutral { background: var(--color-text-tertiary); }
-    .finance-legend__amount { color: var(--color-text); font-family: var(--font-mono); font-weight: 600; }
-    
-    .finance-svg-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    .finance-svg-chart { display: block; inline-size: 100%; min-inline-size: 460px; block-size: 13.5rem; overflow: visible; }
-    .finance-svg__grid { stroke: var(--color-border); stroke-width: 1; stroke-dasharray: 4 4; }
-    .finance-svg__axis { stroke: var(--color-border-strong, var(--color-border)); stroke-width: 1.25; }
-    .finance-svg__scale-label { fill: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 9px; text-anchor: end; }
-    .finance-svg__date-label { fill: var(--color-text-secondary); font-size: 9.5px; text-anchor: middle; font-weight: 500; }
-    .finance-svg__line-loot { fill: none; stroke: var(--color-success); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-    .finance-svg__line-outflow { fill: none; stroke: var(--color-primary); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-    .finance-svg__area-loot { fill: url(#lootGradient); }
-    .finance-svg__area-outflow { fill: url(#outflowGradient); }
-    .finance-svg__node-loot { fill: var(--color-surface); stroke: var(--color-success); stroke-width: 2.5; cursor: pointer; transition: transform 0.15s ease; }
-    .finance-svg__node-loot:hover { transform: scale(1.4); }
-    .finance-svg__node-outflow { fill: var(--color-surface); stroke: var(--color-primary); stroke-width: 2.5; cursor: pointer; transition: transform 0.15s ease; }
-    .finance-svg__node-outflow:hover { transform: scale(1.4); }
-    .finance-svg__bar-loss { fill: var(--color-error); opacity: 0.85; transition: opacity 0.15s ease; }
-    .finance-svg__bar-loss:hover { opacity: 1; }
-    .finance-svg__bar-regear { fill: var(--color-success); opacity: 0.9; transition: opacity 0.15s ease; }
-    .finance-svg__bar-regear:hover { opacity: 1; }
-    .finance-svg__bar-fight { fill: #38bdf8; opacity: 0.85; }
-    .finance-svg__bar-fight:hover { opacity: 1; }
-    .finance-svg__bar-event { fill: var(--color-warning); opacity: 0.85; }
-    .finance-svg__bar-event:hover { opacity: 1; }
-    
-    .finance-chart-legend { display: flex; flex-wrap: wrap; gap: 1rem; margin-block-start: 0.75rem; color: var(--color-text-secondary); font-size: 0.6875rem; }
-    .finance-chart-legend span { display: inline-flex; align-items: center; gap: 0.375rem; font-weight: 500; }
-    .finance-chart-legend__key { inline-size: 0.75rem; block-size: 0.25rem; border-radius: 1px; }
-    .finance-chart-legend__key--loot { background: var(--color-success); }
-    .finance-chart-legend__key--outflow { background: var(--color-primary); }
-    .finance-chart-legend__key--loss { background: var(--color-error); }
-    .finance-chart-legend__key--regear { background: var(--color-success); }
-    .finance-chart-legend__key--fight { background: #38bdf8; }
-    .finance-chart-legend__key--event { background: var(--color-warning); }
-    
-    .finance-panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.875rem; }
-    .finance-panel { min-inline-size: 0; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); }
-    .finance-panel__header { display: flex; align-items: safe center; justify-content: space-between; gap: 0.5rem; padding: 0.75rem 0.875rem; border-block-end: 1px solid var(--color-border); }
-    .finance-panel__title { margin: 0; color: var(--color-text-secondary); font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.035em; }
-    .finance-list { margin: 0; padding: 0; list-style: none; }
-    .finance-list__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: safe center; gap: 0.75rem; padding: 0.625rem 0.875rem; border-block-end: 1px solid var(--color-border); }
-    .finance-list__row:last-child { border-block-end: 0; }
-    .finance-list__label { overflow: hidden; color: var(--color-text-secondary); font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
-    .finance-list__meta { display: block; margin-block-start: 0.125rem; color: var(--color-text-tertiary); font-size: 0.6875rem; }
-    .finance-list__amount { color: var(--color-text); font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; }
-    .finance-note, .finance-empty { margin: 0; padding: 0.75rem 0.875rem; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text-tertiary); font-size: 0.75rem; line-height: 1.5; }
-    .finance-empty { padding: 2rem 0; border: 0; text-align: center; }
-    
-    @media (max-width: 72rem) {
-      .finance-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .finance-metric:nth-child(2) { border-inline-end: 0; }
-      .finance-metric:nth-child(-n + 2) { border-block-end: 1px solid var(--color-border); }
-      .finance-chart-grid, .finance-panels { grid-template-columns: 1fr; }
+    .fin-filters {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.625rem 0.75rem;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface);
     }
-    @media (max-width: 48rem) {
-      .finance-metrics { grid-template-columns: 1fr; }
-      .finance-metric, .finance-metric:nth-child(2) { border-inline-end: 0; border-block-end: 1px solid var(--color-border); }
-      .finance-metric:last-child { border-block-end: 0; }
-      .finance-donut-container { grid-template-columns: 1fr; justify-items: center; }
+    .fin-filters__group {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .fin-filters__window,
+    .fin-meta {
+      color: var(--color-text-tertiary);
+      font-size: 0.6875rem;
+    }
+    .fin-filters__window strong,
+    .fin-meta strong {
+      color: var(--color-text-secondary);
+      font-weight: 600;
+    }
+    .fin-date {
+      inline-size: 9.5rem;
+    }
+
+    .fin-section {
+      display: grid;
+      gap: 0.75rem;
+    }
+    .fin-section__head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.5rem 0.75rem;
+    }
+    .fin-section__title {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 0;
+      color: var(--color-text);
+      font-size: 0.875rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .fin-section__sub {
+      margin: 0.125rem 0 0;
+      max-inline-size: 62ch;
+      color: var(--color-text-tertiary);
+      font-size: 0.6875rem;
+      line-height: 1.45;
+    }
+    .fin-scope {
+      flex: 0 0 auto;
+      padding: 0.0625rem 0.375rem;
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      color: var(--color-text-tertiary);
+      font-size: 0.625rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    .fin-kpis {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.625rem;
+    }
+    .fin-kpi {
+      display: flex;
+      min-inline-size: 0;
+      flex-direction: column;
+      gap: 0.25rem;
+      padding: 0.75rem 0.875rem;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface);
+      color: inherit;
+      text-decoration: none;
+      transition:
+        border-color 0.15s ease,
+        background-color 0.15s ease;
+    }
+    a.fin-kpi:hover {
+      border-color: var(--color-border-strong);
+      background: var(--color-surface-hover);
+    }
+    a.fin-kpi:focus-visible {
+      outline: 2px solid var(--color-primary);
+      outline-offset: 2px;
+    }
+    .fin-kpi__top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+    .fin-kpi__label {
+      margin: 0;
+      overflow: hidden;
+      color: var(--color-text-tertiary);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.035em;
+      text-overflow: ellipsis;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .fin-kpi__value {
+      margin: 0;
+      color: var(--color-text);
+      font-family: var(--font-mono);
+      font-size: 1.375rem;
+      font-weight: 600;
+      letter-spacing: -0.025em;
+      line-height: 1.15;
+    }
+    .fin-kpi__value--success {
+      color: var(--color-success);
+    }
+    .fin-kpi__value--warning {
+      color: var(--color-warning);
+    }
+    .fin-kpi__value--danger {
+      color: var(--color-error);
+    }
+    .fin-kpi__detail {
+      margin: 0;
+      color: var(--color-text-secondary);
+      font-size: 0.6875rem;
+      line-height: 1.35;
+    }
+    .fin-kpi__delta {
+      display: inline-flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: 0.1875rem;
+      padding: 0.0625rem 0.3125rem;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      font-weight: 700;
+    }
+    .fin-kpi__delta--good {
+      background: var(--color-success-container);
+      color: var(--color-success);
+    }
+    .fin-kpi__delta--bad {
+      background: var(--color-error-container);
+      color: var(--color-error);
+    }
+    .fin-kpi__delta--flat {
+      background: var(--color-surface-2);
+      color: var(--color-text-tertiary);
+    }
+    .fin-kpi__cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      margin-block-start: 0.125rem;
+      color: var(--color-text-tertiary);
+      font-size: 0.625rem;
+      font-weight: 500;
+    }
+
+    .fin-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+    .fin-grid--thirds {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .fin-card {
+      display: flex;
+      min-inline-size: 0;
+      flex-direction: column;
+      padding: 0.875rem;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-surface);
+    }
+    .fin-card--full {
+      grid-column: 1 / -1;
+    }
+    .fin-card__head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-block-end: 0.625rem;
+    }
+    .fin-card__title {
+      margin: 0;
+      color: var(--color-text);
+      font-size: 0.8125rem;
+      font-weight: 600;
+    }
+    .fin-card__sub {
+      margin: 0.125rem 0 0;
+      color: var(--color-text-tertiary);
+      font-size: 0.6875rem;
+      line-height: 1.4;
+    }
+    .fin-card__badge {
+      flex: 0 0 auto;
+      padding: 0.125rem 0.375rem;
+      border-radius: 4px;
+      background: var(--color-surface-2);
+      color: var(--color-text-secondary);
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      font-weight: 600;
+    }
+
+    .fin-table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+    }
+    .fin-table {
+      inline-size: 100%;
+      min-inline-size: 42rem;
+      border-collapse: collapse;
+      font-size: 0.75rem;
+    }
+    .fin-table th,
+    .fin-table td {
+      padding: 0.5rem 0.75rem;
+      border-block-end: 1px solid var(--color-border);
+      text-align: end;
+      white-space: nowrap;
+    }
+    .fin-table th:first-child,
+    .fin-table td:first-child {
+      text-align: start;
+    }
+    .fin-table thead th {
+      position: sticky;
+      inset-block-start: 0;
+      background: var(--color-surface-2);
+      color: var(--color-text-tertiary);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+    .fin-table tbody td {
+      color: var(--color-text-secondary);
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+    }
+    .fin-table tbody th {
+      color: var(--color-text);
+      font-weight: 500;
+    }
+    .fin-table tbody tr:last-child td,
+    .fin-table tbody tr:last-child th {
+      border-block-end: 0;
+    }
+    .fin-table tbody tr:hover {
+      background: var(--color-surface-hover);
+    }
+    .fin-table a {
+      color: var(--color-primary);
+      text-decoration: none;
+    }
+    .fin-table a:hover {
+      text-decoration: underline;
+    }
+
+    .fin-note {
+      margin: 0;
+      padding: 0.625rem 0.75rem;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      color: var(--color-text-tertiary);
+      font-size: 0.6875rem;
+      line-height: 1.5;
+    }
+    .fin-empty {
+      margin: 0;
+      padding: 1.75rem 0;
+      color: var(--color-text-tertiary);
+      font-size: 0.75rem;
+      text-align: center;
+    }
+    .fin-stale {
+      opacity: 0.55;
+      transition: opacity 0.15s ease;
+    }
+
+    @media (max-width: 72rem) {
+      .fin-kpis {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .fin-grid,
+      .fin-grid--thirds {
+        grid-template-columns: 1fr;
+      }
+    }
+    @media (max-width: 40rem) {
+      .fin-kpis {
+        grid-template-columns: 1fr;
+      }
     }
   `,
   template: `
     <app-page-header [title]="t('bank.finance.heading')" [subtitle]="t('bank.finance.description')">
-      <button type="button" class="btn btn--outline btn--sm" [disabled]="loading()" (click)="loadFinance()">
-        <app-icon name="sparkles" size="0.875rem" />
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        [disabled]="busy()"
+        (click)="loadFinance()"
+      >
+        <app-icon name="refresh" size="0.875rem" />
         {{ t('common.refreshNow') }}
+      </button>
+      <button
+        type="button"
+        class="btn btn--outline btn--sm"
+        [disabled]="!summary()"
+        (click)="exportCsv()"
+      >
+        <app-icon name="list" size="0.875rem" />
+        {{ t('bank.finance.exportCsv') }}
       </button>
     </app-page-header>
 
     <app-page-stack>
-      <section class="finance-overview" [attr.aria-label]="t('bank.finance.ariaLabel')">
-        @if (summary(); as bank) {
-          <!-- High-Level Financial Ledger Metrics -->
-          <div class="finance-metrics">
-            <div class="finance-metric">
-              <p class="finance-metric__label">{{ t('bank.finance.openLiability') }}</p>
-              <p class="finance-metric__value">{{ formatAmount(bank.outstanding_total) }}</p>
-              <p class="finance-metric__detail">{{ t('bank.finance.creditsOwed', { count: bank.outstanding_count }) }}</p>
-            </div>
-            <div class="finance-metric">
-              <p class="finance-metric__label">{{ t('bank.finance.awaitingApproval') }}</p>
-              <p class="finance-metric__value">{{ formatAmount(bank.requested_total) }}</p>
-              <p class="finance-metric__detail">{{ t('bank.finance.requestedWithdrawals', { count: bank.requested_count }) }}</p>
-            </div>
-            <div class="finance-metric">
-              <p class="finance-metric__label">{{ t('bank.finance.paidOut') }}</p>
-              <p class="finance-metric__value">{{ formatAmount(bank.paid_out_total) }}</p>
-              <p class="finance-metric__detail">{{ t('bank.finance.settledPayouts', { count: bank.paid_out_count }) }}</p>
-            </div>
-            <div class="finance-metric">
-              <p class="finance-metric__label">{{ t('bank.finance.donatedBack') }}</p>
-              <p class="finance-metric__value">{{ formatAmount(bank.donated_total) }}</p>
-              <p class="finance-metric__detail">{{ t('bank.finance.memberDonations', { count: bank.donated_count }) }}</p>
-            </div>
-          </div>
+      <!-- One filter row, above everything it scopes. -->
+      <div class="fin-filters">
+        <div class="fin-filters__group">
+          <span class="eyebrow">{{ t('bank.finance.periodLabel') }}</span>
+          <app-view-toggle
+            [options]="periodOptions()"
+            [active]="period()"
+            (activeChange)="onPeriodChange($event)"
+          />
+          @if (period() === 'custom') {
+            <label class="sr-only" for="fin-from">{{ t('bank.finance.from') }}</label>
+            <input
+              id="fin-from"
+              class="input input--sm fin-date"
+              type="date"
+              [value]="customFrom()"
+              [max]="customTo()"
+              (change)="onCustomFrom($event)"
+            />
+            <span aria-hidden="true" style="color: var(--color-text-tertiary)">→</span>
+            <label class="sr-only" for="fin-to">{{ t('bank.finance.to') }}</label>
+            <input
+              id="fin-to"
+              class="input input--sm fin-date"
+              type="date"
+              [value]="customTo()"
+              [min]="customFrom()"
+              [max]="today()"
+              (change)="onCustomTo($event)"
+            />
+          }
+        </div>
+        <p class="fin-filters__window" aria-live="polite">
+          @if (busy()) {
+            {{ t('bank.finance.reloading') }}
+          } @else if (report(); as r) {
+            <strong>{{ formatDate(r.from) }} → {{ formatDate(r.to) }}</strong>
+            · {{ t('bank.finance.weeksTracked', { count: r.trends.length }) }}
+          }
+        </p>
+      </div>
 
-          <!-- Comprehensive Visual Financial Analytics Grid -->
-          <section class="finance-analytics" [attr.aria-label]="t('bank.finance.analytics')">
-            <div class="flex items-center justify-between">
-              <h2 class="finance-section-label">{{ t('bank.finance.analytics') }}</h2>
-              @if (report()?.economy; as econ) {
-                <div class="flex items-center gap-3 text-xs">
-                  <span class="text-[var(--color-text-secondary)]">
-                    {{ t('bank.finance.netCashFlow') }}:
-                    <strong class="font-mono" [style.color]="econ.net >= 0 ? 'var(--color-success)' : 'var(--color-error)'">
-                      {{ econ.net >= 0 ? '+' : '' }}{{ formatAmount(econ.net) }}
-                    </strong>
+      @if (summary(); as bank) {
+        <!-- ============ 1. Bank position — whole ledger, period-independent ============ -->
+        <section class="fin-section" [attr.aria-label]="t('bank.finance.positionTitle')">
+          <header class="fin-section__head">
+            <div>
+              <h2 class="fin-section__title">
+                <app-icon name="bank" size="0.9375rem" />
+                {{ t('bank.finance.positionTitle') }}
+                <span class="fin-scope">{{ t('bank.finance.scopeAllTime') }}</span>
+              </h2>
+              <p class="fin-section__sub">{{ t('bank.finance.positionDescription') }}</p>
+            </div>
+            <p class="fin-meta">
+              {{ t('bank.finance.ledgerVolume') }}
+              <strong class="mono">{{ formatAmount(bank.ledger_volume) }}</strong>
+              · {{ t('bank.finance.ledgerEntries', { count: bank.transaction_count }) }}
+            </p>
+          </header>
+
+          <div class="fin-kpis">
+            @for (kpi of positionKpis(); track kpi.key) {
+              @if (kpi.link; as link) {
+                <a class="fin-kpi" [routerLink]="link[0]" [queryParams]="link[1]">
+                  <ng-container
+                    *ngTemplateOutlet="kpiBody; context: { $implicit: kpi, linked: true }"
+                  />
+                </a>
+              } @else {
+                <div class="fin-kpi">
+                  <ng-container
+                    *ngTemplateOutlet="kpiBody; context: { $implicit: kpi, linked: false }"
+                  />
+                </div>
+              }
+            }
+          </div>
+        </section>
+
+        @if (report(); as guildReport) {
+          <!-- ============ 2. Silver flow in the selected window ============ -->
+          <section class="fin-section" [attr.aria-label]="t('bank.finance.flowTitle')">
+            <header class="fin-section__head">
+              <div>
+                <h2 class="fin-section__title">
+                  <app-icon name="activity" size="0.9375rem" />
+                  {{ t('bank.finance.flowTitle') }}
+                  <span class="fin-scope">{{ t('bank.finance.scopeWindow') }}</span>
+                </h2>
+                <p class="fin-section__sub">{{ t('bank.finance.flowDescription') }}</p>
+              </div>
+            </header>
+
+            <div class="fin-kpis">
+              @for (kpi of flowKpis(); track kpi.key) {
+                @if (kpi.link; as link) {
+                  <a class="fin-kpi" [routerLink]="link[0]" [queryParams]="link[1]">
+                    <ng-container
+                      *ngTemplateOutlet="kpiBody; context: { $implicit: kpi, linked: true }"
+                    />
+                  </a>
+                } @else {
+                  <div class="fin-kpi">
+                    <ng-container
+                      *ngTemplateOutlet="kpiBody; context: { $implicit: kpi, linked: false }"
+                    />
+                  </div>
+                }
+              }
+            </div>
+
+            <div class="fin-grid">
+              <article class="fin-card fin-card--full">
+                <header class="fin-card__head">
+                  <div>
+                    <h3 class="fin-card__title">{{ t('bank.finance.weeklyFlow') }}</h3>
+                    <p class="fin-card__sub">{{ t('bank.finance.weeklyFlowDescription') }}</p>
+                  </div>
+                  <span class="fin-card__badge">
+                    {{ t('bank.finance.avgWeeklyLoot') }} {{ formatCompact(avgWeeklyLoot()) }}
                   </span>
+                </header>
+                @if (hasTrends()) {
+                  <app-chart
+                    [option]="flowOption()"
+                    height="19rem"
+                    [stale]="busy()"
+                    [label]="t('bank.finance.weeklyFlow')"
+                    [tableHead]="flowTableHead()"
+                    [tableRows]="flowTableRows()"
+                  />
+                } @else {
+                  <p class="fin-empty">{{ t('bank.finance.noChartData') }}</p>
+                }
+              </article>
+
+              <article class="fin-card">
+                <header class="fin-card__head">
+                  <div>
+                    <h3 class="fin-card__title">{{ t('bank.finance.netWeekly') }}</h3>
+                    <p class="fin-card__sub">{{ t('bank.finance.netWeeklyDescription') }}</p>
+                  </div>
+                  <span class="fin-card__badge">
+                    {{ t('bank.finance.avgWeeklyNet') }} {{ formatSigned(avgWeeklyNet()) }}
+                  </span>
+                </header>
+                @if (hasTrends()) {
+                  <app-chart
+                    [option]="netOption()"
+                    height="16rem"
+                    [stale]="busy()"
+                    [label]="t('bank.finance.netWeekly')"
+                    [tableHead]="netTableHead()"
+                    [tableRows]="netTableRows()"
+                  />
+                } @else {
+                  <p class="fin-empty">{{ t('bank.finance.noChartData') }}</p>
+                }
+              </article>
+
+              <article class="fin-card">
+                <header class="fin-card__head">
+                  <div>
+                    <h3 class="fin-card__title">{{ t('bank.finance.outflowAllocation') }}</h3>
+                    <p class="fin-card__sub">
+                      {{ t('bank.finance.outflowAllocationDescription') }}
+                    </p>
+                  </div>
+                  <span class="fin-card__badge">{{
+                    formatCompact(guildReport.economy.outflow_total)
+                  }}</span>
+                </header>
+                @if (guildReport.economy.outflow_total > 0) {
+                  <app-chart
+                    [option]="outflowOption()"
+                    height="16rem"
+                    [stale]="busy()"
+                    [label]="t('bank.finance.outflowAllocation')"
+                    [tableHead]="shareTableHead()"
+                    [tableRows]="outflowTableRows()"
+                  />
+                } @else {
+                  <p class="fin-empty">{{ t('bank.finance.noChartData') }}</p>
+                }
+              </article>
+            </div>
+          </section>
+
+          <!-- ============ 3. Losses and recovery ============ -->
+          <section class="fin-section" [attr.aria-label]="t('bank.finance.combatTitle')">
+            <header class="fin-section__head">
+              <div>
+                <h2 class="fin-section__title">
+                  <app-icon name="shield" size="0.9375rem" />
+                  {{ t('bank.finance.combatTitle') }}
+                  <span class="fin-scope">{{ t('bank.finance.scopeWindow') }}</span>
+                </h2>
+                <p class="fin-section__sub">{{ t('bank.finance.combatDescription') }}</p>
+              </div>
+            </header>
+
+            <div class="fin-kpis">
+              @for (kpi of combatKpis(); track kpi.key) {
+                <div class="fin-kpi">
+                  <ng-container
+                    *ngTemplateOutlet="kpiBody; context: { $implicit: kpi, linked: false }"
+                  />
                 </div>
               }
             </div>
 
-            <div class="finance-chart-grid">
-              <!-- Chart 1 (Full width): Weekly Cash Flow (Loot In vs Member Outflow Area Chart) -->
-              <section class="finance-chart finance-chart--full" aria-labelledby="finance-flow-chart">
-                <header class="finance-chart__header">
+            <div class="fin-grid">
+              <article class="fin-card">
+                <header class="fin-card__head">
                   <div>
-                    <h3 id="finance-flow-chart" class="finance-chart__title">{{ t('bank.finance.weeklyFlow') }}</h3>
-                    <p class="finance-chart__sub">{{ t('bank.finance.weeklyFlowDescription') }}</p>
+                    <h3 class="fin-card__title">{{ t('bank.finance.lossVsRegear') }}</h3>
+                    <p class="fin-card__sub">{{ t('bank.finance.coverageDetail') }}</p>
                   </div>
-                  @if (report()?.economy; as econ) {
-                    <div class="flex items-center gap-2">
-                      <span class="text-xs font-mono font-semibold px-2 py-0.5 rounded" style="background: var(--color-surface-2)">
-                        {{ t('bank.finance.avgWeeklyLoot') }}: {{ formatAmount(avgWeeklyLoot()) }}
-                      </span>
-                    </div>
-                  }
+                  <span class="fin-card__badge">{{ regearCoverageRatio() }}%</span>
                 </header>
-
-                @if (flowPoints().length > 1) {
-                  <div class="finance-svg-wrapper">
-                    <svg class="finance-svg-chart" viewBox="0 0 600 240" preserveAspectRatio="xMidYMid meet" role="img" [attr.aria-label]="t('bank.finance.weeklyFlow')">
-                      <defs>
-                        <linearGradient id="lootGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stop-color="var(--color-success)" stop-opacity="0.32" />
-                          <stop offset="100%" stop-color="var(--color-success)" stop-opacity="0.0" />
-                        </linearGradient>
-                        <linearGradient id="outflowGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stop-color="var(--color-primary)" stop-opacity="0.28" />
-                          <stop offset="100%" stop-color="var(--color-primary)" stop-opacity="0.0" />
-                        </linearGradient>
-                      </defs>
-
-                      <!-- Grid background lines & Scale markers -->
-                      <line class="finance-svg__grid" x1="45" y1="35" x2="585" y2="35" />
-                      <text class="finance-svg__scale-label" x="40" y="38">{{ formatCompact(maxFlowValue()) }}</text>
-
-                      <line class="finance-svg__grid" x1="45" y1="115" x2="585" y2="115" />
-                      <text class="finance-svg__scale-label" x="40" y="118">{{ formatCompact(maxFlowValue() / 2) }}</text>
-
-                      <line class="finance-svg__axis" x1="45" y1="195" x2="585" y2="195" />
-                      <text class="finance-svg__scale-label" x="40" y="198">0</text>
-
-                      <!-- Area fills below curves -->
-                      <path class="finance-svg__area-loot" [attr.d]="lootAreaPath()" />
-                      <path class="finance-svg__area-outflow" [attr.d]="outflowAreaPath()" />
-
-                      <!-- Multi-curves -->
-                      <path class="finance-svg__line-loot" [attr.d]="lootLinePath()" />
-                      <path class="finance-svg__line-outflow" [attr.d]="outflowLinePath()" />
-
-                      <!-- Data node markers & date labels -->
-                      @for (pt of flowPoints(); track pt.label) {
-                        <circle class="finance-svg__node-loot" [attr.cx]="pt.x" [attr.cy]="pt.lootY" r="4.5">
-                          <title>{{ pt.fullDate }}: {{ t('bank.finance.lootCreated') }} = {{ formatAmount(pt.lootValue) }}</title>
-                        </circle>
-                        <circle class="finance-svg__node-outflow" [attr.cx]="pt.x" [attr.cy]="pt.outflowY" r="4.5">
-                          <title>{{ pt.fullDate }}: {{ t('bank.finance.memberOutflow') }} = {{ formatAmount(pt.outflowValue) }}</title>
-                        </circle>
-                        <text class="finance-svg__date-label" [attr.x]="pt.x" y="215">{{ pt.label }}</text>
-                      }
-                    </svg>
-                  </div>
-
-                  <div class="finance-chart-legend">
-                    <span><i class="finance-chart-legend__key finance-chart-legend__key--loot"></i>{{ t('bank.finance.lootCreated') }}</span>
-                    <span><i class="finance-chart-legend__key finance-chart-legend__key--outflow"></i>{{ t('bank.finance.memberOutflow') }}</span>
-                  </div>
+                @if (hasTrends()) {
+                  <app-chart
+                    [option]="lossRegearOption()"
+                    height="17rem"
+                    [stale]="busy()"
+                    [label]="t('bank.finance.lossVsRegear')"
+                    [tableHead]="lossTableHead()"
+                    [tableRows]="lossTableRows()"
+                  />
                 } @else {
-                  <p class="finance-empty">{{ t('bank.finance.noChartData') }}</p>
+                  <p class="fin-empty">{{ t('bank.finance.noChartData') }}</p>
                 }
-              </section>
+              </article>
 
-              <!-- Chart 2: Combat Losses vs Regear Reimbursement -->
-              <section class="finance-chart" aria-labelledby="finance-loss-regear-chart">
-                <header class="finance-chart__header">
+              <article class="fin-card">
+                <header class="fin-card__head">
                   <div>
-                    <h3 id="finance-loss-regear-chart" class="finance-chart__title">{{ t('bank.finance.lossVsRegear') }}</h3>
-                    <p class="finance-chart__sub">{{ t('bank.finance.regearCoverage') }}</p>
-                  </div>
-                  @if (regearCoverageRatio() > 0) {
-                    <span class="text-xs font-mono font-semibold px-2 py-0.5 rounded text-[var(--color-success)]" style="background: var(--color-success-container)">
-                      {{ regearCoverageRatio() }}% {{ t('bank.finance.regearCoverage') }}
-                    </span>
-                  }
-                </header>
-
-                @if (lossRegearPoints().length > 0) {
-                  <div class="finance-svg-wrapper">
-                    <svg class="finance-svg-chart" viewBox="0 0 600 240" preserveAspectRatio="xMidYMid meet" role="img" [attr.aria-label]="t('bank.finance.lossVsRegear')">
-                      <!-- Grid lines -->
-                      <line class="finance-svg__grid" x1="45" y1="35" x2="585" y2="35" />
-                      <text class="finance-svg__scale-label" x="40" y="38">{{ formatCompact(maxLossRegearValue()) }}</text>
-
-                      <line class="finance-svg__grid" x1="45" y1="115" x2="585" y2="115" />
-                      <text class="finance-svg__scale-label" x="40" y="118">{{ formatCompact(maxLossRegearValue() / 2) }}</text>
-
-                      <line class="finance-svg__axis" x1="45" y1="195" x2="585" y2="195" />
-                      <text class="finance-svg__scale-label" x="40" y="198">0</text>
-
-                      <!-- Grouped bars -->
-                      @for (pt of lossRegearPoints(); track pt.label) {
-                        <rect
-                          class="finance-svg__bar-loss"
-                          [attr.x]="pt.lossX"
-                          [attr.y]="pt.lossY"
-                          [attr.width]="pt.barWidth"
-                          [attr.height]="pt.lossHeight"
-                          rx="3"
-                        >
-                          <title>{{ pt.fullDate }}: {{ t('bank.finance.silverLost') }} = {{ formatAmount(pt.lossValue) }}</title>
-                        </rect>
-                        <rect
-                          class="finance-svg__bar-regear"
-                          [attr.x]="pt.regearX"
-                          [attr.y]="pt.regearY"
-                          [attr.width]="pt.barWidth"
-                          [attr.height]="pt.regearHeight"
-                          rx="3"
-                        >
-                          <title>{{ pt.fullDate }}: {{ t('bank.finance.regearPaid') }} = {{ formatAmount(pt.regearValue) }}</title>
-                        </rect>
-                        <text class="finance-svg__date-label" [attr.x]="pt.x" y="215">{{ pt.label }}</text>
-                      }
-                    </svg>
-                  </div>
-
-                  <div class="finance-chart-legend">
-                    <span><i class="finance-chart-legend__key finance-chart-legend__key--loss"></i>{{ t('bank.finance.silverLost') }}</span>
-                    <span><i class="finance-chart-legend__key finance-chart-legend__key--regear"></i>{{ t('bank.finance.regearPaid') }}</span>
-                  </div>
-                } @else {
-                  <p class="finance-empty">{{ t('bank.finance.noChartData') }}</p>
-                }
-              </section>
-
-              <!-- Chart 3: Weekly Operational Activity (Fights vs Events) -->
-              <section class="finance-chart" aria-labelledby="finance-ops-chart">
-                <header class="finance-chart__header">
-                  <div>
-                    <h3 id="finance-ops-chart" class="finance-chart__title">{{ t('bank.finance.weeklyActivity') }}</h3>
-                    <p class="finance-chart__sub">{{ t('bank.finance.weeklyActivityDescription') }}</p>
+                    <h3 class="fin-card__title">{{ t('bank.finance.weeklyActivity') }}</h3>
+                    <p class="fin-card__sub">{{ t('bank.finance.weeklyActivityDescription') }}</p>
                   </div>
                 </header>
-
-                @if (activityPoints().length > 0) {
-                  <div class="finance-svg-wrapper">
-                    <svg class="finance-svg-chart" viewBox="0 0 600 240" preserveAspectRatio="xMidYMid meet" role="img" [attr.aria-label]="t('bank.finance.weeklyActivity')">
-                      <!-- Grid lines -->
-                      <line class="finance-svg__grid" x1="45" y1="35" x2="585" y2="35" />
-                      <text class="finance-svg__scale-label" x="40" y="38">{{ maxActivityValue() }}</text>
-
-                      <line class="finance-svg__grid" x1="45" y1="115" x2="585" y2="115" />
-                      <text class="finance-svg__scale-label" x="40" y="118">{{ Math.round(maxActivityValue() / 2) }}</text>
-
-                      <line class="finance-svg__axis" x1="45" y1="195" x2="585" y2="195" />
-                      <text class="finance-svg__scale-label" x="40" y="198">0</text>
-
-                      <!-- Grouped bars -->
-                      @for (pt of activityPoints(); track pt.label) {
-                        <rect
-                          class="finance-svg__bar-fight"
-                          [attr.x]="pt.fightX"
-                          [attr.y]="pt.fightY"
-                          [attr.width]="pt.barWidth"
-                          [attr.height]="pt.fightHeight"
-                          rx="3"
-                        >
-                          <title>{{ pt.fullDate }}: {{ t('bank.finance.fights') }} = {{ pt.fights }}</title>
-                        </rect>
-                        <rect
-                          class="finance-svg__bar-event"
-                          [attr.x]="pt.eventX"
-                          [attr.y]="pt.eventY"
-                          [attr.width]="pt.barWidth"
-                          [attr.height]="pt.eventHeight"
-                          rx="3"
-                        >
-                          <title>{{ pt.fullDate }}: {{ t('bank.finance.events') }} = {{ pt.events }}</title>
-                        </rect>
-                        <text class="finance-svg__date-label" [attr.x]="pt.x" y="215">{{ pt.label }}</text>
-                      }
-                    </svg>
-                  </div>
-
-                  <div class="finance-chart-legend">
-                    <span><i class="finance-chart-legend__key finance-chart-legend__key--fight"></i>{{ t('bank.finance.fights') }}</span>
-                    <span><i class="finance-chart-legend__key finance-chart-legend__key--event"></i>{{ t('bank.finance.events') }}</span>
-                  </div>
+                @if (hasTrends()) {
+                  <app-chart
+                    [option]="activityOption()"
+                    height="17rem"
+                    [stale]="busy()"
+                    [label]="t('bank.finance.weeklyActivity')"
+                    [tableHead]="activityTableHead()"
+                    [tableRows]="activityTableRows()"
+                  />
                 } @else {
-                  <p class="finance-empty">{{ t('bank.finance.noChartData') }}</p>
+                  <p class="fin-empty">{{ t('bank.finance.noChartData') }}</p>
                 }
-              </section>
-
-              <!-- Chart 4: Solvency & Liability Ring Breakdown -->
-              <section class="finance-chart" aria-labelledby="finance-liability-chart">
-                <header class="finance-chart__header">
-                  <div>
-                    <h3 id="finance-liability-chart" class="finance-chart__title">{{ t('bank.finance.liabilityMix') }}</h3>
-                    <p class="finance-chart__sub">{{ t('bank.finance.currentLedger') }}</p>
-                  </div>
-                </header>
-
-                @if (liabilityBars().length > 0) {
-                  <div class="finance-donut-container">
-                    <svg class="finance-donut-svg" viewBox="0 0 160 160" role="img" [attr.aria-label]="t('bank.finance.liabilityMix')">
-                      <circle class="finance-donut__ring" cx="80" cy="80" r="58" />
-                      @for (segment of donutSegments(); track segment.label) {
-                        <circle
-                          class="finance-donut__segment"
-                          [class]="'finance-donut__segment--' + segment.tone"
-                          cx="80"
-                          cy="80"
-                          r="58"
-                          [attr.stroke-dasharray]="segment.dasharray"
-                          [attr.stroke-dashoffset]="segment.dashoffset"
-                        />
-                      }
-                      <text class="finance-donut__center-label" x="80" y="74">Volume</text>
-                      <text class="finance-donut__center-val" x="80" y="92">{{ formatCompact(donutTotal()) }}</text>
-                    </svg>
-
-                    <ul class="finance-legend" role="list">
-                      @for (bar of liabilityBars(); track bar.label) {
-                        <li class="finance-legend__row">
-                          <span class="finance-legend__dot" [class]="'finance-legend__dot--' + bar.tone"></span>
-                          <span>{{ bar.label }}</span>
-                          <span class="finance-legend__amount">{{ formatAmount(bar.value) }}</span>
-                        </li>
-                      }
-                    </ul>
-                  </div>
-                } @else {
-                  <p class="finance-empty">{{ t('bank.finance.noChartData') }}</p>
-                }
-              </section>
-
-              <!-- Chart 5: Outflow Allocation Distribution -->
-              <section class="finance-chart" aria-labelledby="finance-outflow-chart">
-                <header class="finance-chart__header">
-                  <div>
-                    <h3 id="finance-outflow-chart" class="finance-chart__title">{{ t('bank.finance.outflowAllocation') }}</h3>
-                    <p class="finance-chart__sub">{{ t('bank.finance.lastThirtyDays') }}</p>
-                  </div>
-                </header>
-
-                @if (outflowBars().length > 0) {
-                  <ul class="finance-bars" role="list">
-                    @for (bar of outflowBars(); track bar.label) {
-                      <li class="finance-bar">
-                        <span class="finance-bar__label">{{ bar.label }}</span>
-                        <span class="finance-bar__amount">{{ formatAmount(bar.value) }}</span>
-                        <span class="finance-bar__track">
-                          <span class="finance-bar__fill" [class]="'finance-bar__fill--' + bar.tone" [style.inlineSize.%]="bar.width"></span>
-                        </span>
-                      </li>
-                    }
-                  </ul>
-                } @else {
-                  <p class="finance-empty">{{ t('bank.finance.noChartData') }}</p>
-                }
-              </section>
-
-              <!-- Chart 6: Transaction Types Distribution -->
-              <section class="finance-chart" aria-labelledby="finance-type-chart">
-                <header class="finance-chart__header">
-                  <div>
-                    <h3 id="finance-type-chart" class="finance-chart__title">{{ t('bank.finance.ledgerMix') }}</h3>
-                    <p class="finance-chart__sub">{{ t('bank.finance.byTransactionType') }}</p>
-                  </div>
-                </header>
-
-                @if (transactionTypeBars().length > 0) {
-                  <ul class="finance-bars" role="list">
-                    @for (bar of transactionTypeBars(); track bar.label) {
-                      <li class="finance-bar">
-                        <span class="finance-bar__label">{{ bar.label }}</span>
-                        <span class="finance-bar__amount">{{ formatAmount(bar.value) }}</span>
-                        <span class="finance-bar__track">
-                          <span class="finance-bar__fill" [class]="'finance-bar__fill--' + bar.tone" [style.inlineSize.%]="bar.width"></span>
-                        </span>
-                      </li>
-                    }
-                  </ul>
-                } @else {
-                  <p class="finance-empty">{{ t('bank.finance.noChartData') }}</p>
-                }
-              </section>
+              </article>
             </div>
           </section>
-
-          <!-- Fund Sources & Destinations Breakdown Panels -->
-          <div class="finance-panels">
-            <section class="finance-panel" aria-labelledby="finance-source-heading">
-              <header class="finance-panel__header">
-                <h2 id="finance-source-heading" class="finance-panel__title">{{ t('bank.finance.topSourcesTitle') }}</h2>
-              </header>
-              <ul class="finance-list">
-                @for (line of bank.sources.slice(0, 5); track line.label) {
-                  <li class="finance-list__row">
-                    <span class="finance-list__label">
-                      {{ line.label }}
-                      <span class="finance-list__meta">{{ t('bank.finance.ledgerEntries', { count: line.transaction_count }) }}</span>
-                    </span>
-                    <span class="finance-list__amount">{{ formatAmount(line.total_amount) }}</span>
-                  </li>
-                }
-              </ul>
-            </section>
-
-            <section class="finance-panel" aria-labelledby="finance-dest-heading">
-              <header class="finance-panel__header">
-                <h2 id="finance-dest-heading" class="finance-panel__title">{{ t('bank.finance.topDestinationsTitle') }}</h2>
-              </header>
-              <ul class="finance-list">
-                @for (line of bank.destinations.slice(0, 5); track line.label) {
-                  <li class="finance-list__row">
-                    <span class="finance-list__label">
-                      {{ line.label }}
-                      <span class="finance-list__meta">{{ t('bank.finance.ledgerEntries', { count: line.transaction_count }) }}</span>
-                    </span>
-                    <span class="finance-list__amount">{{ formatAmount(line.total_amount) }}</span>
-                  </li>
-                }
-              </ul>
-            </section>
-
-            <section class="finance-panel" aria-labelledby="finance-period-heading">
-              <header class="finance-panel__header">
-                <h2 id="finance-period-heading" class="finance-panel__title">{{ t('bank.finance.lastThirtyDays') }}</h2>
-              </header>
-              @if (report(); as guildReport) {
-                <ul class="finance-list">
-                  <li class="finance-list__row">
-                    <span class="finance-list__label">{{ t('bank.finance.lootCreated') }}</span>
-                    <span class="finance-list__amount" style="color: var(--color-success)">{{ formatAmount(guildReport.economy.loot_in) }}</span>
-                  </li>
-                  <li class="finance-list__row">
-                    <span class="finance-list__label">{{ t('bank.finance.memberOutflow') }}</span>
-                    <span class="finance-list__amount" style="color: var(--color-primary)">{{ formatAmount(guildReport.economy.outflow_total) }}</span>
-                  </li>
-                  <li class="finance-list__row">
-                    <span class="finance-list__label">{{ t('bank.finance.regearPaid') }}</span>
-                    <span class="finance-list__amount">{{ formatAmount(guildReport.economy.regear_paid) }}</span>
-                  </li>
-                  <li class="finance-list__row">
-                    <span class="finance-list__label">
-                      {{ t('bank.finance.siphonedNet') }}
-                      <span class="finance-list__meta">{{ t('bank.finance.siphonedDetail') }}</span>
-                    </span>
-                    <span class="finance-list__amount">{{ formatAmount(guildReport.economy.siphoned_net) }}</span>
-                  </li>
-                </ul>
-              } @else {
-                <p class="finance-note">{{ t('bank.finance.reportPermission') }}</p>
-              }
-            </section>
-          </div>
-
-          <p class="finance-note">{{ t('bank.finance.ledgerNote') }}</p>
-        } @else if (loading()) {
-          <p class="finance-note">{{ t('bank.finance.loading') }}</p>
         } @else {
-          <p class="finance-note">{{ t('bank.finance.unavailable') }}</p>
+          <p class="fin-note">{{ t('bank.finance.reportPermission') }}</p>
         }
-      </section>
+
+        <!-- ============ 4. Where money comes from and goes — whole ledger ============ -->
+        <section class="fin-section" [attr.aria-label]="t('bank.finance.originTitle')">
+          <header class="fin-section__head">
+            <div>
+              <h2 class="fin-section__title">
+                <app-icon name="scan" size="0.9375rem" />
+                {{ t('bank.finance.originTitle') }}
+                <span class="fin-scope">{{ t('bank.finance.scopeAllTime') }}</span>
+              </h2>
+              <p class="fin-section__sub">{{ t('bank.finance.originDescription') }}</p>
+            </div>
+          </header>
+
+          <div class="fin-grid fin-grid--thirds">
+            <article class="fin-card">
+              <header class="fin-card__head">
+                <h3 class="fin-card__title">{{ t('bank.finance.topSourcesTitle') }}</h3>
+              </header>
+              @if (bank.sources.length > 0) {
+                <app-chart
+                  [option]="sourcesOption()"
+                  height="16rem"
+                  [stale]="busy()"
+                  [label]="t('bank.finance.topSourcesTitle')"
+                  [tableHead]="breakdownTableHead()"
+                  [tableRows]="sourcesTableRows()"
+                />
+              } @else {
+                <p class="fin-empty">{{ t('bank.finance.noChartData') }}</p>
+              }
+            </article>
+
+            <article class="fin-card">
+              <header class="fin-card__head">
+                <h3 class="fin-card__title">{{ t('bank.finance.topDestinationsTitle') }}</h3>
+              </header>
+              @if (bank.destinations.length > 0) {
+                <app-chart
+                  [option]="destinationsOption()"
+                  height="16rem"
+                  [stale]="busy()"
+                  [label]="t('bank.finance.topDestinationsTitle')"
+                  [tableHead]="breakdownTableHead()"
+                  [tableRows]="destinationsTableRows()"
+                />
+              } @else {
+                <p class="fin-empty">{{ t('bank.finance.noChartData') }}</p>
+              }
+            </article>
+
+            <article class="fin-card">
+              <header class="fin-card__head">
+                <h3 class="fin-card__title">{{ t('bank.finance.ledgerMix') }}</h3>
+                <span class="fin-card__badge">{{ t('bank.finance.byTransactionType') }}</span>
+              </header>
+              @if (bank.transaction_types.length > 0) {
+                <app-chart
+                  [option]="typesOption()"
+                  height="16rem"
+                  [stale]="busy()"
+                  [label]="t('bank.finance.ledgerMix')"
+                  [tableHead]="breakdownTableHead()"
+                  [tableRows]="typesTableRows()"
+                />
+              } @else {
+                <p class="fin-empty">{{ t('bank.finance.noChartData') }}</p>
+              }
+            </article>
+          </div>
+        </section>
+
+        <!-- ============ 5. Per-member ledger — every figure traceable to a member ============ -->
+        @if (memberRows().length > 0) {
+          <section class="fin-section" [attr.aria-label]="t('bank.finance.memberLedgerTitle')">
+            <header class="fin-section__head">
+              <div>
+                <h2 class="fin-section__title">
+                  <app-icon name="users" size="0.9375rem" />
+                  {{ t('bank.finance.memberLedgerTitle') }}
+                  <span class="fin-scope">{{ t('bank.finance.scopeWindow') }}</span>
+                </h2>
+                <p class="fin-section__sub">{{ t('bank.finance.memberLedgerDescription') }}</p>
+              </div>
+              <p class="fin-meta">
+                {{ t('bank.finance.membersShown', { count: memberRows().length }) }}
+              </p>
+            </header>
+
+            <div class="fin-table-wrap" [class.fin-stale]="busy()">
+              <table class="fin-table">
+                <caption class="sr-only">
+                  {{
+                    t('bank.finance.memberLedgerTitle')
+                  }}
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">{{ t('bank.finance.member') }}</th>
+                    <th scope="col">{{ t('bank.finance.splitEarnings') }}</th>
+                    <th scope="col">{{ t('bank.finance.regearSilver') }}</th>
+                    <th scope="col">{{ t('bank.finance.silverLost') }}</th>
+                    <th scope="col">{{ t('bank.finance.bankPending') }}</th>
+                    <th scope="col">{{ t('bank.finance.siphoned') }}</th>
+                    <th scope="col">{{ t('common.actions') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of memberRows(); track row.user_id) {
+                    <tr>
+                      <th scope="row">{{ row.username }}</th>
+                      <td>{{ formatAmount(row.split_earnings) }}</td>
+                      <td>{{ formatAmount(row.regear_silver) }}</td>
+                      <td>{{ formatAmount(row.silver_lost) }}</td>
+                      <td>{{ formatAmount(row.bank_pending) }}</td>
+                      <td>{{ formatAmount(row.siphoned) }}</td>
+                      <td>
+                        <a
+                          [routerLink]="'/admin/transactions'"
+                          [queryParams]="{ search: row.username }"
+                          [appTooltip]="t('bank.finance.viewTransactions')"
+                        >
+                          {{ t('bank.finance.viewTransactions') }}
+                        </a>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </section>
+        }
+
+        @if (report()?.data_quality; as quality) {
+          <p class="fin-note">
+            <strong>{{ t('bank.finance.dataQuality') }}:</strong>
+            {{
+              t('bank.finance.dataQualityDetail', {
+                attributed: quality.attributed_battles,
+                total: quality.total_battles,
+              })
+            }}
+            @if (quality.unlinked_players.length > 0) {
+              · {{ t('bank.finance.unlinkedPlayers', { count: quality.unlinked_players.length }) }}
+            }
+          </p>
+        }
+        <p class="fin-note">{{ t('bank.finance.ledgerNote') }}</p>
+      } @else if (loading()) {
+        <p class="fin-note">{{ t('bank.finance.loading') }}</p>
+      } @else {
+        <p class="fin-note">{{ t('bank.finance.unavailable') }}</p>
+      }
     </app-page-stack>
+
+    <!-- Shared KPI body so the linked and unlinked tiles cannot drift apart. -->
+    <ng-template #kpiBody let-kpi let-linked="linked">
+      <div class="fin-kpi__top">
+        <p class="fin-kpi__label">{{ kpi.label }}</p>
+        @if (kpi.delta; as delta) {
+          <span
+            class="fin-kpi__delta"
+            [class.fin-kpi__delta--good]="delta.direction !== 'flat' && delta.good"
+            [class.fin-kpi__delta--bad]="delta.direction !== 'flat' && !delta.good"
+            [class.fin-kpi__delta--flat]="delta.direction === 'flat'"
+            [appTooltip]="t('bank.finance.vsPrevious', { days: rangeDays() })"
+          >
+            {{ delta.label }}
+          </span>
+        }
+      </div>
+      <p class="fin-kpi__value" [class]="'fin-kpi__value--' + kpi.tone">{{ kpi.value }}</p>
+      <p class="fin-kpi__detail">{{ kpi.detail }}</p>
+      @if (linked) {
+        <span class="fin-kpi__cta">
+          {{ t('bank.finance.viewTransactions') }}
+          <app-icon name="chevron-right" size="0.75rem" />
+        </span>
+      }
+    </ng-template>
   `,
 })
 export class AdminFinance {
   private readonly api = inject(ApiService);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
+  private readonly theme = inject(ThemeService);
 
-  protected readonly Math = Math;
   protected readonly summary = signal<BankAnalyticsSummary | null>(null);
   protected readonly report = signal<GuildReport | null>(null);
+  protected readonly previousReport = signal<GuildReport | null>(null);
   protected readonly loading = signal(true);
+  protected readonly refreshing = signal(false);
 
-  protected readonly liabilityBars = computed(() => {
-    const summary = this.summary();
-    if (!summary) return [];
-    return this.makeBars([
-      { label: this.t('bank.finance.openLiability'), value: summary.outstanding_total, tone: 'warning' },
-      { label: this.t('bank.finance.awaitingApproval'), value: summary.requested_total, tone: 'primary' },
-      { label: this.t('bank.finance.paidOut'), value: summary.paid_out_total, tone: 'success' },
-      { label: this.t('bank.finance.donatedBack'), value: summary.donated_total, tone: 'neutral' },
-    ]);
-  });
+  protected readonly period = signal<PeriodId>('30');
+  protected readonly customFrom = signal(toDateInput(new Date(Date.now() - 30 * MS_PER_DAY)));
+  protected readonly customTo = signal(toDateInput(new Date()));
 
-  protected readonly transactionTypeBars = computed(() => this.breakdownBars(this.summary()?.transaction_types));
-  protected readonly sourceBars = computed(() => this.breakdownBars(this.summary()?.sources));
-  protected readonly destinationBars = computed(() => this.breakdownBars(this.summary()?.destinations));
+  /** True while any fetch is in flight; charts hold their last render instead of flashing. */
+  protected readonly busy = computed(() => this.loading() || this.refreshing());
 
-  protected readonly outflowBars = computed(() => {
-    const economy = this.report()?.economy;
-    if (!economy) return [];
-    return this.makeBars([
-      { label: this.t('bank.finance.splitOutflow'), value: economy.outflow_splits, tone: 'primary' },
-      { label: this.t('bank.finance.regearPaid'), value: economy.outflow_regear, tone: 'warning' },
-      { label: this.t('bank.finance.otherOutflow'), value: economy.outflow_other, tone: 'neutral' },
-    ]);
-  });
+  protected readonly today = computed(() => toDateInput(new Date()));
 
-  protected readonly donutTotal = computed(() =>
-    this.liabilityBars().reduce((total, bar) => total + Math.abs(bar.value), 0),
-  );
+  protected readonly periodOptions = computed<ViewToggleOption[]>(() => [
+    { id: '7', label: this.t('bank.finance.period7') },
+    { id: '30', label: this.t('bank.finance.period30') },
+    { id: '90', label: this.t('bank.finance.period90') },
+    { id: 'custom', label: this.t('bank.finance.periodCustom'), icon: 'calendar' },
+  ]);
 
-  protected readonly donutSegments = computed(() => {
-    const total = this.donutTotal() || 1;
-    const circumference = 364.42; // 2 * PI * 58
-    let offset = 0;
-    return this.liabilityBars().map((bar) => {
-      const length = (Math.abs(bar.value) / total) * circumference;
-      const segment = { ...bar, dasharray: `${length} ${circumference - length}`, dashoffset: -offset };
-      offset += length;
-      return segment;
-    });
-  });
+  protected readonly rangeDays = computed(() => this.resolveRange()?.days ?? 30);
 
-  protected readonly maxFlowValue = computed(() => {
-    const trends = this.report()?.trends ?? [];
-    if (trends.length === 0) return 1000;
-    return Math.max(100, ...trends.flatMap((t) => [Math.abs(t.loot_in), Math.abs(t.outflow)]));
-  });
+  protected readonly trends = computed<readonly TrendBucket[]>(() => this.report()?.trends ?? []);
+  protected readonly hasTrends = computed(() => this.trends().length > 0);
 
-  protected readonly flowPoints = computed<FlowTrendPoint[]>(() => {
-    const trends = this.report()?.trends ?? [];
-    if (trends.length === 0) return [];
-    const max = this.maxFlowValue();
-    const span = Math.max(1, trends.length - 1);
-    const leftPad = 55;
-    const rightPad = 575;
-    const chartWidth = rightPad - leftPad;
-    const chartHeight = 160; // 195 - 35
-    const baseLine = 195;
-
-    return trends.map((trend, index) => {
-      const x = leftPad + (chartWidth * index) / span;
-      const lootY = baseLine - (Math.abs(trend.loot_in) / max) * chartHeight;
-      const outflowY = baseLine - (Math.abs(trend.outflow) / max) * chartHeight;
-      return {
-        label: this.formatWeek(trend.week_start),
-        fullDate: this.formatFullDate(trend.week_start),
-        x,
-        lootY,
-        outflowY,
-        lootValue: trend.loot_in,
-        outflowValue: trend.outflow,
-        netValue: trend.loot_in - trend.outflow,
-      };
-    });
-  });
-
-  protected readonly lootLinePath = computed(() => this.toSmoothPath(this.flowPoints(), 'lootY'));
-  protected readonly outflowLinePath = computed(() => this.toSmoothPath(this.flowPoints(), 'outflowY'));
-
-  protected readonly lootAreaPath = computed(() => {
-    const pts = this.flowPoints();
-    if (pts.length === 0) return '';
-    const line = this.toSmoothPath(pts, 'lootY');
-    const first = pts[0];
-    const last = pts[pts.length - 1];
-    return `${line} L ${last.x},195 L ${first.x},195 Z`;
-  });
-
-  protected readonly outflowAreaPath = computed(() => {
-    const pts = this.flowPoints();
-    if (pts.length === 0) return '';
-    const line = this.toSmoothPath(pts, 'outflowY');
-    const first = pts[0];
-    const last = pts[pts.length - 1];
-    return `${line} L ${last.x},195 L ${first.x},195 Z`;
-  });
-
-  protected readonly maxLossRegearValue = computed(() => {
-    const trends = this.report()?.trends ?? [];
-    if (trends.length === 0) return 1000;
-    return Math.max(100, ...trends.flatMap((t) => [Math.abs(t.silver_lost || 0), Math.abs(t.outflow || 0)]));
-  });
-
-  protected readonly lossRegearPoints = computed<LossRegearTrendPoint[]>(() => {
-    const trends = this.report()?.trends ?? [];
-    if (trends.length === 0) return [];
-    const max = this.maxLossRegearValue();
-    const leftPad = 55;
-    const rightPad = 575;
-    const chartWidth = rightPad - leftPad;
-    const chartHeight = 160;
-    const baseLine = 195;
-    const slotWidth = chartWidth / trends.length;
-    const barWidth = Math.max(6, Math.min(22, slotWidth * 0.35));
-
-    return trends.map((trend, index) => {
-      const centerX = leftPad + slotWidth * index + slotWidth / 2;
-      const lossVal = Math.abs(trend.silver_lost || 0);
-      const regearVal = Math.abs(trend.regear_paid || 0);
-      const lossH = Math.max(lossVal > 0 ? 3 : 0, (lossVal / max) * chartHeight);
-      const regearH = Math.max(regearVal > 0 ? 3 : 0, (regearVal / max) * chartHeight);
-
-      return {
-        label: this.formatWeek(trend.week_start),
-        fullDate: this.formatFullDate(trend.week_start),
-        x: centerX,
-        lossX: centerX - barWidth - 2,
-        lossY: baseLine - lossH,
-        lossHeight: lossH,
-        lossValue: lossVal,
-        regearX: centerX + 2,
-        regearY: baseLine - regearH,
-        regearHeight: regearH,
-        regearValue: regearVal,
-        barWidth,
-      };
-    });
-  });
-
-  protected readonly maxActivityValue = computed(() => {
-    const trends = this.report()?.trends ?? [];
-    if (trends.length === 0) return 10;
-    return Math.max(5, ...trends.flatMap((t) => [t.fights, t.events]));
-  });
-
-  protected readonly activityPoints = computed<ActivityTrendPoint[]>(() => {
-    const trends = this.report()?.trends ?? [];
-    if (trends.length === 0) return [];
-    const max = this.maxActivityValue();
-    const leftPad = 55;
-    const rightPad = 575;
-    const chartWidth = rightPad - leftPad;
-    const chartHeight = 160;
-    const baseLine = 195;
-    const slotWidth = chartWidth / trends.length;
-    const barWidth = Math.max(6, Math.min(22, slotWidth * 0.35));
-
-    return trends.map((trend, index) => {
-      const centerX = leftPad + slotWidth * index + slotWidth / 2;
-      const fightH = Math.max(trend.fights > 0 ? 3 : 0, (trend.fights / max) * chartHeight);
-      const eventH = Math.max(trend.events > 0 ? 3 : 0, (trend.events / max) * chartHeight);
-
-      return {
-        label: this.formatWeek(trend.week_start),
-        fullDate: this.formatFullDate(trend.week_start),
-        x: centerX,
-        fightX: centerX - barWidth - 2,
-        fightY: baseLine - fightH,
-        fightHeight: fightH,
-        fights: trend.fights,
-        eventX: centerX + 2,
-        eventY: baseLine - eventH,
-        eventHeight: eventH,
-        events: trend.events,
-        barWidth,
-      };
-    });
-  });
-
-  protected readonly avgWeeklyLoot = computed(() => {
-    const trends = this.report()?.trends ?? [];
-    if (trends.length === 0) return 0;
-    const total = trends.reduce((acc, t) => acc + t.loot_in, 0);
-    return Math.round(total / trends.length);
-  });
-
-  protected readonly regearCoverageRatio = computed(() => {
-    const econ = this.report()?.economy;
-    if (!econ || econ.outflow_regear <= 0) return 0;
-    const trends = this.report()?.trends ?? [];
-    const totalLost = trends.reduce((acc, t) => acc + (t.silver_lost || 0), 0);
-    if (totalLost <= 0) return 0;
-    return Math.min(100, Math.round((econ.regear_paid / totalLost) * 100));
-  });
+  private readonly palette = computed(() => chartPalette(this.theme.isDark()));
+  private readonly chrome = computed(() => chartChrome(this.theme.isDark()));
 
   constructor() {
     void this.loadFinance();
   }
 
-  protected t = (key: TranslationKey, params?: Record<string, string | number>) => this.translate.t(key, params);
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
+
+  /* ------------------------------ Loading ------------------------------ */
+
+  protected onPeriodChange(id: string): void {
+    this.period.set(id as PeriodId);
+    void this.loadFinance();
+  }
+
+  protected onCustomFrom(event: Event): void {
+    this.customFrom.set((event.target as HTMLInputElement).value);
+    void this.loadFinance();
+  }
+
+  protected onCustomTo(event: Event): void {
+    this.customTo.set((event.target as HTMLInputElement).value);
+    void this.loadFinance();
+  }
+
+  /**
+   * Resolves the selected period into an absolute window plus the equally long
+   * window immediately before it. Returns `null` when a custom range is
+   * incomplete or inverted, which is a user-correctable state, not an error.
+   */
+  private resolveRange(): ResolvedRange | null {
+    const preset = this.period();
+    let from: Date;
+    let to: Date;
+
+    if (preset === 'custom') {
+      const rawFrom = this.customFrom();
+      const rawTo = this.customTo();
+      if (!rawFrom || !rawTo) {
+        return null;
+      }
+      from = new Date(`${rawFrom}T00:00:00`);
+      to = new Date(`${rawTo}T23:59:59`);
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from >= to) {
+        return null;
+      }
+    } else {
+      to = new Date();
+      from = new Date(to.getTime() - PRESET_DAYS[preset] * MS_PER_DAY);
+    }
+
+    const span = to.getTime() - from.getTime();
+    return {
+      from,
+      to,
+      days: Math.max(1, Math.round(span / MS_PER_DAY)),
+      previousFrom: new Date(from.getTime() - span),
+      previousTo: new Date(from.getTime()),
+    };
+  }
 
   protected async loadFinance(): Promise<void> {
-    this.loading.set(true);
-    const [bankResult, reportResult] = await Promise.allSettled([
+    const range = this.resolveRange();
+    if (!range) {
+      this.toasts.error(this.t('bank.finance.invalidRange'));
+      return;
+    }
+
+    const firstLoad = this.summary() === null;
+    this.loading.set(firstLoad);
+    this.refreshing.set(!firstLoad);
+
+    const [bankResult, reportResult, previousResult] = await Promise.allSettled([
       firstValueFrom(this.api.get<BankAnalyticsSummary>('api/bank/admin/summary')),
-      firstValueFrom(this.api.get<GuildReport>('api/intel/report')),
+      firstValueFrom(
+        this.api.get<GuildReport>('api/intel/report', {
+          from: range.from.toISOString(),
+          to: range.to.toISOString(),
+        }),
+      ),
+      firstValueFrom(
+        this.api.get<GuildReport>('api/intel/report', {
+          from: range.previousFrom.toISOString(),
+          to: range.previousTo.toISOString(),
+        }),
+      ),
     ]);
+
     if (bankResult.status === 'fulfilled') {
       this.summary.set(bankResult.value);
     } else {
@@ -809,8 +1037,790 @@ export class AdminFinance {
       this.toasts.error(this.t('common.error'));
     }
     this.report.set(reportResult.status === 'fulfilled' ? reportResult.value : null);
+    this.previousReport.set(previousResult.status === 'fulfilled' ? previousResult.value : null);
     this.loading.set(false);
+    this.refreshing.set(false);
   }
+
+  /* -------------------------------- KPIs ------------------------------- */
+
+  /**
+   * Whole-ledger position. Each tile links to the transaction queue filtered to
+   * the status it counts, so the figure can always be walked back to its rows.
+   */
+  protected readonly positionKpis = computed<FinanceKpi[]>(() => {
+    const bank = this.summary();
+    if (!bank) {
+      return [];
+    }
+    return [
+      {
+        key: 'outstanding',
+        label: this.t('bank.finance.openLiability'),
+        value: this.formatAmount(bank.outstanding_total),
+        detail: this.t('bank.finance.creditsOwed', { count: bank.outstanding_count }),
+        tone: 'warning',
+        link: ['/admin/transactions', { status: 'pending' }],
+      },
+      {
+        key: 'requested',
+        label: this.t('bank.finance.awaitingApproval'),
+        value: this.formatAmount(bank.requested_total),
+        detail: this.t('bank.finance.requestedWithdrawals', { count: bank.requested_count }),
+        tone: 'default',
+        link: ['/admin/transactions', { status: 'requested' }],
+      },
+      {
+        key: 'paid',
+        label: this.t('bank.finance.paidOut'),
+        value: this.formatAmount(bank.paid_out_total),
+        detail: this.t('bank.finance.settledPayouts', { count: bank.paid_out_count }),
+        tone: 'success',
+        link: ['/admin/transactions', { status: 'withdrawn' }],
+      },
+      {
+        key: 'donated',
+        label: this.t('bank.finance.donatedBack'),
+        value: this.formatAmount(bank.donated_total),
+        detail: this.t('bank.finance.memberDonations', { count: bank.donated_count }),
+        tone: 'default',
+        link: ['/admin/transactions', { status: 'donated' }],
+      },
+    ];
+  });
+
+  /** Window-scoped flow, each figure carrying its movement against the prior window. */
+  protected readonly flowKpis = computed<FinanceKpi[]>(() => {
+    const economy = this.report()?.economy;
+    if (!economy) {
+      return [];
+    }
+    const previous = this.previousReport()?.economy;
+    return [
+      {
+        key: 'loot',
+        label: this.t('bank.finance.lootCreated'),
+        value: this.formatAmount(economy.loot_in),
+        detail: this.t('bank.finance.perWeek', { value: this.formatCompact(this.avgWeeklyLoot()) }),
+        tone: 'success',
+        delta: this.buildDelta(economy.loot_in, previous?.loot_in, true),
+      },
+      {
+        key: 'outflow',
+        label: this.t('bank.finance.memberOutflow'),
+        value: this.formatAmount(economy.outflow_total),
+        detail: this.t('bank.finance.outflowSplit', {
+          splits: this.formatCompact(economy.outflow_splits),
+          regear: this.formatCompact(economy.outflow_regear),
+        }),
+        tone: 'default',
+        delta: this.buildDelta(economy.outflow_total, previous?.outflow_total, false),
+      },
+      {
+        key: 'net',
+        label: this.t('bank.finance.netCashFlow'),
+        value: this.formatSigned(economy.net),
+        detail: this.t('bank.finance.netDetail'),
+        tone: economy.net >= 0 ? 'success' : 'danger',
+        delta: this.buildDelta(economy.net, previous?.net, true),
+      },
+      {
+        key: 'pending',
+        label: this.t('bank.finance.bankPending'),
+        value: this.formatAmount(economy.bank_pending),
+        detail: this.t('bank.finance.bankPendingDetail'),
+        tone: 'warning',
+        delta: this.buildDelta(economy.bank_pending, previous?.bank_pending, false),
+        link: ['/admin/transactions', { status: 'pending' }],
+      },
+    ];
+  });
+
+  protected readonly combatKpis = computed<FinanceKpi[]>(() => {
+    const report = this.report();
+    if (!report) {
+      return [];
+    }
+    const previous = this.previousReport();
+    const lost = report.overview.silver_lost;
+    return [
+      {
+        key: 'lost',
+        label: this.t('bank.finance.silverLost'),
+        value: this.formatAmount(lost),
+        detail: this.t('bank.finance.acrossFights', { count: report.overview.fights }),
+        tone: 'danger',
+        delta: this.buildDelta(lost, previous?.overview.silver_lost, false),
+      },
+      {
+        key: 'regear',
+        label: this.t('bank.finance.regearPaid'),
+        value: this.formatAmount(report.economy.regear_paid),
+        detail: this.t('bank.finance.regearOpenDetail', {
+          value: this.formatCompact(report.economy.regear_open),
+        }),
+        tone: 'default',
+        delta: this.buildDelta(report.economy.regear_paid, previous?.economy.regear_paid, true),
+      },
+      {
+        key: 'coverage',
+        label: this.t('bank.finance.regearCoverage'),
+        value: `${this.regearCoverageRatio()}%`,
+        detail: this.t('bank.finance.coverageDetail'),
+        tone: 'default',
+      },
+      {
+        key: 'fame',
+        label: this.t('bank.finance.fameEfficiency'),
+        value: this.formatCompact(report.economy.fame_per_million_lost),
+        detail: this.t('bank.finance.fameEfficiencyDetail'),
+        tone: 'default',
+        delta: this.buildDelta(
+          report.economy.fame_per_million_lost,
+          previous?.economy.fame_per_million_lost,
+          true,
+        ),
+      },
+    ];
+  });
+
+  /**
+   * Percentage movement against the previous window.
+   *
+   * `higherIsBetter` is deliberately separate from the direction: outflow going
+   * up is not automatically bad news, but it is never painted green.
+   */
+  private buildDelta(
+    current: number,
+    previous: number | undefined,
+    higherIsBetter: boolean,
+  ): FinanceDelta | undefined {
+    if (previous === undefined || previous === 0) {
+      return undefined;
+    }
+    const change = ((current - previous) / Math.abs(previous)) * 100;
+    if (!Number.isFinite(change)) {
+      return undefined;
+    }
+    const rounded = Math.round(change);
+    if (rounded === 0) {
+      return { label: '0%', direction: 'flat', good: true };
+    }
+    return {
+      label: `${rounded > 0 ? '+' : ''}${rounded}%`,
+      direction: rounded > 0 ? 'up' : 'down',
+      good: rounded > 0 === higherIsBetter,
+    };
+  }
+
+  protected readonly avgWeeklyLoot = computed(() => {
+    const trends = this.trends();
+    if (trends.length === 0) {
+      return 0;
+    }
+    return Math.round(trends.reduce((acc, bucket) => acc + bucket.loot_in, 0) / trends.length);
+  });
+
+  protected readonly avgWeeklyNet = computed(() => {
+    const trends = this.trends();
+    if (trends.length === 0) {
+      return 0;
+    }
+    const total = trends.reduce((acc, bucket) => acc + (bucket.loot_in - bucket.outflow), 0);
+    return Math.round(total / trends.length);
+  });
+
+  protected readonly regearCoverageRatio = computed(() => {
+    const trends = this.trends();
+    const lost = trends.reduce((acc, bucket) => acc + (bucket.silver_lost || 0), 0);
+    if (lost <= 0) {
+      return 0;
+    }
+    const paid = trends.reduce((acc, bucket) => acc + (bucket.regear_paid || 0), 0);
+    return Math.min(999, Math.round((paid / lost) * 100));
+  });
+
+  protected readonly memberRows = computed<readonly ReportMemberRow[]>(() => {
+    const members = this.report()?.members ?? [];
+    return [...members]
+      .filter(
+        (row) =>
+          row.split_earnings > 0 ||
+          row.regear_silver > 0 ||
+          row.silver_lost > 0 ||
+          row.bank_pending > 0 ||
+          row.siphoned > 0,
+      )
+      .sort((a, b) => b.split_earnings + b.regear_silver - (a.split_earnings + a.regear_silver))
+      .slice(0, 25);
+  });
+
+  /* ------------------------------- Charts ------------------------------ */
+
+  private weekLabels(): string[] {
+    return this.trends().map((bucket) => this.formatWeek(bucket.week_start));
+  }
+
+  /** Shared axis/grid skeleton so every plot lines up with the others. */
+  private baseGrid(bottom: number): EChartsOption['grid'] {
+    return { left: 4, right: 12, top: 30, bottom, containLabel: true };
+  }
+
+  private valueAxisLabel(): Record<string, unknown> {
+    return { formatter: (value: number) => this.formatCompact(value), hideOverlap: true };
+  }
+
+  /** Axis tooltip listing every series at the hovered week, value first. */
+  private axisTooltip(unit: 'silver' | 'count'): Record<string, unknown> {
+    return {
+      trigger: 'axis',
+      axisPointer: { type: 'line' },
+      formatter: (input: unknown) => {
+        const params = toParamList(input);
+        const header = escapeHtml(params[0]?.axisValueLabel ?? params[0]?.name ?? '');
+        const rows = params
+          .map((param) => {
+            const raw = toNumber(param.value as number);
+            const value = unit === 'silver' ? this.formatAmount(raw) : this.formatAmount(raw);
+            const key = `<span style="display:inline-block;width:12px;height:2px;border-radius:1px;background:${
+              param.color ?? 'currentColor'
+            };vertical-align:middle;margin-inline-end:6px"></span>`;
+            return `<div style="display:flex;align-items:center;gap:12px;justify-content:space-between;margin-top:3px">
+              <span style="opacity:0.75">${key}${escapeHtml(param.seriesName ?? '')}</span>
+              <strong style="font-variant-numeric:tabular-nums">${escapeHtml(value)}</strong>
+            </div>`;
+          })
+          .join('');
+        return `<div style="font-size:11px;opacity:0.7;margin-bottom:2px">${header}</div>${rows}`;
+      },
+    };
+  }
+
+  /** Per-mark tooltip for the horizontal breakdown bars. */
+  private itemTooltip(total: number): Record<string, unknown> {
+    return {
+      trigger: 'item',
+      formatter: (input: unknown) => {
+        const param = toParamList(input)[0];
+        const raw = toNumber(param?.value as number);
+        const share = total > 0 ? Math.round((raw / total) * 1000) / 10 : 0;
+        return `<div style="font-size:11px;opacity:0.7;margin-bottom:2px">${escapeHtml(
+          param?.name ?? '',
+        )}</div><strong style="font-variant-numeric:tabular-nums">${escapeHtml(
+          this.formatAmount(raw),
+        )}</strong> <span style="opacity:0.6">· ${share}%</span>`;
+      },
+    };
+  }
+
+  /** Vertical gradient under a line, fading to nothing at the baseline. */
+  private areaFill(color: string): Record<string, unknown> {
+    return {
+      color: {
+        type: 'linear',
+        x: 0,
+        y: 0,
+        x2: 0,
+        y2: 1,
+        colorStops: [
+          { offset: 0, color: `${color}3d` },
+          { offset: 1, color: `${color}00` },
+        ],
+      },
+    };
+  }
+
+  protected readonly flowOption = computed<EChartsOption>(() => {
+    const trends = this.trends();
+    const palette = this.palette();
+    const surface = this.chrome().surface;
+    const zoomable = trends.length > 10;
+
+    // A ring in the surface colour keeps the two markers readable where the
+    // lines cross, which on a flow chart is exactly where the reader looks.
+    const marker = (color: string) => ({ color, borderColor: surface, borderWidth: 2 });
+
+    return {
+      aria: { enabled: true },
+      grid: this.baseGrid(zoomable ? 46 : 8),
+      legend: { top: 0, left: 0 },
+      tooltip: this.axisTooltip('silver'),
+      xAxis: { type: 'category', boundaryGap: false, data: this.weekLabels() },
+      yAxis: { type: 'value', axisLabel: this.valueAxisLabel() },
+      dataZoom: zoomable
+        ? [
+            { type: 'inside', filterMode: 'none' },
+            { type: 'slider', height: 18, bottom: 6, filterMode: 'none' },
+          ]
+        : undefined,
+      series: [
+        {
+          name: this.t('bank.finance.lootCreated'),
+          type: 'line',
+          data: trends.map((bucket) => bucket.loot_in),
+          symbol: 'circle',
+          symbolSize: 8,
+          lineStyle: { width: 2, color: palette.lootIn },
+          itemStyle: marker(palette.lootIn),
+          areaStyle: this.areaFill(palette.lootIn),
+          emphasis: { focus: 'series' },
+        },
+        {
+          name: this.t('bank.finance.memberOutflow'),
+          type: 'line',
+          data: trends.map((bucket) => bucket.outflow),
+          symbol: 'circle',
+          symbolSize: 8,
+          lineStyle: { width: 2, color: palette.outflow },
+          itemStyle: marker(palette.outflow),
+          areaStyle: this.areaFill(palette.outflow),
+          emphasis: { focus: 'series' },
+        },
+      ],
+    };
+  });
+
+  protected readonly netOption = computed<EChartsOption>(() => {
+    const trends = this.trends();
+    const palette = this.palette();
+    const values = trends.map((bucket) => bucket.loot_in - bucket.outflow);
+
+    return {
+      aria: { enabled: true },
+      grid: this.baseGrid(8),
+      tooltip: this.axisTooltip('silver'),
+      xAxis: { type: 'category', data: this.weekLabels() },
+      yAxis: { type: 'value', axisLabel: this.valueAxisLabel() },
+      series: [
+        {
+          name: this.t('bank.finance.netResult'),
+          type: 'bar',
+          data: values.map((value) => ({
+            value,
+            itemStyle: {
+              color: value >= 0 ? palette.neutralSeries : palette.negativeSeries,
+              borderRadius: value >= 0 ? [4, 4, 0, 0] : [0, 0, 4, 4],
+            },
+          })),
+          barMaxWidth: 26,
+          barCategoryGap: '38%',
+        },
+      ],
+    };
+  });
+
+  protected readonly lossRegearOption = computed<EChartsOption>(() => {
+    const trends = this.trends();
+    const palette = this.palette();
+
+    return {
+      aria: { enabled: true },
+      grid: this.baseGrid(8),
+      legend: { top: 0, left: 0 },
+      tooltip: this.axisTooltip('silver'),
+      xAxis: { type: 'category', data: this.weekLabels() },
+      yAxis: { type: 'value', axisLabel: this.valueAxisLabel() },
+      series: [
+        {
+          name: this.t('bank.finance.silverLost'),
+          type: 'bar',
+          data: trends.map((bucket) => Math.abs(bucket.silver_lost || 0)),
+          itemStyle: { color: palette.silverLost, borderRadius: [4, 4, 0, 0] },
+          barMaxWidth: 18,
+          barGap: '18%',
+          barCategoryGap: '40%',
+        },
+        {
+          name: this.t('bank.finance.regearPaid'),
+          type: 'bar',
+          data: trends.map((bucket) => Math.abs(bucket.regear_paid || 0)),
+          itemStyle: { color: palette.regearPaid, borderRadius: [4, 4, 0, 0] },
+          barMaxWidth: 18,
+        },
+      ],
+    };
+  });
+
+  protected readonly activityOption = computed<EChartsOption>(() => {
+    const trends = this.trends();
+    const palette = this.palette();
+
+    return {
+      aria: { enabled: true },
+      grid: this.baseGrid(8),
+      legend: { top: 0, left: 0 },
+      tooltip: this.axisTooltip('count'),
+      xAxis: { type: 'category', data: this.weekLabels() },
+      yAxis: { type: 'value', minInterval: 1 },
+      series: [
+        {
+          name: this.t('bank.finance.fights'),
+          type: 'bar',
+          data: trends.map((bucket) => bucket.fights),
+          itemStyle: { color: palette.fights, borderRadius: [4, 4, 0, 0] },
+          barMaxWidth: 18,
+          barGap: '18%',
+          barCategoryGap: '40%',
+        },
+        {
+          name: this.t('bank.finance.events'),
+          type: 'bar',
+          data: trends.map((bucket) => bucket.events),
+          itemStyle: { color: palette.events, borderRadius: [4, 4, 0, 0] },
+          barMaxWidth: 18,
+        },
+      ],
+    };
+  });
+
+  /**
+   * Horizontal single-series bars for nominal categories.
+   *
+   * One series, one colour: darkening bars by size would double-encode length
+   * as hue and burn the only free channel on information the bar already shows.
+   */
+  private horizontalBars(
+    rows: ReadonlyArray<{ label: string; value: number }>,
+    directLabels: boolean,
+  ): EChartsOption {
+    const palette = this.palette();
+    const ordered = [...rows].sort((a, b) => a.value - b.value);
+    const total = ordered.reduce((acc, row) => acc + row.value, 0);
+
+    return {
+      aria: { enabled: true },
+      grid: { left: 4, right: directLabels ? 72 : 16, top: 8, bottom: 4, containLabel: true },
+      tooltip: this.itemTooltip(total),
+      xAxis: {
+        type: 'value',
+        // These cards are narrow; the default tick count collides into an
+        // unreadable smear, so ask for few ticks and drop any that still touch.
+        splitNumber: 3,
+        axisLabel: this.valueAxisLabel(),
+        splitLine: { show: true },
+      },
+      yAxis: {
+        type: 'category',
+        data: ordered.map((row) => row.label),
+        axisLabel: { width: 124, overflow: 'truncate' },
+      },
+      series: [
+        {
+          type: 'bar',
+          data: ordered.map((row) => row.value),
+          itemStyle: { color: palette.neutralSeries, borderRadius: [0, 4, 4, 0] },
+          barMaxWidth: 16,
+          barCategoryGap: '42%',
+          label: directLabels
+            ? {
+                show: true,
+                position: 'right',
+                distance: 8,
+                formatter: (param: { value?: unknown }) =>
+                  this.formatCompact(toNumber(param.value as number)),
+                fontSize: 11,
+                color: this.chrome().textSecondary,
+                textBorderWidth: 0,
+              }
+            : { show: false },
+        },
+      ],
+    };
+  }
+
+  protected readonly outflowOption = computed<EChartsOption>(() => {
+    const economy = this.report()?.economy;
+    if (!economy) {
+      return {};
+    }
+    return this.horizontalBars(
+      [
+        { label: this.t('bank.finance.splitOutflow'), value: economy.outflow_splits },
+        { label: this.t('bank.finance.regearPaid'), value: economy.outflow_regear },
+        { label: this.t('bank.finance.otherOutflow'), value: economy.outflow_other },
+      ],
+      true,
+    );
+  });
+
+  protected readonly sourcesOption = computed<EChartsOption>(() =>
+    this.horizontalBars(this.breakdownRows(this.summary()?.sources), false),
+  );
+
+  protected readonly destinationsOption = computed<EChartsOption>(() =>
+    this.horizontalBars(this.breakdownRows(this.summary()?.destinations), false),
+  );
+
+  protected readonly typesOption = computed<EChartsOption>(() =>
+    this.horizontalBars(this.breakdownRows(this.summary()?.transaction_types), false),
+  );
+
+  private breakdownRows(
+    lines: readonly BankBreakdown[] | undefined,
+  ): ReadonlyArray<{ label: string; value: number }> {
+    return [...(lines ?? [])]
+      .map((line) => ({ label: line.label, value: Math.abs(toNumber(line.total_amount)) }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8);
+  }
+
+  /* ---------------------------- Table twins ---------------------------- */
+
+  protected readonly flowTableHead = computed(() => [
+    this.t('bank.finance.week'),
+    this.t('bank.finance.lootCreated'),
+    this.t('bank.finance.memberOutflow'),
+    this.t('bank.finance.netResult'),
+  ]);
+
+  protected readonly flowTableRows = computed<ChartTableRow[]>(() =>
+    this.trends().map((bucket) => [
+      this.formatWeek(bucket.week_start),
+      this.formatAmount(bucket.loot_in),
+      this.formatAmount(bucket.outflow),
+      this.formatSigned(bucket.loot_in - bucket.outflow),
+    ]),
+  );
+
+  protected readonly netTableHead = computed(() => [
+    this.t('bank.finance.week'),
+    this.t('bank.finance.netResult'),
+  ]);
+
+  protected readonly netTableRows = computed<ChartTableRow[]>(() =>
+    this.trends().map((bucket) => [
+      this.formatWeek(bucket.week_start),
+      this.formatSigned(bucket.loot_in - bucket.outflow),
+    ]),
+  );
+
+  protected readonly lossTableHead = computed(() => [
+    this.t('bank.finance.week'),
+    this.t('bank.finance.silverLost'),
+    this.t('bank.finance.regearPaid'),
+  ]);
+
+  protected readonly lossTableRows = computed<ChartTableRow[]>(() =>
+    this.trends().map((bucket) => [
+      this.formatWeek(bucket.week_start),
+      this.formatAmount(Math.abs(bucket.silver_lost || 0)),
+      this.formatAmount(Math.abs(bucket.regear_paid || 0)),
+    ]),
+  );
+
+  protected readonly activityTableHead = computed(() => [
+    this.t('bank.finance.week'),
+    this.t('bank.finance.fights'),
+    this.t('bank.finance.events'),
+  ]);
+
+  protected readonly activityTableRows = computed<ChartTableRow[]>(() =>
+    this.trends().map((bucket) => [
+      this.formatWeek(bucket.week_start),
+      String(bucket.fights),
+      String(bucket.events),
+    ]),
+  );
+
+  protected readonly shareTableHead = computed(() => [
+    this.t('bank.finance.destination'),
+    this.t('common.amount'),
+  ]);
+
+  protected readonly breakdownTableHead = computed(() => [
+    this.t('common.label'),
+    this.t('common.amount'),
+    this.t('bank.finance.ledgerEntriesShort'),
+  ]);
+
+  protected readonly outflowTableRows = computed<ChartTableRow[]>(() => {
+    const economy = this.report()?.economy;
+    if (!economy) {
+      return [];
+    }
+    return [
+      [this.t('bank.finance.splitOutflow'), this.formatAmount(economy.outflow_splits)],
+      [this.t('bank.finance.regearPaid'), this.formatAmount(economy.outflow_regear)],
+      [this.t('bank.finance.otherOutflow'), this.formatAmount(economy.outflow_other)],
+    ];
+  });
+
+  protected readonly sourcesTableRows = computed(() =>
+    this.breakdownTable(this.summary()?.sources),
+  );
+
+  protected readonly destinationsTableRows = computed(() =>
+    this.breakdownTable(this.summary()?.destinations),
+  );
+
+  protected readonly typesTableRows = computed(() =>
+    this.breakdownTable(this.summary()?.transaction_types),
+  );
+
+  private breakdownTable(lines: readonly BankBreakdown[] | undefined): ChartTableRow[] {
+    return [...(lines ?? [])]
+      .sort((a, b) => Math.abs(toNumber(b.total_amount)) - Math.abs(toNumber(a.total_amount)))
+      .slice(0, 8)
+      .map((line) => [
+        line.label,
+        this.formatAmount(line.total_amount),
+        String(line.transaction_count),
+      ]);
+  }
+
+  /* ------------------------------- Export ------------------------------ */
+
+  /**
+   * Downloads everything on screen as one CSV, in labelled blocks.
+   *
+   * Officers reconcile against an external sheet, so the export mirrors the
+   * page rather than a single chart: the window that produced it, the weekly
+   * series, the totals, the whole-ledger breakdowns and the per-member rows.
+   */
+  protected exportCsv(): void {
+    const bank = this.summary();
+    if (!bank || typeof document === 'undefined') {
+      return;
+    }
+    const report = this.report();
+    const cell = (value: string | number): string => {
+      const text = String(value);
+      return /[",\n;]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const line = (...values: Array<string | number>): string => values.map(cell).join(',');
+    const rows: string[] = [];
+
+    rows.push(line(this.t('bank.finance.heading')));
+    if (report) {
+      rows.push(line(this.t('bank.finance.periodLabel'), report.from, report.to));
+    }
+    rows.push('');
+
+    rows.push(line(this.t('bank.finance.positionTitle')));
+    rows.push(
+      line(
+        this.t('common.label'),
+        this.t('common.amount'),
+        this.t('bank.finance.ledgerEntriesShort'),
+      ),
+    );
+    rows.push(
+      line(
+        this.t('bank.finance.openLiability'),
+        toNumber(bank.outstanding_total),
+        bank.outstanding_count,
+      ),
+    );
+    rows.push(
+      line(
+        this.t('bank.finance.awaitingApproval'),
+        toNumber(bank.requested_total),
+        bank.requested_count,
+      ),
+    );
+    rows.push(
+      line(this.t('bank.finance.paidOut'), toNumber(bank.paid_out_total), bank.paid_out_count),
+    );
+    rows.push(
+      line(this.t('bank.finance.donatedBack'), toNumber(bank.donated_total), bank.donated_count),
+    );
+    rows.push(
+      line(
+        this.t('bank.finance.ledgerVolume'),
+        toNumber(bank.ledger_volume),
+        bank.transaction_count,
+      ),
+    );
+    rows.push('');
+
+    if (report) {
+      rows.push(line(this.t('bank.finance.weeklyFlow')));
+      rows.push(
+        line(
+          this.t('bank.finance.week'),
+          this.t('bank.finance.lootCreated'),
+          this.t('bank.finance.memberOutflow'),
+          this.t('bank.finance.netResult'),
+          this.t('bank.finance.silverLost'),
+          this.t('bank.finance.regearPaid'),
+          this.t('bank.finance.fights'),
+          this.t('bank.finance.events'),
+        ),
+      );
+      for (const bucket of report.trends) {
+        rows.push(
+          line(
+            bucket.week_start,
+            bucket.loot_in,
+            bucket.outflow,
+            bucket.loot_in - bucket.outflow,
+            bucket.silver_lost,
+            bucket.regear_paid,
+            bucket.fights,
+            bucket.events,
+          ),
+        );
+      }
+      rows.push('');
+
+      rows.push(line(this.t('bank.finance.memberLedgerTitle')));
+      rows.push(
+        line(
+          this.t('bank.finance.member'),
+          this.t('bank.finance.splitEarnings'),
+          this.t('bank.finance.regearSilver'),
+          this.t('bank.finance.silverLost'),
+          this.t('bank.finance.bankPending'),
+          this.t('bank.finance.siphoned'),
+        ),
+      );
+      for (const member of this.memberRows()) {
+        rows.push(
+          line(
+            member.username,
+            member.split_earnings,
+            member.regear_silver,
+            member.silver_lost,
+            member.bank_pending,
+            member.siphoned,
+          ),
+        );
+      }
+      rows.push('');
+    }
+
+    const blocks: ReadonlyArray<[TranslationKey, readonly BankBreakdown[]]> = [
+      ['bank.finance.topSourcesTitle', bank.sources],
+      ['bank.finance.topDestinationsTitle', bank.destinations],
+      ['bank.finance.ledgerMix', bank.transaction_types],
+    ];
+    for (const [titleKey, lines] of blocks) {
+      rows.push(line(this.t(titleKey)));
+      rows.push(
+        line(
+          this.t('common.label'),
+          this.t('common.amount'),
+          this.t('bank.finance.ledgerEntriesShort'),
+        ),
+      );
+      for (const entry of lines) {
+        rows.push(line(entry.label, toNumber(entry.total_amount), entry.transaction_count));
+      }
+      rows.push('');
+    }
+
+    // The BOM keeps Excel from mangling non-ASCII member names.
+    const blob = new Blob([`﻿${rows.join('\n')}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `weaklings-finance-${toDateInput(new Date())}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    this.toasts.success(this.t('bank.finance.exported'));
+  }
+
+  /* ----------------------------- Formatting ---------------------------- */
 
   private getLocale(): string {
     const lang = this.translate.language();
@@ -820,49 +1830,31 @@ export class AdminFinance {
   }
 
   protected formatAmount(value: number | string | null | undefined): string {
-    const numeric = Number(value ?? 0);
     return new Intl.NumberFormat(this.getLocale(), { maximumFractionDigits: 0 }).format(
-      Number.isFinite(numeric) ? numeric : 0,
+      toNumber(value),
     );
   }
 
-  protected formatCompact(value: number): string {
-    return new Intl.NumberFormat(this.getLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(value);
-  }
-
-  private breakdownBars(lines: readonly BankBreakdown[] | undefined): FinanceBar[] {
-    return this.makeBars(
-      (lines ?? []).slice(0, 6).map((line, index) => ({
-        label: line.label,
-        value: line.total_amount,
-        tone: (['primary', 'success', 'warning', 'neutral'] as const)[index % 4],
-      })),
-    );
-  }
-
-  private makeBars(
-    values: ReadonlyArray<{ label: string; value: number | string; tone: FinanceBar['tone'] }>,
-  ): FinanceBar[] {
-    const normalized = values.map((entry) => ({ ...entry, value: Number(entry.value) || 0 }));
-    const max = Math.max(1, ...normalized.map((entry) => Math.abs(entry.value)));
-    return normalized.map((entry) => ({ ...entry, width: (Math.abs(entry.value) / max) * 100 }));
-  }
-
-  private toSmoothPath(points: readonly FlowTrendPoint[], yKey: 'lootY' | 'outflowY'): string {
-    if (points.length === 0) return '';
-    if (points.length === 1) return `M ${points[0].x},${points[0][yKey]}`;
-
-    let path = `M ${points[0].x},${points[0][yKey]}`;
-    for (let i = 0; i < points.length - 1; i++) {
-      const p0 = points[i];
-      const p1 = points[i + 1];
-      const cpX1 = p0.x + (p1.x - p0.x) / 2;
-      const cpY1 = p0[yKey];
-      const cpX2 = p0.x + (p1.x - p0.x) / 2;
-      const cpY2 = p1[yKey];
-      path += ` C ${cpX1},${cpY1} ${cpX2},${cpY2} ${p1.x},${p1[yKey]}`;
+  protected formatSigned(value: number): string {
+    const formatted = this.formatAmount(Math.abs(value));
+    if (value === 0) {
+      return formatted;
     }
-    return path;
+    return `${value > 0 ? '+' : '−'}${formatted}`;
+  }
+
+  protected formatCompact(value: number | string | null | undefined): string {
+    return new Intl.NumberFormat(this.getLocale(), {
+      notation: 'compact',
+      maximumFractionDigits: 1,
+    }).format(toNumber(value));
+  }
+
+  protected formatDate(value: string): string {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime())
+      ? value
+      : new Intl.DateTimeFormat(this.getLocale(), { dateStyle: 'medium' }).format(date);
   }
 
   private formatWeek(value: TrendBucket['week_start']): string {
@@ -871,12 +1863,4 @@ export class AdminFinance {
       ? '—'
       : new Intl.DateTimeFormat(this.getLocale(), { month: 'short', day: 'numeric' }).format(date);
   }
-
-  private formatFullDate(value: string): string {
-    const date = new Date(value);
-    return Number.isNaN(date.getTime())
-      ? value
-      : new Intl.DateTimeFormat(this.getLocale(), { dateStyle: 'medium' }).format(date);
-  }
 }
-

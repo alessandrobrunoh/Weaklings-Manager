@@ -130,6 +130,8 @@ pub fn router() -> Router {
         )
         .route("/builds/{id}/versions", post(create_build_version))
         .route("/builds/{id}/performance", get(get_build_performance))
+        .route("/builds/{id}/archive", post(archive_build))
+        .route("/builds/{id}/unarchive", post(unarchive_build))
         // Comps
         .route("/", get(list_comps).post(create_comp))
         .route(
@@ -138,6 +140,8 @@ pub fn router() -> Router {
         )
         .route("/{id}/performance", get(get_comp_performance))
         .route("/{id}/versions", post(create_comp_version))
+        .route("/{id}/archive", post(archive_comp))
+        .route("/{id}/unarchive", post(unarchive_comp))
         .route("/{id}/builds", post(add_comp_build))
         .route(
             "/{id}/builds/{build_id}",
@@ -730,6 +734,70 @@ async fn create_build_version(
     Ok(Json(ApiResponse::new(build)))
 }
 
+/// Archives a build, taking it out of pickers without touching anything that already uses it.
+///
+/// Requires `comps.builds.manage` permission.
+#[utoipa::path(
+    post,
+    path = "/api/comps/builds/{id}/archive",
+    tag = "comps",
+    summary = "Archive a build",
+    description = "Marks a build archived: it drops out of the default `list_builds` results and \
+                   every picker, but the row and everything already referencing it (comps, event \
+                   rosters, past participations) is untouched. Unlike delete, this never fails on \
+                   references. Requires `comps.builds.manage` permission.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Build ID")),
+    responses(
+        (status = 200, description = "Build archived successfully", body = ApiResponseBuildDetail),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks comps.builds.manage permission", body = ProblemDetails),
+        (status = 404, description = "Build not found", body = ProblemDetails)
+    )
+)]
+async fn archive_build(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Path(id): Path<i64>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
+    user.require(&perms, Permission::CompsBuildsDelete).await?;
+    let service = CompService::new();
+    let build = service.archive_build(&db, id).await?;
+    Ok(Json(ApiResponse::new(build)))
+}
+
+/// Unarchives a build, making it selectable again.
+///
+/// Requires `comps.builds.manage` permission.
+#[utoipa::path(
+    post,
+    path = "/api/comps/builds/{id}/unarchive",
+    tag = "comps",
+    summary = "Unarchive a build",
+    description = "Reverses archiving: the build reappears in `list_builds` and every picker. \
+                   Requires `comps.builds.manage` permission.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Build ID")),
+    responses(
+        (status = 200, description = "Build unarchived successfully", body = ApiResponseBuildDetail),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks comps.builds.manage permission", body = ProblemDetails),
+        (status = 404, description = "Build not found", body = ProblemDetails)
+    )
+)]
+async fn unarchive_build(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Path(id): Path<i64>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
+    user.require(&perms, Permission::CompsBuildsDelete).await?;
+    let service = CompService::new();
+    let build = service.unarchive_build(&db, id).await?;
+    Ok(Json(ApiResponse::new(build)))
+}
+
 // ===== Comps =====
 
 /// Lists comps with pagination and filtering.
@@ -1061,6 +1129,70 @@ async fn create_comp_version(
     user.require(&perms, Permission::CompsCompsCreate).await?;
     let service = CompService::new();
     let comp = service.create_comp_version(&db, id, user.user_id).await?;
+    Ok(Json(ApiResponse::new(comp)))
+}
+
+/// Archives a comp, taking it out of pickers without touching anything that already uses it.
+///
+/// Requires `comps.comps.manage` permission.
+#[utoipa::path(
+    post,
+    path = "/api/comps/{id}/archive",
+    tag = "comps",
+    summary = "Archive a comp",
+    description = "Marks a comp archived: it drops out of the default `list_comps` results and \
+                   every picker, but the row and everything already referencing it (events, child \
+                   variants) is untouched. Unlike delete, this never fails on references. Requires \
+                   `comps.comps.manage` permission.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Comp ID")),
+    responses(
+        (status = 200, description = "Comp archived successfully", body = ApiResponseCompDetail),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks comps.comps.manage permission", body = ProblemDetails),
+        (status = 404, description = "Comp not found", body = ProblemDetails)
+    )
+)]
+async fn archive_comp(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Path(id): Path<i64>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<crate::modules::comps::models::CompDetail>>, AppError> {
+    user.require(&perms, Permission::CompsCompsDelete).await?;
+    let service = CompService::new();
+    let comp = service.archive_comp(&db, id).await?;
+    Ok(Json(ApiResponse::new(comp)))
+}
+
+/// Unarchives a comp, making it selectable again.
+///
+/// Requires `comps.comps.manage` permission.
+#[utoipa::path(
+    post,
+    path = "/api/comps/{id}/unarchive",
+    tag = "comps",
+    summary = "Unarchive a comp",
+    description = "Reverses archiving: the comp reappears in `list_comps` and every picker. \
+                   Requires `comps.comps.manage` permission.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Comp ID")),
+    responses(
+        (status = 200, description = "Comp unarchived successfully", body = ApiResponseCompDetail),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks comps.comps.manage permission", body = ProblemDetails),
+        (status = 404, description = "Comp not found", body = ProblemDetails)
+    )
+)]
+async fn unarchive_comp(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Path(id): Path<i64>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<crate::modules::comps::models::CompDetail>>, AppError> {
+    user.require(&perms, Permission::CompsCompsDelete).await?;
+    let service = CompService::new();
+    let comp = service.unarchive_comp(&db, id).await?;
     Ok(Json(ApiResponse::new(comp)))
 }
 

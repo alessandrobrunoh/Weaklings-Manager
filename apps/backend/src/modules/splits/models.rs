@@ -39,7 +39,7 @@ pub struct SplitKpiSummary {
     pub pending_count: u64,
     /// Splits that have been paid out.
     pub completed_count: u64,
-    /// Sum of completed net values (falls back to estimated − fee − repair + bags).
+    /// Sum of completed net values (falls back to (estimated − repair + bags) − fee).
     #[schema(value_type = String, example = "125000")]
     pub total_net_distributed: Decimal,
     /// Sum of estimated market value across every split.
@@ -47,6 +47,9 @@ pub struct SplitKpiSummary {
     pub total_estimated_volume: Decimal,
     /// Total participant rows across every split.
     pub total_participants: u64,
+    /// Default fee percentage for newly created splits.
+    #[schema(value_type = String, example = "20.00")]
+    pub default_split_fee: Decimal,
 }
 
 /// A split's summary, as shown in list views.
@@ -193,6 +196,7 @@ pub struct UpdateSplitRequest {
     /// with the event's sign-ups — existing participants absent from the event are removed,
     /// event sign-ups not yet in the split are added with a default weight, and participants
     /// in both keep their current weight.
+    #[serde(default, deserialize_with = "crate::serde_helpers::double_option")]
     pub event_id: Option<Option<i64>>,
     /// Move a pending split to another catalog tab. Cannot be cleared.
     #[schema(example = 10)]

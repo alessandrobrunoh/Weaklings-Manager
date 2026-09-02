@@ -19,6 +19,7 @@ import type {
   BattleSummary,
   BuildDetail,
   BuildItemSlot,
+  BuildLoadout,
   BuildRole,
   BuildSlot,
   BuildSummary,
@@ -66,6 +67,7 @@ import { DataTable, type DataTableColumn } from '../../shared/components/data-ta
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
+import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
@@ -130,6 +132,7 @@ interface AddEventMemberRequest {
     DataTableCell,
     Dialog,
     EmptyState,
+    EquipmentGrid,
     ErrorState,
     Icon,
     Loading,
@@ -403,142 +406,178 @@ interface AddEventMemberRequest {
                   {{ rosterAnnouncement() }}
                 </p>
 
-                <!-- 1. MY ASSIGNMENT SPOTLIGHT CARD -->
-                <section class="card p-4 sm:p-5 shadow-sm" aria-labelledby="my-assignment-heading">
-                  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div>
-                      <div class="flex items-center gap-2">
-                        <span class="h-2 w-2 rounded-full bg-[var(--color-primary)]"></span>
-                        <p
-                          class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
-                        >
-                          Roster Room
-                        </p>
-                      </div>
-                      <h2
-                        id="my-assignment-heading"
-                        class="mt-1 text-lg font-bold text-[var(--color-text)]"
-                      >
-                        Il tuo incarico
-                      </h2>
-                    </div>
-
-                    @if (ownRosterSeat(); as seat) {
-                      <div class="flex flex-wrap items-center gap-3">
-                        <div
-                          class="flex items-center gap-3 rounded-xl border-2 px-4 py-2.5"
-                          [class]="roleSpotlightClass(seat.role)"
-                        >
-                          <span
-                            class="font-mono text-2xl sm:text-3xl font-black leading-none"
-                            aria-hidden="true"
-                          >
-                            {{ roleGlyph(seat.role) }}
-                          </span>
-                          <div class="flex flex-col leading-tight">
-                            <span
-                              class="text-xl sm:text-2xl font-extrabold uppercase tracking-wide"
-                            >
-                              {{ rosterSeatRoleLabel(seat) }}
-                            </span>
-                            <span class="font-mono text-[11px] font-semibold opacity-80">
-                              Party {{ rosterSeatPartyNumber(seat) }} &middot; Posizione
-                              {{ rosterSeatPosition(seat) }}
-                            </span>
-                          </div>
-                        </div>
-                        <span class="font-semibold text-sm text-[var(--color-text)]">
-                          {{ rosterSeatBuildName(seat) }}
-                          @if (rosterSeatBuildVersion(seat)) {
-                            <span class="text-xs text-[var(--color-text-secondary)] font-mono"
-                              >v{{ rosterSeatBuildVersion(seat) }}</span
-                            >
-                          }
-                        </span>
-                      </div>
-                    } @else if (isCurrentUserOnRosterBench()) {
-                      <div
-                        class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs font-semibold"
-                      >
-                        <app-icon name="alert" size="0.875rem" />
-                        <span>Sei in Bench (in attesa di assegnazione posto da un ufficiale).</span>
-                      </div>
-                    } @else {
-                      <div
-                        class="flex items-center gap-2 text-xs text-[var(--color-text-secondary)]"
-                      >
-                        <span>Nessun incarico assegnato. Iscriviti per partecipare.</span>
-                      </div>
-                    }
-                  </div>
-
-                  <!-- Equipment Loadout Preview for user's own seat -->
-                  @if (ownRosterSeat(); as seat) {
-                    @if (rosterSeatBuildItems(seat).length > 0) {
-                      <div class="mt-4 pt-4 border-t border-[var(--color-border)]">
-                        <p
-                          class="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider mb-2"
-                        >
-                          Equipaggiamento per questo ruolo:
-                        </p>
-                        <div class="flex flex-wrap gap-2">
-                          @for (
-                            item of rosterSeatBuildItems(seat);
-                            track item.slot + ':' + item.loadout
-                          ) {
-                            <div
-                              class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--color-surface-2)] border border-[var(--color-border)] text-xs"
-                              [appTooltip]="slotLabel(item.slot)"
-                            >
-                              @if (item.openalbion_item_icon) {
-                                <img
-                                  [src]="renderItemIconUrl(item)"
-                                  [alt]="item.openalbion_item_name"
-                                  class="h-5 w-5 object-contain"
-                                  loading="lazy"
-                                />
-                              } @else {
-                                <span
-                                  class="font-mono text-[10px] text-[var(--color-text-secondary)]"
-                                >
-                                  {{ slotGlyph(item.slot) }}
-                                </span>
-                              }
-                              <span
-                                class="font-medium text-[var(--color-text)] truncate max-w-[140px]"
-                              >
-                                {{ item.openalbion_item_name }}
-                              </span>
-                            </div>
-                          }
-                        </div>
-                      </div>
-                    }
-
-                    <!-- Abilities & Passives set on this role's equipment, shown directly rather than on hover -->
-                    @if (rosterSeatAbilityRows(seat); as abilityRows) {
-                      @if (abilityRows.length > 0) {
-                        <div class="mt-4 pt-4 border-t border-[var(--color-border)] grid gap-3">
+                <!-- 1. MY ROLE SPOTLIGHT — paper doll left, ability deck right, as on the build page -->
+                <section class="grid gap-4" aria-labelledby="my-assignment-heading">
+                  <div class="card p-4 sm:p-5 shadow-sm">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div>
+                        <div class="flex items-center gap-2">
+                          <span class="h-2 w-2 rounded-full bg-[var(--color-primary)]"></span>
                           <p
-                            class="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider"
+                            class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
                           >
-                            Abilità e passive
+                            Roster Room
                           </p>
-                          @for (row of abilityRows; track row.slot) {
-                            <div
-                              class="p-3 bg-[var(--color-surface-2)] rounded-lg grid gap-1.5 border border-[var(--color-border)]"
+                        </div>
+                        <h2
+                          id="my-assignment-heading"
+                          class="mt-1 text-lg font-bold text-[var(--color-text)]"
+                        >
+                          Il tuo ruolo
+                        </h2>
+                      </div>
+
+                      @if (ownRosterSeat(); as seat) {
+                        <div class="flex flex-wrap items-center gap-3">
+                          <div
+                            class="flex items-center gap-3 rounded-xl border-2 px-4 py-2.5"
+                            [class]="roleSpotlightClass(seat.role)"
+                          >
+                            <span
+                              class="font-mono text-2xl sm:text-3xl font-black leading-none"
+                              aria-hidden="true"
                             >
+                              {{ roleGlyph(seat.role) }}
+                            </span>
+                            <div class="flex flex-col leading-tight">
                               <span
-                                class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
+                                class="text-xl sm:text-2xl font-extrabold uppercase tracking-wide"
                               >
-                                {{ row.itemName }}
+                                {{ rosterSeatRoleLabel(seat) }}
                               </span>
-                              <app-ability-bar [slots]="row.slots" />
+                              <span class="font-mono text-[11px] font-semibold opacity-80">
+                                Party {{ rosterSeatPartyNumber(seat) }} &middot; Posizione
+                                {{ rosterSeatPosition(seat) }}
+                              </span>
                             </div>
-                          }
+                          </div>
+                          <span class="font-semibold text-sm text-[var(--color-text)]">
+                            {{ rosterSeatBuildName(seat) }}
+                            @if (rosterSeatBuildVersion(seat)) {
+                              <span class="text-xs text-[var(--color-text-secondary)] font-mono"
+                                >v{{ rosterSeatBuildVersion(seat) }}</span
+                              >
+                            }
+                          </span>
+                        </div>
+                      } @else if (isCurrentUserOnRosterBench()) {
+                        <div
+                          class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs font-semibold"
+                        >
+                          <app-icon name="alert" size="0.875rem" />
+                          <span
+                            >Sei in Bench (in attesa di assegnazione posto da un ufficiale).</span
+                          >
+                        </div>
+                      } @else {
+                        <div
+                          class="flex items-center gap-2 text-xs text-[var(--color-text-secondary)]"
+                        >
+                          <span>Nessun ruolo assegnato. Iscriviti per partecipare.</span>
                         </div>
                       }
-                    }
+                    </div>
+                  </div>
+
+                  @if (ownRosterSeat(); as seat) {
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                      <!-- LEFT: equipment paper doll (main set, plus the swap set when present) -->
+                      <div class="lg:col-span-7 grid gap-5">
+                        <section class="card p-5 grid gap-4">
+                          <header class="flex items-center justify-between gap-3">
+                            <div>
+                              <h3 class="text-base font-bold text-[var(--color-text)]">
+                                Equipaggiamento
+                              </h3>
+                              <p class="text-xs text-[var(--color-text-secondary)]">
+                                {{ ownSeatMainItems().length }}/{{ SLOT_COUNT }} slot &middot;
+                                {{ rosterSeatBuildName(seat) }}
+                              </p>
+                            </div>
+                            <span class="chip font-semibold">{{ rosterSeatRoleLabel(seat) }}</span>
+                          </header>
+
+                          <app-equipment-grid [items]="ownSeatMainItems()" />
+                        </section>
+
+                        @if (ownSeatSwapItems().length > 0) {
+                          <section class="card p-5 grid gap-4">
+                            <header>
+                              <h3 class="text-base font-bold text-[var(--color-text)]">
+                                Set di swap
+                              </h3>
+                              <p class="text-xs text-[var(--color-text-secondary)]">
+                                {{ ownSeatSwapItems().length }}/{{ SLOT_COUNT }} pezzi tattici
+                                opzionali
+                              </p>
+                            </header>
+
+                            <app-equipment-grid [items]="ownSeatSwapItems()" />
+                          </section>
+                        }
+                      </div>
+
+                      <!-- RIGHT: ability & passive deck for the same seat -->
+                      <div class="lg:col-span-5 grid gap-5">
+                        <section class="card p-5 grid gap-4">
+                          <header>
+                            <h3 class="text-base font-bold text-[var(--color-text)]">
+                              Abilità e passive
+                            </h3>
+                            <p class="text-xs text-[var(--color-text-secondary)]">
+                              Le abilità impostate sull'equipaggiamento di questo ruolo.
+                            </p>
+                          </header>
+
+                          @if (ownSeatAbilityRows(); as rows) {
+                            @if (rows.length > 0) {
+                              <div class="grid gap-3">
+                                @for (row of rows; track row.slot) {
+                                  <div
+                                    class="p-3 bg-[var(--color-surface-2)] rounded-lg grid gap-1.5 border border-[var(--color-border)]"
+                                  >
+                                    <span
+                                      class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
+                                    >
+                                      {{ row.itemName }}
+                                    </span>
+                                    <app-ability-bar [slots]="row.slots" />
+                                  </div>
+                                }
+                              </div>
+                            } @else {
+                              <p class="text-xs text-[var(--color-text-secondary)]">
+                                Nessuna abilità configurata per questo ruolo.
+                              </p>
+                            }
+                          }
+
+                          @if (ownSeatSwapAbilityRows(); as swapRows) {
+                            @if (swapRows.length > 0) {
+                              <div class="pt-4 border-t border-[var(--color-border)] grid gap-3">
+                                <span
+                                  class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
+                                >
+                                  Abilità del set di swap
+                                </span>
+                                @for (row of swapRows; track row.slot) {
+                                  <div
+                                    class="p-3 bg-[var(--color-surface-2)] rounded-lg grid gap-1.5 border border-[var(--color-border)]"
+                                  >
+                                    <span
+                                      class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
+                                    >
+                                      {{ row.itemName }}
+                                    </span>
+                                    <app-ability-bar [slots]="row.slots" />
+                                  </div>
+                                }
+                              </div>
+                            }
+                          }
+                        </section>
+                      </div>
+                    </div>
                   }
                 </section>
 
@@ -1254,9 +1293,7 @@ interface AddEventMemberRequest {
                           <span
                             class="text-xs font-mono font-medium text-[var(--color-text-secondary)]"
                           >
-                            {{ opponent.wins }}W / {{ opponent.losses }}L ({{
-                              opponent.battles
-                            }}
+                            {{ opponent.wins }}W / {{ opponent.losses }}L ({{ opponent.battles }}
                             btl)
                           </span>
                         </div>
@@ -2334,6 +2371,11 @@ export class EventDetailPage {
    * wrong event.
    */
   private loadGeneration = 0;
+  /**
+   * Generation of the load that currently owns the full-page spinner. Only a non-silent load
+   * raises `loading`, so only a newer non-silent load may leave it raised on its behalf.
+   */
+  private loadingGeneration = 0;
 
   protected readonly event = signal<EventDetailView | null>(null);
   protected readonly eventLossEstimate = signal<BattleLossEstimate>(emptyLossEstimate());
@@ -2504,6 +2546,8 @@ export class EventDetailPage {
   protected readonly rosterCommandSaving = signal(false);
   protected readonly rosterSwapSource = signal<EventRosterSeat | null>(null);
   protected readonly rosterAssignTarget = signal<EventRosterSeat | null>(null);
+  /** Total paper-doll slots, for the "n/10 slot" counter on the own-seat equipment card. */
+  protected readonly SLOT_COUNT = SLOT_ORDER.length;
   protected readonly activeLegacyQuickAssignSlot = computed(() =>
     this.rosterSnapshot() === null ? this.quickAssignSlot() : null,
   );
@@ -2573,6 +2617,21 @@ export class EventDetailPage {
       userId !== null && this.rosterSnapshot()?.bench.some((member) => member.user_id === userId)
     );
   });
+
+  /**
+   * The current member's own seat, rendered with the build page's paper doll and ability deck.
+   *
+   * Splitting by loadout here (rather than in the template) keeps the two grids independent, so the
+   * swap panel only appears for builds that actually carry a swap set.
+   */
+  protected readonly ownSeatMainItems = computed(() => this.ownSeatItems('main'));
+  protected readonly ownSeatSwapItems = computed(() => this.ownSeatItems('swap'));
+  protected readonly ownSeatAbilityRows = computed(() =>
+    this.abilityRowsFor(this.ownSeatMainItems()),
+  );
+  protected readonly ownSeatSwapAbilityRows = computed(() =>
+    this.abilityRowsFor(this.ownSeatSwapItems()),
+  );
 
   protected readonly filteredRosterBench = computed<readonly EventParticipant[]>(() => {
     const bench = this.rosterSnapshot()?.bench ?? [];
@@ -3084,7 +3143,8 @@ export class EventDetailPage {
         this.api.post(`api/events/${this.eventId}/roster-roles`, { build_id: buildId }),
       );
       this.draftRosterRoleBuildId.set('');
-      await this.load();
+      // Silent: adding a role reshapes the seats, but the page must not blink back to the top.
+      await this.load(true);
       this.toasts.success('Ruolo extra aggiunto al roster.');
     } catch (error) {
       this.rosterRoleError.set(error instanceof Error ? error.message : this.t('common.error'));
@@ -3099,7 +3159,7 @@ export class EventDetailPage {
     this.rosterRoleError.set(null);
     try {
       await firstValueFrom(this.api.delete(`api/events/${this.eventId}/roster-roles/${role.id}`));
-      await this.load();
+      await this.load(true);
       this.toasts.success('Ruolo extra rimosso dal roster.');
     } catch (error) {
       this.rosterRoleError.set(error instanceof Error ? error.message : this.t('common.error'));
@@ -3400,20 +3460,33 @@ export class EventDetailPage {
     );
   }
 
+  /**
+   * Runs one seat command and folds the roster it returns straight back into the view.
+   *
+   * Every roster endpoint answers with the freshly recomputed snapshot, so refetching would only
+   * repeat the work — and going through the non-silent loader would unmount the whole roster panel
+   * behind a spinner, collapsing the page and throwing the officer back to the top on every single
+   * assignment. Swapping the data in place keeps the scroll position and the open panels exactly
+   * where they were; the socket broadcast still carries the same change to everyone else.
+   */
   private async runServerRosterCommand(
     successMessage: string,
     command: () => Promise<EventRosterView | void>,
   ): Promise<void> {
     this.rosterCommandSaving.set(true);
     try {
-      await command();
+      const roster = await command();
       this.cancelRosterCommandMode();
-      await this.loadRosterSnapshot();
+      if (isEventRosterView(roster)) {
+        this.applyRosterSnapshot(roster);
+      } else {
+        await this.loadRosterSnapshot(true);
+      }
       this.toasts.success(successMessage);
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
         this.cancelRosterCommandMode();
-        await this.loadRosterSnapshot();
+        await this.loadRosterSnapshot(true);
         this.toasts.error('Il roster è stato aggiornato da un altro ufficiale. Riprova.');
         return;
       }
@@ -4142,9 +4215,9 @@ export class EventDetailPage {
       );
       if (updated) {
         this.event.set(updated);
-        await this.loadRosterSnapshot();
+        await this.loadRosterSnapshot(true);
       } else {
-        await this.load();
+        await this.load(true);
       }
       this.showJoinForm.set(false);
       this.toasts.success(this.t('events.detail.left'));
@@ -4283,14 +4356,6 @@ export class EventDetailPage {
     return (ROLE_GLYPH as Record<string, string>)[role] ?? '•';
   }
 
-  protected slotGlyph(slot: BuildSlot): string {
-    return SLOT_GLYPH[slot] ?? '•';
-  }
-
-  protected slotLabel(slot: BuildSlot): string {
-    return SLOT_LABELS[slot] ?? slot;
-  }
-
   protected fillPercent(current: number, target: number): number {
     if (target <= 0) return 0;
     return Math.min(100, Math.round((current / target) * 100));
@@ -4315,16 +4380,23 @@ export class EventDetailPage {
     }
   }
 
+  /** The current member's own seat equipment for one loadout, in canonical slot order. */
+  private ownSeatItems(loadout: BuildLoadout): BuildItemSlot[] {
+    const seat = this.ownRosterSeat();
+    if (!seat) return [];
+    return this.rosterSeatBuildItems(seat).filter((item) => (item.loadout ?? 'main') === loadout);
+  }
+
   /**
-   * One ability bar per item equipped on a roster seat's build that actually offers abilities.
+   * One ability bar per equipped item that actually offers abilities.
    *
    * Items with nothing to choose — off-hands, capes, bags, consumables, mounts — produce no row.
    */
-  protected rosterSeatAbilityRows(
-    seat: EventRosterSeat,
+  private abilityRowsFor(
+    items: readonly BuildItemSlot[],
   ): { slot: BuildSlot; itemName: string; slots: AbilitySlotView[] }[] {
     const catalog = this.abilityCatalog();
-    return this.rosterSeatBuildItems(seat).flatMap((item) => {
+    return items.flatMap((item) => {
       const key = abilityKeyForItem(item);
       const slots = abilitySlotsFor(item.slot, key ? catalog[key] : undefined, item.spells);
       return slots.length === 0
@@ -4342,6 +4414,7 @@ export class EventDetailPage {
     // Silent reloads (e.g. a realtime roster event) keep the current view mounted
     // and refresh its data in place, instead of flashing the full-page loading state.
     if (!silent) {
+      this.loadingGeneration = generation;
       this.loading.set(true);
     }
     this.loadFailed.set(false);
@@ -4363,7 +4436,12 @@ export class EventDetailPage {
       this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
-      if (!silent && !this.isStaleLoad(generation, eventId)) {
+      // A silent reload bumps the generation without ever touching `loading` — and the roster
+      // socket, which `connect()` above opens, pushes its first message while this very load is
+      // still awaiting the calls below. Deferring to `isStaleLoad` here would hand the spinner to
+      // a load that never lowers it, leaving the page stuck on "loading" forever. Only a newer
+      // non-silent load, which raises the spinner itself, may keep it up.
+      if (!silent && this.loadingGeneration === generation) {
         this.loading.set(false);
       }
     }
@@ -4390,23 +4468,9 @@ export class EventDetailPage {
         this.api.get<EventRosterView>(`api/events/${eventId}/roster`),
       );
       if (this.isStaleLoad(generation, eventId)) return;
-      this.rosterSnapshot.set(roster);
-      this.rosterSnapshotState.set('ready');
       // A silent refresh comes from someone else's action; don't clobber the
       // current user's own in-progress swap/search/drag interactions.
-      if (!silent) {
-        this.clearLegacyRosterInteractionState();
-      }
-      await this.preloadRosterBuildDetails(roster.seats.map((seat) => seat.build_id));
-      if (this.isStaleLoad(generation, eventId)) return;
-      const ownSeat = this.ownRosterSeat();
-      this.rosterAnnouncement.set(
-        ownSeat
-          ? `Roster aggiornato. Il tuo incarico è ${this.rosterSeatRoleLabel(ownSeat)}, Party ${this.rosterSeatPartyNumber(ownSeat)}, posizione ${ownSeat.position}.`
-          : this.isCurrentUserOnRosterBench()
-            ? 'Roster aggiornato. Sei in bench, senza un posto assegnato.'
-            : 'Roster aggiornato.',
-      );
+      this.applyRosterSnapshot(roster, { clearInteractions: !silent });
     } catch (error) {
       if (this.isStaleLoad(generation, eventId)) return;
       this.rosterSnapshot.set(null);
@@ -4416,6 +4480,34 @@ export class EventDetailPage {
       );
       this.rosterAnnouncement.set('');
     }
+  }
+
+  /**
+   * Swaps a roster snapshot into the view without ever passing through the loading state.
+   *
+   * The missing build details are fetched in the background rather than awaited, so the seats
+   * repaint on the same frame and only the equipment icons fill in a moment later.
+   */
+  private applyRosterSnapshot(
+    roster: EventRosterView,
+    options: { clearInteractions?: boolean } = {},
+  ): void {
+    this.rosterSnapshot.set(roster);
+    this.rosterSnapshotState.set('ready');
+    this.rosterSnapshotError.set('');
+    if (options.clearInteractions) {
+      this.clearLegacyRosterInteractionState();
+    }
+    void this.preloadRosterBuildDetails(roster.seats.map((seat) => seat.build_id));
+
+    const ownSeat = this.ownRosterSeat();
+    this.rosterAnnouncement.set(
+      ownSeat
+        ? `Roster aggiornato. Il tuo ruolo è ${this.rosterSeatRoleLabel(ownSeat)}, Party ${this.rosterSeatPartyNumber(ownSeat)}, posizione ${ownSeat.position}.`
+        : this.isCurrentUserOnRosterBench()
+          ? 'Roster aggiornato. Sei in bench, senza un posto assegnato.'
+          : 'Roster aggiornato.',
+    );
   }
 
   private async preloadRosterBuildDetails(buildIds: readonly number[]): Promise<void> {
@@ -4538,6 +4630,22 @@ export class EventDetailPage {
   }
 }
 
+/**
+ * Whether a roster command's response body is a usable snapshot.
+ *
+ * `DELETE` may answer with an empty body, and a proxy or an older backend can return something else
+ * entirely; either way the caller falls back to a silent refetch instead of blanking the roster.
+ */
+function isEventRosterView(value: unknown): value is EventRosterView {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Partial<EventRosterView>;
+  return (
+    Array.isArray(candidate.seats) &&
+    Array.isArray(candidate.bench) &&
+    typeof candidate.roster_version === 'number'
+  );
+}
+
 interface FightKpis {
   readonly outcome: 'victory' | 'defeat' | 'draw' | 'unknown';
   readonly segments: number;
@@ -4638,32 +4746,6 @@ const ROLE_GLYPH: Readonly<Record<BuildRole, string>> = {
   dps: 'DPS',
   battle_mount: 'BM',
   brawler: 'BR',
-};
-
-const SLOT_GLYPH: Readonly<Record<BuildSlot, string>> = {
-  weapon: 'W',
-  off_hand: 'O',
-  head: 'H',
-  armor: 'A',
-  shoes: 'S',
-  cape: 'C',
-  bag: 'B',
-  potion: 'P',
-  food: 'F',
-  mount: 'M',
-};
-
-const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
-  weapon: 'Weapon',
-  off_hand: 'Off-hand',
-  head: 'Head',
-  armor: 'Armor',
-  shoes: 'Shoes',
-  cape: 'Cape',
-  bag: 'Bag',
-  potion: 'Potion',
-  food: 'Food',
-  mount: 'Mount',
 };
 
 interface RoleGrouping {

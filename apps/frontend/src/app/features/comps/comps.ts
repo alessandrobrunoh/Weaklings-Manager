@@ -12,6 +12,7 @@ import type {
   BuildCategoryView,
   BuildDetail,
   BuildItemSlot,
+  BuildItemSpells,
   BuildRole,
   BuildSlot,
   BuildSummary,
@@ -24,6 +25,7 @@ import type {
   CreateCompCategoryRequest,
   CreateCompRequest,
   OpenAlbionItem,
+  OpenAlbionItemAbilities,
   PaginatedData,
   UpdateBuildCategoryRequest,
   UpdateCompCategoryRequest,
@@ -32,6 +34,14 @@ import {
   albionEquipmentIconUrl,
   filterAlbionEquipmentCatalog,
 } from '../../shared/data/albion-equipment-catalog';
+import {
+  abilityCatalogKey,
+  abilitySlotsFor,
+  withAbilityChoice,
+} from '../../shared/data/albion-abilities';
+import type { AbilitySlotView } from '../../shared/data/albion-abilities';
+import type { AbilityChoiceChange } from '../../shared/components/ability-bar/ability-bar';
+import { AlbionAbilitiesService } from '../../shared/services/albion-abilities.service';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -71,9 +81,12 @@ type TabId = 'comps' | 'builds' | 'categories';
 type CategoryKind = 'build' | 'comp';
 type ManagedCategory = BuildCategoryView | CompCategoryView;
 
-type PendingDelete =
-  | { kind: 'comp' | 'build'; id: number; name: string }
-  | { kind: 'category'; id: number; name: string; categoryKind: CategoryKind };
+/**
+ * Only categories still go through a real, permanent delete — comps and builds are archived
+ * instead (see `pendingArchive`), since deleting either one is blocked the moment anything
+ * (an event, a comp) depends on it.
+ */
+type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind: CategoryKind };
 
 /**
  * Compositions and builds workspace.
@@ -236,6 +249,18 @@ type PendingDelete =
                 (activeChange)="setCompFilterType($event)"
               />
 
+              @if (canArchiveComps()) {
+                <button
+                  type="button"
+                  class="btn btn--sm"
+                  [class.btn--tonal]="showArchivedComps()"
+                  [class.btn--outline]="!showArchivedComps()"
+                  (click)="toggleShowArchivedComps()"
+                >
+                  {{ t('comps.showArchived') }}
+                </button>
+              }
+
               @if (compFilterType() === 'all' && hasExpandableParents()) {
                 <button
                   type="button"
@@ -244,7 +269,10 @@ type PendingDelete =
                   [appTooltip]="areAllExpanded() ? t('comps.collapseAll') : t('comps.expandAll')"
                   tooltipPosition="bottom"
                 >
-                  <app-icon [name]="areAllExpanded() ? 'chevron-up' : 'chevron-down'" size="0.75rem" />
+                  <app-icon
+                    [name]="areAllExpanded() ? 'chevron-up' : 'chevron-down'"
+                    size="0.75rem"
+                  />
                   {{ areAllExpanded() ? t('comps.collapseAll') : t('comps.expandAll') }}
                 </button>
               }
@@ -274,13 +302,25 @@ type PendingDelete =
                 >
                   <!-- Comp Info & Ancestry -->
                   <div class="flex items-center gap-3 min-w-0 flex-1">
-                    @if (compFilterType() === 'all' && !hasActiveCompCriteria() && item.children.length > 0) {
+                    @if (
+                      compFilterType() === 'all' &&
+                      !hasActiveCompCriteria() &&
+                      item.children.length > 0
+                    ) {
                       <button
                         type="button"
                         class="flex shrink-0 items-center justify-center w-7 h-7 rounded-lg bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-transform"
                         (click)="$event.stopPropagation(); toggleParentExpand(item.comp.id)"
-                        [appTooltip]="isExpanded(item.comp.id) ? t('comps.collapseAll') : t('comps.expandAll')"
-                        [attr.aria-label]="(isExpanded(item.comp.id) ? t('comps.collapseAll') : t('comps.expandAll')) + ': ' + item.comp.name"
+                        [appTooltip]="
+                          isExpanded(item.comp.id) ? t('comps.collapseAll') : t('comps.expandAll')
+                        "
+                        [attr.aria-label]="
+                          (isExpanded(item.comp.id)
+                            ? t('comps.collapseAll')
+                            : t('comps.expandAll')) +
+                          ': ' +
+                          item.comp.name
+                        "
                         [attr.aria-expanded]="isExpanded(item.comp.id)"
                         tooltipPosition="top"
                       >
@@ -290,15 +330,22 @@ type PendingDelete =
                         />
                       </button>
                     } @else if (item.depth > 0) {
-                      <span class="font-mono text-sm text-[var(--color-text-tertiary)] select-none pl-2" aria-hidden="true">
+                      <span
+                        class="font-mono text-sm text-[var(--color-text-tertiary)] select-none pl-2"
+                        aria-hidden="true"
+                      >
                         {{ item.isLastSibling ? '└──' : '├──' }}
                       </span>
                     }
 
                     <div class="flex flex-col gap-1 min-w-0">
                       <div class="flex flex-wrap items-center gap-2">
-                        <span class="font-bold text-base text-[var(--color-text)]">{{ item.comp.name }}</span>
-                        <span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
+                        <span class="font-bold text-base text-[var(--color-text)]">{{
+                          item.comp.name
+                        }}</span>
+                        <span
+                          class="px-2 py-0.5 rounded-full text-xs font-semibold bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]"
+                        >
                           v{{ item.comp.version }}
                         </span>
                         <span
@@ -313,10 +360,15 @@ type PendingDelete =
                         @if (item.comp.category_name) {
                           <span class="chip text-xs">{{ item.comp.category_name }}</span>
                         }
+                        @if (item.comp.archived_at) {
+                          <span class="chip chip--neutral text-xs">{{ t('comps.archived') }}</span>
+                        }
                       </div>
 
                       @if (compFilterType() === 'variants') {
-                        <div class="text-xs text-[var(--color-text-secondary)] flex items-center gap-1">
+                        <div
+                          class="text-xs text-[var(--color-text-secondary)] flex items-center gap-1"
+                        >
                           <span>↳ {{ t('comps.derivedFrom') }}:</span>
                           <a
                             [routerLink]="['/comps', item.comp.parent_id]"
@@ -335,16 +387,20 @@ type PendingDelete =
                   </div>
 
                   <!-- Comp Metrics & Actions -->
-                  <div class="flex flex-wrap items-center justify-between md:justify-end gap-3 shrink-0">
+                  <div
+                    class="flex flex-wrap items-center justify-between md:justify-end gap-3 shrink-0"
+                  >
                     <!-- Capacity & Win Rate -->
                     <div class="flex items-center gap-4 text-xs">
                       <div class="text-right">
                         <div class="text-[var(--color-text-secondary)]">Roster Capacity</div>
                         <div class="font-bold text-[var(--color-text)]">
                           @if (item.capacityIncrement === null) {
-                            {{ item.comp.build_count }} builds · {{ item.comp.total_quantity }} slots
+                            {{ item.comp.build_count }} builds ·
+                            {{ item.comp.total_quantity }} slots
                           } @else {
-                            {{ formatCapacityIncrement(item.capacityIncrement) }} = {{ item.comp.total_quantity }}
+                            {{ formatCapacityIncrement(item.capacityIncrement) }} =
+                            {{ item.comp.total_quantity }}
                           }
                         </div>
                       </div>
@@ -378,15 +434,26 @@ type PendingDelete =
                       <a class="btn btn--tonal btn--sm" [routerLink]="['/comps', item.comp.id]">
                         {{ t('common.open') }}
                       </a>
-                      @if (canDeleteComps()) {
-                        <button
-                          type="button"
-                          class="btn btn--danger btn--sm"
-                          [disabled]="saving()"
-                          (click)="askDeleteComp(item.comp)"
-                        >
-                          {{ t('common.delete') }}
-                        </button>
+                      @if (canArchiveComps()) {
+                        @if (item.comp.archived_at) {
+                          <button
+                            type="button"
+                            class="btn btn--outline btn--sm"
+                            [disabled]="saving()"
+                            (click)="unarchiveComp(item.comp)"
+                          >
+                            {{ t('comps.unarchive') }}
+                          </button>
+                        } @else {
+                          <button
+                            type="button"
+                            class="btn btn--outline btn--sm"
+                            [disabled]="saving()"
+                            (click)="askArchiveComp(item.comp)"
+                          >
+                            {{ t('comps.archive') }}
+                          </button>
+                        }
                       }
                     </div>
                   </div>
@@ -396,8 +463,12 @@ type PendingDelete =
           }
 
           @if (!loading() && !loadFailed() && comps().length < compsTotal()) {
-            <div class="flex items-center justify-between gap-3 text-xs text-[var(--color-text-secondary)]">
-              <span>{{ t('comps.showingCount', { shown: comps().length, total: compsTotal() }) }}</span>
+            <div
+              class="flex items-center justify-between gap-3 text-xs text-[var(--color-text-secondary)]"
+            >
+              <span>{{
+                t('comps.showingCount', { shown: comps().length, total: compsTotal() })
+              }}</span>
               <button
                 type="button"
                 class="btn btn--outline btn--sm"
@@ -410,6 +481,19 @@ type PendingDelete =
           }
         </section>
       } @else if (tab() === 'builds') {
+        @if (canArchiveBuilds()) {
+          <div class="flex justify-end">
+            <button
+              type="button"
+              class="btn btn--sm"
+              [class.btn--tonal]="showArchivedBuilds()"
+              [class.btn--outline]="!showArchivedBuilds()"
+              (click)="toggleShowArchivedBuilds()"
+            >
+              {{ t('comps.showArchived') }}
+            </button>
+          </div>
+        }
         <app-data-table
           [columns]="buildColumns()"
           [rows]="builds()"
@@ -426,7 +510,12 @@ type PendingDelete =
           (rowClick)="openBuild($event)"
         >
           <ng-template dataTableCell="name" let-row>
-            <span class="font-bold text-sm">{{ row.name }}</span>
+            <span class="flex items-center gap-2">
+              <span class="font-bold text-sm">{{ row.name }}</span>
+              @if (row.archived_at) {
+                <span class="chip chip--neutral text-xs">{{ t('comps.archived') }}</span>
+              }
+            </span>
           </ng-template>
           <ng-template dataTableCell="role" let-row>
             <span class="chip font-semibold">{{ roleLabel(row.role) }}</span>
@@ -442,15 +531,26 @@ type PendingDelete =
               <a class="btn btn--tonal btn--sm" [routerLink]="['/comps', 'builds', row.id]">{{
                 t('common.open')
               }}</a>
-              @if (canDeleteBuilds()) {
-                <button
-                  type="button"
-                  class="btn btn--danger btn--sm"
-                  [disabled]="saving()"
-                  (click)="askDeleteBuild(row)"
-                >
-                  {{ t('common.delete') }}
-                </button>
+              @if (canArchiveBuilds()) {
+                @if (row.archived_at) {
+                  <button
+                    type="button"
+                    class="btn btn--outline btn--sm"
+                    [disabled]="saving()"
+                    (click)="unarchiveBuild(row)"
+                  >
+                    {{ t('comps.unarchive') }}
+                  </button>
+                } @else {
+                  <button
+                    type="button"
+                    class="btn btn--outline btn--sm"
+                    [disabled]="saving()"
+                    (click)="askArchiveBuild(row)"
+                  >
+                    {{ t('comps.archive') }}
+                  </button>
+                }
               }
             </div>
           </ng-template>
@@ -577,6 +677,7 @@ type PendingDelete =
                 [searchResults]="itemSearchResults()"
                 [searchLoading]="itemSearchLoading()"
                 [tiers]="itemTiers"
+                [draftAbilitySlots]="draftAbilitySlots()"
                 (slotToggle)="onSlotToggle($event)"
                 (tierChange)="onPopoverTierChange($event)"
                 (searchChange)="onPopoverSearchChange($event)"
@@ -584,6 +685,7 @@ type PendingDelete =
                 (saveSlot)="onPopoverSave()"
                 (cancelEdit)="onPopoverCancel()"
                 (removeItem)="removeDraftItem($event)"
+                (abilityChoice)="onDraftAbilityChange($event)"
               />
             </section>
           } @else {
@@ -739,6 +841,26 @@ type PendingDelete =
         </div>
       </app-dialog>
     }
+
+    @if (pendingArchive(); as pending) {
+      <app-dialog [title]="t('common.confirm')" size="sm" (closed)="closeArchiveConfirm()">
+        <p>{{ t('comps.archiveConfirm') }}</p>
+        <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">{{ pending.name }}</p>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="closeArchiveConfirm()">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn--tonal"
+            [disabled]="saving()"
+            (click)="confirmArchive()"
+          >
+            {{ t('comps.archive') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
   `,
 })
 export class Comps {
@@ -748,6 +870,7 @@ export class Comps {
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
   private readonly albionCatalog = inject(AlbionCatalogService);
+  private readonly albionAbilities = inject(AlbionAbilitiesService);
 
   protected readonly PAGE_SIZE = PAGE_SIZE;
   protected readonly tab = signal<TabId>('comps');
@@ -859,6 +982,14 @@ export class Comps {
   protected readonly categoryDraftDescription = signal('');
   protected readonly editingCategoryId = signal<number | null>(null);
   protected readonly pendingDelete = signal<PendingDelete | null>(null);
+  protected readonly pendingArchive = signal<{
+    kind: 'comp' | 'build';
+    id: number;
+    name: string;
+  } | null>(null);
+  /** Whether the comps/builds tabs are currently browsing the archive instead of active rows. */
+  protected readonly showArchivedComps = signal(false);
+  protected readonly showArchivedBuilds = signal(false);
 
   protected readonly draftName = signal('');
   protected readonly draftDescription = signal('');
@@ -879,6 +1010,21 @@ export class Comps {
   protected readonly itemSearchResults = signal<OpenAlbionItem[]>([]);
   protected readonly itemSearchLoading = signal(false);
   protected readonly draftItems = signal<BuildItemSlot[]>([]);
+  /** The bundled ability catalog, loaded once and keyed by tier-stripped base identifier. */
+  protected readonly abilityCatalog = signal<Record<string, OpenAlbionItemAbilities>>({});
+  /** Ability-catalog key of the drafted item, so its ability bar can render before it is added. */
+  protected readonly draftItemAbilityKey = signal<string | null>(null);
+  /** Abilities picked in the popover, attached to the item when it joins `draftItems`. */
+  protected readonly draftItemSpells = signal<BuildItemSpells>({ active: {}, passive: {} });
+  /** Ability slots for the item currently open in the create dialog's picker. */
+  protected readonly draftAbilitySlots = computed<AbilitySlotView[]>(() => {
+    const slot = this.draftItemSlot();
+    const key = this.draftItemAbilityKey();
+    if (!slot || !key) {
+      return [];
+    }
+    return abilitySlotsFor(slot, this.abilityCatalog()[key], this.draftItemSpells());
+  });
 
   protected readonly roles: readonly BuildRole[] = [
     'healer',
@@ -910,11 +1056,13 @@ export class Comps {
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly canCreateComps = computed(() => this.auth.hasPermission('comps.comps.create'));
-  protected readonly canDeleteComps = computed(() => this.auth.hasPermission('comps.comps.delete'));
+  protected readonly canArchiveComps = computed(() =>
+    this.auth.hasPermission('comps.comps.delete'),
+  );
   protected readonly canCreateBuilds = computed(() =>
     this.auth.hasPermission('comps.builds.create'),
   );
-  protected readonly canDeleteBuilds = computed(() =>
+  protected readonly canArchiveBuilds = computed(() =>
     this.auth.hasPermission('comps.builds.delete'),
   );
   protected readonly canCreateCurrentCategory = computed(() =>
@@ -1027,6 +1175,11 @@ export class Comps {
 
   constructor() {
     void this.init();
+    // Static application data; one fetch serves every dialog opened in the session.
+    void this.albionAbilities
+      .load()
+      .then((abilities) => this.abilityCatalog.set(abilities))
+      .catch(() => this.abilityCatalog.set({}));
   }
 
   private async init(): Promise<void> {
@@ -1310,6 +1463,19 @@ export class Comps {
     this.draftItemType.set(item.type);
     this.draftItemTier.set(this.normalizeTier(item.tier));
     this.draftItemIcon.set(this.itemIconUrl(item));
+    const key = item.identifier ? abilityCatalogKey(item.identifier) : null;
+    // A different weapon family offers different slots, so a stale choice from whatever was
+    // picked before does not silently carry over onto abilities it cannot actually cast.
+    if (key !== this.draftItemAbilityKey()) {
+      this.draftItemSpells.set({ active: {}, passive: {} });
+    }
+    this.draftItemAbilityKey.set(key);
+  }
+
+  protected onDraftAbilityChange(change: AbilityChoiceChange): void {
+    this.draftItemSpells.update((spells) =>
+      withAbilityChoice(spells, change.kind, change.index, change.spellId),
+    );
   }
 
   protected onPopoverSave(): void {
@@ -1375,6 +1541,12 @@ export class Comps {
     }
     if (tier) {
       item.openalbion_item_tier = tier;
+    }
+    // Abilities picked in the same popover, ready to persist alongside the item once the build
+    // itself is created — the create request sends them together in one call.
+    const spells = this.draftItemSpells();
+    if (Object.keys(spells.active).length > 0 || Object.keys(spells.passive).length > 0) {
+      item.spells = spells;
     }
     this.draftItems.update((items) => [
       ...items.filter((existing) => existing.slot !== item.slot),
@@ -1449,12 +1621,86 @@ export class Comps {
     void this.createCategory();
   }
 
-  protected askDeleteComp(item: CompSummary): void {
-    this.pendingDelete.set({ kind: 'comp', id: item.id, name: item.name });
+  protected askArchiveComp(item: CompSummary): void {
+    this.pendingArchive.set({ kind: 'comp', id: item.id, name: item.name });
   }
 
-  protected askDeleteBuild(item: BuildSummary): void {
-    this.pendingDelete.set({ kind: 'build', id: item.id, name: item.name });
+  protected askArchiveBuild(item: BuildSummary): void {
+    this.pendingArchive.set({ kind: 'build', id: item.id, name: item.name });
+  }
+
+  protected closeArchiveConfirm(): void {
+    this.pendingArchive.set(null);
+  }
+
+  /**
+   * Archives the pending comp or build.
+   *
+   * Unlike delete, archiving never fails on references — that's the whole point — so there is no
+   * blocking-reference branch to handle here.
+   */
+  protected async confirmArchive(): Promise<void> {
+    const pending = this.pendingArchive();
+    if (!pending) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      const path =
+        pending.kind === 'build'
+          ? `api/comps/builds/${pending.id}/archive`
+          : `api/comps/${pending.id}/archive`;
+      await firstValueFrom(this.api.post(path, {}));
+      if (pending.kind === 'build') {
+        await this.loadBuilds();
+      } else {
+        await this.loadComps();
+      }
+      this.pendingArchive.set(null);
+      this.toasts.success(this.t('comps.archiveSuccess'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  /** Unarchiving is always safe — no dialog, one click, back into every picker. */
+  protected async unarchiveComp(item: CompSummary): Promise<void> {
+    await this.unarchive('comp', item.id);
+  }
+
+  protected async unarchiveBuild(item: BuildSummary): Promise<void> {
+    await this.unarchive('build', item.id);
+  }
+
+  private async unarchive(kind: 'comp' | 'build', id: number): Promise<void> {
+    this.saving.set(true);
+    try {
+      const path =
+        kind === 'build' ? `api/comps/builds/${id}/unarchive` : `api/comps/${id}/unarchive`;
+      await firstValueFrom(this.api.post(path, {}));
+      if (kind === 'build') {
+        await this.loadBuilds();
+      } else {
+        await this.loadComps();
+      }
+      this.toasts.success(this.t('comps.unarchiveSuccess'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected toggleShowArchivedComps(): void {
+    this.showArchivedComps.update((value) => !value);
+    void this.loadComps();
+  }
+
+  protected toggleShowArchivedBuilds(): void {
+    this.showArchivedBuilds.update((value) => !value);
+    void this.loadBuilds();
   }
 
   protected askDeleteCategory(category: ManagedCategory): void {
@@ -1477,20 +1723,12 @@ export class Comps {
     }
     this.saving.set(true);
     try {
-      if (pending.kind === 'category') {
-        const path =
-          pending.categoryKind === 'build'
-            ? `api/comps/build-categories/${pending.id}`
-            : `api/comps/comp-categories/${pending.id}`;
-        await firstValueFrom(this.api.delete<void>(path));
-        await this.loadCategories();
-      } else if (pending.kind === 'build') {
-        await firstValueFrom(this.api.delete(`api/comps/builds/${pending.id}`));
-        await this.loadBuilds();
-      } else {
-        await firstValueFrom(this.api.delete(`api/comps/${pending.id}`));
-        await this.loadComps();
-      }
+      const path =
+        pending.categoryKind === 'build'
+          ? `api/comps/build-categories/${pending.id}`
+          : `api/comps/comp-categories/${pending.id}`;
+      await firstValueFrom(this.api.delete<void>(path));
+      await this.loadCategories();
       this.pendingDelete.set(null);
       this.toasts.success(this.t('common.delete'));
     } catch (error) {
@@ -1682,6 +1920,8 @@ export class Comps {
     this.draftItemId.set('');
     this.draftItemName.set('');
     this.draftItemIcon.set('');
+    this.draftItemAbilityKey.set(null);
+    this.draftItemSpells.set({ active: {}, passive: {} });
   }
 
   private normalizeTier(tier: string): string {
@@ -1732,6 +1972,9 @@ export class Comps {
     const role = event?.columnFilters['role'];
     if (role) {
       params['role'] = role;
+    }
+    if (this.showArchivedBuilds()) {
+      params['archived'] = 'true';
     }
     return params;
   }
@@ -1792,6 +2035,7 @@ export class Comps {
           limit: OPTIONS_LIMIT,
           sort: 'name',
           order: 'asc',
+          ...(this.showArchivedComps() ? { archived: 'true' } : {}),
         }),
       );
       this.comps.set(data.items);
@@ -1826,6 +2070,7 @@ export class Comps {
           limit: OPTIONS_LIMIT,
           sort: 'name',
           order: 'asc',
+          ...(this.showArchivedComps() ? { archived: 'true' } : {}),
         }),
       );
       this.compsLoadedPage = nextPage;

@@ -34,10 +34,11 @@ function render(slots: AbilitySlotView[], canManage: boolean) {
 describe('AbilityBar', () => {
   beforeEach(() => TestBed.configureTestingModule({ imports: [AbilityBar] }));
 
-  it('renders one picker per slot, and no more', () => {
+  it('renders one icon picker per slot, and no more', () => {
     const fixture = render([slot('active', 1, 'Q'), slot('active', 2, 'W')], true);
 
-    expect(fixture.nativeElement.querySelectorAll('select')).toHaveLength(2);
+    expect(fixture.nativeElement.querySelectorAll('.ability-bar__choices')).toHaveLength(2);
+    expect(fixture.nativeElement.querySelectorAll('.ability-bar__choice')).toHaveLength(6);
   });
 
   it('renders nothing at all for an item with no ability slots', () => {
@@ -66,7 +67,7 @@ describe('AbilityBar', () => {
   it('offers no picker when the viewer cannot manage the build', () => {
     const fixture = render([slot('active', 1, 'Q', 'CLEAVE')], false);
 
-    expect(fixture.nativeElement.querySelector('select')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.ability-bar__choices')).toBeNull();
   });
 
   it('emits the slot that changed, and null when the choice is cleared', () => {
@@ -74,11 +75,9 @@ describe('AbilityBar', () => {
     const emitted: unknown[] = [];
     fixture.componentInstance.choiceChange.subscribe((change) => emitted.push(change));
 
-    const select: HTMLSelectElement = fixture.nativeElement.querySelector('select');
-    select.value = 'CLEAVE';
-    select.dispatchEvent(new Event('change'));
-    select.value = '';
-    select.dispatchEvent(new Event('change'));
+    const choices = fixture.nativeElement.querySelectorAll('.ability-bar__choice');
+    choices[2].click();
+    choices[0].click();
 
     expect(emitted).toEqual([
       { kind: 'active', index: 2, spellId: 'CLEAVE' },

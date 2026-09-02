@@ -18,6 +18,7 @@ const settings: GuildSettingsView = {
   discord_split_not_completed_tag_id: null,
   discord_split_lost_tag_id: null,
   discord_event_voice_category_id: "123456789012345678",
+  default_split_fee: "20.00",
 };
 
 test("SettingsService exposes the configured event voice category", async () => {

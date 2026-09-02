@@ -20,7 +20,8 @@ use crate::modules::intel::models::{
     UpdateScoutRequest,
 };
 use crate::modules::intel::report::{
-    DateRange, GuildReport, ReportLeaderboards, ReportParams, build_guild_report,
+    DateRange, GuildReport, PlayerReport, ReportLeaderboards, ReportParams, build_guild_report,
+    build_player_report,
 };
 use crate::modules::intel::service::IntelService;
 use crate::pagination::{PaginatedScoutedComp, PaginationParams};
@@ -105,6 +106,7 @@ pub fn router() -> Router {
         .route("/leaderboards", get(leaderboards))
         .route("/report", get(guild_report))
         .route("/report/refresh", post(refresh_guild_report))
+        .route("/players/{user_id}", get(player_report))
 }
 
 /// Builds the friendly-guild classifier from configuration.
@@ -579,4 +581,46 @@ pub async fn leaderboards(
         leaderboards.siphoned.clear();
     }
     Ok(Json(ApiResponse::new(leaderboards)))
+}
+
+/// One member's combat record for a window: their roster row plus a weekly
+/// breakdown and their most recent fights.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` without `intel.report.view` (the same gate as
+/// `/report`, since this surfaces the same per-member silver and split
+/// figures one row at a time), `400` for an invalid window, or `404` if
+/// `user_id` does not exist.
+#[utoipa::path(
+    get,
+    path = "/api/intel/players/{user_id}",
+    tag = "intel",
+    summary = "Get one member's intel report",
+    description = "The guild report's per-member row, expanded with a weekly breakdown \
+        (fights, win rate, kills, deaths, kill fame, silver lost) and this member's most \
+        recent fights. Defaults to the last 30 days, not served from the guild report's cache.",
+    security(("session_cookie" = ["intel.report.view"])),
+    params(("user_id" = i64, Path, description = "App user id"), ReportParams),
+    responses(
+        (status = 200, description = "Player report computed", body = PlayerReport),
+        (status = 400, description = "Invalid window", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks intel.report.view", body = ProblemDetails),
+        (status = 404, description = "No such user", body = ProblemDetails)
+    )
+)]
+pub async fn player_report(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Path(user_id): Path<i64>,
+    Query(params): Query<ReportParams>,
+) -> Result<Json<ApiResponse<PlayerReport>>, AppError> {
+    user.require(&perms, Permission::IntelReportView).await?;
+    let range = DateRange::resolve(params.from.as_deref(), params.to.as_deref())?;
+    let report = build_player_report(&db, &guild_context(&cfg), user_id, range)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("no user with id {user_id}")))?;
+    Ok(Json(ApiResponse::new(report)))
 }

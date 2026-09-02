@@ -5374,9 +5374,9 @@
       ],
       "3": [
         {
-          "id": "SPEEDARCHER_KITE",
-          "name": "Enchanted Quiver",
-          "cooldown": "0",
+          "id": "SKILLSHOT_STUN",
+          "name": "Magic Arrow",
+          "cooldown": "10",
           "energy": "11"
         }
       ]
@@ -5465,10 +5465,10 @@
       ],
       "3": [
         {
-          "id": "SPEEDARCHER_KITE",
-          "name": "Enchanted Quiver",
-          "cooldown": "0",
-          "energy": "11"
+          "id": "ARROWRAIN",
+          "name": "Rain of Arrows",
+          "cooldown": "15",
+          "energy": "17"
         }
       ]
     },
@@ -5556,10 +5556,10 @@
       ],
       "3": [
         {
-          "id": "SPEEDARCHER_KITE",
-          "name": "Enchanted Quiver",
-          "cooldown": "0",
-          "energy": "11"
+          "id": "UNDEADARROWS",
+          "name": "Undead Arrows",
+          "cooldown": "10",
+          "energy": "14"
         }
       ]
     },
@@ -5647,10 +5647,10 @@
       ],
       "3": [
         {
-          "id": "SPEEDARCHER_KITE",
-          "name": "Enchanted Quiver",
-          "cooldown": "0",
-          "energy": "11"
+          "id": "HELL_ARROW",
+          "name": "Demon Arrow",
+          "cooldown": "25",
+          "energy": "18"
         }
       ]
     },
@@ -5738,10 +5738,10 @@
       ],
       "3": [
         {
-          "id": "SPEEDARCHER_KITE",
-          "name": "Enchanted Quiver",
-          "cooldown": "0",
-          "energy": "11"
+          "id": "LIGHTNING_ARROW",
+          "name": "Raging Storm",
+          "cooldown": "30",
+          "energy": "19"
         }
       ]
     },
@@ -5829,10 +5829,10 @@
       ],
       "3": [
         {
-          "id": "SPEEDARCHER_KITE",
-          "name": "Enchanted Quiver",
+          "id": "HAWK_SHOT_MULTI1",
+          "name": "Lucent Hawk",
           "cooldown": "0",
-          "energy": "11"
+          "energy": "6"
         }
       ]
     },
@@ -5920,10 +5920,10 @@
       ],
       "3": [
         {
-          "id": "SPEEDARCHER_KITE",
-          "name": "Enchanted Quiver",
-          "cooldown": "0",
-          "energy": "11"
+          "id": "AIR_RAID",
+          "name": "Sky's Fury",
+          "cooldown": "25",
+          "energy": "18"
         }
       ]
     },
@@ -6102,10 +6102,10 @@
       ],
       "3": [
         {
-          "id": "SNIPESHOT_CROSSBOW",
-          "name": "Snipe Shot",
-          "cooldown": "15",
-          "energy": "16"
+          "id": "CROSSBOW_ARMORPIERCER",
+          "name": "Sweeping Bolt",
+          "cooldown": "20",
+          "energy": "15"
         }
       ]
     },
@@ -6193,10 +6193,10 @@
       ],
       "3": [
         {
-          "id": "SNIPESHOT_CROSSBOW",
-          "name": "Snipe Shot",
+          "id": "EXPLODING_SHOT",
+          "name": "Exploding Shot",
           "cooldown": "15",
-          "energy": "16"
+          "energy": "15"
         }
       ]
     },
@@ -6284,10 +6284,10 @@
       ],
       "3": [
         {
-          "id": "SNIPESHOT_CROSSBOW",
-          "name": "Snipe Shot",
-          "cooldown": "15",
-          "energy": "16"
+          "id": "GROUNDMINE",
+          "name": "Explosive Mine",
+          "cooldown": "20",
+          "energy": "14"
         }
       ]
     },
@@ -6375,10 +6375,10 @@
       ],
       "3": [
         {
-          "id": "SNIPESHOT_CROSSBOW",
-          "name": "Snipe Shot",
-          "cooldown": "15",
-          "energy": "16"
+          "id": "DUAL_RAPIDFIRE",
+          "name": "Deathward Climax",
+          "cooldown": "20",
+          "energy": "13"
         }
       ]
     },
@@ -6466,10 +6466,10 @@
       ],
       "3": [
         {
-          "id": "SNIPESHOT_CROSSBOW",
-          "name": "Snipe Shot",
-          "cooldown": "15",
-          "energy": "16"
+          "id": "CROSSBOW_CONE_ULTIMATE",
+          "name": "Vicious Barrage",
+          "cooldown": "30",
+          "energy": "21"
         }
       ]
     },
@@ -6557,10 +6557,10 @@
       ],
       "3": [
         {
-          "id": "SNIPESHOT_CROSSBOW",
-          "name": "Snipe Shot",
-          "cooldown": "15",
-          "energy": "16"
+          "id": "CROSSBOW_DIVINE_SHOT",
+          "name": "Divine Engine",
+          "cooldown": "35",
+          "energy": "29"
         }
       ]
     },
@@ -6648,10 +6648,10 @@
       ],
       "3": [
         {
-          "id": "SNIPESHOT_CROSSBOW",
-          "name": "Snipe Shot",
-          "cooldown": "15",
-          "energy": "16"
+          "id": "CRYSTALXBOW",
+          "name": "Flickershots",
+          "cooldown": "10",
+          "energy": "6"
         }
       ]
     },
@@ -6842,10 +6842,10 @@
       ],
       "3": [
         {
-          "id": "DEATHCURSE2",
-          "name": "Death Curse",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "AREAOFDECAY",
+          "name": "Area of Decay",
+          "cooldown": "20",
+          "energy": "17"
         }
       ]
     },
@@ -6939,10 +6939,10 @@
       ],
       "3": [
         {
-          "id": "DEATHCURSE2",
-          "name": "Death Curse",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "CURSED_WALL",
+          "name": "Anguished Soul",
+          "cooldown": "25",
+          "energy": "19"
         }
       ]
     },
@@ -7036,10 +7036,10 @@
       ],
       "3": [
         {
-          "id": "DEATHCURSE2",
-          "name": "Death Curse",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "ENFEEBLEBLADES",
+          "name": "Enfeeble Blades",
+          "cooldown": "63",
+          "energy": "25"
         }
       ]
     },
@@ -7133,10 +7133,10 @@
       ],
       "3": [
         {
-          "id": "DEATHCURSE2",
-          "name": "Death Curse",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "SKULLCURSE",
+          "name": "Haunting Screams",
+          "cooldown": "30",
+          "energy": "20"
         }
       ]
     },
@@ -7230,10 +7230,10 @@
       ],
       "3": [
         {
-          "id": "DEATHCURSE2",
-          "name": "Death Curse",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "CURSEULTIMATE",
+          "name": "Cataclysm",
+          "cooldown": "30",
+          "energy": "31"
         }
       ]
     },
@@ -7327,10 +7327,10 @@
       ],
       "3": [
         {
-          "id": "DEATHCURSE2",
-          "name": "Death Curse",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "DYNAMIC_CURSE",
+          "name": "Inner Shadow",
+          "cooldown": "30",
+          "energy": "21"
         }
       ]
     },
@@ -7424,10 +7424,10 @@
       ],
       "3": [
         {
-          "id": "DEATHCURSE2",
-          "name": "Death Curse",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "CURSE_SKELETON_BARF_FDHR",
+          "name": "Plaguebringer",
+          "cooldown": "30",
+          "energy": "18"
         }
       ]
     },
@@ -7618,10 +7618,10 @@
       ],
       "3": [
         {
-          "id": "PYROBLAST_SKILLSHOT",
-          "name": "Pyroblast",
+          "id": "FLAMEPILLAR",
+          "name": "Flame Pillar",
           "cooldown": "15",
-          "energy": "15"
+          "energy": "9"
         }
       ]
     },
@@ -7715,10 +7715,10 @@
       ],
       "3": [
         {
-          "id": "PYROBLAST_SKILLSHOT",
-          "name": "Pyroblast",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "HUMAN_TORCH",
+          "name": "Combustion",
+          "cooldown": "20",
+          "energy": "12"
         }
       ]
     },
@@ -7812,10 +7812,10 @@
       ],
       "3": [
         {
-          "id": "PYROBLAST_SKILLSHOT",
-          "name": "Pyroblast",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "MAGMASPHERE",
+          "name": "Magma Sphere",
+          "cooldown": "30",
+          "energy": "20"
         }
       ]
     },
@@ -7909,10 +7909,10 @@
       ],
       "3": [
         {
-          "id": "PYROBLAST_SKILLSHOT",
-          "name": "Pyroblast",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "METEOR",
+          "name": "Meteor",
+          "cooldown": "30",
+          "energy": "24"
         }
       ]
     },
@@ -8006,10 +8006,10 @@
       ],
       "3": [
         {
-          "id": "PYROBLAST_SKILLSHOT",
-          "name": "Pyroblast",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "FLAMETORNADO",
+          "name": "Flame Tornado",
+          "cooldown": "35",
+          "energy": "26"
         }
       ]
     },
@@ -8103,10 +8103,10 @@
       ],
       "3": [
         {
-          "id": "PYROBLAST_SKILLSHOT",
-          "name": "Pyroblast",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "FIREPHOENIX",
+          "name": "Flaming Phoenix",
+          "cooldown": "30",
+          "energy": "21"
         }
       ]
     },
@@ -8200,10 +8200,10 @@
       ],
       "3": [
         {
-          "id": "PYROBLAST_SKILLSHOT",
-          "name": "Pyroblast",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "FLAMEDASH",
+          "name": "Spontaneous Combustion",
+          "cooldown": "40",
+          "energy": "19"
         }
       ]
     },
@@ -8394,10 +8394,10 @@
       ],
       "3": [
         {
-          "id": "FREEZINGWIND",
-          "name": "Freezing Wind",
-          "cooldown": "18",
-          "energy": "16"
+          "id": "HAIL_MULTI_1",
+          "name": "Hail",
+          "cooldown": "1",
+          "energy": "15"
         }
       ]
     },
@@ -8491,10 +8491,10 @@
       ],
       "3": [
         {
-          "id": "FREEZINGWIND",
-          "name": "Freezing Wind",
-          "cooldown": "18",
-          "energy": "16"
+          "id": "ICESTORM2",
+          "name": "Ice Storm",
+          "cooldown": "30",
+          "energy": "23"
         }
       ]
     },
@@ -8588,10 +8588,10 @@
       ],
       "3": [
         {
-          "id": "FREEZINGWIND",
-          "name": "Freezing Wind",
-          "cooldown": "18",
-          "energy": "16"
+          "id": "ICEROCK_EXPLODE",
+          "name": "Avalanche",
+          "cooldown": "20",
+          "energy": "15"
         }
       ]
     },
@@ -8685,10 +8685,10 @@
       ],
       "3": [
         {
-          "id": "FREEZINGWIND",
-          "name": "Freezing Wind",
-          "cooldown": "18",
-          "energy": "16"
+          "id": "GLACIALFIELD",
+          "name": "Frozen Hell",
+          "cooldown": "30",
+          "energy": "20"
         }
       ]
     },
@@ -8782,10 +8782,10 @@
       ],
       "3": [
         {
-          "id": "FREEZINGWIND",
-          "name": "Freezing Wind",
-          "cooldown": "18",
-          "energy": "16"
+          "id": "FROST_ULTIMATE",
+          "name": "Ice Crystal",
+          "cooldown": "30",
+          "energy": "21"
         }
       ]
     },
@@ -8879,10 +8879,10 @@
       ],
       "3": [
         {
-          "id": "FREEZINGWIND",
-          "name": "Freezing Wind",
-          "cooldown": "18",
-          "energy": "16"
+          "id": "FROZEN_CRYSTAL",
+          "name": "Glacial Prison",
+          "cooldown": "25",
+          "energy": "22"
         }
       ]
     },
@@ -8976,10 +8976,10 @@
       ],
       "3": [
         {
-          "id": "FREEZINGWIND",
-          "name": "Freezing Wind",
-          "cooldown": "18",
-          "energy": "16"
+          "id": "FROST_TARGETED_CHANNEL",
+          "name": "Arctic Volley",
+          "cooldown": "12",
+          "energy": "3"
         }
       ]
     },
@@ -9170,10 +9170,10 @@
       ],
       "3": [
         {
-          "id": "ARCANEORB2",
-          "name": "Arcane Orb",
-          "cooldown": "20",
-          "energy": "15"
+          "id": "TIME_FREEZE",
+          "name": "Time Freeze",
+          "cooldown": "72",
+          "energy": "27"
         }
       ]
     },
@@ -9267,10 +9267,10 @@
       ],
       "3": [
         {
-          "id": "ARCANEORB2",
-          "name": "Arcane Orb",
-          "cooldown": "20",
-          "energy": "15"
+          "id": "INVULNERABILITY",
+          "name": "Protective Beam",
+          "cooldown": "30",
+          "energy": "0"
         }
       ]
     },
@@ -9364,10 +9364,10 @@
       ],
       "3": [
         {
-          "id": "ARCANEORB2",
-          "name": "Arcane Orb",
+          "id": "BLACKHOLE",
+          "name": "Black Hole",
           "cooldown": "20",
-          "energy": "15"
+          "energy": "18"
         }
       ]
     },
@@ -9461,10 +9461,10 @@
       ],
       "3": [
         {
-          "id": "ARCANEORB2",
-          "name": "Arcane Orb",
-          "cooldown": "20",
-          "energy": "15"
+          "id": "ARCANECORRIDOR",
+          "name": "Time Corridor",
+          "cooldown": "44",
+          "energy": "0.15"
         }
       ]
     },
@@ -9558,10 +9558,10 @@
       ],
       "3": [
         {
-          "id": "ARCANEORB2",
-          "name": "Arcane Orb",
-          "cooldown": "20",
-          "energy": "15"
+          "id": "VOID",
+          "name": "The Void",
+          "cooldown": "62",
+          "energy": "0.2"
         }
       ]
     },
@@ -9655,10 +9655,10 @@
       ],
       "3": [
         {
-          "id": "ARCANEORB2",
-          "name": "Arcane Orb",
-          "cooldown": "20",
-          "energy": "15"
+          "id": "ARCANE_METEOR",
+          "name": "Dark Sphere",
+          "cooldown": "38",
+          "energy": "0.16"
         }
       ]
     },
@@ -9752,10 +9752,10 @@
       ],
       "3": [
         {
-          "id": "ARCANEORB2",
-          "name": "Arcane Orb",
-          "cooldown": "20",
-          "energy": "15"
+          "id": "STARFALL_DOT",
+          "name": "Starfall",
+          "cooldown": "30",
+          "energy": "9.75"
         }
       ]
     },
@@ -9946,10 +9946,10 @@
       ],
       "3": [
         {
-          "id": "HOLYDESPERATEPRAYER2",
-          "name": "Desperate Prayer",
-          "cooldown": "10",
-          "energy": "15"
+          "id": "HOLYEXPLOSION",
+          "name": "Holy Explosion",
+          "cooldown": "18",
+          "energy": "0"
         }
       ]
     },
@@ -10043,10 +10043,10 @@
       ],
       "3": [
         {
-          "id": "HOLYDESPERATEPRAYER2",
-          "name": "Desperate Prayer",
-          "cooldown": "10",
-          "energy": "15"
+          "id": "HOLYSHIELD",
+          "name": "Divine Protection",
+          "cooldown": "0",
+          "energy": "9"
         }
       ]
     },
@@ -10140,10 +10140,10 @@
       ],
       "3": [
         {
-          "id": "HOLYDESPERATEPRAYER2",
-          "name": "Desperate Prayer",
-          "cooldown": "10",
-          "energy": "15"
+          "id": "HOLYTOUCH",
+          "name": "Holy Touch",
+          "cooldown": "20",
+          "energy": "16"
         }
       ]
     },
@@ -10237,10 +10237,10 @@
       ],
       "3": [
         {
-          "id": "HOLYDESPERATEPRAYER2",
-          "name": "Desperate Prayer",
-          "cooldown": "10",
-          "energy": "15"
+          "id": "HOLY_ULTIMATE",
+          "name": "Salvation",
+          "cooldown": "30",
+          "energy": "18"
         }
       ]
     },
@@ -10334,10 +10334,10 @@
       ],
       "3": [
         {
-          "id": "HOLYDESPERATEPRAYER2",
-          "name": "Desperate Prayer",
-          "cooldown": "10",
-          "energy": "15"
+          "id": "CELESTIAL_SPHERE",
+          "name": "Celestial Sphere",
+          "cooldown": "25",
+          "energy": "16"
         }
       ]
     },
@@ -10431,10 +10431,10 @@
       ],
       "3": [
         {
-          "id": "HOLYDESPERATEPRAYER2",
-          "name": "Desperate Prayer",
-          "cooldown": "10",
-          "energy": "15"
+          "id": "DIVINE_JUMP",
+          "name": "Divine Intervention",
+          "cooldown": "30",
+          "energy": "18"
         }
       ]
     },
@@ -10528,10 +10528,10 @@
       ],
       "3": [
         {
-          "id": "HOLYDESPERATEPRAYER2",
-          "name": "Desperate Prayer",
-          "cooldown": "10",
-          "energy": "15"
+          "id": "HOLY_DISPEL",
+          "name": "Sanctify",
+          "cooldown": "65",
+          "energy": "21"
         }
       ]
     },
@@ -10722,10 +10722,10 @@
       ],
       "3": [
         {
-          "id": "CIRCLEOFLIFE",
-          "name": "Circle of Life",
-          "cooldown": "18",
-          "energy": "15"
+          "id": "BRIEROFLIFE",
+          "name": "Living Armor",
+          "cooldown": "15",
+          "energy": "16"
         }
       ]
     },
@@ -10819,10 +10819,10 @@
       ],
       "3": [
         {
-          "id": "CIRCLEOFLIFE",
-          "name": "Circle of Life",
-          "cooldown": "18",
-          "energy": "15"
+          "id": "WELLOFLIFE2",
+          "name": "Well Of Life",
+          "cooldown": "20",
+          "energy": "18"
         }
       ]
     },
@@ -10916,10 +10916,10 @@
       ],
       "3": [
         {
-          "id": "CIRCLEOFLIFE",
-          "name": "Circle of Life",
-          "cooldown": "18",
-          "energy": "15"
+          "id": "NATURE_ULTIMATE_SINGLE",
+          "name": "Spiritual Seed",
+          "cooldown": "20",
+          "energy": "9"
         }
       ]
     },
@@ -11013,9 +11013,9 @@
       ],
       "3": [
         {
-          "id": "CIRCLEOFLIFE",
-          "name": "Circle of Life",
-          "cooldown": "18",
+          "id": "ROTTENVINES",
+          "name": "Elevated Nature",
+          "cooldown": "25",
           "energy": "15"
         }
       ]
@@ -11110,10 +11110,10 @@
       ],
       "3": [
         {
-          "id": "CIRCLEOFLIFE",
-          "name": "Circle of Life",
-          "cooldown": "18",
-          "energy": "15"
+          "id": "SPIRITANIMAL",
+          "name": "Spirit Animal",
+          "cooldown": "30",
+          "energy": "18"
         }
       ]
     },
@@ -11207,10 +11207,10 @@
       ],
       "3": [
         {
-          "id": "CIRCLEOFLIFE",
-          "name": "Circle of Life",
-          "cooldown": "18",
-          "energy": "15"
+          "id": "SOUL_LINK",
+          "name": "Soul Link",
+          "cooldown": "0",
+          "energy": "0"
         }
       ]
     },
@@ -11304,10 +11304,10 @@
       ],
       "3": [
         {
-          "id": "CIRCLEOFLIFE",
-          "name": "Circle of Life",
-          "cooldown": "18",
-          "energy": "15"
+          "id": "DUAL_NATURE",
+          "name": "Dual Nature",
+          "cooldown": "30",
+          "energy": "18"
         }
       ]
     },
@@ -11498,10 +11498,10 @@
       ],
       "3": [
         {
-          "id": "BLOODTHIRSTYBLADE",
-          "name": "Bloodthirsty Blade",
-          "cooldown": "20",
-          "energy": "14"
+          "id": "EXECUTEDAGGER",
+          "name": "Slit Throat",
+          "cooldown": "15",
+          "energy": "11"
         }
       ]
     },
@@ -11595,10 +11595,10 @@
       ],
       "3": [
         {
-          "id": "BLOODTHIRSTYBLADE",
-          "name": "Bloodthirsty Blade",
-          "cooldown": "20",
-          "energy": "14"
+          "id": "DISEMBOWEL",
+          "name": "Disembowel",
+          "cooldown": "25",
+          "energy": "15"
         }
       ]
     },
@@ -11692,10 +11692,10 @@
       ],
       "3": [
         {
-          "id": "BLOODTHIRSTYBLADE",
-          "name": "Bloodthirsty Blade",
-          "cooldown": "20",
-          "energy": "14"
+          "id": "RAPIERSTAB",
+          "name": "Lunging Stabs",
+          "cooldown": "35",
+          "energy": "17"
         }
       ]
     },
@@ -11789,10 +11789,10 @@
       ],
       "3": [
         {
-          "id": "BLOODTHIRSTYBLADE",
-          "name": "Bloodthirsty Blade",
-          "cooldown": "20",
-          "energy": "14"
+          "id": "BLOOD_BLADE",
+          "name": "Blood Ritual",
+          "cooldown": "0",
+          "energy": "5"
         }
       ]
     },
@@ -11886,10 +11886,10 @@
       ],
       "3": [
         {
-          "id": "BLOODTHIRSTYBLADE",
-          "name": "Bloodthirsty Blade",
-          "cooldown": "20",
-          "energy": "14"
+          "id": "GHOSTSTRIKE",
+          "name": "Ghost Strike",
+          "cooldown": "25",
+          "energy": "10"
         }
       ]
     },
@@ -11983,10 +11983,10 @@
       ],
       "3": [
         {
-          "id": "BLOODTHIRSTYBLADE",
-          "name": "Bloodthirsty Blade",
+          "id": "BACK_SLASH",
+          "name": "Merciless Finish",
           "cooldown": "20",
-          "energy": "14"
+          "energy": "15"
         }
       ]
     },
@@ -12080,10 +12080,10 @@
       ],
       "3": [
         {
-          "id": "BLOODTHIRSTYBLADE",
-          "name": "Bloodthirsty Blade",
-          "cooldown": "20",
-          "energy": "14"
+          "id": "CRYSTAL_DAGGER_BLADE_RING",
+          "name": "Ring of Death",
+          "cooldown": "1",
+          "energy": "10"
         }
       ]
     },
@@ -12274,10 +12274,10 @@
       ],
       "3": [
         {
-          "id": "DASHDMG",
-          "name": "Reckless Charge",
-          "cooldown": "20",
-          "energy": "18"
+          "id": "HALBERDSMASH",
+          "name": "Rooting Smash",
+          "cooldown": "15",
+          "energy": "14"
         }
       ]
     },
@@ -12371,10 +12371,10 @@
       ],
       "3": [
         {
-          "id": "DASHDMG",
-          "name": "Reckless Charge",
-          "cooldown": "20",
-          "energy": "18"
+          "id": "SHOVEL",
+          "name": "Fling",
+          "cooldown": "18",
+          "energy": "15"
         }
       ]
     },
@@ -12468,8 +12468,8 @@
       ],
       "3": [
         {
-          "id": "DASHDMG",
-          "name": "Reckless Charge",
+          "id": "SPEARTHROW",
+          "name": "Spear Throw",
           "cooldown": "20",
           "energy": "18"
         }
@@ -12565,10 +12565,10 @@
       ],
       "3": [
         {
-          "id": "DASHDMG",
-          "name": "Reckless Charge",
-          "cooldown": "20",
-          "energy": "18"
+          "id": "TAINTED_STEEL",
+          "name": "Corrupting Steel",
+          "cooldown": "30",
+          "energy": "20"
         }
       ]
     },
@@ -12662,10 +12662,10 @@
       ],
       "3": [
         {
-          "id": "DASHDMG",
-          "name": "Reckless Charge",
-          "cooldown": "20",
-          "energy": "18"
+          "id": "TRIDENTTHROW",
+          "name": "Spectral Trident",
+          "cooldown": "30",
+          "energy": "21"
         }
       ]
     },
@@ -12759,10 +12759,10 @@
       ],
       "3": [
         {
-          "id": "DASHDMG",
-          "name": "Reckless Charge",
-          "cooldown": "20",
-          "energy": "18"
+          "id": "LANCE_CHARGE",
+          "name": "Breakthrough",
+          "cooldown": "25",
+          "energy": "19"
         }
       ]
     },
@@ -12856,10 +12856,10 @@
       ],
       "3": [
         {
-          "id": "DASHDMG",
-          "name": "Reckless Charge",
-          "cooldown": "20",
-          "energy": "18"
+          "id": "SPEAR_AOE_FINISHER",
+          "name": "Razor's Edge",
+          "cooldown": "30",
+          "energy": "20"
         }
       ]
     },
@@ -13050,10 +13050,10 @@
       ],
       "3": [
         {
-          "id": "AXETHROW",
-          "name": "Blood Bandit",
-          "cooldown": "10",
-          "energy": "12"
+          "id": "AXEWHIRLWIND2",
+          "name": "Whirlwind",
+          "cooldown": "25",
+          "energy": "0"
         }
       ]
     },
@@ -13147,10 +13147,10 @@
       ],
       "3": [
         {
-          "id": "AXETHROW",
-          "name": "Blood Bandit",
-          "cooldown": "10",
-          "energy": "12"
+          "id": "RENDINGSWING",
+          "name": "Tear Apart",
+          "cooldown": "15",
+          "energy": "18"
         }
       ]
     },
@@ -13244,10 +13244,10 @@
       ],
       "3": [
         {
-          "id": "AXETHROW",
-          "name": "Blood Bandit",
-          "cooldown": "10",
-          "energy": "12"
+          "id": "SHOCKWAVE",
+          "name": "Morgana Raven",
+          "cooldown": "15",
+          "energy": "17"
         }
       ]
     },
@@ -13341,10 +13341,10 @@
       ],
       "3": [
         {
-          "id": "AXETHROW",
-          "name": "Blood Bandit",
-          "cooldown": "10",
-          "energy": "12"
+          "id": "SCYTHESWING",
+          "name": "Bloody Reap",
+          "cooldown": "20",
+          "energy": "18"
         }
       ]
     },
@@ -13438,10 +13438,10 @@
       ],
       "3": [
         {
-          "id": "AXETHROW",
-          "name": "Blood Bandit",
-          "cooldown": "10",
-          "energy": "12"
+          "id": "DUALAXE_CRAWLER",
+          "name": "Razor Cut",
+          "cooldown": "20",
+          "energy": "16"
         }
       ]
     },
@@ -13535,10 +13535,10 @@
       ],
       "3": [
         {
-          "id": "AXETHROW",
-          "name": "Blood Bandit",
-          "cooldown": "10",
-          "energy": "12"
+          "id": "LETHAL_CLEAVER",
+          "name": "Aftershock",
+          "cooldown": "25",
+          "energy": "20"
         }
       ]
     },
@@ -13632,10 +13632,10 @@
       ],
       "3": [
         {
-          "id": "AXETHROW",
-          "name": "Blood Bandit",
-          "cooldown": "10",
-          "energy": "12"
+          "id": "CRYSTAL_SCYTHE_DASH_ZONE",
+          "name": "Relentless Assault",
+          "cooldown": "3",
+          "energy": "16"
         }
       ]
     },
@@ -13826,10 +13826,10 @@
       ],
       "3": [
         {
-          "id": "MIGHTYBLOW",
-          "name": "Mighty Blow",
-          "cooldown": "12",
-          "energy": "11"
+          "id": "CLAYMORECHARGE",
+          "name": "Charge",
+          "cooldown": "20",
+          "energy": "16"
         }
       ]
     },
@@ -13923,10 +13923,10 @@
       ],
       "3": [
         {
-          "id": "MIGHTYBLOW",
-          "name": "Mighty Blow",
-          "cooldown": "12",
-          "energy": "11"
+          "id": "SPINATTACK",
+          "name": "Spinning Blades",
+          "cooldown": "15",
+          "energy": "17"
         }
       ]
     },
@@ -14020,10 +14020,10 @@
       ],
       "3": [
         {
-          "id": "MIGHTYBLOW",
-          "name": "Mighty Blow",
-          "cooldown": "12",
-          "energy": "11"
+          "id": "MIGHTYSWING",
+          "name": "Crescent Slash",
+          "cooldown": "15",
+          "energy": "14"
         }
       ]
     },
@@ -14117,10 +14117,10 @@
       ],
       "3": [
         {
-          "id": "MIGHTYBLOW",
-          "name": "Mighty Blow",
-          "cooldown": "12",
-          "energy": "11"
+          "id": "CLAYMORESLASH",
+          "name": "Fearless Strike",
+          "cooldown": "25",
+          "energy": "16"
         }
       ]
     },
@@ -14214,10 +14214,10 @@
       ],
       "3": [
         {
-          "id": "MIGHTYBLOW",
-          "name": "Mighty Blow",
-          "cooldown": "12",
-          "energy": "11"
+          "id": "BLADE_AREA",
+          "name": "Soulless Stream",
+          "cooldown": "30",
+          "energy": "22"
         }
       ]
     },
@@ -14311,10 +14311,10 @@
       ],
       "3": [
         {
-          "id": "MIGHTYBLOW",
-          "name": "Mighty Blow",
-          "cooldown": "12",
-          "energy": "11"
+          "id": "MAJESTIC_SMASH",
+          "name": "Majestic Smash",
+          "cooldown": "20",
+          "energy": "19"
         }
       ]
     },
@@ -14408,10 +14408,10 @@
       ],
       "3": [
         {
-          "id": "MIGHTYBLOW",
-          "name": "Mighty Blow",
-          "cooldown": "12",
-          "energy": "11"
+          "id": "SWORD_BERSERK_RUN_RE",
+          "name": "Limitbreaker",
+          "cooldown": "0",
+          "energy": "6"
         }
       ]
     },
@@ -14602,10 +14602,10 @@
       ],
       "3": [
         {
-          "id": "VAULT_ATTACK",
-          "name": "Vault Leap",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "QSWHIRLWIND",
+          "name": "Hurricane",
+          "cooldown": "29",
+          "energy": "0.1"
         }
       ]
     },
@@ -14699,10 +14699,10 @@
       ],
       "3": [
         {
-          "id": "VAULT_ATTACK",
-          "name": "Vault Leap",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "DASH_KNOCKBACK",
+          "name": "Soaring Swipe",
+          "cooldown": "25",
+          "energy": "16"
         }
       ]
     },
@@ -14796,10 +14796,10 @@
       ],
       "3": [
         {
-          "id": "VAULT_ATTACK",
-          "name": "Vault Leap",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "COMBATSTAFF_SLASH",
+          "name": "Fatal Blade",
+          "cooldown": "26.8",
+          "energy": "14"
         }
       ]
     },
@@ -14893,10 +14893,10 @@
       ],
       "3": [
         {
-          "id": "VAULT_ATTACK",
-          "name": "Vault Leap",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "TORNADO",
+          "name": "Tornado",
+          "cooldown": "30",
+          "energy": "0.15"
         }
       ]
     },
@@ -14990,10 +14990,10 @@
       ],
       "3": [
         {
-          "id": "VAULT_ATTACK",
-          "name": "Vault Leap",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "QS_SLOWROPE",
+          "name": "Mystic Rocks",
+          "cooldown": "37.5",
+          "energy": "0.20"
         }
       ]
     },
@@ -15087,10 +15087,10 @@
       ],
       "3": [
         {
-          "id": "VAULT_ATTACK",
-          "name": "Vault Leap",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "SOULSHAKER",
+          "name": "Soul Shaker",
+          "cooldown": "20",
+          "energy": "12"
         }
       ]
     },
@@ -15184,10 +15184,10 @@
       ],
       "3": [
         {
-          "id": "VAULT_ATTACK",
-          "name": "Vault Leap",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "QS_CRYSTAL_COMBO",
+          "name": "Phantom Twin",
+          "cooldown": "1",
+          "energy": "5"
         }
       ]
     },
@@ -15378,10 +15378,10 @@
       ],
       "3": [
         {
-          "id": "HAMMERWHIRLWIND2",
-          "name": "Earth Shatter",
+          "id": "GROUNDBREAKER2",
+          "name": "Groundbreaker",
           "cooldown": "15",
-          "energy": "15"
+          "energy": "16"
         }
       ]
     },
@@ -15475,10 +15475,10 @@
       ],
       "3": [
         {
-          "id": "HAMMERWHIRLWIND2",
-          "name": "Earth Shatter",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "HAMMERTACKLE",
+          "name": "Tackle",
+          "cooldown": "20",
+          "energy": "16"
         }
       ]
     },
@@ -15572,9 +15572,9 @@
       ],
       "3": [
         {
-          "id": "HAMMERWHIRLWIND2",
-          "name": "Earth Shatter",
-          "cooldown": "15",
+          "id": "UNDEADHAND",
+          "name": "Grasp of the Undead",
+          "cooldown": "14",
           "energy": "15"
         }
       ]
@@ -15669,10 +15669,10 @@
       ],
       "3": [
         {
-          "id": "HAMMERWHIRLWIND2",
-          "name": "Earth Shatter",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "GIANTSTEPS",
+          "name": "Giant Steps",
+          "cooldown": "30",
+          "energy": "20"
         }
       ]
     },
@@ -15766,10 +15766,10 @@
       ],
       "3": [
         {
-          "id": "HAMMERWHIRLWIND2",
-          "name": "Earth Shatter",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "RAM_CHARGE",
+          "name": "Ground Pound",
+          "cooldown": "30",
+          "energy": "23"
         }
       ]
     },
@@ -15863,10 +15863,10 @@
       ],
       "3": [
         {
-          "id": "HAMMERWHIRLWIND2",
-          "name": "Earth Shatter",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "SPINNING_SMASH",
+          "name": "Onslaught",
+          "cooldown": "30",
+          "energy": "21"
         }
       ]
     },
@@ -15960,10 +15960,10 @@
       ],
       "3": [
         {
-          "id": "HAMMERWHIRLWIND2",
-          "name": "Earth Shatter",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "CRYSTALWAVE",
+          "name": "Hyperstatic",
+          "cooldown": "25",
+          "energy": "17"
         }
       ]
     },
@@ -16142,10 +16142,10 @@
       ],
       "3": [
         {
-          "id": "MACELEAP",
-          "name": "Deep Leap",
-          "cooldown": "25",
-          "energy": "16"
+          "id": "SHRIEKMACE",
+          "name": "Battle Howl",
+          "cooldown": "20",
+          "energy": "12"
         }
       ]
     },
@@ -16233,10 +16233,10 @@
       ],
       "3": [
         {
-          "id": "MACELEAP",
-          "name": "Deep Leap",
-          "cooldown": "25",
-          "energy": "16"
+          "id": "ROOTFIELD",
+          "name": "Gravitas",
+          "cooldown": "0",
+          "energy": "0.1"
         }
       ]
     },
@@ -16324,10 +16324,10 @@
       ],
       "3": [
         {
-          "id": "MACELEAP",
-          "name": "Deep Leap",
-          "cooldown": "25",
-          "energy": "16"
+          "id": "PRIMALSLAM",
+          "name": "Force of Nature",
+          "cooldown": "27.5",
+          "energy": "10"
         }
       ]
     },
@@ -16415,10 +16415,10 @@
       ],
       "3": [
         {
-          "id": "MACELEAP",
-          "name": "Deep Leap",
-          "cooldown": "25",
-          "energy": "16"
+          "id": "SHRINKINGSMASH",
+          "name": "Shrinking Curse",
+          "cooldown": "30",
+          "energy": "22"
         }
       ]
     },
@@ -16506,10 +16506,10 @@
       ],
       "3": [
         {
-          "id": "MACELEAP",
-          "name": "Deep Leap",
+          "id": "VACUUMSLASH",
+          "name": "Vendetta",
           "cooldown": "25",
-          "energy": "16"
+          "energy": "17"
         }
       ]
     },
@@ -16597,10 +16597,10 @@
       ],
       "3": [
         {
-          "id": "MACELEAP",
-          "name": "Deep Leap",
-          "cooldown": "25",
-          "energy": "16"
+          "id": "BLESSED_MACES",
+          "name": "Blessed Aurora",
+          "cooldown": "30",
+          "energy": "20"
         }
       ]
     },
@@ -16688,10 +16688,10 @@
       ],
       "3": [
         {
-          "id": "MACELEAP",
-          "name": "Deep Leap",
-          "cooldown": "25",
-          "energy": "16"
+          "id": "MACE_CRYSTAL_FRAGMENT_STORM",
+          "name": "Eye of the Storm",
+          "cooldown": "1.5",
+          "energy": "5"
         }
       ]
     },
@@ -16882,21 +16882,15 @@
       ],
       "3": [
         {
-          "id": "BLAZING_GEYSER",
-          "name": "Blazing Geyser",
-          "cooldown": "15",
+          "id": "DIVEPUNCH_RISE",
+          "name": "Falcon Smash",
+          "cooldown": "0",
           "energy": "15"
         }
       ]
     },
     "passive": {
       "1": [
-        {
-          "id": "PASSIVE_KNUCKLE_BRAWLER",
-          "name": "Fatal Fury",
-          "cooldown": null,
-          "energy": null
-        },
         {
           "id": "PASSIVE_KNUCKLE_RAGE",
           "name": "Rage",
@@ -16912,6 +16906,12 @@
         {
           "id": "PASSIVE_KNUCKLE_COMBOBREAKER",
           "name": "Hard to Catch",
+          "cooldown": null,
+          "energy": null
+        },
+        {
+          "id": "PASSIVE_KNUCKLE_BRAWLER_SPEED",
+          "name": "Fatal Fury",
           "cooldown": null,
           "energy": null
         }
@@ -16979,10 +16979,10 @@
       ],
       "3": [
         {
-          "id": "BLAZING_GEYSER",
-          "name": "Blazing Geyser",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "IMPULSE_PUNCH",
+          "name": "Gravitational Collapse",
+          "cooldown": "20",
+          "energy": "20"
         }
       ]
     },
@@ -17076,10 +17076,10 @@
       ],
       "3": [
         {
-          "id": "BLAZING_GEYSER",
-          "name": "Blazing Geyser",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "PUMMELING_STRIKES",
+          "name": "Hundred Striking Fists",
+          "cooldown": "20",
+          "energy": "18"
         }
       ]
     },
@@ -17173,10 +17173,10 @@
       ],
       "3": [
         {
-          "id": "BLAZING_GEYSER",
-          "name": "Blazing Geyser",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "BOULDER_TOSS",
+          "name": "Infernal Boulder",
+          "cooldown": "20",
+          "energy": "18"
         }
       ]
     },
@@ -17270,21 +17270,15 @@
       ],
       "3": [
         {
-          "id": "BLAZING_GEYSER",
-          "name": "Blazing Geyser",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "GROWING_PUNCH",
+          "name": "Earth Crusher",
+          "cooldown": "30",
+          "energy": "23"
         }
       ]
     },
     "passive": {
       "1": [
-        {
-          "id": "PASSIVE_KNUCKLE_BRAWLER",
-          "name": "Fatal Fury",
-          "cooldown": null,
-          "energy": null
-        },
         {
           "id": "PASSIVE_KNUCKLE_RAGE",
           "name": "Rage",
@@ -17300,6 +17294,12 @@
         {
           "id": "PASSIVE_KNUCKLE_COMBOBREAKER",
           "name": "Hard to Catch",
+          "cooldown": null,
+          "energy": null
+        },
+        {
+          "id": "PASSIVE_KNUCKLE_BRAWLER_SPEED",
+          "name": "Fatal Fury",
           "cooldown": null,
           "energy": null
         }
@@ -17367,21 +17367,15 @@
       ],
       "3": [
         {
-          "id": "BLAZING_GEYSER",
-          "name": "Blazing Geyser",
-          "cooldown": "15",
-          "energy": "15"
+          "id": "TRIPLECOMBO_DIVEKICK",
+          "name": "Purifying Combination",
+          "cooldown": "25",
+          "energy": "7"
         }
       ]
     },
     "passive": {
       "1": [
-        {
-          "id": "PASSIVE_KNUCKLE_BRAWLER",
-          "name": "Fatal Fury",
-          "cooldown": null,
-          "energy": null
-        },
         {
           "id": "PASSIVE_KNUCKLE_RAGE",
           "name": "Rage",
@@ -17397,6 +17391,12 @@
         {
           "id": "PASSIVE_KNUCKLE_COMBOBREAKER",
           "name": "Hard to Catch",
+          "cooldown": null,
+          "energy": null
+        },
+        {
+          "id": "PASSIVE_KNUCKLE_BRAWLER_SPEED",
+          "name": "Fatal Fury",
           "cooldown": null,
           "energy": null
         }
@@ -17464,21 +17464,15 @@
       ],
       "3": [
         {
-          "id": "BLAZING_GEYSER",
-          "name": "Blazing Geyser",
+          "id": "CONEPUNCH2",
+          "name": "Unstoppable Rush",
           "cooldown": "15",
-          "energy": "15"
+          "energy": "9"
         }
       ]
     },
     "passive": {
       "1": [
-        {
-          "id": "PASSIVE_KNUCKLE_BRAWLER",
-          "name": "Fatal Fury",
-          "cooldown": null,
-          "energy": null
-        },
         {
           "id": "PASSIVE_KNUCKLE_RAGE",
           "name": "Rage",
@@ -17494,6 +17488,12 @@
         {
           "id": "PASSIVE_KNUCKLE_COMBOBREAKER",
           "name": "Hard to Catch",
+          "cooldown": null,
+          "energy": null
+        },
+        {
+          "id": "PASSIVE_KNUCKLE_BRAWLER_SPEED",
+          "name": "Fatal Fury",
           "cooldown": null,
           "energy": null
         }
@@ -17658,8 +17658,8 @@
       ],
       "3": [
         {
-          "id": "SHAPESHIFT_PANTHER",
-          "name": "Shadow Panther Transformation",
+          "id": "SHAPESHIFT_ENT",
+          "name": "Sylvian Transformation",
           "cooldown": "5",
           "energy": "0"
         }
@@ -17755,9 +17755,9 @@
       ],
       "3": [
         {
-          "id": "SHAPESHIFT_PANTHER",
-          "name": "Shadow Panther Transformation",
-          "cooldown": "5",
+          "id": "SHAPESHIFT_BEAR",
+          "name": "Spirit Bear Transformation",
+          "cooldown": "10",
           "energy": "0"
         }
       ]
@@ -17852,9 +17852,9 @@
       ],
       "3": [
         {
-          "id": "SHAPESHIFT_PANTHER",
-          "name": "Shadow Panther Transformation",
-          "cooldown": "5",
+          "id": "SHAPESHIFT_WEREWOLF",
+          "name": "Werewolf Transformation",
+          "cooldown": "8",
           "energy": "0"
         }
       ]
@@ -17949,9 +17949,9 @@
       ],
       "3": [
         {
-          "id": "SHAPESHIFT_PANTHER",
-          "name": "Shadow Panther Transformation",
-          "cooldown": "5",
+          "id": "SHAPESHIFT_IMP",
+          "name": "Hellfire Imp Transformation",
+          "cooldown": "8",
           "energy": "0"
         }
       ]
@@ -18046,9 +18046,9 @@
       ],
       "3": [
         {
-          "id": "SHAPESHIFT_PANTHER",
-          "name": "Shadow Panther Transformation",
-          "cooldown": "5",
+          "id": "SHAPESHIFT_ROCK_ELEMENTAL",
+          "name": "Runestone Golem Transformation",
+          "cooldown": "25",
           "energy": "0"
         }
       ]
@@ -18143,9 +18143,9 @@
       ],
       "3": [
         {
-          "id": "SHAPESHIFT_PANTHER",
-          "name": "Shadow Panther Transformation",
-          "cooldown": "5",
+          "id": "SHAPESHIFT_AVALONIAN_EAGLE",
+          "name": "Dawnbird Transformation",
+          "cooldown": "15",
           "energy": "0"
         }
       ]
@@ -18240,9 +18240,9 @@
       ],
       "3": [
         {
-          "id": "SHAPESHIFT_PANTHER",
-          "name": "Shadow Panther Transformation",
-          "cooldown": "5",
+          "id": "SHAPESHIFT_CRYSTAL_COBRA",
+          "name": "Crystal Cobra Transformation",
+          "cooldown": "12",
           "energy": "0"
         }
       ]

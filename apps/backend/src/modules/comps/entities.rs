@@ -93,6 +93,9 @@ pub mod build {
         pub created_at: DateTimeWithTimeZone,
         /// The timestamp when the build was last updated.
         pub updated_at: DateTimeWithTimeZone,
+        /// When this build was archived. `None` means it's active and offered for new use;
+        /// archiving never deletes the row, so anything already using it keeps working.
+        pub archived_at: Option<DateTimeWithTimeZone>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]
@@ -262,6 +265,9 @@ pub mod comp {
         pub updated_at: DateTimeWithTimeZone,
         /// The parent comp ID if this comp is a variant.
         pub parent_id: Option<i64>,
+        /// When this comp was archived. `None` means it's active and offered for new use;
+        /// archiving never deletes the row, so any event already using it keeps working.
+        pub archived_at: Option<DateTimeWithTimeZone>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]

@@ -32,10 +32,10 @@ use super::entities::{
 use super::models::{
     AddCompBuildRequest, BuildCategoryView, BuildDetail, BuildFilters, BuildItemSpells,
     BuildItemView, BuildSummary, BuildVersionRef, CompBuildView, CompCategoryView, CompDetail,
-    CompFilters, CompSummary, CreateBuildCategoryRequest, CreateBuildRequest,
-    CreateCompCategoryRequest, CreateCompRequest, UpdateBuildCategoryRequest, UpdateBuildRequest,
-    UpdateCompBuildQuantityRequest, UpdateCompCategoryRequest, UpdateCompRequest,
-    UpsertBuildItemRequest,
+    CompFilters, CompSummary, CreateBuildCategoryRequest, CreateBuildItemRequest,
+    CreateBuildRequest, CreateCompCategoryRequest, CreateCompRequest, UpdateBuildCategoryRequest,
+    UpdateBuildRequest, UpdateCompBuildQuantityRequest, UpdateCompCategoryRequest,
+    UpdateCompRequest, UpsertBuildItemRequest,
 };
 use super::status::{BuildLoadout, BuildRole, BuildSlot};
 
@@ -152,6 +152,33 @@ fn validate_ability_choice(
         )));
     }
     Ok(())
+}
+
+/// Validates every entry in a spell selection against what the item actually offers, returning the
+/// rows ready to insert.
+///
+/// Shared by `create_build` (items can arrive with abilities already chosen in the picker) and
+/// `set_build_item_spells` (abilities edited afterwards), so both reject the same invalid choice
+/// the same way. Validating everything up front, before either caller touches the database, keeps
+/// a bad request from partially applying.
+fn validated_spell_rows(
+    item: &build_item::Model,
+    spells: &BuildItemSpells,
+) -> Result<Vec<(&'static str, i32, String)>, AppError> {
+    let mut chosen = Vec::new();
+    for (kind, entries) in [
+        (ACTIVE_KIND, &spells.active),
+        (PASSIVE_KIND, &spells.passive),
+    ] {
+        for (raw_index, spell_id) in entries {
+            let slot_index: i32 = raw_index.parse().map_err(|_| {
+                AppError::Validation(format!("{kind} slot {raw_index:?} is not a slot number"))
+            })?;
+            validate_ability_choice(item, kind, slot_index, spell_id)?;
+            chosen.push((kind, slot_index, spell_id.clone()));
+        }
+    }
+    Ok(chosen)
 }
 
 /// Resolves a user's display name by id, returning `"Unknown"` if the user no longer exists.
@@ -561,6 +588,7 @@ impl CompService {
             created_by_username,
             updated_at: build.updated_at.to_rfc3339(),
             item_count,
+            archived_at: build.archived_at.map(|dt| dt.to_rfc3339()),
         })
     }
 
@@ -682,6 +710,12 @@ impl CompService {
         let page = pagination.offset_page();
 
         let mut query = build::Entity::find();
+
+        query = if filters.archived.unwrap_or(false) {
+            query.filter(BuildColumn::ArchivedAt.is_not_null())
+        } else {
+            query.filter(BuildColumn::ArchivedAt.is_null())
+        };
 
         if let Some(role) = filters.role {
             query = query.filter(BuildColumn::Role.eq(role.to_string()));
@@ -899,6 +933,7 @@ impl CompService {
                     )));
                 }
 
+                let spells = item.spells;
                 let active = build_item::ActiveModel {
                     build_id: Set(inserted.id),
                     // Items supplied at creation time are always the main loadout; the swap is
@@ -912,7 +947,25 @@ impl CompService {
                     openalbion_item_tier: Set(item.openalbion_item_tier),
                     ..Default::default()
                 };
-                active.insert(&txn).await?;
+                let inserted_item = active.insert(&txn).await?;
+
+                // Abilities the officer already picked in the item's search popover, so the
+                // build comes out of creation fully slotted rather than needing a second pass.
+                if let Some(spells) = spells {
+                    for (kind, slot_index, spell_id) in
+                        validated_spell_rows(&inserted_item, &spells)?
+                    {
+                        build_item_spell::ActiveModel {
+                            build_item_id: Set(inserted_item.id),
+                            kind: Set(kind.to_string()),
+                            slot_index: Set(slot_index),
+                            spell_id: Set(spell_id),
+                            ..Default::default()
+                        }
+                        .insert(&txn)
+                        .await?;
+                    }
+                }
             }
         }
 
@@ -1189,6 +1242,43 @@ impl CompService {
         Ok(())
     }
 
+    /// Archives a build so it stops being offered for new use, without touching the row itself.
+    ///
+    /// Unlike [`Self::delete_build`], this never fails on references: everything already using the
+    /// build — comps, event rosters, past participations — keeps pointing at the exact same row.
+    /// Archiving only removes it from `list_builds`'s default (active) results, so pickers stop
+    /// offering it while existing usages render unchanged.
+    pub async fn archive_build(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+    ) -> Result<BuildDetail, AppError> {
+        let build = build::Entity::find_by_id(id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Build {id} not found")))?;
+        let mut active: build::ActiveModel = build.into();
+        active.archived_at = Set(Some(chrono::Utc::now().into()));
+        active.update(db).await?;
+        self.get_build(db, id).await
+    }
+
+    /// Reverses [`Self::archive_build`], making the build selectable again.
+    pub async fn unarchive_build(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+    ) -> Result<BuildDetail, AppError> {
+        let build = build::Entity::find_by_id(id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Build {id} not found")))?;
+        let mut active: build::ActiveModel = build.into();
+        active.archived_at = Set(None);
+        active.update(db).await?;
+        self.get_build(db, id).await
+    }
+
     /// Upserts (insert-or-update) the item in a specific slot of a build.
     pub async fn upsert_build_item(
         &self,
@@ -1264,16 +1354,7 @@ impl CompService {
                 ))
             })?;
 
-        let mut chosen: Vec<(&str, i32, String)> = Vec::new();
-        for (kind, entries) in [(ACTIVE_KIND, &req.active), (PASSIVE_KIND, &req.passive)] {
-            for (raw_index, spell_id) in entries {
-                let slot_index: i32 = raw_index.parse().map_err(|_| {
-                    AppError::Validation(format!("{kind} slot {raw_index:?} is not a slot number"))
-                })?;
-                validate_ability_choice(&item, kind, slot_index, spell_id)?;
-                chosen.push((kind, slot_index, spell_id.clone()));
-            }
-        }
+        let chosen = validated_spell_rows(&item, &req)?;
 
         let txn = db.begin().await?;
         build_item_spell::Entity::delete_many()
@@ -1346,6 +1427,7 @@ impl CompService {
             build_count,
             total_quantity,
             parent_id: comp.parent_id,
+            archived_at: comp.archived_at.map(|dt| dt.to_rfc3339()),
         })
     }
 
@@ -1406,6 +1488,12 @@ impl CompService {
         let page = pagination.offset_page();
 
         let mut query = comp::Entity::find();
+
+        query = if filters.archived.unwrap_or(false) {
+            query.filter(CompColumn::ArchivedAt.is_not_null())
+        } else {
+            query.filter(CompColumn::ArchivedAt.is_null())
+        };
 
         if let Some(category_id) = filters.category_id {
             query = query.filter(CompColumn::CategoryId.eq(category_id));
@@ -1502,6 +1590,12 @@ impl CompService {
                 .one(db)
                 .await?
                 .ok_or_else(|| AppError::NotFound(format!("Parent comp {parent_id} not found")))?;
+            if parent.archived_at.is_some() {
+                return Err(AppError::Validation(format!(
+                    "Comp {:?} is archived and can't be used as a parent",
+                    parent.name
+                )));
+            }
             let parent_builds = comp_build::Entity::find()
                 .filter(CompBuildColumn::CompId.eq(parent.id))
                 .all(db)
@@ -1515,14 +1609,16 @@ impl CompService {
         };
 
         for addition in builds {
-            let build_exists = build::Entity::find_by_id(addition.build_id)
+            let build = build::Entity::find_by_id(addition.build_id)
                 .one(db)
                 .await?
-                .is_some();
-            if !build_exists {
-                return Err(AppError::NotFound(format!(
-                    "Build {} not found",
-                    addition.build_id
+                .ok_or_else(|| {
+                    AppError::NotFound(format!("Build {} not found", addition.build_id))
+                })?;
+            if build.archived_at.is_some() {
+                return Err(AppError::Validation(format!(
+                    "Build {:?} is archived and can't be added to a comp",
+                    build.name
                 )));
             }
             let quantity = snapshot.entry(addition.build_id).or_default();
@@ -1627,12 +1723,20 @@ impl CompService {
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Comp {id} not found")))?;
+        let was_parentless = comp.parent_id.is_none();
         let mut active: comp::ActiveModel = comp.into();
         if let Some(description) = req.description {
             active.description = Set(Some(description));
         }
         if let Some(parent_id) = req.parent_id {
             if let Some(parent_id) = parent_id {
+                // A comp created without a parent may contain only the additions (for example,
+                // a 5-player Comp2 created before its 10-player Comp1 is selected). Materialize
+                // that shorthand when the parent is assigned during a later edit.
+                if was_parentless {
+                    self.merge_parent_builds_if_additions(db, id, parent_id)
+                        .await?;
+                }
                 self.validate_expansion_parent(db, id, parent_id).await?;
                 active.parent_id = Set(Some(parent_id));
             } else {
@@ -1644,6 +1748,62 @@ impl CompService {
         let updated = active.update(db).await?;
 
         self.to_comp_detail(db, updated).await
+    }
+
+    /// Adds a parent's snapshot to a parentless comp when its current rows are clearly additions.
+    ///
+    /// This supports creating a variant in two steps: first saving the additional builds, then
+    /// assigning the parent while editing. A comp that already exceeds the parent is left alone,
+    /// because its rows already represent a complete snapshot.
+    async fn merge_parent_builds_if_additions(
+        &self,
+        db: &DatabaseConnection,
+        comp_id: i64,
+        parent_id: i64,
+    ) -> Result<(), AppError> {
+        let current_capacity = self.get_comp_capacity(db, comp_id).await?;
+        let parent_capacity = self.get_comp_capacity(db, parent_id).await?;
+        if current_capacity > parent_capacity {
+            return Ok(());
+        }
+
+        let parent_builds = comp_build::Entity::find()
+            .filter(CompBuildColumn::CompId.eq(parent_id))
+            .all(db)
+            .await?;
+        for parent_build in parent_builds {
+            let existing = comp_build::Entity::find()
+                .filter(CompBuildColumn::CompId.eq(comp_id))
+                .filter(CompBuildColumn::BuildId.eq(parent_build.build_id))
+                .one(db)
+                .await?;
+            let quantity = existing
+                .as_ref()
+                .map_or(0, |build| build.quantity)
+                .checked_add(parent_build.quantity)
+                .ok_or_else(|| {
+                    AppError::Validation(format!(
+                        "quantity for build {} exceeds the supported limit",
+                        parent_build.build_id
+                    ))
+                })?;
+
+            if let Some(existing) = existing {
+                let mut active: comp_build::ActiveModel = existing.into();
+                active.quantity = Set(quantity);
+                active.update(db).await?;
+            } else {
+                comp_build::ActiveModel {
+                    comp_id: Set(comp_id),
+                    build_id: Set(parent_build.build_id),
+                    quantity: Set(parent_build.quantity),
+                    ..Default::default()
+                }
+                .insert(db)
+                .await?;
+            }
+        }
+        Ok(())
     }
 
     /// Returns the total number of concrete slots in a comp snapshot.
@@ -1811,6 +1971,43 @@ impl CompService {
         Ok(())
     }
 
+    /// Archives a comp so it stops being offered for new use, without touching the row itself.
+    ///
+    /// Unlike [`Self::delete_comp`], this never fails on references: an event still using the comp
+    /// keeps pointing at the exact same row and keeps rendering. Archiving only removes it from
+    /// `list_comps`'s default (active) results, so pickers stop offering it for new events while
+    /// past usage renders unchanged.
+    pub async fn archive_comp(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+    ) -> Result<CompDetail, AppError> {
+        let comp = comp::Entity::find_by_id(id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Comp {id} not found")))?;
+        let mut active: comp::ActiveModel = comp.into();
+        active.archived_at = Set(Some(chrono::Utc::now().into()));
+        active.update(db).await?;
+        self.get_comp(db, id).await
+    }
+
+    /// Reverses [`Self::archive_comp`], making the comp selectable again.
+    pub async fn unarchive_comp(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+    ) -> Result<CompDetail, AppError> {
+        let comp = comp::Entity::find_by_id(id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Comp {id} not found")))?;
+        let mut active: comp::ActiveModel = comp.into();
+        active.archived_at = Set(None);
+        active.update(db).await?;
+        self.get_comp(db, id).await
+    }
+
     /// Adds a build to a comp, or — if the (comp, build) pair already exists — sets its
     /// quantity to the new value (upsert semantics on the unique pair).
     pub async fn add_comp_build(
@@ -1830,7 +2027,7 @@ impl CompService {
             .ok_or_else(|| AppError::NotFound(format!("Comp {comp_id} not found")))?;
 
         // Ensure build exists.
-        let _ = build::Entity::find_by_id(req.build_id)
+        let build = build::Entity::find_by_id(req.build_id)
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Build {} not found", req.build_id)))?;
@@ -1840,6 +2037,15 @@ impl CompService {
             .filter(CompBuildColumn::BuildId.eq(req.build_id))
             .one(db)
             .await?;
+
+        // An archived build stays usable wherever it already is — only *new* placements are
+        // refused, so bumping the quantity of one already in this comp still works.
+        if existing.is_none() && build.archived_at.is_some() {
+            return Err(AppError::Validation(format!(
+                "Build {:?} is archived and can't be added to a comp",
+                build.name
+            )));
+        }
 
         let current_capacity = self.get_comp_capacity(db, comp_id).await?;
         let old_quantity = existing
@@ -2271,6 +2477,23 @@ mod tests {
                     .to_string(),
             ),
             openalbion_item_tier: Some("8".to_string()),
+        }
+    }
+
+    /// Same weapon as [`broadsword`], but as the shape `create_build` accepts — with abilities
+    /// already picked, the way the item search popover now sends it.
+    fn broadsword_create_item(spells: Option<BuildItemSpells>) -> CreateBuildItemRequest {
+        CreateBuildItemRequest {
+            slot: BuildSlot::Weapon,
+            openalbion_item_type: "weapon".to_string(),
+            openalbion_item_id: 1,
+            openalbion_item_name: "Broadsword".to_string(),
+            openalbion_item_icon: Some(
+                "https://render.albiononline.com/v1/item/T8_MAIN_SWORD.png?quality=1&size=64"
+                    .to_string(),
+            ),
+            openalbion_item_tier: Some("8".to_string()),
+            spells,
         }
     }
 
@@ -3008,6 +3231,186 @@ mod tests {
         assert_eq!(references[0].label, "Roaming per i Draghi");
     }
 
+    /// Archiving exists precisely so a comp an event uses — undeletable, per the test above — can
+    /// still be retired from active pickers without breaking that event.
+    #[tokio::test]
+    async fn archiving_a_comp_an_event_uses_succeeds_and_hides_it_from_default_listing() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let zvz = insert_comp_category(&db, "ZvZ").await;
+        let service = CompService::new();
+        let comp = service
+            .create_comp(&db, user, comp_request("Roaming", zvz))
+            .await
+            .unwrap();
+
+        event::ActiveModel {
+            title: Set("Roaming per i Draghi".to_string()),
+            comp_id: Set(comp.summary.id),
+            created_by: Set(user),
+            event_date_utc: Set(now()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert the event");
+
+        let archived = service
+            .archive_comp(&db, comp.summary.id)
+            .await
+            .expect("a comp an event uses can still be archived");
+        assert!(archived.summary.archived_at.is_some());
+
+        // The event's comp still resolves — archiving never touches the row.
+        service
+            .get_comp(&db, comp.summary.id)
+            .await
+            .expect("the archived comp is still readable");
+
+        let pagination = PaginationParams {
+            page: None,
+            limit: None,
+        };
+        let active = service
+            .list_comps(&db, CompFilters::default(), pagination.clone())
+            .await
+            .unwrap();
+        assert!(!active.items.iter().any(|c| c.id == comp.summary.id));
+
+        let archived_listing = service
+            .list_comps(
+                &db,
+                CompFilters {
+                    archived: Some(true),
+                    ..Default::default()
+                },
+                pagination.clone(),
+            )
+            .await
+            .unwrap();
+        assert!(
+            archived_listing
+                .items
+                .iter()
+                .any(|c| c.id == comp.summary.id)
+        );
+
+        let unarchived = service
+            .unarchive_comp(&db, comp.summary.id)
+            .await
+            .expect("unarchiving should succeed");
+        assert!(unarchived.summary.archived_at.is_none());
+        let active_again = service
+            .list_comps(&db, CompFilters::default(), pagination)
+            .await
+            .unwrap();
+        assert!(active_again.items.iter().any(|c| c.id == comp.summary.id));
+    }
+
+    /// Same guarantee as above, for a build a comp uses.
+    #[tokio::test]
+    async fn archiving_a_build_a_comp_uses_succeeds_and_hides_it_from_default_listing() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let zvz = insert_comp_category(&db, "ZvZ").await;
+        let comp = service
+            .create_comp(&db, user, comp_request("Standard", zvz))
+            .await
+            .unwrap();
+        service
+            .add_comp_build(
+                &db,
+                comp.summary.id,
+                AddCompBuildRequest {
+                    build_id,
+                    quantity: 1,
+                },
+            )
+            .await
+            .unwrap();
+
+        service
+            .archive_build(&db, build_id)
+            .await
+            .expect("a build a comp uses can still be archived");
+
+        service
+            .get_build(&db, build_id)
+            .await
+            .expect("the archived build is still readable");
+
+        let pagination = PaginationParams {
+            page: None,
+            limit: None,
+        };
+        let active = service
+            .list_builds(&db, BuildFilters::default(), pagination)
+            .await
+            .unwrap();
+        assert!(!active.items.iter().any(|b| b.id == build_id));
+    }
+
+    /// An archived build can't be placed into a *new* comp, but bumping its quantity where it's
+    /// already used still works — archiving only closes off new placements.
+    #[tokio::test]
+    async fn an_archived_build_cannot_be_newly_added_but_can_still_be_requantified() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let zvz = insert_comp_category(&db, "ZvZ").await;
+        let comp = service
+            .create_comp(&db, user, comp_request("Standard", zvz))
+            .await
+            .unwrap();
+        service
+            .add_comp_build(
+                &db,
+                comp.summary.id,
+                AddCompBuildRequest {
+                    build_id,
+                    quantity: 1,
+                },
+            )
+            .await
+            .unwrap();
+        service.archive_build(&db, build_id).await.unwrap();
+
+        // Already used here — bumping its quantity still works.
+        service
+            .add_comp_build(
+                &db,
+                comp.summary.id,
+                AddCompBuildRequest {
+                    build_id,
+                    quantity: 2,
+                },
+            )
+            .await
+            .expect("requantifying an already-used archived build should succeed");
+
+        // A different, brand-new comp can't pick it up.
+        let other = service
+            .create_comp(&db, user, comp_request("Alternate", zvz))
+            .await
+            .unwrap();
+        let error = service
+            .add_comp_build(
+                &db,
+                other.summary.id,
+                AddCompBuildRequest {
+                    build_id,
+                    quantity: 1,
+                },
+            )
+            .await
+            .unwrap_err();
+        match error {
+            AppError::Validation(message) => assert!(message.contains("archived")),
+            other => panic!("expected validation, got {other:?}"),
+        }
+    }
+
     #[tokio::test]
     async fn an_expansion_comp_inherits_its_parent_snapshot_and_merges_additions() {
         let db = seed_db().await;
@@ -3091,6 +3494,72 @@ mod tests {
 
         assert_eq!(snapshot, expected);
         assert_eq!(expansion.summary.total_quantity, 15);
+    }
+
+    #[tokio::test]
+    async fn assigning_a_parent_after_creation_merges_additions() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let build_category = insert_build_category(&db, "ZvZ builds").await;
+        let comp_category = insert_comp_category(&db, "ZvZ comps").await;
+        let service = CompService::new();
+        let build = service
+            .create_build(&db, user, build_request("DPS", build_category))
+            .await
+            .expect("build should be created");
+
+        let base = service
+            .create_comp(
+                &db,
+                user,
+                CreateCompRequest {
+                    name: "10-man".to_string(),
+                    description: None,
+                    category_id: comp_category,
+                    builds: vec![AddCompBuildRequest {
+                        build_id: build.summary.id,
+                        quantity: 10,
+                    }],
+                    parent_id: None,
+                },
+            )
+            .await
+            .expect("base comp should be created");
+        let additions = service
+            .create_comp(
+                &db,
+                user,
+                CreateCompRequest {
+                    name: "15-man".to_string(),
+                    description: None,
+                    category_id: comp_category,
+                    builds: vec![AddCompBuildRequest {
+                        build_id: build.summary.id,
+                        quantity: 5,
+                    }],
+                    parent_id: None,
+                },
+            )
+            .await
+            .expect("additions comp should be created");
+
+        let expanded = service
+            .update_comp(
+                &db,
+                additions.summary.id,
+                UpdateCompRequest {
+                    name: None,
+                    description: None,
+                    category_id: None,
+                    parent_id: Some(Some(base.summary.id)),
+                },
+            )
+            .await
+            .expect("parent assignment should materialize the expansion");
+
+        assert_eq!(expanded.summary.total_quantity, 15);
+        assert_eq!(expanded.builds[0].quantity, 15);
+        assert_eq!(expanded.summary.parent_id, Some(base.summary.id));
     }
 
     #[tokio::test]
@@ -3527,6 +3996,55 @@ mod tests {
             .expect("build should be created");
 
         assert_eq!(created.summary.name, "Pole Hammer");
+    }
+
+    #[tokio::test]
+    async fn create_build_accepts_abilities_chosen_in_the_item_picker() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let crystal = insert_build_category(&db, "Crystal").await;
+        let service = CompService::new();
+
+        let mut request = build_request("Broadsword DPS", crystal);
+        request.items = Some(vec![broadsword_create_item(Some(spells(
+            &[("1", "HEROICSTRIKE2")],
+            &[("1", "PASSIVE_BLEEDCHANCE")],
+        )))]);
+
+        let created = service
+            .create_build(&db, user, request)
+            .await
+            .expect("a build with abilities already picked should be created");
+
+        let stored = spells_on(&created, BuildLoadout::Main, BuildSlot::Weapon);
+        assert_eq!(
+            stored.active.get("1").map(String::as_str),
+            Some("HEROICSTRIKE2")
+        );
+        assert_eq!(
+            stored.passive.get("1").map(String::as_str),
+            Some("PASSIVE_BLEEDCHANCE")
+        );
+    }
+
+    #[tokio::test]
+    async fn create_build_refuses_an_ability_the_item_does_not_offer() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "admin", "admin@example.com").await;
+        let crystal = insert_build_category(&db, "Crystal").await;
+        let service = CompService::new();
+
+        let mut request = build_request("Broadsword DPS", crystal);
+        request.items = Some(vec![broadsword_create_item(Some(spells(
+            &[("1", "NOT_A_REAL_SPELL")],
+            &[],
+        )))]);
+
+        let error = service
+            .create_build(&db, user, request)
+            .await
+            .expect_err("an ability the weapon does not offer should be refused");
+        assert!(matches!(error, AppError::Validation(_)));
     }
 
     #[tokio::test]

@@ -12,7 +12,9 @@ import type { TranslationKey } from '../../i18n/en';
 import type {
   FightTrendView,
   GuildReport,
+  LeaderboardEntry,
   MatchupReport,
+  ReportEnemyRow,
   ScoutedCompSummary,
   TrendBucket,
 } from '../../core/models/api.models';
@@ -239,7 +241,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
                         <ol class="mt-3 divide-y" style="border-color: var(--color-border)">
                           @for (player of topPlayers(); track player.user_id) {
                             <li class="flex items-center justify-between gap-3 py-2 first:pt-0">
-                              <span class="min-w-0 truncate text-sm" style="color: var(--color-text)">{{ player.username }}</span>
+                              <a class="min-w-0 truncate text-sm no-underline hover:underline" [routerLink]="['/users', player.user_id]" style="color: var(--color-text)">{{ player.username }}</a>
                               <span class="mono shrink-0 text-xs" style="color: var(--color-text-secondary)">
                                 {{ player.fights }} {{ t('intel.fights') }} · {{ player.kill_death_ratio | number: '1.1-2' }} K/D
                               </span>
@@ -293,6 +295,31 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
                     </section>
                   </div>
                 </section>
+
+                <!-- Guild Leaderboards -->
+                @if (topLeaderboards().length > 0) {
+                  <section class="card p-5 lg:col-span-2" aria-labelledby="intel-leaderboards-heading">
+                    <h2 class="eyebrow" id="intel-leaderboards-heading">{{ t('intel.leaderboards.title') }}</h2>
+                    <p class="mt-1 text-xs" style="color: var(--color-text-secondary)">{{ t('intel.leaderboards.hint') }}</p>
+                    <div class="mt-4 grid gap-3 lg:grid-cols-3">
+                      @for (board of topLeaderboards(); track board.key) {
+                        <section class="rounded-lg border p-3" style="border-color: var(--color-border); background-color: var(--color-surface-2)">
+                          <h3 class="text-sm font-medium" style="color: var(--color-text)">{{ board.label }}</h3>
+                          <ol class="mt-2 divide-y" style="border-color: var(--color-border)">
+                            @for (entry of board.entries; track entry.user_id) {
+                              <li class="flex items-center justify-between gap-3 py-1.5 first:pt-0">
+                                <a class="min-w-0 truncate text-sm no-underline hover:underline" [routerLink]="['/users', entry.user_id]" style="color: var(--color-text)">{{ entry.username }}</a>
+                                <span class="mono shrink-0 text-xs" style="color: var(--color-text-secondary)">{{ entry.value | number: '1.0-0' }}</span>
+                              </li>
+                            } @empty {
+                              <li class="py-1.5 text-sm" style="color: var(--color-text-secondary)">{{ t('common.empty') }}</li>
+                            }
+                          </ol>
+                        </section>
+                      }
+                    </div>
+                  </section>
+                }
 
                 @if (fightTrends(); as trends) {
                   <section class="card p-5 lg:col-span-2 intel-trend-chart" aria-labelledby="intel-fight-pulse-heading">
@@ -438,6 +465,34 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
               <!-- Meta Weapon Breakdown -->
               @if (report(); as r) {
+                @if (topThreats().length > 0) {
+                  <section class="card p-5" aria-labelledby="intel-top-threats-heading">
+                    <h3 class="eyebrow" id="intel-top-threats-heading">{{ t('intel.topThreats.title') }}</h3>
+                    <p class="mt-1 text-xs" style="color: var(--color-text-secondary)">{{ t('intel.topThreats.hint') }}</p>
+                    <ol class="mt-3 divide-y" style="border-color: var(--color-border)">
+                      @for (enemy of topThreats(); track enemy.scouted_comp_id) {
+                        <li class="flex items-center justify-between gap-3 py-2.5 first:pt-0">
+                          <div class="min-w-0">
+                            <a class="text-sm font-medium no-underline hover:underline" [routerLink]="['/intel', enemy.scouted_comp_id]" style="color: var(--color-text)">
+                              {{ enemy.opponent_guild_name }}
+                            </a>
+                            <p class="mt-0.5 text-xs" style="color: var(--color-text-secondary)">
+                              {{ t('intel.detail.lastSeen') }} {{ enemy.last_seen | date: 'mediumDate' }}
+                              @if (enemy.counter_comp_name) {
+                                · {{ t('intel.topThreats.counter') }}: {{ enemy.counter_comp_name }}
+                              }
+                            </p>
+                          </div>
+                          <div class="shrink-0 text-right">
+                            <span class="mono text-sm font-semibold" style="color: var(--color-error)">{{ enemy.threat_score }}</span>
+                            <p class="mono mt-0.5 text-xs" style="color: var(--color-text-secondary)">{{ enemy.wins }}–{{ enemy.losses }}</p>
+                          </div>
+                        </li>
+                      }
+                    </ol>
+                  </section>
+                }
+
                 <div class="grid gap-4 lg:grid-cols-2">
                   <section class="card p-5">
                     <h3 class="eyebrow mb-3">{{ t('intel.ourMeta') }}</h3>
@@ -581,6 +636,18 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
               <ng-template dataTableCell="battles" let-row>
                 <span class="mono">{{ row.source_battle_count }}</span>
               </ng-template>
+              <ng-template dataTableCell="record" let-row>
+                @let record = enemyRecord(row.id);
+                @if (record) {
+                  <span class="mono text-sm">
+                    <span style="color: var(--color-success)">{{ record.wins }}</span>
+                    <span class="opacity-40">/</span>
+                    <span style="color: var(--color-error)">{{ record.losses }}</span>
+                  </span>
+                } @else {
+                  <span class="text-sm" style="color: var(--color-text-secondary)">—</span>
+                }
+              </ng-template>
               <ng-template dataTableCell="saved_at" let-row>
                 <span class="text-sm" style="color: var(--color-text-secondary)">{{ row.saved_at | date: 'short' }}</span>
               </ng-template>
@@ -649,6 +716,18 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
                   </section>
                 </div>
 
+                <!-- Characters seen in battle but not linked to a member -->
+                @if (r.data_quality.unlinked_players.length > 0) {
+                  <section class="card p-5">
+                    <h2 class="eyebrow mb-3">{{ t('intel.unlinkedPlayers') }}</h2>
+                    <div class="flex flex-wrap gap-1.5">
+                      @for (name of r.data_quality.unlinked_players; track name) {
+                        <span class="chip chip--warning text-xs">{{ name }}</span>
+                      }
+                    </div>
+                  </section>
+                }
+
                 <!-- Economy Overview Strip -->
                 <section class="space-y-3">
                   <h3 class="text-base font-semibold" style="color: var(--color-text)">{{ t('intel.nav.economy') }}</h3>
@@ -713,6 +792,8 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
                     [columns]="rosterColumns()"
                     [rows]="r.members"
                     [trackBy]="trackMember"
+                    [rowClickable]="true"
+                    (rowClick)="openMember($event)"
                     emptyIcon="users"
                   >
                     <ng-template dataTableCell="username" let-row>
@@ -827,6 +908,15 @@ export class Intel {
         label: 'intel.fights',
         sortable: true,
         accessor: (row) => row.source_battle_count,
+        align: 'right',
+      },
+      {
+        key: 'record',
+        label: 'intel.recordVsUs',
+        accessor: (row) => {
+          const record = this.enemyRecord(row.id);
+          return record ? record.wins - record.losses : 0;
+        },
         align: 'right',
       },
       {
@@ -1051,6 +1141,35 @@ export class Intel {
       .slice(0, 4),
   );
 
+  private static readonly LEADERBOARD_ENTRY_LIMIT = 5;
+
+  protected readonly topLeaderboards = computed<
+    { key: string; label: string; entries: LeaderboardEntry[] }[]
+  >(() => {
+    const boards = this.report()?.leaderboards;
+    if (!boards) {
+      return [];
+    }
+    const limit = Intel.LEADERBOARD_ENTRY_LIMIT;
+    return [
+      { key: 'attendance', label: this.t('intel.trends.attendance'), entries: boards.attendance },
+      { key: 'kills', label: this.t('intel.kills'), entries: boards.kills },
+      { key: 'kill_fame', label: this.t('intel.killFame'), entries: boards.kill_fame },
+      { key: 'silver_lost', label: this.t('intel.silverLost'), entries: boards.silver_lost },
+      { key: 'split_earnings', label: this.t('intel.splitEarnings'), entries: boards.split_earnings },
+    ]
+      .map((board) => ({ ...board, entries: board.entries.slice(0, limit) }))
+      .filter((board) => board.entries.length > 0);
+  });
+
+  protected readonly topThreats = computed<ReportEnemyRow[]>(() =>
+    (this.report()?.enemies ?? []).slice(0, 6),
+  );
+
+  protected enemyRecord(scoutId: number): ReportEnemyRow | null {
+    return this.report()?.enemies.find((row) => row.scouted_comp_id === scoutId) ?? null;
+  }
+
   protected readonly plannedBuilds = computed(() => {
     const selections = this.fightTrends()?.last_30_days.planned_participation;
     if (!selections) {
@@ -1181,6 +1300,10 @@ export class Intel {
 
   protected openScout(scout: ScoutedCompSummary): void {
     void this.router.navigate(['/intel', scout.id]);
+  }
+
+  protected openMember(member: RosterRow): void {
+    void this.router.navigate(['/users', member.user_id]);
   }
 
   protected onLibraryPageChange(event: DataTablePageChange): void {

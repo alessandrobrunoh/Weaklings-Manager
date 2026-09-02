@@ -114,6 +114,9 @@ pub struct GuildSettingsView {
     pub discord_split_lost_tag_id: Option<String>,
     /// Category where the bot creates live event voice channels.
     pub discord_event_voice_category_id: Option<String>,
+    /// Default percentage fee applied to new splits.
+    #[schema(value_type = String, example = "20.00")]
+    pub default_split_fee: rust_decimal::Decimal,
 }
 
 impl GuildSettingsView {
@@ -134,6 +137,7 @@ impl GuildSettingsView {
             discord_split_not_completed_tag_id: model.discord_split_not_completed_tag_id,
             discord_split_lost_tag_id: model.discord_split_lost_tag_id,
             discord_event_voice_category_id: model.discord_event_voice_category_id,
+            default_split_fee: model.default_split_fee,
         }
     }
 }
@@ -200,4 +204,7 @@ pub struct UpdateGuildSettingsRequest {
     pub discord_split_lost_tag_id: Option<String>,
     /// New value. Omit to leave unchanged; send `""` to clear.
     pub discord_event_voice_category_id: Option<String>,
+    /// New default split fee percentage. Must be between 0 and 100.
+    #[schema(value_type = Option<String>, example = "20.00")]
+    pub default_split_fee: Option<rust_decimal::Decimal>,
 }
