@@ -19,8 +19,8 @@ use crate::responses::{
 };
 
 use super::models::{
-    AcceptWithdrawalRequest, CreateTransactionRequest, RejectWithdrawalRequest,
-    TransactionFilters, TransactionView, UpdateTransactionRequest, WithdrawRequest,
+    AcceptWithdrawalRequest, CreateTransactionRequest, RejectWithdrawalRequest, TransactionFilters,
+    TransactionView, UpdateTransactionRequest, WithdrawRequest,
 };
 use super::service::BankService;
 
@@ -223,8 +223,12 @@ async fn list_transactions(
         // not the admin-only `bank.view_others` — either is enough to list every
         // member's transactions. A `split_id` filter needs the same check: it spans
         // every participant of that split, not just the caller.
-        let can_view_others = user.has_permission(&perms, Permission::BankViewOthers).await;
-        let can_review_withdrawals = user.has_permission(&perms, Permission::BankWithdrawAccept).await;
+        let can_view_others = user
+            .has_permission(&perms, Permission::BankViewOthers)
+            .await;
+        let can_review_withdrawals = user
+            .has_permission(&perms, Permission::BankWithdrawAccept)
+            .await;
         if !can_view_others && !can_review_withdrawals {
             return Err(AppError::Forbidden(format!(
                 "Missing permission: {} or {}",
@@ -408,9 +412,7 @@ async fn create_transaction(
     user.require(&perms, Permission::BankTransactionsCreate)
         .await?;
     let service = BankService::new();
-    let created = service
-        .create_transaction(&db, &req, user.user_id)
-        .await?;
+    let created = service.create_transaction(&db, &req, user.user_id).await?;
     Ok(Json(ApiResponse::new(created)))
 }
 

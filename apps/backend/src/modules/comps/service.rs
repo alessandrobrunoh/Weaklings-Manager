@@ -16,9 +16,8 @@ use sea_orm::sea_query::{Expr, Func};
 
 use crate::errors::{AppError, BlockingReference};
 use crate::modules::events::entities::{
-    event, event_participation, event_roster_role,
-    event_participation::Column as EventParticipationColumn,
-    event_roster_role::Column as EventRosterRoleColumn,
+    event, event_participation, event_participation::Column as EventParticipationColumn,
+    event_roster_role, event_roster_role::Column as EventRosterRoleColumn,
 };
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
@@ -562,6 +561,7 @@ impl CompService {
             created_by_username,
             updated_at: build.updated_at.to_rfc3339(),
             item_count,
+            archived_at: build.archived_at.map(|dt| dt.to_rfc3339()),
         })
     }
 
@@ -683,6 +683,12 @@ impl CompService {
         let page = pagination.offset_page();
 
         let mut query = build::Entity::find();
+
+        query = if filters.archived.unwrap_or(false) {
+            query.filter(BuildColumn::ArchivedAt.is_not_null())
+        } else {
+            query.filter(BuildColumn::ArchivedAt.is_null())
+        };
 
         if let Some(role) = filters.role {
             query = query.filter(BuildColumn::Role.eq(role.to_string()));
@@ -1190,6 +1196,43 @@ impl CompService {
         Ok(())
     }
 
+    /// Archives a build so it stops being offered for new use, without touching the row itself.
+    ///
+    /// Unlike [`Self::delete_build`], this never fails on references: everything already using the
+    /// build — comps, event rosters, past participations — keeps pointing at the exact same row.
+    /// Archiving only removes it from `list_builds`'s default (active) results, so pickers stop
+    /// offering it while existing usages render unchanged.
+    pub async fn archive_build(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+    ) -> Result<BuildDetail, AppError> {
+        let build = build::Entity::find_by_id(id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Build {id} not found")))?;
+        let mut active: build::ActiveModel = build.into();
+        active.archived_at = Set(Some(chrono::Utc::now().into()));
+        active.update(db).await?;
+        self.get_build(db, id).await
+    }
+
+    /// Reverses [`Self::archive_build`], making the build selectable again.
+    pub async fn unarchive_build(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+    ) -> Result<BuildDetail, AppError> {
+        let build = build::Entity::find_by_id(id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Build {id} not found")))?;
+        let mut active: build::ActiveModel = build.into();
+        active.archived_at = Set(None);
+        active.update(db).await?;
+        self.get_build(db, id).await
+    }
+
     /// Upserts (insert-or-update) the item in a specific slot of a build.
     pub async fn upsert_build_item(
         &self,
@@ -1347,6 +1390,7 @@ impl CompService {
             build_count,
             total_quantity,
             parent_id: comp.parent_id,
+            archived_at: comp.archived_at.map(|dt| dt.to_rfc3339()),
         })
     }
 
@@ -1407,6 +1451,12 @@ impl CompService {
         let page = pagination.offset_page();
 
         let mut query = comp::Entity::find();
+
+        query = if filters.archived.unwrap_or(false) {
+            query.filter(CompColumn::ArchivedAt.is_not_null())
+        } else {
+            query.filter(CompColumn::ArchivedAt.is_null())
+        };
 
         if let Some(category_id) = filters.category_id {
             query = query.filter(CompColumn::CategoryId.eq(category_id));
@@ -1503,6 +1553,12 @@ impl CompService {
                 .one(db)
                 .await?
                 .ok_or_else(|| AppError::NotFound(format!("Parent comp {parent_id} not found")))?;
+            if parent.archived_at.is_some() {
+                return Err(AppError::Validation(format!(
+                    "Comp {:?} is archived and can't be used as a parent",
+                    parent.name
+                )));
+            }
             let parent_builds = comp_build::Entity::find()
                 .filter(CompBuildColumn::CompId.eq(parent.id))
                 .all(db)
@@ -1516,14 +1572,16 @@ impl CompService {
         };
 
         for addition in builds {
-            let build_exists = build::Entity::find_by_id(addition.build_id)
+            let build = build::Entity::find_by_id(addition.build_id)
                 .one(db)
                 .await?
-                .is_some();
-            if !build_exists {
-                return Err(AppError::NotFound(format!(
-                    "Build {} not found",
-                    addition.build_id
+                .ok_or_else(|| {
+                    AppError::NotFound(format!("Build {} not found", addition.build_id))
+                })?;
+            if build.archived_at.is_some() {
+                return Err(AppError::Validation(format!(
+                    "Build {:?} is archived and can't be added to a comp",
+                    build.name
                 )));
             }
             let quantity = snapshot.entry(addition.build_id).or_default();
@@ -1812,6 +1870,43 @@ impl CompService {
         Ok(())
     }
 
+    /// Archives a comp so it stops being offered for new use, without touching the row itself.
+    ///
+    /// Unlike [`Self::delete_comp`], this never fails on references: an event still using the comp
+    /// keeps pointing at the exact same row and keeps rendering. Archiving only removes it from
+    /// `list_comps`'s default (active) results, so pickers stop offering it for new events while
+    /// past usage renders unchanged.
+    pub async fn archive_comp(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+    ) -> Result<CompDetail, AppError> {
+        let comp = comp::Entity::find_by_id(id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Comp {id} not found")))?;
+        let mut active: comp::ActiveModel = comp.into();
+        active.archived_at = Set(Some(chrono::Utc::now().into()));
+        active.update(db).await?;
+        self.get_comp(db, id).await
+    }
+
+    /// Reverses [`Self::archive_comp`], making the comp selectable again.
+    pub async fn unarchive_comp(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+    ) -> Result<CompDetail, AppError> {
+        let comp = comp::Entity::find_by_id(id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Comp {id} not found")))?;
+        let mut active: comp::ActiveModel = comp.into();
+        active.archived_at = Set(None);
+        active.update(db).await?;
+        self.get_comp(db, id).await
+    }
+
     /// Adds a build to a comp, or — if the (comp, build) pair already exists — sets its
     /// quantity to the new value (upsert semantics on the unique pair).
     pub async fn add_comp_build(
@@ -1831,7 +1926,7 @@ impl CompService {
             .ok_or_else(|| AppError::NotFound(format!("Comp {comp_id} not found")))?;
 
         // Ensure build exists.
-        let _ = build::Entity::find_by_id(req.build_id)
+        let build = build::Entity::find_by_id(req.build_id)
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Build {} not found", req.build_id)))?;
@@ -1842,8 +1937,19 @@ impl CompService {
             .one(db)
             .await?;
 
+        // An archived build stays usable wherever it already is — only *new* placements are
+        // refused, so bumping the quantity of one already in this comp still works.
+        if existing.is_none() && build.archived_at.is_some() {
+            return Err(AppError::Validation(format!(
+                "Build {:?} is archived and can't be added to a comp",
+                build.name
+            )));
+        }
+
         let current_capacity = self.get_comp_capacity(db, comp_id).await?;
-        let old_quantity = existing.as_ref().map_or(0, |model| i64::from(model.quantity));
+        let old_quantity = existing
+            .as_ref()
+            .map_or(0, |model| i64::from(model.quantity));
         let prospective_capacity = current_capacity - old_quantity + i64::from(req.quantity);
         self.check_expansion_capacity_invariant(db, comp_id, prospective_capacity)
             .await?;
@@ -3005,6 +3111,186 @@ mod tests {
         assert_eq!(references.len(), 1);
         assert_eq!(references[0].resource, "event");
         assert_eq!(references[0].label, "Roaming per i Draghi");
+    }
+
+    /// Archiving exists precisely so a comp an event uses — undeletable, per the test above — can
+    /// still be retired from active pickers without breaking that event.
+    #[tokio::test]
+    async fn archiving_a_comp_an_event_uses_succeeds_and_hides_it_from_default_listing() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let zvz = insert_comp_category(&db, "ZvZ").await;
+        let service = CompService::new();
+        let comp = service
+            .create_comp(&db, user, comp_request("Roaming", zvz))
+            .await
+            .unwrap();
+
+        event::ActiveModel {
+            title: Set("Roaming per i Draghi".to_string()),
+            comp_id: Set(comp.summary.id),
+            created_by: Set(user),
+            event_date_utc: Set(now()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert the event");
+
+        let archived = service
+            .archive_comp(&db, comp.summary.id)
+            .await
+            .expect("a comp an event uses can still be archived");
+        assert!(archived.summary.archived_at.is_some());
+
+        // The event's comp still resolves — archiving never touches the row.
+        service
+            .get_comp(&db, comp.summary.id)
+            .await
+            .expect("the archived comp is still readable");
+
+        let pagination = PaginationParams {
+            page: None,
+            limit: None,
+        };
+        let active = service
+            .list_comps(&db, CompFilters::default(), pagination.clone())
+            .await
+            .unwrap();
+        assert!(!active.items.iter().any(|c| c.id == comp.summary.id));
+
+        let archived_listing = service
+            .list_comps(
+                &db,
+                CompFilters {
+                    archived: Some(true),
+                    ..Default::default()
+                },
+                pagination.clone(),
+            )
+            .await
+            .unwrap();
+        assert!(
+            archived_listing
+                .items
+                .iter()
+                .any(|c| c.id == comp.summary.id)
+        );
+
+        let unarchived = service
+            .unarchive_comp(&db, comp.summary.id)
+            .await
+            .expect("unarchiving should succeed");
+        assert!(unarchived.summary.archived_at.is_none());
+        let active_again = service
+            .list_comps(&db, CompFilters::default(), pagination)
+            .await
+            .unwrap();
+        assert!(active_again.items.iter().any(|c| c.id == comp.summary.id));
+    }
+
+    /// Same guarantee as above, for a build a comp uses.
+    #[tokio::test]
+    async fn archiving_a_build_a_comp_uses_succeeds_and_hides_it_from_default_listing() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let zvz = insert_comp_category(&db, "ZvZ").await;
+        let comp = service
+            .create_comp(&db, user, comp_request("Standard", zvz))
+            .await
+            .unwrap();
+        service
+            .add_comp_build(
+                &db,
+                comp.summary.id,
+                AddCompBuildRequest {
+                    build_id,
+                    quantity: 1,
+                },
+            )
+            .await
+            .unwrap();
+
+        service
+            .archive_build(&db, build_id)
+            .await
+            .expect("a build a comp uses can still be archived");
+
+        service
+            .get_build(&db, build_id)
+            .await
+            .expect("the archived build is still readable");
+
+        let pagination = PaginationParams {
+            page: None,
+            limit: None,
+        };
+        let active = service
+            .list_builds(&db, BuildFilters::default(), pagination)
+            .await
+            .unwrap();
+        assert!(!active.items.iter().any(|b| b.id == build_id));
+    }
+
+    /// An archived build can't be placed into a *new* comp, but bumping its quantity where it's
+    /// already used still works — archiving only closes off new placements.
+    #[tokio::test]
+    async fn an_archived_build_cannot_be_newly_added_but_can_still_be_requantified() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let zvz = insert_comp_category(&db, "ZvZ").await;
+        let comp = service
+            .create_comp(&db, user, comp_request("Standard", zvz))
+            .await
+            .unwrap();
+        service
+            .add_comp_build(
+                &db,
+                comp.summary.id,
+                AddCompBuildRequest {
+                    build_id,
+                    quantity: 1,
+                },
+            )
+            .await
+            .unwrap();
+        service.archive_build(&db, build_id).await.unwrap();
+
+        // Already used here — bumping its quantity still works.
+        service
+            .add_comp_build(
+                &db,
+                comp.summary.id,
+                AddCompBuildRequest {
+                    build_id,
+                    quantity: 2,
+                },
+            )
+            .await
+            .expect("requantifying an already-used archived build should succeed");
+
+        // A different, brand-new comp can't pick it up.
+        let other = service
+            .create_comp(&db, user, comp_request("Alternate", zvz))
+            .await
+            .unwrap();
+        let error = service
+            .add_comp_build(
+                &db,
+                other.summary.id,
+                AddCompBuildRequest {
+                    build_id,
+                    quantity: 1,
+                },
+            )
+            .await
+            .unwrap_err();
+        match error {
+            AppError::Validation(message) => assert!(message.contains("archived")),
+            other => panic!("expected validation, got {other:?}"),
+        }
     }
 
     #[tokio::test]

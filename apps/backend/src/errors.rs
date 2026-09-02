@@ -167,7 +167,10 @@ impl IntoResponse for AppError {
                 msg,
                 None,
             ),
-            Self::ConflictWithReferences { message, references } => (
+            Self::ConflictWithReferences {
+                message,
+                references,
+            } => (
                 StatusCode::CONFLICT,
                 "/errors/conflict",
                 "Conflict",

@@ -236,6 +236,18 @@ type PendingDelete =
                 (activeChange)="setCompFilterType($event)"
               />
 
+              @if (canArchiveComps()) {
+                <button
+                  type="button"
+                  class="btn btn--sm"
+                  [class.btn--tonal]="showArchivedComps()"
+                  [class.btn--outline]="!showArchivedComps()"
+                  (click)="toggleShowArchivedComps()"
+                >
+                  {{ t('comps.showArchived') }}
+                </button>
+              }
+
               @if (compFilterType() === 'all' && hasExpandableParents()) {
                 <button
                   type="button"
@@ -313,6 +325,9 @@ type PendingDelete =
                         @if (item.comp.category_name) {
                           <span class="chip text-xs">{{ item.comp.category_name }}</span>
                         }
+                        @if (item.comp.archived_at) {
+                          <span class="chip chip--neutral text-xs">{{ t('comps.archived') }}</span>
+                        }
                       </div>
 
                       @if (compFilterType() === 'variants') {
@@ -378,15 +393,26 @@ type PendingDelete =
                       <a class="btn btn--tonal btn--sm" [routerLink]="['/comps', item.comp.id]">
                         {{ t('common.open') }}
                       </a>
-                      @if (canDeleteComps()) {
-                        <button
-                          type="button"
-                          class="btn btn--danger btn--sm"
-                          [disabled]="saving()"
-                          (click)="askDeleteComp(item.comp)"
-                        >
-                          {{ t('common.delete') }}
-                        </button>
+                      @if (canArchiveComps()) {
+                        @if (item.comp.archived_at) {
+                          <button
+                            type="button"
+                            class="btn btn--outline btn--sm"
+                            [disabled]="saving()"
+                            (click)="unarchiveComp(item.comp)"
+                          >
+                            {{ t('comps.unarchive') }}
+                          </button>
+                        } @else {
+                          <button
+                            type="button"
+                            class="btn btn--outline btn--sm"
+                            [disabled]="saving()"
+                            (click)="askArchiveComp(item.comp)"
+                          >
+                            {{ t('comps.archive') }}
+                          </button>
+                        }
                       }
                     </div>
                   </div>
@@ -426,7 +452,12 @@ type PendingDelete =
           (rowClick)="openBuild($event)"
         >
           <ng-template dataTableCell="name" let-row>
-            <span class="font-bold text-sm">{{ row.name }}</span>
+            <span class="flex items-center gap-2">
+              <span class="font-bold text-sm">{{ row.name }}</span>
+              @if (row.archived_at) {
+                <span class="chip chip--neutral text-xs">{{ t('comps.archived') }}</span>
+              }
+            </span>
           </ng-template>
           <ng-template dataTableCell="role" let-row>
             <span class="chip font-semibold">{{ roleLabel(row.role) }}</span>
@@ -442,15 +473,26 @@ type PendingDelete =
               <a class="btn btn--tonal btn--sm" [routerLink]="['/comps', 'builds', row.id]">{{
                 t('common.open')
               }}</a>
-              @if (canDeleteBuilds()) {
-                <button
-                  type="button"
-                  class="btn btn--danger btn--sm"
-                  [disabled]="saving()"
-                  (click)="askDeleteBuild(row)"
-                >
-                  {{ t('common.delete') }}
-                </button>
+              @if (canArchiveBuilds()) {
+                @if (row.archived_at) {
+                  <button
+                    type="button"
+                    class="btn btn--outline btn--sm"
+                    [disabled]="saving()"
+                    (click)="unarchiveBuild(row)"
+                  >
+                    {{ t('comps.unarchive') }}
+                  </button>
+                } @else {
+                  <button
+                    type="button"
+                    class="btn btn--outline btn--sm"
+                    [disabled]="saving()"
+                    (click)="askArchiveBuild(row)"
+                  >
+                    {{ t('comps.archive') }}
+                  </button>
+                }
               }
             </div>
           </ng-template>
@@ -910,11 +952,11 @@ export class Comps {
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly canCreateComps = computed(() => this.auth.hasPermission('comps.comps.create'));
-  protected readonly canDeleteComps = computed(() => this.auth.hasPermission('comps.comps.delete'));
+  protected readonly canArchiveComps = computed(() => this.auth.hasPermission('comps.comps.delete'));
   protected readonly canCreateBuilds = computed(() =>
     this.auth.hasPermission('comps.builds.create'),
   );
-  protected readonly canDeleteBuilds = computed(() =>
+  protected readonly canArchiveBuilds = computed(() =>
     this.auth.hasPermission('comps.builds.delete'),
   );
   protected readonly canCreateCurrentCategory = computed(() =>

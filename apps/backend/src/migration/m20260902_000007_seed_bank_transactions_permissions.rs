@@ -73,13 +73,11 @@ impl MigrationTrait for Migration {
             backend.build(
                 &Query::delete()
                     .from_table(RolePermissions::Table)
-                    .and_where(
-                        Expr::col(RolePermissions::Permission).is_in([
-                            "bank.transactions.create",
-                            "bank.transactions.edit",
-                            "bank.transactions.delete",
-                        ]),
-                    )
+                    .and_where(Expr::col(RolePermissions::Permission).is_in([
+                        "bank.transactions.create",
+                        "bank.transactions.edit",
+                        "bank.transactions.delete",
+                    ]))
                     .to_owned(),
             ),
         )

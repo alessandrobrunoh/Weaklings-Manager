@@ -43,7 +43,11 @@ mod tests {
     #[test]
     fn explicit_null_means_clear() {
         let p: Probe = serde_json::from_str(r#"{"field": null}"#).unwrap();
-        assert_eq!(p.field, Some(None), "explicit null must be distinguishable from a missing key");
+        assert_eq!(
+            p.field,
+            Some(None),
+            "explicit null must be distinguishable from a missing key"
+        );
     }
 
     #[test]
