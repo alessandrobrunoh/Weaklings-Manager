@@ -12,7 +12,7 @@ import {
   buildEventEmbed,
   buildEventReminderMessage,
   buildEventSummaryEmbed,
-  buildEventThreadActionRow,
+  buildEventThreadActionRows,
 } from "../embeds/event.embed.js";
 import { buildBattleListEmbed } from "../embeds/battle.embed.js";
 import { createResponseEmbed } from '../embeds/theme.js';
@@ -260,7 +260,7 @@ async function handleEventButton(
     );
     await interaction.message.edit({
       embeds: [buildEventEmbed(result.event)],
-      components: [buildEventThreadActionRow(result.event)],
+      components: buildEventThreadActionRows(result.event),
     });
     const successEmbed = createResponseEmbed(
       "success",
@@ -296,7 +296,7 @@ async function handleEventButton(
     }
     await interaction.message.edit({
       embeds: [buildEventEmbed(event)],
-      components: [buildEventThreadActionRow(event)],
+      components: buildEventThreadActionRows(event),
     });
     const closed = await getPoller()?.closeEventThread(eventId);
     if (!closed && interaction.channel?.isThread()) {
@@ -329,7 +329,7 @@ async function handleEventButton(
     await getPoller()?.closeEventThread(eventId);
     await interaction.message.edit({
       embeds: [buildEventEmbed(result.event)],
-      components: [buildEventThreadActionRow(result.event)],
+      components: buildEventThreadActionRows(result.event),
     });
     const message = result.voiceChannelOccupied
       ? `Event **#${eventId}** stopped. Its voice channel is still occupied, so it was kept.`

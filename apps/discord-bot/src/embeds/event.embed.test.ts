@@ -6,7 +6,7 @@ import {
   buildEventMassMessage,
   buildEventReminderMessage,
   buildEventStartMessage,
-  buildEventThreadActionRow,
+  buildEventThreadActionRows,
 } from "./event.embed.js";
 
 function event(overrides: Partial<EventView> = {}): EventView {
@@ -71,9 +71,11 @@ test("event embed renders every active comp build and marks empty seats", () => 
   ]);
 });
 
-test("thread action row exposes six state-aware event controls", () => {
-  const scheduled = buildEventThreadActionRow(event()).toJSON().components;
+test("thread action rows expose six state-aware event controls within Discord limits", () => {
+  const scheduledRows = buildEventThreadActionRows(event()).map((row) => row.toJSON().components);
+  const scheduled = scheduledRows.flat();
 
+  assert.deepEqual(scheduledRows.map((row) => row.length), [5, 1]);
   assert.deepEqual(
     scheduled.map((component) =>
       "custom_id" in component ? component.custom_id : undefined,
@@ -92,16 +94,16 @@ test("thread action row exposes six state-aware event controls", () => {
     [false, false, false, false, true, false],
   );
 
-  const live = buildEventThreadActionRow(event({ status: "live" })).toJSON().components;
+  const live = buildEventThreadActionRows(event({ status: "live" })).flatMap((row) => row.toJSON().components);
   assert.deepEqual(
     live.map((component) => component.disabled ?? false),
     [true, true, true, true, false, false],
   );
 
-  const stopped = buildEventThreadActionRow(event({ status: "stopped" })).toJSON().components;
+  const stopped = buildEventThreadActionRows(event({ status: "stopped" })).flatMap((row) => row.toJSON().components);
   assert.ok(stopped.every((component) => component.disabled));
 
-  const cancelled = buildEventThreadActionRow(event({ status: "cancelled" })).toJSON().components;
+  const cancelled = buildEventThreadActionRows(event({ status: "cancelled" })).flatMap((row) => row.toJSON().components);
   assert.ok(cancelled.every((component) => component.disabled));
 });
 
