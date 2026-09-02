@@ -378,7 +378,7 @@ interface EventRosterParty {
 
                 <!-- 1. MY ASSIGNMENT SPOTLIGHT CARD -->
                 <section
-                  class="card p-4 sm:p-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm"
+                  class="card p-4 sm:p-5 shadow-sm"
                   aria-labelledby="my-assignment-heading"
                 >
                   <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -490,7 +490,7 @@ interface EventRosterParty {
                 </section>
 
                 <!-- 2. ROSTER CONTROL BAR -->
-                <section class="card p-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <section class="card p-4">
                   <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                     <!-- Left: Posti & Ruoli counts -->
                     <div class="flex flex-wrap items-center gap-3">
@@ -574,7 +574,7 @@ interface EventRosterParty {
 
                 <!-- 3. ACTIVE COMMAND NOTICE BANNER (Swap or Assign mode) -->
                 @if (rosterSwapSource(); as source) {
-                  <div class="card p-3.5 rounded-xl border-2 border-[var(--color-primary)] bg-[var(--color-surface-2)] flex items-center justify-between gap-3 shadow-md animate-pulse">
+                  <div class="card p-3.5 border-2 border-[var(--color-primary)] bg-[var(--color-surface-2)] flex items-center justify-between gap-3 shadow-md animate-pulse">
                     <div class="flex items-center gap-2.5">
                       <app-icon name="refresh" size="1.125rem" />
                       <span class="text-xs font-semibold text-[var(--color-text)]">
@@ -592,7 +592,7 @@ interface EventRosterParty {
                     </button>
                   </div>
                 } @else if (rosterAssignTarget(); as target) {
-                  <div class="card p-3.5 rounded-xl border-2 border-[var(--color-primary)] bg-[var(--color-surface-2)] flex items-center justify-between gap-3 shadow-md animate-pulse">
+                  <div class="card p-3.5 border-2 border-[var(--color-primary)] bg-[var(--color-surface-2)] flex items-center justify-between gap-3 shadow-md animate-pulse">
                     <div class="flex items-center gap-2.5">
                       <app-icon name="plus" size="1.125rem" />
                       <span class="text-xs font-semibold text-[var(--color-text)]">
@@ -618,7 +618,7 @@ interface EventRosterParty {
                     <div class="grid gap-4 md:grid-cols-2">
                       @for (party of rosterParties(); track party.partyNumber) {
                         <section
-                          class="card p-0 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm"
+                          class="card p-0 overflow-hidden shadow-sm"
                           [attr.aria-labelledby]="'party-heading-' + party.partyNumber"
                         >
                           <!-- Party Header -->
@@ -816,7 +816,7 @@ interface EventRosterParty {
 
                   <!-- BENCH TRAY (PANCHINA) -->
                   <aside
-                    class="card p-0 overflow-hidden rounded-2xl border transition-all bg-[var(--color-surface)] shadow-sm sticky top-4"
+                    class="card p-0 overflow-hidden transition-all shadow-sm sticky top-4"
                     [class.border-[var(--color-border)]]="!isDropTargetBench()"
                     [class.border-amber-500]="isDropTargetBench()"
                     [class.border-dashed]="isDropTargetBench()"
@@ -868,7 +868,7 @@ interface EventRosterParty {
                     <div class="p-3 space-y-2 max-h-[38rem] overflow-y-auto">
                       @for (member of filteredRosterBench(); track member.user_id) {
                         <div
-                          class="p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)] transition-all space-y-2 select-none"
+                          class="surface p-3 hover:border-[var(--color-primary)] transition-all space-y-2 select-none"
                           [class.border-amber-500]="rosterAssignTarget() !== null"
                           [class.bg-amber-500/5]="rosterAssignTarget() !== null"
                           [class.opacity-40]="draggedBenchMember()?.user_id === member.user_id"
@@ -935,11 +935,11 @@ interface EventRosterParty {
                 </div>
               </div>
             } @else if (rosterSnapshotState() === 'loading') {
-              <section class="card p-6 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] text-center">
+              <section class="card p-6 text-center">
                 <app-loading [label]="'Caricamento del roster in corso...'" />
               </section>
             } @else if (rosterSnapshotState() === 'error') {
-              <section class="card p-6 rounded-2xl border border-[var(--color-error)] bg-[var(--color-surface)] text-center space-y-2">
+              <section class="card p-6 border-[var(--color-error)] text-center space-y-2">
                 <app-icon name="alert" size="2rem" color="var(--color-danger)" />
                 <h2 class="text-sm font-bold text-[var(--color-text)]">Roster non disponibile</h2>
                 <p class="text-xs text-[var(--color-text-secondary)]">{{ rosterSnapshotError() }}</p>
@@ -958,7 +958,7 @@ interface EventRosterParty {
               aria-label="Event Overview KPIs"
             >
               <!-- Card 1: Win Rate -->
-              <article class="surface p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+              <article class="surface p-4">
                 <p class="event-detail__label">{{ t('events.detail.win_rate') }}</p>
                 <p class="event-detail__value mt-1">{{ formatPercent(detail.stats.win_rate) }}</p>
                 <p class="event-detail__sub mb-2">
@@ -976,7 +976,7 @@ interface EventRosterParty {
               </article>
 
               <!-- Card 2: K/D Ratio & Kill Fame -->
-              <article class="surface p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+              <article class="surface p-4">
                 <p class="event-detail__label">
                   {{ t('events.detail.kd') }} &middot; {{ t('events.detail.kill_fame') }}
                 </p>
@@ -996,7 +996,7 @@ interface EventRosterParty {
               </article>
 
               <!-- Card 3: Estimated Combat Losses / Regear Expenses -->
-              <article class="surface p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+              <article class="surface p-4">
                 <p class="event-detail__label">{{ t('events.detail.our_guild_loss') }}</p>
                 <p class="event-detail__value mt-1 text-[var(--color-danger)] font-mono">
                   -{{ formatAmount(eventLossEstimate().total_estimated_loss) }}
@@ -1009,7 +1009,7 @@ interface EventRosterParty {
 
               <!-- Card 4: Net Financial Outcome (Loot vs Expenses) -->
               <article
-                class="surface p-4 rounded-xl border bg-[var(--color-surface)]"
+                class="surface p-4"
                 [class.border-[var(--color-success)]]="eventBalance().isProfitable"
                 [class.border-[var(--color-danger)]]="!eventBalance().isProfitable"
               >
@@ -1032,7 +1032,7 @@ interface EventRosterParty {
             <!-- 2-Column Analytical Breakdown -->
             <div class="grid gap-5 lg:grid-cols-2">
               <!-- Left Column: Guild Member Equipment Losses -->
-              <section class="card p-0 overflow-hidden border border-[var(--color-border)] rounded-2xl bg-[var(--color-surface)] shadow-sm">
+              <section class="card p-0 overflow-hidden shadow-sm">
                 <header class="event-detail__section-header">
                   <div class="flex items-center gap-2">
                     <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text)]">
@@ -1046,7 +1046,7 @@ interface EventRosterParty {
                 @if (eventLossEstimate().players.length > 0) {
                   <div class="p-3 space-y-2 max-h-96 overflow-y-auto">
                     @for (player of eventLossEstimate().players; track player.player_name) {
-                      <div class="flex items-center justify-between gap-3 p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                      <div class="surface flex items-center justify-between gap-3 p-3">
                         <div class="flex items-center gap-2.5 min-w-0">
                           <app-avatar [username]="player.player_name" size="sm" />
                           <div class="min-w-0">
@@ -1077,7 +1077,7 @@ interface EventRosterParty {
               </section>
 
               <!-- Right Column: Top Opponents -->
-              <section class="card p-0 overflow-hidden border border-[var(--color-border)] rounded-2xl bg-[var(--color-surface)] shadow-sm">
+              <section class="card p-0 overflow-hidden shadow-sm">
                 <header class="event-detail__section-header">
                   <div class="flex items-center gap-2">
                     <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text)]">
@@ -1094,7 +1094,7 @@ interface EventRosterParty {
                       opponent of detail.stats.top_opponents;
                       track opponent.guild_id || opponent.guild_name
                     ) {
-                      <div class="p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)] space-y-2">
+                      <div class="surface p-3 space-y-2">
                         <div class="flex items-center justify-between gap-2">
                           <span class="text-xs font-bold text-[var(--color-text)] truncate">
                             {{ opponent.guild_name || 'Gilda sconosciuta' }}
@@ -1136,7 +1136,7 @@ interface EventRosterParty {
           @case ('battles') {
             <div class="space-y-5">
               <!-- Battles Management Bar -->
-              <section class="card p-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+              <section class="card p-4">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                   <div class="flex items-center gap-3">
                     <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text)]">
@@ -1181,7 +1181,7 @@ interface EventRosterParty {
                 <section class="space-y-3" aria-label="Canonical fights">
                   @for (fight of detail.fights; track fight.id) {
                     @let metrics = fightMetrics(fight, detail.battles);
-                    <article class="card p-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm space-y-4">
+                    <article class="card p-5 shadow-sm space-y-4">
                       <div class="flex flex-wrap items-center justify-between gap-3">
                         <div class="space-y-1">
                           <div class="flex items-center gap-2">
@@ -1214,34 +1214,34 @@ interface EventRosterParty {
                       </div>
 
                       <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6 pt-3 border-t border-[var(--color-border)]">
-                        <div class="surface p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                        <div class="surface p-3">
                           <p class="event-detail__label">{{ t('battles.outcome') }}</p>
                           <p class="text-xs font-bold mt-1 uppercase">{{ metrics.outcome }}</p>
                         </div>
-                        <div class="surface p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                        <div class="surface p-3">
                           <p class="event-detail__label">{{ t('battles.segments') }}</p>
                           <p class="event-detail__value-sm mt-1">{{ metrics.segments }}</p>
                         </div>
-                        <div class="surface p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                        <div class="surface p-3">
                           <p class="event-detail__label">Confidence</p>
                           <p class="event-detail__value-sm mt-1">
                             {{ formatPercent(fight.grouping_confidence) }}
                           </p>
                         </div>
                         @if (metrics.players !== null) {
-                          <div class="surface p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                          <div class="surface p-3">
                             <p class="event-detail__label">{{ t('battles.players') }}</p>
                             <p class="event-detail__value-sm mt-1">{{ formatNumber(metrics.players) }}</p>
                           </div>
                         }
                         @if (metrics.kills !== null) {
-                          <div class="surface p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                          <div class="surface p-3">
                             <p class="event-detail__label">{{ t('battles.kills') }}</p>
                             <p class="event-detail__value-sm mt-1 text-[var(--color-success)]">{{ formatNumber(metrics.kills) }}</p>
                           </div>
                         }
                         @if (metrics.fame !== null) {
-                          <div class="surface p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                          <div class="surface p-3">
                             <p class="event-detail__label">{{ t('battles.kill_fame') }}</p>
                             <p class="event-detail__value-sm mt-1 text-[var(--color-success)]">{{ formatCompact(metrics.fame) }}</p>
                           </div>
@@ -1256,7 +1256,7 @@ interface EventRosterParty {
               @if (detail.battles.length > 0) {
                 <div class="space-y-3">
                   @for (battle of detail.battles; track battle.id) {
-                    <article class="card p-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)] transition-colors shadow-sm space-y-3">
+                    <article class="card p-5 shadow-sm space-y-3">
                       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[var(--color-border)]">
                         <div class="flex items-center gap-2.5 flex-wrap">
                           <span
@@ -1303,7 +1303,7 @@ interface EventRosterParty {
 
                       <!-- 4-Column Combat Metrics -->
                       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <div class="surface p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                        <div class="surface p-3">
                           <span class="event-detail__label">Forze in campo</span>
                           <p class="font-mono text-sm font-bold text-[var(--color-text)] mt-0.5">
                             {{ battle.guild_players_count }}
@@ -1312,7 +1312,7 @@ interface EventRosterParty {
                           </p>
                         </div>
 
-                        <div class="surface p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                        <div class="surface p-3">
                           <span class="event-detail__label">Kill / Morti</span>
                           <p class="font-mono text-sm font-bold text-[var(--color-text)] mt-0.5">
                             <span class="text-[var(--color-success)]">{{ battle.guild_kills }}</span>
@@ -1321,14 +1321,14 @@ interface EventRosterParty {
                           </p>
                         </div>
 
-                        <div class="surface p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                        <div class="surface p-3">
                           <span class="event-detail__label">Fama Kill Gilda</span>
                           <p class="font-mono text-sm font-bold text-[var(--color-success)] mt-0.5">
                             +{{ formatCompact(battle.guild_kill_fame) }}
                           </p>
                         </div>
 
-                        <div class="surface p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                        <div class="surface p-3">
                           <span class="event-detail__label">Morti Registrate</span>
                           <p class="font-mono text-sm font-bold text-[var(--color-danger)] mt-0.5">
                             {{ battle.guild_deaths }} morti
@@ -1339,7 +1339,7 @@ interface EventRosterParty {
                   }
                 </div>
               } @else {
-                <div class="card p-10 text-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <div class="card p-10 text-center">
                   <app-empty-state [message]="t('events.detail.no_battles')" icon="swords" />
                 </div>
               }
@@ -1350,7 +1350,7 @@ interface EventRosterParty {
           @case ('splits') {
             <div class="space-y-5">
               <!-- Summary Strip -->
-              <section class="card p-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
+              <section class="card p-5 shadow-sm">
                 <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
                   <div>
                     <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text)]">
@@ -1383,23 +1383,23 @@ interface EventRosterParty {
 
                 @if (detail.split_stats.total_splits > 0) {
                   <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-[var(--color-border)]">
-                    <div class="surface p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                    <div class="surface p-3">
                       <p class="event-detail__label">{{ t('events.detail.split_total') }}</p>
                       <p class="event-detail__value-sm mt-1 font-bold">{{ detail.split_stats.total_splits }}</p>
                     </div>
-                    <div class="surface p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                    <div class="surface p-3">
                       <p class="event-detail__label">{{ t('events.detail.split_completed') }}</p>
                       <p class="event-detail__value-sm mt-1 text-[var(--color-success)] font-bold">
                         {{ detail.split_stats.completed_splits }}
                       </p>
                     </div>
-                    <div class="surface p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                    <div class="surface p-3">
                       <p class="event-detail__label">{{ t('events.detail.split_pending') }}</p>
                       <p class="event-detail__value-sm mt-1 text-[var(--color-warning)] font-bold">
                         {{ detail.split_stats.pending_splits }}
                       </p>
                     </div>
-                    <div class="surface p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                    <div class="surface p-3">
                       <p class="event-detail__label">{{ t('events.detail.split_net') }}</p>
                       <p class="event-detail__value-sm mt-1 text-[var(--color-success)] font-mono font-bold">
                         {{ formatAmount(detail.split_stats.completed_net_value) }}
@@ -1413,7 +1413,7 @@ interface EventRosterParty {
               @if (detail.splits.length > 0) {
                 <div class="space-y-3">
                   @for (split of detail.splits; track split.id) {
-                    <article class="card p-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)] transition-colors shadow-sm space-y-3">
+                    <article class="card p-5 shadow-sm space-y-3">
                       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[var(--color-border)]">
                         <div class="flex items-center gap-2.5 flex-wrap">
                           <app-status-chip [value]="split.status" />
@@ -1455,25 +1455,25 @@ interface EventRosterParty {
                       </div>
 
                       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <div class="surface p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                        <div class="surface p-3">
                           <span class="event-detail__label">{{ t('splits.estimated') }}</span>
                           <p class="font-mono text-xs font-bold text-[var(--color-text)] mt-0.5">
                             {{ formatAmount(split.estimated_market_value) }}
                           </p>
                         </div>
-                        <div class="surface p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                        <div class="surface p-3">
                           <span class="event-detail__label">{{ t('splits.repair_cost') }}</span>
                           <p class="font-mono text-xs font-bold text-[var(--color-danger)] mt-0.5">
                             -{{ formatAmount(split.repair_value) }}
                           </p>
                         </div>
-                        <div class="surface p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                        <div class="surface p-3">
                           <span class="event-detail__label">{{ t('splits.bags_value') }}</span>
                           <p class="font-mono text-xs font-bold text-[var(--color-text)] mt-0.5">
                             +{{ formatAmount(split.bags_value) }}
                           </p>
                         </div>
-                        <div class="surface p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)]">
+                        <div class="surface p-3">
                           <span class="event-detail__label">{{ t('splits.net_value') }}</span>
                           <p class="font-mono text-xs font-bold text-[var(--color-success)] mt-0.5">
                             {{ formatAmount(netOfSplit(split)) }} ({{ split.participant_count }} p)
@@ -1484,7 +1484,7 @@ interface EventRosterParty {
                   }
                 </div>
               } @else {
-                <div class="card p-10 text-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+                <div class="card p-10 text-center">
                   <app-empty-state [message]="t('events.detail.no_splits')" icon="package" />
                 </div>
               }
@@ -1783,7 +1783,7 @@ interface EventRosterParty {
             <div class="mt-2 grid gap-2">
               @for (role of extraRosterRoles(); track role.id) {
                 <div
-                  class="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] px-3.5 py-2 bg-[var(--color-surface-1)]"
+                  class="surface flex min-h-11 items-center justify-between gap-3 px-3.5 py-2"
                 >
                   <span class="text-xs font-semibold text-[var(--color-text)]">{{ role.name }}</span>
                   <button
