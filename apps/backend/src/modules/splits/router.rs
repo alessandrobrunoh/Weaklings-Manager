@@ -121,8 +121,9 @@ pub async fn split_kpi_summary(
         older version of this API, there is no separate \"create draft then add participants\" step: \
         `participants` is required up front (at least one entry, no duplicate `user_id`s, every \
         `weight` must be positive) and the split is created already fully formed. It starts in \
-        `SplitStatus::Pending` and stays editable (via `POST/DELETE .../participants`) until an \
-        officer closes it out with one of `POST /splits/{id}/complete`, `.../not-completed`, or \
+        `SplitStatus::Pending` for standalone loot, or `SplitStatus::AwaitingEvent` when linked to an \
+        unfinished event. Linked splits stay payout-blocked until the event ends, while remaining \
+        editable (via `POST/DELETE .../participants`) until an officer closes them out with one of `POST /splits/{id}/complete`, `.../not-completed`, or \
         `.../lost` — see the `splits` tag description for the full lifecycle. `net_value` is `null` \
         until completed; the preview formula the frontend can show before that is \
         `(estimated_market_value - repair_value + bags_value) - ((estimated_market_value - repair_value + bags_value) * fee / 100)`, with a configurable default fee of 20%.",

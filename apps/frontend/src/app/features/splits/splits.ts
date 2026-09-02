@@ -6,6 +6,7 @@ import type {
   AlbionGuildMember,
   CompleteSplitsBatchResult,
   CreateSplitRequest,
+  DiscordUserProfile,
   EventView,
   MatchedParticipant,
   OcrResult,
@@ -38,7 +39,7 @@ import {
   type SearchDialogOption,
 } from '../../shared/components/search-dialog/search-dialog';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
-import { StatusChip } from '../../shared/components/status-chip/status-chip';
+
 
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
@@ -81,7 +82,6 @@ interface SplitParticipantDraft {
     RouterLink,
     SearchDialog,
     StatCard,
-    StatusChip,
     TooltipDirective,
   ],
   template: `
@@ -151,7 +151,7 @@ interface SplitParticipantDraft {
         />
       </section>
 
-      @if (canAct() && pendingSplits().length > 0) {
+      @if (canAct() && (pendingSplits().length > 0 || awaitingEventSplits().length > 0)) {
         <section
           class="surface flex flex-wrap items-center justify-between gap-3 p-3.5"
           style="border-color: var(--color-border); background-color: var(--color-surface-2)"
@@ -172,6 +172,11 @@ interface SplitParticipantDraft {
               }
             </span>
           </label>
+          @if (awaitingEventSplits().length > 0) {
+            <p class="basis-full text-xs text-[var(--color-warning)]" role="status">
+              {{ t('splits.awaiting_event.message') }}
+            </p>
+          }
           <button
             type="button"
             class="btn btn--primary btn--sm flex items-center gap-2"
@@ -215,7 +220,9 @@ interface SplitParticipantDraft {
           <span class="font-medium">{{ row.note || t('splits.untitled', { id: row.id }) }}</span>
         </ng-template>
         <ng-template dataTableCell="status" let-row>
-          <app-status-chip [value]="row.status" />
+          <span class="chip" [class]="'chip chip--' + statusTone(row.status)">
+            <span class="status-dot"></span>{{ statusLabel(row.status) }}
+          </span>
         </ng-template>
         <ng-template dataTableCell="island" let-row>
           {{ locationLabel(row) }}
@@ -831,12 +838,15 @@ export class Splits {
     this.translate.t(key, params);
 
   protected readonly pendingSplits = computed(() =>
-    this.splits().filter((split) => split.status === 'pending'),
+    this.splits().filter((split) => isSplitBatchSelectable(split.status)),
   );
-  protected readonly selectedCount = computed(() => this.selectedIds().size);
+  protected readonly awaitingEventSplits = computed(() =>
+    this.splits().filter((split) => isSplitAwaitingEvent(split.status)),
+  );
   protected readonly selectedSplits = computed(() =>
-    this.splits().filter((split) => this.selectedIds().has(split.id)),
+    this.splits().filter((split) => split.status === 'pending' && this.selectedIds().has(split.id)),
   );
+  protected readonly selectedCount = computed(() => this.selectedSplits().length);
   protected readonly selectedTotalNet = computed(() =>
     this.selectedSplits().reduce((sum, split) => sum + this.netOf(split), 0),
   );
@@ -939,6 +949,24 @@ export class Splits {
     return this.t(`splits.city.${city}` as TranslationKey);
   }
 
+  protected statusLabel(status: SplitStatus): string {
+    return this.t(`splits.status.${status}` as TranslationKey);
+  }
+
+  protected statusTone(status: SplitStatus): 'warning' | 'success' | 'neutral' | 'error' {
+    switch (status) {
+      case 'pending':
+      case 'awaiting_event':
+        return 'warning';
+      case 'completed':
+        return 'success';
+      case 'lost':
+        return 'error';
+      default:
+        return 'neutral';
+    }
+  }
+
   protected locationLabel(split: SplitSummary): string {
     if (
       !split.island_tab_id ||
@@ -975,7 +1003,9 @@ export class Splits {
   }
 
   protected openCreateDialog(): void {
-    this.draftFeeInput.set(String(this.kpi()?.default_split_fee ?? DEFAULT_SPLIT_FEE));
+    this.participants.set(
+      addCurrentUserToParticipants(this.participants(), this.auth.profile()),
+    );
     this.showCreateForm.set(true);
   }
 
@@ -1260,7 +1290,7 @@ export class Splits {
   }
 
   protected completeSelected(): void {
-    if (this.selectedIds().size === 0) {
+    if (this.selectedCount() === 0) {
       return;
     }
     this.showBatchConfirmDialog.set(true);
@@ -1272,7 +1302,7 @@ export class Splits {
   }
 
   protected async runBatchComplete(): Promise<void> {
-    const ids = [...this.selectedIds()];
+    const ids = this.selectedSplits().map((split) => split.id);
     if (ids.length === 0) {
       return;
     }
@@ -1431,10 +1461,41 @@ export class Splits {
   }
 }
 
+export function isSplitBatchSelectable(status: SplitStatus): boolean {
+  return status === 'pending';
+}
+
+export function isSplitAwaitingEvent(status: SplitStatus): boolean {
+  return status === 'awaiting_event';
+}
+
 function isSplitStatus(value: string): value is SplitStatus {
   return (
-    value === 'pending' || value === 'completed' || value === 'not_completed' || value === 'lost'
+    value === 'pending' ||
+    value === 'awaiting_event' ||
+    value === 'completed' ||
+    value === 'not_completed' ||
+    value === 'lost'
   );
+}
+
+export function addCurrentUserToParticipants(
+  participants: readonly SplitParticipantDraft[],
+  profile: Pick<DiscordUserProfile, 'user_id' | 'username'> | null,
+): SplitParticipantDraft[] {
+  if (!profile || participants.some((participant) => participant.user_id === profile.user_id)) {
+    return [...participants];
+  }
+
+  return redistributeWeights([
+    ...participants,
+    {
+      raw_name: profile.username,
+      user_id: profile.user_id,
+      username: profile.username,
+      weight: 1,
+    },
+  ]);
 }
 
 function toDraftParticipants(matched: MatchedParticipant[]): SplitParticipantDraft[] {

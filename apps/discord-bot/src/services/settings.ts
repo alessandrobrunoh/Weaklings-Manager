@@ -73,6 +73,17 @@ export class SettingsService {
   async splitsForumChannelId(): Promise<string | null> {
     return (await this.get()).discord_splits_forum_channel_id;
   }
+
+  async splitTagId(status: 'pending' | 'awaiting_event' | 'completed' | 'not_completed' | 'lost'): Promise<string | null> {
+    const settings = await this.get();
+    return {
+      pending: settings.discord_split_pending_tag_id,
+      awaiting_event: settings.discord_split_pending_tag_id,
+      completed: settings.discord_split_completed_tag_id,
+      not_completed: settings.discord_split_not_completed_tag_id,
+      lost: settings.discord_split_lost_tag_id,
+    }[status];
+  }
 }
 
 let instance: SettingsService | null = null;

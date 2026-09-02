@@ -11,6 +11,21 @@ function kda(kills: number, deaths: number): string {
   return `${kills}K / ${deaths}D (${ratio})`;
 }
 
+function bar(value: number, max: number, width = 12): string {
+  const filled = max > 0 ? Math.round((value / max) * width) : 0;
+  return `${"█".repeat(Math.min(width, filled))}${"░".repeat(Math.max(0, width - filled))}`;
+}
+
+function chartLine(
+  name: string,
+  kills: number,
+  deaths: number,
+  maxKills: number,
+  maxDeaths: number,
+): string {
+  return `${name.padEnd(16)} K ${bar(kills, maxKills)} ${kills}   D ${bar(deaths, maxDeaths)} ${deaths}`;
+}
+
 // ── Embed singola battaglia ──────────────────────────────────────────────────
 
 export function buildBattleEmbed(
@@ -35,7 +50,7 @@ export function buildBattleEmbed(
   const embed = createBaseEmbed({
     category: "BATTLE REPORT",
     title: `${resultStr} — <t:${ts}:F>`,
-    description: `*Duration: ${durationStr} · Total Kills: ${fmt(battle.total_kills)}*`,
+    description: `*⏱️ Duration: ${durationStr} · 💀 Total Battle Kills: ${fmt(battle.total_kills)}*`,
     color,
     footerText: `Battle #${battle.battle_id} • Weaklings Guild Manager`,
   });
@@ -58,15 +73,37 @@ export function buildBattleEmbed(
     .filter((g) => g.name !== guildName)
     .sort((a, b) => b.kill_fame - a.kill_fame)
     .slice(0, 3);
+  const chartGuilds = guildSide ? [guildSide, ...opponents] : opponents;
+  const maxKills = Math.max(...chartGuilds.map((g) => g.kills), 0);
+  const maxDeaths = Math.max(...chartGuilds.map((g) => g.deaths), 0);
+  const maxFame = Math.max(...chartGuilds.map((g) => g.kill_fame), 0);
+  const codeFence = "```";
+
+  if (chartGuilds.length > 0) {
+    embed.addFields({
+      name: "⚔️ K/D BREAKDOWN",
+      value: `${codeFence}\n${chartGuilds
+        .map((g) => chartLine(g.name, g.kills, g.deaths, maxKills, maxDeaths))
+        .join("\n")}\n${codeFence}`,
+      inline: false,
+    });
+
+    embed.addFields({
+      name: "⭐ KILL FAME",
+      value: `${codeFence}\n${chartGuilds
+        .map((g) => `${g.name.padEnd(16)} ${bar(g.kill_fame, maxFame)} ${fmt(g.kill_fame)}`)
+        .join("\n")}\n${codeFence}`,
+      inline: false,
+    });
+  }
 
   if (opponents.length > 0) {
     const lines = opponents.map(
-      (g) =>
-        `• ⚔️ **${g.name}**\n  - K/D: ${kda(g.kills, g.deaths)} · ${fmt(g.kill_fame)} fame`,
+      (g) => `• ⚔️ **${g.name}** · ${kda(g.kills, g.deaths)} · ${fmt(g.kill_fame)} fame`,
     );
     embed.addFields({
       name: "💀 Top Opponents",
-      value: lines.join("\n\n"),
+      value: lines.join("\n"),
       inline: true,
     });
   }

@@ -287,17 +287,17 @@
   }
 
   .data-table__toolbar-left {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    align-items: center;
   }
 
   .data-table__filters {
-    width: 100%;
+    width: auto;
   }
 
   .data-table__filters select {
-    flex: 1 1 auto;
-    width: 100%;
+    flex: 0 1 auto;
+    width: auto;
   }
 
   .data-table__search-wrapper {

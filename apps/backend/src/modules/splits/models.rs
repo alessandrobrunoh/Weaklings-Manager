@@ -161,7 +161,8 @@ pub struct CreateSplitRequest {
     #[schema(example = 10)]
     pub island_tab_id: i64,
     /// The participants to distribute the loot to, with their relative weights. Must be
-    /// non-empty and contain no duplicate user ids.
+    /// non-empty for standalone splits; linked event splits may start empty and are populated
+    /// from the event roster as users sign up.
     pub participants: Vec<UpsertParticipantRequest>,
 }
 

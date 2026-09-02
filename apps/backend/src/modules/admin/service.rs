@@ -71,6 +71,18 @@ impl AdminService {
         if let Some(value) = &req.discord_splits_forum_channel_id {
             active.discord_splits_forum_channel_id = Set(normalize(value));
         }
+        if let Some(value) = &req.discord_split_pending_tag_id {
+            active.discord_split_pending_tag_id = Set(normalize(value));
+        }
+        if let Some(value) = &req.discord_split_completed_tag_id {
+            active.discord_split_completed_tag_id = Set(normalize(value));
+        }
+        if let Some(value) = &req.discord_split_not_completed_tag_id {
+            active.discord_split_not_completed_tag_id = Set(normalize(value));
+        }
+        if let Some(value) = &req.discord_split_lost_tag_id {
+            active.discord_split_lost_tag_id = Set(normalize(value));
+        }
         if let Some(value) = &req.discord_event_voice_category_id {
             active.discord_event_voice_category_id = Set(normalize_discord_snowflake(value)?);
         }
@@ -102,6 +114,10 @@ impl AdminService {
                 "discord_transaction_spam_channel_id": req.discord_transaction_spam_channel_id,
                 "discord_event_role_id": req.discord_event_role_id,
                 "discord_splits_forum_channel_id": req.discord_splits_forum_channel_id,
+                "discord_split_pending_tag_id": req.discord_split_pending_tag_id,
+                "discord_split_completed_tag_id": req.discord_split_completed_tag_id,
+                "discord_split_not_completed_tag_id": req.discord_split_not_completed_tag_id,
+                "discord_split_lost_tag_id": req.discord_split_lost_tag_id,
                 "discord_event_voice_category_id": req.discord_event_voice_category_id,
                 "default_split_fee": req.default_split_fee,
             })),

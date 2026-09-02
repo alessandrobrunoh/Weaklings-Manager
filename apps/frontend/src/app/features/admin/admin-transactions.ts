@@ -466,6 +466,8 @@ export class AdminTransactions {
         page: query.page,
         limit: query.pageSize,
         global: true,
+        // Keep the optional flattened filter visible to older query deserializers.
+        split_id: '',
       };
       if (query.search.trim()) {
         params['search'] = query.search.trim();

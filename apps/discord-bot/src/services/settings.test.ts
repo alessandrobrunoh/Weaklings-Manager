@@ -13,6 +13,10 @@ const settings: GuildSettingsView = {
   discord_event_role_id: null,
   discord_auto_role_id: null,
   discord_splits_forum_channel_id: null,
+  discord_split_pending_tag_id: null,
+  discord_split_completed_tag_id: null,
+  discord_split_not_completed_tag_id: null,
+  discord_split_lost_tag_id: null,
   discord_event_voice_category_id: "123456789012345678",
   default_split_fee: "20.00",
 };

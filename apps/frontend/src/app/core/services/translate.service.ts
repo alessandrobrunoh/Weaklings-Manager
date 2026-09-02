@@ -2,6 +2,7 @@ import { computed, Injectable, signal } from '@angular/core';
 
 import { en, type TranslationDict, type TranslationKey } from '../../i18n/en';
 import { es } from '../../i18n/es';
+import { fr } from '../../i18n/fr';
 import { it } from '../../i18n/it';
 
 /**
@@ -16,13 +17,13 @@ import { it } from '../../i18n/it';
  * The user's choice is persisted in `localStorage` (`alm.lang`) and mirrored
  * onto `<html lang>` for accessibility / screen readers.
  */
-export type Language = 'en' | 'it' | 'es';
+export type Language = 'en' | 'it' | 'es' | 'fr';
 
 const STORAGE_KEY = 'alm.lang';
 
-const DICTIONARIES: Record<Language, TranslationDict> = { en, it, es };
+const DICTIONARIES: Record<Language, TranslationDict> = { en, it, es, fr };
 
-const SUPPORTED: ReadonlyArray<Language> = ['en', 'it', 'es'];
+const SUPPORTED: ReadonlyArray<Language> = ['en', 'it', 'es', 'fr'];
 
 function detectInitialLanguage(): Language {
   if (typeof localStorage !== 'undefined') {
@@ -58,6 +59,7 @@ export class TranslateService {
     en: 'English',
     it: 'Italiano',
     es: 'Español',
+    fr: 'Français',
   };
 
   constructor() {

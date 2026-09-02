@@ -26,10 +26,11 @@ use sea_orm::EntityTrait;
 use std::collections::HashSet;
 
 use super::models::{
-    AssignRosterSeatRequest, CreateEventRequest, CreateEventRosterRoleRequest, EventDetailView,
-    EventFilters, EventRosterRoleView, EventRosterView, EventSignupOptionsView, EventView,
-    ParticipateEventRequest, RosterVersionRequest, SetEventVoiceChannelRequest,
-    SetParticipantRequest, SwapRosterSeatsRequest, UpdateEventBattlesRequest, UpdateEventRequest,
+    AddEventMemberRequest, AssignRosterSeatRequest, CreateEventRequest,
+    CreateEventRosterRoleRequest, EventDetailView, EventFilters, EventRosterRoleView,
+    EventRosterView, EventSignupOptionsView, EventView, ParticipateEventRequest,
+    RosterVersionRequest, SetEventVoiceChannelRequest, SetParticipantRequest,
+    SwapRosterSeatsRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
 use super::roster_hub::{RosterHub, RosterNotification};
 use super::service::{BattleLinkingContext, EventService};
@@ -68,6 +69,7 @@ pub fn router() -> Router {
             "/{id}/participate",
             post(participate).delete(cancel_participation),
         )
+        .route("/{id}/participants", post(add_event_member))
         .route(
             "/{id}/participants/{user_id}",
             put(set_participant).delete(remove_participant),
@@ -776,9 +778,51 @@ async fn require_event_management_authority(
     ))
 }
 
-/// Inserts or updates a participant on behalf of an arbitrary guild member.
+/// Adds or updates a participant on behalf of an arbitrary guild member.
 ///
 /// Restricted to the event creator or users holding `events.edit`.
+#[utoipa::path(
+    post,
+    path = "/api/events/{id}/participants",
+    tag = "events",
+    summary = "Add a member to an event",
+    description = "Adds an existing member to the event using the same comp, build-slot, roster, and capacity invariants as self-service participation. Repeating the request updates that member's build assignment.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    request_body(content = AddEventMemberRequest, description = "Member and build IDs to assign"),
+    responses(
+        (status = 200, description = "Member added", body = ApiResponseEventDetail),
+        (status = 400, description = "Validation error (e.g. comp full, build not allowed)", body = ProblemDetails),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - caller is not creator and lacks events.edit", body = ProblemDetails),
+        (status = 404, description = "Event / user / build not found", body = ProblemDetails)
+    )
+)]
+async fn add_event_member(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(hub): Extension<RosterHub>,
+    Path(id): Path<i64>,
+    Json(req): Json<AddEventMemberRequest>,
+) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
+    require_event_management_authority(&user, &perms, &db, id).await?;
+    let service = EventService::new();
+    let (detail, version) = service.add_member_with_roster_version(&db, id, req).await?;
+    tracing::info!(
+        event_id = id,
+        roster_version = version,
+        actor_id = user.user_id,
+        "event member added"
+    );
+    hub.publish(id, version, "participation_changed", Vec::new());
+    Ok(Json(ApiResponse::new(detail)))
+}
+
+/// Inserts or updates a participant on behalf of an arbitrary guild member.
+///
+/// Restricted to the event creator or users holding `events.edit`. This URL form is retained for
+/// clients that already send the target user ID as a path parameter.
 #[utoipa::path(
     put,
     path = "/api/events/{id}/participants/{user_id}",

@@ -7,16 +7,14 @@ import {
 } from "discord.js";
 import type { ApiClient } from "../api/client.js";
 import type {
-  SplitAuditLog,
   SplitDiscordSync,
-  TransactionView,
   UpdateSplitDiscordSyncState,
 } from "../api/types.js";
 import {
   buildSplitSummary,
   buildSplitThreadName,
-  chunkSplitLog,
 } from "./split-summary.js";
+import { getSettingsService } from "./settings.js";
 
 /** Creates and maintains Discord Forum posts. It never creates message-based text-channel threads. */
 export class SplitForumAdapter {
@@ -46,12 +44,25 @@ export class SplitForumAdapter {
     }
 
     if (!await this.updateSummary(thread, summaryMessageId, item)) return false;
-    if (!await this.saveState(item.split_id, {
+    if (!await this.updateForumTag(thread, item)) return false;
+
+    // A finalized split remains available as history, but its Forum post must no longer accept
+    // replies. Locking prevents writes while archiving removes it from the active post list.
+    if (["completed", "not_completed", "lost"].includes(item.detail.status)
+      && !await this.closeForumPost(thread, item.split_id)) {
+      return false;
+    }
+
+    // The summary is the only Discord message maintained for a split. Advance both backend
+    // cursors only after it is current, so a failed summary update is retried without losing
+    // the opportunity to reconcile it. Persisting both cursors also prevents the backend's
+    // incremental endpoint from returning the same audit/transaction rows forever.
+    return this.saveState(item.split_id, {
       thread_id: thread.id,
       summary_message_id: summaryMessageId,
-    })) return false;
-
-    return this.syncLogs(thread, item);
+      last_audit_id: item.next_audit_cursor,
+      last_transaction_id: item.next_transaction_cursor,
+    });
   }
 
   private async createForumPost(item: SplitDiscordSync): Promise<ThreadChannel | null> {
@@ -139,28 +150,41 @@ export class SplitForumAdapter {
     }
   }
 
-  private async syncLogs(thread: ThreadChannel, item: SplitDiscordSync): Promise<boolean> {
+
+  private async updateForumTag(thread: ThreadChannel, item: SplitDiscordSync): Promise<boolean> {
     try {
-      for (const audit of item.audit) {
-        if (!await this.sendLog(thread, formatAuditLog(audit))) return false;
-        if (!await this.saveState(item.split_id, { last_audit_id: audit.id })) return false;
+      let tagId: string | null;
+      try {
+        tagId = await getSettingsService().splitTagId(item.detail.status);
+      } catch (error) {
+        // Unit callers can use the adapter without bootstrapping the process-wide settings service.
+        // The real bot initializes it before the poller starts.
+        if (error instanceof Error && error.message.startsWith("SettingsService not initialized")) {
+          return true;
+        }
+        throw error;
       }
-      for (const transaction of item.transactions) {
-        if (!await this.sendLog(thread, formatTransactionLog(transaction))) return false;
-        if (!await this.saveState(item.split_id, { last_transaction_id: transaction.id })) return false;
+      // An unset tag means this lifecycle state is intentionally not configured yet.
+      if (!tagId) return true;
+      if (!thread.appliedTags.includes(tagId)) {
+        await thread.setAppliedTags([tagId], `Set split #${item.split_id} status tag`);
       }
       return true;
     } catch (error) {
-      console.warn(`[SplitForum] Could not sync logs for split #${item.split_id}:`, error);
+      console.warn(`[SplitForum] Could not update status tag for split #${item.split_id}:`, error);
       return false;
     }
   }
 
-  private async sendLog(thread: ThreadChannel, message: string): Promise<boolean> {
-    for (const content of chunkSplitLog(message)) {
-      await thread.send({ content, allowedMentions: { parse: [] } });
+  private async closeForumPost(thread: ThreadChannel, splitId: number): Promise<boolean> {
+    try {
+      await thread.setLocked(true, `Split #${splitId} closed`);
+      await thread.setArchived(true, `Split #${splitId} closed`);
+      return true;
+    } catch (error) {
+      console.warn(`[SplitForum] Could not close Forum post for split #${splitId}:`, error);
+      return false;
     }
-    return true;
   }
 
   private async saveState(
@@ -178,18 +202,4 @@ export class SplitForumAdapter {
       return false;
     }
   }
-}
-
-function formatAuditLog(log: SplitAuditLog): string {
-  const details = log.details == null ? "" : ` · ${JSON.stringify(log.details)}`;
-  return `[${log.created_at}] ${log.action}${details}`;
-}
-
-function formatTransactionLog(transaction: TransactionView): string {
-  return [
-    `[${transaction.created_at}] Transaction #${transaction.id}`,
-    `${transaction.type}: ${transaction.amount} silver`,
-    `${transaction.from_label} → ${transaction.to_label}`,
-    `status: ${transaction.status}`,
-  ].join(" · ");
 }

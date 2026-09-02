@@ -19,6 +19,7 @@ import { createResponseEmbed } from '../embeds/theme.js';
 import { config } from "../config.js";
 import { formatSilver } from '../format.js';
 import { startDiscordEvent, stopDiscordEvent } from "../services/event-lifecycle.js";
+import { getPoller } from "../services/poller.js";
 import { buildSignupRoleOptions, signupRoles } from "../services/event-signup.js";
 
 /**
@@ -284,6 +285,7 @@ async function handleEventButton(
       interaction.user.id,
       eventId,
     );
+    await getPoller()?.closeEventThread(eventId);
     await interaction.message.edit({
       embeds: [buildEventEmbed(result.event)],
       components: [buildEventThreadActionRow(result.event)],

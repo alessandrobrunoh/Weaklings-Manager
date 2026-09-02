@@ -2,6 +2,7 @@ import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import { createResponseEmbed } from '../embeds/theme.js';
 import { stopDiscordEvent } from '../services/event-lifecycle.js';
+import { getPoller } from '../services/poller.js';
 
 export const data = new SlashCommandBuilder()
   .setName('event-stop')
@@ -24,6 +25,10 @@ export async function execute(
     interaction.user.id,
     eventId,
   );
+  // Close the discussion immediately when the command is issued from Discord. Events stopped from
+  // the web app are handled by the poller's terminal-status reconciliation.
+  await getPoller()?.closeEventThread(eventId);
+
   const message = result.voiceChannelOccupied
     ? `Event **#${eventId}** stopped. Its voice channel is still occupied, so it was kept.`
     : result.voiceChannelDeleted

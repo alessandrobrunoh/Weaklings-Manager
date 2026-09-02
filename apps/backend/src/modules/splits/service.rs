@@ -106,6 +106,18 @@ const DEFAULT_SPLIT_FEE_PERCENT: i32 = 20;
 /// `add_or_update_participant`.
 const IMPORTED_EVENT_PARTICIPANT_WEIGHT: Decimal = Decimal::ONE;
 
+fn event_has_ended(status: &str) -> bool {
+    matches!(status, "stopped" | "auto_stopped")
+}
+
+fn status_for_event(event_status: &str) -> SplitStatus {
+    if event_has_ended(event_status) {
+        SplitStatus::Pending
+    } else {
+        SplitStatus::AwaitingEvent
+    }
+}
+
 fn default_split_fee() -> Decimal {
     Decimal::from(DEFAULT_SPLIT_FEE_PERCENT)
 }
@@ -461,13 +473,8 @@ impl SplitService {
         if participants.is_empty()
             && let Some(event_id) = req.event_id
         {
-            let event_user_ids = event_participant_ids(db, event_id).await?;
-            if event_user_ids.is_empty() {
-                return Err(AppError::Validation(format!(
-                    "event {event_id} has no participants to import"
-                )));
-            }
-            participants = event_user_ids
+            participants = event_participant_ids(db, event_id)
+                .await?
                 .into_iter()
                 .map(|user_id| UpsertParticipantRequest {
                     user_id,
@@ -476,7 +483,7 @@ impl SplitService {
                 .collect();
         }
 
-        if participants.is_empty() {
+        if participants.is_empty() && req.event_id.is_none() {
             return Err(AppError::Validation(
                 "a split must be requested with at least one participant".to_string(),
             ));
@@ -517,11 +524,26 @@ impl SplitService {
 
         require_island_tab(db, req.island_tab_id).await?;
 
+        let event_status = if let Some(event_id) = req.event_id {
+            Some(
+                EventEntity::find_by_id(event_id)
+                    .one(db)
+                    .await?
+                    .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?
+                    .status,
+            )
+        } else {
+            None
+        };
+        let initial_status = event_status
+            .as_deref()
+            .map_or(SplitStatus::Pending, status_for_event);
+
         let txn = db.begin().await?;
 
         let active = SplitActiveModel {
             created_by: Set(creator_id),
-            status: Set(SplitStatus::Pending.to_string()),
+            status: Set(initial_status.to_string()),
             estimated_market_value: Set(req.estimated_market_value),
             fee: Set(fee),
             repair_value: Set(req.repair_value),
@@ -542,6 +564,11 @@ impl SplitService {
                 ..Default::default()
             };
             active.insert(&txn).await?;
+        }
+
+        if let Some(event_id) = req.event_id {
+            self.sync_participants_from_event(&txn, inserted.id, event_id)
+                .await?;
         }
 
         txn.commit().await?;
@@ -641,7 +668,26 @@ impl SplitService {
         self.close_split(db, split_id, SplitStatus::Lost).await
     }
 
-    /// Updates mutable split values while the split is still pending.
+    async fn load_editable(
+        &self,
+        db: &DatabaseConnection,
+        split_id: i64,
+        action: &str,
+    ) -> Result<SplitModel, AppError> {
+        let split = SplitEntity::find_by_id(split_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
+        let status = parse_status(&split)?;
+        if !matches!(status, SplitStatus::Pending | SplitStatus::AwaitingEvent) {
+            return Err(AppError::Validation(format!(
+                "cannot {action} a split that is not editable"
+            )));
+        }
+        Ok(split)
+    }
+
+    /// Updates mutable split values while the split is still editable.
     ///
     /// Linking an event (`event_id` set to `Some(Some(id))`) has a side effect: the split's
     /// roster is synchronized with the event's participants. Participants already in the
@@ -658,9 +704,7 @@ impl SplitService {
         split_id: i64,
         req: UpdateSplitRequest,
     ) -> Result<SplitDetail, AppError> {
-        let split = self
-            .load_with_status(db, split_id, SplitStatus::Pending, "update")
-            .await?;
+        let split = self.load_editable(db, split_id, "update").await?;
         let mut active: SplitActiveModel = split.into();
 
         active.updated_at = Set(chrono::Utc::now().into());
@@ -716,11 +760,20 @@ impl SplitService {
             active.event_id = Set(event_id_opt);
         }
 
-        let updated = active.update(&txn).await?;
+        let mut updated = active.update(&txn).await?;
 
         if let Some(Some(event_id)) = linked_event_id {
             self.sync_participants_from_event(&txn, updated.id, event_id)
                 .await?;
+            let event_status = EventEntity::find_by_id(event_id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?
+                .status;
+            let mut linked: SplitActiveModel = updated.into();
+            linked.status = Set(status_for_event(&event_status).to_string());
+            linked.updated_at = Set(chrono::Utc::now().into());
+            updated = linked.update(&txn).await?;
         }
 
         txn.commit().await?;
@@ -741,8 +794,8 @@ impl SplitService {
     ///   [`IMPORTED_EVENT_PARTICIPANT_WEIGHT`];
     /// - participants in both keep their existing weight untouched.
     ///
-    /// Refuses to run when the event has no sign-ups, since that would silently empty the
-    /// split and leave it impossible to complete.
+    /// An empty event roster is valid: it clears the linked split roster, which will remain
+    /// uncompletable until the event has participants.
     ///
     /// # Errors
     ///
@@ -757,12 +810,6 @@ impl SplitService {
         C: ConnectionTrait,
     {
         let event_user_ids = event_participant_ids(db, event_id).await?;
-        if event_user_ids.is_empty() {
-            return Err(AppError::Validation(format!(
-                "cannot link event {event_id}: the event has no participants to import"
-            )));
-        }
-
         let event_user_set: HashSet<i64> = event_user_ids.into_iter().collect();
 
         let existing = ParticipantEntity::find()
@@ -800,6 +847,37 @@ impl SplitService {
         Ok(())
     }
 
+    /// Synchronizes every split linked to an event and aligns its waiting state with the event.
+    pub async fn sync_event_participants(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+    ) -> Result<(), AppError> {
+        let event = EventEntity::find_by_id(event_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+        let desired_status = status_for_event(&event.status);
+        let splits = SplitEntity::find()
+            .filter(SplitColumn::EventId.eq(event_id))
+            .all(db)
+            .await?;
+        for split in splits {
+            self.sync_participants_from_event(db, split.id, event_id)
+                .await?;
+            if matches!(
+                parse_status(&split)?,
+                SplitStatus::Pending | SplitStatus::AwaitingEvent
+            ) {
+                let mut active: SplitActiveModel = split.into();
+                active.status = Set(desired_status.to_string());
+                active.updated_at = Set(chrono::Utc::now().into());
+                active.update(db).await?;
+            }
+        }
+        Ok(())
+    }
+
     /// Deletes a split entirely.
     ///
     /// # Errors
@@ -811,9 +889,7 @@ impl SplitService {
         db: &DatabaseConnection,
         split_id: i64,
     ) -> Result<(), AppError> {
-        let split = self
-            .load_with_status(db, split_id, SplitStatus::Pending, "delete")
-            .await?;
+        let split = self.load_editable(db, split_id, "delete").await?;
 
         let txn = db.begin().await?;
         ParticipantEntity::delete_many()
@@ -845,7 +921,7 @@ impl SplitService {
         for split in &splits {
             total_estimated_volume += split.estimated_market_value;
             match parse_status(split)? {
-                SplitStatus::Pending => pending_count += 1,
+                SplitStatus::Pending | SplitStatus::AwaitingEvent => pending_count += 1,
                 SplitStatus::Completed => {
                     completed_count += 1;
                     total_net_distributed += split.net_value.unwrap_or(calculate_net_value(
@@ -1313,9 +1389,7 @@ impl SplitService {
         split_id: i64,
         req: UpsertParticipantRequest,
     ) -> Result<SplitDetail, AppError> {
-        let split = self
-            .load_with_status(db, split_id, SplitStatus::Pending, "modify")
-            .await?;
+        let split = self.load_editable(db, split_id, "modify").await?;
 
         if req.weight <= Decimal::ZERO {
             return Err(AppError::Validation("weight must be positive".to_string()));
@@ -1359,9 +1433,7 @@ impl SplitService {
         split_id: i64,
         user_id: i64,
     ) -> Result<SplitDetail, AppError> {
-        let split = self
-            .load_with_status(db, split_id, SplitStatus::Pending, "modify")
-            .await?;
+        let split = self.load_editable(db, split_id, "modify").await?;
 
         ParticipantEntity::delete_many()
             .filter(ParticipantColumn::SplitId.eq(split_id))
@@ -1434,9 +1506,19 @@ impl SplitService {
         split_id: i64,
         officer_user_id: i64,
     ) -> Result<SplitDetail, AppError> {
-        let split = self
-            .load_with_status(db, split_id, SplitStatus::Pending, "complete")
-            .await?;
+        let split = self.load_editable(db, split_id, "complete").await?;
+
+        if let Some(event_id) = split.event_id {
+            let event = EventEntity::find_by_id(event_id)
+                .one(db)
+                .await?
+                .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+            if !event_has_ended(&event.status) {
+                return Err(AppError::Conflict(format!(
+                    "split {split_id} is awaiting event {event_id} to finish"
+                )));
+            }
+        }
 
         let participants = ParticipantEntity::find()
             .filter(ParticipantColumn::SplitId.eq(split_id))
@@ -1471,7 +1553,10 @@ impl SplitService {
         let now = chrono::Utc::now().into();
         let flip = SplitEntity::update_many()
             .filter(SplitColumn::Id.eq(split_id))
-            .filter(SplitColumn::Status.eq(SplitStatus::Pending.to_string()))
+            .filter(SplitColumn::Status.is_in([
+                SplitStatus::Pending.to_string(),
+                SplitStatus::AwaitingEvent.to_string(),
+            ]))
             .set(SplitActiveModel {
                 status: Set(SplitStatus::Completed.to_string()),
                 net_value: Set(Some(net_value)),
@@ -2726,5 +2811,161 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn linked_split_waits_for_event_and_syncs_late_participants() {
+        let db = seed_db().await;
+        let creator = insert_user(&db, "creator", "creator@example.com").await;
+        let first = insert_user(&db, "first", "first@example.com").await;
+        let late = insert_user(&db, "late", "late@example.com").await;
+        let category = crate::modules::comps::entities::comp_category::ActiveModel {
+            name: Set("test".to_string()),
+            slug: Set("test".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let comp = crate::modules::comps::entities::comp::ActiveModel {
+            name: Set("test comp".to_string()),
+            category_id: Set(category.id),
+            created_by: Set(creator),
+            version: Set(1),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let event = crate::modules::events::entities::event::ActiveModel {
+            title: Set("scheduled event".to_string()),
+            comp_id: Set(comp.id),
+            created_by: Set(creator),
+            event_date_utc: Set(chrono::Utc::now().into()),
+            status: Set("scheduled".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        crate::modules::events::entities::event_participation::ActiveModel {
+            event_id: Set(event.id),
+            user_id: Set(first),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let split = SplitActiveModel {
+            created_by: Set(creator),
+            status: Set(SplitStatus::AwaitingEvent.to_string()),
+            estimated_market_value: Set("100".parse().unwrap()),
+            fee: Set(Decimal::ZERO),
+            repair_value: Set(Decimal::ZERO),
+            bags_value: Set(Decimal::ZERO),
+            event_id: Set(Some(event.id)),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        ParticipantActiveModel {
+            split_id: Set(split.id),
+            user_id: Set(first),
+            weight: Set(Decimal::ONE),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        crate::modules::events::entities::event_participation::ActiveModel {
+            event_id: Set(event.id),
+            user_id: Set(late),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let service = SplitService::new();
+        service
+            .sync_event_participants(&db, event.id)
+            .await
+            .unwrap();
+        let detail = service.get_split(&db, split.id).await.unwrap();
+        assert_eq!(detail.summary.status, SplitStatus::AwaitingEvent);
+        assert_eq!(detail.participants.len(), 2);
+
+        let error = service
+            .complete_split(&db, split.id, creator)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::Conflict(message) if message.contains("awaiting event")));
+    }
+
+    #[tokio::test]
+    async fn completing_linked_split_is_allowed_after_event_stops() {
+        let db = seed_db().await;
+        let creator = insert_user(&db, "creator", "creator@example.com").await;
+        let participant = insert_user(&db, "participant", "participant@example.com").await;
+        let category = crate::modules::comps::entities::comp_category::ActiveModel {
+            name: Set("test".to_string()),
+            slug: Set("test".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let comp = crate::modules::comps::entities::comp::ActiveModel {
+            name: Set("test comp".to_string()),
+            category_id: Set(category.id),
+            created_by: Set(creator),
+            version: Set(1),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let event = crate::modules::events::entities::event::ActiveModel {
+            title: Set("stopped event".to_string()),
+            comp_id: Set(comp.id),
+            created_by: Set(creator),
+            event_date_utc: Set(chrono::Utc::now().into()),
+            status: Set("stopped".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let split = SplitActiveModel {
+            created_by: Set(creator),
+            status: Set(SplitStatus::AwaitingEvent.to_string()),
+            estimated_market_value: Set("100".parse().unwrap()),
+            fee: Set(Decimal::ZERO),
+            repair_value: Set(Decimal::ZERO),
+            bags_value: Set(Decimal::ZERO),
+            event_id: Set(Some(event.id)),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        ParticipantActiveModel {
+            split_id: Set(split.id),
+            user_id: Set(participant),
+            weight: Set(Decimal::ONE),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let completed = SplitService::new()
+            .complete_split(&db, split.id, creator)
+            .await
+            .unwrap();
+        assert_eq!(completed.summary.status, SplitStatus::Completed);
     }
 }

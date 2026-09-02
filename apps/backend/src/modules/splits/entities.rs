@@ -12,7 +12,7 @@ pub mod split {
         pub id: i64,
         /// The user who created the split.
         pub created_by: i64,
-        /// The lifecycle status of the split: `"draft"` or `"finalized"`.
+        /// The lifecycle status of the split (`pending`, `awaiting_event`, or a terminal value).
         pub status: String,
         /// The estimated market value of the loot before deductions.
         pub estimated_market_value: Decimal,
