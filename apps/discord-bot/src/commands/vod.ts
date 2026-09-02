@@ -15,6 +15,9 @@ export async function execute(
   api: ApiClient,
 ): Promise<void> {
   await interaction.deferReply({ flags: ['Ephemeral'] });
+  // Real message snowflake for the deferred reply — use this instead of
+  // `interaction.id` (which identifies the interaction, not a message).
+  const deferredReply = await interaction.fetchReply();
 
   const channel = interaction.channel;
   if (!channel || !channel.isThread()) {
@@ -45,7 +48,7 @@ export async function execute(
   const body: SubmitVodRequest = {
     url,
     discord_thread_id: channel.id,
-    discord_message_id: interaction.id,
+    discord_message_id: deferredReply.id,
     forum_channel_id: forumChannelId,
     thread_owner_discord_id: threadOwnerId,
   };

@@ -18,6 +18,12 @@ const Env = z.object({
   POLL_INTERVAL_MS: z.coerce.number().default(60_000),
   /** Writable directory used to persist poller checkpoints between restarts. */
   POLLER_STATE_DIR: z.string().min(1).default("/app/data"),
+  /**
+   * Guild name used in embed headers/footers and to determine win/loss in
+   * battle reports. Single source of truth — read this instead of
+   * `process.env['GUILD_NAME']` directly.
+   */
+  GUILD_NAME: z.string().min(1).default("Weaklings"),
 });
 
 export type Config = z.infer<typeof Env>;

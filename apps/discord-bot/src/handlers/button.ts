@@ -16,11 +16,10 @@ import {
 } from "../embeds/event.embed.js";
 import { buildBattleListEmbed } from "../embeds/battle.embed.js";
 import { createResponseEmbed } from '../embeds/theme.js';
+import { config } from "../config.js";
 import { formatSilver } from '../format.js';
 import { startDiscordEvent, stopDiscordEvent } from "../services/event-lifecycle.js";
 import { buildSignupRoleOptions, signupRoles } from "../services/event-signup.js";
-
-const GUILD_NAME = process.env["GUILD_NAME"] ?? "";
 
 /**
  * Handles all button interactions.
@@ -372,7 +371,7 @@ async function handleBattlesNav(
 
   const embed = buildBattleListEmbed(
     result.items,
-    GUILD_NAME,
+    config.GUILD_NAME,
     result.current_page,
     result.total_pages,
   );

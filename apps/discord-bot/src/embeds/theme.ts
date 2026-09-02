@@ -1,4 +1,5 @@
 import { EmbedBuilder } from 'discord.js';
+import { config } from '../config.js';
 
 export const BOT_COLORS = {
   BRAND: 0xc5a059,    // Albion Gold / Bronze (#C5A059)
@@ -9,7 +10,7 @@ export const BOT_COLORS = {
   DARK: 0x2b2d31,     // Discord Dark Slate
 } as const;
 
-export const GUILD_NAME = process.env['GUILD_NAME'] || 'Weaklings';
+export const GUILD_NAME = config.GUILD_NAME;
 
 export function getGuildHeader(subCategory?: string): string {
   const gName = GUILD_NAME.toUpperCase();
