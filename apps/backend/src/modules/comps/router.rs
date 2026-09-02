@@ -531,7 +531,7 @@ async fn update_build(
     path = "/api/comps/builds/{id}",
     tag = "comps",
     summary = "Delete a build",
-    description = "Deletes a build. Fails with 409 Conflict if any comp_builds reference this build. Requires `comps.builds.manage` permission.",
+    description = "Deletes a build. Fails with 409 Conflict if any comps, event rosters, or event participations still reference this build. Requires `comps.builds.manage` permission.",
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Build ID")
@@ -883,7 +883,8 @@ async fn update_comp(
         (status = 204, description = "Comp deleted successfully"),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks comps.comps.manage permission", body = ProblemDetails),
-        (status = 404, description = "Comp not found", body = ProblemDetails)
+        (status = 404, description = "Comp not found", body = ProblemDetails),
+        (status = 409, description = "Comp is still linked to one or more events", body = ProblemDetails)
     )
 )]
 async fn delete_comp(

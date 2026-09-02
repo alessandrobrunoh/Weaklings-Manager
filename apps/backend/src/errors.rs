@@ -8,9 +8,26 @@ use axum::{
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
+use sea_orm::SqlErr;
 use serde::Serialize;
+use serde_json::json;
 use thiserror::Error;
 use utoipa::ToSchema;
+
+/// One row that's stopping a delete/update from proceeding.
+///
+/// Carried on [`AppError::ConflictWithReferences`] so the frontend can show
+/// the caller exactly what's in the way (e.g. "used by 2 events: ...")
+/// instead of a bare "conflict" message.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BlockingReference {
+    /// The kind of thing blocking the action, e.g. `"event"`.
+    pub resource: String,
+    /// The blocking row's id.
+    pub id: i64,
+    /// Human-readable label for that row (its title/name), for display.
+    pub label: String,
+}
 
 /// The standard RFC 7807 Problem Details representation for HTTP API errors.
 #[derive(Debug, Serialize, ToSchema)]
@@ -59,6 +76,17 @@ pub enum AppError {
     #[error("Conflict: {0}")]
     Conflict(String),
 
+    /// A conflict where the caller needs to see exactly what's blocking the
+    /// action (e.g. deleting a comp that's still linked to live events) —
+    /// carries the specific rows in the way, not just a message string.
+    #[error("Conflict: {message}")]
+    ConflictWithReferences {
+        /// Human-readable summary of the conflict.
+        message: String,
+        /// The specific rows in the way, for a rich frontend list.
+        references: Vec<BlockingReference>,
+    },
+
     /// Error indicating an upstream third-party service (e.g. Albion Online API) failed or is unreachable.
     #[error("Upstream service error: {0}")]
     UpstreamService(String),
@@ -70,49 +98,95 @@ pub enum AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status, type_uri, title, detail) = match self {
-            Self::Database(ref err) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "/errors/database-error",
-                "Database Error",
-                err.to_string(),
-            ),
+        let (status, type_uri, title, detail, invalid_params) = match self {
+            Self::Database(err) => {
+                // A constraint violation is a client-facing conflict, not a
+                // server fault — map it to 409 with an honest-but-generic
+                // message instead of a bare 500 with the raw driver text.
+                // This is the safety net for every module that doesn't (yet)
+                // pre-check its own delete/update against referencing rows;
+                // callers that want the rich per-reference list return
+                // `ConflictWithReferences` themselves before ever reaching
+                // the database.
+                match err.sql_err() {
+                    Some(SqlErr::ForeignKeyConstraintViolation(_)) => (
+                        StatusCode::CONFLICT,
+                        "/errors/conflict",
+                        "Conflict",
+                        "This item can't be removed or changed because something else still refers to it.".to_string(),
+                        None,
+                    ),
+                    Some(SqlErr::UniqueConstraintViolation(_)) => (
+                        StatusCode::CONFLICT,
+                        "/errors/conflict",
+                        "Conflict",
+                        "That value is already in use.".to_string(),
+                        None,
+                    ),
+                    _ => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "/errors/database-error",
+                        "Database Error",
+                        err.to_string(),
+                        None,
+                    ),
+                }
+            }
             Self::NotFound(msg) => (
                 StatusCode::NOT_FOUND,
                 "/errors/not-found",
                 "Resource Not Found",
                 msg,
+                None,
             ),
             Self::Unauthorized(msg) => (
                 StatusCode::UNAUTHORIZED,
                 "/errors/unauthorized",
                 "Unauthorized Access",
                 msg,
+                None,
             ),
             Self::Forbidden(msg) => (
                 StatusCode::FORBIDDEN,
                 "/errors/forbidden",
                 "Access Forbidden",
                 msg,
+                None,
             ),
             Self::Validation(msg) => (
                 StatusCode::BAD_REQUEST,
                 "/errors/validation-error",
                 "Validation Error",
                 msg,
+                None,
             ),
-            Self::Conflict(msg) => (StatusCode::CONFLICT, "/errors/conflict", "Conflict", msg),
+            Self::Conflict(msg) => (
+                StatusCode::CONFLICT,
+                "/errors/conflict",
+                "Conflict",
+                msg,
+                None,
+            ),
+            Self::ConflictWithReferences { message, references } => (
+                StatusCode::CONFLICT,
+                "/errors/conflict",
+                "Conflict",
+                message,
+                Some(json!({ "blocking_references": references })),
+            ),
             Self::UpstreamService(msg) => (
                 StatusCode::BAD_GATEWAY,
                 "/errors/upstream-service-error",
                 "Upstream Service Error",
                 msg,
+                None,
             ),
             Self::Internal(msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "/errors/internal-error",
                 "Internal Server Error",
                 msg,
+                None,
             ),
         };
 
@@ -122,7 +196,7 @@ impl IntoResponse for AppError {
             status: status.as_u16(),
             detail,
             instance: None,
-            invalid_params: None,
+            invalid_params,
         };
 
         (

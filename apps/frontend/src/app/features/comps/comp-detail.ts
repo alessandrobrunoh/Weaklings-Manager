@@ -19,7 +19,8 @@ import type {
   PaginatedData,
   UpdateCompRequest,
 } from '../../core/models/api.models';
-import { ApiService } from '../../core/services/api.service';
+import { ApiError, ApiService } from '../../core/services/api.service';
+import type { BlockingReference } from '../../core/models/api.models';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
@@ -553,21 +554,43 @@ const ROLE_LABELS: Record<BuildRole, string> = {
 
       @if (pendingDelete()) {
         <app-dialog [title]="t('common.confirm')" size="sm" (closed)="closeDelete()">
-          <p>{{ t('comps.delete.confirm') }}</p>
-          <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">{{ current.name }}</p>
-          <div dialogFooter>
-            <button type="button" class="btn btn--ghost" (click)="closeDelete()">
-              {{ t('common.cancel') }}
-            </button>
-            <button
-              type="button"
-              class="btn btn--danger"
-              [disabled]="saving()"
-              (click)="deleteComp()"
-            >
-              {{ t('common.delete') }}
-            </button>
-          </div>
+          @if (blockedByRefs(); as refs) {
+            <p>Impossibile eliminare "{{ current.name }}": è ancora in uso.</p>
+            <ul class="mt-2 grid gap-1 text-sm">
+              @for (ref of refs; track ref.resource + ':' + ref.id) {
+                <li>
+                  @if (ref.resource === 'event') {
+                    <a class="text-primary no-underline hover:underline" [routerLink]="['/events', ref.id]">
+                      {{ ref.label }}
+                    </a>
+                  } @else {
+                    <span style="color: var(--color-text-secondary)">{{ ref.label }}</span>
+                  }
+                </li>
+              }
+            </ul>
+            <div dialogFooter>
+              <button type="button" class="btn btn--ghost" (click)="closeDelete()">
+                {{ t('common.close') }}
+              </button>
+            </div>
+          } @else {
+            <p>{{ t('comps.delete.confirm') }}</p>
+            <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">{{ current.name }}</p>
+            <div dialogFooter>
+              <button type="button" class="btn btn--ghost" (click)="closeDelete()">
+                {{ t('common.cancel') }}
+              </button>
+              <button
+                type="button"
+                class="btn btn--danger"
+                [disabled]="saving()"
+                (click)="deleteComp()"
+              >
+                {{ t('common.delete') }}
+              </button>
+            </div>
+          }
         </app-dialog>
       }
     } @else if (loadFailed()) {
@@ -614,6 +637,8 @@ export class CompDetailPage {
 
   protected readonly mode = signal<'view' | 'edit'>('view');
   protected readonly pendingDelete = signal(false);
+  /** Set when a delete attempt was rejected because other rows still reference this comp. */
+  protected readonly blockedByRefs = signal<BlockingReference[] | null>(null);
   protected readonly editName = signal('');
   protected readonly editDescription = signal('');
   protected readonly editCategoryId = signal('');
@@ -1018,11 +1043,13 @@ export class CompDetailPage {
   }
 
   protected askDeleteComp(): void {
+    this.blockedByRefs.set(null);
     this.pendingDelete.set(true);
   }
 
   protected closeDelete(): void {
     this.pendingDelete.set(false);
+    this.blockedByRefs.set(null);
   }
 
   protected async deleteComp(): Promise<void> {
@@ -1037,7 +1064,13 @@ export class CompDetailPage {
       this.toasts.success(this.t('common.delete'));
       await this.router.navigate(['/comps']);
     } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      const references = error instanceof ApiError ? error.blockingReferences() : null;
+      if (references) {
+        // Keep the dialog open — swap it to the "here's what's blocking it" view.
+        this.blockedByRefs.set(references);
+      } else {
+        this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      }
     } finally {
       this.saving.set(false);
     }
