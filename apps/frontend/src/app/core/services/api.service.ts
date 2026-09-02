@@ -117,7 +117,7 @@ export class ApiService {
       return httpParams;
     }
     for (const [key, value] of Object.entries(params)) {
-      if (value === undefined || value === null || (value === '' && key !== 'split_id')) {
+      if (value === undefined || value === null || value === '') {
         continue;
       }
       httpParams = httpParams.set(key, String(value));
