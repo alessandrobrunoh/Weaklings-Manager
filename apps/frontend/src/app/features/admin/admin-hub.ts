@@ -489,7 +489,7 @@ export class AdminHub {
       return 'var(--color-success)';
     }
     if (action.includes('REJECT') || action.includes('DELETE') || action.includes('WARN')) {
-      return '#ef4444';
+      return 'var(--color-error)';
     }
     if (action.includes('UPDATE') || action.includes('SET') || action.includes('REQUEST')) {
       return 'var(--color-warning)';
