@@ -115,6 +115,12 @@ const ROLE_LABELS: Record<BuildRole, string> = {
               {{ t('comps.compare') }}
             </button>
           }
+          @if ((canManage() || canDelete()) && mode() === 'view') {
+            <span
+              class="hidden sm:block w-px h-6 self-center bg-[var(--color-border)]"
+              aria-hidden="true"
+            ></span>
+          }
           @if (canManage() && mode() === 'view') {
             <button
               type="button"
@@ -147,6 +153,31 @@ const ROLE_LABELS: Record<BuildRole, string> = {
       </app-page-header>
 
       <app-page-stack>
+        <!-- At-a-glance KPIs: orients the reader before they dig into the roster or the sidebar. -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <app-stat-card
+            [label]="t('comps.totalSlots')"
+            [value]="current.total_quantity"
+            icon="users"
+          />
+          <app-stat-card
+            [label]="t('comps.builds')"
+            [value]="current.builds.length"
+            icon="package"
+          />
+          <app-stat-card
+            [label]="t('comps.winrate')"
+            [value]="performance() ? formatPercent(performance()!.stats.win_rate) : null"
+            [tone]="performance() ? winRateTone(performance()!.stats.win_rate) : 'default'"
+            icon="trophy"
+          />
+          <app-stat-card
+            [label]="t('comps.totalBattles')"
+            [value]="performance() ? performance()!.stats.total_battles : null"
+            icon="swords"
+          />
+        </div>
+
         @if (mode() === 'edit' && canManage()) {
           <form class="card grid gap-4 p-5" (submit)="saveEdit($event)">
             <div class="grid gap-4 md:grid-cols-2">
@@ -291,17 +322,27 @@ const ROLE_LABELS: Record<BuildRole, string> = {
               <!-- Role Grouped Matrix Cards -->
               @for (roleGroup of groupedBuildsByRole(); track roleGroup.role) {
                 <section class="grid gap-3">
-                  <div class="flex items-center justify-between px-1">
-                    <div class="flex items-center gap-2">
+                  <div class="flex flex-wrap items-center justify-between gap-2 px-1">
+                    <div
+                      class="inline-flex items-center gap-1.5 rounded-full px-3 py-1"
+                      [style.background-color]="roleBadgeBg(roleGroup.role)"
+                    >
                       <span
-                        class="w-3 h-3 rounded-full"
+                        class="w-2 h-2 rounded-full"
                         [style.background-color]="roleColorHex(roleGroup.role)"
                       ></span>
                       <h3
-                        class="text-sm font-bold uppercase tracking-wider text-[var(--color-text)]"
+                        class="text-xs font-bold uppercase tracking-wider"
+                        [style.color]="roleColorHex(roleGroup.role)"
                       >
-                        {{ roleLabel(roleGroup.role) }} ({{ roleGroup.totalSlots }} slots)
+                        {{ roleLabel(roleGroup.role) }}
                       </h3>
+                      <span
+                        class="text-xs font-semibold"
+                        [style.color]="roleColorHex(roleGroup.role)"
+                      >
+                        · {{ roleGroup.totalSlots }} {{ t('comps.slotsShort') }}
+                      </span>
                     </div>
                     <span class="text-xs text-[var(--color-text-secondary)]">
                       {{ roleGroup.entries.length }} {{ t('comps.buildVariants') }}
@@ -501,33 +542,20 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                   {{ t('comps.battlePerformance') }}
                 </h3>
 
-                <div class="grid grid-cols-2 gap-3 text-center">
-                  <div class="p-3 bg-[var(--color-surface-2)] rounded-lg">
-                    <div
-                      class="text-xl font-bold"
-                      [style.color]="winRateColor(perf.stats.win_rate)"
-                    >
-                      {{ formatPercent(perf.stats.win_rate) }}
-                    </div>
-                    <div class="text-xs text-[var(--color-text-secondary)]">
-                      {{ t('comps.winrate') }}
-                    </div>
-                  </div>
-                  <div class="p-3 bg-[var(--color-surface-2)] rounded-lg">
-                    <div class="text-xl font-bold text-[var(--color-text)]">
-                      {{ formatRatio(perf.stats.kill_death_ratio) }}
-                    </div>
-                    <div class="text-xs text-[var(--color-text-secondary)]">
-                      {{ t('comps.kdRatio') }}
-                    </div>
-                  </div>
+                <!-- Win rate & total battles already headline the page in the KPI strip above;
+                     this card adds the detail that strip has no room for. -->
+                <div
+                  class="flex items-center justify-between p-3 bg-[var(--color-surface-2)] rounded-lg"
+                >
+                  <span class="text-xs text-[var(--color-text-secondary)]">
+                    {{ t('comps.kdRatio') }}
+                  </span>
+                  <span class="text-xl font-bold text-[var(--color-text)]">
+                    {{ formatRatio(perf.stats.kill_death_ratio) }}
+                  </span>
                 </div>
 
                 <div class="text-xs space-y-1.5 text-[var(--color-text-secondary)]">
-                  <div class="flex justify-between">
-                    <span>{{ t('comps.totalBattles') }}:</span>
-                    <strong class="text-[var(--color-text)]">{{ perf.stats.total_battles }}</strong>
-                  </div>
                   <div class="flex justify-between">
                     <span>{{ t('comps.winsLosses') }}:</span>
                     <strong class="text-[var(--color-text)]"
@@ -828,6 +856,11 @@ export class CompDetailPage {
 
   protected roleColorHex(role: BuildRole): string {
     return this.roleColorMap[role] ?? 'var(--color-primary)';
+  }
+
+  /** Tinted pill background for a role group header — same hue as {@link roleColorHex}, low opacity. */
+  protected roleBadgeBg(role: BuildRole): string {
+    return `color-mix(in oklab, ${this.roleColorHex(role)} 16%, transparent)`;
   }
 
   protected readonly groupedBuildsByRole = computed(() => {
@@ -1292,10 +1325,22 @@ export class CompDetailPage {
     return (opponent.wins / opponent.battles) * 100;
   }
 
+  /** Same 60/40 thresholds as {@link winRateColor}, expressed as a `StatCard` tone. */
+  protected winRateTone(rate: number): 'success' | 'danger' | 'default' {
+    if (rate >= 60) return 'success';
+    if (rate < 40) return 'danger';
+    return 'default';
+  }
+
   protected winRateColor(rate: number): string {
-    if (rate >= 60) return 'var(--color-success)';
-    if (rate < 40) return 'var(--color-danger)';
-    return 'var(--color-text)';
+    switch (this.winRateTone(rate)) {
+      case 'success':
+        return 'var(--color-success)';
+      case 'danger':
+        return 'var(--color-danger)';
+      default:
+        return 'var(--color-text)';
+    }
   }
 
   protected formatNumber(value: number): string {
