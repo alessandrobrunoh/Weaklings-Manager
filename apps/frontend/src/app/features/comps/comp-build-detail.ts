@@ -154,6 +154,8 @@ const ITEM_TIERS = [
             >
               {{ t('common.edit') }}
             </button>
+          }
+          @if (canDelete() && mode() === 'view') {
             <button
               type="button"
               class="btn btn--danger"
@@ -573,7 +575,8 @@ export class CompBuildDetailPage {
 
   protected readonly t = (key: TranslationKey) => this.translate.t(key);
 
-  protected readonly canManage = computed(() => this.auth.hasPermission('comps.builds.manage'));
+  protected readonly canManage = computed(() => this.auth.hasPermission('comps.builds.edit'));
+  protected readonly canDelete = computed(() => this.auth.hasPermission('comps.builds.delete'));
   /** The bundled ability catalog, loaded once and keyed by tier-stripped base identifier. */
   protected readonly abilityCatalog = signal<Record<string, OpenAlbionItemAbilities>>({});
   protected readonly performance = signal<BuildPerformanceView | null>(null);

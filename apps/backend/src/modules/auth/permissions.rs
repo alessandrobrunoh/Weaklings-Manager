@@ -64,18 +64,74 @@ pub enum Permission {
     /// Create, update, link, and delete gestionale roles. Distinct from editing the matrix.
     #[strum(serialize = "roles.manage")]
     RolesManage,
-    /// Manage build categories (create, edit, delete).
+    /// Manage build categories (create, edit, delete). Superseded by the
+    /// split permissions below — kept so existing role_permissions rows
+    /// keep resolving.
     #[strum(serialize = "comps.build_categories.manage")]
     CompsBuildCategoriesManage,
-    /// Manage comp categories (create, edit, delete).
+    /// View build categories. Member+.
+    #[strum(serialize = "comps.build_categories.view")]
+    CompsBuildCategoriesView,
+    /// Create a build category. Officer+.
+    #[strum(serialize = "comps.build_categories.create")]
+    CompsBuildCategoriesCreate,
+    /// Edit a build category. Officer+.
+    #[strum(serialize = "comps.build_categories.edit")]
+    CompsBuildCategoriesEdit,
+    /// Delete a build category. Officer+.
+    #[strum(serialize = "comps.build_categories.delete")]
+    CompsBuildCategoriesDelete,
+    /// Manage comp categories (create, edit, delete). Superseded by the
+    /// split permissions below — kept so existing role_permissions rows
+    /// keep resolving.
     #[strum(serialize = "comps.comp_categories.manage")]
     CompsCompCategoriesManage,
-    /// Manage builds (create, edit, delete).
+    /// View comp categories. Member+.
+    #[strum(serialize = "comps.comp_categories.view")]
+    CompsCompCategoriesView,
+    /// Create a comp category. Officer+.
+    #[strum(serialize = "comps.comp_categories.create")]
+    CompsCompCategoriesCreate,
+    /// Edit a comp category. Officer+.
+    #[strum(serialize = "comps.comp_categories.edit")]
+    CompsCompCategoriesEdit,
+    /// Delete a comp category. Officer+.
+    #[strum(serialize = "comps.comp_categories.delete")]
+    CompsCompCategoriesDelete,
+    /// Manage builds (create, edit, delete). Superseded by the split
+    /// permissions below — kept so existing role_permissions rows keep
+    /// resolving.
     #[strum(serialize = "comps.builds.manage")]
     CompsBuildsManage,
-    /// Manage comps (create, edit, delete).
+    /// View builds. Member+.
+    #[strum(serialize = "comps.builds.view")]
+    CompsBuildsView,
+    /// Create a build (and new versions of an existing build). Officer+.
+    #[strum(serialize = "comps.builds.create")]
+    CompsBuildsCreate,
+    /// Edit a build: details, items, spells. Officer+.
+    #[strum(serialize = "comps.builds.edit")]
+    CompsBuildsEdit,
+    /// Delete a build. Officer+.
+    #[strum(serialize = "comps.builds.delete")]
+    CompsBuildsDelete,
+    /// Manage comps (create, edit, delete). Superseded by the split
+    /// permissions below — kept so existing role_permissions rows keep
+    /// resolving.
     #[strum(serialize = "comps.comps.manage")]
     CompsCompsManage,
+    /// View comps. Member+.
+    #[strum(serialize = "comps.comps.view")]
+    CompsCompsView,
+    /// Create a comp (and new versions of an existing comp). Officer+.
+    #[strum(serialize = "comps.comps.create")]
+    CompsCompsCreate,
+    /// Edit a comp: details, build entries and quantities. Officer+.
+    #[strum(serialize = "comps.comps.edit")]
+    CompsCompsEdit,
+    /// Delete a comp. Officer+.
+    #[strum(serialize = "comps.comps.delete")]
+    CompsCompsDelete,
     /// Manage events (create, edit, delete). Superseded by the split
     /// events.view/.create/.edit/.delete below — kept so existing
     /// role_permissions rows and any external reference keep resolving.

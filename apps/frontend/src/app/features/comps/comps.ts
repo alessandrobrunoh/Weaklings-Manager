@@ -363,7 +363,7 @@ type PendingDelete =
 
                     <!-- Action Buttons -->
                     <div class="flex items-center gap-1.5" (click)="$event.stopPropagation()">
-                      @if (canManageComps()) {
+                      @if (canCreateComps()) {
                         <button
                           type="button"
                           class="btn btn--outline btn--sm"
@@ -378,7 +378,7 @@ type PendingDelete =
                       <a class="btn btn--tonal btn--sm" [routerLink]="['/comps', item.comp.id]">
                         {{ t('common.open') }}
                       </a>
-                      @if (canManageComps()) {
+                      @if (canDeleteComps()) {
                         <button
                           type="button"
                           class="btn btn--danger btn--sm"
@@ -428,7 +428,7 @@ type PendingDelete =
               <a class="btn btn--tonal btn--sm" [routerLink]="['/comps', 'builds', row.id]">{{
                 t('common.open')
               }}</a>
-              @if (canManageBuilds()) {
+              @if (canDeleteBuilds()) {
                 <button
                   type="button"
                   class="btn btn--danger btn--sm"
@@ -464,23 +464,27 @@ type PendingDelete =
             <span style="color: var(--color-text-secondary)">{{ row.description || '' }}</span>
           </ng-template>
           <ng-template dataTableCell="actions" let-row>
-            @if (canManageCurrentCategory()) {
+            @if (canEditCurrentCategory() || canDeleteCurrentCategory()) {
               <div class="flex flex-wrap justify-end gap-2">
-                <button
-                  type="button"
-                  class="btn btn--outline btn--sm"
-                  (click)="openCategoryEdit(row)"
-                >
-                  {{ t('common.edit') }}
-                </button>
-                <button
-                  type="button"
-                  class="btn btn--danger btn--sm"
-                  [disabled]="saving()"
-                  (click)="askDeleteCategory(row)"
-                >
-                  {{ t('common.delete') }}
-                </button>
+                @if (canEditCurrentCategory()) {
+                  <button
+                    type="button"
+                    class="btn btn--outline btn--sm"
+                    (click)="openCategoryEdit(row)"
+                  >
+                    {{ t('common.edit') }}
+                  </button>
+                }
+                @if (canDeleteCurrentCategory()) {
+                  <button
+                    type="button"
+                    class="btn btn--danger btn--sm"
+                    [disabled]="saving()"
+                    (click)="askDeleteCategory(row)"
+                  >
+                    {{ t('common.delete') }}
+                  </button>
+                }
               </div>
             }
           </ng-template>
@@ -888,14 +892,28 @@ export class Comps {
   private buildsPage: DataTablePageChange | null = null;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
-  protected readonly canManageComps = computed(() => this.auth.hasPermission('comps.comps.manage'));
-  protected readonly canManageBuilds = computed(() =>
-    this.auth.hasPermission('comps.builds.manage'),
+  protected readonly canCreateComps = computed(() => this.auth.hasPermission('comps.comps.create'));
+  protected readonly canDeleteComps = computed(() => this.auth.hasPermission('comps.comps.delete'));
+  protected readonly canCreateBuilds = computed(() =>
+    this.auth.hasPermission('comps.builds.create'),
   );
-  protected readonly canManageCurrentCategory = computed(() =>
+  protected readonly canDeleteBuilds = computed(() =>
+    this.auth.hasPermission('comps.builds.delete'),
+  );
+  protected readonly canCreateCurrentCategory = computed(() =>
     this.categoryKind() === 'build'
-      ? this.auth.hasPermission('comps.build_categories.manage')
-      : this.auth.hasPermission('comps.comp_categories.manage'),
+      ? this.auth.hasPermission('comps.build_categories.create')
+      : this.auth.hasPermission('comps.comp_categories.create'),
+  );
+  protected readonly canEditCurrentCategory = computed(() =>
+    this.categoryKind() === 'build'
+      ? this.auth.hasPermission('comps.build_categories.edit')
+      : this.auth.hasPermission('comps.comp_categories.edit'),
+  );
+  protected readonly canDeleteCurrentCategory = computed(() =>
+    this.categoryKind() === 'build'
+      ? this.auth.hasPermission('comps.build_categories.delete')
+      : this.auth.hasPermission('comps.comp_categories.delete'),
   );
 
   protected readonly currentCategories = computed(() =>
@@ -1009,12 +1027,12 @@ export class Comps {
 
   protected canCreateCurrent(): boolean {
     if (this.tab() === 'comps') {
-      return this.canManageComps();
+      return this.canCreateComps();
     }
     if (this.tab() === 'builds') {
-      return this.canManageBuilds();
+      return this.canCreateBuilds();
     }
-    return this.canManageCurrentCategory();
+    return this.canCreateCurrentCategory();
   }
 
   protected createButtonLabel(): string {

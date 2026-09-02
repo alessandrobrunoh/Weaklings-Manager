@@ -163,8 +163,12 @@ pub fn router() -> Router {
     )
 )]
 async fn list_build_categories(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<Vec<crate::modules::comps::models::BuildCategoryView>>>, AppError> {
+    user.require(&perms, Permission::CompsBuildCategoriesView)
+        .await?;
     let service = CompService::new();
     let categories = service.list_build_categories(&db).await?;
     Ok(Json(ApiResponse::new(categories)))
@@ -194,7 +198,7 @@ async fn create_build_category(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<CreateBuildCategoryRequest>,
 ) -> Result<Json<ApiResponse<Vec<crate::modules::comps::models::BuildCategoryView>>>, AppError> {
-    user.require(&perms, Permission::CompsBuildCategoriesManage)
+    user.require(&perms, Permission::CompsBuildCategoriesCreate)
         .await?;
     let service = CompService::new();
     let category = service.create_build_category(&db, req).await?;
@@ -230,7 +234,7 @@ async fn update_build_category(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<UpdateBuildCategoryRequest>,
 ) -> Result<Json<ApiResponse<Vec<crate::modules::comps::models::BuildCategoryView>>>, AppError> {
-    user.require(&perms, Permission::CompsBuildCategoriesManage)
+    user.require(&perms, Permission::CompsBuildCategoriesEdit)
         .await?;
     let service = CompService::new();
     let category = service.update_build_category(&db, id, req).await?;
@@ -265,7 +269,7 @@ async fn delete_build_category(
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<StatusCode, AppError> {
-    user.require(&perms, Permission::CompsBuildCategoriesManage)
+    user.require(&perms, Permission::CompsBuildCategoriesDelete)
         .await?;
     let service = CompService::new();
     service.delete_build_category(&db, id).await?;
@@ -290,8 +294,12 @@ async fn delete_build_category(
     )
 )]
 async fn list_comp_categories(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<Vec<crate::modules::comps::models::CompCategoryView>>>, AppError> {
+    user.require(&perms, Permission::CompsCompCategoriesView)
+        .await?;
     let service = CompService::new();
     let categories = service.list_comp_categories(&db).await?;
     Ok(Json(ApiResponse::new(categories)))
@@ -321,7 +329,7 @@ async fn create_comp_category(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<CreateCompCategoryRequest>,
 ) -> Result<Json<ApiResponse<Vec<crate::modules::comps::models::CompCategoryView>>>, AppError> {
-    user.require(&perms, Permission::CompsCompCategoriesManage)
+    user.require(&perms, Permission::CompsCompCategoriesCreate)
         .await?;
     let service = CompService::new();
     let category = service.create_comp_category(&db, req).await?;
@@ -357,7 +365,7 @@ async fn update_comp_category(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<UpdateCompCategoryRequest>,
 ) -> Result<Json<ApiResponse<Vec<crate::modules::comps::models::CompCategoryView>>>, AppError> {
-    user.require(&perms, Permission::CompsCompCategoriesManage)
+    user.require(&perms, Permission::CompsCompCategoriesEdit)
         .await?;
     let service = CompService::new();
     let category = service.update_comp_category(&db, id, req).await?;
@@ -392,7 +400,7 @@ async fn delete_comp_category(
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<StatusCode, AppError> {
-    user.require(&perms, Permission::CompsCompCategoriesManage)
+    user.require(&perms, Permission::CompsCompCategoriesDelete)
         .await?;
     let service = CompService::new();
     service.delete_comp_category(&db, id).await?;
@@ -418,9 +426,12 @@ async fn delete_comp_category(
     )
 )]
 async fn list_builds(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Query(query): Query<ListBuildsQuery>,
 ) -> Result<Json<ApiResponse<PaginatedBuildSummary>>, AppError> {
+    user.require(&perms, Permission::CompsBuildsView).await?;
     let service = CompService::new();
     let pagination = query.pagination();
     let filters = query.filters.clone();
@@ -453,7 +464,7 @@ async fn create_build(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<CreateBuildRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
-    user.require(&perms, Permission::CompsBuildsManage).await?;
+    user.require(&perms, Permission::CompsBuildsCreate).await?;
     let service = CompService::new();
     let build = service.create_build(&db, user.user_id, req).await?;
     Ok(Json(ApiResponse::new(build)))
@@ -479,9 +490,12 @@ async fn create_build(
     )
 )]
 async fn get_build(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
+    user.require(&perms, Permission::CompsBuildsView).await?;
     let service = CompService::new();
     let build = service.get_build(&db, id).await?;
     Ok(Json(ApiResponse::new(build)))
@@ -516,7 +530,7 @@ async fn update_build(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<UpdateBuildRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
-    user.require(&perms, Permission::CompsBuildsManage).await?;
+    user.require(&perms, Permission::CompsBuildsEdit).await?;
     let service = CompService::new();
     let build = service.update_build(&db, id, req).await?;
     Ok(Json(ApiResponse::new(build)))
@@ -550,7 +564,7 @@ async fn delete_build(
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<StatusCode, AppError> {
-    user.require(&perms, Permission::CompsBuildsManage).await?;
+    user.require(&perms, Permission::CompsBuildsDelete).await?;
     let service = CompService::new();
     service.delete_build(&db, id).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -588,7 +602,7 @@ async fn upsert_build_item(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<UpsertBuildItemRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
-    user.require(&perms, Permission::CompsBuildsManage).await?;
+    user.require(&perms, Permission::CompsBuildsEdit).await?;
     let slot = crate::modules::comps::status::BuildSlot::from_str(&slot)
         .map_err(|e| AppError::Validation(e))?;
     let loadout = loadout.resolve()?;
@@ -627,7 +641,7 @@ async fn remove_build_item(
     Query(loadout): Query<BuildItemLoadoutQuery>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<StatusCode, AppError> {
-    user.require(&perms, Permission::CompsBuildsManage).await?;
+    user.require(&perms, Permission::CompsBuildsEdit).await?;
     let slot = crate::modules::comps::status::BuildSlot::from_str(&slot)
         .map_err(|e| AppError::Validation(e))?;
     let loadout = loadout.resolve()?;
@@ -671,7 +685,7 @@ async fn set_build_item_spells(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<BuildItemSpells>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
-    user.require(&perms, Permission::CompsBuildsManage).await?;
+    user.require(&perms, Permission::CompsBuildsEdit).await?;
     let slot = crate::modules::comps::status::BuildSlot::from_str(&slot)
         .map_err(|e| AppError::Validation(e))?;
     let loadout = loadout.resolve()?;
@@ -710,7 +724,7 @@ async fn create_build_version(
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildDetail>>, AppError> {
-    user.require(&perms, Permission::CompsBuildsManage).await?;
+    user.require(&perms, Permission::CompsBuildsCreate).await?;
     let service = CompService::new();
     let build = service.create_build_version(&db, id, user.user_id).await?;
     Ok(Json(ApiResponse::new(build)))
@@ -735,9 +749,12 @@ async fn create_build_version(
     )
 )]
 async fn list_comps(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Query(query): Query<ListCompsQuery>,
 ) -> Result<Json<ApiResponse<PaginatedCompSummary>>, AppError> {
+    user.require(&perms, Permission::CompsCompsView).await?;
     let service = CompService::new();
     let pagination = query.pagination();
     let filters = query.filters.clone();
@@ -770,7 +787,7 @@ async fn create_comp(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<CreateCompRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::CompDetail>>, AppError> {
-    user.require(&perms, Permission::CompsCompsManage).await?;
+    user.require(&perms, Permission::CompsCompsCreate).await?;
     let service = CompService::new();
     let comp = service.create_comp(&db, user.user_id, req).await?;
     Ok(Json(ApiResponse::new(comp)))
@@ -796,9 +813,12 @@ async fn create_comp(
     )
 )]
 async fn get_comp(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::CompDetail>>, AppError> {
+    user.require(&perms, Permission::CompsCompsView).await?;
     let service = CompService::new();
     let comp = service.get_comp(&db, id).await?;
     Ok(Json(ApiResponse::new(comp)))
@@ -823,9 +843,12 @@ async fn get_comp(
     )
 )]
 async fn get_comp_performance(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<crate::modules::events::models::CompPerformanceView>>, AppError> {
+    user.require(&perms, Permission::CompsCompsView).await?;
     let service = crate::modules::events::service::EventService::new();
     let performance = service.get_comp_performance(&db, id).await?;
     Ok(Json(ApiResponse::new(performance)))
@@ -860,7 +883,7 @@ async fn update_comp(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<UpdateCompRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::CompDetail>>, AppError> {
-    user.require(&perms, Permission::CompsCompsManage).await?;
+    user.require(&perms, Permission::CompsCompsEdit).await?;
     let service = CompService::new();
     let comp = service.update_comp(&db, id, req).await?;
     Ok(Json(ApiResponse::new(comp)))
@@ -892,7 +915,7 @@ async fn delete_comp(
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<StatusCode, AppError> {
-    user.require(&perms, Permission::CompsCompsManage).await?;
+    user.require(&perms, Permission::CompsCompsDelete).await?;
     let service = CompService::new();
     service.delete_comp(&db, id).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -928,7 +951,7 @@ async fn add_comp_build(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<AddCompBuildRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::CompDetail>>, AppError> {
-    user.require(&perms, Permission::CompsCompsManage).await?;
+    user.require(&perms, Permission::CompsCompsEdit).await?;
     let service = CompService::new();
     let comp = service.add_comp_build(&db, id, req).await?;
     Ok(Json(ApiResponse::new(comp)))
@@ -964,7 +987,7 @@ async fn update_comp_build_quantity(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(req): Json<UpdateCompBuildQuantityRequest>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::CompDetail>>, AppError> {
-    user.require(&perms, Permission::CompsCompsManage).await?;
+    user.require(&perms, Permission::CompsCompsEdit).await?;
     let service = CompService::new();
     let comp = service
         .update_comp_build_quantity(&db, id, build_id, req)
@@ -999,7 +1022,7 @@ async fn remove_comp_build(
     Path((id, build_id)): Path<(i64, i64)>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<StatusCode, AppError> {
-    user.require(&perms, Permission::CompsCompsManage).await?;
+    user.require(&perms, Permission::CompsCompsEdit).await?;
     let service = CompService::new();
     service.remove_comp_build(&db, id, build_id).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -1034,7 +1057,7 @@ async fn create_comp_version(
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<crate::modules::comps::models::CompDetail>>, AppError> {
-    user.require(&perms, Permission::CompsCompsManage).await?;
+    user.require(&perms, Permission::CompsCompsCreate).await?;
     let service = CompService::new();
     let comp = service.create_comp_version(&db, id, user.user_id).await?;
     Ok(Json(ApiResponse::new(comp)))
@@ -1063,10 +1086,12 @@ async fn create_comp_version(
     )
 )]
 async fn get_build_performance(
-    _user: UserContext,
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<crate::modules::events::models::BuildPerformanceView>>, AppError> {
+    user.require(&perms, Permission::CompsBuildsView).await?;
     let service = crate::modules::events::service::EventService::new();
     let performance = service.get_build_performance(&db, id).await?;
     Ok(Json(ApiResponse::new(performance)))
