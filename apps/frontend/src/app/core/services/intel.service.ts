@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 import { ApiService } from './api.service';
 import type {
   GuildReport,
+  PlayerReport,
   ReportLeaderboards,
   MatchupReport,
   PaginatedData,
@@ -97,6 +98,18 @@ export class IntelService {
    */
   report(from?: string, to?: string): Observable<GuildReport> {
     return this.api.get<GuildReport>('/api/intel/report', { from, to });
+  }
+
+  /**
+   * One member's intel report for a window: their roster row, a weekly
+   * breakdown and their recent fights.
+   *
+   * Same gate as {@link IntelService.report} (`intel.report.view`), since it
+   * exposes the identical per-member silver and split figures one row at a
+   * time instead of buried in the roster table.
+   */
+  playerReport(userId: number, from?: string, to?: string): Observable<PlayerReport> {
+    return this.api.get<PlayerReport>(`/api/intel/players/${userId}`, { from, to });
   }
 
   /** Recomputes the report, bypassing the cache. Officer-only. */

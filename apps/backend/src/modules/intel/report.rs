@@ -57,6 +57,8 @@ use crate::modules::users::entities as user;
 const DEFAULT_WINDOW_DAYS: i64 = 30;
 /// Entries kept in the activity timeline.
 const TIMELINE_LIMIT: usize = 20;
+/// Fights kept in a single player's report.
+const PLAYER_RECENT_FIGHTS_LIMIT: usize = 15;
 /// Weapons kept in each meta distribution.
 const META_LIMIT: usize = 12;
 /// A win is worth this much in the fight score, a loss the same against.
@@ -343,6 +345,55 @@ pub struct ReportDataQuality {
     pub unlinked_players: Vec<String>,
 }
 
+/// One member's activity in a single week, the per-player counterpart to
+/// [`TrendBucket`].
+///
+/// Unlike the guild-wide bucket this carries `win_rate` directly rather than
+/// leaving the caller to divide `wins` by `wins + losses`: a single player's
+/// week is thin enough (often 0-3 fights) that "no fights" and "0% win rate"
+/// need to stay visibly different, which a client-side division would blur.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PlayerTrendBucket {
+    /// Monday 00:00 UTC of this week, RFC 3339.
+    pub week_start: String,
+    pub fights: i64,
+    pub wins: i64,
+    pub losses: i64,
+    pub win_rate: f64,
+    pub kills: i64,
+    pub deaths: i64,
+    pub kill_fame: i64,
+    pub silver_lost: i64,
+}
+
+/// One member's combat record, isolated from the guild report.
+///
+/// `member` carries every total the guild report's roster table already
+/// shows for this user (fights, silver, splits, siphoned, fill rate); `weekly`
+/// and `recent_fights` are the two things a single roster row cannot show —
+/// how those totals built up over the window, and the individual fights
+/// behind them.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PlayerReport {
+    pub user_id: i64,
+    pub username: String,
+    pub albion_name: Option<String>,
+    pub role: String,
+    pub is_officer: bool,
+    pub linked: bool,
+    pub from: String,
+    pub to: String,
+    pub member: MemberRow,
+    /// One entry per week in the window, oldest first, zero-filled gaps
+    /// included — same convention as [`GuildReport::trends`].
+    pub weekly: Vec<PlayerTrendBucket>,
+    /// This member's fights, newest first, capped at
+    /// [`PLAYER_RECENT_FIGHTS_LIMIT`].
+    pub recent_fights: Vec<FightSummary>,
+    /// Consecutive wins counting back from the most recent fight.
+    pub win_streak: i64,
+}
+
 /// The whole aggregate.
 #[derive(Debug, Clone, Default, Serialize, ToSchema)]
 pub struct GuildReport {
@@ -449,6 +500,75 @@ pub async fn build_guild_report(
         leaderboards,
         data_quality,
     })
+}
+
+/// Builds one member's report for a window — the roster row from
+/// [`build_guild_report`] plus what a single row cannot show.
+///
+/// Runs its own bulk load rather than reading from [`ReportCache`], since the
+/// cache only ever holds the folded [`GuildReport`], not the intermediate
+/// `fights` this needs for the weekly breakdown. The cost is the same as one
+/// guild report computation — nothing here is per-user in complexity, it
+/// just discards every other member's rows at the end instead of keeping
+/// them.
+///
+/// Returns `Ok(None)` when `user_id` does not exist, so the router can 404
+/// instead of returning an empty-looking report.
+///
+/// [`ReportCache`]: crate::modules::intel::cache::ReportCache
+pub async fn build_player_report(
+    db: &DatabaseConnection,
+    guild_ctx: &BattleLinkingContext,
+    user_id: i64,
+    range: DateRange,
+) -> Result<Option<PlayerReport>, AppError> {
+    let raw = load(db, range).await?;
+    let Some(user_row) = raw.users.iter().find(|u| u.id == user_id) else {
+        return Ok(None);
+    };
+
+    let fights = decode_fights(&raw.snapshots, guild_ctx)?;
+    let name_to_user = link_names_to_users(&raw);
+    let members = compute_members(&raw, &fights, &name_to_user);
+    let Some(member) = members.into_iter().find(|m| m.user_id == user_id) else {
+        return Ok(None);
+    };
+
+    let own_fights: Vec<&Fight> = fights
+        .iter()
+        .filter(|fight| {
+            fight
+                .our_players
+                .iter()
+                .any(|p| name_to_user.get(&p.name.to_ascii_lowercase()).copied() == Some(user_id))
+        })
+        .collect();
+
+    let weekly = compute_member_trend(&fights, &name_to_user, user_id, &range);
+
+    let mut recent_fights: Vec<FightSummary> = own_fights.iter().map(|f| f.summary()).collect();
+    recent_fights.truncate(PLAYER_RECENT_FIGHTS_LIMIT);
+    let win_streak = recent_fights
+        .iter()
+        .take_while(|f| f.is_win)
+        .count()
+        .try_into()
+        .unwrap_or(0);
+
+    Ok(Some(PlayerReport {
+        user_id: user_row.id,
+        username: user_row.username.clone(),
+        albion_name: member.albion_name.clone(),
+        role: user_row.role.clone(),
+        is_officer: member.is_officer,
+        linked: member.linked,
+        from: range.from.to_rfc3339(),
+        to: range.to.to_rfc3339(),
+        member,
+        weekly,
+        recent_fights,
+        win_streak,
+    }))
 }
 
 /// One query per table, all range-filtered. No N+1 anywhere downstream.
@@ -1407,6 +1527,91 @@ fn compute_trends(raw: &RawData, fights: &[Fight], range: &DateRange) -> Vec<Tre
         .collect()
 }
 
+/// Weekly activity for one member, the per-player counterpart to
+/// [`compute_trends`].
+///
+/// Resolves the same way [`compute_members`]'s combat fold does — by
+/// matching `target_user_id` against each fight's `our_players` through
+/// `name_to_user` — so a week's totals here are this member's own
+/// contribution (`BattlePlayer::kills`, not the whole battle's), and summing
+/// `weekly` across every week reproduces `MemberRow::kills`/`kill_fame`/
+/// `silver_lost` for the same member. `is_win` is a whole-battle outcome, but
+/// it applies to every one of our players in that battle, so it is counted
+/// as-is for any week this member fought in.
+fn compute_member_trend(
+    fights: &[Fight],
+    name_to_user: &HashMap<String, i64>,
+    target_user_id: i64,
+    range: &DateRange,
+) -> Vec<PlayerTrendBucket> {
+    let start_week = week_start_utc(range.from);
+    let end_week = week_start_utc(range.to);
+
+    let mut order: Vec<DateTimeWithTimeZone> = Vec::new();
+    let mut cursor = start_week;
+    loop {
+        order.push(cursor);
+        if cursor >= end_week {
+            break;
+        }
+        cursor += chrono::Duration::weeks(1);
+    }
+
+    let mut buckets: HashMap<DateTimeWithTimeZone, PlayerTrendBucket> = order
+        .iter()
+        .map(|week| {
+            (
+                *week,
+                PlayerTrendBucket {
+                    week_start: week.to_rfc3339(),
+                    fights: 0,
+                    wins: 0,
+                    losses: 0,
+                    win_rate: 0.0,
+                    kills: 0,
+                    deaths: 0,
+                    kill_fame: 0,
+                    silver_lost: 0,
+                },
+            )
+        })
+        .collect();
+
+    for fight in fights {
+        let Some(player) = fight.our_players.iter().find(|p| {
+            name_to_user.get(&p.name.to_ascii_lowercase()).copied() == Some(target_user_id)
+        }) else {
+            continue;
+        };
+        let Some(bucket) = buckets.get_mut(&week_start_utc(fight.started_at)) else {
+            continue;
+        };
+        bucket.fights += 1;
+        if fight.is_win {
+            bucket.wins += 1;
+        } else {
+            bucket.losses += 1;
+        }
+        bucket.kills += player.kills;
+        bucket.deaths += player.deaths;
+        bucket.kill_fame += player.kill_fame;
+        bucket.silver_lost += fight
+            .per_player_loss
+            .get(&player.name.to_ascii_lowercase())
+            .copied()
+            .unwrap_or(0);
+    }
+
+    for bucket in buckets.values_mut() {
+        bucket.win_rate = ratio_percent(bucket.wins, bucket.wins + bucket.losses);
+    }
+
+    order
+        .into_iter()
+        .filter_map(|week| buckets.remove(&week))
+        .collect()
+}
+
 fn compute_timeline(raw: &RawData, fights: &[Fight]) -> Vec<TimelineEntry> {
     let mut entries: Vec<(DateTimeWithTimeZone, TimelineEntry)> = Vec::new();
 
@@ -1854,5 +2059,132 @@ mod tests {
             .unwrap();
         assert_eq!(week.loot_in, 95_000);
         assert_eq!(week.outflow, 42_000);
+    }
+
+    /// A fight with one named `BattlePlayer` on our side, contributing their
+    /// own kills/deaths/fame — distinct from the fight-wide totals `fight()`
+    /// above fills in, since `compute_member_trend` must read the player's
+    /// own contribution, not the battle's.
+    fn player_fight(
+        started_at: &str,
+        is_win: bool,
+        player_name: &str,
+        player_kills: i64,
+        player_deaths: i64,
+        player_kill_fame: i64,
+        silver_lost: i64,
+    ) -> Fight {
+        Fight {
+            our_players: vec![BattlePlayer {
+                id: "1".to_string(),
+                name: player_name.to_string(),
+                guild_id: "g".to_string(),
+                guild_name: "Us".to_string(),
+                alliance_name: None,
+                alliance_id: None,
+                kills: player_kills,
+                deaths: player_deaths,
+                kill_fame: player_kill_fame,
+                death_fame: 0,
+                item_power: 1000.0,
+            }],
+            per_player_loss: HashMap::from([(player_name.to_ascii_lowercase(), silver_lost)]),
+            // The fight-wide totals are deliberately different from the
+            // player's own figures above, so a test that accidentally reads
+            // fight-wide totals instead of the player's own fails loudly.
+            ..fight(started_at, is_win, player_kills + 100, player_deaths + 100)
+        }
+    }
+
+    fn name_to_user(pairs: &[(&str, i64)]) -> HashMap<String, i64> {
+        pairs
+            .iter()
+            .map(|(name, id)| (name.to_ascii_lowercase(), *id))
+            .collect()
+    }
+
+    #[test]
+    fn member_trend_seeds_every_week_even_when_empty() {
+        let range = DateRange {
+            from: ts("2026-08-03T00:00:00Z"),
+            to: ts("2026-08-20T00:00:00Z"),
+        };
+        let buckets = compute_member_trend(&[], &HashMap::new(), 1, &range);
+        // Aug 3 (Mon) .. Aug 17 (Mon) inclusive = 3 weekly buckets.
+        assert_eq!(buckets.len(), 3);
+        assert!(buckets.iter().all(|b| b.fights == 0 && b.win_rate == 0.0));
+    }
+
+    #[test]
+    fn member_trend_only_counts_fights_this_member_appears_in() {
+        let range = DateRange {
+            from: ts("2026-08-03T00:00:00Z"),
+            to: ts("2026-08-20T00:00:00Z"),
+        };
+        let fights = vec![
+            player_fight("2026-08-19T10:00:00Z", true, "Alice", 3, 1, 100_000, 5_000),
+            player_fight("2026-08-19T12:00:00Z", false, "Bob", 1, 2, 50_000, 2_000),
+        ];
+        let names = name_to_user(&[("Alice", 1), ("Bob", 2)]);
+        let buckets = compute_member_trend(&fights, &names, 1, &range);
+        let week = buckets
+            .iter()
+            .find(|b| b.week_start == week_start_utc(ts("2026-08-19T00:00:00Z")).to_rfc3339())
+            .unwrap();
+        assert_eq!(week.fights, 1);
+        assert_eq!(week.wins, 1);
+        assert_eq!(week.losses, 0);
+    }
+
+    #[test]
+    fn member_trend_uses_the_players_own_contribution_not_the_whole_fight() {
+        let range = DateRange {
+            from: ts("2026-08-03T00:00:00Z"),
+            to: ts("2026-08-20T00:00:00Z"),
+        };
+        let fights = vec![player_fight(
+            "2026-08-19T10:00:00Z",
+            true,
+            "Alice",
+            3,
+            1,
+            100_000,
+            5_000,
+        )];
+        let names = name_to_user(&[("Alice", 1)]);
+        let buckets = compute_member_trend(&fights, &names, 1, &range);
+        let week = buckets
+            .iter()
+            .find(|b| b.week_start == week_start_utc(ts("2026-08-19T00:00:00Z")).to_rfc3339())
+            .unwrap();
+        // Not 103/101 — the fight-wide totals `player_fight` deliberately
+        // inflates to catch exactly this mistake.
+        assert_eq!(week.kills, 3);
+        assert_eq!(week.deaths, 1);
+        assert_eq!(week.kill_fame, 100_000);
+        assert_eq!(week.silver_lost, 5_000);
+    }
+
+    #[test]
+    fn member_trend_win_rate_matches_wins_over_fights() {
+        let range = DateRange {
+            from: ts("2026-08-03T00:00:00Z"),
+            to: ts("2026-08-20T00:00:00Z"),
+        };
+        let fights = vec![
+            player_fight("2026-08-19T10:00:00Z", true, "Alice", 1, 0, 0, 0),
+            player_fight("2026-08-19T12:00:00Z", true, "Alice", 1, 0, 0, 0),
+            player_fight("2026-08-19T14:00:00Z", false, "Alice", 0, 1, 0, 0),
+        ];
+        let names = name_to_user(&[("Alice", 1)]);
+        let buckets = compute_member_trend(&fights, &names, 1, &range);
+        let week = buckets
+            .iter()
+            .find(|b| b.week_start == week_start_utc(ts("2026-08-19T00:00:00Z")).to_rfc3339())
+            .unwrap();
+        assert_eq!(week.fights, 3);
+        assert_eq!(week.wins, 2);
+        assert_eq!(week.losses, 1);
+        assert!((week.win_rate - ratio_percent(2, 3)).abs() < f64::EPSILON);
     }
 }

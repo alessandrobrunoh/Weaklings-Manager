@@ -46,12 +46,25 @@
                     class="select select--sm data-table__filter-select"
                     [class.data-table__filter-select--active]="!!columnFilterValue(column.key)"
                     [attr.aria-label]="t(column.label) + ': ' + t('common.all')"
-                    [value]="columnFilterValue(column.key)"
                     (change)="onColumnFilter(column.key, $event)"
                   >
-                    <option value="">{{ t(column.label) }}: {{ t('common.all') }}</option>
+                    <!--
+                      Selection is expressed per option rather than with
+                      `[value]` on the select: a `[value]` binding is applied
+                      before the `@for` has created the options, so a filter
+                      restored from a deep link would leave the control blank
+                      while the table was in fact filtered.
+                    -->
+                    <option value="" [selected]="!columnFilterValue(column.key)">
+                      {{ t(column.label) }}: {{ t('common.all') }}
+                    </option>
                     @for (option of column.filterOptions; track option.value) {
-                      <option [value]="option.value">{{ option.label }}</option>
+                      <option
+                        [value]="option.value"
+                        [selected]="option.value === columnFilterValue(column.key)"
+                      >
+                        {{ option.label }}
+                      </option>
                     }
                   </select>
                 }
@@ -106,7 +119,10 @@
                       <span>{{ t(column.label) }}</span>
                       <span class="data-table__sort-indicator" aria-hidden="true">
                         @if (sort()?.columnKey === column.key) {
-                          <app-icon [name]="sort()?.direction === 'asc' ? 'chevron-up' : 'chevron-down'" size="0.75rem" />
+                          <app-icon
+                            [name]="sort()?.direction === 'asc' ? 'chevron-up' : 'chevron-down'"
+                            size="0.75rem"
+                          />
                         } @else {
                           <span class="text-[var(--color-text-disabled)] opacity-40">↕</span>
                         }

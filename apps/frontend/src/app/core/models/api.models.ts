@@ -137,7 +137,6 @@ export interface UserProfile {
 
 export type AlbionCombatCategory = 'weapon' | 'armor';
 
-
 export interface UserSpecialization {
   node_key: string;
   node_name: string;
@@ -285,6 +284,7 @@ export interface SplitKpiSummary {
   total_net_distributed: number;
   total_estimated_volume: number;
   total_participants: number;
+  default_split_fee: number | string;
 }
 
 export interface SplitParticipant {
@@ -366,13 +366,7 @@ export interface MatchedParticipant {
 }
 
 export type SplitIslandCity =
-  | 'lymhurst'
-  | 'bridgewatch'
-  | 'martlock'
-  | 'fort_sterling'
-  | 'thetford'
-  | 'caerleon'
-  | 'brecilien';
+  'lymhurst' | 'bridgewatch' | 'martlock' | 'fort_sterling' | 'thetford' | 'caerleon' | 'brecilien';
 
 export interface SplitIslandTab {
   id: number;
@@ -761,9 +755,7 @@ export interface RosterRealtimeResyncRequiredMessage {
 
 /** Notifications sent by `GET /api/events/{id}/roster/live`. */
 export type RosterRealtimeMessage =
-  | RosterRealtimeReadyMessage
-  | RosterRealtimeChangedMessage
-  | RosterRealtimeResyncRequiredMessage;
+  RosterRealtimeReadyMessage | RosterRealtimeChangedMessage | RosterRealtimeResyncRequiredMessage;
 
 export interface EventFilters {
   search?: string;
@@ -1108,6 +1100,8 @@ export interface BuildSummary {
   created_by_username: string;
   updated_at: string;
   item_count: number;
+  /** When this build was archived, if it has been. `null` means it's active. */
+  archived_at: string | null;
 }
 
 /** One sibling version of a build or comp, for the version switcher. */
@@ -1172,6 +1166,8 @@ export interface CompSummary {
   build_count: number;
   total_quantity: number;
   parent_id: number | null;
+  /** When this comp was archived, if it has been. `null` means it's active. */
+  archived_at: string | null;
 }
 
 export interface CompDetail extends CompSummary {
@@ -1186,6 +1182,8 @@ export interface CompFilters {
   search?: string;
   date_from?: string;
   date_to?: string;
+  /** When `true`, lists archived comps instead of active ones. */
+  archived?: boolean;
 }
 
 export type BuildRole = 'healer' | 'support' | 'dps' | 'tank' | 'battle_mount' | 'brawler';
@@ -1769,6 +1767,37 @@ export interface GuildReport {
   data_quality: ReportDataQuality;
 }
 
+/** One member's activity in a single week — the per-player counterpart to {@link TrendBucket}. */
+export interface PlayerTrendBucket {
+  week_start: string;
+  fights: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  kills: number;
+  deaths: number;
+  kill_fame: number;
+  silver_lost: number;
+}
+
+/** One member's combat record for a window: their roster row, a weekly breakdown, and recent fights. */
+export interface PlayerReport {
+  user_id: number;
+  username: string;
+  albion_name: string | null;
+  role: string;
+  is_officer: boolean;
+  linked: boolean;
+  from: string;
+  to: string;
+  member: ReportMemberRow;
+  /** One entry per week in the window, oldest first, including quiet weeks. */
+  weekly: PlayerTrendBucket[];
+  /** This member's fights, newest first. */
+  recent_fights: FightSummary[];
+  win_streak: number;
+}
+
 /** One split that could not be completed in a batch, and why. */
 export interface BatchFailure {
   split_id: number;
@@ -1847,6 +1876,7 @@ export interface GuildSettingsView {
   discord_split_not_completed_tag_id: string | null;
   discord_split_lost_tag_id: string | null;
   discord_event_voice_category_id: string | null;
+  default_split_fee: number | string;
 }
 
 /**
@@ -1938,12 +1968,7 @@ export interface ProgressionLeaderboardEntry {
 
 /** Why a progression ledger row was written. */
 export type XpSource =
-  | 'message'
-  | 'event_create'
-  | 'event_join'
-  | 'event_complete'
-  | 'vod'
-  | 'admin_adjust';
+  'message' | 'event_create' | 'event_join' | 'event_complete' | 'vod' | 'admin_adjust';
 
 /** One append-only XP award (or admin adjust) row. */
 export interface ProgressionLedgerRow {

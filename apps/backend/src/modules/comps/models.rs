@@ -123,6 +123,8 @@ pub struct BuildSummary {
     /// The number of items in the build.
     #[schema(example = 7)]
     pub item_count: u64,
+    /// When this build was archived, if it has been. `None` means it's active.
+    pub archived_at: Option<String>,
 }
 
 /// A build's full detail, including items.
@@ -186,6 +188,8 @@ pub struct CompSummary {
     pub total_quantity: i64,
     /// The parent comp ID if this comp is a variant.
     pub parent_id: Option<i64>,
+    /// When this comp was archived, if it has been. `None` means it's active.
+    pub archived_at: Option<String>,
 }
 
 /// A comp's full detail, including builds.
@@ -310,7 +314,8 @@ pub struct UpdateBuildRequest {
     "openalbion_item_id": 4532,
     "openalbion_item_name": "Holy Staff",
     "openalbion_item_icon": "https://...",
-    "openalbion_item_tier": "8.0"
+    "openalbion_item_tier": "8.0",
+    "spells": { "active": { "1": "HEROICSTRIKE2" }, "passive": {} }
 }))]
 pub struct CreateBuildItemRequest {
     /// The equipment slot where this item belongs.
@@ -323,6 +328,10 @@ pub struct CreateBuildItemRequest {
     pub openalbion_item_name: String,
     /// The OpenAlbion item icon URL.
     pub openalbion_item_icon: Option<String>,
+    /// Abilities chosen for this item while it was still a picker draft, if any. Validated the
+    /// same way `PUT .../items/{slot}/spells` validates them.
+    #[serde(default)]
+    pub spells: Option<BuildItemSpells>,
     /// The OpenAlbion item tier.
     pub openalbion_item_tier: Option<String>,
 }
@@ -388,6 +397,7 @@ pub struct UpdateCompRequest {
     pub category_id: Option<i64>,
     /// The new parent comp ID if this comp is a variant. `null` explicitly removes the parent;
     /// omitting the field leaves the current parent unchanged.
+    #[serde(default, deserialize_with = "crate::serde_helpers::double_option")]
     pub parent_id: Option<Option<i64>>,
 }
 
@@ -431,6 +441,10 @@ pub struct BuildFilters {
     pub sort: Option<String>,
     /// Sort direction: `asc` or `desc`. Defaults to `desc`.
     pub order: Option<String>,
+    /// When `true`, lists archived builds instead of active ones. Defaults to `false` — every
+    /// picker and listing shows active builds only unless a caller explicitly asks to browse the
+    /// archive.
+    pub archived: Option<bool>,
 }
 
 /// Filters for listing comps.
@@ -450,4 +464,8 @@ pub struct CompFilters {
     pub sort: Option<String>,
     /// Sort direction: `asc` or `desc`. Defaults to `desc`.
     pub order: Option<String>,
+    /// When `true`, lists archived comps instead of active ones. Defaults to `false` — every
+    /// picker and listing shows active comps only unless a caller explicitly asks to browse the
+    /// archive.
+    pub archived: Option<bool>,
 }

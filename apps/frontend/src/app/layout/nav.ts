@@ -86,6 +86,12 @@ export const APP_NAV_SECTIONS: NavSection[] = [
   {
     headingKey: 'nav.section.guild',
     items: [
+      {
+        path: '/guild',
+        icon: 'users',
+        labelKey: 'nav.guild',
+        permissions: ['intel.report.view'],
+      },
       { path: '/bank', icon: 'bank', labelKey: 'nav.bank' },
       { path: '/splits', icon: 'swords', labelKey: 'nav.splits' },
       { path: '/events', icon: 'calendar', labelKey: 'nav.events' },

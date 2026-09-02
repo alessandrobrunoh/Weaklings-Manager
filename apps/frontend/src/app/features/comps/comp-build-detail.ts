@@ -1,4 +1,11 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
@@ -23,6 +30,7 @@ import type {
 import { filterAlbionEquipmentCatalog } from '../../shared/data/albion-equipment-catalog';
 import { SLOT_ORDER, itemsForLoadout } from './build-loadouts';
 import {
+  abilityCatalogKey,
   abilityKeyForItem,
   abilitySlotsFor,
   withAbilityChoice,
@@ -35,8 +43,7 @@ import { VersionSwitcher } from '../../shared/components/version-switcher/versio
 import { VersionDiffList } from '../../shared/components/version-diff-list/version-diff-list';
 import { abilityNameLookup, diffBuildVersions } from './version-diff';
 import type { VersionDiffEntry } from './version-diff';
-import { ApiError, ApiService } from '../../core/services/api.service';
-import type { BlockingReference } from '../../core/models/api.models';
+import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
@@ -130,6 +137,7 @@ const ITEM_TIERS = [
         [subtitle]="
           roleLabel(current.role) + ' · ' + (current.category_name || t('comps.noCategory'))
         "
+        [badge]="current.archived_at ? t('comps.archived') : undefined"
       >
         <div pageActions class="flex flex-wrap items-center gap-2">
           <a class="btn btn--ghost" routerLink="/comps">← {{ t('comps.title') }}</a>
@@ -159,14 +167,25 @@ const ITEM_TIERS = [
             </button>
           }
           @if (canDelete() && mode() === 'view') {
-            <button
-              type="button"
-              class="btn btn--danger"
-              (click)="askDeleteBuild()"
-              [disabled]="saving()"
-            >
-              {{ t('common.delete') }}
-            </button>
+            @if (current.archived_at) {
+              <button
+                type="button"
+                class="btn btn--outline"
+                (click)="unarchiveBuild()"
+                [disabled]="saving()"
+              >
+                {{ t('comps.unarchive') }}
+              </button>
+            } @else {
+              <button
+                type="button"
+                class="btn btn--outline"
+                (click)="askArchiveBuild()"
+                [disabled]="saving()"
+              >
+                {{ t('comps.archive') }}
+              </button>
+            }
           }
         </div>
       </app-page-header>
@@ -238,7 +257,8 @@ const ITEM_TIERS = [
                     {{ t('comps.mainLoadout') }}
                   </h2>
                   <p class="text-xs text-[var(--color-text-secondary)]">
-                    {{ mainItems().length }}/{{ SLOT_ORDER.length }} slots equipped · {{ current.item_count }} items total
+                    {{ mainItems().length }}/{{ SLOT_ORDER.length }} slots equipped ·
+                    {{ current.item_count }} items total
                   </p>
                 </div>
                 <span class="chip font-semibold">{{ roleLabel(current.role) }}</span>
@@ -254,6 +274,7 @@ const ITEM_TIERS = [
                 [searchResults]="searchResults()"
                 [searchLoading]="searchLoading()"
                 [tiers]="ITEM_TIERS"
+                [draftAbilitySlots]="draftAbilitySlots()"
                 (slotToggle)="onSlotToggle('main', $event)"
                 (tierChange)="onDraftTierChangeValue($event)"
                 (searchChange)="onDraftSearchChangeValue($event)"
@@ -261,6 +282,7 @@ const ITEM_TIERS = [
                 (saveSlot)="saveSlot('main', $event)"
                 (cancelEdit)="cancelSlotEdit()"
                 (removeItem)="askRemoveItem('main', $event)"
+                (abilityChoice)="onDraftAbilityChange($event)"
               />
             </section>
 
@@ -293,6 +315,7 @@ const ITEM_TIERS = [
                     [searchResults]="searchResults()"
                     [searchLoading]="searchLoading()"
                     [tiers]="ITEM_TIERS"
+                    [draftAbilitySlots]="draftAbilitySlots()"
                     (slotToggle)="onSlotToggle('swap', $event)"
                     (tierChange)="onDraftTierChangeValue($event)"
                     (searchChange)="onDraftSearchChangeValue($event)"
@@ -300,6 +323,7 @@ const ITEM_TIERS = [
                     (saveSlot)="saveSlot('swap', $event)"
                     (cancelEdit)="cancelSlotEdit()"
                     (removeItem)="askRemoveItem('swap', $event)"
+                    (abilityChoice)="onDraftAbilityChange($event)"
                   />
                 }
               </section>
@@ -323,8 +347,12 @@ const ITEM_TIERS = [
                 @if (rows.length > 0) {
                   <div class="grid gap-3">
                     @for (row of rows; track row.slot) {
-                      <div class="p-3 bg-[var(--color-surface-2)] rounded-lg grid gap-1.5 border border-[var(--color-border)]">
-                        <span class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                      <div
+                        class="p-3 bg-[var(--color-surface-2)] rounded-lg grid gap-1.5 border border-[var(--color-border)]"
+                      >
+                        <span
+                          class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
+                        >
                           {{ row.itemName }}
                         </span>
                         <app-ability-bar
@@ -337,7 +365,9 @@ const ITEM_TIERS = [
                     }
                   </div>
                 } @else {
-                  <p class="text-xs text-[var(--color-text-secondary)]">No abilities configured for main set.</p>
+                  <p class="text-xs text-[var(--color-text-secondary)]">
+                    No abilities configured for main set.
+                  </p>
                 }
               }
 
@@ -345,12 +375,18 @@ const ITEM_TIERS = [
               @if (abilityRows('swap'); as swapRows) {
                 @if (swapRows.length > 0) {
                   <div class="pt-4 border-t border-[var(--color-border)] grid gap-3">
-                    <span class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                    <span
+                      class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
+                    >
                       Swap Set Abilities
                     </span>
                     @for (row of swapRows; track row.slot) {
-                      <div class="p-3 bg-[var(--color-surface-2)] rounded-lg grid gap-1.5 border border-[var(--color-border)]">
-                        <span class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                      <div
+                        class="p-3 bg-[var(--color-surface-2)] rounded-lg grid gap-1.5 border border-[var(--color-border)]"
+                      >
+                        <span
+                          class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
+                        >
                           {{ row.itemName }}
                         </span>
                         <app-ability-bar
@@ -371,11 +407,17 @@ const ITEM_TIERS = [
           <aside class="lg:col-span-3 grid gap-5">
             <section class="card p-5 grid gap-4">
               <header class="flex items-center justify-between gap-2">
-                <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]">
+                <h2
+                  class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
+                >
                   {{ t('comps.performance') }} · v{{ current.version }}
                 </h2>
                 <span class="chip text-xs">
-                  {{ (performance()?.signups_as_primary ?? 0) + (performance()?.signups_as_secondary ?? 0) }} Signups
+                  {{
+                    (performance()?.signups_as_primary ?? 0) +
+                      (performance()?.signups_as_secondary ?? 0)
+                  }}
+                  Signups
                 </span>
               </header>
 
@@ -386,7 +428,9 @@ const ITEM_TIERS = [
                       <div class="text-base font-bold text-[var(--color-text)]">
                         {{ winRate(stats.wins, stats.losses) }}
                       </div>
-                      <div class="text-[10px] text-[var(--color-text-secondary)]">{{ t('comps.winrate') }}</div>
+                      <div class="text-[10px] text-[var(--color-text-secondary)]">
+                        {{ t('comps.winrate') }}
+                      </div>
                     </div>
                     <div class="p-2.5 bg-[var(--color-surface-2)] rounded-lg">
                       <div class="text-base font-bold text-[var(--color-text)]">
@@ -396,7 +440,9 @@ const ITEM_TIERS = [
                     </div>
                   </div>
 
-                  <div class="text-xs space-y-1.5 text-[var(--color-text-secondary)] pt-2 border-t border-[var(--color-border)]">
+                  <div
+                    class="text-xs space-y-1.5 text-[var(--color-text-secondary)] pt-2 border-t border-[var(--color-border)]"
+                  >
                     <div class="flex justify-between">
                       <span>Battles Tracked:</span>
                       <strong class="text-[var(--color-text)]">{{ stats.battles }}</strong>
@@ -412,7 +458,9 @@ const ITEM_TIERS = [
                   </div>
 
                   @if (report.players_without_an_albion_link > 0) {
-                    <div class="text-xs text-[var(--color-warning)] pt-2 border-t border-[var(--color-border)]">
+                    <div
+                      class="text-xs text-[var(--color-warning)] pt-2 border-t border-[var(--color-border)]"
+                    >
                       {{ t('comps.unlinkedPlayers') }}: {{ report.players_without_an_albion_link }}
                     </div>
                   }
@@ -484,45 +532,45 @@ const ITEM_TIERS = [
 
       @if (pendingDelete(); as pending) {
         <app-dialog [title]="t('common.confirm')" size="sm" (closed)="closeDelete()">
-          @if (blockedByRefs(); as refs) {
-            <p>Impossibile eliminare "{{ current.name }}": è ancora in uso.</p>
-            <ul class="mt-2 grid gap-1 text-sm">
-              @for (ref of refs; track ref.resource + ':' + ref.id) {
-                <li>
-                  @if (ref.resource === 'event') {
-                    <a class="text-primary no-underline hover:underline" [routerLink]="['/events', ref.id]">
-                      {{ ref.label }}
-                    </a>
-                  } @else {
-                    <span style="color: var(--color-text-secondary)">{{ ref.label }}</span>
-                  }
-                </li>
-              }
-            </ul>
-            <div dialogFooter>
-              <button type="button" class="btn btn--ghost" (click)="closeDelete()">
-                {{ t('common.close') }}
-              </button>
-            </div>
-          } @else {
-            <p>{{ pending.kind === 'slot' ? t('comps.deleteItem') : t('comps.delete.confirm') }}</p>
-            <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
-              {{ pending.kind === 'slot' ? slotLabel(pending.slot) : current.name }}
-            </p>
-            <div dialogFooter>
-              <button type="button" class="btn btn--ghost" (click)="closeDelete()">
-                {{ t('common.cancel') }}
-              </button>
-              <button
-                type="button"
-                class="btn btn--danger"
-                [disabled]="saving()"
-                (click)="confirmPendingDelete()"
-              >
-                {{ t('common.delete') }}
-              </button>
-            </div>
-          }
+          <p>{{ t('comps.deleteItem') }}</p>
+          <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
+            {{ slotLabel(pending.slot) }}
+          </p>
+          <div dialogFooter>
+            <button type="button" class="btn btn--ghost" (click)="closeDelete()">
+              {{ t('common.cancel') }}
+            </button>
+            <button
+              type="button"
+              class="btn btn--danger"
+              [disabled]="saving()"
+              (click)="confirmPendingDelete()"
+            >
+              {{ t('common.delete') }}
+            </button>
+          </div>
+        </app-dialog>
+      }
+
+      @if (pendingArchive()) {
+        <app-dialog [title]="t('common.confirm')" size="sm" (closed)="closeArchiveConfirm()">
+          <p>{{ t('comps.archiveConfirm') }}</p>
+          <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
+            {{ current.name }}
+          </p>
+          <div dialogFooter>
+            <button type="button" class="btn btn--ghost" (click)="closeArchiveConfirm()">
+              {{ t('common.cancel') }}
+            </button>
+            <button
+              type="button"
+              class="btn btn--tonal"
+              [disabled]="saving()"
+              (click)="confirmArchiveBuild()"
+            >
+              {{ t('comps.archive') }}
+            </button>
+          </div>
         </app-dialog>
       }
     } @else if (loadFailed()) {
@@ -580,11 +628,10 @@ export class CompBuildDetailPage {
   });
 
   protected readonly mode = signal<'view' | 'edit'>('view');
-  protected readonly pendingDelete = signal<
-    { kind: 'build' } | { kind: 'slot'; loadout: BuildLoadout; slot: BuildSlot } | null
-  >(null);
-  /** Set when a build-delete attempt was rejected because other rows still reference it. */
-  protected readonly blockedByRefs = signal<BlockingReference[] | null>(null);
+  protected readonly pendingDelete = signal<{ loadout: BuildLoadout; slot: BuildSlot } | null>(
+    null,
+  );
+  protected readonly pendingArchive = signal(false);
   protected readonly editName = signal('');
   protected readonly editDescription = signal('');
   protected readonly editCategoryId = signal('');
@@ -602,6 +649,10 @@ export class CompBuildDetailPage {
   protected readonly draftItemIcon = signal<string | null>(null);
   protected readonly searchResults = signal<OpenAlbionItem[]>([]);
   protected readonly searchLoading = signal(false);
+  /** Ability-catalog key of the drafted item, so its ability bar can render before it is saved. */
+  protected readonly draftAbilityKey = signal<string | null>(null);
+  /** Abilities picked in the popover, applied together with the item on save. */
+  protected readonly draftSpells = signal<BuildItemSpells>({ active: {}, passive: {} });
 
   protected readonly t = (key: TranslationKey) => this.translate.t(key);
 
@@ -623,6 +674,15 @@ export class CompBuildDetailPage {
   });
   protected readonly mainItems = computed<BuildItemSlot[]>(() => this.itemsFor('main'));
   protected readonly swapItems = computed<BuildItemSlot[]>(() => this.itemsFor('swap'));
+  /** Ability slots for the item currently open in the picker, so it can be chosen before saving. */
+  protected readonly draftAbilitySlots = computed<AbilitySlotView[]>(() => {
+    const editingState = this.editing();
+    const key = this.draftAbilityKey();
+    if (!editingState || !key) {
+      return [];
+    }
+    return abilitySlotsFor(editingState.slot, this.abilityCatalog()[key], this.draftSpells());
+  });
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -759,6 +819,8 @@ export class CompBuildDetailPage {
     this.draftItemName.set(current?.openalbion_item_name ?? '');
     this.draftItemType.set(current?.openalbion_item_type ?? '');
     this.draftItemIcon.set(current?.openalbion_item_icon ?? null);
+    this.draftAbilityKey.set(current ? abilityKeyForItem(current) : null);
+    this.draftSpells.set(current?.spells ?? { active: {}, passive: {} });
     this.searchResults.set([]);
     if (current) {
       void this.runItemSearch();
@@ -769,6 +831,8 @@ export class CompBuildDetailPage {
     this.editing.set(null);
     this.draftSearch.set('');
     this.draftItemId.set('');
+    this.draftAbilityKey.set(null);
+    this.draftSpells.set({ active: {}, passive: {} });
     this.searchResults.set([]);
   }
 
@@ -794,7 +858,20 @@ export class CompBuildDetailPage {
       this.draftItemName.set(item.name);
       this.draftItemType.set(item.type);
       this.draftItemIcon.set(item.icon ?? null);
+      const key = item.identifier ? abilityCatalogKey(item.identifier) : null;
+      // A different weapon family offers different slots, so a stale choice from whatever was
+      // picked before does not silently carry over onto abilities it cannot actually cast.
+      if (key !== this.draftAbilityKey()) {
+        this.draftSpells.set({ active: {}, passive: {} });
+      }
+      this.draftAbilityKey.set(key);
     }
+  }
+
+  protected onDraftAbilityChange(change: AbilityChoiceChange): void {
+    this.draftSpells.update((spells) =>
+      withAbilityChoice(spells, change.kind, change.index, change.spellId),
+    );
   }
 
   protected async saveSlot(loadout: BuildLoadout, slot: BuildSlot): Promise<void> {
@@ -804,7 +881,7 @@ export class CompBuildDetailPage {
     }
     this.saving.set(true);
     try {
-      const updated = await firstValueFrom(
+      let updated = await firstValueFrom(
         this.api.put<BuildDetail>(`api/comps/builds/${build.id}/items/${slot}?loadout=${loadout}`, {
           openalbion_item_type: this.draftItemType(),
           openalbion_item_id: Number(this.draftItemId()),
@@ -813,6 +890,17 @@ export class CompBuildDetailPage {
           openalbion_item_tier: this.draftTier(),
         }),
       );
+      // Abilities picked in the same popover, applied right after the item exists to fill —
+      // the spells endpoint targets an existing slot, so it cannot run before this PUT.
+      const spells = this.draftSpells();
+      if (Object.keys(spells.active).length > 0 || Object.keys(spells.passive).length > 0) {
+        updated = await firstValueFrom(
+          this.api.put<BuildDetail>(
+            `api/comps/builds/${build.id}/items/${slot}/spells?loadout=${loadout}`,
+            spells,
+          ),
+        );
+      }
       this.build.set(updated);
       this.cancelSlotEdit();
       this.toasts.success('Item saved');
@@ -824,7 +912,7 @@ export class CompBuildDetailPage {
   }
 
   protected askRemoveItem(loadout: BuildLoadout, slot: BuildSlot): void {
-    this.pendingDelete.set({ kind: 'slot', loadout, slot });
+    this.pendingDelete.set({ loadout, slot });
   }
 
   protected async removeItem(loadout: BuildLoadout, slot: BuildSlot): Promise<void> {
@@ -899,14 +987,8 @@ export class CompBuildDetailPage {
     }
   }
 
-  protected askDeleteBuild(): void {
-    this.blockedByRefs.set(null);
-    this.pendingDelete.set({ kind: 'build' });
-  }
-
   protected closeDelete(): void {
     this.pendingDelete.set(null);
-    this.blockedByRefs.set(null);
   }
 
   protected async confirmPendingDelete(): Promise<void> {
@@ -914,32 +996,52 @@ export class CompBuildDetailPage {
     if (!pending) {
       return;
     }
-    if (pending.kind === 'slot') {
-      await this.removeItem(pending.loadout, pending.slot);
-      return;
-    }
-    await this.deleteBuild();
+    await this.removeItem(pending.loadout, pending.slot);
   }
 
-  protected async deleteBuild(): Promise<void> {
+  protected askArchiveBuild(): void {
+    this.pendingArchive.set(true);
+  }
+
+  protected closeArchiveConfirm(): void {
+    this.pendingArchive.set(false);
+  }
+
+  /**
+   * Archives the build in place — unlike the old hard delete, this never fails on references, so
+   * there's no blocking-reference branch to fall back to and no need to leave the page.
+   */
+  protected async confirmArchiveBuild(): Promise<void> {
     const build = this.build();
     if (!build) {
       return;
     }
     this.saving.set(true);
     try {
-      await firstValueFrom(this.api.delete(`api/comps/builds/${build.id}`));
-      this.pendingDelete.set(null);
-      this.toasts.success(this.t('common.delete'));
-      await this.router.navigate(['/comps']);
+      await firstValueFrom(this.api.post(`api/comps/builds/${build.id}/archive`, {}));
+      this.pendingArchive.set(false);
+      this.toasts.success(this.t('comps.archiveSuccess'));
+      await this.load(this.buildId());
     } catch (error) {
-      const references = error instanceof ApiError ? error.blockingReferences() : null;
-      if (references) {
-        // Keep the dialog open — swap it to the "here's what's blocking it" view.
-        this.blockedByRefs.set(references);
-      } else {
-        this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-      }
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  /** Unarchiving is always safe — no dialog, one click, back into every picker. */
+  protected async unarchiveBuild(): Promise<void> {
+    const build = this.build();
+    if (!build) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      await firstValueFrom(this.api.post(`api/comps/builds/${build.id}/unarchive`, {}));
+      this.toasts.success(this.t('comps.unarchiveSuccess'));
+      await this.load(this.buildId());
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.saving.set(false);
     }
@@ -1148,4 +1250,3 @@ export class CompBuildDetailPage {
     }
   }
 }
-

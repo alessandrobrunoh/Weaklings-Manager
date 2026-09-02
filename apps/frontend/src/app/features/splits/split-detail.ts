@@ -285,7 +285,7 @@ function parsePercentageInput(raw: string): number | null {
                           {{ t('splits.net_value') }}
                         </span>
                         <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5">
-                          {{ formatAmount(editEstimated()) }} − {{ formatAmount(editEstimated() * editFee() / 100) }} ({{ editFee() }}%) − {{ formatAmount(editRepair()) }} + {{ formatAmount(editBags()) }}
+                          ({{ formatAmount(editEstimated()) }} − {{ formatAmount(editRepair()) }} + {{ formatAmount(editBags()) }}) − {{ formatAmount((editEstimated() - editRepair() + editBags()) * editFee() / 100) }} ({{ editFee() }}%)
                         </p>
                       </div>
                       <div class="text-right">
@@ -425,7 +425,7 @@ function parsePercentageInput(raw: string): number | null {
                   {{ t('splits.fee') }}
                 </p>
                 <p class="font-mono text-base font-medium text-[var(--color-danger)] mt-1">
-                  {{ formatAmount(toNumber(detail.estimated_market_value) * toNumber(detail.fee ?? defaultFee) / 100) }} ({{ detail.fee ?? defaultFee }}%)
+                  {{ formatAmount((toNumber(detail.estimated_market_value) - toNumber(detail.repair_value) + toNumber(detail.bags_value)) * toNumber(detail.fee ?? defaultFee) / 100) }} ({{ detail.fee ?? defaultFee }}%)
                 </p>
               </article>
               <article class="surface p-3.5">
@@ -857,7 +857,7 @@ export class SplitDetailPage {
   protected readonly editNetPreview = computed(() =>
     Math.max(
       0,
-      this.editEstimated() - (this.editEstimated() * this.editFee()) / 100 - this.editRepair() + this.editBags(),
+      (this.editEstimated() - this.editRepair() + this.editBags()) * (1 - this.editFee() / 100),
     ),
   );
   protected readonly editIslandTabs = computed(() => {
@@ -909,7 +909,8 @@ export class SplitDetailPage {
     const estimated = Number(split.estimated_market_value);
     return Math.max(
       0,
-      estimated - (estimated * Number(split.fee ?? DEFAULT_SPLIT_FEE)) / 100 - Number(split.repair_value) + Number(split.bags_value),
+      (estimated - Number(split.repair_value) + Number(split.bags_value)) *
+        (1 - Number(split.fee ?? DEFAULT_SPLIT_FEE) / 100),
     );
   }
 

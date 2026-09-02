@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -76,6 +76,8 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
         (retry)="load()"
         [trackBy]="trackById"
         [serverMode]="true"
+        [initialSearch]="initialSearch"
+        [initialColumnFilters]="initialColumnFilters"
         [totalItems]="total()"
         [pageSize]="25"
         emptyIcon="bank"
@@ -387,7 +389,31 @@ export class AdminTransactions {
   protected readonly searchingRoster = signal(false);
   private rosterTarget: RosterTarget = 'create-to';
 
-  private readonly tableQuery = signal<DataTablePageChange>(emptyPageChange());
+  /**
+   * Deep-link prefilter.
+   *
+   * The finance page links every KPI here with `?status=` (and the per-member
+   * rows with `?search=`), so a figure there can be walked back to the rows
+   * behind it. Read once from the entry snapshot: this is an entry condition,
+   * not a live binding, and the table owns the filters from that point on.
+   */
+  private readonly entryParams = inject(ActivatedRoute).snapshot.queryParamMap;
+
+  protected readonly initialSearch = this.entryParams.get('search') ?? '';
+
+  protected readonly initialColumnFilters = ((): Readonly<Record<string, string>> => {
+    const status = this.entryParams.get('status');
+    if (!status || !STATUSES.includes(status as TransactionStatus)) {
+      return {};
+    }
+    return { status };
+  })();
+
+  private readonly tableQuery = signal<DataTablePageChange>({
+    ...emptyPageChange(),
+    search: this.initialSearch,
+    columnFilters: this.initialColumnFilters,
+  });
 
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);

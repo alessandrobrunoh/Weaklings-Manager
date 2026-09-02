@@ -31,6 +31,7 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
   discord_split_not_completed_tag_id: '',
   discord_split_lost_tag_id: '',
   discord_event_voice_category_id: '',
+  default_split_fee: '20',
 };
 
 /**
@@ -191,6 +192,27 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
               </span>
             </label>
 
+            <label>
+              <span class="label">{{ t('admin.split.defaultFee') }}</span>
+              <div class="flex items-center gap-2">
+                <input
+                  class="input mono"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  inputmode="decimal"
+                  [value]="guildSettingsDraft().default_split_fee"
+                  [attr.aria-describedby]="'admin-split-default-fee-hint'"
+                  (input)="updateDraftField('default_split_fee', $event)"
+                />
+                <span class="font-mono text-xs">%</span>
+              </div>
+              <span id="admin-split-default-fee-hint" class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                {{ t('admin.split.defaultFeeHint') }}
+              </span>
+            </label>
+
             <div class="sm:col-span-2">
               <button type="submit" class="btn btn--primary" [disabled]="guildSettingsSaving()">
                 {{ t('admin.discord.save') }}
@@ -312,6 +334,7 @@ export class AdminDiscord {
         discord_split_not_completed_tag_id: draft.discord_split_not_completed_tag_id.trim(),
         discord_split_lost_tag_id: draft.discord_split_lost_tag_id.trim(),
         discord_event_voice_category_id: draft.discord_event_voice_category_id.trim(),
+        default_split_fee: Number(draft.default_split_fee),
       };
       const updated = await firstValueFrom(
         this.api.put<GuildSettingsView>('api/admin/settings', body),
@@ -391,5 +414,6 @@ function toDraft(settings: GuildSettingsView): Record<keyof GuildSettingsView, s
     discord_split_not_completed_tag_id: settings.discord_split_not_completed_tag_id ?? '',
     discord_split_lost_tag_id: settings.discord_split_lost_tag_id ?? '',
     discord_event_voice_category_id: settings.discord_event_voice_category_id ?? '',
+    default_split_fee: String(settings.default_split_fee ?? 20),
   };
 }

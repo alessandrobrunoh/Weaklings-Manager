@@ -408,6 +408,7 @@ export interface GuildSettingsView {
   discord_split_not_completed_tag_id: string | null;
   discord_split_lost_tag_id: string | null;
   discord_event_voice_category_id: string | null;
+  default_split_fee: number | string;
 }
 
 /* -------------------------- Progression ----------------------------- */
