@@ -3,8 +3,11 @@ import {
   Component,
   inject,
   output,
+  signal,
 } from '@angular/core';
-import { Router } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router } from '@angular/router';
+import { filter } from 'rxjs';
 
 import { AuthService } from '../../core/services/auth.service';
 import { ThemeService } from '../../core/services/theme.service';
@@ -71,6 +74,7 @@ import type { NavSection } from '../sidebar/sidebar';
   template: `
     <header
       class="topbar flex items-center justify-between gap-2 px-3 sm:px-4 transition-colors"
+      [class.md:hidden]="isDashboard()"
       aria-label="Application toolbar"
     >
       <div class="flex min-w-0 items-center gap-2">
@@ -184,6 +188,24 @@ export class Topbar {
   protected readonly translate = inject(TranslateService);
   protected readonly toasts = inject(ToastService);
   private readonly router = inject(Router);
+
+  protected readonly isDashboard = signal(this.checkIsDashboard(this.router.url));
+
+  constructor() {
+    this.router.events
+      .pipe(
+        filter((event) => event instanceof NavigationEnd),
+        takeUntilDestroyed(),
+      )
+      .subscribe((event) => {
+        this.isDashboard.set(this.checkIsDashboard(event.urlAfterRedirects));
+      });
+  }
+
+  private checkIsDashboard(url: string): boolean {
+    const path = url.split('?')[0].split('#')[0];
+    return path === '' || path === '/' || path === '/dashboard';
+  }
 
   readonly menuToggle = output<void>();
 

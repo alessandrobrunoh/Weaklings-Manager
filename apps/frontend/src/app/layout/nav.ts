@@ -79,27 +79,37 @@ export const APP_NAV_SECTIONS: NavSection[] = [
   {
     headingKey: 'nav.section.main',
     items: [
-      { path: '/dashboard', icon: 'chart', labelKey: 'nav.dashboard' },
-      { path: '/season', icon: 'trophy', labelKey: 'nav.season' },
+      { path: '/dashboard', icon: 'dashboard', labelKey: 'nav.dashboard' },
+      { path: '/season', icon: 'chart', labelKey: 'nav.season' },
+    ],
+  },
+  {
+    headingKey: 'nav.section.operations',
+    items: [
+      { path: '/events', icon: 'calendar', labelKey: 'nav.events' },
+      { path: '/comps', icon: 'package', labelKey: 'nav.comps' },
+      { path: '/battles', icon: 'swords', labelKey: 'nav.battles' },
+      { path: '/intel', icon: 'scan', labelKey: 'nav.intel' },
+    ],
+  },
+  {
+    headingKey: 'nav.section.economy',
+    items: [
+      { path: '/bank', icon: 'bank', labelKey: 'nav.bank' },
+      { path: '/splits', icon: 'percent', labelKey: 'nav.splits' },
+      { path: '/regears', icon: 'shield', labelKey: 'nav.regears' },
+      {
+        path: '/siphoned',
+        icon: 'zap',
+        labelKey: 'nav.siphoned',
+        permissions: ['siphoned.view'],
+      },
     ],
   },
   {
     headingKey: 'nav.section.guild',
     items: [
-      {
-        path: '/guild',
-        icon: 'users',
-        labelKey: 'nav.guild',
-        permissions: ['intel.report.view'],
-      },
-      { path: '/bank', icon: 'bank', labelKey: 'nav.bank' },
-      { path: '/splits', icon: 'swords', labelKey: 'nav.splits' },
-      { path: '/events', icon: 'calendar', labelKey: 'nav.events' },
-      { path: '/battles', icon: 'shield', labelKey: 'nav.battles' },
-      { path: '/intel', icon: 'scan', labelKey: 'nav.intel' },
-      { path: '/comps', icon: 'package', labelKey: 'nav.comps' },
-      { path: '/siphoned', icon: 'activity', labelKey: 'nav.siphoned' },
-      { path: '/regears', icon: 'shield', labelKey: 'nav.regears' },
+      { path: '/users', icon: 'users', labelKey: 'nav.users' },
       {
         path: '/warns',
         icon: 'alert',
@@ -113,17 +123,16 @@ export const APP_NAV_SECTIONS: NavSection[] = [
     items: [
       {
         path: '/admin',
-        icon: 'hammer',
+        icon: 'settings',
         labelKey: 'nav.admin',
         permissions: [...ADMIN_ACCESS_PERMISSIONS],
       },
       {
         path: '/audit',
-        icon: 'activity',
+        icon: 'list',
         labelKey: 'nav.audit',
         permissions: ['audit.view'],
       },
-      { path: '/profile', icon: 'users', labelKey: 'nav.profile' },
     ],
   },
 ];

@@ -87,6 +87,8 @@ export const en = {
   'nav.profile': 'Profile',
   'nav.logout': 'Sign out',
   'nav.section.main': 'Main',
+  'nav.section.operations': 'Operations',
+  'nav.section.economy': 'Economy',
   'nav.openMenu': 'Open menu',
   'nav.section.guild': 'Guild',
   'nav.section.system': 'System',

@@ -85,6 +85,8 @@ export const fr: TranslationDict = {
   'nav.profile': 'Profil',
   'nav.logout': 'Déconnexion',
   'nav.section.main': 'Main',
+  'nav.section.operations': 'Operations',
+  'nav.section.economy': 'Economy',
   'nav.openMenu': 'Open menu',
   'nav.section.guild': 'Guild',
   'nav.section.system': 'System',
