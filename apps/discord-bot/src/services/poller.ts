@@ -5,6 +5,7 @@ import type { ApiClient } from "../api/client.js";
 import type {
   PaginatedData,
   EventView,
+  EventDetailView,
   BattleSummary,
   SplitDiscoveryBatch,
   SplitDiscordSync,
@@ -274,21 +275,26 @@ export class Poller {
           return;
         }
 
-        const roleIds = event.discord_role_ids ?? []
+        // The list endpoint only contains event metadata. Fetch the detail snapshot before
+        // creating any Discord resources so the signup card includes every comp seat and the
+        // current roster, including empty slots. A failed detail fetch is retried safely on the
+        // next poll without leaving a partial announcement behind.
+        const eventDetail = await this.api.get<EventDetailView>(`api/events/${event.id}`);
+        const roleIds = eventDetail.discord_role_ids ?? [];
         const announcementMessage = await channel.send({
-          content: buildEventAnnouncementContent(event),
+          content: buildEventAnnouncementContent(eventDetail),
           allowedMentions: roleIds.length > 0
             ? { roles: roleIds }
             : { parse: [] },
         });
         const thread = await createEventAnnouncementThread(
           announcementMessage,
-          event,
+          eventDetail,
           "Poller",
         );
         if (thread) {
           this.state.eventThreadIds[String(event.id)] = thread.id;
-          await sendEventSignupMessage(thread, event, "Poller");
+          await sendEventSignupMessage(thread, eventDetail, "Poller");
         }
 
         this.state.lastEventId = event.id;

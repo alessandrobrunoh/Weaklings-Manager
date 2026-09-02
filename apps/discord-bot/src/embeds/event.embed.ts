@@ -324,14 +324,13 @@ export function buildEventManageActionRow(
   return row;
 }
 
-/** Builds the shared five-button control row shown inside an event announcement thread. */
-export function buildEventThreadActionRow(
+/** Builds the shared event control rows shown inside an event announcement thread. */
+export function buildEventThreadActionRows(
   event: EventView,
-): ActionRowBuilder<ButtonBuilder> {
+): ActionRowBuilder<ButtonBuilder>[] {
   const isScheduled = event.status === "scheduled";
   const isLive = event.status === "live";
-
-  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+  const buttons = [
     new ButtonBuilder()
       .setCustomId(`event:join:${event.id}`)
       .setLabel("Join / Change Build")
@@ -368,5 +367,11 @@ export function buildEventThreadActionRow(
       .setEmoji("❌")
       .setStyle(ButtonStyle.Danger)
       .setDisabled(!(isScheduled || isLive)),
-  );
+  ];
+
+  // Discord allows at most five buttons in one action row.
+  return [
+    new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons.slice(0, 5)),
+    new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons.slice(5)),
+  ];
 }
