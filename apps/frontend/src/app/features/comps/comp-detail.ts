@@ -7,6 +7,7 @@ import { validateBuildName } from '../../shared/validation/build-validation';
 
 import type {
   BuildDetail,
+  BuildItemSlot,
   OpenAlbionItemAbilities,
   BuildRole,
   BuildSummary,
@@ -215,12 +216,21 @@ const ROLE_LABELS: Record<BuildRole, string> = {
           <div class="lg:col-span-8 grid gap-6">
             <!-- Section Header & Add Build Controller -->
             <div class="card flex flex-wrap items-center justify-between gap-3 p-4">
-              <div>
-                <h2 class="text-base font-bold text-[var(--color-text)]">Party Roster Matrix</h2>
-                <p class="text-xs text-[var(--color-text-secondary)]">
-                  {{ current.total_quantity }} total player slots across
-                  {{ current.builds.length }} distinct builds.
-                </p>
+              <div class="flex items-center gap-2">
+                <app-icon name="users" size="1.1rem" color="var(--color-text-secondary)" />
+                <div>
+                  <h2 class="text-base font-bold text-[var(--color-text)]">
+                    {{ t('comps.rosterTitle') }}
+                  </h2>
+                  <p class="text-xs text-[var(--color-text-secondary)]">
+                    {{
+                      t('comps.rosterSubtitle', {
+                        slots: current.total_quantity,
+                        builds: current.builds.length,
+                      })
+                    }}
+                  </p>
+                </div>
               </div>
 
               @if (canManage() && mode() === 'edit') {
@@ -257,7 +267,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                     }
                   </datalist>
                   <label class="grid gap-1">
-                    <span class="label">Qty</span>
+                    <span class="label">{{ t('comps.quantity') }}</span>
                     <input
                       class="input"
                       type="number"
@@ -294,7 +304,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                       </h3>
                     </div>
                     <span class="text-xs text-[var(--color-text-secondary)]">
-                      {{ roleGroup.entries.length }} build variants
+                      {{ roleGroup.entries.length }} {{ t('comps.buildVariants') }}
                     </span>
                   </div>
 
@@ -307,16 +317,40 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                       >
                         <!-- Card Header -->
                         <div class="flex items-start justify-between gap-2">
-                          <div class="flex flex-col gap-0.5">
-                            <a
-                              class="font-semibold text-base text-[var(--color-text)] hover:underline"
-                              [routerLink]="['/comps', 'builds', entry.build_id]"
+                          <div class="flex items-start gap-2 min-w-0">
+                            <!-- Weapon Icon -->
+                            <div
+                              class="shrink-0 w-10 h-10 rounded-lg bg-[var(--color-surface-2)] border border-[var(--color-border)] grid place-items-center overflow-hidden"
+                              [appTooltip]="weaponNameFor(entry.build_id) || t('comps.noWeapon')"
                             >
-                              {{ entry.build.name }}
-                            </a>
-                            <span class="text-xs text-[var(--color-text-secondary)]">
-                              {{ entry.build.category_name || t('comps.noCategory') }}
-                            </span>
+                              @if (weaponIconFor(entry.build_id); as weaponIcon) {
+                                <img
+                                  class="w-full h-full object-contain p-1"
+                                  [src]="weaponIcon"
+                                  [alt]="weaponNameFor(entry.build_id) ?? ''"
+                                  loading="lazy"
+                                  (error)="hideBrokenIcon($event)"
+                                />
+                              } @else {
+                                <app-icon
+                                  name="swords"
+                                  size="1rem"
+                                  color="var(--color-text-secondary)"
+                                />
+                              }
+                            </div>
+
+                            <div class="flex flex-col gap-0.5 min-w-0">
+                              <a
+                                class="font-semibold text-base text-[var(--color-text)] hover:underline truncate"
+                                [routerLink]="['/comps', 'builds', entry.build_id]"
+                              >
+                                {{ entry.build.name }}
+                              </a>
+                              <span class="text-xs text-[var(--color-text-secondary)] truncate">
+                                {{ entry.build.category_name || t('comps.noCategory') }}
+                              </span>
+                            </div>
                           </div>
 
                           <!-- Quantity Pill / Stepper -->
@@ -408,7 +442,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
               <h3
                 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
               >
-                Role Composition Balance
+                {{ t('comps.roleBalance') }}
               </h3>
 
               <!-- Role Balance Progress Bar -->
@@ -445,8 +479,9 @@ const ROLE_LABELS: Record<BuildRole, string> = {
 
               @if (compositionStats().weaponNames.length > 0) {
                 <div class="pt-3 border-t border-[var(--color-border)]">
-                  <span class="text-xs font-semibold text-[var(--color-text-secondary)] block mb-1"
-                    >Weapons In Comp</span
+                  <span
+                    class="text-xs font-semibold text-[var(--color-text-secondary)] block mb-1"
+                    >{{ t('comps.weaponsInComp') }}</span
                   >
                   <div class="flex flex-wrap gap-1">
                     @for (wName of compositionStats().weaponNames; track wName) {
@@ -463,7 +498,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                 <h3
                   class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
                 >
-                  Battle Performance Record
+                  {{ t('comps.battlePerformance') }}
                 </h3>
 
                 <div class="grid grid-cols-2 gap-3 text-center">
@@ -474,29 +509,33 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                     >
                       {{ formatPercent(perf.stats.win_rate) }}
                     </div>
-                    <div class="text-xs text-[var(--color-text-secondary)]">Win Rate</div>
+                    <div class="text-xs text-[var(--color-text-secondary)]">
+                      {{ t('comps.winrate') }}
+                    </div>
                   </div>
                   <div class="p-3 bg-[var(--color-surface-2)] rounded-lg">
                     <div class="text-xl font-bold text-[var(--color-text)]">
                       {{ formatRatio(perf.stats.kill_death_ratio) }}
                     </div>
-                    <div class="text-xs text-[var(--color-text-secondary)]">K / D Ratio</div>
+                    <div class="text-xs text-[var(--color-text-secondary)]">
+                      {{ t('comps.kdRatio') }}
+                    </div>
                   </div>
                 </div>
 
                 <div class="text-xs space-y-1.5 text-[var(--color-text-secondary)]">
                   <div class="flex justify-between">
-                    <span>Total Battles:</span>
+                    <span>{{ t('comps.totalBattles') }}:</span>
                     <strong class="text-[var(--color-text)]">{{ perf.stats.total_battles }}</strong>
                   </div>
                   <div class="flex justify-between">
-                    <span>Wins / Losses:</span>
+                    <span>{{ t('comps.winsLosses') }}:</span>
                     <strong class="text-[var(--color-text)]"
                       >{{ perf.stats.wins }}W - {{ perf.stats.losses }}L</strong
                     >
                   </div>
                   <div class="flex justify-between">
-                    <span>Kill Fame Earned:</span>
+                    <span>{{ t('comps.killFame') }}:</span>
                     <strong class="text-[var(--color-text)]">{{
                       formatNumber(perf.stats.total_kill_fame)
                     }}</strong>
@@ -507,15 +546,15 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                   <div class="pt-3 border-t border-[var(--color-border)]">
                     <span
                       class="text-xs font-semibold text-[var(--color-text-secondary)] block mb-2"
-                      >Top Opponent Matchups</span
+                      >{{ t('comps.topOpponents') }}</span
                     >
                     <div class="overflow-x-auto">
                       <table class="table text-xs">
                         <thead>
                           <tr>
-                            <th class="text-left">Opponent</th>
+                            <th class="text-left">{{ t('comps.opponent') }}</th>
                             <th class="text-right">W-L</th>
-                            <th class="text-right">Win%</th>
+                            <th class="text-right">{{ t('comps.winPercent') }}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -600,7 +639,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
       @if (pendingDelete()) {
         <app-dialog [title]="t('common.confirm')" size="sm" (closed)="closeDelete()">
           @if (blockedByRefs(); as refs) {
-            <p>Impossibile eliminare "{{ current.name }}": è ancora in uso.</p>
+            <p>{{ t('comps.delete.blocked', { name: current.name }) }}</p>
             <ul class="mt-2 grid gap-1 text-sm">
               @for (ref of refs; track ref.resource + ':' + ref.id) {
                 <li>
@@ -702,7 +741,8 @@ export class CompDetailPage {
   protected readonly editingBuildId = signal<number | null>(null);
   protected readonly editingBuildQty = signal(1);
 
-  protected readonly t = (key: TranslationKey) => this.translate.t(key);
+  protected readonly t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
 
   protected readonly canManage = computed(() => this.auth.hasPermission('comps.comps.edit'));
   protected readonly canDelete = computed(() => this.auth.hasPermission('comps.comps.delete'));
@@ -859,6 +899,26 @@ export class CompDetailPage {
         ? []
         : [{ slot: item.slot, itemName: item.openalbion_item_name, slots }];
     });
+  }
+
+  /** The build's main-loadout weapon, if one is equipped — backs the roster card's weapon icon. */
+  private weaponItemFor(buildId: number): BuildItemSlot | undefined {
+    return this.buildDetails()
+      .get(buildId)
+      ?.items.find((item) => item.slot === 'weapon' && (item.loadout ?? 'main') === 'main');
+  }
+
+  protected weaponIconFor(buildId: number): string | null {
+    return this.weaponItemFor(buildId)?.openalbion_item_icon ?? null;
+  }
+
+  protected weaponNameFor(buildId: number): string | null {
+    return this.weaponItemFor(buildId)?.openalbion_item_name ?? null;
+  }
+
+  /** Hides a weapon icon the CDN cannot render, mirroring the ability bar's own fallback. */
+  protected hideBrokenIcon(event: Event): void {
+    (event.target as HTMLImageElement).style.display = 'none';
   }
 
   protected openCompare(): void {
@@ -1111,7 +1171,7 @@ export class CompDetailPage {
         })),
       };
       const created = await firstValueFrom(this.api.post<CompDetail>('api/comps', request));
-      this.toasts.success('Composition cloned');
+      this.toasts.success(this.t('comps.cloneSuccess'));
       await this.router.navigate(['/comps', created.id]);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -1173,7 +1233,7 @@ export class CompDetailPage {
       this.comp.set(updated);
       void this.loadBuildDetails(updated);
       this.toggleAddBuild();
-      this.toasts.success('Build added');
+      this.toasts.success(this.t('comps.buildAdded'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -1196,7 +1256,7 @@ export class CompDetailPage {
       this.comp.set(updated);
       void this.loadBuildDetails(updated);
       this.cancelEditBuild();
-      this.toasts.success('Quantity updated');
+      this.toasts.success(this.t('comps.quantityUpdated'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -1213,7 +1273,7 @@ export class CompDetailPage {
     try {
       await firstValueFrom(this.api.delete(`api/comps/${comp.id}/builds/${buildId}`));
       await this.load(this.compId());
-      this.toasts.success('Build removed');
+      this.toasts.success(this.t('comps.buildRemoved'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {

@@ -192,6 +192,7 @@ pub struct UpdateSplitRequest {
     /// with the event's sign-ups — existing participants absent from the event are removed,
     /// event sign-ups not yet in the split are added with a default weight, and participants
     /// in both keep their current weight.
+    #[serde(default, deserialize_with = "crate::serde_helpers::double_option")]
     pub event_id: Option<Option<i64>>,
     /// Move a pending split to another catalog tab. Cannot be cleared.
     #[schema(example = 10)]

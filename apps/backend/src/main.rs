@@ -11,6 +11,7 @@ mod modules;
 mod openapi;
 pub mod pagination;
 pub mod responses;
+pub mod serde_helpers;
 
 use axum::Router;
 use migration::MigratorTrait;

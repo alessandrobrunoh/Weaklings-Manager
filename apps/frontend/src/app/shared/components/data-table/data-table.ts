@@ -95,6 +95,16 @@ export class DataTable<T> {
   /** When `true`, hides the page size selector. */
   readonly hidePageSize = input(false);
 
+  /**
+   * Search term the table starts with, e.g. when a page deep-links into the
+   * table pre-filtered. Re-applied whenever `columns()` changes, alongside the
+   * rest of the toolbar reset.
+   */
+  readonly initialSearch = input('');
+
+  /** Column filters the table starts with, keyed by column key. */
+  readonly initialColumnFilters = input<Readonly<Record<string, string>>>({});
+
   /** Stable identity function used by `@for` track. Required for change detection. */
   readonly trackBy = input.required<(row: T) => unknown>();
 
@@ -153,9 +163,9 @@ export class DataTable<T> {
       }
       this.currentPageSize.set(untracked(() => this.pageSize()));
       this.page.set(1);
-      this.search.set('');
+      this.search.set(untracked(() => this.initialSearch()));
       this.sort.set(null);
-      this.columnFilters.set({});
+      this.columnFilters.set(untracked(() => ({ ...this.initialColumnFilters() })));
       // The host already fetches its own initial page; only notify it here for
       // a genuine post-mount structural change, not for the effect's first run.
       if (columnsInitialized) {

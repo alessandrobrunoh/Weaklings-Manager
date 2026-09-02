@@ -1,3 +1,4 @@
+import { isPlatformBrowser } from '@angular/common';
 import {
   Directive,
   ElementRef,
@@ -5,6 +6,7 @@ import {
   input,
   OnDestroy,
   NgZone,
+  PLATFORM_ID,
   Renderer2,
 } from '@angular/core';
 
@@ -47,6 +49,12 @@ export class TooltipDirective implements OnDestroy {
   private unlistenScroll: (() => void) | null = null;
 
   constructor() {
+    // The directive is instantiated during the SSR pass too, where there is no
+    // `window` to listen on. Every other code path here already runs only from
+    // a pointer or focus event, so guarding the constructor is enough.
+    if (!isPlatformBrowser(inject(PLATFORM_ID))) {
+      return;
+    }
     this.ngZone.runOutsideAngular(() => {
       const handler = () => {
         if (this.tooltipEl) {
@@ -54,7 +62,8 @@ export class TooltipDirective implements OnDestroy {
         }
       };
       window.addEventListener('scroll', handler, { capture: true, passive: true });
-      this.unlistenScroll = () => window.removeEventListener('scroll', handler, { capture: true } as EventListenerOptions);
+      this.unlistenScroll = () =>
+        window.removeEventListener('scroll', handler, { capture: true } as EventListenerOptions);
     });
   }
 

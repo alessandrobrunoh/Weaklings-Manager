@@ -31,6 +31,12 @@ export const routes: Routes = [
         redirectTo: 'season',
       },
       {
+        path: 'guild',
+        canActivate: [permissionGuard('intel.report.view')],
+        loadComponent: () =>
+          import('./features/guild/guild-overview').then((m) => m.GuildOverviewPage),
+      },
+      {
         path: 'bank',
         loadComponent: () => import('./features/bank/bank').then((m) => m.Bank),
       },
