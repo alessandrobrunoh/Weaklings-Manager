@@ -3,14 +3,44 @@ import analog from '@analogjs/platform';
 import { resolve } from 'node:path';
 import { createLogger, defineConfig, loadEnv } from 'vite';
 
+import { clientDisconnectCode } from './src/server/client-disconnect.ts';
+
+/**
+ * Survives a browser walking away mid-request.
+ *
+ * Node reports the aborted inbound socket as a rejected promise created inside
+ * the request pipeline, with nothing for us to `catch`, so it lands as an
+ * unhandled rejection and — under Node's default `--unhandled-rejections=throw`
+ * — kills `npm run dev` outright with `Error: read ECONNRESET`. A reload landing
+ * on a still-rendering page is enough to trigger it.
+ *
+ * The same guard is installed for the built server by
+ * `src/server/plugins/client-disconnect.ts`; this one covers the dev server,
+ * which serves requests from the Vite process rather than that Nitro app.
+ * Registering any listener suppresses Node's default, so anything that is not a
+ * disconnect is rethrown and still crashes loudly.
+ */
+let disconnectGuardInstalled = false;
+function installClientDisconnectGuard(): void {
+  if (disconnectGuardInstalled) {
+    return;
+  }
+  disconnectGuardInstalled = true;
+  process.on('unhandledRejection', (reason) => {
+    const code = clientDisconnectCode(reason);
+    if (code === null) {
+      throw reason;
+    }
+    viteLogger.warn(`[dev] client disconnected mid-request (${code})`);
+  });
+}
+
 const viteLogger = createLogger();
 const warn = viteLogger.warn.bind(viteLogger);
 const warnOnce = viteLogger.warnOnce.bind(viteLogger);
 
 function isAngularPlatformServerSourcemapWarning(message: string): boolean {
-  return (
-    message.includes('Sourcemap for') && message.includes('@angular/platform-server')
-  );
+  return message.includes('Sourcemap for') && message.includes('@angular/platform-server');
 }
 
 viteLogger.warn = (message, options) => {
@@ -57,6 +87,11 @@ export default defineConfig(({ mode }) => {
       mainFields: ['module'],
     },
     plugins: [
+      {
+        name: 'weaklings:survive-client-disconnect',
+        apply: 'serve',
+        configureServer: installClientDisconnectGuard,
+      },
       analog({
         ssr: true,
         static: false,
