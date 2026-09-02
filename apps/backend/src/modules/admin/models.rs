@@ -114,6 +114,22 @@ pub struct GuildSettingsView {
     pub discord_split_lost_tag_id: Option<String>,
     /// Category where the bot creates live event voice channels.
     pub discord_event_voice_category_id: Option<String>,
+    /// Channel where the application panel is published.
+    pub discord_applications_channel_id: Option<String>,
+    /// Category where active application channels are created.
+    pub discord_applications_category_id: Option<String>,
+    /// Optional archive category for resolved applications.
+    pub discord_applications_archive_category_id: Option<String>,
+    /// Role allowed to manage applications.
+    pub discord_applications_manage_role_id: Option<String>,
+    /// Channel for application open/closed announcements.
+    pub discord_applications_status_channel_id: Option<String>,
+    /// Whether new applications are accepted.
+    pub discord_applications_open: bool,
+    /// Application panel title.
+    pub discord_applications_panel_title: String,
+    /// Application panel message.
+    pub discord_applications_panel_message: String,
     /// Default percentage fee applied to new splits.
     #[schema(value_type = String, example = "20.00")]
     pub default_split_fee: rust_decimal::Decimal,
@@ -137,6 +153,15 @@ impl GuildSettingsView {
             discord_split_not_completed_tag_id: model.discord_split_not_completed_tag_id,
             discord_split_lost_tag_id: model.discord_split_lost_tag_id,
             discord_event_voice_category_id: model.discord_event_voice_category_id,
+            discord_applications_channel_id: model.discord_applications_channel_id,
+            discord_applications_category_id: model.discord_applications_category_id,
+            discord_applications_archive_category_id: model
+                .discord_applications_archive_category_id,
+            discord_applications_manage_role_id: model.discord_applications_manage_role_id,
+            discord_applications_status_channel_id: model.discord_applications_status_channel_id,
+            discord_applications_open: model.discord_applications_open,
+            discord_applications_panel_title: model.discord_applications_panel_title,
+            discord_applications_panel_message: model.discord_applications_panel_message,
             default_split_fee: model.default_split_fee,
         }
     }
@@ -204,6 +229,22 @@ pub struct UpdateGuildSettingsRequest {
     pub discord_split_lost_tag_id: Option<String>,
     /// New value. Omit to leave unchanged; send `""` to clear.
     pub discord_event_voice_category_id: Option<String>,
+    /// New application panel channel; empty clears it.
+    pub discord_applications_channel_id: Option<String>,
+    /// New active application category; empty clears it.
+    pub discord_applications_category_id: Option<String>,
+    /// New archive category; empty clears it.
+    pub discord_applications_archive_category_id: Option<String>,
+    /// New application manager role; empty clears it.
+    pub discord_applications_manage_role_id: Option<String>,
+    /// New application status channel; empty clears it.
+    pub discord_applications_status_channel_id: Option<String>,
+    /// New application open state.
+    pub discord_applications_open: Option<bool>,
+    /// New panel title.
+    pub discord_applications_panel_title: Option<String>,
+    /// New panel message.
+    pub discord_applications_panel_message: Option<String>,
     /// New default split fee percentage. Must be between 0 and 100.
     #[schema(value_type = Option<String>, example = "20.00")]
     pub default_split_fee: Option<rust_decimal::Decimal>,

@@ -18,6 +18,14 @@ const settings: GuildSettingsView = {
   discord_split_not_completed_tag_id: null,
   discord_split_lost_tag_id: null,
   discord_event_voice_category_id: "123456789012345678",
+  discord_applications_channel_id: null,
+  discord_applications_category_id: null,
+  discord_applications_archive_category_id: null,
+  discord_applications_manage_role_id: null,
+  discord_applications_status_channel_id: null,
+  discord_applications_open: false,
+  discord_applications_panel_title: "Applications",
+  discord_applications_panel_message: "Clicca il pulsante per creare una application.",
   default_split_fee: "20.00",
 };
 

@@ -40,6 +40,22 @@ pub struct Model {
     pub discord_split_lost_tag_id: Option<String>,
     /// Category where the bot creates live event voice channels.
     pub discord_event_voice_category_id: Option<String>,
+    /// Channel where the application panel is published.
+    pub discord_applications_channel_id: Option<String>,
+    /// Category where active application channels are created.
+    pub discord_applications_category_id: Option<String>,
+    /// Optional archive category for resolved applications.
+    pub discord_applications_archive_category_id: Option<String>,
+    /// Role allowed to manage applications.
+    pub discord_applications_manage_role_id: Option<String>,
+    /// Channel where application open/closed announcements are published.
+    pub discord_applications_status_channel_id: Option<String>,
+    /// Whether new applications are currently accepted.
+    pub discord_applications_open: bool,
+    /// Application panel title.
+    pub discord_applications_panel_title: String,
+    /// Application panel message.
+    pub discord_applications_panel_message: String,
     /// Default fee percentage applied to new loot splits when no fee is provided.
     pub default_split_fee: Decimal,
     /// Last admin edit.

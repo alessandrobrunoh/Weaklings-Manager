@@ -1876,6 +1876,14 @@ export interface GuildSettingsView {
   discord_split_not_completed_tag_id: string | null;
   discord_split_lost_tag_id: string | null;
   discord_event_voice_category_id: string | null;
+  discord_applications_channel_id: string | null;
+  discord_applications_category_id: string | null;
+  discord_applications_archive_category_id: string | null;
+  discord_applications_manage_role_id: string | null;
+  discord_applications_status_channel_id: string | null;
+  discord_applications_open: boolean;
+  discord_applications_panel_title: string;
+  discord_applications_panel_message: string;
   default_split_fee: number | string;
 }
 

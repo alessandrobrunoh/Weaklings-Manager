@@ -86,6 +86,34 @@ impl AdminService {
         if let Some(value) = &req.discord_event_voice_category_id {
             active.discord_event_voice_category_id = Set(normalize_discord_snowflake(value)?);
         }
+        if let Some(value) = &req.discord_applications_channel_id {
+            active.discord_applications_channel_id = Set(normalize_discord_snowflake(value)?);
+        }
+        if let Some(value) = &req.discord_applications_category_id {
+            active.discord_applications_category_id = Set(normalize_discord_snowflake(value)?);
+        }
+        if let Some(value) = &req.discord_applications_archive_category_id {
+            active.discord_applications_archive_category_id =
+                Set(normalize_discord_snowflake(value)?);
+        }
+        if let Some(value) = &req.discord_applications_manage_role_id {
+            active.discord_applications_manage_role_id = Set(normalize_discord_snowflake(value)?);
+        }
+        if let Some(value) = &req.discord_applications_status_channel_id {
+            active.discord_applications_status_channel_id =
+                Set(normalize_discord_snowflake(value)?);
+        }
+        if let Some(value) = req.discord_applications_open {
+            active.discord_applications_open = Set(value);
+        }
+        if let Some(value) = &req.discord_applications_panel_title {
+            active.discord_applications_panel_title =
+                Set(normalize_application_text(value, 256, "panel title")?);
+        }
+        if let Some(value) = &req.discord_applications_panel_message {
+            active.discord_applications_panel_message =
+                Set(normalize_application_text(value, 4000, "panel message")?);
+        }
         if let Some(value) = req.default_split_fee {
             if !(sea_orm::prelude::Decimal::ZERO..=sea_orm::prelude::Decimal::from(100))
                 .contains(&value)
@@ -119,6 +147,14 @@ impl AdminService {
                 "discord_split_not_completed_tag_id": req.discord_split_not_completed_tag_id,
                 "discord_split_lost_tag_id": req.discord_split_lost_tag_id,
                 "discord_event_voice_category_id": req.discord_event_voice_category_id,
+                "discord_applications_channel_id": req.discord_applications_channel_id,
+                "discord_applications_category_id": req.discord_applications_category_id,
+                "discord_applications_archive_category_id": req.discord_applications_archive_category_id,
+                "discord_applications_manage_role_id": req.discord_applications_manage_role_id,
+                "discord_applications_status_channel_id": req.discord_applications_status_channel_id,
+                "discord_applications_open": req.discord_applications_open,
+                "discord_applications_panel_title": req.discord_applications_panel_title,
+                "discord_applications_panel_message": req.discord_applications_panel_message,
                 "default_split_fee": req.default_split_fee,
             })),
         )
@@ -488,6 +524,25 @@ fn normalize(value: &str) -> Option<String> {
 }
 
 /// Validates a Discord snowflake while retaining the standard empty-string-means-clear convention.
+fn normalize_application_text(
+    value: &str,
+    max_len: usize,
+    field: &str,
+) -> Result<String, AppError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::Validation(format!(
+            "application {field} cannot be empty"
+        )));
+    }
+    if trimmed.chars().count() > max_len {
+        return Err(AppError::Validation(format!(
+            "application {field} exceeds {max_len} characters"
+        )));
+    }
+    Ok(trimmed.to_string())
+}
+
 fn normalize_discord_snowflake(value: &str) -> Result<Option<String>, AppError> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -695,6 +750,76 @@ mod tests {
         .await
         .expect_err("invalid snowflake must be rejected");
         assert!(matches!(error, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn guild_settings_round_trip_application_configuration() {
+        let db = seed_db().await;
+        let saved = AdminService::update_guild_settings(
+            &db,
+            1,
+            &UpdateGuildSettingsRequest {
+                discord_applications_channel_id: Some(" 123456789012345678 ".into()),
+                discord_applications_category_id: Some("123456789012345679".into()),
+                discord_applications_archive_category_id: Some("123456789012345680".into()),
+                discord_applications_manage_role_id: Some("123456789012345681".into()),
+                discord_applications_status_channel_id: Some("123456789012345682".into()),
+                discord_applications_open: Some(true),
+                discord_applications_panel_title: Some(" Recruitment ".into()),
+                discord_applications_panel_message: Some(" Click to apply ".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("save application settings");
+
+        assert_eq!(
+            saved.discord_applications_channel_id.as_deref(),
+            Some("123456789012345678")
+        );
+        assert_eq!(
+            saved.discord_applications_category_id.as_deref(),
+            Some("123456789012345679")
+        );
+        assert_eq!(
+            saved.discord_applications_archive_category_id.as_deref(),
+            Some("123456789012345680")
+        );
+        assert_eq!(
+            saved.discord_applications_manage_role_id.as_deref(),
+            Some("123456789012345681")
+        );
+        assert_eq!(
+            saved.discord_applications_status_channel_id.as_deref(),
+            Some("123456789012345682")
+        );
+        assert!(saved.discord_applications_open);
+        assert_eq!(saved.discord_applications_panel_title, "Recruitment");
+        assert_eq!(saved.discord_applications_panel_message, "Click to apply");
+
+        let cleared = AdminService::update_guild_settings(
+            &db,
+            1,
+            &UpdateGuildSettingsRequest {
+                discord_applications_archive_category_id: Some("   ".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("clear archive category");
+        assert_eq!(cleared.discord_applications_archive_category_id, None);
+
+        let invalid = AdminService::update_guild_settings(
+            &db,
+            1,
+            &UpdateGuildSettingsRequest {
+                discord_applications_channel_id: Some("not-a-snowflake".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("invalid application channel must be rejected");
+        assert!(matches!(invalid, AppError::Validation(_)));
     }
 
     #[tokio::test]

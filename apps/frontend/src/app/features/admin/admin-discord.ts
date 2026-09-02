@@ -31,6 +31,14 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
   discord_split_not_completed_tag_id: '',
   discord_split_lost_tag_id: '',
   discord_event_voice_category_id: '',
+  discord_applications_channel_id: '',
+  discord_applications_category_id: '',
+  discord_applications_archive_category_id: '',
+  discord_applications_manage_role_id: '',
+  discord_applications_status_channel_id: '',
+  discord_applications_open: 'false',
+  discord_applications_panel_title: 'Applications',
+  discord_applications_panel_message: 'Clicca il pulsante per creare una application.',
   default_split_fee: '20',
 };
 
@@ -193,6 +201,61 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
             </label>
 
             <label>
+              <span class="label">{{ t('admin.discord.applicationPanelChannel') }}</span>
+              <input class="input mono" type="text" inputmode="numeric" [placeholder]="t('admin.discord.placeholder')"
+                [value]="guildSettingsDraft().discord_applications_channel_id"
+                [attr.aria-describedby]="'application-panel-channel-hint'"
+                (input)="updateDraftField('discord_applications_channel_id', $event)" />
+              <span id="application-panel-channel-hint" class="mt-1 block text-xs" style="color: var(--color-text-secondary)">{{ t('admin.discord.applicationPanelChannelHint') }}</span>
+            </label>
+            <label>
+              <span class="label">{{ t('admin.discord.applicationCategory') }}</span>
+              <input class="input mono" type="text" inputmode="numeric" [placeholder]="t('admin.discord.placeholder')"
+                [value]="guildSettingsDraft().discord_applications_category_id"
+                (input)="updateDraftField('discord_applications_category_id', $event)" />
+              <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">{{ t('admin.discord.applicationCategoryHint') }}</span>
+            </label>
+            <label>
+              <span class="label">{{ t('admin.discord.applicationArchiveCategory') }}</span>
+              <input class="input mono" type="text" inputmode="numeric" [placeholder]="t('admin.discord.placeholder')"
+                [value]="guildSettingsDraft().discord_applications_archive_category_id"
+                (input)="updateDraftField('discord_applications_archive_category_id', $event)" />
+              <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">{{ t('admin.discord.applicationArchiveCategoryHint') }}</span>
+            </label>
+            <label>
+              <span class="label">{{ t('admin.discord.applicationManageRole') }}</span>
+              <input class="input mono" type="text" inputmode="numeric" [placeholder]="t('admin.discord.placeholder')"
+                [value]="guildSettingsDraft().discord_applications_manage_role_id"
+                (input)="updateDraftField('discord_applications_manage_role_id', $event)" />
+              <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">{{ t('admin.discord.applicationManageRoleHint') }}</span>
+            </label>
+            <label>
+              <span class="label">{{ t('admin.discord.applicationStatusChannel') }}</span>
+              <input class="input mono" type="text" inputmode="numeric" [placeholder]="t('admin.discord.placeholder')"
+                [value]="guildSettingsDraft().discord_applications_status_channel_id"
+                (input)="updateDraftField('discord_applications_status_channel_id', $event)" />
+              <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">{{ t('admin.discord.applicationStatusChannelHint') }}</span>
+            </label>
+            <label class="flex items-center gap-3 sm:col-span-2">
+              <input type="checkbox" [checked]="guildSettingsDraft().discord_applications_open === 'true'"
+                (change)="updateApplicationsOpen($event)" />
+              <span>
+                <span class="label">{{ t('admin.discord.applicationsOpen') }}</span>
+                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">{{ t('admin.discord.applicationsOpenHint') }}</span>
+              </span>
+            </label>
+            <label>
+              <span class="label">{{ t('admin.discord.applicationPanelTitle') }}</span>
+              <input class="input" type="text" maxlength="256" [value]="guildSettingsDraft().discord_applications_panel_title"
+                (input)="updateDraftField('discord_applications_panel_title', $event)" />
+            </label>
+            <label>
+              <span class="label">{{ t('admin.discord.applicationPanelMessage') }}</span>
+              <textarea class="input min-h-24" maxlength="4000" [value]="guildSettingsDraft().discord_applications_panel_message"
+                (input)="updateDraftField('discord_applications_panel_message', $event)"></textarea>
+            </label>
+
+            <label>
               <span class="label">{{ t('admin.split.defaultFee') }}</span>
               <div class="flex items-center gap-2">
                 <input
@@ -312,8 +375,15 @@ export class AdminDiscord {
   }
 
   protected updateDraftField(field: keyof GuildSettingsView, event: Event): void {
-    const value = (event.target as HTMLInputElement).value;
+    const value = (event.target as HTMLInputElement | HTMLTextAreaElement).value;
     this.guildSettingsDraft.update((draft) => ({ ...draft, [field]: value }));
+  }
+
+  protected updateApplicationsOpen(event: Event): void {
+    this.guildSettingsDraft.update((draft) => ({
+      ...draft,
+      discord_applications_open: (event.target as HTMLInputElement).checked ? 'true' : 'false',
+    }));
   }
 
   protected async saveGuildSettings(submit: SubmitEvent): Promise<void> {
@@ -334,6 +404,14 @@ export class AdminDiscord {
         discord_split_not_completed_tag_id: draft.discord_split_not_completed_tag_id.trim(),
         discord_split_lost_tag_id: draft.discord_split_lost_tag_id.trim(),
         discord_event_voice_category_id: draft.discord_event_voice_category_id.trim(),
+        discord_applications_channel_id: draft.discord_applications_channel_id.trim(),
+        discord_applications_category_id: draft.discord_applications_category_id.trim(),
+        discord_applications_archive_category_id: draft.discord_applications_archive_category_id.trim(),
+        discord_applications_manage_role_id: draft.discord_applications_manage_role_id.trim(),
+        discord_applications_status_channel_id: draft.discord_applications_status_channel_id.trim(),
+        discord_applications_open: draft.discord_applications_open === 'true',
+        discord_applications_panel_title: draft.discord_applications_panel_title.trim(),
+        discord_applications_panel_message: draft.discord_applications_panel_message.trim(),
         default_split_fee: Number(draft.default_split_fee),
       };
       const updated = await firstValueFrom(
@@ -414,6 +492,14 @@ function toDraft(settings: GuildSettingsView): Record<keyof GuildSettingsView, s
     discord_split_not_completed_tag_id: settings.discord_split_not_completed_tag_id ?? '',
     discord_split_lost_tag_id: settings.discord_split_lost_tag_id ?? '',
     discord_event_voice_category_id: settings.discord_event_voice_category_id ?? '',
+    discord_applications_channel_id: settings.discord_applications_channel_id ?? '',
+    discord_applications_category_id: settings.discord_applications_category_id ?? '',
+    discord_applications_archive_category_id: settings.discord_applications_archive_category_id ?? '',
+    discord_applications_manage_role_id: settings.discord_applications_manage_role_id ?? '',
+    discord_applications_status_channel_id: settings.discord_applications_status_channel_id ?? '',
+    discord_applications_open: String(settings.discord_applications_open),
+    discord_applications_panel_title: settings.discord_applications_panel_title ?? 'Applications',
+    discord_applications_panel_message: settings.discord_applications_panel_message ?? 'Clicca il pulsante per creare una application.',
     default_split_fee: String(settings.default_split_fee ?? 20),
   };
 }
