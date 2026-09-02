@@ -128,26 +128,26 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
         </section>
 
         <!-- ITEM BREAKDOWN TABLE WITH ALBION SPRITES -->
-        <section class="card p-5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
+        <section class="card p-5">
           <h2 class="mb-4 text-base font-bold text-[var(--color-text)]">{{ t('regears.detail.breakdown') }}</h2>
           <div class="overflow-x-auto">
-            <table class="w-full text-sm">
+            <table class="table">
               <thead>
-                <tr class="text-xs uppercase text-[var(--color-text-secondary)] border-b border-[var(--color-border)]">
-                  <th class="px-3 py-2 text-left">{{ t('regears.slot') }}</th>
-                  <th class="px-3 py-2 text-left">{{ t('regears.item') }}</th>
-                  <th class="px-3 py-2 text-right">{{ t('regears.unitPrice') }}</th>
-                  <th class="px-3 py-2 text-right">{{ t('regears.qty') }}</th>
-                  <th class="px-3 py-2 text-center">{{ t('regears.included') }}</th>
+                <tr>
+                  <th class="text-left">{{ t('regears.slot') }}</th>
+                  <th class="text-left">{{ t('regears.item') }}</th>
+                  <th class="text-right">{{ t('regears.unitPrice') }}</th>
+                  <th class="text-right">{{ t('regears.qty') }}</th>
+                  <th class="text-center">{{ t('regears.included') }}</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-[var(--color-border)]">
+              <tbody>
                 @for (row of breakdown(); track row.item_id + row.slot) {
-                  <tr class="hover:bg-[var(--color-surface-hover)] transition-colors">
-                    <td class="px-3 py-2.5">
+                  <tr>
+                    <td>
                       <span class="chip text-xs font-bold uppercase">{{ row.slot }}</span>
                     </td>
-                    <td class="px-3 py-2.5">
+                    <td>
                       <div class="flex items-center gap-2.5">
                         <img
                           [src]="itemIconUrl(row.item_id)"
@@ -158,9 +158,9 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
                         <span class="font-mono text-xs font-semibold text-[var(--color-text)]">{{ row.item_id }}</span>
                       </div>
                     </td>
-                    <td class="px-3 py-2.5 text-right font-mono font-medium">{{ formatSilver(row.unit_price) }}</td>
-                    <td class="px-3 py-2.5 text-right font-mono font-bold">{{ row.quantity }}</td>
-                    <td class="px-3 py-2.5 text-center">
+                    <td class="text-right font-mono font-medium">{{ formatSilver(row.unit_price) }}</td>
+                    <td class="text-right font-mono font-bold">{{ row.quantity }}</td>
+                    <td class="text-center">
                       @if (row.included) {
                         <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-[var(--color-success-subtle)] text-[var(--color-success)]">✓ Included</span>
                       } @else {
@@ -186,20 +186,20 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
           {{ t('regears.acceptHint') }}
         </p>
         <div class="mb-3 max-h-80 overflow-y-auto">
-          <table class="w-full text-sm">
+          <table class="table">
             <thead>
-              <tr class="text-xs uppercase text-[var(--color-text-secondary)] border-b border-[var(--color-border)]">
-                <th class="px-3 py-2 text-left">{{ t('regears.slot') }}</th>
-                <th class="px-3 py-2 text-left">{{ t('regears.item') }}</th>
-                <th class="px-3 py-2 text-right">{{ t('regears.unitPrice') }}</th>
-                <th class="px-3 py-2 text-center">{{ t('regears.included') }}</th>
+              <tr>
+                <th class="text-left">{{ t('regears.slot') }}</th>
+                <th class="text-left">{{ t('regears.item') }}</th>
+                <th class="text-right">{{ t('regears.unitPrice') }}</th>
+                <th class="text-center">{{ t('regears.included') }}</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-[var(--color-border)]">
+            <tbody>
               @for (row of acceptRows(); track row.item_id + row.slot; let i = $index) {
                 <tr>
-                  <td class="px-3 py-2 font-bold uppercase text-xs">{{ row.slot }}</td>
-                  <td class="px-3 py-2">
+                  <td class="font-bold uppercase text-xs">{{ row.slot }}</td>
+                  <td>
                     <div class="flex items-center gap-2">
                       <img
                         [src]="itemIconUrl(row.item_id)"
@@ -210,7 +210,7 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
                       <span class="font-mono text-xs">{{ row.item_id }}</span>
                     </div>
                   </td>
-                  <td class="px-3 py-2 text-right">
+                  <td class="text-right">
                     <input
                       class="input input--sm w-32 text-right font-mono"
                       type="number"
@@ -219,7 +219,7 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
                       (input)="updateEditablePrice(i, $event)"
                     />
                   </td>
-                  <td class="px-3 py-2 text-center">
+                  <td class="text-center">
                     <input
                       type="checkbox"
                       class="checkbox"
