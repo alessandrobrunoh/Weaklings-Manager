@@ -30,6 +30,7 @@ import type {
 import { filterAlbionEquipmentCatalog } from '../../shared/data/albion-equipment-catalog';
 import { SLOT_ORDER, itemsForLoadout } from './build-loadouts';
 import {
+  abilityCatalogKey,
   abilityKeyForItem,
   abilitySlotsFor,
   withAbilityChoice,
@@ -273,6 +274,7 @@ const ITEM_TIERS = [
                 [searchResults]="searchResults()"
                 [searchLoading]="searchLoading()"
                 [tiers]="ITEM_TIERS"
+                [draftAbilitySlots]="draftAbilitySlots()"
                 (slotToggle)="onSlotToggle('main', $event)"
                 (tierChange)="onDraftTierChangeValue($event)"
                 (searchChange)="onDraftSearchChangeValue($event)"
@@ -280,6 +282,7 @@ const ITEM_TIERS = [
                 (saveSlot)="saveSlot('main', $event)"
                 (cancelEdit)="cancelSlotEdit()"
                 (removeItem)="askRemoveItem('main', $event)"
+                (abilityChoice)="onDraftAbilityChange($event)"
               />
             </section>
 
@@ -312,6 +315,7 @@ const ITEM_TIERS = [
                     [searchResults]="searchResults()"
                     [searchLoading]="searchLoading()"
                     [tiers]="ITEM_TIERS"
+                    [draftAbilitySlots]="draftAbilitySlots()"
                     (slotToggle)="onSlotToggle('swap', $event)"
                     (tierChange)="onDraftTierChangeValue($event)"
                     (searchChange)="onDraftSearchChangeValue($event)"
@@ -319,6 +323,7 @@ const ITEM_TIERS = [
                     (saveSlot)="saveSlot('swap', $event)"
                     (cancelEdit)="cancelSlotEdit()"
                     (removeItem)="askRemoveItem('swap', $event)"
+                    (abilityChoice)="onDraftAbilityChange($event)"
                   />
                 }
               </section>
@@ -644,6 +649,10 @@ export class CompBuildDetailPage {
   protected readonly draftItemIcon = signal<string | null>(null);
   protected readonly searchResults = signal<OpenAlbionItem[]>([]);
   protected readonly searchLoading = signal(false);
+  /** Ability-catalog key of the drafted item, so its ability bar can render before it is saved. */
+  protected readonly draftAbilityKey = signal<string | null>(null);
+  /** Abilities picked in the popover, applied together with the item on save. */
+  protected readonly draftSpells = signal<BuildItemSpells>({ active: {}, passive: {} });
 
   protected readonly t = (key: TranslationKey) => this.translate.t(key);
 
@@ -665,6 +674,15 @@ export class CompBuildDetailPage {
   });
   protected readonly mainItems = computed<BuildItemSlot[]>(() => this.itemsFor('main'));
   protected readonly swapItems = computed<BuildItemSlot[]>(() => this.itemsFor('swap'));
+  /** Ability slots for the item currently open in the picker, so it can be chosen before saving. */
+  protected readonly draftAbilitySlots = computed<AbilitySlotView[]>(() => {
+    const editingState = this.editing();
+    const key = this.draftAbilityKey();
+    if (!editingState || !key) {
+      return [];
+    }
+    return abilitySlotsFor(editingState.slot, this.abilityCatalog()[key], this.draftSpells());
+  });
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -801,6 +819,8 @@ export class CompBuildDetailPage {
     this.draftItemName.set(current?.openalbion_item_name ?? '');
     this.draftItemType.set(current?.openalbion_item_type ?? '');
     this.draftItemIcon.set(current?.openalbion_item_icon ?? null);
+    this.draftAbilityKey.set(current ? abilityKeyForItem(current) : null);
+    this.draftSpells.set(current?.spells ?? { active: {}, passive: {} });
     this.searchResults.set([]);
     if (current) {
       void this.runItemSearch();
@@ -811,6 +831,8 @@ export class CompBuildDetailPage {
     this.editing.set(null);
     this.draftSearch.set('');
     this.draftItemId.set('');
+    this.draftAbilityKey.set(null);
+    this.draftSpells.set({ active: {}, passive: {} });
     this.searchResults.set([]);
   }
 
@@ -836,7 +858,20 @@ export class CompBuildDetailPage {
       this.draftItemName.set(item.name);
       this.draftItemType.set(item.type);
       this.draftItemIcon.set(item.icon ?? null);
+      const key = item.identifier ? abilityCatalogKey(item.identifier) : null;
+      // A different weapon family offers different slots, so a stale choice from whatever was
+      // picked before does not silently carry over onto abilities it cannot actually cast.
+      if (key !== this.draftAbilityKey()) {
+        this.draftSpells.set({ active: {}, passive: {} });
+      }
+      this.draftAbilityKey.set(key);
     }
+  }
+
+  protected onDraftAbilityChange(change: AbilityChoiceChange): void {
+    this.draftSpells.update((spells) =>
+      withAbilityChoice(spells, change.kind, change.index, change.spellId),
+    );
   }
 
   protected async saveSlot(loadout: BuildLoadout, slot: BuildSlot): Promise<void> {
@@ -846,7 +881,7 @@ export class CompBuildDetailPage {
     }
     this.saving.set(true);
     try {
-      const updated = await firstValueFrom(
+      let updated = await firstValueFrom(
         this.api.put<BuildDetail>(`api/comps/builds/${build.id}/items/${slot}?loadout=${loadout}`, {
           openalbion_item_type: this.draftItemType(),
           openalbion_item_id: Number(this.draftItemId()),
@@ -855,6 +890,17 @@ export class CompBuildDetailPage {
           openalbion_item_tier: this.draftTier(),
         }),
       );
+      // Abilities picked in the same popover, applied right after the item exists to fill —
+      // the spells endpoint targets an existing slot, so it cannot run before this PUT.
+      const spells = this.draftSpells();
+      if (Object.keys(spells.active).length > 0 || Object.keys(spells.passive).length > 0) {
+        updated = await firstValueFrom(
+          this.api.put<BuildDetail>(
+            `api/comps/builds/${build.id}/items/${slot}/spells?loadout=${loadout}`,
+            spells,
+          ),
+        );
+      }
       this.build.set(updated);
       this.cancelSlotEdit();
       this.toasts.success('Item saved');

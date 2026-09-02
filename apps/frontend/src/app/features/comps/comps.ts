@@ -12,6 +12,7 @@ import type {
   BuildCategoryView,
   BuildDetail,
   BuildItemSlot,
+  BuildItemSpells,
   BuildRole,
   BuildSlot,
   BuildSummary,
@@ -24,6 +25,7 @@ import type {
   CreateCompCategoryRequest,
   CreateCompRequest,
   OpenAlbionItem,
+  OpenAlbionItemAbilities,
   PaginatedData,
   UpdateBuildCategoryRequest,
   UpdateCompCategoryRequest,
@@ -32,6 +34,14 @@ import {
   albionEquipmentIconUrl,
   filterAlbionEquipmentCatalog,
 } from '../../shared/data/albion-equipment-catalog';
+import {
+  abilityCatalogKey,
+  abilitySlotsFor,
+  withAbilityChoice,
+} from '../../shared/data/albion-abilities';
+import type { AbilitySlotView } from '../../shared/data/albion-abilities';
+import type { AbilityChoiceChange } from '../../shared/components/ability-bar/ability-bar';
+import { AlbionAbilitiesService } from '../../shared/services/albion-abilities.service';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -667,6 +677,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                 [searchResults]="itemSearchResults()"
                 [searchLoading]="itemSearchLoading()"
                 [tiers]="itemTiers"
+                [draftAbilitySlots]="draftAbilitySlots()"
                 (slotToggle)="onSlotToggle($event)"
                 (tierChange)="onPopoverTierChange($event)"
                 (searchChange)="onPopoverSearchChange($event)"
@@ -674,6 +685,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                 (saveSlot)="onPopoverSave()"
                 (cancelEdit)="onPopoverCancel()"
                 (removeItem)="removeDraftItem($event)"
+                (abilityChoice)="onDraftAbilityChange($event)"
               />
             </section>
           } @else {
@@ -858,6 +870,7 @@ export class Comps {
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
   private readonly albionCatalog = inject(AlbionCatalogService);
+  private readonly albionAbilities = inject(AlbionAbilitiesService);
 
   protected readonly PAGE_SIZE = PAGE_SIZE;
   protected readonly tab = signal<TabId>('comps');
@@ -997,6 +1010,21 @@ export class Comps {
   protected readonly itemSearchResults = signal<OpenAlbionItem[]>([]);
   protected readonly itemSearchLoading = signal(false);
   protected readonly draftItems = signal<BuildItemSlot[]>([]);
+  /** The bundled ability catalog, loaded once and keyed by tier-stripped base identifier. */
+  protected readonly abilityCatalog = signal<Record<string, OpenAlbionItemAbilities>>({});
+  /** Ability-catalog key of the drafted item, so its ability bar can render before it is added. */
+  protected readonly draftItemAbilityKey = signal<string | null>(null);
+  /** Abilities picked in the popover, attached to the item when it joins `draftItems`. */
+  protected readonly draftItemSpells = signal<BuildItemSpells>({ active: {}, passive: {} });
+  /** Ability slots for the item currently open in the create dialog's picker. */
+  protected readonly draftAbilitySlots = computed<AbilitySlotView[]>(() => {
+    const slot = this.draftItemSlot();
+    const key = this.draftItemAbilityKey();
+    if (!slot || !key) {
+      return [];
+    }
+    return abilitySlotsFor(slot, this.abilityCatalog()[key], this.draftItemSpells());
+  });
 
   protected readonly roles: readonly BuildRole[] = [
     'healer',
@@ -1147,6 +1175,11 @@ export class Comps {
 
   constructor() {
     void this.init();
+    // Static application data; one fetch serves every dialog opened in the session.
+    void this.albionAbilities
+      .load()
+      .then((abilities) => this.abilityCatalog.set(abilities))
+      .catch(() => this.abilityCatalog.set({}));
   }
 
   private async init(): Promise<void> {
@@ -1430,6 +1463,19 @@ export class Comps {
     this.draftItemType.set(item.type);
     this.draftItemTier.set(this.normalizeTier(item.tier));
     this.draftItemIcon.set(this.itemIconUrl(item));
+    const key = item.identifier ? abilityCatalogKey(item.identifier) : null;
+    // A different weapon family offers different slots, so a stale choice from whatever was
+    // picked before does not silently carry over onto abilities it cannot actually cast.
+    if (key !== this.draftItemAbilityKey()) {
+      this.draftItemSpells.set({ active: {}, passive: {} });
+    }
+    this.draftItemAbilityKey.set(key);
+  }
+
+  protected onDraftAbilityChange(change: AbilityChoiceChange): void {
+    this.draftItemSpells.update((spells) =>
+      withAbilityChoice(spells, change.kind, change.index, change.spellId),
+    );
   }
 
   protected onPopoverSave(): void {
@@ -1495,6 +1541,12 @@ export class Comps {
     }
     if (tier) {
       item.openalbion_item_tier = tier;
+    }
+    // Abilities picked in the same popover, ready to persist alongside the item once the build
+    // itself is created — the create request sends them together in one call.
+    const spells = this.draftItemSpells();
+    if (Object.keys(spells.active).length > 0 || Object.keys(spells.passive).length > 0) {
+      item.spells = spells;
     }
     this.draftItems.update((items) => [
       ...items.filter((existing) => existing.slot !== item.slot),
@@ -1868,6 +1920,8 @@ export class Comps {
     this.draftItemId.set('');
     this.draftItemName.set('');
     this.draftItemIcon.set('');
+    this.draftItemAbilityKey.set(null);
+    this.draftItemSpells.set({ active: {}, passive: {} });
   }
 
   private normalizeTier(tier: string): string {
