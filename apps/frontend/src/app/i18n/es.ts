@@ -308,6 +308,7 @@ export const es: TranslationDict = {
   'splits.city.thetford': 'Thetford',
   'splits.city.caerleon': 'Caerleon',
   'splits.city.brecilien': 'Brecilien',
+  'splits.all_islands': 'Todas las islas',
   'admin.link.splits': 'Islas de split',
   'admin.link.splitsHint': 'Catálogo de islas y pestañas para localizar los splits.',
 

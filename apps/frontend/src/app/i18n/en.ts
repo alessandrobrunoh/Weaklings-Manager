@@ -313,6 +313,7 @@ export const en = {
   'splits.city.thetford': 'Thetford',
   'splits.city.caerleon': 'Caerleon',
   'splits.city.brecilien': 'Brecilien',
+  'splits.all_islands': 'All islands',
   'admin.link.splits': 'Split islands',
   'admin.link.splitsHint': 'The island and tab catalog used when locating loot splits.',
 

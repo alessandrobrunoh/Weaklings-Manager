@@ -291,6 +291,7 @@ export const fr: TranslationDict = {
   'splits.city.thetford': 'Thetford',
   'splits.city.caerleon': 'Caerleon',
   'splits.city.brecilien': 'Brecilien',
+  'splits.all_islands': 'Toutes les îles',
   'admin.link.splits': 'Split islands',
   'admin.link.splitsHint': 'The island and tab catalog used when locating loot splits.',
   'events.title': 'Événements',
