@@ -151,7 +151,7 @@ interface SplitParticipantDraft {
 
       @if (canAct() && pendingSplits().length > 0) {
         <section
-          class="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3.5 surface"
+          class="surface flex flex-wrap items-center justify-between gap-3 p-3.5"
           style="border-color: var(--color-border); background-color: var(--color-surface-2)"
         >
           <label class="flex cursor-pointer select-none items-center gap-2 text-sm">
@@ -279,7 +279,7 @@ interface SplitParticipantDraft {
             <!-- LEFT COLUMN: CONFIGURATION & FINANCIALS -->
             <div class="space-y-4">
               <!-- Card 1: Note & Location -->
-              <section class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] space-y-3">
+              <section class="card p-4 space-y-3">
                 <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                   {{ t('splits.location') }} &middot; {{ t('splits.note') }}
                 </h3>
@@ -363,7 +363,7 @@ interface SplitParticipantDraft {
               </section>
 
               <!-- Card 2: Silver & Live Net Calculation -->
-              <section class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] space-y-3">
+              <section class="card p-4 space-y-3">
                 <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                   {{ t('splits.net_value') }}
                 </h3>
@@ -444,7 +444,7 @@ interface SplitParticipantDraft {
             <!-- RIGHT COLUMN: ROSTER & OCR PARSING -->
             <div class="space-y-4">
               <!-- Card 3: Smart OCR / Raw Names Import -->
-              <section class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] space-y-3">
+              <section class="card p-4 space-y-3">
                 <div class="flex items-center justify-between">
                   <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                     {{ t('splits.match_ocr') }}
@@ -499,7 +499,7 @@ interface SplitParticipantDraft {
               </section>
 
               <!-- Card 4: Active Roster & Weights -->
-              <section class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] space-y-3">
+              <section class="card p-4 space-y-3">
                 <div class="flex items-center justify-between gap-2">
                   <div class="flex items-center gap-2">
                     <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text)]">

@@ -24,6 +24,7 @@ import { Dialog } from '../../shared/components/dialog/dialog';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
+import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import {
   SearchDialog,
@@ -58,19 +59,13 @@ function parsePercentageInput(raw: string): number | null {
     ErrorState,
     Icon,
     Loading,
+    PageHeader,
     PageStack,
     RouterLink,
     SearchDialog,
     StatusChip,
   ],
   template: `
-    <div class="mb-4">
-      <a routerLink="/splits" class="btn btn--ghost btn--sm inline-flex items-center gap-1.5 text-xs">
-        <app-icon name="chevron-left" size="0.875rem" />
-        {{ t('splits.detail.back') }}
-      </a>
-    </div>
-
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
     } @else if (loadFailed() || !split()) {
@@ -81,66 +76,64 @@ function parsePercentageInput(raw: string): number | null {
       />
     } @else {
       @if (split(); as detail) {
+        <app-page-header [title]="detail.note || t('splits.untitled', { id: detail.id })">
+          <a routerLink="/splits" class="btn btn--ghost btn--sm">
+            <app-icon name="chevron-left" size="0.875rem" />
+            {{ t('splits.detail.back') }}
+          </a>
+          @if (canEdit()) {
+            <button type="button" class="btn btn--ghost btn--sm" (click)="toggleMode()">
+              {{ mode() === 'edit' ? t('common.close') : t('common.edit') }}
+            </button>
+          }
+          @if (detail.status === 'pending' && canAct()) {
+            <button
+              type="button"
+              class="btn btn--primary btn--sm"
+              (click)="showCompleteConfirmDialog.set(true)"
+            >
+              {{ t('splits.payout_complete') }}
+            </button>
+            <button
+              type="button"
+              class="btn btn--outline btn--sm"
+              (click)="closeSplit('not-completed')"
+            >
+              {{ t('splits.mark_not_completed') }}
+            </button>
+            <button type="button" class="btn btn--danger btn--sm" (click)="closeSplit('lost')">
+              {{ t('splits.mark_lost') }}
+            </button>
+          }
+          @if (canAct()) {
+            <button type="button" class="btn btn--danger btn--sm" (click)="showDelete.set(true)">
+              {{ t('common.delete') }}
+            </button>
+          }
+        </app-page-header>
+
         <app-page-stack>
-          <header class="card p-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-            <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <div class="mb-1.5 flex flex-wrap items-center gap-2">
-                  <h1 class="text-xl font-medium text-[var(--color-text)]">
-                    {{ detail.note || t('splits.untitled', { id: detail.id }) }}
-                  </h1>
-                  <app-status-chip [value]="detail.status" />
-                </div>
-                <p class="text-xs text-[var(--color-text-secondary)]">
-                  {{ t('splits.created_by', { name: detail.created_by_username }) }}
-                  &middot; {{ formatDate(detail.created_at) }}
-                  @if (detail.event_title && detail.event_id) {
-                    &middot; {{ t('splits.event_linked') }}:
-                    <a
-                      class="text-primary no-underline hover:underline"
-                      [routerLink]="['/events', detail.event_id]"
-                    >
-                      {{ detail.event_title }}
-                    </a>
-                  }
-                  @if (detail.island_tab_id) {
-                    &middot; {{ locationLabel(detail) }}
-                  }
-                </p>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                @if (canEdit()) {
-                  <button type="button" class="btn btn--ghost btn--sm" (click)="toggleMode()">
-                    {{ mode() === 'edit' ? t('common.close') : t('common.edit') }}
-                  </button>
-                }
-                @if (detail.status === 'pending' && canAct()) {
-                  <button
-                    type="button"
-                    class="btn btn--primary btn--sm"
-                    (click)="showCompleteConfirmDialog.set(true)"
-                  >
-                    {{ t('splits.payout_complete') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn--outline btn--sm"
-                    (click)="closeSplit('not-completed')"
-                  >
-                    {{ t('splits.mark_not_completed') }}
-                  </button>
-                  <button type="button" class="btn btn--danger btn--sm" (click)="closeSplit('lost')">
-                    {{ t('splits.mark_lost') }}
-                  </button>
-                }
-                @if (canAct()) {
-                  <button type="button" class="btn btn--danger btn--sm" (click)="showDelete.set(true)">
-                    {{ t('common.delete') }}
-                  </button>
-                }
-              </div>
+          <section class="card p-4 sm:p-5">
+            <div class="mb-1.5 flex flex-wrap items-center gap-2">
+              <app-status-chip [value]="detail.status" />
             </div>
-          </header>
+            <p class="text-xs text-[var(--color-text-secondary)]">
+              {{ t('splits.created_by', { name: detail.created_by_username }) }}
+              &middot; {{ formatDate(detail.created_at) }}
+              @if (detail.event_title && detail.event_id) {
+                &middot; {{ t('splits.event_linked') }}:
+                <a
+                  class="text-primary no-underline hover:underline"
+                  [routerLink]="['/events', detail.event_id]"
+                >
+                  {{ detail.event_title }}
+                </a>
+              }
+              @if (detail.island_tab_id) {
+                &middot; {{ locationLabel(detail) }}
+              }
+            </p>
+          </section>
 
           @if (mode() === 'edit' && canEdit()) {
             <form id="edit-split-form" class="space-y-4" (submit)="onEditSubmit($event)">
@@ -148,7 +141,7 @@ function parsePercentageInput(raw: string): number | null {
                 <!-- LEFT COLUMN: NOTE & FINANCIALS -->
                 <div class="space-y-4">
                   <!-- Note & Location Card -->
-                  <section class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] space-y-3">
+                  <section class="card p-4 space-y-3">
                     <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                       {{ t('splits.location') }} &middot; {{ t('splits.note') }}
                     </h3>
@@ -225,7 +218,7 @@ function parsePercentageInput(raw: string): number | null {
                   </section>
 
                   <!-- Silver Breakdown & Live Computation -->
-                  <section class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] space-y-3">
+                  <section class="card p-4 space-y-3">
                     <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                       {{ t('splits.net_value') }}
                     </h3>
@@ -298,7 +291,7 @@ function parsePercentageInput(raw: string): number | null {
                 </div>
 
                 <!-- RIGHT COLUMN: ROSTER & WEIGHTS -->
-                <section class="card p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] space-y-3 flex flex-col justify-between">
+                <section class="card p-4 space-y-3 flex flex-col justify-between">
                   <div class="space-y-3">
                     <div class="flex items-center justify-between gap-2 pb-2 border-b border-[var(--color-border)]">
                       <div class="flex items-center gap-2">
@@ -405,7 +398,7 @@ function parsePercentageInput(raw: string): number | null {
             </form>
           } @else {
             <section class="grid grid-cols-2 gap-3 sm:grid-cols-5">
-              <article class="surface rounded-xl border border-[var(--color-border)] p-3.5 bg-[var(--color-surface)]">
+              <article class="surface p-3.5">
                 <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                   {{ t('splits.estimated') }}
                 </p>
@@ -413,7 +406,7 @@ function parsePercentageInput(raw: string): number | null {
                   {{ formatAmount(detail.estimated_market_value) }}
                 </p>
               </article>
-              <article class="surface rounded-xl border border-[var(--color-border)] p-3.5 bg-[var(--color-surface)]">
+              <article class="surface p-3.5">
                 <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                   {{ t('splits.fee') }}
                 </p>
@@ -421,7 +414,7 @@ function parsePercentageInput(raw: string): number | null {
                   {{ formatAmount(toNumber(detail.estimated_market_value) * toNumber(detail.fee ?? defaultFee) / 100) }} ({{ detail.fee ?? defaultFee }}%)
                 </p>
               </article>
-              <article class="surface rounded-xl border border-[var(--color-border)] p-3.5 bg-[var(--color-surface)]">
+              <article class="surface p-3.5">
                 <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                   {{ t('splits.repair_cost') }}
                 </p>
@@ -429,7 +422,7 @@ function parsePercentageInput(raw: string): number | null {
                   -{{ formatAmount(detail.repair_value) }}
                 </p>
               </article>
-              <article class="surface rounded-xl border border-[var(--color-border)] p-3.5 bg-[var(--color-surface)]">
+              <article class="surface p-3.5">
                 <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                   {{ t('splits.bags_value') }}
                 </p>
@@ -438,7 +431,7 @@ function parsePercentageInput(raw: string): number | null {
                 </p>
               </article>
               <article
-                class="surface rounded-xl border border-[var(--color-success)] p-3.5 bg-[var(--color-surface)]"
+                class="surface p-3.5 border-[var(--color-success)]"
               >
                 <p class="text-[0.6875rem] font-medium uppercase tracking-wider text-[var(--color-text-secondary)]">
                   {{ t('splits.net_value') }}
@@ -450,7 +443,7 @@ function parsePercentageInput(raw: string): number | null {
             </section>
 
             <section
-              class="surface overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]"
+              class="surface overflow-hidden"
             >
               <header
                 class="flex items-center justify-between border-b border-[var(--color-border)] p-3.5"
