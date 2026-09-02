@@ -387,6 +387,7 @@ export interface GuildSettingsView {
   discord_auto_role_id: string | null;
   discord_splits_forum_channel_id: string | null;
   discord_event_voice_category_id: string | null;
+  default_split_fee: number | string;
 }
 
 /* -------------------------- Progression ----------------------------- */

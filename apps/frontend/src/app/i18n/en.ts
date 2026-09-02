@@ -808,7 +808,7 @@ export const en = {
   'admin.loadError': "Couldn't load the permission matrix. Try reloading the page.",
   'admin.subtitle': 'Authorization, and where the rest of the settings live.',
   'admin.hub.subtitle':
-    'Pick a panel to configure authorization, Discord, season XP, regears, and islands.'
+    'Pick a panel to configure authorization, Discord, season XP, regears, and islands.',
   'admin.hub.panels': 'Admin panels',
   'admin.hub.rolesHint': 'Create gestionale roles and link them to Discord.',
   'admin.hub.permissionsHint': 'Grant or revoke capabilities per role.',

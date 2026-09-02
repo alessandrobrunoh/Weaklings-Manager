@@ -3497,6 +3497,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn assigning_a_parent_after_creation_merges_additions() {
+        let db = seed_db().await;
+        let user = insert_user(&db, "officer", "officer@example.com").await;
+        let build_category = insert_build_category(&db, "ZvZ builds").await;
+        let comp_category = insert_comp_category(&db, "ZvZ comps").await;
+        let service = CompService::new();
+        let build = service
+            .create_build(&db, user, build_request("DPS", build_category))
+            .await
+            .expect("build should be created");
+
+        let base = service
+            .create_comp(
+                &db,
+                user,
+                CreateCompRequest {
+                    name: "10-man".to_string(),
+                    description: None,
+                    category_id: comp_category,
+                    builds: vec![AddCompBuildRequest {
+                        build_id: build.summary.id,
+                        quantity: 10,
+                    }],
+                    parent_id: None,
+                },
+            )
+            .await
+            .expect("base comp should be created");
+        let additions = service
+            .create_comp(
+                &db,
+                user,
+                CreateCompRequest {
+                    name: "15-man".to_string(),
+                    description: None,
+                    category_id: comp_category,
+                    builds: vec![AddCompBuildRequest {
+                        build_id: build.summary.id,
+                        quantity: 5,
+                    }],
+                    parent_id: None,
+                },
+            )
+            .await
+            .expect("additions comp should be created");
+
+        let expanded = service
+            .update_comp(
+                &db,
+                additions.summary.id,
+                UpdateCompRequest {
+                    name: None,
+                    description: None,
+                    category_id: None,
+                    parent_id: Some(Some(base.summary.id)),
+                },
+            )
+            .await
+            .expect("parent assignment should materialize the expansion");
+
+        assert_eq!(expanded.summary.total_quantity, 15);
+        assert_eq!(expanded.builds[0].quantity, 15);
+        assert_eq!(expanded.summary.parent_id, Some(base.summary.id));
+    }
+
+    #[tokio::test]
     async fn an_expansion_cannot_keep_or_reduce_its_parent_capacity() {
         let db = seed_db().await;
         let user = insert_user(&db, "officer", "officer@example.com").await;
