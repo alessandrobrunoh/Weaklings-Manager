@@ -1209,6 +1209,23 @@
   --font-display: var(--font-universalsans);
   --font-mono: var(--font-geistmono);
   --page-gap: 1.5rem;
+
+  /* Podium medal gradients — theme-invariant: each is a self-contained
+     badge with its own internal contrast, not something that should
+     shift with the page theme. Centralized here instead of living as
+     raw hex inside the leaderboards component. */
+  --color-medal-gold-1: #fde047;
+  --color-medal-gold-2: #eab308;
+  --color-medal-gold-3: #ca8a04;
+  --color-medal-gold-text: #713f12;
+  --color-medal-silver-1: #f4f4f5;
+  --color-medal-silver-2: #cbd5e1;
+  --color-medal-silver-3: #94a3b8;
+  --color-medal-silver-text: #334155;
+  --color-medal-bronze-1: #fdba74;
+  --color-medal-bronze-2: #ea580c;
+  --color-medal-bronze-3: #9a3412;
+  --color-medal-bronze-text: #ffffff;
 }
 
 .light {
