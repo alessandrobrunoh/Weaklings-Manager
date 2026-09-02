@@ -1102,6 +1102,8 @@ export interface BuildSummary {
   created_by_username: string;
   updated_at: string;
   item_count: number;
+  /** When this build was archived, if it has been. `null` means it's active. */
+  archived_at: string | null;
 }
 
 /** One sibling version of a build or comp, for the version switcher. */
@@ -1166,6 +1168,8 @@ export interface CompSummary {
   build_count: number;
   total_quantity: number;
   parent_id: number | null;
+  /** When this comp was archived, if it has been. `null` means it's active. */
+  archived_at: string | null;
 }
 
 export interface CompDetail extends CompSummary {
@@ -1180,6 +1184,8 @@ export interface CompFilters {
   search?: string;
   date_from?: string;
   date_to?: string;
+  /** When `true`, lists archived comps instead of active ones. */
+  archived?: boolean;
 }
 
 export type BuildRole = 'healer' | 'support' | 'dps' | 'tank' | 'battle_mount' | 'brawler';

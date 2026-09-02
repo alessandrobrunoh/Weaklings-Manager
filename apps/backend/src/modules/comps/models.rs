@@ -123,6 +123,8 @@ pub struct BuildSummary {
     /// The number of items in the build.
     #[schema(example = 7)]
     pub item_count: u64,
+    /// When this build was archived, if it has been. `None` means it's active.
+    pub archived_at: Option<String>,
 }
 
 /// A build's full detail, including items.
@@ -186,6 +188,8 @@ pub struct CompSummary {
     pub total_quantity: i64,
     /// The parent comp ID if this comp is a variant.
     pub parent_id: Option<i64>,
+    /// When this comp was archived, if it has been. `None` means it's active.
+    pub archived_at: Option<String>,
 }
 
 /// A comp's full detail, including builds.
@@ -432,6 +436,10 @@ pub struct BuildFilters {
     pub sort: Option<String>,
     /// Sort direction: `asc` or `desc`. Defaults to `desc`.
     pub order: Option<String>,
+    /// When `true`, lists archived builds instead of active ones. Defaults to `false` — every
+    /// picker and listing shows active builds only unless a caller explicitly asks to browse the
+    /// archive.
+    pub archived: Option<bool>,
 }
 
 /// Filters for listing comps.
@@ -451,4 +459,8 @@ pub struct CompFilters {
     pub sort: Option<String>,
     /// Sort direction: `asc` or `desc`. Defaults to `desc`.
     pub order: Option<String>,
+    /// When `true`, lists archived comps instead of active ones. Defaults to `false` — every
+    /// picker and listing shows active comps only unless a caller explicitly asks to browse the
+    /// archive.
+    pub archived: Option<bool>,
 }

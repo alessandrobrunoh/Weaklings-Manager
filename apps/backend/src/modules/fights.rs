@@ -2201,7 +2201,8 @@ mod tests {
             albionbb_base_url: "http://localhost".to_string(),
             albionbb_request_timeout_secs: 60,
             albiondata_request_timeout_secs: 30,
-            session_secret: "test-session-secret-at-least-64-bytes-long-000000000000000000000000".to_string(),
+            session_secret: "test-session-secret-at-least-64-bytes-long-000000000000000000000000"
+                .to_string(),
         }
     }
 

@@ -33,10 +33,8 @@ impl MigrationTrait for Migration {
         // intel.manage was seeded to Moderator + Admin (not Officer) by
         // m20260823_000002 — match that exactly so nobody's access changes.
         let perms = ["intel.create", "intel.edit", "intel.delete"];
-        let seeds: &[(&str, &[&str])] = &[
-            ("Admin", perms.as_slice()),
-            ("Moderator", perms.as_slice()),
-        ];
+        let seeds: &[(&str, &[&str])] =
+            &[("Admin", perms.as_slice()), ("Moderator", perms.as_slice())];
 
         for (role_name, perms) in seeds {
             let Some(role_id) = name_to_id.get(*role_name) else {
@@ -68,10 +66,11 @@ impl MigrationTrait for Migration {
             backend.build(
                 &Query::delete()
                     .from_table(RolePermissions::Table)
-                    .and_where(
-                        Expr::col(RolePermissions::Permission)
-                            .is_in(["intel.create", "intel.edit", "intel.delete"]),
-                    )
+                    .and_where(Expr::col(RolePermissions::Permission).is_in([
+                        "intel.create",
+                        "intel.edit",
+                        "intel.delete",
+                    ]))
                     .to_owned(),
             ),
         )
