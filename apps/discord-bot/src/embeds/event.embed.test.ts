@@ -3,6 +3,7 @@ import test from "node:test";
 import type { EventDetailView, EventView } from "../api/types.js";
 import {
   buildEventEmbed,
+  buildEventMassMessage,
   buildEventReminderMessage,
   buildEventStartMessage,
   buildEventThreadActionRow,
@@ -111,6 +112,20 @@ test("event embed renders distinct Mass and Start timestamps", () => {
   })).toJSON();
   assert.match(embed.description ?? "", /Mass.*<t:1788291000:F>/);
   assert.match(embed.description ?? "", /Start.*<t:1788292800:F>/);
+});
+
+test("Mass notice pings linked participants and points at the pre-created voice channel", () => {
+  const message = buildEventMassMessage(
+    event({ start_time_utc: "2026-09-01T20:00:00Z" }),
+    [{ discord_id: "333333333333333333", username: "Linked" }],
+    "444444444444444444",
+  );
+  assert.match(message.content, /<@333333333333333333>/);
+  assert.match(message.content, /<#444444444444444444>/);
+  assert.deepEqual(message.allowedMentions, {
+    parse: [],
+    users: ["333333333333333333"],
+  });
 });
 
 test("reminder uses stable per-event role mentions and a relative event timestamp", () => {

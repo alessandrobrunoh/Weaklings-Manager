@@ -277,7 +277,23 @@ async function handleEventButton(
     const eventId = Number(eventIdStr);
     await interaction.deferReply({ flags: ["Ephemeral"] });
     if (!Number.isSafeInteger(eventId) || eventId <= 0) throw new Error("Invalid event ID.");
-    const event = await api.post<EventDetailView>(`api/events/${eventId}/cancel`, {}, interaction.user.id);
+    let event = await api.post<EventDetailView>(`api/events/${eventId}/cancel`, {}, interaction.user.id);
+    // Cancellation may leave a Mass-created voice behind. Remove it only when empty; occupied
+    // channels remain available for members to leave safely.
+    if (event.discord_voice_channel_id) {
+      try {
+        const channel = await interaction.client.channels.fetch(event.discord_voice_channel_id);
+        if (channel?.isVoiceBased() && channel.members.size === 0) {
+          await channel.delete(`Event #${eventId} cancelled and voice channel was empty`);
+          event = await api.delete<EventDetailView>(
+            `api/events/${eventId}/discord-voice-channel`,
+            interaction.user.id,
+          ) ?? event;
+        }
+      } catch (error) {
+        console.warn(`[Button] Could not clean up cancelled event #${eventId} voice channel:`, error);
+      }
+    }
     await interaction.message.edit({
       embeds: [buildEventEmbed(event)],
       components: [buildEventThreadActionRow(event)],
