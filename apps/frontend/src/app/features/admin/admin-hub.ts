@@ -31,25 +31,50 @@ import type { AuditLog } from '../audit/audit';
 @Component({
   selector: 'app-admin-hub',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, PageHeader, PageStack, RouterLink, StatCard, TooltipDirective],
+  imports: [Icon, PageHeader, PageStack, RouterLink, TooltipDirective],
   styles: `
     .admin-card-hover {
       transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
     }
     .admin-card-hover:hover {
-      border-color: var(--color-border-strong);
+      border-color: var(--color-border-hover);
       background: var(--color-surface-hover);
+    }
+    .kpi-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius-cards);
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      padding: 1.125rem 1.25rem;
+      transition: border-color var(--motion-fast), transform var(--motion-fast);
+    }
+    .kpi-card:hover {
+      border-color: var(--color-border-hover);
+    }
+    .icon-capsule {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 0.5rem;
+      flex-shrink: 0;
     }
     .admin-queue-card {
       display: flex;
       flex-direction: column;
       justify-content: space-between;
       border: 1px solid var(--color-border);
-      border-radius: 8px;
-      padding: 1rem;
+      border-radius: var(--radius-cards);
+      padding: 1.125rem 1.25rem;
       background: var(--color-surface);
       position: relative;
-      overflow: clip;
+      overflow: hidden;
+      transition: border-color var(--motion-fast);
+    }
+    .admin-queue-card:hover {
+      border-color: var(--color-border-hover);
     }
     .admin-queue-card::before {
       content: '';
@@ -59,13 +84,13 @@ import type { AuditLog } from '../audit/audit';
       inline-size: 3px;
     }
     .admin-queue-card--warning::before {
-      background: var(--color-warning);
+      background: #facc15;
     }
     .admin-queue-card--primary::before {
-      background: var(--color-primary);
+      background: #38bdf8;
     }
     .admin-queue-card--success::before {
-      background: var(--color-success);
+      background: #4ade80;
     }
   `,
   template: `
@@ -87,82 +112,164 @@ import type { AuditLog } from '../audit/audit';
     </app-page-header>
 
     <app-page-stack>
-      <!-- Core Administrative KPIs -->
-      <section class="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6" aria-label="Admin KPI summary">
-        <app-stat-card
-          [label]="t('admin.stat.totalMembers')"
-          [value]="formatCount(totalMembers())"
-          icon="users"
-          tone="primary"
-        />
-        <app-stat-card
-          [label]="t('admin.stat.ledgerVolume')"
-          [value]="formatAmount(bankSummary()?.ledger_volume)"
-          [sub]="formatCountHint(bankSummary()?.transaction_count, 'transazioni')"
-          icon="bank"
-          tone="neutral"
-        />
-        <app-stat-card
-          [label]="t('admin.stat.openLiability')"
-          [value]="formatAmount(bankSummary()?.outstanding_total)"
-          [sub]="formatCountHint(bankSummary()?.outstanding_count, 'richieste')"
-          icon="bank"
-          tone="warning"
-        />
-        <app-stat-card
-          [label]="t('admin.stat.paidOut')"
-          [value]="formatAmount(bankSummary()?.paid_out_total)"
-          [sub]="formatCountHint(bankSummary()?.paid_out_count, 'liquidati')"
-          icon="bank"
-          tone="success"
-        />
-        <app-stat-card
-          [label]="t('admin.stat.totalRoles')"
-          [value]="formatCount(matrix()?.roles?.length)"
-          icon="shield"
-          tone="primary"
-        />
-        <app-stat-card
-          [label]="t('admin.stat.totalEvents')"
-          [value]="formatCount(totalEvents())"
-          icon="calendar"
-          tone="neutral"
-        />
+      <!-- Core Administrative KPIs: 6 Modern Cards -->
+      <section class="grid gap-3.5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6" aria-label="Admin KPI summary">
+        <!-- Card 1: Total Members -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('admin.stat.totalMembers') }}
+              </p>
+              <p class="font-mono text-xl font-bold tracking-tight text-white mt-1">
+                {{ formatCount(totalMembers()) }}
+              </p>
+              <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5 truncate">
+                Guild roster
+              </p>
+            </div>
+            <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <app-icon name="users" size="1.125rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 2: Ledger Volume -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('admin.stat.ledgerVolume') }}
+              </p>
+              <p class="font-mono text-xl font-bold tracking-tight text-purple-400 mt-1">
+                {{ formatCompact(bankSummary()?.ledger_volume) }}
+              </p>
+              <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5 truncate">
+                {{ bankSummary()?.transaction_count ?? 0 }} entries
+              </p>
+            </div>
+            <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+              <app-icon name="bank" size="1.125rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 3: Open Liability -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('admin.stat.openLiability') }}
+              </p>
+              <p class="font-mono text-xl font-bold tracking-tight text-amber-400 mt-1">
+                {{ formatCompact(bankSummary()?.outstanding_total) }}
+              </p>
+              <p class="text-[0.6875rem] text-amber-400/90 mt-0.5 truncate flex items-center gap-1">
+                <span class="h-1 w-1 rounded-full bg-amber-400 animate-pulse"></span>
+                {{ bankSummary()?.outstanding_count ?? 0 }} requests
+              </p>
+            </div>
+            <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <app-icon name="alert" size="1.125rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 4: Paid Out -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('admin.stat.paidOut') }}
+              </p>
+              <p class="font-mono text-xl font-bold tracking-tight text-emerald-400 mt-1">
+                {{ formatCompact(bankSummary()?.paid_out_total) }}
+              </p>
+              <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5 truncate">
+                {{ bankSummary()?.paid_out_count ?? 0 }} paid
+              </p>
+            </div>
+            <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <app-icon name="coins" size="1.125rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 5: Total Roles -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('admin.stat.totalRoles') }}
+              </p>
+              <p class="font-mono text-xl font-bold tracking-tight text-white mt-1">
+                {{ formatCount(matrix()?.roles?.length) }}
+              </p>
+              <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5 truncate">
+                Auth roles
+              </p>
+            </div>
+            <div class="icon-capsule bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <app-icon name="shield" size="1.125rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 6: Total Events -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('admin.stat.totalEvents') }}
+              </p>
+              <p class="font-mono text-xl font-bold tracking-tight text-white mt-1">
+                {{ formatCount(totalEvents()) }}
+              </p>
+              <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5 truncate">
+                Scheduled activities
+              </p>
+            </div>
+            <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <app-icon name="calendar" size="1.125rem" />
+            </div>
+          </div>
+        </article>
       </section>
 
       <!-- Urgent Officer Action Queues -->
       @if (hasPendingQueues()) {
         <section aria-labelledby="admin-queues-heading">
-          <div class="flex items-center justify-between mb-2">
-            <h2 id="admin-queues-heading" class="eyebrow flex items-center gap-1.5">
-              <span class="inline-block h-2 w-2 rounded-full" style="background-color: var(--color-warning)"></span>
+          <div class="flex items-center justify-between mb-3">
+            <h2 id="admin-queues-heading" class="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)] flex items-center gap-2">
+              <span class="inline-block h-2 w-2 rounded-full bg-amber-400 animate-pulse"></span>
               {{ t('admin.hub.quickQueues') }}
             </h2>
           </div>
-          <div class="grid gap-3 sm:grid-cols-3">
+          <div class="grid gap-3.5 sm:grid-cols-3">
             <!-- Pending Regears Queue -->
             <div class="admin-queue-card admin-queue-card--warning">
               <div class="flex items-start justify-between gap-2 mb-2">
                 <div>
-                  <span class="text-xs font-semibold uppercase tracking-wider block" style="color: var(--color-warning)">
+                  <span class="text-[0.6875rem] font-semibold uppercase tracking-wider block text-amber-400">
                     {{ t('admin.stat.pendingRegears') }}
                   </span>
-                  <div class="text-xl font-bold mt-0.5 tabular-nums">
+                  <div class="text-2xl font-mono font-bold mt-0.5 text-white">
                     {{ formatCount(pendingRegearsCount()) }}
                   </div>
                 </div>
-                <span class="p-1.5 rounded" style="background: var(--color-warning-container); color: var(--color-warning)">
-                  <app-icon name="shield" size="1.125rem" />
+                <span class="p-2 rounded-lg bg-amber-500/15 text-amber-400 border border-amber-500/25">
+                  <app-icon name="shield" size="1.25rem" />
                 </span>
               </div>
-              <p class="text-xs mb-3" style="color: var(--color-text-secondary)">
-                Richieste di risarcimento equipaggiamento in attesa di approvazione.
+              <p class="text-xs mb-3 text-[var(--color-text-secondary)] leading-relaxed">
+                Reimbursement claims awaiting officer inspection and approval.
               </p>
               <a
                 routerLink="/regears"
-                class="btn btn--sm btn--outline justify-center text-xs font-medium no-underline"
+                class="btn btn--sm btn--outline justify-center text-xs font-medium no-underline inline-flex items-center gap-1.5"
               >
-                {{ t('admin.hub.goToQueue') }} →
+                <span>{{ t('admin.hub.goToQueue') }}</span>
+                &rarr;
               </a>
             </div>
 
@@ -170,25 +277,26 @@ import type { AuditLog } from '../audit/audit';
             <div class="admin-queue-card admin-queue-card--primary">
               <div class="flex items-start justify-between gap-2 mb-2">
                 <div>
-                  <span class="text-xs font-semibold uppercase tracking-wider block" style="color: var(--color-primary)">
+                  <span class="text-[0.6875rem] font-semibold uppercase tracking-wider block text-sky-400">
                     {{ t('admin.stat.pendingSplits') }}
                   </span>
-                  <div class="text-xl font-bold mt-0.5 tabular-nums">
+                  <div class="text-2xl font-mono font-bold mt-0.5 text-white">
                     {{ formatCount(pendingSplitsCount()) }}
                   </div>
                 </div>
-                <span class="p-1.5 rounded" style="background: var(--color-primary-container); color: var(--color-primary)">
-                  <app-icon name="swords" size="1.125rem" />
+                <span class="p-2 rounded-lg bg-sky-500/15 text-sky-400 border border-sky-500/25">
+                  <app-icon name="swords" size="1.25rem" />
                 </span>
               </div>
-              <p class="text-xs mb-3" style="color: var(--color-text-secondary)">
-                Divisioni bottino aperte che richiedono calcolo e distribuzione quote.
+              <p class="text-xs mb-3 text-[var(--color-text-secondary)] leading-relaxed">
+                Active loot splits awaiting calculation and member share payouts.
               </p>
               <a
                 routerLink="/splits"
-                class="btn btn--sm btn--outline justify-center text-xs font-medium no-underline"
+                class="btn btn--sm btn--outline justify-center text-xs font-medium no-underline inline-flex items-center gap-1.5"
               >
-                {{ t('admin.hub.goToQueue') }} →
+                <span>{{ t('admin.hub.goToQueue') }}</span>
+                &rarr;
               </a>
             </div>
 
@@ -196,25 +304,26 @@ import type { AuditLog } from '../audit/audit';
             <div class="admin-queue-card admin-queue-card--success">
               <div class="flex items-start justify-between gap-2 mb-2">
                 <div>
-                  <span class="text-xs font-semibold uppercase tracking-wider block" style="color: var(--color-success)">
+                  <span class="text-[0.6875rem] font-semibold uppercase tracking-wider block text-emerald-400">
                     {{ t('admin.stat.pendingWithdrawals') }}
                   </span>
-                  <div class="text-xl font-bold mt-0.5 tabular-nums">
+                  <div class="text-2xl font-mono font-bold mt-0.5 text-emerald-400">
                     {{ formatCount(pendingWithdrawalsCount()) }}
                   </div>
                 </div>
-                <span class="p-1.5 rounded" style="background: var(--color-success-container); color: var(--color-success)">
-                  <app-icon name="bank" size="1.125rem" />
+                <span class="p-2 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
+                  <app-icon name="bank" size="1.25rem" />
                 </span>
               </div>
-              <p class="text-xs mb-3" style="color: var(--color-text-secondary)">
-                Prelievi richiesti dai membri pronti per essere liquidati in game.
+              <p class="text-xs mb-3 text-[var(--color-text-secondary)] leading-relaxed">
+                Silver withdrawals requested by members ready to trade in-game.
               </p>
               <a
                 routerLink="/admin/withdrawals"
-                class="btn btn--sm btn--outline justify-center text-xs font-medium no-underline"
+                class="btn btn--sm btn--outline justify-center text-xs font-medium no-underline inline-flex items-center gap-1.5"
               >
-                {{ t('admin.hub.goToQueue') }} →
+                <span>{{ t('admin.hub.goToQueue') }}</span>
+                &rarr;
               </a>
             </div>
           </div>
@@ -473,6 +582,22 @@ export class AdminHub {
   protected formatCount(value: number | null | undefined): string {
     if (value === null || value === undefined) return '—';
     return value.toLocaleString(this.getLocale());
+  }
+
+  protected formatCompact(value: number | string | null | undefined): string {
+    const num = Number(value ?? 0);
+    if (!Number.isFinite(num) || num === 0) return '0';
+    const abs = Math.abs(num);
+    if (abs >= 1_000_000_000) {
+      return `${(num / 1_000_000_000).toFixed(2)}B`;
+    }
+    if (abs >= 1_000_000) {
+      return `${(num / 1_000_000).toFixed(2)}M`;
+    }
+    if (abs >= 1_000) {
+      return `${(num / 1_000).toFixed(1)}k`;
+    }
+    return num.toLocaleString(this.getLocale());
   }
 
   protected formatAmount(value: number | string | null | undefined): string {

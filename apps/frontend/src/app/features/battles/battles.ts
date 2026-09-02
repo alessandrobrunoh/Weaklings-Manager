@@ -71,11 +71,68 @@ interface BattleScopeStats {
     PageStack,
     DataTable,
     DataTableCell,
-    StatCard,
     TooltipDirective,
     ViewToggle,
     Icon,
   ],
+  styles: `
+    .kpi-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius-cards);
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      padding: 1.125rem 1.25rem;
+      transition: border-color var(--motion-fast), transform var(--motion-fast);
+    }
+    .kpi-card:hover {
+      border-color: var(--color-border-hover);
+    }
+    .icon-capsule {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 0.5rem;
+      flex-shrink: 0;
+    }
+    .outcome-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 9999px;
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+    .outcome-pill--victory {
+      background: rgba(34, 197, 94, 0.15);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    .outcome-pill--defeat {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .outcome-pill--contested {
+      background: rgba(234, 179, 8, 0.15);
+      color: #facc15;
+      border: 1px solid rgba(234, 179, 8, 0.3);
+    }
+    .outcome-pill--draw {
+      background: rgba(148, 163, 184, 0.15);
+      color: #94a3b8;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+    }
+    .battle-list__refresh-chip {
+      font-variant-numeric: tabular-nums;
+      font-family: var(--font-mono);
+    }
+  `,
   template: `
     <app-page-header [title]="t('battles.title')" [subtitle]="t('battles.subtitle')">
       <span
@@ -106,37 +163,127 @@ interface BattleScopeStats {
 
     <app-page-stack>
       @if (!loading() || battles().length > 0) {
-        <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" aria-label="Battle totals">
-          <app-stat-card
-            [label]="t('battles.visible_battles')"
-            [value]="scopeStats().battles.toString()"
-            icon="shield"
-          />
-          <app-stat-card
-            [label]="t('battles.total_fame')"
-            [value]="formatCompact(scopeStats().fame)"
-            icon="sparkles"
-            tone="warning"
-          />
-          <app-stat-card
-            [label]="t('battles.players')"
-            [value]="formatAmount(scopeStats().players)"
-            icon="users"
-          />
-          <app-stat-card
-            [label]="t('battles.kills')"
-            [value]="formatAmount(scopeStats().kills)"
-            icon="swords"
-            tone="success"
-          />
+        <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-5" aria-label="Battle totals">
+          <!-- Card 1: Visible Battles -->
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('battles.visible_battles') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ scopeStats().battles }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Loaded engagements
+                </p>
+              </div>
+              <div class="icon-capsule bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                <app-icon name="shield" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <!-- Card 2: Total Fame -->
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('battles.total_fame') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-amber-400 mt-1">
+                  {{ formatCompact(scopeStats().fame) }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Kill fame generated
+                </p>
+              </div>
+              <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <app-icon name="sparkles" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <!-- Card 3: Total Kills -->
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('battles.kills') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-emerald-400 mt-1">
+                  {{ formatAmount(scopeStats().kills) }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Enemies dispatched
+                </p>
+              </div>
+              <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <app-icon name="swords" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <!-- Card 4: Deaths / Segments -->
           @if (tab() === 'me') {
-            <app-stat-card
-              [label]="t('battles.deaths')"
-              [value]="formatAmount(scopeStats().deaths)"
-              icon="alert"
-              tone="danger"
-            />
+            <article class="kpi-card">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                    {{ t('battles.deaths') }}
+                  </p>
+                  <p class="font-mono text-2xl font-bold tracking-tight text-red-400 mt-1">
+                    {{ formatAmount(scopeStats().deaths) }}
+                  </p>
+                  <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                    Casualties suffered
+                  </p>
+                </div>
+                <div class="icon-capsule bg-red-500/10 text-red-400 border border-red-500/20">
+                  <app-icon name="alert" size="1.25rem" />
+                </div>
+              </div>
+            </article>
+          } @else {
+            <article class="kpi-card">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                    Guild K/D
+                  </p>
+                  <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                    {{ scopeStats().deaths > 0 ? (scopeStats().kills / scopeStats().deaths).toFixed(2) : scopeStats().kills }}
+                  </p>
+                  <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                    Ratio in loaded battles
+                  </p>
+                </div>
+                <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                  <app-icon name="coins" size="1.25rem" />
+                </div>
+              </div>
+            </article>
           }
+
+          <!-- Card 5: Total Players -->
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('battles.players') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ formatAmount(scopeStats().players) }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Total participants
+                </p>
+              </div>
+              <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                <app-icon name="users" size="1.25rem" />
+              </div>
+            </div>
+          </article>
         </section>
       }
 
@@ -168,57 +315,81 @@ interface BattleScopeStats {
               />
             }
           </ng-template>
+
           <ng-template dataTableCell="id" let-row>
-            <span class="mono font-medium">#{{ rowId(row) }}</span>
+            <span class="font-mono font-medium text-xs text-white">#{{ rowId(row) }}</span>
           </ng-template>
+
           <ng-template dataTableCell="time" let-row>
-            <span class="text-sm">{{ formatDate(rowStartTime(row)) }}</span>
-            <span class="ml-1 text-xs" style="color: var(--color-text-secondary)">
-              · {{ formatDuration(row) }}
-            </span>
+            <div class="flex items-center gap-1.5 text-xs text-[var(--color-text)]">
+              <span>{{ formatDate(rowStartTime(row)) }}</span>
+              <span class="text-[var(--color-text-tertiary)]">
+                &middot; {{ formatDuration(row) }}
+              </span>
+            </div>
           </ng-template>
+
           <ng-template dataTableCell="outcome" let-row>
             @if (rowOutcome(row); as outcome) {
-              <span
-                class="chip text-xs py-0 font-semibold"
-                [class.chip--success]="outcome.type === 'victory'"
-                [class.chip--error]="outcome.type === 'defeat'"
-                [class.chip--warning]="outcome.type === 'contested'"
-              >
-                {{ outcome.label }}
-              </span>
+              @switch (outcome.type) {
+                @case ('victory') {
+                  <span class="outcome-pill outcome-pill--victory">
+                    {{ outcome.label }}
+                  </span>
+                }
+                @case ('defeat') {
+                  <span class="outcome-pill outcome-pill--defeat">
+                    {{ outcome.label }}
+                  </span>
+                }
+                @case ('contested') {
+                  <span class="outcome-pill outcome-pill--contested">
+                    {{ outcome.label }}
+                  </span>
+                }
+                @default {
+                  <span class="outcome-pill outcome-pill--draw">
+                    {{ outcome.label }}
+                  </span>
+                }
+              }
             }
           </ng-template>
+
           <ng-template dataTableCell="fame" let-row>
-            <span class="mono text-warning">{{ formatCompact(row.total_fame) }}</span>
+            <span class="font-mono text-xs font-medium text-amber-400">{{ formatCompact(row.total_fame) }}</span>
           </ng-template>
+
           <ng-template dataTableCell="kills" let-row>
-            <span class="mono">{{ formatAmount(row.total_kills) }}</span>
+            <span class="font-mono text-xs font-semibold text-emerald-400">{{ formatAmount(row.total_kills) }}</span>
           </ng-template>
+
           <ng-template dataTableCell="deaths" let-row>
             @if (isBattle(row)) {
-              <span class="mono">{{ formatAmount(battleDeaths(row)) }}</span>
+              <span class="font-mono text-xs text-red-400">{{ formatAmount(battleDeaths(row)) }}</span>
             }
           </ng-template>
+
           <ng-template dataTableCell="players" let-row>
-            <span class="mono">{{ formatAmount(row.total_players) }}</span>
+            <span class="font-mono text-xs text-[var(--color-text-secondary)]">{{ formatAmount(row.total_players) }}</span>
           </ng-template>
+
           <ng-template dataTableCell="segments" let-row>
             @if (isFight(row)) {
-              <span class="mono">{{ formatAmount(row.segment_count) }}</span>
+              <span class="font-mono text-xs text-[var(--color-text-secondary)]">{{ formatAmount(row.segment_count) }}</span>
             }
           </ng-template>
         </app-data-table>
       }
 
       @if (tab() === 'me' && selectedBattleIds().length > 0) {
-        <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-2xl bg-[var(--color-surface)] border-2 border-[var(--color-primary)] shadow-2xl backdrop-blur">
-          <span class="font-mono text-sm font-bold text-[var(--color-text)]">
+        <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-2xl backdrop-blur">
+          <span class="font-mono text-xs font-bold text-white bg-sky-500/20 text-sky-300 border border-sky-500/30 px-2 py-0.5 rounded-full">
             {{ selectedBattleIds().length }} {{ t('battles.selected') }}
           </span>
           <button
             type="button"
-            class="btn btn--primary btn--sm"
+            class="btn btn--primary btn--sm inline-flex items-center gap-1.5"
             (click)="openSelectedGroup()"
           >
             <app-icon name="swords" size="0.75rem" />
@@ -226,7 +397,7 @@ interface BattleScopeStats {
           </button>
           <button
             type="button"
-            class="btn btn--ghost btn--sm"
+            class="btn btn--ghost btn--sm text-xs"
             (click)="clearSelection()"
           >
             {{ t('common.cancel') }}
@@ -234,14 +405,6 @@ interface BattleScopeStats {
         </div>
       }
     </app-page-stack>
-  `,
-  styles: `
-    @layer components {
-      .battle-list__refresh-chip {
-        font-variant-numeric: tabular-nums;
-        font-family: var(--font-mono);
-      }
-    }
   `,
 })
 export class Battles {

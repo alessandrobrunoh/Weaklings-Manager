@@ -68,11 +68,61 @@ function isWarnsTab(value: string): value is WarnsTab {
     Icon,
     PageHeader,
     PageStack,
-    StatCard,
     TooltipDirective,
     ViewToggle,
   ],
   styles: `
+    .kpi-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius-cards);
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      padding: 1.125rem 1.25rem;
+      transition: border-color var(--motion-fast), transform var(--motion-fast);
+    }
+    .kpi-card:hover {
+      border-color: var(--color-border-hover);
+    }
+    .icon-capsule {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 0.5rem;
+      flex-shrink: 0;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.25rem 0.625rem;
+      border-radius: 9999px;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .status-pill--active {
+      background: rgba(250, 204, 21, 0.12);
+      color: #facc15;
+      border: 1px solid rgba(250, 204, 21, 0.25);
+    }
+    .status-pill--revoked {
+      background: rgba(148, 163, 184, 0.1);
+      color: #94a3b8;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+    }
+    .status-pill--acked {
+      background: rgba(74, 222, 128, 0.12);
+      color: #4ade80;
+      border: 1px solid rgba(74, 222, 128, 0.25);
+    }
+    .status-pill--escalated {
+      background: rgba(248, 113, 113, 0.12);
+      color: #f87171;
+      border: 1px solid rgba(248, 113, 113, 0.25);
+    }
     .warns-permission-note { margin: 0; padding: 0.75rem 0.875rem; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text-secondary); font-size: 0.75rem; line-height: 1.5; }
   `,
   template: `
@@ -113,31 +163,87 @@ function isWarnsTab(value: string): value is WarnsTab {
       @if (!canIssue()) {
         <p class="warns-permission-note" role="status">{{ t('warns.missingManagePermission') }}</p>
       }
-      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Warns summary">
-        <app-stat-card
-          [label]="t('warns.stat.active')"
-          [value]="activeWarnsCount()"
-          icon="alert"
-          tone="warning"
-        />
-        <app-stat-card
-          [label]="t('warns.stat.strikes')"
-          [value]="strikesCount()"
-          icon="alert"
-          tone="danger"
-        />
-        <app-stat-card
-          [label]="t('warns.stat.notes')"
-          [value]="notesCount()"
-          icon="list"
-          tone="neutral"
-        />
-        <app-stat-card
-          [label]="t('warns.stat.escalations')"
-          [value]="escalationTotal()"
-          icon="sparkles"
-          tone="primary"
-        />
+      <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Warns summary">
+        <!-- Card 1: Active Warns -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('warns.stat.active') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-amber-400 mt-1">
+                {{ activeWarnsCount() }}
+              </p>
+              <p class="text-xs text-amber-400/90 mt-1 truncate flex items-center gap-1.5">
+                <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                Disciplinary records
+              </p>
+            </div>
+            <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <app-icon name="alert" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 2: Strikes -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('warns.stat.strikes') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-red-400 mt-1">
+                {{ strikesCount() }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                Major infractions
+              </p>
+            </div>
+            <div class="icon-capsule bg-red-500/10 text-red-400 border border-red-500/20">
+              <app-icon name="alert" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 3: Notes -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('warns.stat.notes') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                {{ notesCount() }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                Informal warnings
+              </p>
+            </div>
+            <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <app-icon name="list" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 4: Escalations -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('warns.stat.escalations') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-purple-400 mt-1">
+                {{ escalationTotal() }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                Threshold triggers
+              </p>
+            </div>
+            <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+              <app-icon name="sparkles" size="1.25rem" />
+            </div>
+          </div>
+        </article>
       </section>
 
       @if (tab() === 'register') {
@@ -155,7 +261,7 @@ function isWarnsTab(value: string): value is WarnsTab {
           (pageChange)="onWarnsChange($event)"
         >
           <ng-template dataTableCell="user" let-row>
-            <span style="font-weight: 500">{{ displayName(row.user_id, row.username) }}</span>
+            <span class="font-medium text-white">{{ displayName(row.user_id, row.username) }}</span>
           </ng-template>
           <ng-template dataTableCell="severity" let-row>
             <span class="chip" [class]="severityChip(row.severity)">{{
@@ -164,13 +270,18 @@ function isWarnsTab(value: string): value is WarnsTab {
           </ng-template>
           <ng-template dataTableCell="status" let-row>
             @if (row.revoked_at) {
-              <span class="chip">{{ t('warns.revoked') }}</span>
+              <span class="status-pill status-pill--revoked">
+                {{ t('warns.revoked') }}
+              </span>
             } @else {
-              <span class="chip chip--warning">{{ t('warns.active') }}</span>
+              <span class="status-pill status-pill--active">
+                <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                {{ t('warns.active') }}
+              </span>
             }
           </ng-template>
           <ng-template dataTableCell="created_at" let-row>
-            <span style="color: var(--color-text-secondary); font-size: 0.85rem">{{
+            <span class="text-xs text-[var(--color-text-secondary)]">{{
               row.created_at | date: 'short'
             }}</span>
           </ng-template>
@@ -185,7 +296,7 @@ function isWarnsTab(value: string): value is WarnsTab {
                 {{ t('warns.revoke') }}
               </button>
             } @else {
-              <span style="color: var(--color-text-secondary)">{{ t('bank.actions.none') }}</span>
+              <span class="text-xs text-[var(--color-text-secondary)]">{{ t('bank.actions.none') }}</span>
             }
           </ng-template>
         </app-data-table>
@@ -205,20 +316,26 @@ function isWarnsTab(value: string): value is WarnsTab {
           (pageChange)="onEscalationsChange($event)"
         >
           <ng-template dataTableCell="user" let-row>
-            <span style="font-weight: 500">{{ displayName(row.user_id, row.username) }}</span>
+            <span class="font-medium text-white">{{ displayName(row.user_id, row.username) }}</span>
           </ng-template>
           <ng-template dataTableCell="opened_at" let-row>
-            <span style="color: var(--color-text-secondary); font-size: 0.85rem">{{
+            <span class="text-xs text-[var(--color-text-secondary)]">{{
               row.opened_at | date: 'short'
             }}</span>
           </ng-template>
           <ng-template dataTableCell="status" let-row>
             @if (row.acknowledged_at) {
-              <span class="chip chip--success">{{ t('warns.acked') }}</span>
+              <span class="status-pill status-pill--acked">
+                <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                {{ t('warns.acked') }}
+              </span>
             } @else if (row.closed_reason) {
-              <span class="chip">{{ row.closed_reason }}</span>
+              <span class="status-pill status-pill--revoked">{{ row.closed_reason }}</span>
             } @else {
-              <span class="chip chip--warning">{{ t('common.open') }}</span>
+              <span class="status-pill status-pill--escalated">
+                <span class="h-1.5 w-1.5 rounded-full bg-red-400 animate-pulse"></span>
+                {{ t('common.open') }}
+              </span>
             }
           </ng-template>
           <ng-template dataTableCell="actions" let-row>

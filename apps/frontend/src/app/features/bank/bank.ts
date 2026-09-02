@@ -52,9 +52,92 @@ function emptyPageChange(): DataTablePageChange {
     PageHeader,
     PageStack,
     RouterLink,
-    StatCard,
     TooltipDirective,
   ],
+  styles: `
+    .kpi-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius-cards);
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      padding: 1.125rem 1.25rem;
+      transition: border-color var(--motion-fast), transform var(--motion-fast);
+    }
+    .kpi-card:hover {
+      border-color: var(--color-border-hover);
+    }
+    .icon-capsule {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 0.5rem;
+      flex-shrink: 0;
+    }
+    .status-tab-group {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      overflow-x: auto;
+      padding: 0.25rem 0;
+    }
+    .status-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.375rem 0.75rem;
+      border-radius: 0.5rem;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--color-text-secondary);
+      border: 1px solid transparent;
+      background: transparent;
+      transition: all var(--motion-fast);
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .status-tab:hover {
+      color: var(--color-text);
+      background: var(--color-surface-hover);
+    }
+    .status-tab--active {
+      color: var(--color-text);
+      background: var(--color-surface-1);
+      border-color: var(--color-border);
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.25rem 0.625rem;
+      border-radius: 9999px;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .status-pill--withdrawn {
+      background: rgba(34, 197, 94, 0.12);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.25);
+    }
+    .status-pill--requested {
+      background: rgba(234, 179, 8, 0.12);
+      color: #facc15;
+      border: 1px solid rgba(234, 179, 8, 0.25);
+    }
+    .status-pill--pending {
+      background: rgba(56, 189, 248, 0.12);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.25);
+    }
+    .status-pill--rejected {
+      background: rgba(239, 68, 68, 0.12);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.25);
+    }
+  `,
   template: `
     <app-page-header [title]="t('bank.title')" [subtitle]="t('bank.subtitle')">
       <button
@@ -75,37 +158,175 @@ function emptyPageChange(): DataTablePageChange {
           class="btn btn--ghost btn--sm"
           [appTooltip]="t('bank.reviewRequestsTooltip')"
           tooltipPosition="bottom"
-        >{{ t('bank.reviewRequests') }}</a>
+        >
+          <app-icon name="bank" size="0.875rem" />
+          {{ t('bank.reviewRequests') }}
+        </a>
       }
 
       <button
         type="button"
-        class="btn btn--tonal btn--sm"
+        class="btn btn--primary btn--sm"
         [disabled]="(balance()?.pending_total ?? 0) <= 0"
         (click)="confirmWithdrawalOpen.set(true)"
         [appTooltip]="t('bank.requestTooltip')"
         tooltipPosition="bottom"
       >
+        <app-icon name="plus" size="0.875rem" />
         {{ t('bank.withdraw.request') }}
       </button>
     </app-page-header>
 
     <app-page-stack>
-      <section class="grid grid-cols-2 gap-3 sm:max-w-md" [attr.aria-label]="t('bank.personalSummary')">
-        <app-stat-card
-          [label]="t('bank.balance.pending')"
-          [value]="formatAmount(balance()?.pending_total)"
-          [sub]="t('bank.creditsAvailable', { count: balance()?.pending_count ?? 0 })"
-          icon="bank"
-          tone="primary"
-        />
-        <app-stat-card
-          [label]="t('bank.balance.requested')"
-          [value]="formatAmount(balance()?.requested_total)"
-          [sub]="t('bank.withdrawalsInReview', { count: balance()?.requested_count ?? 0 })"
-          icon="alert"
-          tone="warning"
-        />
+      <!-- KPI Row: 4 modern cards -->
+      <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('bank.personalSummary')">
+        <!-- Card 1: Available credits -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('bank.balance.pending') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                {{ formatCompact(balance()?.pending_total) }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                {{ t('bank.creditsAvailable', { count: balance()?.pending_count ?? 0 }) }}
+              </p>
+            </div>
+            <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <app-icon name="bank" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 2: In Review / Requested -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('bank.balance.requested') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                {{ formatCompact(balance()?.requested_total) }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                {{ t('bank.withdrawalsInReview', { count: balance()?.requested_count ?? 0 }) }}
+              </p>
+            </div>
+            <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <app-icon name="alert" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 3: Total Withdrawn -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('bank.status.withdrawn') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                {{ formatCompact(totalWithdrawn()) }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                {{ t('bank.balance.payouts') }}
+              </p>
+            </div>
+            <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+              <app-icon name="coins" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 4: Ledger Entries -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('bank.transactions.title') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                {{ transactionTotal() }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                {{ t('bank.queue.entryCount', { count: transactionTotal() }) }}
+              </p>
+            </div>
+            <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <app-icon name="users" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <!-- Status Filter Tabs -->
+      <section class="flex flex-wrap items-center justify-between gap-3 pt-1">
+        <nav class="status-tab-group" aria-label="Transaction status filter">
+          <button
+            type="button"
+            class="status-tab"
+            [class.status-tab--active]="statusFilter() === ''"
+            (click)="setStatusFilter('')"
+          >
+            <span>{{ t('common.all') }}</span>
+            <span class="rounded-full bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[0.6875rem] font-mono">
+              {{ transactionTotal() }}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            class="status-tab"
+            [class.status-tab--active]="statusFilter() === 'requested'"
+            (click)="setStatusFilter('requested')"
+          >
+            <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+            <span>{{ t('bank.status.requested') }}</span>
+          </button>
+
+          <button
+            type="button"
+            class="status-tab"
+            [class.status-tab--active]="statusFilter() === 'pending'"
+            (click)="setStatusFilter('pending')"
+          >
+            <span class="h-1.5 w-1.5 rounded-full bg-sky-400"></span>
+            <span>{{ t('bank.status.pending') }}</span>
+          </button>
+
+          <button
+            type="button"
+            class="status-tab"
+            [class.status-tab--active]="statusFilter() === 'withdrawn'"
+            (click)="setStatusFilter('withdrawn')"
+          >
+            <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+            <span>{{ t('bank.status.withdrawn') }}</span>
+          </button>
+
+          <button
+            type="button"
+            class="status-tab"
+            [class.status-tab--active]="statusFilter() === 'rejected'"
+            (click)="setStatusFilter('rejected')"
+          >
+            <span class="h-1.5 w-1.5 rounded-full bg-red-400"></span>
+            <span>{{ t('bank.status.rejected') }}</span>
+          </button>
+        </nav>
+
+        @if (statusFilter() !== '') {
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm text-xs py-1 px-2 text-[var(--color-text-secondary)] hover:text-white inline-flex items-center gap-1"
+            (click)="setStatusFilter('')"
+          >
+            <app-icon name="close" size="0.75rem" />
+            <span>{{ t('common.clear') }}</span>
+          </button>
+        }
       </section>
 
       <app-data-table
@@ -123,24 +344,52 @@ function emptyPageChange(): DataTablePageChange {
         (pageChange)="onTableChange($event)"
       >
         <ng-template dataTableCell="status" let-row>
-          <span class="chip" [class]="statusChipClass(row.status)">
-            <app-icon [name]="statusIcon(row.status)" size="0.875rem" />
-            {{ statusLabel(row.status) }}
-          </span>
+          @switch (row.status) {
+            @case ('withdrawn') {
+              <span class="status-pill status-pill--withdrawn">
+                <app-icon name="check" size="0.75rem" />
+                {{ statusLabel(row.status) }}
+              </span>
+            }
+            @case ('requested') {
+              <span class="status-pill status-pill--requested">
+                <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                {{ statusLabel(row.status) }}
+              </span>
+            }
+            @case ('pending') {
+              <span class="status-pill status-pill--pending">
+                <app-icon name="info" size="0.75rem" />
+                {{ statusLabel(row.status) }}
+              </span>
+            }
+            @case ('rejected') {
+              <span class="status-pill status-pill--rejected">
+                <app-icon name="close" size="0.75rem" />
+                {{ statusLabel(row.status) }}
+              </span>
+            }
+            @default {
+              <span class="status-pill status-pill--pending">
+                {{ statusLabel(row.status) }}
+              </span>
+            }
+          }
         </ng-template>
+
         <ng-template dataTableCell="amount" let-row>
           <span
-            class="font-semibold mono"
-            [class.text-success]="row.status === 'withdrawn'"
-            [class.text-warning]="row.status === 'requested'"
-            [class.text-error]="row.status === 'rejected'"
-            style="font-variant-numeric: tabular-nums"
+            class="font-mono text-sm font-semibold"
+            [class.text-emerald-400]="row.status === 'withdrawn' || row.status === 'pending'"
+            [class.text-amber-400]="row.status === 'requested'"
+            [class.text-red-400]="row.status === 'rejected'"
           >
             {{ formatAmount(row.amount) }}
           </span>
         </ng-template>
+
         <ng-template dataTableCell="created_at" let-row>
-          <span style="color: var(--color-text-secondary)">
+          <span class="text-xs text-[var(--color-text-secondary)]">
             {{ formatDate(row.created_at) }}
           </span>
         </ng-template>
@@ -152,18 +401,44 @@ function emptyPageChange(): DataTablePageChange {
         [title]="t('bank.withdraw.request')"
         [subtitle]="t('bank.withdraw.requestConfirmSubtitle')"
         icon="bank"
-        size="sm"
+        size="md"
         (closed)="confirmWithdrawalOpen.set(false)"
       >
-        <div class="space-y-3">
-          <p class="text-sm" style="color: var(--color-text)">
-            {{ t('bank.withdraw.requestConfirmBody') }}
-            <span class="font-mono font-bold text-success">{{ formatAmount(balance()?.pending_total) }}</span>
-          </p>
-          <p class="text-xs" style="color: var(--color-text-secondary)">
-            {{ t('bank.withdraw.requestConfirmHint') }}
-          </p>
+        <div class="space-y-4">
+          <!-- Balance Summary Banner -->
+          <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)] p-4 flex items-center justify-between">
+            <div>
+              <span class="text-xs uppercase tracking-wider text-[var(--color-text-secondary)] font-semibold">
+                {{ t('bank.balance.pending') }}
+              </span>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                {{ t('bank.creditsAvailable', { count: balance()?.pending_count ?? 0 }) }}
+              </p>
+            </div>
+            <div class="text-right">
+              <span class="font-mono text-2xl font-bold text-emerald-400">
+                {{ formatAmount(balance()?.pending_total) }}
+              </span>
+              <span class="block text-[0.6875rem] font-mono text-[var(--color-text-secondary)] uppercase">
+                silver
+              </span>
+            </div>
+          </div>
+
+          <!-- Info Card -->
+          <div class="p-3.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] flex items-start gap-3">
+            <app-icon name="info" size="1.125rem" class="text-amber-400 flex-shrink-0 mt-0.5" />
+            <div class="text-xs text-[var(--color-text-secondary)] space-y-1">
+              <p class="text-[var(--color-text)] font-medium">
+                {{ t('bank.withdraw.requestConfirmBody') }}
+              </p>
+              <p>
+                {{ t('bank.withdraw.requestConfirmHint') }}
+              </p>
+            </div>
+          </div>
         </div>
+
         <div dialogFooter class="flex justify-end gap-2">
           <button type="button" class="btn btn--ghost btn--sm" (click)="confirmWithdrawalOpen.set(false)">
             {{ t('common.cancel') }}
@@ -174,7 +449,8 @@ function emptyPageChange(): DataTablePageChange {
             [disabled]="withdrawing()"
             (click)="executeWithdrawal()"
           >
-            {{ t('common.confirm') }}
+            <app-icon name="check" size="0.875rem" />
+            {{ withdrawing() ? t('common.loading') : t('common.confirm') }}
           </button>
         </div>
       </app-dialog>
@@ -192,6 +468,13 @@ export class Bank {
   protected readonly transactionTotal = signal(0);
   protected readonly loading = signal(false);
   protected readonly transactionsLoadFailed = signal(false);
+  protected readonly statusFilter = signal<TransactionStatus | ''>('');
+
+  protected readonly totalWithdrawn = computed(() => {
+    return this.transactions()
+      .filter((t) => t.status === 'withdrawn')
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  });
 
   protected readonly confirmWithdrawalOpen = signal(false);
   protected readonly withdrawing = signal(false);
@@ -244,8 +527,24 @@ export class Bank {
     return this.auth.hasPermission('bank.withdraw.accept');
   }
 
+  protected setStatusFilter(status: TransactionStatus | ''): void {
+    this.statusFilter.set(status);
+    const query = this.tableQuery();
+    const columnFilters = { ...query.columnFilters };
+    if (status) {
+      columnFilters['status'] = status;
+    } else {
+      delete columnFilters['status'];
+    }
+    this.tableQuery.set({ ...query, page: 1, columnFilters });
+    void this.loadTransactions();
+  }
+
   protected onTableChange(event: DataTablePageChange): void {
     this.tableQuery.set(event);
+    if (event.columnFilters['status']) {
+      this.statusFilter.set(event.columnFilters['status'] as TransactionStatus);
+    }
     void this.loadTransactions();
   }
 
@@ -283,7 +582,6 @@ export class Bank {
       const params: Record<string, string | number | boolean> = {
         page: query.page,
         limit: query.pageSize,
-
       };
       if (query.search.trim()) {
         params['search'] = query.search.trim();
@@ -292,7 +590,8 @@ export class Bank {
         params['sort'] = query.sort.columnKey;
         params['order'] = query.sort.direction;
       }
-      const status = query.columnFilters['status'] as TransactionStatus;
+      const filterStatus = this.statusFilter();
+      const status = (filterStatus || query.columnFilters['status']) as TransactionStatus;
       if (status) {
         params['status'] = status;
       }
@@ -307,6 +606,22 @@ export class Bank {
     } finally {
       this.loading.set(false);
     }
+  }
+
+  protected formatCompact(value: number | string | null | undefined): string {
+    const num = Number(value ?? 0);
+    if (!Number.isFinite(num) || num === 0) return '0';
+    const abs = Math.abs(num);
+    if (abs >= 1_000_000_000) {
+      return `${(num / 1_000_000_000).toFixed(2)}B`;
+    }
+    if (abs >= 1_000_000) {
+      return `${(num / 1_000_000).toFixed(2)}M`;
+    }
+    if (abs >= 1_000) {
+      return `${(num / 1_000).toFixed(1)}k`;
+    }
+    return num.toLocaleString();
   }
 
   private async mutate(

@@ -111,9 +111,31 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
     EquipmentGrid,
     Icon,
     Loading,
-    StatCard,
     TooltipDirective,
   ],
+  styles: `
+    .kpi-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius-cards);
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      padding: 1.125rem 1.25rem;
+      transition: border-color var(--motion-fast), transform var(--motion-fast);
+    }
+    .kpi-card:hover {
+      border-color: var(--color-border-hover);
+    }
+    .icon-capsule {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 0.5rem;
+      flex-shrink: 0;
+    }
+  `,
   template: `
     <app-page-header [title]="t('comps.title')" [subtitle]="t('comps.subtitle')">
       <button
@@ -149,57 +171,159 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
     </app-page-header>
 
     <app-page-stack>
-      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Comps summary">
+      <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Comps summary">
         @if (tab() === 'comps') {
-          <app-stat-card
-            [label]="t('comps.stat.comps')"
-            [value]="comps().length"
-            icon="swords"
-            tone="primary"
-          />
-          <app-stat-card
-            [label]="t('comps.stat.parentComps')"
-            [value]="parentCompsCount()"
-            icon="shield"
-            tone="neutral"
-          />
-          <app-stat-card
-            [label]="t('comps.stat.variantComps')"
-            [value]="variantCompsCount()"
-            icon="sparkles"
-            tone="neutral"
-          />
-          <app-stat-card
-            [label]="t('comps.stat.compCategories')"
-            [value]="compCategories().length"
-            icon="list"
-            tone="warning"
-          />
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('comps.stat.comps') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ comps().length }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Total compositions
+                </p>
+              </div>
+              <div class="icon-capsule bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                <app-icon name="swords" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('comps.stat.parentComps') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ parentCompsCount() }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Base archetypes
+                </p>
+              </div>
+              <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                <app-icon name="shield" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('comps.stat.variantComps') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ variantCompsCount() }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Scale & role adaptations
+                </p>
+              </div>
+              <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                <app-icon name="sparkles" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('comps.stat.compCategories') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ compCategories().length }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Active tags
+                </p>
+              </div>
+              <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <app-icon name="list" size="1.25rem" />
+              </div>
+            </div>
+          </article>
         } @else {
-          <app-stat-card
-            [label]="t('comps.stat.comps')"
-            [value]="compsTotal()"
-            icon="swords"
-            tone="primary"
-          />
-          <app-stat-card
-            [label]="t('comps.stat.builds')"
-            [value]="buildsTotal()"
-            icon="shield"
-            tone="neutral"
-          />
-          <app-stat-card
-            [label]="t('comps.stat.buildCategories')"
-            [value]="buildCategories().length"
-            icon="list"
-            tone="neutral"
-          />
-          <app-stat-card
-            [label]="t('comps.stat.compCategories')"
-            [value]="compCategories().length"
-            icon="list"
-            tone="warning"
-          />
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('comps.stat.comps') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ compsTotal() }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Compositions
+                </p>
+              </div>
+              <div class="icon-capsule bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                <app-icon name="swords" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('comps.stat.builds') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-emerald-400 mt-1">
+                  {{ buildsTotal() }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Equipment loadouts
+                </p>
+              </div>
+              <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <app-icon name="shield" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('comps.stat.buildCategories') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ buildCategories().length }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Build categories
+                </p>
+              </div>
+              <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                <app-icon name="list" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('comps.stat.compCategories') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ compCategories().length }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Comp categories
+                </p>
+              </div>
+              <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <app-icon name="list" size="1.25rem" />
+              </div>
+            </div>
+          </article>
         }
       </section>
       @if (tab() === 'comps') {

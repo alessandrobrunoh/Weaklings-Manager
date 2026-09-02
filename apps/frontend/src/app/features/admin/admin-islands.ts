@@ -10,6 +10,7 @@ import type { TranslationKey } from '../../i18n/en';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
+import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 
@@ -33,15 +34,99 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
 @Component({
   selector: 'app-admin-islands',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DataTable, DataTableCell, Dialog, PageHeader, PageStack, RouterLink],
+  imports: [DataTable, DataTableCell, Dialog, Icon, PageHeader, PageStack, RouterLink],
+  styles: `
+    .kpi-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius-cards);
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      padding: 1.125rem 1.25rem;
+      transition: border-color var(--motion-fast), transform var(--motion-fast);
+    }
+    .kpi-card:hover {
+      border-color: var(--color-border-hover);
+    }
+    .icon-capsule {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 0.5rem;
+      flex-shrink: 0;
+    }
+  `,
   template: `
     <app-page-header [title]="t('admin.islands.title')" [subtitle]="t('admin.islands.hint')">
-      <button type="button" class="btn btn--primary" (click)="openCreate()">
+      <button type="button" class="btn btn--primary btn--sm inline-flex items-center gap-1.5" (click)="openCreate()">
+        <app-icon name="plus" size="0.875rem" />
         {{ t('admin.islands.create') }}
       </button>
     </app-page-header>
 
     <app-page-stack>
+      <!-- KPI cards -->
+      <section class="grid gap-3.5 sm:grid-cols-3" aria-label="Islands summary">
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('admin.islands.title') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                {{ islands().length }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                Registered guild islands
+              </p>
+            </div>
+            <div class="icon-capsule bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <app-icon name="bank" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('admin.islands.tabs') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-emerald-400 mt-1">
+                {{ totalTabsCount() }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                Loot split deposit tabs
+              </p>
+            </div>
+            <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <app-icon name="list" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('admin.islands.location') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-amber-400 mt-1">
+                {{ uniqueCitiesCount() }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                Royal cities & portals
+              </p>
+            </div>
+            <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <app-icon name="sparkles" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+      </section>
+
       <app-data-table
         [columns]="columns()"
         [rows]="islands()"
@@ -55,7 +140,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
       >
         <ng-template dataTableCell="name" let-row>
           <a
-            class="font-medium text-primary no-underline hover:underline cursor-pointer"
+            class="font-medium text-white no-underline hover:underline cursor-pointer"
             [routerLink]="['/admin/islands', row.id]"
           >
             {{ row.name }}
@@ -235,6 +320,12 @@ export class AdminIslands {
 
   protected readonly islandCities = ISLAND_CITIES;
   protected readonly islands = signal<SplitIsland[]>([]);
+  protected readonly totalTabsCount = computed(() => {
+    return this.islands().reduce((sum, island) => sum + (island.tabs?.length ?? 0), 0);
+  });
+  protected readonly uniqueCitiesCount = computed(() => {
+    return new Set(this.islands().map((i) => i.city)).size;
+  });
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
   protected readonly catalogSaving = signal(false);

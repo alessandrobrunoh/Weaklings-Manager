@@ -7,6 +7,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import { ErrorState } from '../../shared/components/error-state/error-state';
+import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
@@ -44,7 +45,30 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
 @Component({
   selector: 'app-admin-regears',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ErrorState, Loading, PageHeader, PageStack],
+  imports: [ErrorState, Icon, Loading, PageHeader, PageStack],
+  styles: `
+    .kpi-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius-cards);
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      padding: 1.125rem 1.25rem;
+      transition: border-color var(--motion-fast), transform var(--motion-fast);
+    }
+    .kpi-card:hover {
+      border-color: var(--color-border-hover);
+    }
+    .icon-capsule {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 0.5rem;
+      flex-shrink: 0;
+    }
+  `,
   template: `
     <app-page-header
       [title]="t('admin.regears.title')"
@@ -56,6 +80,85 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
       @if (loading()) {
         <app-loading [label]="t('common.loading')" />
       } @else if (settings(); as s) {
+        <!-- KPI Cards summary of active policy -->
+        <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Regear policy summary">
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('admin.regears.maxPerEvent') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ s.max_regears_per_event }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Claims allowed per event
+                </p>
+              </div>
+              <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                <app-icon name="shield" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('admin.regears.maxPerMonth') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  {{ s.max_regears_per_month }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Monthly quota per member
+                </p>
+              </div>
+              <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                <app-icon name="calendar" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('admin.regears.pricingLocation') }}
+                </p>
+                <p class="font-mono text-xl font-bold tracking-tight text-amber-400 mt-1 truncate max-w-[170px]">
+                  {{ s.pricing_location }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Market price source
+                </p>
+              </div>
+              <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <app-icon name="bank" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('admin.regears.slots') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-emerald-400 mt-1">
+                  {{ enabledSlotsCount(s.enabled_slots_mask) }} / {{ slotBits.length }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Reimbursed equipment slots
+                </p>
+              </div>
+              <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <app-icon name="check" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+        </section>
+
         <section class="card p-5">
           <form class="grid gap-4" (submit)="onSubmit($event)">
             <div class="grid gap-3 md:grid-cols-2">
@@ -159,6 +262,16 @@ export class AdminRegears {
 
   protected isSlotEnabled(mask: number, bit: number): boolean {
     return (mask & bit) !== 0;
+  }
+
+  protected enabledSlotsCount(mask: number): number {
+    let count = 0;
+    for (const slot of this.slotBits) {
+      if ((mask & slot.bit) !== 0) {
+        count++;
+      }
+    }
+    return count;
   }
 
   protected toggleSlot(bit: number, event: Event): void {

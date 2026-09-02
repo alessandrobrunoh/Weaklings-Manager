@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -80,8 +81,29 @@ function toDateInput(date: Date): string {
 @Component({
   selector: 'app-guild-overview-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Chart, DataTable, DataTableCell, ErrorState, Icon, Loading, PageHeader, PageStack, RouterLink, StatCard, ViewToggle],
+  imports: [Chart, DataTable, DataTableCell, ErrorState, Icon, Loading, NgTemplateOutlet, PageHeader, PageStack, RouterLink, ViewToggle],
   styles: `
+    .kpi-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius-cards);
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      padding: 1.125rem 1.25rem;
+      transition: border-color var(--motion-fast), transform var(--motion-fast);
+    }
+    .kpi-card:hover {
+      border-color: var(--color-border-hover);
+    }
+    .icon-capsule {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 0.5rem;
+      flex-shrink: 0;
+    }
     .guild-filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.625rem 0.75rem; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); }
     .guild-filters__group { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
     .guild-filters__window { color: var(--color-text-tertiary); font-size: 0.75rem; }
@@ -165,11 +187,57 @@ function toDateInput(date: Date): string {
           </p>
         </div>
 
+        <ng-template #statCardTemplate let-stat>
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ stat.label }}
+                </p>
+                <p
+                  class="font-mono text-2xl font-bold tracking-tight mt-1"
+                  [class.text-white]="stat.tone === 'default'"
+                  [class.text-emerald-400]="stat.tone === 'success'"
+                  [class.text-amber-400]="stat.tone === 'warning'"
+                  [class.text-red-400]="stat.tone === 'danger'"
+                >
+                  {{ stat.value }}
+                </p>
+                @if (stat.sub) {
+                  <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                    {{ stat.sub }}
+                  </p>
+                }
+              </div>
+              @if (stat.icon) {
+                <div
+                  class="icon-capsule"
+                  [class.bg-sky-500/10]="stat.tone === 'default'"
+                  [class.text-sky-400]="stat.tone === 'default'"
+                  [class.border-sky-500/20]="stat.tone === 'default'"
+                  [class.bg-emerald-500/10]="stat.tone === 'success'"
+                  [class.text-emerald-400]="stat.tone === 'success'"
+                  [class.border-emerald-500/20]="stat.tone === 'success'"
+                  [class.bg-amber-500/10]="stat.tone === 'warning'"
+                  [class.text-amber-400]="stat.tone === 'warning'"
+                  [class.border-amber-500/20]="stat.tone === 'warning'"
+                  [class.bg-red-500/10]="stat.tone === 'danger'"
+                  [class.text-red-400]="stat.tone === 'danger'"
+                  [class.border-red-500/20]="stat.tone === 'danger'"
+                  style="border-width: 1px; border-style: solid"
+                >
+                  <app-icon [name]="stat.icon" size="1.25rem" />
+                </div>
+              }
+            </div>
+          </article>
+        </ng-template>
+
         @switch (tab()) {
           @case ('overview') {
-            <section class="guild-stat-grid" [attr.aria-label]="t('guild.tabs.overview')">
+            <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('guild.tabs.overview')">
               @for (stat of overviewStats(); track stat.key) {
-                <app-stat-card [label]="stat.label" [value]="stat.value" [sub]="stat.sub" [icon]="stat.icon" [tone]="stat.tone" />
+                <ng-container *ngTemplateOutlet="statCardTemplate; context: { $implicit: stat }" />
               }
             </section>
 
@@ -274,9 +342,9 @@ function toDateInput(date: Date): string {
           }
 
           @case ('roster') {
-            <section class="guild-stat-grid" [attr.aria-label]="t('guild.tabs.roster')">
+            <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('guild.tabs.roster')">
               @for (stat of operationsStats(); track stat.key) {
-                <app-stat-card [label]="stat.label" [value]="stat.value" [sub]="stat.sub" [icon]="stat.icon" [tone]="stat.tone" />
+                <ng-container *ngTemplateOutlet="statCardTemplate; context: { $implicit: stat }" />
               }
             </section>
 
@@ -360,9 +428,9 @@ function toDateInput(date: Date): string {
           }
 
           @case ('economy') {
-            <section class="guild-stat-grid" [attr.aria-label]="t('guild.tabs.economy')">
+            <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('guild.tabs.economy')">
               @for (stat of economyStats(); track stat.key) {
-                <app-stat-card [label]="stat.label" [value]="stat.value" [sub]="stat.sub" [icon]="stat.icon" [tone]="stat.tone" />
+                <ng-container *ngTemplateOutlet="statCardTemplate; context: { $implicit: stat }" />
               }
             </section>
 

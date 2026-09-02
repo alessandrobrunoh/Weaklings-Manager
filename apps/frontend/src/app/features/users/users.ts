@@ -40,7 +40,60 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
 @Component({
   selector: 'app-users',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Avatar, PageHeader, PageStack, DataTable, DataTableCell, Icon, StatCard, TooltipDirective],
+  imports: [Avatar, PageHeader, PageStack, DataTable, DataTableCell, Icon, TooltipDirective],
+  styles: `
+    .kpi-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius-cards);
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
+      padding: 1.125rem 1.25rem;
+      transition: border-color var(--motion-fast), transform var(--motion-fast);
+    }
+    .kpi-card:hover {
+      border-color: var(--color-border-hover);
+    }
+    .icon-capsule {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 0.5rem;
+      flex-shrink: 0;
+    }
+    .role-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.2rem 0.625rem;
+      border-radius: 9999px;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .role-pill--superadmin {
+      background: rgba(168, 85, 247, 0.15);
+      color: #c084fc;
+      border: 1px solid rgba(168, 85, 247, 0.3);
+    }
+    .role-pill--admin {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .role-pill--officer {
+      background: rgba(234, 179, 8, 0.15);
+      color: #facc15;
+      border: 1px solid rgba(234, 179, 8, 0.3);
+    }
+    .role-pill--member {
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+  `,
   template: `
     <app-page-header
       [title]="t('users.title')"
@@ -60,35 +113,86 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
     </app-page-header>
 
     <app-page-stack>
-      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Members summary">
-        <app-stat-card
-          [label]="t('users.stat.total')"
-          [value]="totalItems()"
-          [sub]="t('common.totalResults')"
-          icon="users"
-          tone="primary"
-        />
-        <app-stat-card
-          [label]="t('users.stat.admins')"
-          [value]="adminCount()"
-          [sub]="'Pagina corrente'"
-          icon="shield"
-          tone="danger"
-        />
-        <app-stat-card
-          [label]="t('users.stat.officers')"
-          [value]="officerCount()"
-          [sub]="'Pagina corrente'"
-          icon="sparkles"
-          tone="warning"
-        />
-        <app-stat-card
-          [label]="t('users.stat.members')"
-          [value]="memberCount()"
-          [sub]="'Pagina corrente'"
-          icon="users"
-          tone="neutral"
-        />
+      <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Members summary">
+        <!-- Card 1: Total -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('users.stat.total') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                {{ totalItems() }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                {{ t('common.totalResults') }}
+              </p>
+            </div>
+            <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <app-icon name="users" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 2: Admins -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('users.stat.admins') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-red-400 mt-1">
+                {{ adminCount() }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                System administrators
+              </p>
+            </div>
+            <div class="icon-capsule bg-red-500/10 text-red-400 border border-red-500/20">
+              <app-icon name="shield" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 3: Officers -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('users.stat.officers') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-amber-400 mt-1">
+                {{ officerCount() }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                Guild officers
+              </p>
+            </div>
+            <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <app-icon name="sparkles" size="1.25rem" />
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 4: Members -->
+        <article class="kpi-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                {{ t('users.stat.members') }}
+              </p>
+              <p class="font-mono text-2xl font-bold tracking-tight text-emerald-400 mt-1">
+                {{ memberCount() }}
+              </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                Active roster members
+              </p>
+            </div>
+            <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <app-icon name="users" size="1.25rem" />
+            </div>
+          </div>
+        </article>
       </section>
 
       <app-data-table
@@ -109,14 +213,41 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         <ng-template dataTableCell="username" let-row>
           <div class="flex items-center gap-2.5">
             <app-avatar [userId]="row.id" [username]="row.username" size="sm" />
-            <span style="font-weight: 500">{{ row.username }}</span>
+            <span class="font-medium text-white hover:underline cursor-pointer">{{ row.username }}</span>
           </div>
         </ng-template>
+
         <ng-template dataTableCell="email" let-row>
-          <span style="color: var(--color-text-secondary)">{{ row.email }}</span>
+          <span class="text-xs text-[var(--color-text-secondary)] font-mono">{{ row.email }}</span>
         </ng-template>
+
         <ng-template dataTableCell="role" let-row>
-          <span class="chip" [class]="roleChip(row.role)">{{ row.role }}</span>
+          @switch (row.role) {
+            @case ('SuperAdmin') {
+              <span class="role-pill role-pill--superadmin">
+                <app-icon name="sparkles" size="0.75rem" />
+                {{ row.role }}
+              </span>
+            }
+            @case ('Admin') {
+              <span class="role-pill role-pill--admin">
+                <app-icon name="shield" size="0.75rem" />
+                {{ row.role }}
+              </span>
+            }
+            @case ('Officer') {
+              <span class="role-pill role-pill--officer">
+                <app-icon name="sparkles" size="0.75rem" />
+                {{ row.role }}
+              </span>
+            }
+            @default {
+              <span class="role-pill role-pill--member">
+                <app-icon name="users" size="0.75rem" />
+                {{ row.role }}
+              </span>
+            }
+          }
         </ng-template>
       </app-data-table>
     </app-page-stack>
