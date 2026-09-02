@@ -38,6 +38,7 @@ export const ADMIN_ACCESS_PERMISSIONS = [
   'regear.settings.manage',
   'splits.islands.manage',
   'bank.view_others',
+  'bank.withdraw.accept',
 ] as const;
 
 /**
@@ -123,11 +124,11 @@ export const APP_NAV_SECTIONS: NavSection[] = [
 
 export const ADMIN_PANELS: readonly AdminPanel[] = [
   {
-    path: '/bank',
+    path: '/admin/withdrawals',
     icon: 'bank',
-    labelKey: 'nav.bank',
-    hintKey: 'bank.subtitle',
-    permissions: ['bank.view_others'],
+    labelKey: 'nav.admin.withdrawals',
+    hintKey: 'admin.hub.withdrawalsHint',
+    permissions: ['bank.withdraw.accept'],
   },
   {
     path: '/admin/finance',

@@ -53,7 +53,6 @@ impl UserContext {
     /// Returns `true` if the user holds `perm` through any of their roles.
     ///
     /// Async because the shared permission cache sits behind an `RwLock`.
-    #[allow(dead_code)]
     pub async fn has_permission(&self, perms: &Permissions, perm: Permission) -> bool {
         perms.check(self.is_superadmin(), &self.roles, perm).await
     }

@@ -200,7 +200,7 @@ import type { AuditLog } from '../audit/audit';
                     {{ t('admin.stat.pendingWithdrawals') }}
                   </span>
                   <div class="text-xl font-bold mt-0.5 tabular-nums">
-                    {{ formatCount(bankSummary()?.requested_count ?? null) }}
+                    {{ formatCount(pendingWithdrawalsCount()) }}
                   </div>
                 </div>
                 <span class="p-1.5 rounded" style="background: var(--color-success-container); color: var(--color-success)">
@@ -211,7 +211,7 @@ import type { AuditLog } from '../audit/audit';
                 Prelievi richiesti dai membri pronti per essere liquidati in game.
               </p>
               <a
-                routerLink="/bank"
+                routerLink="/admin/withdrawals"
                 class="btn btn--sm btn--outline justify-center text-xs font-medium no-underline"
               >
                 {{ t('admin.hub.goToQueue') }} →
@@ -355,6 +355,7 @@ export class AdminHub {
   protected readonly bankSummary = signal<BankAnalyticsSummary | null>(null);
   protected readonly pendingRegearsCount = signal<number | null>(null);
   protected readonly pendingSplitsCount = signal<number | null>(null);
+  protected readonly pendingWithdrawalsCount = signal<number | null>(null);
   protected readonly totalEvents = signal<number | null>(null);
   protected readonly matrix = signal<PermissionMatrix | null>(null);
   protected readonly recentAudit = signal<ReadonlyArray<AuditLog>>([]);
@@ -373,7 +374,7 @@ export class AdminHub {
   protected readonly hasPendingQueues = computed(() => {
     const regears = this.pendingRegearsCount() ?? 0;
     const splits = this.pendingSplitsCount() ?? 0;
-    const withdrawals = Number(this.bankSummary()?.requested_count ?? 0);
+    const withdrawals = this.pendingWithdrawalsCount() ?? 0;
     return regears > 0 || splits > 0 || withdrawals > 0;
   });
 
@@ -413,6 +414,25 @@ export class AdminHub {
         firstValueFrom(this.api.get<BankAnalyticsSummary>('api/bank/admin/summary'))
           .then((res) => this.bankSummary.set(res))
           .catch(() => this.bankSummary.set(null)),
+      );
+    }
+
+    // Officers only hold `bank.withdraw.accept`, not the admin-only
+    // `bank.view_others` the full ledger summary requires above — so the
+    // withdrawal queue count is fetched separately with the permission that
+    // actually gates it, or every Officer's queue card would read zero.
+    if (this.auth.hasPermission('bank.withdraw.accept')) {
+      requests.push(
+        firstValueFrom(
+          this.api.get<PaginatedData<unknown>>('api/bank/transactions', {
+            global: true,
+            status: 'requested',
+            page: 1,
+            limit: 1,
+          }),
+        )
+          .then((res) => this.pendingWithdrawalsCount.set(res.total_items))
+          .catch(() => this.pendingWithdrawalsCount.set(null)),
       );
     }
 

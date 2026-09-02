@@ -191,12 +191,14 @@ pub async fn get_admin_summary(
         `TransactionStatus`); omit it to get every status. Search recipients with `search` \
         (case-insensitive username substring). Sort with `sort=created_at|amount|status|to_username` \
         and `order=asc|desc` (default `created_at` desc). Standard `page`/`limit` pagination. Pass `?user_id=<id>` to view \
-        another member's transactions — administrator-only, same rule as `GET /bank/balance`.",
+        another member's transactions — administrator-only, same rule as `GET /bank/balance`. Pass `?global=true` to list \
+        every member's transactions instead (the officer withdrawal review queue); this requires either `bank.view_others` \
+        (administrators) or `bank.withdraw.accept` (officers reviewing requested withdrawals).",
     security(("session_cookie" = [])),
     params(ListTransactionsQuery),
     responses(
         (status = 200, description = "Transactions retrieved successfully", body = PaginatedTransactionView),
-        (status = 403, description = "Forbidden - only administrators can view another user's transactions", body = ProblemDetails)
+        (status = 403, description = "Forbidden - viewing another user's transactions requires bank.view_others, and ?global=true requires bank.view_others or bank.withdraw.accept", body = ProblemDetails)
     )
 )]
 async fn list_transactions(
@@ -206,7 +208,18 @@ async fn list_transactions(
     Query(query): Query<ListTransactionsQuery>,
 ) -> Result<Json<ApiResponse<PaginatedTransactionView>>, AppError> {
     let target = if query.global.unwrap_or(false) {
-        user.require(&perms, Permission::BankViewOthers).await?;
+        // Officers reviewing the withdrawal queue only hold `bank.withdraw.accept`,
+        // not the admin-only `bank.view_others` — either is enough to list every
+        // member's transactions.
+        let can_view_others = user.has_permission(&perms, Permission::BankViewOthers).await;
+        let can_review_withdrawals = user.has_permission(&perms, Permission::BankWithdrawAccept).await;
+        if !can_view_others && !can_review_withdrawals {
+            return Err(AppError::Forbidden(format!(
+                "Missing permission: {} or {}",
+                Permission::BankViewOthers.as_str(),
+                Permission::BankWithdrawAccept.as_str()
+            )));
+        }
         None
     } else {
         Some(resolve_target_user(&user, &perms, query.user_id).await?)
