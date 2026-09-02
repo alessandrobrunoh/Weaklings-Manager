@@ -540,11 +540,31 @@ impl BankService {
         let mut updated_models = Vec::with_capacity(targets.len());
         let now = chrono::Utc::now().into();
         for model in targets {
-            let mut active: ActiveModel = model.into();
-            active.status = Set(TransactionStatus::Requested.to_string());
-            active.requested_at = Set(Some(now));
-            active.updated_at = Set(now);
-            let updated = active.update(&txn).await?;
+            // Re-check the status as part of the write itself: a concurrent request could have
+            // moved this row out of the requestable statuses between the `SELECT` above and here.
+            // A losing request is skipped rather than silently re-requesting a stale row.
+            let update = TransactionEntity::update_many()
+                .filter(Column::Id.eq(model.id))
+                .filter(requestable_status_condition())
+                .set(ActiveModel {
+                    status: Set(TransactionStatus::Requested.to_string()),
+                    requested_at: Set(Some(now)),
+                    updated_at: Set(now),
+                    ..Default::default()
+                })
+                .exec(&txn)
+                .await?;
+
+            if update.rows_affected != 1 {
+                continue;
+            }
+
+            let updated = TransactionEntity::find_by_id(model.id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| {
+                    AppError::Internal("requested transaction disappeared".to_string())
+                })?;
             updated_models.push(updated);
         }
 
@@ -624,12 +644,32 @@ impl BankService {
         let mut updated_models = Vec::with_capacity(targets.len());
         let now = chrono::Utc::now().into();
         for model in targets {
-            let mut active: ActiveModel = model.into();
-            active.status = Set(TransactionStatus::Withdrawn.to_string());
-            active.from_user_id = Set(Some(officer_user_id));
-            active.withdrawn_at = Set(Some(now));
-            active.updated_at = Set(now);
-            let updated = active.update(&txn).await?;
+            // Re-check the status as part of the write itself: a concurrent accept/reject could
+            // have moved this row out of `requested` between the `SELECT` above and here. A
+            // losing request is skipped rather than double-paying it or overwriting the payer.
+            let update = TransactionEntity::update_many()
+                .filter(Column::Id.eq(model.id))
+                .filter(Column::Status.eq(TransactionStatus::Requested.to_string()))
+                .set(ActiveModel {
+                    status: Set(TransactionStatus::Withdrawn.to_string()),
+                    from_user_id: Set(Some(officer_user_id)),
+                    withdrawn_at: Set(Some(now)),
+                    updated_at: Set(now),
+                    ..Default::default()
+                })
+                .exec(&txn)
+                .await?;
+
+            if update.rows_affected != 1 {
+                continue;
+            }
+
+            let updated = TransactionEntity::find_by_id(model.id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| {
+                    AppError::Internal("accepted transaction disappeared".to_string())
+                })?;
             updated_models.push(updated);
         }
 
@@ -730,12 +770,33 @@ impl BankService {
         }
 
         let mut updated_models = Vec::with_capacity(targets.len());
+        let now = chrono::Utc::now().into();
         for model in targets {
-            let mut active: ActiveModel = model.into();
-            active.status = Set(TransactionStatus::Rejected.to_string());
-            active.requested_at = Set(None);
-            active.updated_at = Set(chrono::Utc::now().into());
-            let updated = active.update(&txn).await?;
+            // Re-check the status as part of the write itself: a concurrent accept/reject could
+            // have moved this row out of `requested` between the `SELECT` above and here. A
+            // losing request is skipped rather than silently overwriting a settled transaction.
+            let update = TransactionEntity::update_many()
+                .filter(Column::Id.eq(model.id))
+                .filter(Column::Status.eq(TransactionStatus::Requested.to_string()))
+                .set(ActiveModel {
+                    status: Set(TransactionStatus::Rejected.to_string()),
+                    requested_at: Set(None),
+                    updated_at: Set(now),
+                    ..Default::default()
+                })
+                .exec(&txn)
+                .await?;
+
+            if update.rows_affected != 1 {
+                continue;
+            }
+
+            let updated = TransactionEntity::find_by_id(model.id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| {
+                    AppError::Internal("rejected transaction disappeared".to_string())
+                })?;
             updated_models.push(updated);
         }
 

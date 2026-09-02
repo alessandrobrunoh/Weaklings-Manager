@@ -34,7 +34,10 @@ pub async fn sync_guild_nickname(cfg: &Config, discord_user_id: &str, albion_nam
 
     let url = format!("https://discord.com/api/v10/guilds/{guild_id}/members/{discord_user_id}");
     let payload = serde_json::json!({ "nick": nick });
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
     match client
         .patch(&url)
         .header("Authorization", format!("Bot {token}"))

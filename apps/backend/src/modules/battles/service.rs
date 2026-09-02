@@ -5,7 +5,10 @@
 //! paginated battle list, single-battle detail (battle + kills combined), and
 //! the `/me` endpoint filtered by the calling user's linked Albion character.
 
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    Set, TransactionTrait,
+};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -208,7 +211,13 @@ impl BattlesService {
         battle.estimated_losses = estimate_losses(albiondata, &kills, &loss_scope)
             .await
             .unwrap_or_default();
-        battle.linked_event = find_linked_event(db, battle_id).await.unwrap_or(None);
+        battle.linked_event = match find_linked_event(db, battle_id).await {
+            Ok(linked_event) => linked_event,
+            Err(error) => {
+                tracing::warn!(battle_id, error = %error, "failed to resolve linked event for battle");
+                None
+            }
+        };
         if let Err(error) = persist_battle_snapshot(db, &battle).await {
             tracing::warn!(battle_id = battle.summary.battle_id, error = %error, "failed to persist guild battle snapshot");
         }
@@ -561,9 +570,39 @@ async fn persist_battle_snapshot(
     ensure_canonical_fight(db, battle, start_time, end_time).await
 }
 
+/// Attaches `event_id` to `fight_id` if it isn't attributed to an event yet.
+async fn attach_event_to_fight<C: ConnectionTrait>(
+    db: &C,
+    fight_id: i64,
+    event_id: Option<i64>,
+) -> Result<(), AppError> {
+    let Some(event_id) = event_id else {
+        return Ok(());
+    };
+    let existing = fight::Entity::find_by_id(fight_id)
+        .one(db)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::Internal(format!("Fight {fight_id} not found")))?;
+    if existing.event_id.is_none() {
+        let mut active: fight::ActiveModel = existing.into();
+        active.event_id = Set(Some(event_id));
+        active.updated_at = Set(chrono::Utc::now().into());
+        active.update(db).await.map_err(AppError::Database)?;
+    }
+    Ok(())
+}
+
 /// Creates the canonical Fight for a hydrated Battle when it is first seen.
 /// An Event can attach this initially unattributed Fight later without creating
 /// a second membership for the same upstream Battle.
+///
+/// Runs the check-then-insert in a transaction and guards the insert against
+/// `idx_fight_battles_battle_unique`: two callers hydrating the same battle for
+/// the first time concurrently can both pass the initial "no segment yet"
+/// check, but only one `fight_battle` insert can win the unique constraint.
+/// The loser cleans up the canonical `Fight` row it already inserted (instead
+/// of leaving it orphaned) and attaches the event to the winner's fight.
 async fn ensure_canonical_fight(
     db: &DatabaseConnection,
     battle: &BattleDetail,
@@ -571,35 +610,23 @@ async fn ensure_canonical_fight(
     ended_at: Option<chrono::DateTime<chrono::FixedOffset>>,
 ) -> Result<(), AppError> {
     let battle_id = battle.summary.battle_id;
+    let event_id = battle.linked_event.as_ref().map(|event| event.id);
+
+    let txn = db.begin().await.map_err(AppError::Database)?;
+
     if let Some(segment) = fight_battle::Entity::find()
         .filter(fight_battle::Column::BattleId.eq(battle_id))
-        .one(db)
+        .one(&txn)
         .await
         .map_err(AppError::Database)?
     {
-        if let Some(event_id) = battle.linked_event.as_ref().map(|event| event.id) {
-            let existing = fight::Entity::find_by_id(segment.fight_id)
-                .one(db)
-                .await
-                .map_err(AppError::Database)?
-                .ok_or_else(|| {
-                    AppError::Internal(format!(
-                        "Fight segment {} references missing fight {}",
-                        segment.id, segment.fight_id
-                    ))
-                })?;
-            if existing.event_id.is_none() {
-                let mut active: fight::ActiveModel = existing.into();
-                active.event_id = Set(Some(event_id));
-                active.updated_at = Set(chrono::Utc::now().into());
-                active.update(db).await.map_err(AppError::Database)?;
-            }
-        }
+        attach_event_to_fight(&txn, segment.fight_id, event_id).await?;
+        txn.commit().await.map_err(AppError::Database)?;
         return Ok(());
     }
 
     let created = fight::ActiveModel {
-        event_id: Set(battle.linked_event.as_ref().map(|event| event.id)),
+        event_id: Set(event_id),
         started_at: Set(started_at),
         ended_at: Set(ended_at),
         grouping_method: Set("seeded".to_string()),
@@ -608,19 +635,51 @@ async fn ensure_canonical_fight(
         needs_review: Set(false),
         ..Default::default()
     }
-    .insert(db)
+    .insert(&txn)
     .await
     .map_err(AppError::Database)?;
-    fight_battle::ActiveModel {
+
+    let segment_insert = fight_battle::ActiveModel {
         fight_id: Set(created.id),
         battle_id: Set(battle_id),
         sequence_number: Set(1),
         ..Default::default()
     }
-    .insert(db)
-    .await
-    .map_err(AppError::Database)?;
-    Ok(())
+    .insert(&txn)
+    .await;
+
+    match segment_insert {
+        Ok(_) => {
+            txn.commit().await.map_err(AppError::Database)?;
+            Ok(())
+        }
+        Err(err)
+            if matches!(
+                err.sql_err(),
+                Some(sea_orm::SqlErr::UniqueConstraintViolation(_))
+            ) =>
+        {
+            // Lost the race: another transaction already created the canonical fight
+            // for this battle. A failed statement leaves Postgres transactions unable
+            // to run anything further on them, so roll back explicitly rather than
+            // trying to clean up inside `txn` — that also undoes the `fight` row this
+            // transaction just inserted (never committed, so it never orphans), and
+            // a fresh statement on `db` then attaches the event to the winner's fight.
+            txn.rollback().await.map_err(AppError::Database)?;
+            let winner = fight_battle::Entity::find()
+                .filter(fight_battle::Column::BattleId.eq(battle_id))
+                .one(db)
+                .await
+                .map_err(AppError::Database)?
+                .ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "fight_battle unique-constraint conflict but no row found for battle {battle_id}"
+                    ))
+                })?;
+            attach_event_to_fight(db, winner.fight_id, event_id).await
+        }
+        Err(err) => Err(AppError::Database(err)),
+    }
 }
 
 fn serialize_snapshot<T: serde::Serialize>(value: &T) -> Result<String, AppError> {

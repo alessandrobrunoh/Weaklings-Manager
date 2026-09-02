@@ -234,11 +234,20 @@ impl From<&AlbionBbGuild> for BattleGuildSummary {
 impl From<&AlbionBbBattleSummary> for BattleSummary {
     fn from(s: &AlbionBbBattleSummary) -> Self {
         let max_kill_fame = s.guilds.iter().map(|g| g.kill_fame).max().unwrap_or(0);
+        let max_kill_fame_holders = s
+            .guilds
+            .iter()
+            .filter(|g| g.kill_fame == max_kill_fame)
+            .count();
+        // Only crown a winner when one guild uniquely holds the highest kill fame
+        // and that fame is actually greater than zero; a 0-0/aborted battle or a
+        // tie for the top spot has no winner.
+        let is_undisputed_max = max_kill_fame > 0 && max_kill_fame_holders == 1;
         let guilds = s
             .guilds
             .iter()
             .map(|g| BattleGuildSummary {
-                winner: g.winner || g.kill_fame == max_kill_fame,
+                winner: g.winner || (is_undisputed_max && g.kill_fame == max_kill_fame),
                 ..BattleGuildSummary::from(g)
             })
             .collect();

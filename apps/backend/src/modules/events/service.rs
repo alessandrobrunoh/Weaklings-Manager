@@ -6,7 +6,7 @@ use std::str::FromStr;
 use sea_orm::sea_query::{Expr, Func};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
-    PaginatorTrait, QueryFilter, QueryOrder, Set, TransactionTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
 };
 
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
@@ -2639,6 +2639,12 @@ impl EventService {
         if model.status == "live" {
             return Err(AppError::Conflict(format!("Event {id} is already live")));
         }
+        if model.status != "scheduled" {
+            return Err(AppError::Conflict(format!(
+                "Event {id} cannot be started (status={}); re-opening a stopped session is not supported",
+                model.status
+            )));
+        }
 
         let now: DateTime<Utc> = Utc::now();
         let deadline = now + MAX_SESSION_DURATION;
@@ -3213,8 +3219,65 @@ impl EventService {
             }
         }
 
-        // Persist the participation and its roster invalidation atomically.
+        // Persist the participation and its roster invalidation atomically. Locking the
+        // event row here serializes concurrent sign-ups for the same event, so the
+        // build-slot capacity re-check right below can't race with another
+        // transaction that read the same pre-insert count (TOCTOU on the last slot).
         let txn = db.begin().await.map_err(AppError::Database)?;
+        event::Entity::find_by_id(event_id)
+            .lock_exclusive()
+            .one(&txn)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+
+        if let Some(primary_build_id) = primary_build_id {
+            let comp_primary_slots = active_comp_builds
+                .iter()
+                .find(|cb| cb.build_id == primary_build_id)
+                .map_or(0, |comp_build| comp_build.quantity as usize);
+            let extra_primary_slots =
+                usize::from(extra_roster_build_ids.contains(&primary_build_id));
+            let primary_slot_limit = comp_primary_slots + extra_primary_slots;
+
+            let fresh_participations = event_participation::Entity::find()
+                .filter(event_participation::Column::EventId.eq(event_id))
+                .all(&txn)
+                .await
+                .map_err(AppError::Database)?;
+            let fresh_assignments = event_roster_assignment::Entity::find()
+                .filter(event_roster_assignment::Column::EventId.eq(event_id))
+                .all(&txn)
+                .await
+                .map_err(AppError::Database)?;
+            let fresh_assigned_build_by_user: HashMap<i64, i64> = fresh_assignments
+                .into_iter()
+                .filter_map(|assignment| {
+                    let mut parts = assignment.seat_key.split(':');
+                    (parts.next() == Some("build"))
+                        .then(|| parts.next()?.parse::<i64>().ok())
+                        .flatten()
+                        .map(|build_id| (assignment.user_id, build_id))
+                })
+                .collect();
+            let taken_count = fresh_participations
+                .iter()
+                .filter(|p| p.user_id != user_id)
+                .filter(|p| {
+                    fresh_assigned_build_by_user
+                        .get(&p.user_id)
+                        .copied()
+                        .or(p.primary_build_id)
+                        == Some(primary_build_id)
+                })
+                .count();
+            if taken_count >= primary_slot_limit {
+                return Err(AppError::Validation(format!(
+                    "The primary role for build '{primary_build_id}' is already full (limit: {primary_slot_limit})"
+                )));
+            }
+        }
+
         if let Some(p) = existing {
             let mut active: event_participation::ActiveModel = p.clone().into();
             active.primary_build_id = Set(primary_build_id);

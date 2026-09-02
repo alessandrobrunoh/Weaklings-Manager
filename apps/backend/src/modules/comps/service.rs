@@ -1662,6 +1662,53 @@ impl CompService {
             .sum())
     }
 
+    /// Re-checks the "expansion capacity strictly increases down the chain" invariant
+    /// around `comp_id` after one of its builds is about to change to
+    /// `prospective_capacity` total slots.
+    ///
+    /// `create_comp`/`validate_expansion_parent` only enforce this at comp-creation or
+    /// re-parenting time; a build added/edited/removed later on a comp that already sits
+    /// in an expansion chain must not silently break the invariant those checks set up.
+    /// Checks both directions: `comp_id` must still exceed its own parent's capacity
+    /// (if any), and every comp that expands from `comp_id` must still exceed
+    /// `prospective_capacity`.
+    async fn check_expansion_capacity_invariant(
+        &self,
+        db: &DatabaseConnection,
+        comp_id: i64,
+        prospective_capacity: i64,
+    ) -> Result<(), AppError> {
+        let comp = comp::Entity::find_by_id(comp_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Comp {comp_id} not found")))?;
+
+        if let Some(parent_id) = comp.parent_id {
+            let parent_capacity = self.get_comp_capacity(db, parent_id).await?;
+            if prospective_capacity <= parent_capacity {
+                return Err(AppError::Validation(
+                    "an expansion comp must have a capacity greater than its parent".to_string(),
+                ));
+            }
+        }
+
+        let children = comp::Entity::find()
+            .filter(CompColumn::ParentId.eq(comp_id))
+            .all(db)
+            .await?;
+        for child in children {
+            let child_capacity = self.get_comp_capacity(db, child.id).await?;
+            if child_capacity <= prospective_capacity {
+                return Err(AppError::Validation(format!(
+                    "comp {comp_id} still has expansion comp '{}' below it; that comp must keep a capacity greater than {comp_id}'s",
+                    child.name
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
     /// Verifies that assigning `parent_id` keeps the chain acyclic and strictly increasing.
     async fn validate_expansion_parent(
         &self,
@@ -1717,7 +1764,9 @@ impl CompService {
     /// `events.comp_id` is a `RESTRICT` FK, so a comp still linked to any
     /// event can't be deleted at the database level — checked here first so
     /// the caller gets the specific blocking events back instead of a raw
-    /// constraint-violation error.
+    /// constraint-violation error. Comps that reference this one as their
+    /// `parent_id` (expansion children/variants) are checked the same way so
+    /// they aren't silently orphaned or cascade-deleted.
     pub async fn delete_comp(&self, db: &DatabaseConnection, id: i64) -> Result<(), AppError> {
         let blocking_events = event::Entity::find()
             .filter(event::Column::CompId.eq(id))
@@ -1734,6 +1783,26 @@ impl CompService {
                         resource: "event".to_string(),
                         id: e.id,
                         label: e.title,
+                    })
+                    .collect(),
+            });
+        }
+
+        let blocking_children = comp::Entity::find()
+            .filter(CompColumn::ParentId.eq(id))
+            .all(db)
+            .await?;
+
+        if !blocking_children.is_empty() {
+            let count = blocking_children.len();
+            return Err(AppError::ConflictWithReferences {
+                message: format!("Cannot delete comp {id}: {count} comp(s) expand from it"),
+                references: blocking_children
+                    .into_iter()
+                    .map(|c| BlockingReference {
+                        resource: "comp".to_string(),
+                        id: c.id,
+                        label: c.name,
                     })
                     .collect(),
             });
@@ -1771,6 +1840,12 @@ impl CompService {
             .filter(CompBuildColumn::CompId.eq(comp_id))
             .filter(CompBuildColumn::BuildId.eq(req.build_id))
             .one(db)
+            .await?;
+
+        let current_capacity = self.get_comp_capacity(db, comp_id).await?;
+        let old_quantity = existing.as_ref().map_or(0, |model| i64::from(model.quantity));
+        let prospective_capacity = current_capacity - old_quantity + i64::from(req.quantity);
+        self.check_expansion_capacity_invariant(db, comp_id, prospective_capacity)
             .await?;
 
         if let Some(model) = existing {
@@ -1816,6 +1891,12 @@ impl CompService {
                 AppError::NotFound(format!("Build {build_id} is not part of comp {comp_id}"))
             })?;
 
+        let current_capacity = self.get_comp_capacity(db, comp_id).await?;
+        let prospective_capacity =
+            current_capacity - i64::from(cb.quantity) + i64::from(req.quantity);
+        self.check_expansion_capacity_invariant(db, comp_id, prospective_capacity)
+            .await?;
+
         let mut active: comp_build::ActiveModel = cb.into();
         active.quantity = Set(req.quantity);
         active.update(db).await?;
@@ -1835,6 +1916,20 @@ impl CompService {
         comp_id: i64,
         build_id: i64,
     ) -> Result<(), AppError> {
+        let existing = comp_build::Entity::find()
+            .filter(CompBuildColumn::CompId.eq(comp_id))
+            .filter(CompBuildColumn::BuildId.eq(build_id))
+            .one(db)
+            .await?;
+        let Some(existing) = existing else {
+            return Ok(());
+        };
+
+        let current_capacity = self.get_comp_capacity(db, comp_id).await?;
+        let prospective_capacity = current_capacity - i64::from(existing.quantity);
+        self.check_expansion_capacity_invariant(db, comp_id, prospective_capacity)
+            .await?;
+
         comp_build::Entity::delete_many()
             .filter(CompBuildColumn::CompId.eq(comp_id))
             .filter(CompBuildColumn::BuildId.eq(build_id))

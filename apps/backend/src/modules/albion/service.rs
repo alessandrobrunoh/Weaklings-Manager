@@ -13,6 +13,7 @@ use crate::errors::AppError;
 use crate::pagination::{PaginatedData, PaginationParams};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    TransactionTrait,
 };
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -268,20 +269,28 @@ impl AlbionLinkService {
             )
         })?;
 
+        let txn = db.begin().await?;
+
         // If the user already has a link, delete it to allow re-assignment
-        if let Some(existing) = self.get_link_for_discord_user(db, &discord_id).await? {
+        if let Some(existing) = albion_link::Entity::find()
+            .filter(albion_link::Column::DiscordId.eq(&discord_id))
+            .one(&txn)
+            .await?
+        {
             albion_link::Entity::delete_by_id(existing.id)
-                .exec(db)
+                .exec(&txn)
                 .await?;
         }
 
         // If another account was linked to this character, remove that link as well
         if let Some(other) = albion_link::Entity::find()
             .filter(albion_link::Column::AlbionPlayerId.eq(albion_player_id))
-            .one(db)
+            .one(&txn)
             .await?
         {
-            albion_link::Entity::delete_by_id(other.id).exec(db).await?;
+            albion_link::Entity::delete_by_id(other.id)
+                .exec(&txn)
+                .await?;
         }
 
         let active = albion_link::ActiveModel {
@@ -292,29 +301,38 @@ impl AlbionLinkService {
             ..Default::default()
         };
 
-        Ok(active.insert(db).await?)
+        let inserted = active.insert(&txn).await?;
+        txn.commit().await?;
+        Ok(inserted)
     }
 
     /// Admin helper to unlink any user from their Albion player.
+    ///
+    /// Returns the unlinked user's Discord ID when a link was actually removed, so the caller can
+    /// best-effort revoke the configured Discord guild role — `None` when the user has no Discord
+    /// ID or already had no active link.
     pub async fn admin_unlink_user(
         &self,
         db: &DatabaseConnection,
         user_id: i64,
-    ) -> Result<(), AppError> {
+    ) -> Result<Option<String>, AppError> {
         let user = crate::modules::users::entities::Entity::find_by_id(user_id)
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("User {user_id} not found")))?;
 
-        if let Some(ref discord_id) = user.discord_id {
-            if let Some(existing) = self.get_link_for_discord_user(db, discord_id).await? {
-                albion_link::Entity::delete_by_id(existing.id)
-                    .exec(db)
-                    .await?;
-            }
+        let Some(discord_id) = user.discord_id else {
+            return Ok(None);
+        };
+
+        if let Some(existing) = self.get_link_for_discord_user(db, &discord_id).await? {
+            albion_link::Entity::delete_by_id(existing.id)
+                .exec(db)
+                .await?;
+            return Ok(Some(discord_id));
         }
 
-        Ok(())
+        Ok(None)
     }
 }
 

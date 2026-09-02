@@ -48,6 +48,10 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cfg = config::Config::from_env();
 
+    // Derive the session cookie encryption key once at startup so a misconfigured
+    // `SESSION_SECRET` fails the deployment immediately instead of panicking mid-request.
+    let session_key = cfg.session_key();
+
     // Establish connection to Postgres database
     tracing::info!("connecting to database");
     let db = sea_orm::Database::connect(&cfg.database_url).await?;
@@ -126,6 +130,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             modules::events::roster_hub::RosterHub::new(),
         ))
         .layer(axum::Extension(permissions.clone()))
+        .layer(axum::Extension(session_key))
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive());
 

@@ -5,7 +5,7 @@ use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use sea_orm::prelude::Decimal;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, TransactionTrait,
+    EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -135,9 +135,15 @@ impl ProgressionService {
             return Ok(AwardOutcome::Duplicate);
         }
 
+        // Row-locked for the rest of the transaction: two concurrent awards for the
+        // same account must not both read the same pre-update xp and clobber each
+        // other's increment (lost-update race). Postgres takes a real row lock here;
+        // SQLite ignores the clause (no row-level locking), which is fine since it
+        // already serializes writers at the connection/database level.
         let account = ProgressionAccountEntity::find()
             .filter(ProgressionAccountColumn::UserId.eq(spec.user_id))
             .filter(ProgressionAccountColumn::SeasonId.eq(season.id))
+            .lock_exclusive()
             .one(&txn)
             .await?;
 
@@ -946,9 +952,13 @@ async fn load_or_create_account<C: ConnectionTrait>(
     season_id: i64,
     now: DateTime<FixedOffset>,
 ) -> Result<ProgressionAccountModel, AppError> {
+    // Row-locked so a caller running inside a transaction (e.g. `adjust`) holds the
+    // account row for the rest of its read-compute-write cycle, closing the
+    // lost-update race between concurrent XP/level mutations.
     let existing = ProgressionAccountEntity::find()
         .filter(ProgressionAccountColumn::UserId.eq(user_id))
         .filter(ProgressionAccountColumn::SeasonId.eq(season_id))
+        .lock_exclusive()
         .one(db)
         .await?;
     match existing {
@@ -1019,6 +1029,11 @@ fn normalize_optional(value: &str) -> Option<String> {
     }
 }
 
+/// Upper bound on `max_level`. `level_for_xp` walks every level from 2 up to the
+/// configured cap on every award, so an unbounded value lets a caller turn each
+/// award into an arbitrarily long, synchronous CPU-blocking loop.
+const MAX_LEVEL_CAP: i32 = 1000;
+
 fn validate_settings_update(req: &UpdateProgressionSettingsRequest) -> Result<(), AppError> {
     if let Some(value) = req.xp_base
         && value <= 0
@@ -1034,6 +1049,13 @@ fn validate_settings_update(req: &UpdateProgressionSettingsRequest) -> Result<()
         && value < 1
     {
         return Err(AppError::Validation("max_level must be >= 1".into()));
+    }
+    if let Some(value) = req.max_level
+        && value > MAX_LEVEL_CAP
+    {
+        return Err(AppError::Validation(format!(
+            "max_level must be <= {MAX_LEVEL_CAP}"
+        )));
     }
     for (label, value) in [
         ("xp_message", req.xp_message),

@@ -10,10 +10,11 @@ use crate::responses::{ApiResponse, ApiResponseDiscordUserProfile};
 use axum::{
     Extension, Json, Router,
     extract::Query,
+    http::HeaderMap,
     response::Redirect,
     routing::{get, post},
 };
-use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
+use axum_extra::extract::cookie::{Cookie, CookieJar, Key, PrivateCookieJar, SameSite};
 use rand::distributions::{Alphanumeric, DistString};
 use sea_orm::EntityTrait;
 use serde::Deserialize;
@@ -116,9 +117,11 @@ pub async fn discord_callback(
     Extension(cfg): Extension<Config>,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(key): Extension<Key>,
     jar: CookieJar,
+    headers: HeaderMap,
     Query(query): Query<CallbackQuery>,
-) -> Result<(CookieJar, Redirect), AppError> {
+) -> Result<(CookieJar, PrivateCookieJar, Redirect), AppError> {
     // Retrieve the state cookie
     let cookie_state = jar.get("oauth_state").map(|c| c.value().to_string());
 
@@ -171,17 +174,18 @@ pub async fn discord_callback(
     let profile_json = serde_json::to_string(&profile)
         .map_err(|e| AppError::Internal(format!("Failed to serialize session: {e}")))?;
 
-    // Set secure session cookie valid for 7 days
+    // Set secure session cookie valid for 7 days. Encrypted with the server's `Key` via
+    // `PrivateCookieJar` so the payload can't be read or forged client-side.
     let session_cookie = Cookie::build(("session_user", profile_json))
         .path("/")
         .http_only(true)
         .same_site(SameSite::Lax)
         .max_age(time::Duration::days(7));
 
-    let jar = jar.add(session_cookie);
+    let private_jar = PrivateCookieJar::from_headers(&headers, key).add(session_cookie);
 
     let redirect_url = format!("{}/dashboard", cfg.frontend_url);
-    Ok((jar, Redirect::temporary(&redirect_url)))
+    Ok((jar, private_jar, Redirect::temporary(&redirect_url)))
 }
 
 /// Retrieves the profile of the currently logged-in user.
@@ -207,11 +211,13 @@ pub async fn discord_callback(
     )
 )]
 pub async fn get_me(
-    jar: CookieJar,
+    headers: HeaderMap,
     Extension(cfg): Extension<Config>,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
-) -> Result<(CookieJar, Json<ApiResponse<DiscordUserProfile>>), AppError> {
+    Extension(key): Extension<Key>,
+) -> Result<(PrivateCookieJar, Json<ApiResponse<DiscordUserProfile>>), AppError> {
+    let jar = PrivateCookieJar::from_headers(&headers, key);
     let session_cookie = jar
         .get("session_user")
         .ok_or_else(|| AppError::Unauthorized("No active session".to_string()))?;
