@@ -217,7 +217,7 @@ pub async fn update_scout(
     Path(id): Path<i64>,
     Json(body): Json<UpdateScoutRequest>,
 ) -> Result<Json<ApiResponse<ScoutedCompDetail>>, AppError> {
-    user.require(&perms, Permission::IntelManage).await?;
+    user.require(&perms, Permission::IntelEdit).await?;
     let detail = IntelService::new().update_scout(&db, id, &body).await?;
     Ok(Json(ApiResponse::new(detail)))
 }
@@ -248,7 +248,7 @@ pub async fn delete_scout(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
-    user.require(&perms, Permission::IntelManage).await?;
+    user.require(&perms, Permission::IntelDelete).await?;
     IntelService::new().delete_scout(&db, id).await?;
     Ok(Json(ApiResponse::new(())))
 }
@@ -284,7 +284,7 @@ pub async fn scout_battle(
     Path(battle_id): Path<i64>,
     Query(query): Query<ScoutBattleQuery>,
 ) -> Result<Json<ApiResponse<Vec<ScoutOutcome>>>, AppError> {
-    user.require(&perms, Permission::IntelManage).await?;
+    user.require(&perms, Permission::IntelCreate).await?;
     let outcomes = IntelService::new()
         .scout_battle(
             &db,
@@ -505,7 +505,7 @@ pub async fn refresh_guild_report(
     Extension(cache): Extension<ReportCache>,
     Query(params): Query<ReportParams>,
 ) -> Result<Json<ApiResponse<GuildReport>>, AppError> {
-    user.require(&perms, Permission::IntelManage).await?;
+    user.require(&perms, Permission::IntelEdit).await?;
     let range = DateRange::resolve(params.from.as_deref(), params.to.as_deref())?;
     cache.invalidate();
     let report = build_guild_report(&db, &guild_context(&cfg), range).await?;

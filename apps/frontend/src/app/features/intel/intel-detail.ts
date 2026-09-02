@@ -343,7 +343,7 @@ export class IntelDetailPage {
   protected readonly draftNotes = signal('');
   protected readonly draftArchived = signal(false);
 
-  protected readonly canManage = computed(() => this.auth.hasPermission('intel.manage'));
+  protected readonly canManage = computed(() => this.auth.hasPermission('intel.edit'));
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 

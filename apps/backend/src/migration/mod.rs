@@ -75,6 +75,8 @@ mod m20260902_000001_seed_events_granular_permissions;
 mod m20260902_000002_seed_comps_granular_permissions;
 mod m20260902_000003_seed_fights_granular_permissions;
 mod m20260902_000004_seed_splits_granular_permissions;
+mod m20260902_000005_seed_intel_granular_permissions;
+mod m20260902_000006_seed_progression_granular_permissions;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -154,6 +156,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260902_000002_seed_comps_granular_permissions::Migration),
             Box::new(m20260902_000003_seed_fights_granular_permissions::Migration),
             Box::new(m20260902_000004_seed_splits_granular_permissions::Migration),
+            Box::new(m20260902_000005_seed_intel_granular_permissions::Migration),
+            Box::new(m20260902_000006_seed_progression_granular_permissions::Migration),
         ]
     }
 }
