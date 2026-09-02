@@ -33,7 +33,7 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 const PAGE_SIZE = 10;
-const EVENT_STATUSES: readonly EventStatus[] = ['scheduled', 'live', 'stopped', 'auto_stopped'];
+const EVENT_STATUSES: readonly EventStatus[] = ['scheduled', 'live', 'stopped', 'auto_stopped', 'cancelled'];
 
 const SORT_COLUMNS: Readonly<Record<string, string>> = {
   title: 'title',
@@ -177,7 +177,10 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
           </span>
         </ng-template>
         <ng-template dataTableCell="date" let-row>
-          <span style="color: var(--color-text-secondary)">{{ formatDate(row.event_date_utc) }}</span>
+          <div class="flex flex-col gap-0.5" style="color: var(--color-text-secondary)">
+            <span>{{ formatDate(row.start_time_utc ?? row.event_date_utc) }}</span>
+            <span class="text-[var(--color-text-tertiary)]">Mass: {{ formatTime(row.mass_time_utc ?? row.event_date_utc) }}</span>
+          </div>
         </ng-template>
         <ng-template dataTableCell="comp" let-row>
           {{ row.comp_name }}
@@ -242,7 +245,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
             ></textarea>
           </label>
 
-          <div class="grid gap-4 sm:grid-cols-3">
+          <div class="grid gap-4 sm:grid-cols-5">
             <label>
               <span class="label">{{ t('events.detail.comp') }}</span>
               <select
@@ -279,13 +282,17 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
 
             <label>
               <span class="label">{{ t('common.date') }}</span>
-              <input
-                class="input"
-                type="datetime-local"
-                [attr.min]="minScheduledAt"
-                [value]="draftScheduledAt()"
-                (input)="onScheduledAtChange($event)"
-              />
+              <input class="input" type="date" required [attr.min]="minEventDate" [value]="draftEventDate()" (input)="onEventDateChange($event)" />
+            </label>
+
+            <label>
+              <span class="label">Mass</span>
+              <input class="input" type="time" required [value]="draftMassTime()" (input)="onMassTimeChange($event)" />
+            </label>
+
+            <label>
+              <span class="label">Start</span>
+              <input class="input" type="time" required [value]="draftStartTime()" (input)="onStartTimeChange($event)" />
             </label>
           </div>
 
@@ -492,8 +499,10 @@ export class Events {
   protected readonly draftDescription = signal('');
   protected readonly draftCompId = signal('');
   protected readonly draftPlayerCap = signal('');
-  protected readonly draftScheduledAt = signal(defaultScheduledAt());
-  protected readonly minScheduledAt = minScheduledAt();
+  protected readonly draftEventDate = signal(defaultEventDate());
+  protected readonly draftMassTime = signal(defaultMassTime());
+  protected readonly draftStartTime = signal(defaultStartTime());
+  protected readonly minEventDate = defaultEventDate();
   protected readonly draftCallToArms = signal(false);
   protected readonly draftRegear = signal(false);
   protected readonly discordRoles = signal<DiscordRoleView[]>([]);
@@ -652,8 +661,20 @@ export class Events {
     this.draftDescription.set((event.target as HTMLTextAreaElement).value);
   }
 
-  protected onScheduledAtChange(event: Event): void {
-    this.draftScheduledAt.set((event.target as HTMLInputElement).value);
+  protected onEventDateChange(event: Event): void {
+    this.draftEventDate.set((event.target as HTMLInputElement).value);
+  }
+
+  protected onMassTimeChange(event: Event): void {
+    this.draftMassTime.set((event.target as HTMLInputElement).value);
+  }
+
+  protected onStartTimeChange(event: Event): void {
+    this.draftStartTime.set((event.target as HTMLInputElement).value);
+  }
+
+  protected formatTime(iso: string): string {
+    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
   protected onCompChange(event: Event): void {
@@ -730,9 +751,14 @@ export class Events {
       return;
     }
 
-    const scheduledAt = new Date(this.draftScheduledAt());
-    if (Number.isNaN(scheduledAt.getTime())) {
+    const massAt = combineLocalDateTime(this.draftEventDate(), this.draftMassTime());
+    const startAt = combineLocalDateTime(this.draftEventDate(), this.draftStartTime());
+    if (!massAt || !startAt) {
       this.toasts.error(this.t('validation.required'));
+      return;
+    }
+    if (massAt > startAt) {
+      this.toasts.error('Mass deve essere uguale o precedente all\'orario di Start.');
       return;
     }
 
@@ -740,7 +766,9 @@ export class Events {
       title,
       comp_id: compId,
       player_cap: playerCap,
-      event_date_utc: scheduledAt.toISOString(),
+      event_date_utc: startAt.toISOString(),
+      mass_time_utc: massAt.toISOString(),
+      start_time_utc: startAt.toISOString(),
       call_to_arms: this.draftCallToArms(),
       regear: this.draftRegear(),
       discord_role_ids: this.draftDiscordRoleIds(),
@@ -796,7 +824,9 @@ export class Events {
     this.draftDescription.set('');
     this.draftCompId.set('');
     this.draftPlayerCap.set('');
-    this.draftScheduledAt.set(defaultScheduledAt());
+    this.draftEventDate.set(defaultEventDate());
+    this.draftMassTime.set(defaultMassTime());
+    this.draftStartTime.set(defaultStartTime());
     this.draftCallToArms.set(false);
     this.draftRegear.set(false);
     this.draftDiscordRoleIds.set([]);
@@ -844,23 +874,31 @@ function statusLabel(status: EventStatus): TranslationKey {
       return 'events.status.stopped';
     case 'auto_stopped':
       return 'events.status.auto_stopped';
+    case 'cancelled':
+      return 'events.status.cancelled';
   }
 }
 
-/** Formats a `Date` as `YYYY-MM-DDTHH:mm` in the user's local timezone. */
-function formatDatetimeLocal(date: Date): string {
+/** Formats a date as `YYYY-MM-DD` in the user's local timezone. */
+function formatDateInput(date: Date): string {
   const pad = (value: number): string => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-/** Snap to the next whole hour so the default event time is human-readable. */
-function defaultScheduledAt(): string {
-  const nextHour = new Date(Date.now() + 60 * 60 * 1000);
-  nextHour.setMinutes(0, 0, 0);
-  return formatDatetimeLocal(nextHour);
+function defaultEventDate(): string {
+  return formatDateInput(new Date(Date.now() + 60 * 60 * 1000));
 }
 
-/** Floor for the date picker — officers can still pick sooner than the next hour. */
-function minScheduledAt(): string {
-  return formatDatetimeLocal(new Date());
+function defaultMassTime(): string {
+  return '19:30';
+}
+
+function defaultStartTime(): string {
+  return '20:00';
+}
+
+function combineLocalDateTime(date: string, time: string): Date | null {
+  if (!date || !time) return null;
+  const value = new Date(`${date}T${time}`);
+  return Number.isNaN(value.getTime()) ? null : value;
 }

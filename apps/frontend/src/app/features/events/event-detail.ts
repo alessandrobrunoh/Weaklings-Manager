@@ -92,12 +92,29 @@ type EventDetailTab = 'roster' | 'overview' | 'battles' | 'splits';
 type PendingConfirm =
   | { kind: 'delete' }
   | { kind: 'stop'; eventId: number }
+  | { kind: 'cancel'; eventId: number }
   | { kind: 'unlink-split'; splitId: number }
   | { kind: 'clear-all' }
   | { kind: 'remove-participant'; userId: number; username: string; slotKey?: string };
 
 function isEventDetailTab(value: string): value is EventDetailTab {
   return value === 'roster' || value === 'overview' || value === 'battles' || value === 'splits';
+}
+
+function formatDateInput(date: Date): string {
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function formatTimeInput(date: Date): string {
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function combineLocalDateTime(date: string, time: string): Date | null {
+  if (!date || !time) return null;
+  const value = new Date(`${date}T${time}`);
+  return Number.isNaN(value.getTime()) ? null : value;
 }
 
 export interface CompPartyGroup {
@@ -167,6 +184,18 @@ interface AddEventMemberRequest {
           >
             <app-icon name="sparkles" size="0.875rem" />
             {{ t('events.start') }}
+          </button>
+        }
+        @if (canEdit() && detail.status === 'scheduled') {
+          <button
+            type="button"
+            class="btn btn--danger btn--sm"
+            (click)="requestCancel(detail.id)"
+            [appTooltip]="t('events.cancel')"
+            tooltipPosition="bottom"
+          >
+            <app-icon name="close" size="0.875rem" />
+            {{ t('events.cancel') }}
           </button>
         }
         @if (canEdit() && detail.status === 'live') {
@@ -265,8 +294,10 @@ interface AddEventMemberRequest {
             >
               <span class="inline-flex items-center gap-1.5 font-medium text-[var(--color-text)]">
                 <app-icon name="calendar" size="0.875rem" />
-                {{ formatDate(detail.event_date_utc) }}
+                {{ formatDate(detail.start_time_utc ?? detail.event_date_utc) }}
               </span>
+              <span>Mass: {{ formatTime(detail.mass_time_utc ?? detail.event_date_utc) }}</span>
+              <span>Start: {{ formatTime(detail.start_time_utc ?? detail.event_date_utc) }}</span>
 
               <span class="text-[var(--color-text-tertiary)]">&bull;</span>
 
@@ -1722,7 +1753,7 @@ interface AddEventMemberRequest {
             ></textarea>
           </label>
 
-          <div class="grid gap-4 sm:grid-cols-2">
+          <div class="grid gap-4 sm:grid-cols-4">
             <div>
               <span class="label">{{ t('events.detail.comp') }}</span>
               <div class="flex items-center gap-2">
@@ -1757,12 +1788,21 @@ interface AddEventMemberRequest {
               <span class="label">{{ t('common.date') }} *</span>
               <input
                 class="input"
-                type="datetime-local"
+                type="date"
                 required
-                [attr.min]="minScheduledAt()"
-                [value]="draftScheduledAt()"
-                (input)="onScheduledAtChange($event)"
+                [value]="draftEventDate()"
+                (input)="onEventDateChange($event)"
               />
+            </label>
+
+            <label>
+              <span class="label">Mass *</span>
+              <input class="input" type="time" required [value]="draftMassTime()" (input)="onMassTimeChange($event)" />
+            </label>
+
+            <label>
+              <span class="label">Start *</span>
+              <input class="input" type="time" required [value]="draftStartTime()" (input)="onStartTimeChange($event)" />
             </label>
           </div>
 
@@ -2441,12 +2481,10 @@ export class EventDetailPage {
   protected readonly draftCompId = signal('');
   protected readonly draftCallToArms = signal(false);
   protected readonly draftRegear = signal(false);
-  protected readonly draftScheduledAt = signal('');
-  protected readonly minScheduledAt = computed(() => {
-    const now = new Date(this.currentTime());
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-    return now.toISOString().slice(0, 16);
-  });
+  protected readonly draftEventDate = signal('');
+  protected readonly draftMassTime = signal('19:30');
+  protected readonly draftStartTime = signal('20:00');
+
   protected readonly showJoinForm = signal(false);
   protected readonly showJoinConfirm = signal(false);
   protected readonly joinFormLoading = signal(false);
@@ -2737,7 +2775,7 @@ export class EventDetailPage {
     if (detail.status === 'live') {
       return this.t('events.detail.countdown_live');
     }
-    if (detail.status === 'stopped' || detail.status === 'auto_stopped') {
+    if (detail.status === 'stopped' || detail.status === 'auto_stopped' || detail.status === 'cancelled') {
       return this.t('events.detail.countdown_ended');
     }
     const diffMs = new Date(detail.event_date_utc).getTime() - Date.now();
@@ -3843,6 +3881,10 @@ export class EventDetailPage {
     this.pendingConfirm.set({ kind: 'delete' });
   }
 
+  protected requestCancel(eventId: number): void {
+    this.pendingConfirm.set({ kind: 'cancel', eventId });
+  }
+
   protected cancelConfirm(): void {
     this.pendingConfirm.set(null);
   }
@@ -3853,6 +3895,8 @@ export class EventDetailPage {
         return this.t('events.detail.delete');
       case 'stop':
         return this.t('events.stop');
+      case 'cancel':
+        return this.t('events.cancel');
       case 'unlink-split':
         return this.t('events.detail.unlink_split');
       case 'clear-all':
@@ -3894,6 +3938,9 @@ export class EventDetailPage {
       case 'stop':
         await this.mutate(`api/events/${confirm.eventId}/stop`, 'POST', {});
         break;
+      case 'cancel':
+        await this.mutate(`api/events/${confirm.eventId}/cancel`, 'POST', {});
+        break;
       case 'unlink-split':
         await this.performUnlinkSplit(confirm.splitId);
         break;
@@ -3911,9 +3958,11 @@ export class EventDetailPage {
       this.draftDescription.set(detail.description || '');
       this.draftCompId.set(String(detail.active_comp_id || detail.comp_id));
       this.draftCompTitle.set(detail.comp_name || '');
-      const d = new Date(detail.event_date_utc);
-      d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-      this.draftScheduledAt.set(d.toISOString().slice(0, 16));
+      const start = new Date(detail.start_time_utc ?? detail.event_date_utc);
+      const mass = new Date(detail.mass_time_utc ?? new Date(start.getTime() - 30 * 60_000).toISOString());
+      this.draftEventDate.set(formatDateInput(start));
+      this.draftMassTime.set(formatTimeInput(mass));
+      this.draftStartTime.set(formatTimeInput(start));
       this.draftCallToArms.set(detail.call_to_arms);
       this.draftRegear.set(detail.regear);
     }
@@ -3928,8 +3977,20 @@ export class EventDetailPage {
     this.draftDescription.set((event.target as HTMLTextAreaElement).value);
   }
 
-  protected onScheduledAtChange(event: Event): void {
-    this.draftScheduledAt.set((event.target as HTMLInputElement).value);
+  protected onEventDateChange(event: Event): void {
+    this.draftEventDate.set((event.target as HTMLInputElement).value);
+  }
+
+  protected onMassTimeChange(event: Event): void {
+    this.draftMassTime.set((event.target as HTMLInputElement).value);
+  }
+
+  protected onStartTimeChange(event: Event): void {
+    this.draftStartTime.set((event.target as HTMLInputElement).value);
+  }
+
+  protected formatTime(iso: string): string {
+    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
   protected onCompChange(event: Event): void {
@@ -3955,9 +4016,14 @@ export class EventDetailPage {
       return;
     }
 
-    const scheduledAt = this.draftScheduledAt();
-    if (!scheduledAt) {
+    const massAt = combineLocalDateTime(this.draftEventDate(), this.draftMassTime());
+    const startAt = combineLocalDateTime(this.draftEventDate(), this.draftStartTime());
+    if (!massAt || !startAt) {
       this.toasts.error(this.t('validation.required'));
+      return;
+    }
+    if (massAt > startAt) {
+      this.toasts.error('Mass deve essere uguale o precedente all\'orario di Start.');
       return;
     }
 
@@ -3970,7 +4036,9 @@ export class EventDetailPage {
     if (compId > 0) {
       request.comp_id = compId;
     }
-    request.event_date_utc = new Date(scheduledAt).toISOString();
+    request.event_date_utc = startAt.toISOString();
+    request.mass_time_utc = massAt.toISOString();
+    request.start_time_utc = startAt.toISOString();
 
     this.saving.set(true);
     try {

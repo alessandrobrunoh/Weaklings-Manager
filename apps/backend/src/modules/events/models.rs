@@ -16,9 +16,9 @@ pub struct EventFilters {
     pub date_from: Option<String>,
     /// Filter by end date (inclusive).
     pub date_to: Option<String>,
-    /// Filter by session status (`scheduled`, `live`, `stopped`, `auto_stopped`).
+    /// Filter by session status (`scheduled`, `live`, `stopped`, `auto_stopped`, `cancelled`).
     pub status: Option<String>,
-    /// Sort column. Allowed: `event_date_utc` (default), `title`, `created_at`, `status`.
+    /// Sort column. Allowed: `start_time_utc`/`event_date_utc` (default), `mass_time_utc`, `title`, `created_at`, `status`.
     pub sort: Option<String>,
     /// Sort direction: `asc` or `desc`. Defaults to `asc` for the date column.
     pub order: Option<String>,
@@ -207,13 +207,17 @@ pub struct EventView {
     pub created_by: i64,
     /// The username of the user who created this event.
     pub created_by_username: String,
-    /// The start date of the event in UTC.
+    /// Compatibility alias for `start_time_utc`.
     pub event_date_utc: String,
+    /// The mass announcement time in UTC.
+    pub mass_time_utc: String,
+    /// The automatic event start time in UTC.
+    pub start_time_utc: String,
     /// The timestamp when the event was created.
     pub created_at: String,
     /// The timestamp when the event was last updated.
     pub updated_at: String,
-    /// Session status: `scheduled` | `live` | `stopped` | `auto_stopped`.
+    /// Session status: `scheduled` | `live` | `stopped` | `auto_stopped` | `cancelled`.
     pub status: String,
     /// When the session went live (RFC3339), if ever.
     pub started_at: Option<String>,
@@ -484,7 +488,8 @@ pub struct CreateEventRosterRoleRequest {
     "description": "Weekly Castle Fight. Be on time!",
     "call_to_arms": false,
     "comp_id": 1,
-    "event_date_utc": "2026-07-20T20:00:00Z"
+    "mass_time_utc": "2026-07-20T19:30:00Z",
+    "start_time_utc": "2026-07-20T20:00:00Z"
 }))]
 pub struct CreateEventRequest {
     /// The title of the event.
@@ -503,8 +508,15 @@ pub struct CreateEventRequest {
     /// It is a planning value, never a hard signup limit.
     #[serde(default)]
     pub player_cap: Option<i64>,
-    /// The start date and time of the event (UTC, e.g. RFC3339).
-    pub event_date_utc: String,
+    /// Compatibility start date/time alias. Used when the new timestamps are omitted.
+    #[serde(default)]
+    pub event_date_utc: Option<String>,
+    /// The mass announcement date/time (UTC, RFC3339).
+    #[serde(default)]
+    pub mass_time_utc: Option<String>,
+    /// The automatic start date/time (UTC, RFC3339).
+    #[serde(default)]
+    pub start_time_utc: Option<String>,
     /// Discord role snowflakes to mention in the event announcement.
     #[serde(default)]
     pub discord_role_ids: Vec<String>,
@@ -532,7 +544,8 @@ pub struct SetEventVoiceChannelRequest {
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[schema(example = json!({
     "title": "ZvZ Castle Fight (Updated Time)",
-    "event_date_utc": "2026-07-20T20:30:00Z"
+    "mass_time_utc": "2026-07-20T20:00:00Z",
+    "start_time_utc": "2026-07-20T20:30:00Z"
 }))]
 pub struct UpdateEventRequest {
     /// The new title of the event.
@@ -545,8 +558,12 @@ pub struct UpdateEventRequest {
     pub regear: Option<bool>,
     /// The new base composition ID.
     pub comp_id: Option<i64>,
-    /// The new start date and time of the event (UTC, e.g. RFC3339).
+    /// Compatibility start date/time alias.
     pub event_date_utc: Option<String>,
+    /// The new mass announcement date/time (UTC, RFC3339).
+    pub mass_time_utc: Option<String>,
+    /// The new automatic start date/time (UTC, RFC3339).
+    pub start_time_utc: Option<String>,
 }
 
 /// Request body to participate in an event or update participation builds.

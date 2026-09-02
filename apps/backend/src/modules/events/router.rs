@@ -80,6 +80,7 @@ pub fn router() -> Router {
             put(set_event_voice_channel).delete(clear_event_voice_channel),
         )
         .route("/{id}/start", post(start_event))
+        .route("/{id}/cancel", post(cancel_event))
         .route("/{id}/stop", post(stop_event))
         .route(
             "/{id}/battles",
@@ -101,11 +102,11 @@ pub fn router() -> Router {
         ("page" = Option<u64>, Query, description = "Page number (1-indexed, default: 1)"),
         ("limit" = Option<u64>, Query, description = "Items per page (1-50, default: 10)"),
         ("search" = Option<String>, Query, description = "Case-insensitive title match"),
-        ("status" = Option<String>, Query, description = "Session status: scheduled, live, stopped, auto_stopped"),
-        ("sort" = Option<String>, Query, description = "Sort column: event_date_utc, title, created_at, status"),
+        ("status" = Option<String>, Query, description = "Session status: scheduled, live, stopped, auto_stopped, cancelled"),
+        ("sort" = Option<String>, Query, description = "Sort column: event_date_utc/start_time_utc, mass_time_utc, title, created_at, status"),
         ("order" = Option<String>, Query, description = "Sort direction: asc (default) or desc"),
-        ("date_from" = Option<String>, Query, description = "Inclusive start of event_date_utc (RFC3339)"),
-        ("date_to" = Option<String>, Query, description = "Inclusive end of event_date_utc (RFC3339)")
+        ("date_from" = Option<String>, Query, description = "Inclusive start of start_time_utc (RFC3339)"),
+        ("date_to" = Option<String>, Query, description = "Inclusive end of start_time_utc (RFC3339)")
     ),
     responses(
         (status = 200, description = "Events list retrieved successfully", body = ApiResponseEventList),
@@ -1039,6 +1040,37 @@ async fn start_event(
     let service = EventService::new();
     let event = service.start_event(&db, id).await?;
     Ok(Json(ApiResponse::new(event)))
+}
+
+/// Cancels an event (status -> cancelled).
+///
+/// Requires `events.edit` permission. Repeating the request for an already cancelled event is safe.
+#[utoipa::path(
+    post,
+    path = "/api/events/{id}/cancel",
+    tag = "events",
+    summary = "Cancel event",
+    description = "Cancels a scheduled or live event. Completed events cannot be cancelled.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    responses(
+        (status = 200, description = "Event cancelled", body = ApiResponseEventView),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails),
+        (status = 409, description = "Event is already completed", body = ProblemDetails)
+    )
+)]
+async fn cancel_event(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<EventView>>, AppError> {
+    user.require(&perms, Permission::EventsEdit).await?;
+    Ok(Json(ApiResponse::new(
+        EventService::new().cancel_event(&db, id).await?,
+    )))
 }
 
 /// Stops an event session (status -> stopped).

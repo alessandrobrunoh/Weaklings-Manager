@@ -26,8 +26,12 @@ pub mod event {
         pub player_cap: Option<i64>,
         /// The user who created the event.
         pub created_by: i64,
-        /// The timestamp when the event will start (UTC).
+        /// Compatibility alias for `start_time_utc` (UTC).
         pub event_date_utc: DateTimeWithTimeZone,
+        /// The time at which the mass is announced (UTC).
+        pub mass_time_utc: Option<DateTimeWithTimeZone>,
+        /// The time at which the event starts automatically (UTC).
+        pub start_time_utc: Option<DateTimeWithTimeZone>,
         /// The timestamp when the event was created.
         pub created_at: DateTimeWithTimeZone,
         /// The timestamp when the event was last updated.
