@@ -205,6 +205,7 @@ export class Bank {
         { label: this.t('bank.status.requested'), value: 'requested' },
         { label: this.t('bank.status.rejected'), value: 'rejected' },
         { label: this.t('bank.status.withdrawn'), value: 'withdrawn' },
+        { label: this.t('bank.status.donated'), value: 'donated' },
       ],
     },
     {
@@ -332,6 +333,8 @@ export class Bank {
         return 'chip--error';
       case 'withdrawn':
         return 'chip--success';
+      case 'donated':
+        return 'chip--success';
       default:
         return '';
     }
@@ -347,6 +350,8 @@ export class Bank {
         return 'close';
       case 'withdrawn':
         return 'check';
+      case 'donated':
+        return 'bank';
       default:
         return 'info';
     }
@@ -358,6 +363,7 @@ export class Bank {
       requested: 'bank.status.requested',
       rejected: 'bank.status.rejected',
       withdrawn: 'bank.status.withdrawn',
+      donated: 'bank.status.donated',
     };
     return this.t(keyMap[status]);
   }

@@ -43,6 +43,15 @@ pub enum Permission {
     /// View another user's bank balance / transactions. Admin-only today.
     #[strum(serialize = "bank.view_others")]
     BankViewOthers,
+    /// Manually create a bank transaction (e.g. a one-off bonus). Admin-only.
+    #[strum(serialize = "bank.transactions.create")]
+    BankTransactionsCreate,
+    /// Edit an existing bank transaction's amount/status/recipient/etc. Admin-only.
+    #[strum(serialize = "bank.transactions.edit")]
+    BankTransactionsEdit,
+    /// Permanently delete a bank transaction. Admin-only.
+    #[strum(serialize = "bank.transactions.delete")]
+    BankTransactionsDelete,
     /// Create / edit participants / close out a loot split. Officer-or-above today.
     /// Superseded by splits.view/.create/.edit/.delete below — kept so
     /// existing role_permissions rows keep resolving.

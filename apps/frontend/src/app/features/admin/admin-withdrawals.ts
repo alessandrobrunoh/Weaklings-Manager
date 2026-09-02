@@ -583,6 +583,7 @@ export class AdminWithdrawals {
       requested: 'bank.status.requested',
       rejected: 'bank.status.rejected',
       withdrawn: 'bank.status.withdrawn',
+      donated: 'bank.status.donated',
     };
     return this.t(keyMap[status]);
   }

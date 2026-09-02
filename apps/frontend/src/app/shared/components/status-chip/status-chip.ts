@@ -30,6 +30,7 @@ export class StatusChip {
     pending: 'warning',
     requested: 'warning',
     withdrawn: 'success',
+    donated: 'success',
     completed: 'success',
     rejected: 'error',
     not_completed: 'neutral',

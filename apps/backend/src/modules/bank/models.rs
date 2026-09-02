@@ -178,6 +178,59 @@ pub struct TransactionFilters {
     pub sort: Option<String>,
     /// Sort direction: `asc` or `desc`. Defaults to `desc`.
     pub order: Option<String>,
+    /// Restrict to transactions linked to a single split. Since this can span every
+    /// participant's own transactions, listing with this set requires the same permission as
+    /// `?global=true` (`bank.view_others` or `bank.withdraw.accept`).
+    pub split_id: Option<i64>,
+}
+
+/// Request body to manually create a bank transaction (e.g. a one-off bonus or correction).
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct CreateTransactionRequest {
+    /// The user who is owed / receives the amount.
+    #[schema(example = 7)]
+    pub to_user_id: i64,
+    /// The transaction amount. Must be positive.
+    #[schema(value_type = String, example = "42.50")]
+    pub amount: Decimal,
+    /// The lifecycle status to create the row in. Defaults to `pending`.
+    pub status: Option<TransactionStatus>,
+    /// The kind of transaction. Defaults to `"manual_adjustment"`.
+    #[schema(example = "manual_adjustment")]
+    pub r#type: Option<String>,
+    /// Link this transaction to an existing split.
+    #[schema(example = 3)]
+    pub split_id: Option<i64>,
+    /// Whether the destination is the virtual Guild Bank. Defaults to `false`.
+    pub to_guild_bank: Option<bool>,
+    /// The user recorded as having paid this out, if any. Defaults to unset (Guild Bank).
+    #[schema(example = 1)]
+    pub from_user_id: Option<i64>,
+}
+
+/// Request body to update an existing bank transaction. Every field is optional and only
+/// provided fields are changed; omit a field to leave it as-is.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct UpdateTransactionRequest {
+    /// The new recipient.
+    #[schema(example = 7)]
+    pub to_user_id: Option<i64>,
+    /// The new payer. `null` explicitly clears it back to the virtual Guild Bank; omitting the
+    /// field leaves the current payer unchanged.
+    pub from_user_id: Option<Option<i64>>,
+    /// The new amount. Must be positive.
+    #[schema(value_type = Option<String>, example = "42.50")]
+    pub amount: Option<Decimal>,
+    /// The new lifecycle status.
+    pub status: Option<TransactionStatus>,
+    /// The new transaction type.
+    #[schema(example = "manual_adjustment")]
+    pub r#type: Option<String>,
+    /// The new linked split. `null` explicitly unlinks it from any split; omitting the field
+    /// leaves the current linkage unchanged.
+    pub split_id: Option<Option<i64>>,
+    /// Whether the destination is the virtual Guild Bank.
+    pub to_guild_bank: Option<bool>,
 }
 
 /// Request body to request withdrawal of one, several, or all of the caller's requestable
