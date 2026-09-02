@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node --watch --env-file=../../.env --experimental-strip-types src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test dist/embeds/*.test.js dist/services/*.test.js",
+    "test": "npm run build && DISCORD_BOT_TOKEN=test DISCORD_CLIENT_ID=test DISCORD_GUILD_ID=test BOT_API_SECRET=test node --test dist/embeds/*.test.js dist/services/*.test.js",
     "start": "node --env-file=../../.env dist/index.js",
     "type-check": "tsc --noEmit"
   },

@@ -12,6 +12,8 @@ export async function execute(
   interaction: ChatInputCommandInteraction,
   api: ApiClient,
 ): Promise<void> {
+  await interaction.deferReply({ flags: ['Ephemeral'] });
+
   let result: PaginatedData<ProgressionLeaderboardEntry> | ProgressionLeaderboardEntry[];
   try {
     result = await api.get<PaginatedData<ProgressionLeaderboardEntry> | ProgressionLeaderboardEntry[]>(
@@ -22,7 +24,7 @@ export async function execute(
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to load the leaderboard.';
     const errEmbed = createResponseEmbed('error', 'Leaderboard Unavailable', message, 'SEASON RANK');
-    await interaction.reply({ embeds: [errEmbed], flags: ['Ephemeral'] });
+    await interaction.editReply({ embeds: [errEmbed] });
     return;
   }
 
@@ -43,5 +45,5 @@ export async function execute(
     embed.setDescription(lines.join('\n'));
   }
 
-  await interaction.reply({ embeds: [embed] });
+  await interaction.editReply({ embeds: [embed] });
 }

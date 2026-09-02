@@ -7,10 +7,8 @@ import {
 } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import type { BattleSummary, PaginatedData } from '../api/types.js';
+import { config } from '../config.js';
 import { buildBattleListEmbed } from '../embeds/battle.embed.js';
-
-// Guild name for win/loss determination — fetched from env or inferred
-const GUILD_NAME = process.env['GUILD_NAME'] ?? '';
 
 export const data = new SlashCommandBuilder()
   .setName('battles')
@@ -37,7 +35,7 @@ export async function execute(
     { page, limit: 10 },
   );
 
-  const embed = buildBattleListEmbed(result.items, GUILD_NAME, result.current_page, result.total_pages);
+  const embed = buildBattleListEmbed(result.items, config.GUILD_NAME, result.current_page, result.total_pages);
 
   const navRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()

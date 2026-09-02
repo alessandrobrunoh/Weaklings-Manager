@@ -18,8 +18,34 @@ export interface StoppedDiscordEvent {
   voiceChannelOccupied: boolean;
 }
 
+// In-process lock keyed by event id: serializes concurrent "Start Event"
+// calls for the same event so two overlapping requests can't both pass the
+// `discord_voice_channel_id` check and each create their own voice channel.
+// A second caller for the same event id just awaits the first call's result
+// instead of racing it.
+const startLocks = new Map<number, Promise<StartedDiscordEvent>>();
+
 /** Starts or recovers a live event's Discord voice channel and optionally notifies its thread. */
 export async function startDiscordEvent(
+  client: Client,
+  api: ApiClient,
+  discordUserId: string,
+  eventId: number,
+  thread?: ThreadChannel,
+): Promise<StartedDiscordEvent> {
+  const inFlight = startLocks.get(eventId);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const run = startDiscordEventLocked(client, api, discordUserId, eventId, thread).finally(() => {
+    startLocks.delete(eventId);
+  });
+  startLocks.set(eventId, run);
+  return run;
+}
+
+async function startDiscordEventLocked(
   client: Client,
   api: ApiClient,
   discordUserId: string,
@@ -96,7 +122,16 @@ export async function stopDiscordEvent(
     return { event, voiceChannelDeleted: false, voiceChannelOccupied: false };
   }
 
-  const channel = await client.channels.fetch(voiceChannelId);
+  let channel;
+  try {
+    channel = await client.channels.fetch(voiceChannelId);
+  } catch (error) {
+    // The channel is already gone on Discord's side (e.g. manually deleted) —
+    // treat that the same as the "not found" case below instead of letting
+    // the error surface to the caller.
+    console.warn(`[EventLifecycle] Voice channel ${voiceChannelId} for event #${eventId} could not be fetched, treating as already stopped:`, error);
+    channel = null;
+  }
   if (!channel) {
     const cleared = await api.delete<EventDetailView>(
       `api/events/${eventId}/discord-voice-channel`,

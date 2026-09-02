@@ -187,6 +187,13 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Defense-in-depth: an unhandled promise rejection anywhere in the process
+// (e.g. a missed `await`/`.catch()` in a command or handler) would otherwise
+// crash the whole bot. Log it and keep running instead.
+process.on("unhandledRejection", (reason) => {
+  console.error("[Bot] Unhandled rejection:", reason);
+});
+
 main().catch((err) => {
   console.error("❌ Fatal error:", err);
   process.exit(1);
