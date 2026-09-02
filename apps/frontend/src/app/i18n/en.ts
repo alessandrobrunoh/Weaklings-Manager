@@ -672,6 +672,14 @@ export const en = {
   'comps.quantityUpdated': 'Quantity updated',
   'comps.buildRemoved': 'Build removed',
   'comps.delete.blocked': 'Cannot delete "{name}": it is still in use.',
+  'comps.archive': 'Archive',
+  'comps.unarchive': 'Unarchive',
+  'comps.archived': 'Archived',
+  'comps.showArchived': 'Show archived',
+  'comps.archiveConfirm':
+    'It will be hidden from every picker until you unarchive it. Anything already using it — an event, a comp — keeps working.',
+  'comps.archiveSuccess': 'Archived',
+  'comps.unarchiveSuccess': 'Unarchived',
 
   // Albion
   'albion.title': 'Albion Link',

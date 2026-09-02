@@ -663,6 +663,14 @@ export const es: TranslationDict = {
   'comps.quantityUpdated': 'Cantidad actualizada',
   'comps.buildRemoved': 'Build eliminada',
   'comps.delete.blocked': 'No se puede eliminar "{name}": todavía está en uso.',
+  'comps.archive': 'Archivar',
+  'comps.unarchive': 'Desarchivar',
+  'comps.archived': 'Archivada',
+  'comps.showArchived': 'Mostrar archivadas',
+  'comps.archiveConfirm':
+    'Se ocultará de todas las selecciones hasta que la desarchives. Todo lo que ya la usa — un evento, una comp — seguirá funcionando.',
+  'comps.archiveSuccess': 'Archivada',
+  'comps.unarchiveSuccess': 'Desarchivada',
 
   'albion.title': 'Enlace Albion',
   'albion.subtitle': 'Enlaza Discord a tu personaje del juego.',
@@ -1300,12 +1308,14 @@ export const es: TranslationDict = {
 
   // Intel — clasificaciones de gremio, tablero de amenazas, informe por jugador
   'intel.leaderboards.title': 'Clasificaciones del gremio',
-  'intel.leaderboards.hint': 'Ordenadas por actividad real en esta ventana, no por contadores guardados.',
+  'intel.leaderboards.hint':
+    'Ordenadas por actividad real en esta ventana, no por contadores guardados.',
   'intel.kills': 'Muertes infligidas',
   'intel.killFame': 'Fama de muertes',
   'intel.splitEarnings': 'Ganancias de repartos',
   'intel.topThreats.title': 'Principales amenazas',
-  'intel.topThreats.hint': 'Enemigos ordenados por nivel de amenaza, con nuestro historial contra ellos.',
+  'intel.topThreats.hint':
+    'Enemigos ordenados por nivel de amenaza, con nuestro historial contra ellos.',
   'intel.topThreats.counter': 'Nuestra contra',
   'intel.recordVsUs': 'Historial contra nosotros',
   'intel.player.title': 'Intel de combate',

@@ -37,6 +37,7 @@ function build(version: number, items: BuildItemSlot[]): BuildDetail {
     created_by_username: 'admin',
     updated_at: '2026-09-01T00:00:00Z',
     item_count: items.length,
+    archived_at: null,
     items,
   };
 }
@@ -57,6 +58,7 @@ function comp(
     build_count: builds.length,
     total_quantity: builds.reduce((sum, entry) => sum + entry.quantity, 0),
     parent_id: null,
+    archived_at: null,
     builds: builds.map((entry, index) => ({
       build_id: index + 1,
       quantity: entry.quantity,
@@ -71,6 +73,7 @@ function comp(
         created_by_username: 'admin',
         updated_at: '2026-09-01T00:00:00Z',
         item_count: 0,
+        archived_at: null,
       },
     })),
   };

@@ -20,8 +20,7 @@ import type {
   PaginatedData,
   UpdateCompRequest,
 } from '../../core/models/api.models';
-import { ApiError, ApiService } from '../../core/services/api.service';
-import type { BlockingReference } from '../../core/models/api.models';
+import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
@@ -92,6 +91,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
       <app-page-header
         [title]="current.name"
         [subtitle]="current.category_name || t('comps.noCategory')"
+        [badge]="current.archived_at ? t('comps.archived') : undefined"
       >
         <div pageActions class="flex flex-wrap items-center gap-2">
           <a class="btn btn--ghost" routerLink="/comps">← {{ t('comps.title') }}</a>
@@ -140,14 +140,25 @@ const ROLE_LABELS: Record<BuildRole, string> = {
             </button>
           }
           @if (canDelete() && mode() === 'view') {
-            <button
-              type="button"
-              class="btn btn--danger"
-              (click)="askDeleteComp()"
-              [disabled]="saving()"
-            >
-              {{ t('common.delete') }}
-            </button>
+            @if (current.archived_at) {
+              <button
+                type="button"
+                class="btn btn--outline"
+                (click)="unarchiveComp()"
+                [disabled]="saving()"
+              >
+                {{ t('comps.unarchive') }}
+              </button>
+            } @else {
+              <button
+                type="button"
+                class="btn btn--outline"
+                (click)="askArchiveComp()"
+                [disabled]="saving()"
+              >
+                {{ t('comps.archive') }}
+              </button>
+            }
           }
         </div>
       </app-page-header>
@@ -664,50 +675,25 @@ const ROLE_LABELS: Record<BuildRole, string> = {
         </app-dialog>
       }
 
-      @if (pendingDelete()) {
-        <app-dialog [title]="t('common.confirm')" size="sm" (closed)="closeDelete()">
-          @if (blockedByRefs(); as refs) {
-            <p>{{ t('comps.delete.blocked', { name: current.name }) }}</p>
-            <ul class="mt-2 grid gap-1 text-sm">
-              @for (ref of refs; track ref.resource + ':' + ref.id) {
-                <li>
-                  @if (ref.resource === 'event') {
-                    <a
-                      class="text-primary no-underline hover:underline"
-                      [routerLink]="['/events', ref.id]"
-                    >
-                      {{ ref.label }}
-                    </a>
-                  } @else {
-                    <span style="color: var(--color-text-secondary)">{{ ref.label }}</span>
-                  }
-                </li>
-              }
-            </ul>
-            <div dialogFooter>
-              <button type="button" class="btn btn--ghost" (click)="closeDelete()">
-                {{ t('common.close') }}
-              </button>
-            </div>
-          } @else {
-            <p>{{ t('comps.delete.confirm') }}</p>
-            <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
-              {{ current.name }}
-            </p>
-            <div dialogFooter>
-              <button type="button" class="btn btn--ghost" (click)="closeDelete()">
-                {{ t('common.cancel') }}
-              </button>
-              <button
-                type="button"
-                class="btn btn--danger"
-                [disabled]="saving()"
-                (click)="deleteComp()"
-              >
-                {{ t('common.delete') }}
-              </button>
-            </div>
-          }
+      @if (pendingArchive()) {
+        <app-dialog [title]="t('common.confirm')" size="sm" (closed)="closeArchiveConfirm()">
+          <p>{{ t('comps.archiveConfirm') }}</p>
+          <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
+            {{ current.name }}
+          </p>
+          <div dialogFooter>
+            <button type="button" class="btn btn--ghost" (click)="closeArchiveConfirm()">
+              {{ t('common.cancel') }}
+            </button>
+            <button
+              type="button"
+              class="btn btn--tonal"
+              [disabled]="saving()"
+              (click)="confirmArchiveComp()"
+            >
+              {{ t('comps.archive') }}
+            </button>
+          </div>
         </app-dialog>
       }
     } @else if (loadFailed()) {
@@ -753,9 +739,7 @@ export class CompDetailPage {
   protected readonly buildDetailsLoading = signal(false);
 
   protected readonly mode = signal<'view' | 'edit'>('view');
-  protected readonly pendingDelete = signal(false);
-  /** Set when a delete attempt was rejected because other rows still reference this comp. */
-  protected readonly blockedByRefs = signal<BlockingReference[] | null>(null);
+  protected readonly pendingArchive = signal(false);
   protected readonly editName = signal('');
   protected readonly editDescription = signal('');
   protected readonly editCategoryId = signal('');
@@ -1213,35 +1197,49 @@ export class CompDetailPage {
     }
   }
 
-  protected askDeleteComp(): void {
-    this.blockedByRefs.set(null);
-    this.pendingDelete.set(true);
+  protected askArchiveComp(): void {
+    this.pendingArchive.set(true);
   }
 
-  protected closeDelete(): void {
-    this.pendingDelete.set(false);
-    this.blockedByRefs.set(null);
+  protected closeArchiveConfirm(): void {
+    this.pendingArchive.set(false);
   }
 
-  protected async deleteComp(): Promise<void> {
+  /**
+   * Archives the comp in place — unlike the old hard delete, this never fails on references, so
+   * there's no blocking-reference branch to fall back to and no need to leave the page.
+   */
+  protected async confirmArchiveComp(): Promise<void> {
     const comp = this.comp();
     if (!comp) {
       return;
     }
     this.saving.set(true);
     try {
-      await firstValueFrom(this.api.delete(`api/comps/${comp.id}`));
-      this.pendingDelete.set(false);
-      this.toasts.success(this.t('common.delete'));
-      await this.router.navigate(['/comps']);
+      await firstValueFrom(this.api.post(`api/comps/${comp.id}/archive`, {}));
+      this.pendingArchive.set(false);
+      this.toasts.success(this.t('comps.archiveSuccess'));
+      await this.load(this.compId());
     } catch (error) {
-      const references = error instanceof ApiError ? error.blockingReferences() : null;
-      if (references) {
-        // Keep the dialog open — swap it to the "here's what's blocking it" view.
-        this.blockedByRefs.set(references);
-      } else {
-        this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-      }
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  /** Unarchiving is always safe — no dialog, one click, back into every picker. */
+  protected async unarchiveComp(): Promise<void> {
+    const comp = this.comp();
+    if (!comp) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      await firstValueFrom(this.api.post(`api/comps/${comp.id}/unarchive`, {}));
+      this.toasts.success(this.t('comps.unarchiveSuccess'));
+      await this.load(this.compId());
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.saving.set(false);
     }
