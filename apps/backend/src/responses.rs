@@ -105,6 +105,17 @@ pub struct ApiResponseTransactionViewList {
     pub data: Vec<crate::modules::bank::models::TransactionView>,
 }
 
+/// `OpenAPI` schema wrapper for a single `TransactionView` response (the manual create/edit
+/// endpoints return the transaction they just wrote).
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseTransactionView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The transaction that was just created or updated.
+    pub data: crate::modules::bank::models::TransactionView,
+}
+
 /// `OpenAPI` schema wrapper for split KPI totals.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseSplitKpiSummary {

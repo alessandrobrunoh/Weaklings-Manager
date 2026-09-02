@@ -138,6 +138,13 @@ export const ADMIN_PANELS: readonly AdminPanel[] = [
     permissions: ['bank.view_others'],
   },
   {
+    path: '/admin/transactions',
+    icon: 'bank',
+    labelKey: 'nav.admin.transactions',
+    hintKey: 'admin.hub.transactionsHint',
+    permissions: ['bank.view_others'],
+  },
+  {
     path: '/users',
     icon: 'users',
     labelKey: 'nav.admin.users',

@@ -5,8 +5,9 @@
 
 use axum::{
     Extension, Json, Router,
-    extract::Query,
-    routing::{get, post},
+    extract::{Path, Query},
+    http::StatusCode,
+    routing::{delete, get, patch, post},
 };
 
 use crate::errors::{AppError, ProblemDetails};
@@ -14,12 +15,12 @@ use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedTransactionView, PaginationParams};
 use crate::responses::{
     ApiResponse, ApiResponseBalanceSummary, ApiResponseBankAnalyticsSummary,
-    ApiResponseGuildBankSummary, ApiResponseTransactionViewList,
+    ApiResponseGuildBankSummary, ApiResponseTransactionView, ApiResponseTransactionViewList,
 };
 
 use super::models::{
-    AcceptWithdrawalRequest, RejectWithdrawalRequest, TransactionFilters, TransactionView,
-    WithdrawRequest,
+    AcceptWithdrawalRequest, CreateTransactionRequest, RejectWithdrawalRequest,
+    TransactionFilters, TransactionView, UpdateTransactionRequest, WithdrawRequest,
 };
 use super::service::BankService;
 
@@ -65,7 +66,14 @@ pub fn router() -> Router {
         .route("/balance", get(get_balance))
         .route("/guild/summary", get(get_guild_summary))
         .route("/admin/summary", get(get_admin_summary))
-        .route("/transactions", get(list_transactions))
+        .route(
+            "/transactions",
+            get(list_transactions).post(create_transaction),
+        )
+        .route(
+            "/transactions/{id}",
+            patch(update_transaction).delete(delete_transaction),
+        )
         .route("/transactions/withdraw", post(withdraw))
         .route("/transactions/withdraw/accept", post(accept_withdrawal))
         .route("/transactions/withdraw/reject", post(reject_withdrawal))
@@ -193,7 +201,9 @@ pub async fn get_admin_summary(
         and `order=asc|desc` (default `created_at` desc). Standard `page`/`limit` pagination. Pass `?user_id=<id>` to view \
         another member's transactions — administrator-only, same rule as `GET /bank/balance`. Pass `?global=true` to list \
         every member's transactions instead (the officer withdrawal review queue); this requires either `bank.view_others` \
-        (administrators) or `bank.withdraw.accept` (officers reviewing requested withdrawals).",
+        (administrators) or `bank.withdraw.accept` (officers reviewing requested withdrawals). Pass `?split_id=<id>` to \
+        list every transaction linked to one split (e.g. the split detail page) — since that spans every participant, \
+        not just the caller, it requires the same permission as `?global=true`.",
     security(("session_cookie" = [])),
     params(ListTransactionsQuery),
     responses(
@@ -207,10 +217,12 @@ async fn list_transactions(
     Extension(perms): Extension<Permissions>,
     Query(query): Query<ListTransactionsQuery>,
 ) -> Result<Json<ApiResponse<PaginatedTransactionView>>, AppError> {
-    let target = if query.global.unwrap_or(false) {
+    let lists_across_users = query.global.unwrap_or(false) || query.filters.split_id.is_some();
+    let target = if lists_across_users {
         // Officers reviewing the withdrawal queue only hold `bank.withdraw.accept`,
         // not the admin-only `bank.view_others` — either is enough to list every
-        // member's transactions.
+        // member's transactions. A `split_id` filter needs the same check: it spans
+        // every participant of that split, not just the caller.
         let can_view_others = user.has_permission(&perms, Permission::BankViewOthers).await;
         let can_review_withdrawals = user.has_permission(&perms, Permission::BankWithdrawAccept).await;
         if !can_view_others && !can_review_withdrawals {
@@ -356,4 +368,125 @@ async fn reject_withdrawal(
     let service = BankService::new();
     let rejected = service.reject_withdrawal(&db, user.user_id, &req).await?;
     Ok(Json(ApiResponse::new(rejected)))
+}
+
+/// Manually create a bank transaction (Admin only).
+///
+/// Normal transactions are created as a side effect of completing a split — this is the
+/// administrator override for one-off bonuses and corrections that can't go through that flow.
+///
+/// # Errors
+///
+/// * Returns `AppError::Forbidden` if the caller lacks `bank.transactions.create`.
+/// * Returns `AppError::Validation` if `amount` is not positive.
+/// * Returns `AppError::NotFound` if `to_user_id`, `from_user_id`, or `split_id` don't exist.
+#[utoipa::path(
+    post,
+    path = "/api/bank/transactions",
+    tag = "bank",
+    summary = "Manually create a bank transaction (Admin only)",
+    description = "Inserts a new ledger row directly, bypassing the normal split-completion flow. \
+        `status` defaults to `pending` and `type` defaults to `manual_adjustment` if omitted. \
+        `requested_at`/`withdrawn_at` are always left unset on create regardless of the chosen \
+        status — set them naturally by driving the row through the withdraw/accept flow \
+        afterwards if needed. Admin only.",
+    security(("session_cookie" = ["bank.transactions.create"])),
+    request_body(content = CreateTransactionRequest, description = "The transaction to create."),
+    responses(
+        (status = 200, description = "The created transaction", body = ApiResponseTransactionView),
+        (status = 400, description = "Validation error - amount must be positive", body = ProblemDetails),
+        (status = 403, description = "Forbidden - requires bank.transactions.create", body = ProblemDetails),
+        (status = 404, description = "Not found - to_user_id, from_user_id, or split_id doesn't exist", body = ProblemDetails)
+    )
+)]
+async fn create_transaction(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Json(req): Json<CreateTransactionRequest>,
+) -> Result<Json<ApiResponse<TransactionView>>, AppError> {
+    user.require(&perms, Permission::BankTransactionsCreate)
+        .await?;
+    let service = BankService::new();
+    let created = service
+        .create_transaction(&db, &req, user.user_id)
+        .await?;
+    Ok(Json(ApiResponse::new(created)))
+}
+
+/// Edit an existing bank transaction (Admin only).
+///
+/// # Errors
+///
+/// * Returns `AppError::Forbidden` if the caller lacks `bank.transactions.edit`.
+/// * Returns `AppError::Validation` if a provided `amount` is not positive.
+/// * Returns `AppError::NotFound` if the transaction, or a newly-referenced
+///   `to_user_id`/`from_user_id`/`split_id`, don't exist.
+#[utoipa::path(
+    patch,
+    path = "/api/bank/transactions/{id}",
+    tag = "bank",
+    summary = "Edit a bank transaction (Admin only)",
+    description = "Every field is optional; only fields present in the request body are changed. \
+        `from_user_id`/`split_id` use an explicit `null` to clear vs. omitting the field to leave \
+        the current value alone. Admin only.",
+    security(("session_cookie" = ["bank.transactions.edit"])),
+    params(("id" = i64, Path, description = "The transaction id")),
+    request_body(content = UpdateTransactionRequest, description = "The fields to change."),
+    responses(
+        (status = 200, description = "The updated transaction", body = ApiResponseTransactionView),
+        (status = 400, description = "Validation error - amount must be positive", body = ProblemDetails),
+        (status = 403, description = "Forbidden - requires bank.transactions.edit", body = ProblemDetails),
+        (status = 404, description = "Not found - the transaction, or a newly-referenced id, doesn't exist", body = ProblemDetails)
+    )
+)]
+async fn update_transaction(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Path(id): Path<i64>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Json(req): Json<UpdateTransactionRequest>,
+) -> Result<Json<ApiResponse<TransactionView>>, AppError> {
+    user.require(&perms, Permission::BankTransactionsEdit)
+        .await?;
+    let service = BankService::new();
+    let updated = service
+        .update_transaction(&db, id, &req, user.user_id)
+        .await?;
+    Ok(Json(ApiResponse::new(updated)))
+}
+
+/// Permanently delete a bank transaction (Admin only).
+///
+/// # Errors
+///
+/// * Returns `AppError::Forbidden` if the caller lacks `bank.transactions.delete`.
+/// * Returns `AppError::NotFound` if the transaction doesn't exist.
+#[utoipa::path(
+    delete,
+    path = "/api/bank/transactions/{id}",
+    tag = "bank",
+    summary = "Delete a bank transaction (Admin only)",
+    description = "Hard delete — nothing else references a transaction row, so there's no \
+        blocking-reference check. If the transaction was linked to a split, that split's \
+        `updated_at` is bumped so its \"last activity\" stays accurate. Admin only.",
+    security(("session_cookie" = ["bank.transactions.delete"])),
+    params(("id" = i64, Path, description = "The transaction id")),
+    responses(
+        (status = 204, description = "The transaction was deleted"),
+        (status = 403, description = "Forbidden - requires bank.transactions.delete", body = ProblemDetails),
+        (status = 404, description = "Not found - the transaction doesn't exist", body = ProblemDetails)
+    )
+)]
+async fn delete_transaction(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Path(id): Path<i64>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<StatusCode, AppError> {
+    user.require(&perms, Permission::BankTransactionsDelete)
+        .await?;
+    let service = BankService::new();
+    service.delete_transaction(&db, id, user.user_id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }

@@ -11,7 +11,10 @@ import type {
   SplitIsland,
   SplitIslandCity,
   SplitParticipant,
+  TransactionStatus,
+  TransactionView,
   UpdateSplitRequest,
+  UpdateTransactionRequest,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
@@ -491,6 +494,53 @@ function parsePercentageInput(raw: string): number | null {
                 </ng-template>
               </app-data-table>
             </section>
+
+            @if (canViewSplitTransactions()) {
+              <section class="surface overflow-hidden">
+                <header class="flex items-center justify-between border-b border-[var(--color-border)] p-3.5">
+                  <h2 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text)]">
+                    {{ t('splits.detail.transactionsTitle') }} ({{ splitTransactions().length }})
+                  </h2>
+                </header>
+                <app-data-table
+                  [columns]="transactionColumns()"
+                  [rows]="splitTransactions()"
+                  [loading]="transactionsLoading()"
+                  [trackBy]="trackTransaction"
+                  [hideSearch]="true"
+                  emptyIcon="bank"
+                  [emptyLabel]="'splits.detail.transactionsEmpty'"
+                >
+                  <ng-template dataTableCell="to_username" let-row>
+                    <span class="text-xs font-medium">{{ row.to_username }}</span>
+                  </ng-template>
+                  <ng-template dataTableCell="amount" let-row>
+                    <span class="font-mono text-xs font-medium">{{ formatAmount(row.amount) }}</span>
+                  </ng-template>
+                  <ng-template dataTableCell="status" let-row>
+                    <app-status-chip [value]="row.status" />
+                  </ng-template>
+                  <ng-template dataTableCell="created_at" let-row>
+                    <span class="text-xs" style="color: var(--color-text-secondary)">
+                      {{ formatDate(row.created_at) }}
+                    </span>
+                  </ng-template>
+                  @if (canEditTransactions()) {
+                    <ng-template dataTableCell="actions" let-row>
+                      <div class="flex justify-end">
+                        <button
+                          type="button"
+                          class="btn btn--outline btn--sm text-xs py-0.5 px-2"
+                          (click)="openEditTransaction(row)"
+                        >
+                          {{ t('common.edit') }}
+                        </button>
+                      </div>
+                    </ng-template>
+                  }
+                </app-data-table>
+              </section>
+            }
           }
         </app-page-stack>
       }
@@ -601,6 +651,53 @@ function parsePercentageInput(raw: string): number | null {
       </app-dialog>
     }
 
+    @if (editTransactionTarget(); as tx) {
+      <app-dialog [title]="t('splits.detail.transactionsEdit')" size="sm" (closed)="closeEditTransaction()">
+        <form id="edit-transaction-form" class="grid gap-4" (submit)="saveEditTransaction($event)">
+          <p class="text-xs" style="color: var(--color-text-secondary)">{{ tx.to_username }}</p>
+          <label class="block">
+            <span class="label text-xs">{{ t('common.amount') }}</span>
+            <input
+              class="input text-xs"
+              type="number"
+              min="0.01"
+              step="0.01"
+              required
+              [value]="editTransactionAmount() ?? ''"
+              (input)="onEditTransactionAmount($event)"
+            />
+          </label>
+          <label class="block">
+            <span class="label text-xs">{{ t('common.status') }}</span>
+            <select class="select text-xs" [value]="editTransactionStatus()" (change)="onEditTransactionStatus($event)">
+              <option value="pending">{{ t('bank.status.pending') }}</option>
+              <option value="requested">{{ t('bank.status.requested') }}</option>
+              <option value="rejected">{{ t('bank.status.rejected') }}</option>
+              <option value="withdrawn">{{ t('bank.status.withdrawn') }}</option>
+              <option value="donated">{{ t('bank.status.donated') }}</option>
+            </select>
+          </label>
+          <label class="block">
+            <span class="label text-xs">{{ t('admin.transactions.fields.type') }}</span>
+            <input class="input text-xs" type="text" [value]="editTransactionType()" (input)="onEditTransactionType($event)" />
+          </label>
+        </form>
+        <div dialogFooter class="flex justify-end gap-2">
+          <button type="button" class="btn btn--ghost btn--sm" (click)="closeEditTransaction()">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="submit"
+            class="btn btn--primary btn--sm"
+            form="edit-transaction-form"
+            [disabled]="savingTransaction()"
+          >
+            {{ savingTransaction() ? t('common.loading') : t('common.save') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
+
     @if (showEventSearch()) {
       <app-search-dialog
         [title]="t('splits.link_event')"
@@ -663,6 +760,14 @@ export class SplitDetailPage {
   protected readonly participantSearchOptions = signal<SearchDialogOption[]>([]);
   protected readonly searchingRoster = signal(false);
 
+  protected readonly splitTransactions = signal<TransactionView[]>([]);
+  protected readonly transactionsLoading = signal(false);
+  protected readonly editTransactionTarget = signal<TransactionView | null>(null);
+  protected readonly editTransactionAmount = signal<number | null>(null);
+  protected readonly editTransactionStatus = signal<TransactionStatus>('pending');
+  protected readonly editTransactionType = signal('');
+  protected readonly savingTransaction = signal(false);
+
   protected readonly trackParticipant = (row: SplitParticipant): number => row.user_id;
 
   protected readonly participantColumns: readonly DataTableColumn<SplitParticipant>[] = [
@@ -671,12 +776,38 @@ export class SplitDetailPage {
     { key: 'share', label: 'splits.share', align: 'right', accessor: (row) => row.share_amount },
   ];
 
+  protected readonly trackTransaction = (row: TransactionView): number => row.id;
+
+  protected readonly transactionColumns = computed<DataTableColumn<TransactionView>[]>(() => {
+    const base: DataTableColumn<TransactionView>[] = [
+      { key: 'to_username', label: 'admin.transactions.fields.to', accessor: (row) => row.to_username },
+      {
+        key: 'amount',
+        label: 'common.amount',
+        align: 'right',
+        accessor: (row) => Number(row.amount) || 0,
+      },
+      { key: 'status', label: 'common.status', accessor: (row) => row.status },
+      { key: 'created_at', label: 'common.date', accessor: (row) => row.created_at },
+    ];
+    if (this.canEditTransactions()) {
+      base.push({ key: 'actions', label: 'common.actions', align: 'right' });
+    }
+    return base;
+  });
+
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);
 
   protected readonly canAct = computed(() => this.auth.hasPermission('splits.edit'));
   protected readonly canDelete = computed(() => this.auth.hasPermission('splits.delete'));
   protected readonly canEdit = computed(() => this.canAct() && this.split()?.status === 'pending');
+  protected readonly canViewSplitTransactions = computed(
+    () => this.auth.hasPermission('bank.view_others') || this.auth.hasPermission('bank.withdraw.accept'),
+  );
+  protected readonly canEditTransactions = computed(() =>
+    this.auth.hasPermission('bank.transactions.edit'),
+  );
   protected readonly editFee = computed(() => parsePercentageInput(this.editFeeInput()) ?? DEFAULT_SPLIT_FEE);
   protected readonly editNetPreview = computed(() =>
     Math.max(
@@ -1105,6 +1236,80 @@ export class SplitDetailPage {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.loading.set(false);
+    }
+    if (this.canViewSplitTransactions()) {
+      void this.loadTransactions(id);
+    }
+  }
+
+  protected async loadTransactions(id: number): Promise<void> {
+    this.transactionsLoading.set(true);
+    try {
+      const data = await firstValueFrom(
+        this.api.get<PaginatedData<TransactionView>>('api/bank/transactions', {
+          split_id: id,
+          limit: 100,
+        }),
+      );
+      this.splitTransactions.set(data.items);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.transactionsLoading.set(false);
+    }
+  }
+
+  protected openEditTransaction(row: TransactionView): void {
+    this.editTransactionTarget.set(row);
+    this.editTransactionAmount.set(Number(row.amount));
+    this.editTransactionStatus.set(row.status);
+    this.editTransactionType.set(row.type);
+  }
+
+  protected closeEditTransaction(): void {
+    this.editTransactionTarget.set(null);
+  }
+
+  protected onEditTransactionAmount(event: Event): void {
+    const value = Number((event.target as HTMLInputElement).value);
+    this.editTransactionAmount.set(Number.isFinite(value) ? value : null);
+  }
+  protected onEditTransactionStatus(event: Event): void {
+    this.editTransactionStatus.set((event.target as HTMLSelectElement).value as TransactionStatus);
+  }
+  protected onEditTransactionType(event: Event): void {
+    this.editTransactionType.set((event.target as HTMLInputElement).value);
+  }
+
+  protected async saveEditTransaction(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    const target = this.editTransactionTarget();
+    const amount = this.editTransactionAmount();
+    const current = this.split();
+    if (!target || !current) {
+      return;
+    }
+    if (!amount || amount <= 0) {
+      this.toasts.error(this.t('validation.positive'));
+      return;
+    }
+    this.savingTransaction.set(true);
+    try {
+      const payload: UpdateTransactionRequest = {
+        amount,
+        status: this.editTransactionStatus(),
+        type: this.editTransactionType().trim() || undefined,
+      };
+      await firstValueFrom(
+        this.api.patch<TransactionView>(`api/bank/transactions/${target.id}`, payload),
+      );
+      this.closeEditTransaction();
+      await this.loadTransactions(current.id);
+      this.toasts.success(this.t('common.save'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.savingTransaction.set(false);
     }
   }
 

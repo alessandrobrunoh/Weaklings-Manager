@@ -705,11 +705,11 @@ export class Settings {
       align: 'right',
     },
     {
-      key: 'reason',
+      key: 'type',
       label: 'common.description',
       searchable: true,
-      accessor: (row) => row.reason ?? '',
-      comparator: (a, b) => (a.reason ?? '').localeCompare(b.reason ?? ''),
+      accessor: (row) => row.type,
+      comparator: (a, b) => a.type.localeCompare(b.type),
     },
     {
       key: 'created_at',

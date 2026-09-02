@@ -48,6 +48,9 @@ export type Role = string;
 export type PermissionKey =
   | 'bank.withdraw.accept'
   | 'bank.view_others'
+  | 'bank.transactions.create'
+  | 'bank.transactions.edit'
+  | 'bank.transactions.delete'
   | 'splits.manage'
   | 'splits.view'
   | 'splits.create'
@@ -185,20 +188,45 @@ export interface UserFilters {
 
 /* ------------------------------ Bank -------------------------------- */
 
-export type TransactionStatus = 'pending' | 'requested' | 'rejected' | 'withdrawn';
+export type TransactionStatus = 'pending' | 'requested' | 'rejected' | 'withdrawn' | 'donated';
 
 export interface TransactionView {
   id: number;
-  to_user_id: number;
-  to_username: string;
-  amount: number;
-  reason: string | null;
-  status: TransactionStatus;
   from_user_id: number | null;
   from_label: string;
+  to_user_id: number;
+  to_username: string;
+  to_label: string;
+  to_guild_bank: boolean;
+  amount: number;
+  status: TransactionStatus;
+  type: string;
+  split_id: number | null;
   created_at: string;
   requested_at: string | null;
   withdrawn_at: string | null;
+}
+
+export interface CreateTransactionRequest {
+  to_user_id: number;
+  amount: number;
+  status?: TransactionStatus;
+  type?: string;
+  split_id?: number;
+  to_guild_bank?: boolean;
+  from_user_id?: number;
+}
+
+export interface UpdateTransactionRequest {
+  to_user_id?: number;
+  /** `null` explicitly clears the payer back to the virtual Guild Bank. */
+  from_user_id?: number | null;
+  amount?: number;
+  status?: TransactionStatus;
+  type?: string;
+  /** `null` explicitly unlinks the transaction from any split. */
+  split_id?: number | null;
+  to_guild_bank?: boolean;
 }
 
 export interface BalanceSummary {

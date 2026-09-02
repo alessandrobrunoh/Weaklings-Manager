@@ -26,8 +26,9 @@ use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort
 
 use super::entities::{ActiveModel, Column, Entity as TransactionEntity, Model};
 use super::models::{
-    AcceptWithdrawalRequest, BalanceSummary, GuildBankSummary, RejectWithdrawalRequest,
-    TransactionFilters, TransactionView, WithdrawRequest,
+    AcceptWithdrawalRequest, BalanceSummary, CreateTransactionRequest, GuildBankSummary,
+    RejectWithdrawalRequest, TransactionFilters, TransactionView, UpdateTransactionRequest,
+    WithdrawRequest,
 };
 use super::status::TransactionStatus;
 
@@ -35,6 +36,8 @@ use super::status::TransactionStatus;
 pub const TYPE_SPLIT_CREDIT: &str = "split_credit";
 /// The transaction type recorded when a member donates their split share back to the guild.
 pub const TYPE_SPLIT_DONATION: &str = "split_donation";
+/// The transaction type recorded when an administrator manually creates a transaction.
+pub const TYPE_MANUAL: &str = "manual_adjustment";
 
 fn parse_status(model: &Model) -> Result<TransactionStatus, AppError> {
     TransactionStatus::from_str(&model.status)
@@ -73,6 +76,23 @@ where
     SplitEntity::update_many()
         .col_expr(SplitColumn::UpdatedAt, Expr::value(chrono::Utc::now()))
         .filter(SplitColumn::Id.is_in(split_ids))
+        .exec(db)
+        .await?;
+    Ok(())
+}
+
+/// Bumps `updated_at` on the given splits directly, for callers that already have the split ids
+/// (rather than a batch of `Model`s to extract them from, like [`touch_linked_splits`] does).
+async fn touch_split_ids<C>(db: &C, split_ids: &[i64]) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if split_ids.is_empty() {
+        return Ok(());
+    }
+    SplitEntity::update_many()
+        .col_expr(SplitColumn::UpdatedAt, Expr::value(chrono::Utc::now()))
+        .filter(SplitColumn::Id.is_in(split_ids.to_vec()))
         .exec(db)
         .await?;
     Ok(())
@@ -384,6 +404,10 @@ impl BankService {
 
         if let Some(status) = filters.status {
             query = query.filter(Column::Status.eq(status.to_string()));
+        }
+
+        if let Some(split_id) = filters.split_id {
+            query = query.filter(Column::SplitId.eq(split_id));
         }
 
         let search = filters
@@ -757,6 +781,239 @@ impl BankService {
         let updated_views = to_views_with_usernames(db, updated_models).await?;
 
         Ok(updated_views)
+    }
+
+    /// Manually creates a bank transaction (e.g. a one-off bonus or correction). Normal
+    /// transactions are created as a side effect of `SplitService::complete_split`; this is the
+    /// administrator override for everything else.
+    ///
+    /// # Errors
+    ///
+    /// * Returns `AppError::Validation` if `amount` is not positive.
+    /// * Returns `AppError::NotFound` if `to_user_id`, `from_user_id`, or `split_id` don't exist.
+    /// * Returns `AppError::Database` if the query fails.
+    pub async fn create_transaction(
+        &self,
+        db: &DatabaseConnection,
+        req: &CreateTransactionRequest,
+        actor_user_id: i64,
+    ) -> Result<TransactionView, AppError> {
+        if req.amount <= Decimal::ZERO {
+            return Err(AppError::Validation("amount must be positive".to_string()));
+        }
+        if UserEntity::find_by_id(req.to_user_id)
+            .one(db)
+            .await?
+            .is_none()
+        {
+            return Err(AppError::NotFound(format!(
+                "User {} not found",
+                req.to_user_id
+            )));
+        }
+        if let Some(from_user_id) = req.from_user_id {
+            if UserEntity::find_by_id(from_user_id).one(db).await?.is_none() {
+                return Err(AppError::NotFound(format!("User {from_user_id} not found")));
+            }
+        }
+        if let Some(split_id) = req.split_id {
+            if SplitEntity::find_by_id(split_id).one(db).await?.is_none() {
+                return Err(AppError::NotFound(format!("Split {split_id} not found")));
+            }
+        }
+
+        let status = req.status.unwrap_or(TransactionStatus::Pending);
+        let now = chrono::Utc::now().into();
+        let active = ActiveModel {
+            from_user_id: Set(req.from_user_id),
+            to_user_id: Set(req.to_user_id),
+            to_guild_bank: Set(req.to_guild_bank.unwrap_or(false)),
+            amount: Set(req.amount),
+            status: Set(status.to_string()),
+            r#type: Set(req
+                .r#type
+                .clone()
+                .unwrap_or_else(|| TYPE_MANUAL.to_string())),
+            split_id: Set(req.split_id),
+            created_at: Set(now),
+            requested_at: Set(None),
+            withdrawn_at: Set(None),
+            updated_at: Set(now),
+            ..Default::default()
+        };
+        let created = active.insert(db).await?;
+
+        if let Some(split_id) = created.split_id {
+            touch_split_ids(db, &[split_id]).await?;
+        }
+
+        crate::modules::audit::service::AuditService::log(
+            db,
+            "TRANSACTION_CREATED_MANUAL",
+            Some("TRANSACTION"),
+            Some(created.id),
+            Some(actor_user_id),
+            Some(serde_json::json!({
+                "to_user_id": created.to_user_id,
+                "from_user_id": created.from_user_id,
+                "amount": created.amount,
+                "status": created.status,
+                "type": created.r#type,
+                "split_id": created.split_id
+            })),
+        )
+        .await?;
+
+        let mut views = to_views_with_usernames(db, vec![created]).await?;
+        views
+            .pop()
+            .ok_or_else(|| AppError::Internal("created transaction view missing".to_string()))
+    }
+
+    /// Updates fields on an existing bank transaction. Only fields present in `req` are changed;
+    /// `from_user_id`/`split_id` use an explicit `Some(None)` to clear vs. omitted to leave alone.
+    ///
+    /// # Errors
+    ///
+    /// * Returns `AppError::NotFound` if the transaction, or a newly-referenced
+    ///   `to_user_id`/`from_user_id`/`split_id`, don't exist.
+    /// * Returns `AppError::Validation` if a provided `amount` is not positive.
+    /// * Returns `AppError::Database` if the query fails.
+    pub async fn update_transaction(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+        req: &UpdateTransactionRequest,
+        actor_user_id: i64,
+    ) -> Result<TransactionView, AppError> {
+        let existing = TransactionEntity::find_by_id(id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Transaction {id} not found")))?;
+
+        if let Some(amount) = req.amount {
+            if amount <= Decimal::ZERO {
+                return Err(AppError::Validation("amount must be positive".to_string()));
+            }
+        }
+        if let Some(to_user_id) = req.to_user_id {
+            if UserEntity::find_by_id(to_user_id).one(db).await?.is_none() {
+                return Err(AppError::NotFound(format!("User {to_user_id} not found")));
+            }
+        }
+        if let Some(Some(from_user_id)) = req.from_user_id {
+            if UserEntity::find_by_id(from_user_id).one(db).await?.is_none() {
+                return Err(AppError::NotFound(format!("User {from_user_id} not found")));
+            }
+        }
+        if let Some(Some(split_id)) = req.split_id {
+            if SplitEntity::find_by_id(split_id).one(db).await?.is_none() {
+                return Err(AppError::NotFound(format!("Split {split_id} not found")));
+            }
+        }
+
+        let old_split_id = existing.split_id;
+        let before = serde_json::json!({
+            "amount": existing.amount,
+            "status": existing.status,
+            "type": existing.r#type
+        });
+
+        let mut active: ActiveModel = existing.into();
+        if let Some(to_user_id) = req.to_user_id {
+            active.to_user_id = Set(to_user_id);
+        }
+        if let Some(from_user_id) = req.from_user_id {
+            active.from_user_id = Set(from_user_id);
+        }
+        if let Some(amount) = req.amount {
+            active.amount = Set(amount);
+        }
+        if let Some(status) = req.status {
+            active.status = Set(status.to_string());
+        }
+        if let Some(ref transaction_type) = req.r#type {
+            active.r#type = Set(transaction_type.clone());
+        }
+        if let Some(split_id) = req.split_id {
+            active.split_id = Set(split_id);
+        }
+        if let Some(to_guild_bank) = req.to_guild_bank {
+            active.to_guild_bank = Set(to_guild_bank);
+        }
+        active.updated_at = Set(chrono::Utc::now().into());
+
+        let updated = active.update(db).await?;
+
+        let mut touched_splits: Vec<i64> = old_split_id.into_iter().collect();
+        touched_splits.extend(updated.split_id);
+        touched_splits.sort_unstable();
+        touched_splits.dedup();
+        touch_split_ids(db, &touched_splits).await?;
+
+        crate::modules::audit::service::AuditService::log(
+            db,
+            "TRANSACTION_UPDATED",
+            Some("TRANSACTION"),
+            Some(updated.id),
+            Some(actor_user_id),
+            Some(serde_json::json!({
+                "before": before,
+                "after": {
+                    "amount": updated.amount,
+                    "status": updated.status,
+                    "type": updated.r#type
+                }
+            })),
+        )
+        .await?;
+
+        let mut views = to_views_with_usernames(db, vec![updated]).await?;
+        views
+            .pop()
+            .ok_or_else(|| AppError::Internal("updated transaction view missing".to_string()))
+    }
+
+    /// Permanently deletes a bank transaction. Nothing else references `transactions.id`, so this
+    /// is a plain hard delete — no blocking-reference check needed.
+    ///
+    /// # Errors
+    ///
+    /// * Returns `AppError::NotFound` if the transaction doesn't exist.
+    /// * Returns `AppError::Database` if the query fails.
+    pub async fn delete_transaction(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+        actor_user_id: i64,
+    ) -> Result<(), AppError> {
+        let existing = TransactionEntity::find_by_id(id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Transaction {id} not found")))?;
+
+        TransactionEntity::delete_by_id(id).exec(db).await?;
+
+        if let Some(split_id) = existing.split_id {
+            touch_split_ids(db, &[split_id]).await?;
+        }
+
+        crate::modules::audit::service::AuditService::log(
+            db,
+            "TRANSACTION_DELETED",
+            Some("TRANSACTION"),
+            Some(id),
+            Some(actor_user_id),
+            Some(serde_json::json!({
+                "to_user_id": existing.to_user_id,
+                "amount": existing.amount,
+                "type": existing.r#type,
+                "split_id": existing.split_id
+            })),
+        )
+        .await?;
+
+        Ok(())
     }
 }
 
@@ -1302,5 +1559,265 @@ mod tests {
             AppError::Validation(message) => assert!(message.contains("fame")),
             other => panic!("expected validation, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn list_transactions_filters_by_split_id() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let officer = insert_user(&db, "officer", "officer@example.com").await;
+        let old = chrono::Utc::now() - chrono::Duration::days(1);
+        let split_a = insert_completed_split(&db, officer, old).await;
+        let split_b = insert_completed_split(&db, officer, old).await;
+        insert_split_transaction(&db, alice, "10.00", TransactionStatus::Pending, Some(split_a))
+            .await;
+        insert_split_transaction(&db, alice, "5.00", TransactionStatus::Pending, Some(split_b))
+            .await;
+
+        let filtered = BankService::new()
+            .list_transactions(
+                &db,
+                None,
+                &PaginationParams {
+                    page: Some(1),
+                    limit: Some(10),
+                },
+                &TransactionFilters {
+                    split_id: Some(split_a),
+                    ..TransactionFilters::default()
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(filtered.total_items, 1);
+        assert_eq!(filtered.items[0].split_id, Some(split_a));
+    }
+
+    #[tokio::test]
+    async fn create_transaction_rejects_non_positive_amount() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let error = BankService::new()
+            .create_transaction(
+                &db,
+                &CreateTransactionRequest {
+                    to_user_id: alice,
+                    amount: Decimal::ZERO,
+                    status: None,
+                    r#type: None,
+                    split_id: None,
+                    to_guild_bank: None,
+                    from_user_id: None,
+                },
+                alice,
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn create_transaction_rejects_unknown_recipient() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let error = BankService::new()
+            .create_transaction(
+                &db,
+                &CreateTransactionRequest {
+                    to_user_id: 999_999,
+                    amount: "10.00".parse().unwrap(),
+                    status: None,
+                    r#type: None,
+                    split_id: None,
+                    to_guild_bank: None,
+                    from_user_id: None,
+                },
+                admin,
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn create_transaction_defaults_status_and_type_and_touches_split() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let old = chrono::Utc::now() - chrono::Duration::days(1);
+        let split_id = insert_completed_split(&db, admin, old).await;
+
+        let created = BankService::new()
+            .create_transaction(
+                &db,
+                &CreateTransactionRequest {
+                    to_user_id: alice,
+                    amount: "42.50".parse().unwrap(),
+                    status: None,
+                    r#type: None,
+                    split_id: Some(split_id),
+                    to_guild_bank: None,
+                    from_user_id: None,
+                },
+                admin,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(created.status, TransactionStatus::Pending);
+        assert_eq!(created.r#type, TYPE_MANUAL);
+        assert_eq!(created.split_id, Some(split_id));
+        assert_split_was_touched(&db, split_id, old).await;
+    }
+
+    #[tokio::test]
+    async fn update_transaction_changes_only_provided_fields() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let id = insert_transaction(&db, alice, "10.00", TransactionStatus::Pending).await;
+
+        let updated = BankService::new()
+            .update_transaction(
+                &db,
+                id,
+                &UpdateTransactionRequest {
+                    to_user_id: None,
+                    from_user_id: None,
+                    amount: Some("15.00".parse().unwrap()),
+                    status: None,
+                    r#type: None,
+                    split_id: None,
+                    to_guild_bank: None,
+                },
+                admin,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(updated.amount, "15.00".parse().unwrap());
+        assert_eq!(updated.status, TransactionStatus::Pending);
+    }
+
+    #[tokio::test]
+    async fn update_transaction_can_explicitly_clear_split_link() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let old = chrono::Utc::now() - chrono::Duration::days(1);
+        let split_id = insert_completed_split(&db, admin, old).await;
+        let id =
+            insert_split_transaction(&db, alice, "10.00", TransactionStatus::Pending, Some(split_id))
+                .await;
+
+        let updated = BankService::new()
+            .update_transaction(
+                &db,
+                id,
+                &UpdateTransactionRequest {
+                    to_user_id: None,
+                    from_user_id: None,
+                    amount: None,
+                    status: None,
+                    r#type: None,
+                    split_id: Some(None),
+                    to_guild_bank: None,
+                },
+                admin,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(updated.split_id, None);
+        assert_split_was_touched(&db, split_id, old).await;
+    }
+
+    #[tokio::test]
+    async fn update_transaction_rejects_non_positive_amount() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let id = insert_transaction(&db, alice, "10.00", TransactionStatus::Pending).await;
+
+        let error = BankService::new()
+            .update_transaction(
+                &db,
+                id,
+                &UpdateTransactionRequest {
+                    to_user_id: None,
+                    from_user_id: None,
+                    amount: Some(Decimal::ZERO),
+                    status: None,
+                    r#type: None,
+                    split_id: None,
+                    to_guild_bank: None,
+                },
+                alice,
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn update_transaction_returns_not_found_for_unknown_id() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+
+        let error = BankService::new()
+            .update_transaction(
+                &db,
+                999_999,
+                &UpdateTransactionRequest {
+                    to_user_id: None,
+                    from_user_id: None,
+                    amount: Some("1.00".parse().unwrap()),
+                    status: None,
+                    r#type: None,
+                    split_id: None,
+                    to_guild_bank: None,
+                },
+                alice,
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn delete_transaction_removes_the_row_and_touches_its_split() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let old = chrono::Utc::now() - chrono::Duration::days(1);
+        let split_id = insert_completed_split(&db, admin, old).await;
+        let id =
+            insert_split_transaction(&db, alice, "10.00", TransactionStatus::Pending, Some(split_id))
+                .await;
+
+        BankService::new()
+            .delete_transaction(&db, id, admin)
+            .await
+            .unwrap();
+
+        assert!(
+            TransactionEntity::find_by_id(id)
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_split_was_touched(&db, split_id, old).await;
+    }
+
+    #[tokio::test]
+    async fn delete_transaction_returns_not_found_for_unknown_id() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+
+        let error = BankService::new()
+            .delete_transaction(&db, 999_999, alice)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::NotFound(_)));
     }
 }
