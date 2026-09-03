@@ -25,14 +25,6 @@ interface AttentionItem {
   readonly link: string;
 }
 
-interface DisplaySplit {
-  readonly id: number;
-  readonly title: string;
-  readonly relativeTime: string;
-  readonly amount: string;
-  readonly isCompleted: boolean;
-  readonly isPending: boolean;
-}
 
 /**
  * Command Center Dashboard following the precision midnight Linear/Weaklings design.
@@ -150,16 +142,6 @@ interface DisplaySplit {
       background-color: #b91c1c;
     }
 
-    .split-card {
-      background-color: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-cards);
-      transition: border-color 150ms ease, background-color 150ms ease;
-      text-decoration: none;
-    }
-    .split-card:hover {
-      border-color: var(--color-border-strong);
-      background-color: var(--color-surface-hover);
     }
   `,
   template: `
@@ -440,58 +422,6 @@ interface DisplaySplit {
         </div>
       </section>
 
-      <!-- Row 3: RECENT SPLITS -->
-      <section aria-label="Recent splits">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)] m-0">
-            RECENT SPLITS
-          </h2>
-          <a
-            routerLink="/splits"
-            class="text-xs font-medium text-[var(--color-text-secondary)] hover:text-white flex items-center gap-1 transition-colors no-underline"
-          >
-            <span>View all</span>
-            <app-icon name="arrow-right" size="0.75rem" />
-          </a>
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          @for (split of displaySplits(); track split.id) {
-            <a
-              [routerLink]="['/splits', split.id]"
-              class="split-card flex items-center justify-between p-4 group"
-            >
-              <div class="min-w-0 flex-1 pr-3">
-                <p class="text-sm font-semibold text-white truncate m-0 group-hover:text-red-400 transition-colors">
-                  {{ split.title }}
-                </p>
-                <p class="text-xs text-[var(--color-text-tertiary)] mt-1 mb-0">
-                  {{ split.relativeTime }}
-                </p>
-              </div>
-
-              <div class="flex items-center gap-2 shrink-0">
-                <span
-                  class="text-sm font-bold font-mono"
-                  [class.text-emerald-400]="split.isCompleted"
-                  [class.text-[var(--color-text-tertiary)]]="!split.isCompleted"
-                >
-                  {{ split.amount }}
-                </span>
-                @if (split.isCompleted) {
-                  <div class="w-6 h-6 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0">
-                    <app-icon name="check" size="0.875rem" />
-                  </div>
-                } @else {
-                  <div class="w-6 h-6 text-amber-400 flex items-center justify-center shrink-0">
-                    <app-icon name="loader" size="1.125rem" />
-                  </div>
-                }
-              </div>
-            </a>
-          }
-        </div>
-      </section>
     </div>
   `,
 })
@@ -627,58 +557,6 @@ export class Dashboard {
     ];
   });
 
-  protected readonly displaySplits = computed<ReadonlyArray<DisplaySplit>>(() => {
-    const splits = this.recentSplits();
-    if (splits.length > 0) {
-      return splits.slice(0, 4).map((s) => ({
-        id: s.id,
-        title: s.event_title || s.created_by_username || 'Split',
-        relativeTime: this.formatRelative(s.created_at),
-        amount:
-          s.status === 'completed'
-            ? this.formatCompactSilver(s.estimated_market_value, true)
-            : '—',
-        isCompleted: s.status === 'completed',
-        isPending: s.status === 'pending',
-      }));
-    }
-
-    return [
-      {
-        id: 1,
-        title: 'Galvdon',
-        relativeTime: '1 hour ago',
-        amount: '+10.80M',
-        isCompleted: true,
-        isPending: false,
-      },
-      {
-        id: 2,
-        title: 'Launch Terry Grove',
-        relativeTime: '8 hours ago',
-        amount: '—',
-        isCompleted: false,
-        isPending: true,
-      },
-      {
-        id: 3,
-        title: 'Galvdon',
-        relativeTime: 'Yesterday',
-        amount: '+4.85M',
-        isCompleted: true,
-        isPending: false,
-      },
-      {
-        id: 4,
-        title: 'FRATELLI E SORELLE',
-        relativeTime: 'Yesterday',
-        amount: '+30.34M',
-        isCompleted: true,
-        isPending: false,
-      },
-    ];
-  });
-
   constructor() {
     void this.loadSnapshot();
   }
@@ -693,7 +571,7 @@ export class Dashboard {
   }
 
   private async loadSnapshot(): Promise<void> {
-    const [balance, guildSummary, pendingSplits, completedSplits, events, recentSplits] =
+    const [balance, guildSummary, pendingSplits, completedSplits, events] =
       await Promise.allSettled([
         firstValueFrom(this.api.get<BalanceSummary>('api/bank/balance')),
         firstValueFrom(this.api.get<GuildBankSummary>('api/bank/guild/summary')),
@@ -714,9 +592,6 @@ export class Dashboard {
         firstValueFrom(
           this.api.get<PaginatedData<EventView>>('api/events', { page: 1, limit: 10 }),
         ),
-        firstValueFrom(
-          this.api.get<PaginatedData<SplitSummary>>('api/splits', { page: 1, limit: 10 }),
-        ),
       ]);
 
     if (balance.status === 'fulfilled') {
@@ -733,9 +608,6 @@ export class Dashboard {
     }
     if (events.status === 'fulfilled') {
       this.recentEvents.set(events.value.items);
-    }
-    if (recentSplits.status === 'fulfilled') {
-      this.recentSplits.set(recentSplits.value.items);
     }
   }
 

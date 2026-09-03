@@ -37,7 +37,12 @@ interface EventDetailRosterAccess {
   onDragEnd(): void;
 }
 
-function seat(partyNumber: number, position: number, userId: number | null): EventRosterSeat {
+function seat(
+  partyNumber: number,
+  position: number,
+  userId: number | null,
+  role: EventRosterSeat['role'] = 'dps',
+): EventRosterSeat {
   return {
     key: `build:${partyNumber}:${position}`,
     party_number: partyNumber,
@@ -45,7 +50,7 @@ function seat(partyNumber: number, position: number, userId: number | null): Eve
     build_id: position,
     build_name: `Build ${position}`,
     build_version: 1,
-    role: 'dps',
+    role,
     participant:
       userId === null
         ? null
@@ -106,14 +111,14 @@ describe('EventDetailPage roster room', () => {
       event_id: 1,
       roster_version: 3,
       active_comp_id: 9,
-      seats: [seat(2, 2, 42), seat(1, 3, null), seat(2, 1, 7)],
+      seats: [seat(2, 1, 7, 'healer'), seat(1, 3, null), seat(2, 2, 42, 'support')],
       bench: [],
     });
 
     expect(page.ownRosterSeat()?.party_number).toBe(2);
     expect(page.ownRosterSeat()?.position).toBe(2);
     expect(page.rosterParties().map((party) => party.partyNumber)).toEqual([1, 2]);
-    expect(page.rosterParties()[1].seats.map((entry) => entry.position)).toEqual([1, 2]);
+    expect(page.rosterParties()[1].seats.map((entry) => entry.position)).toEqual([2, 1]);
   });
 
   it('correctly groups up to 20 seats per party', () => {
