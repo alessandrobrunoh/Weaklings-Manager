@@ -12,10 +12,8 @@ import type {
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { TranslateService } from '../../core/services/translate.service';
-import { Avatar } from '../../shared/components/avatar/avatar';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
-import { NotificationsPanel } from '../../layout/topbar/notifications-panel';
 
 interface AttentionItem {
   readonly icon: IconName;
@@ -38,7 +36,7 @@ interface AttentionItem {
 @Component({
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Avatar, Icon, NotificationsPanel, RouterLink, TooltipDirective],
+  imports: [Icon, RouterLink, TooltipDirective],
   styles: `
     :host {
       display: block;
@@ -155,7 +153,7 @@ interface AttentionItem {
           </p>
         </div>
 
-        <!-- Header Actions: Refresh, Notification Inbox, Profile Avatar -->
+        <!-- Header Actions: Refresh -->
         <div class="flex items-center gap-3 self-end sm:self-center">
           <button
             type="button"
@@ -168,28 +166,11 @@ interface AttentionItem {
           >
             <app-icon name="refresh" size="1rem" [class.animate-spin]="loading()" />
           </button>
-
-          <app-notifications-panel />
-
-          <a
-            routerLink="/profile"
-            class="inline-flex rounded-full transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-            [appTooltip]="username() + (auth.profile()?.highest_role ? ' (' + auth.profile()?.highest_role + ')' : '')"
-            tooltipPosition="bottom"
-            aria-label="User profile"
-          >
-            <app-avatar
-              [userId]="auth.profile()?.id ?? 'default'"
-              [avatar]="auth.profile()?.avatar ?? null"
-              [username]="username()"
-              size="sm"
-            />
-          </a>
         </div>
       </header>
 
       <!-- Row 1: 4 Key Performance Indicators (KPI Cards) -->
-      <section aria-label="Key Performance Indicators" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <section aria-label="Key Performance Indicators" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5">
         <!-- Card 1: Bank requested -->
         <a
           [routerLink]="auth.hasPermission('bank.withdraw.accept') ? '/admin/withdrawals' : '/bank'"
@@ -308,7 +289,7 @@ interface AttentionItem {
       </section>
 
       <!-- Row 2: Two-column deck (Requires your attention & Next mass) -->
-      <section class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+      <section class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 items-stretch">
         <!-- Left Column: Requires your attention -->
         <div class="action-panel p-5 sm:p-6 flex flex-col justify-between">
           <div>

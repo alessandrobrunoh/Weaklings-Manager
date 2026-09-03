@@ -235,7 +235,7 @@ function toDateInput(date: Date): string {
 
         @switch (tab()) {
           @case ('overview') {
-            <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('guild.tabs.overview')">
+            <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('guild.tabs.overview')">
               @for (stat of overviewStats(); track stat.key) {
                 <ng-container *ngTemplateOutlet="statCardTemplate; context: { $implicit: stat }" />
               }
@@ -342,7 +342,7 @@ function toDateInput(date: Date): string {
           }
 
           @case ('roster') {
-            <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('guild.tabs.roster')">
+            <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('guild.tabs.roster')">
               @for (stat of operationsStats(); track stat.key) {
                 <ng-container *ngTemplateOutlet="statCardTemplate; context: { $implicit: stat }" />
               }
@@ -428,7 +428,7 @@ function toDateInput(date: Date): string {
           }
 
           @case ('economy') {
-            <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('guild.tabs.economy')">
+            <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('guild.tabs.economy')">
               @for (stat of economyStats(); track stat.key) {
                 <ng-container *ngTemplateOutlet="statCardTemplate; context: { $implicit: stat }" />
               }

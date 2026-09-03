@@ -140,7 +140,7 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
     } @else if (matrix(); as data) {
       <app-page-stack>
         <!-- KPI Cards -->
-        <section class="grid gap-3.5 sm:grid-cols-3" aria-label="Permissions summary">
+        <section class="grid gap-4 sm:gap-5 sm:grid-cols-3" aria-label="Permissions summary">
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div>

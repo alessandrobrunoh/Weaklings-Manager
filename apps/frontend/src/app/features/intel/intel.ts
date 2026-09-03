@@ -142,7 +142,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
     } @else {
       <app-page-stack>
         <!-- Top KPI headline strip -->
-        <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Intel summary">
+        <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Intel summary">
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div>

@@ -18,6 +18,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
+  type DataTableTab,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
@@ -75,37 +76,6 @@ function emptyPageChange(): DataTablePageChange {
       height: 2.25rem;
       border-radius: 0.5rem;
       flex-shrink: 0;
-    }
-    .status-tab-group {
-      display: flex;
-      align-items: center;
-      gap: 0.375rem;
-      overflow-x: auto;
-      padding: 0.25rem 0;
-    }
-    .status-tab {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.375rem 0.75rem;
-      border-radius: 0.5rem;
-      font-size: 0.8125rem;
-      font-weight: 500;
-      color: var(--color-text-secondary);
-      border: 1px solid transparent;
-      background: transparent;
-      transition: all var(--motion-fast);
-      white-space: nowrap;
-      cursor: pointer;
-    }
-    .status-tab:hover {
-      color: var(--color-text);
-      background: var(--color-surface-hover);
-    }
-    .status-tab--active {
-      color: var(--color-text);
-      background: var(--color-surface-1);
-      border-color: var(--color-border);
     }
     .status-pill {
       display: inline-flex;
@@ -179,7 +149,7 @@ function emptyPageChange(): DataTablePageChange {
 
     <app-page-stack>
       <!-- KPI Row: 4 modern cards -->
-      <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('bank.personalSummary')">
+      <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('bank.personalSummary')">
         <!-- Card 1: Available credits -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
@@ -261,74 +231,6 @@ function emptyPageChange(): DataTablePageChange {
         </article>
       </section>
 
-      <!-- Status Filter Tabs -->
-      <section class="flex flex-wrap items-center justify-between gap-3 pt-1">
-        <nav class="status-tab-group" aria-label="Transaction status filter">
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === ''"
-            (click)="setStatusFilter('')"
-          >
-            <span>{{ t('common.all') }}</span>
-            <span class="rounded-full bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[0.6875rem] font-mono">
-              {{ transactionTotal() }}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === 'requested'"
-            (click)="setStatusFilter('requested')"
-          >
-            <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
-            <span>{{ t('bank.status.requested') }}</span>
-          </button>
-
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === 'pending'"
-            (click)="setStatusFilter('pending')"
-          >
-            <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-primary)]"></span>
-            <span>{{ t('bank.status.pending') }}</span>
-          </button>
-
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === 'withdrawn'"
-            (click)="setStatusFilter('withdrawn')"
-          >
-            <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-success)]"></span>
-            <span>{{ t('bank.status.withdrawn') }}</span>
-          </button>
-
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === 'rejected'"
-            (click)="setStatusFilter('rejected')"
-          >
-            <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-error)]"></span>
-            <span>{{ t('bank.status.rejected') }}</span>
-          </button>
-        </nav>
-
-        @if (statusFilter() !== '') {
-          <button
-            type="button"
-            class="btn btn--ghost btn--sm text-xs py-1 px-2 text-[var(--color-text-secondary)] hover:text-(--color-text) inline-flex items-center gap-1"
-            (click)="setStatusFilter('')"
-          >
-            <app-icon name="close" size="0.75rem" />
-            <span>{{ t('common.clear') }}</span>
-          </button>
-        }
-      </section>
-
       <app-data-table
         [columns]="transactionColumns()"
         [rows]="transactions()"
@@ -339,59 +241,116 @@ function emptyPageChange(): DataTablePageChange {
         [serverMode]="true"
         [totalItems]="transactionTotal()"
         [pageSize]="10"
+        searchPlaceholder="Search transactions..."
+        itemLabel="transactions"
         emptyIcon="bank"
-        [emptyLabel]="'bank.transactions.empty'"
+        emptyTitle="No transactions found"
+        emptySubtitle="There are no transactions matching the selected filters."
+        [tabs]="bankTabs()"
+        [activeTab]="statusFilter()"
+        (tabChange)="onTabSelect($event)"
         (pageChange)="onTableChange($event)"
       >
-        <ng-template dataTableCell="status" let-row>
-          @switch (row.status) {
-            @case ('withdrawn') {
-              <span class="status-pill status-pill--withdrawn">
-                <app-icon name="check" size="0.75rem" />
-                {{ statusLabel(row.status) }}
-              </span>
-            }
-            @case ('requested') {
-              <span class="status-pill status-pill--requested">
-                <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
-                {{ statusLabel(row.status) }}
-              </span>
-            }
-            @case ('pending') {
-              <span class="status-pill status-pill--pending">
-                <app-icon name="info" size="0.75rem" />
-                {{ statusLabel(row.status) }}
-              </span>
-            }
-            @case ('rejected') {
-              <span class="status-pill status-pill--rejected">
-                <app-icon name="close" size="0.75rem" />
-                {{ statusLabel(row.status) }}
-              </span>
-            }
-            @default {
-              <span class="status-pill status-pill--pending">
-                {{ statusLabel(row.status) }}
-              </span>
-            }
-          }
-        </ng-template>
-
-        <ng-template dataTableCell="amount" let-row>
-          <span
-            class="font-mono text-sm font-semibold"
-            [class.text-success]="row.status === 'withdrawn' || row.status === 'pending'"
-            [class.text-warning]="row.status === 'requested'"
-            [class.text-error]="row.status === 'rejected'"
-          >
-            {{ formatAmount(row.amount) }}
-          </span>
+        <ng-template dataTableCell="transaction" let-row>
+          <div class="min-w-[200px]">
+            <span class="text-sm font-semibold text-[var(--color-text)]">
+              @if (row.type === 'split') {
+                Split #{{ row.split_id || row.id }} Payout
+              } @else if (row.type === 'withdrawal') {
+                Withdrawal to {{ row.to_username || row.to_label }}
+              } @else {
+                {{ row.type || 'Transaction' }} #{{ row.id }}
+              }
+            </span>
+            <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">
+              {{ row.from_label || 'Guild Bank' }} &rarr; {{ row.to_label || row.to_username || 'Member' }}
+            </div>
+          </div>
         </ng-template>
 
         <ng-template dataTableCell="created_at" let-row>
-          <span class="text-xs text-[var(--color-text-secondary)]">
-            {{ formatDate(row.created_at) }}
-          </span>
+          <div class="whitespace-nowrap">
+            <div class="text-xs font-medium text-[var(--color-text)]">
+              {{ formatDateDay(row.created_at) }}
+            </div>
+            <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">
+              {{ formatDateTime(row.created_at) }}
+            </div>
+          </div>
+        </ng-template>
+
+        <ng-template dataTableCell="type" let-row>
+          <div class="inline-flex items-center gap-1.5 text-xs text-[var(--color-text)] whitespace-nowrap">
+            <app-icon
+              [name]="row.type === 'split' ? 'swords' : row.type === 'withdrawal' ? 'bank' : 'coins'"
+              size="0.875rem"
+              class="text-[var(--color-text-tertiary)] shrink-0"
+            />
+            <span class="capitalize">{{ row.type }}</span>
+          </div>
+        </ng-template>
+
+        <ng-template dataTableCell="status" let-row>
+          <div class="whitespace-nowrap">
+            @switch (row.status) {
+              @case ('withdrawn') {
+                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
+                  <app-icon name="check" size="0.75rem" />
+                  <span>Paid out</span>
+                </span>
+              }
+              @case ('requested') {
+                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
+                  <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
+                  <span>Requested</span>
+                </span>
+              }
+              @case ('pending') {
+                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-info-container)] text-[var(--color-info)] border border-[var(--color-info)]">
+                  <app-icon name="info" size="0.75rem" />
+                  <span>Pending</span>
+                </span>
+              }
+              @case ('rejected') {
+                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-error-container)] text-error border border-[var(--color-error)]">
+                  <app-icon name="close" size="0.75rem" />
+                  <span>Rejected</span>
+                </span>
+              }
+              @default {
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-surface-2)] text-[var(--color-text-tertiary)] border border-[var(--color-border)]">
+                  <span>{{ statusLabel(row.status) }}</span>
+                </span>
+              }
+            }
+          </div>
+        </ng-template>
+
+        <ng-template dataTableCell="amount" let-row>
+          <div class="whitespace-nowrap text-right">
+            <span
+              class="font-mono text-sm font-semibold"
+              [class.text-success]="row.status === 'withdrawn' || row.status === 'pending'"
+              [class.text-warning]="row.status === 'requested'"
+              [class.text-error]="row.status === 'rejected'"
+            >
+              {{ formatAmount(row.amount) }}
+            </span>
+            <span class="text-[10px] font-mono text-[var(--color-text-tertiary)] uppercase ml-1">silver</span>
+          </div>
+        </ng-template>
+
+        <ng-template dataTableCell="actions" let-row>
+          <div class="inline-flex items-center justify-end gap-1.5 whitespace-nowrap text-right">
+            @if (row.split_id) {
+              <a
+                [routerLink]="['/splits', row.split_id]"
+                class="px-3 py-1 text-xs font-medium text-[var(--color-text-secondary)] bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)] border border-[var(--color-border)] rounded-md transition-all no-underline"
+              >
+                Split
+              </a>
+            }
+          </div>
         </ng-template>
       </app-data-table>
     </app-page-stack>
@@ -485,17 +444,28 @@ export class Bank {
 
   protected readonly transactionColumns = computed<DataTableColumn<TransactionView>[]>(() => [
     {
+      key: 'transaction',
+      label: 'bank.transactions.title',
+      sortable: false,
+      accessor: (row) => row.id,
+    },
+    {
+      key: 'created_at',
+      label: 'common.date',
+      sortable: true,
+      accessor: (row) => row.created_at,
+    },
+    {
+      key: 'type',
+      label: 'common.type',
+      sortable: true,
+      accessor: (row) => row.type,
+    },
+    {
       key: 'status',
       label: 'common.status',
       sortable: true,
       accessor: (row) => row.status,
-      filterOptions: [
-        { label: this.t('bank.status.pending'), value: 'pending' },
-        { label: this.t('bank.status.requested'), value: 'requested' },
-        { label: this.t('bank.status.rejected'), value: 'rejected' },
-        { label: this.t('bank.status.withdrawn'), value: 'withdrawn' },
-        { label: this.t('bank.status.donated'), value: 'donated' },
-      ],
     },
     {
       key: 'amount',
@@ -505,12 +475,59 @@ export class Bank {
       align: 'right',
     },
     {
-      key: 'created_at',
-      label: 'common.date',
-      sortable: true,
-      accessor: (row) => row.created_at,
+      key: 'actions',
+      label: 'common.actions',
+      sortable: false,
+      accessor: (row) => row.id,
+      align: 'right',
     },
   ]);
+
+  protected readonly bankTabs = computed<DataTableTab[]>(() => [
+    {
+      id: '',
+      label: this.t('common.all'),
+      count: this.transactionTotal(),
+    },
+    {
+      id: 'requested',
+      label: this.t('bank.status.requested'),
+      dotClass: 'bg-[var(--color-warning)] animate-pulse',
+      count: this.balance()?.requested_count,
+    },
+    {
+      id: 'pending',
+      label: this.t('bank.status.pending'),
+      dotClass: 'bg-[var(--color-info)]',
+      count: this.balance()?.pending_count,
+    },
+    {
+      id: 'withdrawn',
+      label: this.t('bank.status.withdrawn'),
+      dotClass: 'bg-[var(--color-success)]',
+    },
+    {
+      id: 'rejected',
+      label: this.t('bank.status.rejected'),
+      dotClass: 'bg-[var(--color-error)]',
+    },
+  ]);
+
+  protected onTabSelect(tabId: string): void {
+    this.setStatusFilter(tabId as TransactionStatus | '');
+  }
+
+  protected formatDateDay(dateStr: string | null | undefined): string {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  protected formatDateTime(dateStr: string | null | undefined): string {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  }
 
   protected async refreshNow(): Promise<void> {
     await this.load();
@@ -542,9 +559,6 @@ export class Bank {
 
   protected onTableChange(event: DataTablePageChange): void {
     this.tableQuery.set(event);
-    if (event.columnFilters['status']) {
-      this.statusFilter.set(event.columnFilters['status'] as TransactionStatus);
-    }
     void this.loadTransactions();
   }
 

@@ -113,7 +113,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
     </app-page-header>
 
     <app-page-stack>
-      <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Members summary">
+      <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Members summary">
         <!-- Card 1: Total -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">

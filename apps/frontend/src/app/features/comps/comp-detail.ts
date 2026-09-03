@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
@@ -46,6 +46,7 @@ import type { AbilitySlotView } from '../../shared/data/albion-abilities';
 import { AlbionAbilitiesService } from '../../shared/services/albion-abilities.service';
 import { Icon } from '../../shared/components/icon/icon';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
+import { COMP_PARTY_SIZE, simulateCompParties, type CompPartyView } from './comp-parties';
 
 const ROLES: BuildRole[] = ['healer', 'support', 'dps', 'tank', 'battle_mount', 'brawler'];
 
@@ -56,6 +57,24 @@ const ROLE_LABELS: Record<BuildRole, string> = {
   tank: 'Tank',
   battle_mount: 'Battle Mount',
   brawler: 'Brawler',
+};
+
+const ROLE_CHIP: Readonly<Record<BuildRole, string>> = {
+  tank: 'chip chip--info',
+  healer: 'chip chip--success',
+  support: 'chip chip--warning',
+  dps: 'chip chip--error',
+  battle_mount: 'chip',
+  brawler: 'chip',
+};
+
+const ROLE_GLYPH: Readonly<Record<BuildRole, string>> = {
+  tank: 'T',
+  healer: 'H',
+  support: 'S',
+  dps: 'DPS',
+  battle_mount: 'BM',
+  brawler: 'BR',
 };
 
 /**
@@ -90,6 +109,12 @@ const ROLE_LABELS: Record<BuildRole, string> = {
     Icon,
     TooltipDirective,
   ],
+  styles: `
+    .comp-detail__party-tab--active {
+      border-bottom-color: var(--color-primary);
+      color: var(--color-text);
+    }
+  `,
   template: `
     @if (loading()) {
       <app-loading [label]="t('common.loading')" />
@@ -216,7 +241,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                 [disabled]="saving()"
               >
                 <app-icon [name]="mode() === 'edit' ? 'check' : 'edit'" size="0.75rem" />
-                {{ mode() === 'edit' ? 'Termina Modifiche' : 'Modifica Roster' }}
+                {{ mode() === 'edit' ? t('comps.doneEditing') : t('comps.editRoster') }}
               </button>
               <button
                 type="button"
@@ -233,7 +258,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                 (click)="openEditMeta()"
                 [disabled]="saving()"
               >
-                Info Comp
+                {{ t('comps.editMeta') }}
               </button>
             }
           </div>
@@ -244,98 +269,143 @@ const ROLE_LABELS: Record<BuildRole, string> = {
           <div class="p-3.5 rounded-[var(--radius-cards)] border border-[var(--color-warning)]/40 bg-[var(--color-warning-container)] flex flex-wrap items-center justify-between gap-3 text-xs">
             <div class="flex items-center gap-2 text-warning">
               <app-icon name="edit" size="1rem" />
-              <span><strong>Modalità Modifica Roster:</strong> Regola le quantità dei ruoli tramite i selettori nelle card, rimuovi build o aggiungine di nuove con il pulsante "Aggiungi Build".</span>
+              <span>{{ t('comps.editRosterHint') }}</span>
             </div>
             <button type="button" class="btn btn--sm btn--primary" (click)="mode.set('view')">
-              Fatto
+              {{ t('comps.doneEditing') }}
             </button>
           </div>
         }
 
         <!-- ================= VIEW 1: PARTIES ROSTER ================= -->
         @if (viewMode() === 'parties') {
-          <div class="space-y-6">
+          <div class="space-y-3">
             @if (partySimulation().length === 0) {
               <app-empty-state icon="package" [message]="t('comps.noBuilds')" />
             } @else {
-              <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
-                @for (party of partySimulation(); track party.partyNumber) {
-                  <div class="card p-4 border border-[var(--color-border)] space-y-3 bg-[var(--color-surface)]">
-                    <!-- Party Card Header -->
-                    <div class="flex items-center justify-between gap-2 pb-2 border-b border-[var(--color-border)]">
-                      <div class="flex items-center gap-2">
-                        <span class="w-2 h-2 rounded-full bg-[var(--color-success)]"></span>
-                        <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text)]">
-                          Party {{ party.partyNumber }}
-                        </h3>
-                      </div>
-                      <span class="chip chip--neutral text-[10px] font-mono">
-                        {{ party.seats.length }}/5 Posti
+              @if (partySimulation().length > 1) {
+                <div
+                  class="flex gap-1 overflow-x-auto border-b border-[var(--color-border)]"
+                  role="tablist"
+                  [attr.aria-label]="t('comps.partyTabs')"
+                >
+                  @for (party of partySimulation(); track party.partyNumber) {
+                    <button
+                      type="button"
+                      role="tab"
+                      class="shrink-0 border-b-2 border-transparent px-3 py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)] focus-visible:outline-offset-[-2px]"
+                      [class.comp-detail__party-tab--active]="activeRosterParty()?.partyNumber === party.partyNumber"
+                      [attr.aria-selected]="activeRosterParty()?.partyNumber === party.partyNumber"
+                      [attr.tabindex]="activeRosterParty()?.partyNumber === party.partyNumber ? 0 : -1"
+                      [attr.aria-controls]="'comp-party-panel-' + party.partyNumber"
+                      (click)="selectRosterParty(party.partyNumber)"
+                      (keydown)="onRosterPartyKeydown($event, party.partyNumber)"
+                    >
+                      {{ partyName(party) }}
+                      <span class="ml-1 font-mono text-[10px] text-[var(--color-text-tertiary)]">
+                        {{ party.seats.length }}/{{ partySize }}
+                      </span>
+                    </button>
+                  }
+                </div>
+              }
+
+              @if (activeRosterParty(); as party) {
+                <section
+                  class="card overflow-hidden border border-[var(--color-border)] p-0 shadow-sm"
+                  role="tabpanel"
+                  [id]="'comp-party-panel-' + party.partyNumber"
+                  [attr.aria-label]="partyName(party)"
+                >
+                  <header
+                    class="flex items-center justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-1)] px-3.5 py-2.5"
+                  >
+                    <div class="flex items-center gap-2">
+                      <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text)]">
+                        {{ partyName(party) }}
+                      </h3>
+                      <span class="text-[11px] font-mono text-[var(--color-text-secondary)]">
+                        ({{ t('comps.partySeats', { count: party.seats.length }) }})
                       </span>
                     </div>
-
-                    <!-- 5 Seats List -->
-                    <div class="space-y-2">
-                      @for (seat of party.seats; track seat.globalIndex) {
+                    <div class="flex items-center gap-2">
+                      <div class="h-1.5 w-14 bg-[var(--color-surface-2)] rounded-full overflow-hidden">
                         <div
-                          class="p-2 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] border border-[var(--color-border)] flex items-center justify-between gap-2.5 transition-all hover:border-[var(--color-border-strong)] cursor-pointer"
-                          (click)="inspectedBuildId.set(seat.buildId)"
-                        >
-                          <div class="flex items-center gap-2.5 min-w-0">
-                            <!-- Seat index indicator -->
-                            <span class="font-mono text-[10px] text-disabled w-4 text-center shrink-0">
-                              #{{ seat.seatNumber }}
-                            </span>
+                          class="h-full bg-[var(--color-success)] rounded-full transition-all"
+                          [style.width.%]="(party.seats.length / partySize) * 100"
+                        ></div>
+                      </div>
+                      <span class="font-mono text-xs font-bold text-[var(--color-text)]">
+                        {{ party.seats.length }}/{{ partySize }}
+                      </span>
+                    </div>
+                  </header>
 
-                            <!-- Weapon Icon -->
-                            <div
-                              class="shrink-0 w-8 h-8 rounded-[var(--radius-md)] bg-[var(--color-surface-1)] border border-[var(--color-border)] grid place-items-center overflow-hidden"
-                              (mouseenter)="onWeaponMouseEnter(seat.buildId, $event)"
-                              (mouseleave)="onWeaponMouseLeave()"
-                            >
-                              @if (weaponIconFor(seat.buildId); as weaponIcon) {
-                                <img
-                                  class="w-full h-full object-contain p-0.5"
-                                  [src]="weaponIcon"
-                                  [alt]="seat.build.name"
-                                  loading="lazy"
-                                  (error)="hideBrokenIcon($event)"
-                                />
-                              } @else {
-                                <app-icon name="swords" size="0.875rem" color="var(--color-text-secondary)" />
-                              }
-                            </div>
-
-                            <!-- Build Info -->
-                            <div class="min-w-0">
-                              <span class="font-bold text-xs text-[var(--color-text)] block truncate hover:text-[var(--color-primary)]">
-                                {{ seat.build.name }}
-                              </span>
-                              <div class="flex items-center gap-1.5 mt-0.5">
-                                <span
-                                  class="text-[9px] font-bold uppercase px-1.5 py-0.2 rounded"
-                                  [style.background-color]="roleBadgeBg(seat.role)"
-                                  [style.color]="roleColorHex(seat.role)"
-                                >
-                                  {{ roleLabel(seat.role) }}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
+                  <ol class="divide-y divide-[var(--color-border)]" [attr.aria-label]="partyName(party)">
+                    @for (seat of party.seats; track seat.globalIndex) {
+                      <li
+                        class="px-3 py-2 transition-all flex items-center justify-between gap-2.5 hover:bg-[var(--color-surface-hover)]"
+                        [class]="roleBorderClass(seat.role)"
+                        [class.bg-[var(--color-surface-2)]]="inspectedBuildId() === seat.buildId"
+                        [class.ring-1]="inspectedBuildId() === seat.buildId"
+                        [class.ring-[var(--color-primary)]]="inspectedBuildId() === seat.buildId"
+                      >
+                        <div class="flex items-center gap-2.5 min-w-0 flex-1">
                           <button
                             type="button"
-                            class="btn btn--ghost btn--xs text-secondary hover:text-[var(--color-text)] shrink-0"
-                            (click)="inspectedBuildId.set(seat.buildId); $event.stopPropagation()"
+                            class="relative flex-shrink-0 h-9 w-9 rounded-lg p-0.5 flex items-center justify-center border border-[var(--color-border)] bg-[var(--color-surface-1)] cursor-pointer hover:border-[var(--color-primary)] hover:scale-105 transition-all focus:outline-none"
+                            (click)="inspectedBuildId.set(seat.buildId)"
+                            (mouseenter)="onWeaponMouseEnter(seat.buildId, $event)"
+                            (mouseleave)="onWeaponMouseLeave()"
+                            [attr.aria-label]="t('comps.inspectBuild', { name: seat.build.name })"
                           >
-                            Ispeziona
+                            @if (weaponIconFor(seat.buildId); as weaponIcon) {
+                              <img
+                                [src]="weaponIcon"
+                                [alt]="seat.build.name"
+                                class="h-full w-full object-contain pointer-events-none"
+                                loading="lazy"
+                                (error)="hideBrokenIcon($event)"
+                              />
+                            } @else {
+                              <span class="text-[10px] font-mono font-bold text-[var(--color-text-secondary)]">
+                                {{ roleGlyph(seat.role) }}
+                              </span>
+                            }
+                          </button>
+
+                          <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                              <span
+                                class="text-[9px] uppercase font-bold px-1.5 py-0.2 rounded"
+                                [class]="roleChip(seat.role)"
+                              >
+                                {{ roleLabel(seat.role) }}
+                              </span>
+                              <span class="text-xs font-bold text-[var(--color-text)] truncate max-w-[11rem]">
+                                {{ seat.build.name }}
+                              </span>
+                              <span class="text-[10px] font-mono text-[var(--color-text-secondary)]">
+                                #{{ seat.seatNumber }}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            type="button"
+                            class="btn btn--ghost btn--sm p-1 text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
+                            (click)="inspectedBuildId.set(seat.buildId)"
+                          >
+                            {{ t('comps.inspect') }}
                           </button>
                         </div>
-                      }
-                    </div>
-                  </div>
-                }
-              </div>
+                      </li>
+                    }
+                  </ol>
+                </section>
+              }
             }
           </div>
         }
@@ -687,30 +757,30 @@ const ROLE_LABELS: Record<BuildRole, string> = {
       @if (addBuildModalOpen()) {
         <app-dialog [title]="t('comps.addBuild')" size="md" (closed)="closeAddBuildModal()">
           <div class="space-y-4">
-            <!-- Search & Filters -->
-            <div class="space-y-2">
+            <div class="space-y-2" role="search">
               <input
                 type="search"
                 class="input input--sm w-full text-xs"
-                placeholder="Cerca build per nome o categoria..."
+                [attr.aria-label]="t('comps.searchBuilds')"
+                [placeholder]="t('comps.searchBuilds')"
                 [value]="newBuildSearch()"
                 (input)="onNewBuildSearchChange($event)"
               />
-              <div class="flex flex-wrap gap-1">
+              <div class="flex flex-wrap gap-1" role="group" [attr.aria-label]="t('common.role')">
                 <button
                   type="button"
                   class="chip text-[11px]"
                   [class.chip--primary]="addBuildRoleFilter() === 'all'"
-                  (click)="addBuildRoleFilter.set('all')"
+                  (click)="setAddBuildRoleFilter('all')"
                 >
-                  Tutti
+                  {{ t('common.all') }}
                 </button>
                 @for (role of roles; track role) {
                   <button
                     type="button"
                     class="chip text-[11px]"
                     [class.chip--primary]="addBuildRoleFilter() === role"
-                    (click)="addBuildRoleFilter.set(role)"
+                    (click)="setAddBuildRoleFilter(role)"
                   >
                     {{ roleLabel(role) }}
                   </button>
@@ -718,47 +788,56 @@ const ROLE_LABELS: Record<BuildRole, string> = {
               </div>
             </div>
 
-            <!-- Available Builds List -->
-            <div class="max-h-64 overflow-y-auto space-y-1.5 pr-1">
-              @for (build of filteredAvailableBuilds(); track build.id) {
-                <div
-                  class="p-2.5 rounded-[var(--radius-md)] border flex items-center justify-between gap-2.5 transition-all cursor-pointer"
-                  [class.border-[var(--color-primary)]]="isSelectedBuild(build.id)"
-                  [class.bg-[var(--color-primary)]/10]="isSelectedBuild(build.id)"
-                  [class.border-[var(--color-border)]]="!isSelectedBuild(build.id)"
-                  [class.bg-[var(--color-surface-2)]]="!isSelectedBuild(build.id)"
-                  (click)="selectAddBuild(build)"
-                >
-                  <div class="flex items-center gap-2.5 min-w-0">
-                    <div class="shrink-0 w-8 h-8 rounded bg-[var(--color-surface-1)] border border-[var(--color-border)] grid place-items-center overflow-hidden">
-                      @if (weaponIconFor(build.id); as weaponIcon) {
-                        <img [src]="weaponIcon" [alt]="build.name" class="w-full h-full object-contain p-0.5" />
-                      } @else {
-                        <app-icon name="swords" size="0.875rem" color="var(--color-text-secondary)" />
-                      }
-                    </div>
-                    <div class="min-w-0">
-                      <span class="text-xs font-bold text-[var(--color-text)] block truncate">{{ build.name }}</span>
-                      <span class="text-[10px] text-secondary">{{ build.category_name || t('comps.noCategory') }}</span>
-                    </div>
-                  </div>
-                  <span
-                    class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0"
-                    [style.background-color]="roleBadgeBg(build.role)"
-                    [style.color]="roleColorHex(build.role)"
-                  >
-                    {{ roleLabel(build.role) }}
-                  </span>
+            <div
+              class="max-h-64 overflow-y-auto space-y-1.5 pr-1"
+              [attr.aria-busy]="buildOptionsLoading()"
+            >
+              @if (buildOptionsLoading() && filteredAvailableBuilds().length === 0) {
+                <div class="py-6">
+                  <app-loading [label]="t('common.loading')" />
                 </div>
-              } @empty {
-                <p class="text-xs text-secondary text-center py-6">Nessuna build disponibile trovata.</p>
+              } @else {
+                @for (build of filteredAvailableBuilds(); track build.id) {
+                  <button
+                    type="button"
+                    class="w-full text-left p-2.5 rounded-[var(--radius-md)] border flex items-center justify-between gap-2.5 transition-all"
+                    [class.border-[var(--color-primary)]]="isSelectedBuild(build.id)"
+                    [class.bg-[var(--color-primary)]/10]="isSelectedBuild(build.id)"
+                    [class.border-[var(--color-border)]]="!isSelectedBuild(build.id)"
+                    [class.bg-[var(--color-surface-2)]]="!isSelectedBuild(build.id)"
+                    (click)="selectAddBuild(build)"
+                  >
+                    <div class="flex items-center gap-2.5 min-w-0">
+                      <div class="shrink-0 w-8 h-8 rounded bg-[var(--color-surface-1)] border border-[var(--color-border)] grid place-items-center overflow-hidden">
+                        @if (weaponIconFor(build.id); as weaponIcon) {
+                          <img [src]="weaponIcon" [alt]="" class="w-full h-full object-contain p-0.5" />
+                        } @else {
+                          <span class="text-[10px] font-mono font-bold text-[var(--color-text-secondary)]">
+                            {{ roleGlyph(build.role) }}
+                          </span>
+                        }
+                      </div>
+                      <div class="min-w-0">
+                        <span class="text-xs font-bold text-[var(--color-text)] block truncate">{{ build.name }}</span>
+                        <span class="text-[10px] text-secondary">{{ build.category_name || t('comps.noCategory') }}</span>
+                      </div>
+                    </div>
+                    <span
+                      class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0"
+                      [class]="roleChip(build.role)"
+                    >
+                      {{ roleLabel(build.role) }}
+                    </span>
+                  </button>
+                } @empty {
+                  <p class="text-xs text-secondary text-center py-6">{{ t('comps.noBuildsAvailable') }}</p>
+                }
               }
             </div>
 
-            <!-- Quantity Selector -->
             @if (newBuildId()) {
               <div class="flex items-center justify-between p-3 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] border border-[var(--color-border)]">
-                <span class="text-xs font-bold text-[var(--color-text)]">Quantità da inserire:</span>
+                <span class="text-xs font-bold text-[var(--color-text)]">{{ t('comps.addBuildQuantity') }}</span>
                 <div class="flex items-center gap-2">
                   <button
                     type="button"
@@ -994,6 +1073,7 @@ export class CompDetailPage {
   private readonly translate = inject(TranslateService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
@@ -1019,15 +1099,20 @@ export class CompDetailPage {
 
   protected readonly mode = signal<'view' | 'edit'>('view');
   protected readonly viewMode = signal<'parties' | 'roles' | 'analytics'>('parties');
+  protected readonly partySize = COMP_PARTY_SIZE;
+  protected readonly selectedRosterPartyNumber = signal(1);
   protected readonly viewModeOptions = computed<readonly ViewToggleOption[]>(() => [
-    { id: 'parties', label: `Parties Roster (${this.totalPartyCount()} Party)` },
-    { id: 'roles', label: `Matrice Ruoli (${this.comp()?.builds.length ?? 0} Build)` },
-    { id: 'analytics', label: 'Analisi & Tattica' },
+    { id: 'parties', label: this.t('comps.viewParties', { count: this.totalPartyCount() }) },
+    { id: 'roles', label: this.t('comps.viewRoles', { count: this.comp()?.builds.length ?? 0 }) },
+    { id: 'analytics', label: this.t('comps.viewAnalytics') },
   ]);
 
   protected readonly editMetaOpen = signal(false);
   protected readonly addBuildModalOpen = signal(false);
   protected readonly addBuildRoleFilter = signal<BuildRole | 'all'>('all');
+  protected readonly buildOptionsLoading = signal(false);
+  private buildSearchTimer: ReturnType<typeof setTimeout> | null = null;
+  private buildSearchSeq = 0;
 
   protected readonly inspectedBuildId = signal<number | null>(null);
   protected readonly inspectedBuild = computed(() =>
@@ -1068,7 +1153,6 @@ export class CompDetailPage {
   protected readonly editCategoryId = signal('');
   protected readonly editParentId = signal('');
 
-  protected readonly addingBuild = signal(false);
   protected readonly newBuildId = signal('');
   protected readonly newBuildSearch = signal('');
   protected readonly newBuildQuantity = signal(1);
@@ -1201,66 +1285,20 @@ export class CompDetailPage {
     return list;
   });
 
-  protected readonly partySimulation = computed(() => {
-    const comp = this.comp();
-    if (!comp || comp.builds.length === 0) return [];
-
-    const allSeats: { buildId: number; build: BuildSummary; role: BuildRole }[] = [];
-    for (const entry of comp.builds) {
-      for (let i = 0; i < entry.quantity; i++) {
-        allSeats.push({
-          buildId: entry.build_id,
-          build: entry.build,
-          role: entry.build.role,
-        });
-      }
-    }
-
-    const rolePriority: Record<BuildRole, number> = {
-      tank: 0,
-      healer: 1,
-      support: 2,
-      brawler: 3,
-      dps: 4,
-      battle_mount: 5,
-    };
-
-    allSeats.sort((a, b) => (rolePriority[a.role] ?? 99) - (rolePriority[b.role] ?? 99));
-
-    const partySize = 5;
-    const totalParties = Math.max(1, Math.ceil(allSeats.length / partySize));
-    const parties: {
-      partyNumber: number;
-      seats: {
-        seatNumber: number;
-        globalIndex: number;
-        buildId: number;
-        build: BuildSummary;
-        role: BuildRole;
-      }[];
-    }[] = [];
-
-    for (let p = 0; p < totalParties; p++) {
-      parties.push({ partyNumber: p + 1, seats: [] });
-    }
-
-    allSeats.forEach((seat, idx) => {
-      const partyIdx = Math.floor(idx / partySize);
-      if (parties[partyIdx]) {
-        parties[partyIdx].seats.push({
-          seatNumber: (idx % partySize) + 1,
-          globalIndex: idx + 1,
-          buildId: seat.buildId,
-          build: seat.build,
-          role: seat.role,
-        });
-      }
-    });
-
-    return parties;
-  });
+  protected readonly partySimulation = computed(() =>
+    simulateCompParties(this.comp()?.builds ?? []),
+  );
 
   protected readonly totalPartyCount = computed(() => this.partySimulation().length);
+
+  protected readonly activeRosterParty = computed<CompPartyView | null>(() => {
+    const parties = this.partySimulation();
+    return (
+      parties.find((party) => party.partyNumber === this.selectedRosterPartyNumber()) ??
+      parties[0] ??
+      null
+    );
+  });
 
   protected onViewModeChange(id: string): void {
     this.viewMode.set(id as 'parties' | 'roles' | 'analytics');
@@ -1270,6 +1308,61 @@ export class CompDetailPage {
     this.mode.set(this.mode() === 'edit' ? 'view' : 'edit');
     if (this.mode() === 'view') {
       this.cancelEditBuild();
+    } else {
+      void this.loadEditOptions();
+    }
+  }
+
+  protected partyName(party: CompPartyView): string {
+    return this.t('comps.partyNum', { number: party.partyNumber });
+  }
+
+  protected selectRosterParty(partyNumber: number): void {
+    this.selectedRosterPartyNumber.set(partyNumber);
+  }
+
+  protected onRosterPartyKeydown(event: Event, partyNumber: number): void {
+    if (
+      event instanceof KeyboardEvent &&
+      (event.key === 'ArrowRight' || event.key === 'ArrowLeft')
+    ) {
+      event.preventDefault();
+      const parties = this.partySimulation();
+      const currentIndex = parties.findIndex((party) => party.partyNumber === partyNumber);
+      if (currentIndex === -1) return;
+      const offset = event.key === 'ArrowRight' ? 1 : -1;
+      const next = parties[(currentIndex + offset + parties.length) % parties.length];
+      this.selectRosterParty(next.partyNumber);
+      (event.currentTarget as HTMLElement).parentElement
+        ?.querySelector<HTMLElement>(`[aria-controls="comp-party-panel-${next.partyNumber}"]`)
+        ?.focus();
+    }
+  }
+
+  protected roleChip(role: BuildRole): string {
+    return ROLE_CHIP[role] ?? 'chip';
+  }
+
+  protected roleGlyph(role: BuildRole): string {
+    return ROLE_GLYPH[role] ?? '•';
+  }
+
+  protected roleBorderClass(role: BuildRole): string {
+    switch (role) {
+      case 'tank':
+        return 'border border-[var(--color-info)] bg-[var(--color-info-container)]';
+      case 'healer':
+        return 'border border-[var(--color-success)] bg-[var(--color-success-container)]';
+      case 'support':
+        return 'border border-[var(--color-warning)] bg-[var(--color-warning-container)]';
+      case 'dps':
+        return 'border border-[var(--color-error)] bg-[var(--color-error-container)]';
+      case 'battle_mount':
+        return 'border border-[var(--color-primary)] bg-[var(--color-primary-container)]';
+      case 'brawler':
+        return 'border border-[var(--color-info)] bg-[var(--color-info-container)]';
+      default:
+        return 'border border-[var(--color-border)]';
     }
   }
 
@@ -1297,10 +1390,21 @@ export class CompDetailPage {
     this.newBuildQuantity.set(1);
     this.addBuildRoleFilter.set('all');
     this.addBuildModalOpen.set(true);
+    void this.searchAvailableBuilds();
   }
 
   protected closeAddBuildModal(): void {
     this.addBuildModalOpen.set(false);
+    this.buildSearchSeq += 1;
+    if (this.buildSearchTimer !== null) {
+      clearTimeout(this.buildSearchTimer);
+      this.buildSearchTimer = null;
+    }
+  }
+
+  protected setAddBuildRoleFilter(role: BuildRole | 'all'): void {
+    this.addBuildRoleFilter.set(role);
+    void this.searchAvailableBuilds();
   }
 
   protected selectAddBuild(build: BuildSummary): void {
@@ -1391,7 +1495,13 @@ export class CompDetailPage {
       }
       this.compId.set(id);
       this.mode.set('view');
+      this.selectedRosterPartyNumber.set(1);
       void this.load(id);
+    });
+    this.destroyRef.onDestroy(() => {
+      if (this.buildSearchTimer !== null) {
+        clearTimeout(this.buildSearchTimer);
+      }
     });
     // Static application data; one fetch serves every comp page in the session.
     void this.albionAbilities
@@ -1533,10 +1643,6 @@ export class CompDetailPage {
     return ROLE_LABELS[role] ?? role;
   }
 
-  protected buildOptionLabel(build: BuildSummary): string {
-    return `${build.name} — ${this.roleLabel(build.role)} — ${build.category_name || this.t('comps.noCategory')}`;
-  }
-
   protected enterEdit(): void {
     const current = this.comp();
     if (!current) {
@@ -1553,16 +1659,8 @@ export class CompDetailPage {
   protected cancelEdit(): void {
     this.mode.set('view');
     this.editMetaOpen.set(false);
-    this.addingBuild.set(false);
     this.cancelEditBuild();
     void this.load(this.compId());
-  }
-
-  protected toggleAddBuild(): void {
-    this.addingBuild.update((value) => !value);
-    this.newBuildId.set('');
-    this.newBuildSearch.set('');
-    this.newBuildQuantity.set(1);
   }
 
   protected onEditNameChange(event: Event): void {
@@ -1591,13 +1689,8 @@ export class CompDetailPage {
   }
 
   protected onNewBuildSearchChange(event: Event): void {
-    const search = (event.target as HTMLInputElement).value;
-    const selectedBuild = this.availableBuildOptions().find(
-      (build) => this.buildOptionLabel(build) === search,
-    );
-
-    this.newBuildSearch.set(search);
-    this.newBuildId.set(selectedBuild ? String(selectedBuild.id) : '');
+    this.newBuildSearch.set((event.target as HTMLInputElement).value);
+    this.scheduleBuildSearch();
   }
 
   protected onNewBuildQtyChange(event: Event): void {
@@ -1674,7 +1767,6 @@ export class CompDetailPage {
       await firstValueFrom(this.api.patch<CompDetail>(`api/comps/${comp.id}`, request));
       this.mode.set('view');
       this.editMetaOpen.set(false);
-      this.addingBuild.set(false);
       this.cancelEditBuild();
       await this.load(this.compId());
       this.toasts.success(this.t('common.save'));
@@ -1751,33 +1843,6 @@ export class CompDetailPage {
       await firstValueFrom(this.api.post(`api/comps/${comp.id}/unarchive`, {}));
       this.toasts.success(this.t('comps.unarchiveSuccess'));
       await this.load(this.compId());
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async addBuild(event: Event): Promise<void> {
-    event.preventDefault();
-    const comp = this.comp();
-    const buildId = Number(this.newBuildId());
-    const isAvailable = this.availableBuildOptions().some((build) => build.id === buildId);
-    if (!comp || !buildId || !isAvailable) {
-      return;
-    }
-    this.saving.set(true);
-    try {
-      const updated = await firstValueFrom(
-        this.api.post<CompDetail>(`api/comps/${comp.id}/builds`, {
-          build_id: buildId,
-          quantity: this.newBuildQuantity(),
-        }),
-      );
-      this.comp.set(updated);
-      void this.loadBuildDetails(updated);
-      this.toggleAddBuild();
-      this.toasts.success(this.t('comps.buildAdded'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -1867,16 +1932,8 @@ export class CompDetailPage {
   }
 
   private async loadEditOptions(): Promise<void> {
-    const [categories, builds, summaries] = await Promise.all([
+    const [categories, summaries] = await Promise.all([
       firstValueFrom(this.api.get<CompCategoryView[]>('api/comps/comp-categories')).catch(() => []),
-      firstValueFrom(
-        this.api.get<PaginatedData<BuildSummary>>('api/comps/builds', {
-          page: 1,
-          limit: 500,
-          sort: 'name',
-          order: 'asc',
-        }),
-      ).catch(() => ({ items: [] as BuildSummary[] })),
       firstValueFrom(
         this.api.get<PaginatedData<CompSummary>>('api/comps', {
           page: 1,
@@ -1887,8 +1944,47 @@ export class CompDetailPage {
       ).catch(() => ({ items: [] as CompSummary[] })),
     ]);
     this.compCategories.set(categories);
-    this.buildOptions.set(builds.items);
     this.compSummaries.set(summaries.items);
+    await this.searchAvailableBuilds();
+  }
+
+  private scheduleBuildSearch(): void {
+    if (this.buildSearchTimer !== null) {
+      clearTimeout(this.buildSearchTimer);
+    }
+    this.buildSearchTimer = setTimeout(() => {
+      this.buildSearchTimer = null;
+      void this.searchAvailableBuilds();
+    }, 250);
+  }
+
+  private async searchAvailableBuilds(): Promise<void> {
+    const seq = ++this.buildSearchSeq;
+    this.buildOptionsLoading.set(true);
+    try {
+      const q = this.newBuildSearch().trim();
+      const role = this.addBuildRoleFilter();
+      const response = await firstValueFrom(
+        this.api.get<PaginatedData<BuildSummary>>('api/comps/builds', {
+          page: 1,
+          limit: 200,
+          sort: 'name',
+          order: 'asc',
+          q: q || undefined,
+          role: role === 'all' ? undefined : role,
+        }),
+      );
+      if (seq !== this.buildSearchSeq) return;
+      this.buildOptions.set(response.items);
+    } catch (error) {
+      if (seq !== this.buildSearchSeq) return;
+      this.buildOptions.set([]);
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      if (seq === this.buildSearchSeq) {
+        this.buildOptionsLoading.set(false);
+      }
+    }
   }
 
   /** Loads the equipment required to calculate weapon and readiness statistics. */

@@ -17,6 +17,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
+  type DataTableTab,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
@@ -84,37 +85,6 @@ const GROUPING_FETCH_LIMIT = 500;
       border-radius: 0.5rem;
       flex-shrink: 0;
     }
-    .status-tab-group {
-      display: flex;
-      align-items: center;
-      gap: 0.375rem;
-      overflow-x: auto;
-      padding: 0.25rem 0;
-    }
-    .status-tab {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.375rem 0.75rem;
-      border-radius: 0.5rem;
-      font-size: 0.8125rem;
-      font-weight: 500;
-      color: var(--color-text-secondary);
-      border: 1px solid transparent;
-      background: transparent;
-      transition: all var(--motion-fast);
-      white-space: nowrap;
-      cursor: pointer;
-    }
-    .status-tab:hover {
-      color: var(--color-text);
-      background: var(--color-surface-hover);
-    }
-    .status-tab--active {
-      color: var(--color-text);
-      background: var(--color-surface-1);
-      border-color: var(--color-border);
-    }
     .status-pill {
       display: inline-flex;
       align-items: center;
@@ -163,7 +133,7 @@ const GROUPING_FETCH_LIMIT = 500;
 
     <app-page-stack>
       <!-- KPI Row: 4 Modern Cards -->
-      <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('bank.queue.ariaLabel')">
+      <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('bank.queue.ariaLabel')">
         <!-- Card 1: Total Pending Payout -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
@@ -246,69 +216,6 @@ const GROUPING_FETCH_LIMIT = 500;
         </article>
       </section>
 
-      <!-- Status Filter Tabs -->
-      <section class="flex flex-wrap items-center justify-between gap-3 pt-1">
-        <nav class="status-tab-group" aria-label="Withdrawals status filter">
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === 'requested'"
-            (click)="setStatusFilter('requested')"
-          >
-            <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
-            <span>{{ t('bank.status.requested') }}</span>
-            @if (pendingRequestsCount() > 0) {
-              <span class="rounded-full bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)] px-1.5 py-0.5 text-[0.6875rem] font-mono">
-                {{ pendingRequestsCount() }}
-              </span>
-            }
-          </button>
-
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === ''"
-            (click)="setStatusFilter('')"
-          >
-            <span>{{ t('common.all') }}</span>
-            <span class="rounded-full bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[0.6875rem] font-mono">
-              {{ displayedRows().length }}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === 'withdrawn'"
-            (click)="setStatusFilter('withdrawn')"
-          >
-            <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-success)]"></span>
-            <span>{{ t('bank.status.withdrawn') }}</span>
-          </button>
-
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === 'rejected'"
-            (click)="setStatusFilter('rejected')"
-          >
-            <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-error)]"></span>
-            <span>{{ t('bank.status.rejected') }}</span>
-          </button>
-        </nav>
-
-        @if (statusFilter() !== 'requested') {
-          <button
-            type="button"
-            class="btn btn--ghost btn--sm text-xs py-1 px-2 text-[var(--color-text-secondary)] hover:text-(--color-text) inline-flex items-center gap-1"
-            (click)="setStatusFilter('requested')"
-          >
-            <app-icon name="close" size="0.75rem" />
-            <span>{{ t('common.clear') }}</span>
-          </button>
-        }
-      </section>
-
       <app-data-table
         [columns]="columns()"
         [rows]="pagedRows()"
@@ -320,8 +227,14 @@ const GROUPING_FETCH_LIMIT = 500;
         [totalItems]="displayedRows().length"
         [pageSize]="10"
         [rowClickable]="true"
+        searchPlaceholder="Search withdrawals..."
+        itemLabel="withdrawals"
         emptyIcon="bank"
-        [emptyLabel]="'bank.transactions.empty'"
+        emptyTitle="No withdrawal requests"
+        emptySubtitle="There are no withdrawal requests matching the selected filters."
+        [tabs]="withdrawalTabs()"
+        [activeTab]="statusFilter()"
+        (tabChange)="onTabSelect($event)"
         (rowClick)="onRowClick($event)"
         (pageChange)="onTableChange($event)"
       >
@@ -588,6 +501,34 @@ export class AdminWithdrawals {
   });
 
   protected readonly trackRow = (row: WithdrawalQueueRow): unknown => `${row.to_user_id}-${row.status}-${row.id}`;
+
+  protected readonly withdrawalTabs = computed<DataTableTab[]>(() => [
+    {
+      id: 'requested',
+      label: this.t('bank.status.requested'),
+      dotClass: 'bg-[var(--color-warning)] animate-pulse',
+      count: this.pendingRequestsCount(),
+    },
+    {
+      id: '',
+      label: this.t('common.all'),
+      count: this.displayedRows().length,
+    },
+    {
+      id: 'withdrawn',
+      label: this.t('bank.status.withdrawn'),
+      dotClass: 'bg-[var(--color-success)]',
+    },
+    {
+      id: 'rejected',
+      label: this.t('bank.status.rejected'),
+      dotClass: 'bg-[var(--color-error)]',
+    },
+  ]);
+
+  protected onTabSelect(tabId: string): void {
+    this.setStatusFilter(tabId as TransactionStatus | '');
+  }
 
   private readonly tableQuery = signal<DataTablePageChange>(emptyPageChange());
 

@@ -74,20 +74,6 @@
   --leading-display: 72px;
   --tracking-display: -1.8px;
 
-  /* Spacing */
-  --spacing-4: 4px;
-  --spacing-8: 8px;
-  --spacing-12: 12px;
-  --spacing-16: 16px;
-  --spacing-20: 20px;
-  --spacing-24: 24px;
-  --spacing-32: 32px;
-  --spacing-40: 40px;
-  --spacing-48: 48px;
-  --spacing-64: 64px;
-  --spacing-96: 96px;
-  --spacing-144: 144px;
-
   /* Border Radius */
   --radius-sm: 2px;
   --radius-md: 6px;
@@ -1245,6 +1231,22 @@
   --font-display: var(--font-universalsans);
   --font-mono: var(--font-geistmono);
   --page-gap: 1.5rem;
+  --motion-fast: 150ms ease;
+  --color-border-hover: var(--color-border-strong);
+
+  /* Component-level spacing token aliases (safe in :root, won't hijack Tailwind utilities) */
+  --spacing-4: 0.25rem;
+  --spacing-8: 0.5rem;
+  --spacing-12: 0.75rem;
+  --spacing-16: 1rem;
+  --spacing-20: 1.25rem;
+  --spacing-24: 1.5rem;
+  --spacing-32: 2rem;
+  --spacing-40: 2.5rem;
+  --spacing-48: 3rem;
+  --spacing-64: 4rem;
+  --spacing-96: 6rem;
+  --spacing-144: 9rem;
 
   /* Podium medal gradients — theme-invariant: each is a self-contained
      badge with its own internal contrast, not something that should
@@ -1505,21 +1507,22 @@ app-shell .table tbody tr:hover {
 }
 
 app-shell .data-table-card {
-  border-radius: 8px;
-  background: var(--color-surface);
+  background: transparent;
+  border: none;
+  border-radius: 0;
 }
 
 app-shell .data-table__toolbar,
 app-shell .data-table__footer {
-  background: var(--color-surface);
+  background: transparent;
 }
 
 app-shell .data-table__table thead th {
-  background: var(--color-surface-2);
+  background: transparent;
 }
 
 app-shell .data-table__row--clickable:hover,
 app-shell .data-table__row--clickable:focus-visible {
-  background: color-mix(in oklab, var(--color-primary) 5%, var(--color-surface));
+  background: rgba(255, 255, 255, 0.04);
 }
 

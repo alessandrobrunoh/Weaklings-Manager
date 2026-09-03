@@ -163,7 +163,7 @@ interface BattleScopeStats {
 
     <app-page-stack>
       @if (!loading() || battles().length > 0) {
-        <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-5" aria-label="Battle totals">
+        <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-5" aria-label="Battle totals">
           <!-- Card 1: Visible Battles -->
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">

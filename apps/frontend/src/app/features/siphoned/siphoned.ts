@@ -139,7 +139,7 @@ const STATS_FETCH_LIMIT = 1000;
       @if (!canIngest()) {
         <p class="siphoned-permission-note" role="status">{{ t('siphoned.missingManagePermission') }}</p>
       }
-      <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Siphoned summary">
+      <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Siphoned summary">
         <!-- Card 1: Deposited -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">

@@ -399,7 +399,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
         </section>
 
         <!-- Charts Row -->
-        <section class="mt-5 grid gap-4 lg:grid-cols-3">
+        <section class="mt-5 grid gap-4 sm:gap-5 lg:grid-cols-3">
           <!-- Alliance & Guild Fame Distribution -->
           <article class="surface p-5">
             <h2 class="battle-detail__panel-title">{{ t('battles.fame_by_alliance') }}</h2>
@@ -443,7 +443,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
       @else if (tab() === 'guild_alliance') {
         <!-- Alliance & Guild Command Overview -->
         @if (ourGuild(); as guild) {
-          <section class="mt-5 grid gap-4 lg:grid-cols-3">
+          <section class="mt-5 grid gap-4 sm:gap-5 lg:grid-cols-3">
             <!-- Our Guild Performance Verdict Card -->
             <article class="surface p-5 lg:col-span-2 border" [style.border-color]="'var(--color-primary)'">
               <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -680,7 +680,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
       <!-- TAB 3: ALLIANCES & GUILDS -->
       @else if (tab() === 'guilds') {
         <!-- Alliance Summary Cards -->
-        <section class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-label="Alliances in battle">
+        <section class="mt-5 grid gap-4 sm:gap-5 sm:grid-cols-2 xl:grid-cols-3" aria-label="Alliances in battle">
           @for (ally of alliances(); track ally.name) {
             <article class="card p-5" [class.border-2]="ally.isOurAlliance" [style.border-color]="ally.isOurAlliance ? 'var(--color-primary)' : 'var(--color-border)'">
               <div class="flex items-center justify-between mb-3">

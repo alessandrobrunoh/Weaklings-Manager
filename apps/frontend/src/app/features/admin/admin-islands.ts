@@ -68,7 +68,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
 
     <app-page-stack>
       <!-- KPI cards -->
-      <section class="grid gap-3.5 sm:grid-cols-3" aria-label="Islands summary">
+      <section class="grid gap-4 sm:gap-5 sm:grid-cols-3" aria-label="Islands summary">
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
             <div>

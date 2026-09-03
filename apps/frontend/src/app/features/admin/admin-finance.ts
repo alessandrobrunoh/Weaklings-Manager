@@ -201,7 +201,7 @@ function toDateInput(date: Date): string {
     .fin-kpis {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 0.625rem;
+      gap: 1rem;
     }
     .fin-kpi {
       display: flex;

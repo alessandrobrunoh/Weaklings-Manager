@@ -163,7 +163,7 @@ function isWarnsTab(value: string): value is WarnsTab {
       @if (!canIssue()) {
         <p class="warns-permission-note" role="status">{{ t('warns.missingManagePermission') }}</p>
       }
-      <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Warns summary">
+      <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Warns summary">
         <!-- Card 1: Active Warns -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">

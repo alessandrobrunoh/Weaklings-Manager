@@ -84,7 +84,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
       </div>
 
       <!-- 4 KPI Cards -->
-      <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" aria-label="Events summary">
+      <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5" aria-label="Events summary">
         <!-- Card 1: TOTAL EVENTS -->
         <article class="kpi-card">
           <div class="flex items-center gap-3">

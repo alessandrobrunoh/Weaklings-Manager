@@ -1182,7 +1182,7 @@ interface AddEventMemberRequest {
           @case ('overview') {
             <!-- Performance & Financial KPI Cards -->
             <section
-              class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 mb-5"
+              class="grid gap-4 sm:gap-5 sm:grid-cols-2 xl:grid-cols-4 mb-5"
               aria-label="Event Overview KPIs"
             >
               <!-- Card 1: Win Rate -->

@@ -97,7 +97,7 @@ import type { AuditLog } from '../audit/audit';
 
     <app-page-stack>
       <!-- Core Administrative KPIs: 6 Modern Cards -->
-      <section class="grid gap-3.5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6" aria-label="Admin KPI summary">
+      <section class="grid gap-3.5 sm:gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6" aria-label="Admin KPI summary">
         <!-- Card 1: Total Members -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-2">
@@ -320,7 +320,7 @@ import type { AuditLog } from '../audit/audit';
           {{ t('admin.hub.panels') }}
         </h2>
         
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-3">
           @for (panel of visiblePanels(); track panel.path) {
             <a
               [routerLink]="panel.path"

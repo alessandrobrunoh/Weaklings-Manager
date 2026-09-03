@@ -1,10 +1,11 @@
-<div class="data-table-card card" [attr.aria-busy]="loading()">
+<div class="w-full" [attr.aria-busy]="loading()">
   @if (loading() && rows().length === 0) {
-    <div class="data-table__state-container">
-      <app-loading [label]="t('common.loading')" />
+    <div class="py-12 text-center text-xs text-[var(--color-text-tertiary)]">
+      <app-icon name="loader" size="1.5rem" class="animate-spin inline-block mb-2 text-[var(--color-text-tertiary)]" />
+      <p class="m-0">{{ t('common.loading') }}</p>
     </div>
   } @else if (error()) {
-    <div class="data-table__state-container">
+    <div class="py-12 text-center text-xs text-[var(--color-text-tertiary)]">
       <app-error-state
         [message]="t('common.error')"
         [retryLabel]="t('common.retry')"
@@ -13,138 +14,180 @@
     </div>
   } @else {
     @if (showToolbar()) {
-      <div class="data-table__toolbar">
-        <div class="data-table__toolbar-left">
-          @if (!hideSearch()) {
-            <div class="data-table__search-wrapper">
-              <app-icon name="search" size="0.875rem" class="data-table__search-icon" />
-              <input
-                type="search"
-                class="data-table__search-input"
-                [placeholder]="t('common.search')"
-                [attr.aria-label]="t('common.search')"
-                [value]="search()"
-                (input)="onSearchInput($event)"
-              />
-              @if (search().length > 0) {
-                <button
-                  type="button"
-                  class="data-table__search-clear"
-                  (click)="clearSearch()"
-                  [attr.aria-label]="t('common.close')"
-                >
-                  <app-icon name="close" size="0.75rem" />
-                </button>
-              }
-            </div>
-          }
-          @if (hasColumnFilters()) {
-            <div class="data-table__filters">
-              @for (column of columns(); track column.key) {
-                @if (column.filterOptions && column.filterOptions.length > 0) {
-                  <select
-                    class="select select--sm data-table__filter-select"
-                    [class.data-table__filter-select--active]="!!columnFilterValue(column.key)"
-                    [attr.aria-label]="t(column.label) + ': ' + t('common.all')"
-                    (change)="onColumnFilter(column.key, $event)"
-                  >
-                    <!--
-                      Selection is expressed per option rather than with
-                      `[value]` on the select: a `[value]` binding is applied
-                      before the `@for` has created the options, so a filter
-                      restored from a deep link would leave the control blank
-                      while the table was in fact filtered.
-                    -->
-                    <option value="" [selected]="!columnFilterValue(column.key)">
-                      {{ t(column.label) }}: {{ t('common.all') }}
-                    </option>
-                    @for (option of column.filterOptions; track option.value) {
-                      <option
-                        [value]="option.value"
-                        [selected]="option.value === columnFilterValue(column.key)"
-                      >
-                        {{ option.label }}
-                      </option>
-                    }
-                  </select>
-                }
-              }
-            </div>
-          }
-        </div>
+      <!-- Search & Filters Toolbar -->
+      <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between pb-3">
+        @if (!hideSearch()) {
+          <div class="relative flex-1 max-w-md">
+            <app-icon
+              name="search"
+              size="1rem"
+              class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-tertiary)] pointer-events-none"
+            />
+            <input
+              type="search"
+              class="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] focus:border-[var(--color-primary)] rounded-lg pl-9 pr-8 py-2 text-xs text-[var(--color-text)] placeholder:text-[var(--color-text-tertiary)] outline-none transition-all"
+              [placeholder]="searchPlaceholder() || t('common.search')"
+              [attr.aria-label]="searchPlaceholder() || t('common.search')"
+              [value]="search()"
+              (input)="onSearchInput($event)"
+            />
+            @if (search().length > 0) {
+              <button
+                type="button"
+                class="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] cursor-pointer"
+                (click)="clearSearch()"
+                [attr.aria-label]="t('common.close')"
+              >
+                <app-icon name="close" size="0.75rem" />
+              </button>
+            }
+          </div>
+        }
 
-        @if (hasActiveFilters()) {
-          <div class="data-table__toolbar-right">
+        <div class="flex items-center gap-2.5 shrink-0 flex-wrap">
+          <ng-content select="[dataTableActions]" />
+
+          @if (hasColumnFilters()) {
+            @for (column of columns(); track column.key) {
+              @if (column.filterOptions && column.filterOptions.length > 0) {
+                <select
+                  class="bg-[var(--color-surface-2)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-lg px-3 py-2 text-xs text-[var(--color-text)] cursor-pointer outline-none transition-all"
+                  [attr.aria-label]="t(column.label) + ': ' + t('common.all')"
+                  (change)="onColumnFilter(column.key, $event)"
+                >
+                  <option value="" [selected]="!columnFilterValue(column.key)">
+                    {{ t(column.label) }}: {{ t('common.all') }}
+                  </option>
+                  @for (option of column.filterOptions; track option.value) {
+                    <option
+                      [value]="option.value"
+                      [selected]="option.value === columnFilterValue(column.key)"
+                      class="bg-[var(--color-surface)] text-[var(--color-text)]"
+                    >
+                      {{ option.label }}
+                    </option>
+                  }
+                </select>
+              }
+            }
+          }
+
+          @if (hasActiveFilters()) {
             <button
               type="button"
-              class="btn btn--outline btn--sm data-table__clear-filters-btn"
+              class="px-2.5 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text)] bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] border border-[var(--color-border)] rounded-lg inline-flex items-center gap-1.5 cursor-pointer transition-all"
               (click)="clearAllFilters()"
             >
               <app-icon name="close" size="0.75rem" />
               <span>{{ t('common.clearFilters') }}</span>
-              <span class="data-table__filter-badge">{{ activeFilterCount() }}</span>
+              <span class="rounded-full px-1.5 py-0.2 bg-[var(--color-primary)] text-white text-[10px] font-bold">{{ activeFilterCount() }}</span>
             </button>
-          </div>
-        }
+          }
+        </div>
       </div>
     }
 
+    <!-- Status Tabs (matching /events) -->
+    @if (tabs() && tabs()!.length > 0) {
+      <nav class="flex items-center gap-6 border-b border-[var(--color-border)] overflow-x-auto mb-2">
+        @for (tab of tabs()!; track tab.id) {
+          <button
+            type="button"
+            class="flex items-center gap-2 pb-3 text-xs font-semibold transition-all border-b-2 cursor-pointer shrink-0"
+            [class.border-[var(--color-primary)]]="activeTab() === tab.id"
+            [class.text-[var(--color-text)]]="activeTab() === tab.id"
+            [class.border-transparent]="activeTab() !== tab.id"
+            [class.text-[var(--color-text-tertiary)]]="activeTab() !== tab.id"
+            [class.hover:text-[var(--color-text)]]="activeTab() !== tab.id"
+            (click)="onTabClick(tab.id)"
+          >
+            @if (tab.dotClass) {
+              <span class="h-1.5 w-1.5 rounded-full {{ tab.dotClass }}"></span>
+            }
+            <span>{{ tab.label }}</span>
+            @if (tab.count !== undefined) {
+              <span
+                class="rounded-full px-2 py-0.5 text-[11px] font-mono border"
+                [class.bg-white/10]="activeTab() === tab.id"
+                [class.border-[var(--color-border-strong)]]="activeTab() === tab.id"
+                [class.text-[var(--color-text)]]="activeTab() === tab.id"
+                [class.bg-[var(--color-surface-2)]]="activeTab() !== tab.id"
+                [class.border-[var(--color-border)]]="activeTab() !== tab.id"
+                [class.text-[var(--color-text-tertiary)]]="activeTab() !== tab.id"
+              >
+                {{ tab.count }}
+              </span>
+            }
+          </button>
+        }
+      </nav>
+    }
+
     @if (processedRows().length === 0) {
-      <div class="data-table__state-container">
-        <app-empty-state [message]="t(emptyLabel())" [icon]="emptyIcon()" />
+      <!-- Clean Centered Empty State (matching /events) -->
+      <div class="py-12 text-center text-xs text-[var(--color-text-tertiary)]">
+        <p class="m-0 font-medium text-sm text-[var(--color-text)]">{{ emptyTitle() || t(emptyLabel()) }}</p>
+        <p class="m-0 text-xs text-[var(--color-text-tertiary)] mt-1">{{ emptySubtitle() || 'There are no items matching the selected filters.' }}</p>
       </div>
     } @else {
+      <!-- TABLE -->
       <div
-        class="data-table__table-wrapper"
+        class="overflow-x-auto w-full"
         role="region"
         [attr.aria-label]="t('common.search') + ' results'"
         tabindex="0"
       >
-        <table class="table data-table__table">
+        <table class="w-full text-left border-collapse">
           <thead>
-            <tr>
+            <tr class="border-b border-[var(--color-border)] text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-tertiary)]">
               @for (column of columns(); track column.key) {
                 <th
-                  [class]="columnAlign(column)"
+                  class="py-3 px-4 font-bold"
+                  [class.text-right]="column.align === 'right'"
+                  [class.text-center]="column.align === 'center'"
+                  [class.cursor-pointer]="column.sortable"
+                  [class.select-none]="column.sortable"
                   [attr.aria-sort]="column.sortable ? sortAria(column.key) : null"
+                  (click)="column.sortable ? toggleSort(column) : null"
                 >
                   @if (column.sortable) {
-                    <button
-                      type="button"
-                      class="data-table__sort-button"
-                      (click)="toggleSort(column)"
-                      [appTooltip]="column.label ? t(column.label) : ''"
-                      tooltipPosition="top"
+                    <div
+                      class="inline-flex items-center gap-1 hover:text-[var(--color-text)] transition-colors"
+                      [class.justify-end]="column.align === 'right'"
                     >
                       <span>{{ t(column.label) }}</span>
-                      <span class="data-table__sort-indicator" aria-hidden="true">
-                        @if (sort()?.columnKey === column.key) {
-                          <app-icon
-                            [name]="sort()?.direction === 'asc' ? 'chevron-up' : 'chevron-down'"
-                            size="0.75rem"
-                          />
-                        } @else {
-                          <span class="text-[var(--color-text-disabled)] opacity-40">↕</span>
-                        }
-                      </span>
-                    </button>
+                      @if (sort()?.columnKey === column.key) {
+                        <app-icon
+                          [name]="sort()?.direction === 'asc' ? 'chevron-up' : 'chevron-down'"
+                          size="0.75rem"
+                          class="text-[var(--color-primary)]"
+                        />
+                      } @else {
+                        <span class="text-xs text-[var(--color-text-disabled)]">⇅</span>
+                      }
+                    </div>
                   } @else {
-                    <span class="data-table__th-label">{{ t(column.label) }}</span>
+                    <span>{{ t(column.label) }}</span>
                   }
                 </th>
               }
             </tr>
           </thead>
-          <tbody>
+          <tbody class="divide-y divide-[var(--color-border)]">
             @for (row of processedRows(); track trackBy()(row)) {
               <tr
-                [class.data-table__row--clickable]="rowClickable()"
+                class="hover:bg-white/[0.02] transition-colors group"
+                [class.cursor-pointer]="rowClickable()"
                 [attr.tabindex]="rowClickable() ? 0 : null"
                 (click)="onRowClick(row)"
                 (keydown)="onRowKeydown($event, row)"
               >
                 @for (column of columns(); track column.key) {
-                  <td [class]="columnAlign(column)">
+                  <td
+                    class="py-3.5 px-4"
+                    [class.text-right]="column.align === 'right'"
+                    [class.text-center]="column.align === 'center'"
+                  >
                     @let directive = cellTemplates().get(column.key);
                     @if (directive) {
                       <ng-container
@@ -162,52 +205,67 @@
         </table>
       </div>
 
-      <footer class="data-table__footer">
-        <p class="data-table__page-info">
-          {{ t('common.page') }} <span class="data-table__page-number">{{ page() }}</span>
-          {{ t('common.of') }} {{ totalPages() }} ·
-          <span class="data-table__page-number">{{ visibleTotal() }}</span>
-          {{ t('common.totalResults') }}
-        </p>
-        <div class="data-table__controls">
-          @if (!hidePageSize()) {
+      <!-- Pagination Footer (exact match to /events) -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-[var(--color-border)] text-xs text-[var(--color-text-tertiary)]">
+        <div>
+          Showing {{ paginationFrom() }} to {{ paginationTo() }} of {{ visibleTotal() }} {{ itemLabel() || t('common.totalResults') }}
+        </div>
+
+        <div class="flex items-center gap-1.5 self-center sm:self-auto">
+          <button
+            type="button"
+            class="w-7 h-7 flex items-center justify-center rounded-md bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
+            [disabled]="page() <= 1"
+            (click)="prevPage()"
+            [attr.aria-label]="t('common.prev')"
+          >
+            <app-icon name="chevron-left" size="0.75rem" />
+          </button>
+
+          @for (p of displayedPages(); track p) {
+            <button
+              type="button"
+              class="w-7 h-7 flex items-center justify-center rounded-md text-xs font-medium transition-all cursor-pointer"
+              [class.bg-[var(--color-primary)]]="p === page()"
+              [class.text-[var(--color-text)]]="p === page()"
+              [class.font-bold]="p === page()"
+              [class.text-[var(--color-text-tertiary)]]="p !== page()"
+              [class.hover:text-[var(--color-text)]]="p !== page()"
+              [class.hover:bg-[var(--color-surface-2)]]="p !== page()"
+              (click)="goToPage(p)"
+            >
+              {{ p }}
+            </button>
+          }
+
+          <button
+            type="button"
+            class="w-7 h-7 flex items-center justify-center rounded-md bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
+            [disabled]="page() >= totalPages()"
+            (click)="nextPage()"
+            [attr.aria-label]="t('common.next')"
+          >
+            <app-icon name="chevron-right" size="0.75rem" />
+          </button>
+        </div>
+
+        @if (!hidePageSize()) {
+          <div class="flex items-center gap-2 self-end sm:self-auto">
             <select
-              class="select select--sm data-table__page-size"
+              class="bg-[var(--color-surface-2)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-md px-2.5 py-1 text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] cursor-pointer outline-none transition-all"
               [attr.aria-label]="t('table.itemsPerPage')"
               [value]="currentPageSize()"
               (change)="onPageSize($event)"
-              [appTooltip]="t('table.itemsPerPage')"
-              tooltipPosition="top"
             >
               @for (size of pageSizeOptions(); track size) {
-                <option [value]="size">{{ size }} / {{ t('common.page') }}</option>
+                <option [value]="size" class="bg-[var(--color-surface)] text-[var(--color-text)]">
+                  {{ size }} per page
+                </option>
               }
             </select>
-          }
-          <div class="data-table__pager">
-            <button
-              type="button"
-              class="btn btn--outline btn--sm"
-              [disabled]="page() <= 1"
-              (click)="prevPage()"
-              [appTooltip]="page() > 1 ? t('common.prev') : null"
-              tooltipPosition="top"
-            >
-              {{ t('common.prev') }}
-            </button>
-            <button
-              type="button"
-              class="btn btn--outline btn--sm"
-              [disabled]="page() >= totalPages()"
-              (click)="nextPage()"
-              [appTooltip]="page() < totalPages() ? t('common.next') : null"
-              tooltipPosition="top"
-            >
-              {{ t('common.next') }}
-            </button>
           </div>
-        </div>
-      </footer>
+        }
+      </div>
     }
   }
 </div>

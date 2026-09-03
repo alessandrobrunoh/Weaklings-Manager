@@ -81,7 +81,7 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
         <app-loading [label]="t('common.loading')" />
       } @else if (settings(); as s) {
         <!-- KPI Cards summary of active policy -->
-        <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Regear policy summary">
+        <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Regear policy summary">
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div>

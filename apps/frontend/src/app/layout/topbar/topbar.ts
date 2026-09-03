@@ -58,7 +58,6 @@ import type { NavSection } from '../sidebar/sidebar';
   template: `
     <header
       class="topbar flex items-center justify-between gap-3 px-4 sm:px-6 transition-colors"
-      [class.md:hidden]="isDashboard()"
       aria-label="Application toolbar"
     >
       <div class="flex min-w-0 items-center gap-3">
@@ -86,7 +85,7 @@ import type { NavSection } from '../sidebar/sidebar';
         <!-- Language selector -->
         <div class="relative hidden items-center sm:flex">
           <select
-            class="cursor-pointer font-medium text-xs bg-[color-mix(in_srgb,var(--color-paper)_4%,transparent)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-[var(--radius-buttons)] px-2.5 py-1.5 transition-all outline-none"
+            class="cursor-pointer font-medium text-xs bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-lg px-2.5 py-1.5 transition-all outline-none"
             [value]="translate.language()"
             (change)="onLanguageChange($event)"
             [appTooltip]="t('language.label')"
@@ -102,7 +101,7 @@ import type { NavSection } from '../sidebar/sidebar';
         <!-- Theme toggle -->
         <button
           type="button"
-          class="btn btn--ghost btn--icon shrink-0 text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
+          class="btn btn--ghost btn--icon shrink-0 text-[var(--color-text-tertiary)] hover:text-[var(--color-text)]"
           (click)="theme.toggle()"
           [appTooltip]="theme.isDark() ? t('theme.toggleLight') : t('theme.toggleDark')"
           tooltipPosition="bottom"
@@ -112,14 +111,15 @@ import type { NavSection } from '../sidebar/sidebar';
           <app-icon [name]="theme.isDark() ? 'moon' : 'sun'" size="1rem" />
         </button>
 
+        <!-- Notifications panel -->
         <app-notifications-panel />
 
-        <!-- User profile capsule -->
+        <!-- User profile capsule & logout button -->
         @if (auth.profile(); as profile) {
           <div class="flex shrink-0 items-center gap-2 pl-2.5 border-l border-[var(--color-border)]">
             <a
               routerLink="/profile"
-              class="inline-flex rounded-[var(--radius-pills)] transition-transform hover:scale-105"
+              class="inline-flex rounded-full transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
               [appTooltip]="profile.username + (profile.highest_role ? ' (' + profile.highest_role + ')' : '')"
               tooltipPosition="bottom"
               aria-label="User profile"
@@ -133,19 +133,19 @@ import type { NavSection } from '../sidebar/sidebar';
             </a>
 
             <div class="hidden xl:flex flex-col min-w-0 leading-tight">
-              <span class="text-xs font-medium text-[var(--color-text)] truncate max-w-[100px]">{{ profile.username }}</span>
+              <span class="text-xs font-semibold text-[var(--color-text)] truncate max-w-[100px]">{{ profile.username }}</span>
               <span class="text-[10px] text-[var(--color-text-tertiary)] truncate max-w-[100px]">{{ profile.highest_role }}</span>
             </div>
 
             <button
               type="button"
-              class="btn btn--ghost btn--icon shrink-0 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-error)]"
+              class="btn btn--ghost btn--icon shrink-0 text-xs text-[var(--color-text-tertiary)] hover:text-red-400"
               (click)="onLogout()"
               [appTooltip]="t('nav.logout')"
               tooltipPosition="bottom"
               [attr.aria-label]="t('nav.logout')"
             >
-              <app-icon name="logout" size="0.95rem" />
+              <app-icon name="logout" size="1rem" />
             </button>
           </div>
         } @else {
