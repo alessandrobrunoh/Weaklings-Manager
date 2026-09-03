@@ -130,6 +130,32 @@ pub struct GuildSettingsView {
     pub discord_applications_panel_title: String,
     /// Application panel message.
     pub discord_applications_panel_message: String,
+    /// Title shown when a manager opens the application actions.
+    pub discord_applications_manage_title: String,
+    /// Message shown when a manager opens the application actions.
+    pub discord_applications_manage_message: String,
+    /// Message shown when applications are closed.
+    pub discord_applications_closed_message: String,
+    pub discord_applications_closed_title: String,
+    pub discord_applications_close_title: String,
+    pub discord_applications_close_message: String,
+    pub discord_applications_accept_title: String,
+    pub discord_applications_decline_title: String,
+    pub discord_applications_no_permission_title: String,
+    pub discord_applications_already_open_title: String,
+    pub discord_applications_final_title: String,
+    /// Message shown when the actor lacks application permissions.
+    pub discord_applications_no_permission_message: String,
+    /// Message shown when the applicant already has an open application.
+    pub discord_applications_already_open_message: String,
+    /// Message shown after accepting an application.
+    pub discord_applications_accept_message: String,
+    /// Message shown after declining an application.
+    pub discord_applications_decline_message: String,
+    /// Message shown when application processing fails.
+    pub discord_applications_error_message: String,
+    /// Message shown after an application action completes.
+    pub discord_applications_result_message: String,
     /// Application welcome title.
     pub discord_applications_welcome_title: String,
     /// Application welcome message.
@@ -172,6 +198,26 @@ impl GuildSettingsView {
             discord_applications_open: model.discord_applications_open,
             discord_applications_panel_title: model.discord_applications_panel_title,
             discord_applications_panel_message: model.discord_applications_panel_message,
+            discord_applications_manage_title: model.discord_applications_manage_title,
+            discord_applications_manage_message: model.discord_applications_manage_message,
+            discord_applications_closed_message: model.discord_applications_closed_message,
+            discord_applications_closed_title: model.discord_applications_closed_title,
+            discord_applications_close_title: model.discord_applications_close_title,
+            discord_applications_close_message: model.discord_applications_close_message,
+            discord_applications_accept_title: model.discord_applications_accept_title,
+            discord_applications_decline_title: model.discord_applications_decline_title,
+            discord_applications_no_permission_title: model
+                .discord_applications_no_permission_title,
+            discord_applications_already_open_title: model.discord_applications_already_open_title,
+            discord_applications_final_title: model.discord_applications_final_title,
+            discord_applications_no_permission_message: model
+                .discord_applications_no_permission_message,
+            discord_applications_already_open_message: model
+                .discord_applications_already_open_message,
+            discord_applications_accept_message: model.discord_applications_accept_message,
+            discord_applications_decline_message: model.discord_applications_decline_message,
+            discord_applications_error_message: model.discord_applications_error_message,
+            discord_applications_result_message: model.discord_applications_result_message,
             discord_applications_welcome_title: model.discord_applications_welcome_title,
             discord_applications_welcome_message: model.discord_applications_welcome_message,
             discord_applications_status_open_message: model
@@ -262,6 +308,32 @@ pub struct UpdateGuildSettingsRequest {
     pub discord_applications_panel_title: Option<String>,
     /// New panel message.
     pub discord_applications_panel_message: Option<String>,
+    /// New manager action title.
+    pub discord_applications_manage_title: Option<String>,
+    /// New manager action message.
+    pub discord_applications_manage_message: Option<String>,
+    /// New closed-application message.
+    pub discord_applications_closed_message: Option<String>,
+    pub discord_applications_closed_title: Option<String>,
+    pub discord_applications_close_title: Option<String>,
+    pub discord_applications_close_message: Option<String>,
+    pub discord_applications_accept_title: Option<String>,
+    pub discord_applications_decline_title: Option<String>,
+    pub discord_applications_no_permission_title: Option<String>,
+    pub discord_applications_already_open_title: Option<String>,
+    pub discord_applications_final_title: Option<String>,
+    /// New insufficient-permission message.
+    pub discord_applications_no_permission_message: Option<String>,
+    /// New already-open message.
+    pub discord_applications_already_open_message: Option<String>,
+    /// New accept result message.
+    pub discord_applications_accept_message: Option<String>,
+    /// New decline result message.
+    pub discord_applications_decline_message: Option<String>,
+    /// New application error message.
+    pub discord_applications_error_message: Option<String>,
+    /// New generic result message.
+    pub discord_applications_result_message: Option<String>,
     /// New application welcome title.
     pub discord_applications_welcome_title: Option<String>,
     /// New application welcome message.

@@ -114,6 +114,83 @@ impl AdminService {
             active.discord_applications_panel_message =
                 Set(normalize_application_text(value, 4000, "panel message")?);
         }
+        if let Some(value) = &req.discord_applications_manage_title {
+            active.discord_applications_manage_title =
+                Set(normalize_application_text(value, 256, "manage title")?);
+        }
+        if let Some(value) = &req.discord_applications_manage_message {
+            active.discord_applications_manage_message =
+                Set(normalize_application_text(value, 4000, "manage message")?);
+        }
+        if let Some(value) = &req.discord_applications_closed_message {
+            active.discord_applications_closed_message =
+                Set(normalize_application_text(value, 4000, "closed message")?);
+        }
+        if let Some(value) = &req.discord_applications_closed_title {
+            active.discord_applications_closed_title =
+                Set(normalize_application_text(value, 256, "closed title")?);
+        }
+        if let Some(value) = &req.discord_applications_close_title {
+            active.discord_applications_close_title =
+                Set(normalize_application_text(value, 256, "close title")?);
+        }
+        if let Some(value) = &req.discord_applications_close_message {
+            active.discord_applications_close_message =
+                Set(normalize_application_text(value, 4000, "close message")?);
+        }
+        if let Some(value) = &req.discord_applications_accept_title {
+            active.discord_applications_accept_title =
+                Set(normalize_application_text(value, 256, "accept title")?);
+        }
+        if let Some(value) = &req.discord_applications_decline_title {
+            active.discord_applications_decline_title =
+                Set(normalize_application_text(value, 256, "decline title")?);
+        }
+        if let Some(value) = &req.discord_applications_no_permission_title {
+            active.discord_applications_no_permission_title =
+                Set(normalize_application_text(value, 256, "permission title")?);
+        }
+        if let Some(value) = &req.discord_applications_already_open_title {
+            active.discord_applications_already_open_title = Set(normalize_application_text(
+                value,
+                256,
+                "already-open title",
+            )?);
+        }
+        if let Some(value) = &req.discord_applications_final_title {
+            active.discord_applications_final_title =
+                Set(normalize_application_text(value, 256, "final title")?);
+        }
+        if let Some(value) = &req.discord_applications_no_permission_message {
+            active.discord_applications_no_permission_message = Set(normalize_application_text(
+                value,
+                4000,
+                "permission message",
+            )?);
+        }
+        if let Some(value) = &req.discord_applications_already_open_message {
+            active.discord_applications_already_open_message = Set(normalize_application_text(
+                value,
+                4000,
+                "already-open message",
+            )?);
+        }
+        if let Some(value) = &req.discord_applications_accept_message {
+            active.discord_applications_accept_message =
+                Set(normalize_application_text(value, 4000, "accept message")?);
+        }
+        if let Some(value) = &req.discord_applications_decline_message {
+            active.discord_applications_decline_message =
+                Set(normalize_application_text(value, 4000, "decline message")?);
+        }
+        if let Some(value) = &req.discord_applications_error_message {
+            active.discord_applications_error_message =
+                Set(normalize_application_text(value, 4000, "error message")?);
+        }
+        if let Some(value) = &req.discord_applications_result_message {
+            active.discord_applications_result_message =
+                Set(normalize_application_text(value, 4000, "result message")?);
+        }
         if let Some(value) = &req.discord_applications_welcome_title {
             active.discord_applications_welcome_title =
                 Set(normalize_application_text(value, 256, "welcome title")?);
@@ -180,6 +257,23 @@ impl AdminService {
                 "discord_applications_open": req.discord_applications_open,
                 "discord_applications_panel_title": req.discord_applications_panel_title,
                 "discord_applications_panel_message": req.discord_applications_panel_message,
+                "discord_applications_manage_title": req.discord_applications_manage_title,
+                "discord_applications_manage_message": req.discord_applications_manage_message,
+                "discord_applications_closed_message": req.discord_applications_closed_message,
+                "discord_applications_closed_title": req.discord_applications_closed_title,
+                "discord_applications_close_title": req.discord_applications_close_title,
+                "discord_applications_close_message": req.discord_applications_close_message,
+                "discord_applications_accept_title": req.discord_applications_accept_title,
+                "discord_applications_decline_title": req.discord_applications_decline_title,
+                "discord_applications_no_permission_title": req.discord_applications_no_permission_title,
+                "discord_applications_already_open_title": req.discord_applications_already_open_title,
+                "discord_applications_final_title": req.discord_applications_final_title,
+                "discord_applications_no_permission_message": req.discord_applications_no_permission_message,
+                "discord_applications_already_open_message": req.discord_applications_already_open_message,
+                "discord_applications_accept_message": req.discord_applications_accept_message,
+                "discord_applications_decline_message": req.discord_applications_decline_message,
+                "discord_applications_error_message": req.discord_applications_error_message,
+                "discord_applications_result_message": req.discord_applications_result_message,
                 "discord_applications_welcome_title": req.discord_applications_welcome_title,
                 "discord_applications_welcome_message": req.discord_applications_welcome_message,
                 "discord_applications_status_open_message": req.discord_applications_status_open_message,
@@ -797,6 +891,15 @@ mod tests {
                 discord_applications_open: Some(true),
                 discord_applications_panel_title: Some(" Recruitment ".into()),
                 discord_applications_panel_message: Some(" Click to apply ".into()),
+                discord_applications_manage_title: Some(" Manage ".into()),
+                discord_applications_manage_message: Some(" Choose an action ".into()),
+                discord_applications_closed_message: Some(" Closed ".into()),
+                discord_applications_no_permission_message: Some(" Denied ".into()),
+                discord_applications_already_open_message: Some(" Already open ".into()),
+                discord_applications_accept_message: Some(" Accepted ".into()),
+                discord_applications_decline_message: Some(" Declined ".into()),
+                discord_applications_error_message: Some(" Error ".into()),
+                discord_applications_result_message: Some(" Result ".into()),
                 ..Default::default()
             },
         )
@@ -826,6 +929,21 @@ mod tests {
         assert!(saved.discord_applications_open);
         assert_eq!(saved.discord_applications_panel_title, "Recruitment");
         assert_eq!(saved.discord_applications_panel_message, "Click to apply");
+        assert_eq!(saved.discord_applications_manage_title, "Manage");
+        assert_eq!(
+            saved.discord_applications_manage_message,
+            "Choose an action"
+        );
+        assert_eq!(saved.discord_applications_closed_message, "Closed");
+        assert_eq!(saved.discord_applications_no_permission_message, "Denied");
+        assert_eq!(
+            saved.discord_applications_already_open_message,
+            "Already open"
+        );
+        assert_eq!(saved.discord_applications_accept_message, "Accepted");
+        assert_eq!(saved.discord_applications_decline_message, "Declined");
+        assert_eq!(saved.discord_applications_error_message, "Error");
+        assert_eq!(saved.discord_applications_result_message, "Result");
 
         let cleared = AdminService::update_guild_settings(
             &db,

@@ -56,6 +56,32 @@ pub struct Model {
     pub discord_applications_panel_title: String,
     /// Application panel message.
     pub discord_applications_panel_message: String,
+    /// Title shown when a manager opens the application actions.
+    pub discord_applications_manage_title: String,
+    /// Message shown when a manager opens the application actions.
+    pub discord_applications_manage_message: String,
+    /// Message shown when applications are closed.
+    pub discord_applications_closed_message: String,
+    pub discord_applications_closed_title: String,
+    pub discord_applications_close_title: String,
+    pub discord_applications_close_message: String,
+    pub discord_applications_accept_title: String,
+    pub discord_applications_decline_title: String,
+    pub discord_applications_no_permission_title: String,
+    pub discord_applications_already_open_title: String,
+    pub discord_applications_final_title: String,
+    /// Message shown when the actor lacks application permissions.
+    pub discord_applications_no_permission_message: String,
+    /// Message shown when the applicant already has an open application.
+    pub discord_applications_already_open_message: String,
+    /// Message shown after accepting an application.
+    pub discord_applications_accept_message: String,
+    /// Message shown after declining an application.
+    pub discord_applications_decline_message: String,
+    /// Message shown when application processing fails.
+    pub discord_applications_error_message: String,
+    /// Message shown after an application action completes.
+    pub discord_applications_result_message: String,
     /// Application welcome title.
     pub discord_applications_welcome_title: String,
     /// Application welcome message.

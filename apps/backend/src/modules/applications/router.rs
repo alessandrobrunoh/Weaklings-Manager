@@ -74,15 +74,20 @@ async fn accept_application(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<ApplicationView>>, AppError> {
-    user.require(&perms, Permission::EventsEdit).await?;
-    let application = ApplicationService::resolve(&db, id, &user, "accepted").await?;
+    user.require(&perms, Permission::ApplicationsManage).await?;
     let default_role_discord_id = role::Entity::find()
         .filter(role::Column::IsDefault.eq(true))
         .one(&db)
         .await?
-        .and_then(|item| item.discord_role_id);
+        .and_then(|item| item.discord_role_id)
+        .ok_or_else(|| {
+            AppError::Conflict(
+                "Cannot accept application: no default Discord role is configured".into(),
+            )
+        })?;
+    let application = ApplicationService::resolve(&db, id, &user, "accepted").await?;
     let mut view: ApplicationView = application.into();
-    view.default_role_discord_id = default_role_discord_id;
+    view.default_role_discord_id = Some(default_role_discord_id);
     Ok(Json(ApiResponse::new(view)))
 }
 
@@ -92,7 +97,7 @@ async fn decline_application(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<ApplicationView>>, AppError> {
-    user.require(&perms, Permission::EventsEdit).await?;
+    user.require(&perms, Permission::ApplicationsManage).await?;
     let application = ApplicationService::resolve(&db, id, &user, "declined").await?;
     Ok(Json(ApiResponse::new(application.into())))
 }
@@ -109,7 +114,7 @@ async fn close_application(
         .await?
         .ok_or_else(|| AppError::NotFound("Application not found".into()))?;
     if existing.user_discord_id != user.id {
-        user.require(&perms, Permission::EventsEdit).await?;
+        user.require(&perms, Permission::ApplicationsManage).await?;
     }
     let application = ApplicationService::resolve(&db, id, &user, "closed").await?;
     Ok(Json(ApiResponse::new(application.into())))

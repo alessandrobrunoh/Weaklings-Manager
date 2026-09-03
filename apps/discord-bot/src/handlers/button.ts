@@ -1,6 +1,7 @@
 import {
   ActionRowBuilder,
   ButtonBuilder,
+  ComponentType,
   ButtonInteraction,
   ButtonStyle,
   PermissionFlagsBits,
@@ -30,7 +31,19 @@ import { getPoller } from "../services/poller.js";
 import { buildSignupRoleOptions, signupRoles } from "../services/event-signup.js";
 import { closeEventAnnouncementThread } from "../services/event-announcement-thread.js";
 import { getSettingsService } from "../services/settings.js";
-import { buildApplicationWelcomeComponents, buildApplicationWelcomeEmbed } from "../embeds/application.embed.js";
+import {
+  buildApplicationAlreadyOpenEmbed,
+  buildApplicationClosedEmbed,
+  buildApplicationFinalMessage,
+  buildApplicationManageEmbed,
+  buildApplicationNoPermissionEmbed,
+  buildApplicationWelcomeComponents,
+  buildApplicationWelcomeEmbed,
+  buildApplicationFinalEmbed,
+  buildApplicationErrorEmbed,
+  buildApplicationResolutionComponents,
+  type ApplicationResolutionAction,
+} from "../embeds/application.embed.js";
 import type { ApplicationView, GuildSettingsView } from "../api/types.js";
 
 
@@ -67,12 +80,19 @@ export async function handleButton(
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "An unexpected error occurred.";
-    const errEmbed = createResponseEmbed(
+    let errEmbed = createResponseEmbed(
       "error",
       "Button Action Failed",
       message,
       "BUTTON SYSTEM",
     );
+    if (ns === 'application') {
+      try {
+        errEmbed = buildApplicationErrorEmbed(await getSettingsService().applicationsSettings());
+      } catch {
+        // Keep the generic error if settings are unavailable while handling an error.
+      }
+    }
     const reply = { embeds: [errEmbed], flags: ["Ephemeral"] as any };
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp(reply);
@@ -109,13 +129,13 @@ async function handleApplicationButton(
   if (action === 'manage') {
     if (!isManager) {
       await interaction.reply({
-        embeds: [createResponseEmbed('warning', 'Permessi insufficienti', 'Non hai i permessi per gestire questa application.', 'APPLICATIONS')],
+        embeds: [buildApplicationNoPermissionEmbed(settings)],
         flags: ['Ephemeral'],
       });
       return;
     }
     await interaction.reply({
-      embeds: [createResponseEmbed('info', 'Gestione application', 'Scegli Accept o Decline.', 'APPLICATIONS')],
+      embeds: [buildApplicationManageEmbed(settings)],
       components: [new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setCustomId(`application:accept:${applicationId}`).setLabel('Accept').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId(`application:decline:${applicationId}`).setLabel('Decline').setStyle(ButtonStyle.Danger),
@@ -127,7 +147,7 @@ async function handleApplicationButton(
 
   if (action !== 'close' && !isManager) {
     await interaction.reply({
-      embeds: [createResponseEmbed('warning', 'Permessi insufficienti', 'Non hai i permessi per questa azione.', 'APPLICATIONS')],
+      embeds: [buildApplicationNoPermissionEmbed(settings)],
       flags: ['Ephemeral'],
     });
     return;
@@ -135,14 +155,17 @@ async function handleApplicationButton(
   if (action === 'close' && !isManager) {
     const active = await api.get<ApplicationView | null>('api/applications/active', interaction.user.id);
     if (!active || active.id !== applicationId) {
-      await interaction.reply({ embeds: [createResponseEmbed('warning', 'Permessi insufficienti', 'Solo il proprietario può chiudere questa application.', 'APPLICATIONS')], flags: ['Ephemeral'] });
+      await interaction.reply({ embeds: [buildApplicationNoPermissionEmbed(settings)], flags: ['Ephemeral'] });
       return;
     }
   }
 
   await interaction.deferReply({ flags: ['Ephemeral'] });
-  const endpoint = action === 'accept' ? 'accept' : action === 'decline' ? 'decline' : 'close';
-  const resolved = await api.post<ApplicationView>(`api/applications/${applicationId}/${endpoint}`, {}, interaction.user.id);
+  if (action !== 'accept' && action !== 'decline' && action !== 'close') {
+    throw new Error('Unknown application action.');
+  }
+  const resolutionAction: ApplicationResolutionAction = action;
+  const resolved = await api.post<ApplicationView>(`api/applications/${applicationId}/${resolutionAction}`, {}, interaction.user.id);
   if (action === 'accept' && interaction.guild) {
     const applicant = await interaction.guild.members.fetch(resolved.user_discord_id);
     if (settings.discord_auto_role_id) {
@@ -152,8 +175,8 @@ async function handleApplicationButton(
       await applicant.roles.add(resolved.default_role_discord_id, 'Application accepted');
     }
   }
-  await finalizeApplicationChannel(interaction, settings, resolved, action);
-  await interaction.editReply({ embeds: [createResponseEmbed('success', 'Application aggiornata', `Application **${resolved.status}**.`, 'APPLICATIONS')] });
+  await finalizeApplicationChannel(interaction, settings, resolved, resolutionAction);
+  await interaction.editReply({ embeds: [buildApplicationFinalEmbed(settings, resolutionAction)] });
 }
 
 async function createApplicationChannel(interaction: ButtonInteraction, api: ApiClient): Promise<void> {
@@ -162,13 +185,13 @@ async function createApplicationChannel(interaction: ButtonInteraction, api: Api
   if (!guild) throw new Error('Applications can only be opened inside a server.');
   const settings = await getSettingsService().applicationsSettings();
   if (!settings.discord_applications_open) {
-    await interaction.editReply({ embeds: [createResponseEmbed('warning', 'Applications closed', 'Le application sono momentaneamente chiuse.', 'APPLICATIONS')] });
+    await interaction.editReply({ embeds: [buildApplicationClosedEmbed(settings)] });
     return;
   }
   if (!settings.discord_applications_category_id) throw new Error('La categoria delle application non è configurata dal pannello admin.');
   const active = await api.get<ApplicationView | null>('api/applications/active', interaction.user.id);
   if (active) {
-    await interaction.editReply({ embeds: [createResponseEmbed('info', 'Application already open', `Hai già un'applicatione aperta: <#${active.channel_id}>.`, 'APPLICATIONS')] });
+    await interaction.editReply({ embeds: [buildApplicationAlreadyOpenEmbed(settings, active.channel_id)] });
     return;
   }
   const safeName = interaction.user.username.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 80) || interaction.user.id;
@@ -183,7 +206,11 @@ async function createApplicationChannel(interaction: ButtonInteraction, api: Api
   });
   try {
     const application = await api.post<ApplicationView>('api/applications', channel.id, interaction.user.id);
-    await channel.send({ embeds: [buildApplicationWelcomeEmbed(settings)], components: buildApplicationWelcomeComponents(application.id) });
+    await channel.send({
+      embeds: [buildApplicationWelcomeEmbed(settings)],
+      components: buildApplicationWelcomeComponents(application.id),
+      allowedMentions: { parse: [] },
+    });
   } catch (error) {
     await channel.delete('Application persistence failed').catch(() => undefined);
     throw error;
@@ -195,7 +222,7 @@ async function finalizeApplicationChannel(
   interaction: ButtonInteraction,
   settings: GuildSettingsView,
   application: ApplicationView,
-  action: string,
+  action: ApplicationResolutionAction,
 ): Promise<void> {
   const channel = interaction.channel;
   if (!channel || !channel.isTextBased() || !('permissionOverwrites' in channel)) return;
@@ -203,7 +230,30 @@ async function finalizeApplicationChannel(
   if (settings.discord_applications_archive_category_id && 'setParent' in channel) {
     await channel.setParent(settings.discord_applications_archive_category_id, { lockPermissions: false }).catch(() => undefined);
   }
-  await channel.send({ content: `Application ${action === 'accept' ? 'accettata' : action === 'decline' ? 'rifiutata' : 'chiusa'}.` }).catch(() => undefined);
+  // The clicked message can be the welcome message (Close) or the ephemeral
+  // manager message (Accept/Decline). In both cases preserve custom IDs while
+  // making the old controls visibly terminal.
+  const terminalComponents = buildApplicationResolutionComponents(application.id, action);
+  await interaction.message.edit({
+    embeds: [buildApplicationFinalEmbed(settings, action)],
+    components: terminalComponents,
+  }).catch(() => undefined);
+
+  // Accept/Decline are clicked from an ephemeral manager prompt, so also update
+  // the persistent welcome message to prevent stale controls being reused.
+  if ('messages' in channel) {
+    const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+    const welcome = messages?.find((message) => message.components.some((row) =>
+      row.type === ComponentType.ActionRow && row.components.some((component) =>
+        component.customId === `application:manage:${application.id}`,
+      ),
+    ));
+    await welcome?.edit({
+      embeds: [buildApplicationFinalEmbed(settings, action)],
+      components: terminalComponents,
+    }).catch(() => undefined);
+  }
+  await channel.send(buildApplicationFinalMessage(settings, action)).catch(() => undefined);
 }
 
 async function handleEventButton(

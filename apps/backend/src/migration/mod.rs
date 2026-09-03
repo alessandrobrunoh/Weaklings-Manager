@@ -90,6 +90,8 @@ mod m20260903_000002_create_discord_applications;
 mod m20260903_000003_add_discord_application_welcome_copy;
 mod m20260903_000004_add_discord_application_status_copy;
 mod m20260903_000005_add_discord_application_panel_message;
+mod m20260903_000006_add_discord_application_workflow_copy;
+mod m20260903_000007_seed_applications_manage_permission;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -184,6 +186,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260903_000003_add_discord_application_welcome_copy::Migration),
             Box::new(m20260903_000004_add_discord_application_status_copy::Migration),
             Box::new(m20260903_000005_add_discord_application_panel_message::Migration),
+            Box::new(m20260903_000006_add_discord_application_workflow_copy::Migration),
+            Box::new(m20260903_000007_seed_applications_manage_permission::Migration),
         ]
     }
 }

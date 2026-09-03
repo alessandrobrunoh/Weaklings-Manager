@@ -1,5 +1,8 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
+    sea_query::Expr,
+};
 
 use crate::errors::AppError;
 use crate::modules::auth::UserContext;
@@ -63,16 +66,26 @@ impl ApplicationService {
         if application.status != "open" {
             return Err(AppError::Conflict("Application is already resolved".into()));
         }
-        if status == "closed" && application.user_discord_id != actor.id {
-            return Err(AppError::Forbidden(
-                "Only the applicant or an authorized manager can close this application".into(),
-            ));
+
+        // Resolve only an application that is still open. This closes the race between two
+        // manager retries: exactly one request can transition the row out of `open`.
+        let resolved_at: sea_orm::prelude::DateTimeWithTimeZone = Utc::now().into();
+        let result = Entity::update_many()
+            .col_expr(Column::Status, Expr::value(status))
+            .col_expr(Column::ResolvedAt, Expr::value(resolved_at))
+            .col_expr(Column::ResolvedByDiscordId, Expr::value(actor.id.clone()))
+            .filter(Column::Id.eq(application_id))
+            .filter(Column::Status.eq("open"))
+            .exec(db)
+            .await
+            .map_err(AppError::Database)?;
+        if result.rows_affected != 1 {
+            return Err(AppError::Conflict("Application is already resolved".into()));
         }
 
-        let mut active: ActiveModel = application.into();
-        active.status = Set(status.to_string());
-        active.resolved_at = Set(Some(Utc::now().into()));
-        active.resolved_by_discord_id = Set(Some(actor.id.clone()));
-        active.update(db).await.map_err(AppError::Database)
+        Entity::find_by_id(application_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Application not found".into()))
     }
 }

@@ -37,6 +37,9 @@ use strum::{AsRefStr, EnumString, IntoStaticStr, VariantArray};
     VariantArray,
 )]
 pub enum Permission {
+    /// Manage Discord applications, including accept, decline, and manager actions. Officer+.
+    #[strum(serialize = "applications.manage")]
+    ApplicationsManage,
     /// Accept (pay out) a requested bank withdrawal. Officer-or-above today.
     #[strum(serialize = "bank.withdraw.accept")]
     BankWithdrawAccept,
@@ -345,6 +348,18 @@ mod tests {
     #[test]
     fn from_str_rejects_unknown() {
         assert_eq!(Permission::from_str("nope.does.not.exist"), None);
+    }
+
+    #[test]
+    fn applications_manage_has_stable_key() {
+        assert_eq!(
+            Permission::ApplicationsManage.as_str(),
+            "applications.manage"
+        );
+        assert_eq!(
+            Permission::from_str("applications.manage"),
+            Some(Permission::ApplicationsManage)
+        );
     }
 
     #[test]
