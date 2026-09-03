@@ -79,15 +79,16 @@ async fn accept_application(
         .filter(role::Column::IsDefault.eq(true))
         .one(&db)
         .await?
-        .and_then(|item| item.discord_role_id)
-        .ok_or_else(|| {
-            AppError::Conflict(
-                "Cannot accept application: no default Discord role is configured".into(),
-            )
-        })?;
+        .and_then(|item| item.discord_role_id);
+    let fallback_auto_role =
+        crate::modules::admin::service::AdminService::get_autorole_settings(&db)
+            .await
+            .ok()
+            .and_then(|settings| settings.discord_auto_role_id);
+    let assigned_role = default_role_discord_id.or(fallback_auto_role);
     let application = ApplicationService::resolve(&db, id, &user, "accepted").await?;
     let mut view: ApplicationView = application.into();
-    view.default_role_discord_id = Some(default_role_discord_id);
+    view.default_role_discord_id = assigned_role;
     Ok(Json(ApiResponse::new(view)))
 }
 

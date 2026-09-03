@@ -1857,6 +1857,23 @@ export interface DiscordRoleView {
   managed: boolean;
 }
 
+export type DiscordChannelKind = 'text' | 'voice' | 'category' | 'forum' | 'other';
+
+export interface DiscordForumTagView {
+  id: string;
+  name: string;
+}
+
+export interface DiscordChannelView {
+  id: string;
+  name: string;
+  kind: DiscordChannelKind | string;
+  type_id: number;
+  parent_id: string | null;
+  position: number;
+  available_tags: DiscordForumTagView[];
+}
+
 /**
  * The guild's Discord integration settings — channel/role IDs that used to live only in
  * deployment env vars. Every field is nullable: an unset channel means the code that would post
@@ -1919,6 +1936,7 @@ export type UpdateGuildSettingsRequest = Partial<GuildSettingsView>;
 /** Current AutoRole configuration. */
 export interface AutoRoleSettingsView {
   discord_auto_role_id: string | null;
+  default_role_discord_id?: string | null;
 }
 
 /** Replacement request for AutoRole; an empty string disables it. */

@@ -291,10 +291,7 @@ impl AdminService {
     pub async fn get_autorole_settings(
         db: &DatabaseConnection,
     ) -> Result<super::models::AutoRoleSettingsView, AppError> {
-        let settings = load_settings(db).await?;
-        Ok(super::models::AutoRoleSettingsView {
-            discord_auto_role_id: settings.discord_auto_role_id,
-        })
+        autorole_view(db).await
     }
 
     /// Updates the AutoRole after confirming that the selected Discord role exists and is not
@@ -340,9 +337,7 @@ impl AdminService {
         )
         .await;
 
-        Ok(super::models::AutoRoleSettingsView {
-            discord_auto_role_id: role_id,
-        })
+        autorole_view(db).await
     }
 
     /// Retrieves the non-managed Discord roles available to the configured guild.
@@ -366,6 +361,25 @@ impl AdminService {
                 .then_with(|| a.name.cmp(&b.name))
         });
         Ok(roles)
+    }
+
+    /// Retrieves Discord guild channels the admin can pick from (text, voice, category, forum).
+    pub async fn discord_channels(
+        cfg: &Config,
+    ) -> Result<Vec<super::models::DiscordChannelView>, AppError> {
+        let mut channels: Vec<super::models::DiscordChannelView> = fetch_discord_channels(cfg)
+            .await?
+            .into_iter()
+            .filter_map(map_discord_channel)
+            .collect();
+        channels.sort_by(|a, b| {
+            a.position.cmp(&b.position).then_with(|| {
+                a.name
+                    .to_ascii_lowercase()
+                    .cmp(&b.name.to_ascii_lowercase())
+            })
+        });
+        Ok(channels)
     }
 
     /// The full role → permission matrix, including Discord-link fields.
@@ -603,14 +617,49 @@ struct DiscordRolePayload {
     managed: bool,
 }
 
-async fn fetch_discord_roles(cfg: &Config) -> Result<Vec<DiscordRolePayload>, AppError> {
-    let token = cfg
-        .discord_bot_token
+#[derive(Debug, Deserialize)]
+struct DiscordForumTagPayload {
+    id: String,
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DiscordChannelPayload {
+    id: String,
+    name: String,
+    #[serde(rename = "type")]
+    type_id: i32,
+    parent_id: Option<String>,
+    #[serde(default)]
+    position: i32,
+    #[serde(default)]
+    available_tags: Vec<DiscordForumTagPayload>,
+}
+
+async fn autorole_view(
+    db: &DatabaseConnection,
+) -> Result<super::models::AutoRoleSettingsView, AppError> {
+    let settings = load_settings(db).await?;
+    let default_role_discord_id = role::Entity::find()
+        .filter(role::Column::IsDefault.eq(true))
+        .one(db)
+        .await?
+        .and_then(|row| row.discord_role_id);
+    Ok(super::models::AutoRoleSettingsView {
+        discord_auto_role_id: settings.discord_auto_role_id,
+        default_role_discord_id,
+    })
+}
+
+fn discord_bot_token(cfg: &Config) -> Result<&str, AppError> {
+    cfg.discord_bot_token
         .as_deref()
         .filter(|token| !token.trim().is_empty() && *token != "your_discord_bot_token")
-        .ok_or_else(|| {
-            AppError::UpstreamService("Discord bot token is not configured".to_string())
-        })?;
+        .ok_or_else(|| AppError::UpstreamService("Discord bot token is not configured".to_string()))
+}
+
+async fn fetch_discord_roles(cfg: &Config) -> Result<Vec<DiscordRolePayload>, AppError> {
+    let token = discord_bot_token(cfg)?;
 
     let response = reqwest::Client::new()
         .get(format!(
@@ -634,6 +683,68 @@ async fn fetch_discord_roles(cfg: &Config) -> Result<Vec<DiscordRolePayload>, Ap
 
     response.json().await.map_err(|error| {
         AppError::UpstreamService(format!("Discord roles response was invalid: {error}"))
+    })
+}
+
+async fn fetch_discord_channels(cfg: &Config) -> Result<Vec<DiscordChannelPayload>, AppError> {
+    let token = discord_bot_token(cfg)?;
+
+    let response = reqwest::Client::new()
+        .get(format!(
+            "https://discord.com/api/v10/guilds/{}/channels",
+            cfg.discord_guild_id
+        ))
+        .header("Authorization", format!("Bot {token}"))
+        .header("User-Agent", "WeaklingsBackend (0.0.3)")
+        .send()
+        .await
+        .map_err(|error| {
+            AppError::UpstreamService(format!("Discord channels request failed: {error}"))
+        })?;
+
+    if !response.status().is_success() {
+        return Err(AppError::UpstreamService(format!(
+            "Discord channels request failed with status {}",
+            response.status()
+        )));
+    }
+
+    response.json().await.map_err(|error| {
+        AppError::UpstreamService(format!("Discord channels response was invalid: {error}"))
+    })
+}
+
+/// Maps a Discord channel type onto the picker kinds the admin UI understands.
+#[must_use]
+fn classify_discord_channel(type_id: i32) -> Option<&'static str> {
+    match type_id {
+        0 | 5 => Some("text"),
+        2 | 13 => Some("voice"),
+        4 => Some("category"),
+        15 | 16 => Some("forum"),
+        _ => None,
+    }
+}
+
+fn map_discord_channel(
+    payload: DiscordChannelPayload,
+) -> Option<super::models::DiscordChannelView> {
+    let kind = classify_discord_channel(payload.type_id)?;
+    Some(super::models::DiscordChannelView {
+        id: payload.id,
+        name: payload.name,
+        kind: kind.to_string(),
+        type_id: payload.type_id,
+        parent_id: payload.parent_id,
+        position: payload.position,
+        available_tags: payload
+            .available_tags
+            .into_iter()
+            .map(|tag| super::models::DiscordForumTagView {
+                id: tag.id,
+                name: tag.name,
+            })
+            .collect(),
     })
 }
 
@@ -811,6 +922,18 @@ mod tests {
             .await
             .expect("migrate");
         db
+    }
+
+    #[test]
+    fn classify_discord_channel_keeps_picker_kinds() {
+        assert_eq!(classify_discord_channel(0), Some("text"));
+        assert_eq!(classify_discord_channel(5), Some("text"));
+        assert_eq!(classify_discord_channel(2), Some("voice"));
+        assert_eq!(classify_discord_channel(13), Some("voice"));
+        assert_eq!(classify_discord_channel(4), Some("category"));
+        assert_eq!(classify_discord_channel(15), Some("forum"));
+        assert_eq!(classify_discord_channel(16), Some("forum"));
+        assert_eq!(classify_discord_channel(11), None);
     }
 
     #[test]

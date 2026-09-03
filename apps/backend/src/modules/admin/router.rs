@@ -19,9 +19,9 @@ use axum::{
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
 
 use super::models::{
-    AutoRoleSettingsView, CreateRoleRequest, DiscordRoleView, GuildSettingsView, PermissionMatrix,
-    UpdateAutoRoleRequest, UpdateGuildSettingsRequest, UpdateRolePermissionsRequest,
-    UpdateRoleRequest,
+    AutoRoleSettingsView, CreateRoleRequest, DiscordChannelView, DiscordRoleView,
+    GuildSettingsView, PermissionMatrix, UpdateAutoRoleRequest, UpdateGuildSettingsRequest,
+    UpdateRolePermissionsRequest, UpdateRoleRequest,
 };
 use super::service::AdminService;
 use crate::modules::auth::entities::{role, role_permission};
@@ -38,6 +38,7 @@ pub fn router() -> Router {
         )
         .route("/roles/{role_id}/permissions", put(update_role_permissions))
         .route("/discord/roles", get(list_guild_discord_roles))
+        .route("/discord/channels", get(list_guild_discord_channels))
         .route(
             "/settings",
             get(get_guild_settings).put(update_guild_settings),
@@ -282,13 +283,14 @@ pub async fn delete_role(
     get,
     path = "/api/admin/discord/roles",
     tag = "admin",
-    summary = "List Discord guild roles for RBAC linking",
+    summary = "List Discord guild roles for searchable pickers",
     description = "Returns non-managed guild roles (excludes @everyone and bot/integration roles), \
-        highest Discord position first. Requires `roles.manage`. Missing bot token yields 502.",
+        highest Discord position first. Allowed for officers who can manage roles, autorole, \
+        Discord settings, events, or progression settings. Missing bot token yields 502.",
     security(("session_cookie" = ["roles.manage"])),
     responses(
         (status = 200, description = "Discord roles retrieved", body = [DiscordRoleView]),
-        (status = 403, description = "Forbidden - lacks roles.manage", body = ProblemDetails),
+        (status = 403, description = "Forbidden", body = ProblemDetails),
         (status = 502, description = "Discord API unavailable or bot token missing", body = ProblemDetails)
     )
 )]
@@ -297,10 +299,57 @@ pub async fn list_guild_discord_roles(
     Extension(perms): Extension<Permissions>,
     Extension(cfg): Extension<Config>,
 ) -> Result<Json<ApiResponse<Vec<DiscordRoleView>>>, AppError> {
-    user.require(&perms, Permission::RolesManage).await?;
+    require_discord_catalog(&user, &perms).await?;
     Ok(Json(ApiResponse::new(
         AdminService::discord_roles(&cfg).await?,
     )))
+}
+
+/// Discord channels in the configured guild, for searchable pickers.
+#[utoipa::path(
+    get,
+    path = "/api/admin/discord/channels",
+    tag = "admin",
+    summary = "List Discord guild channels for searchable pickers",
+    description = "Returns text, voice, category, and forum channels (threads omitted), with \
+        forum tags attached to forum channels. Same permission set as `/api/admin/discord/roles`.",
+    security(("session_cookie" = ["admin.settings.manage"])),
+    responses(
+        (status = 200, description = "Discord channels retrieved", body = [DiscordChannelView]),
+        (status = 403, description = "Forbidden", body = ProblemDetails),
+        (status = 502, description = "Discord API unavailable or bot token missing", body = ProblemDetails)
+    )
+)]
+pub async fn list_guild_discord_channels(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(cfg): Extension<Config>,
+) -> Result<Json<ApiResponse<Vec<DiscordChannelView>>>, AppError> {
+    require_discord_catalog(&user, &perms).await?;
+    Ok(Json(ApiResponse::new(
+        AdminService::discord_channels(&cfg).await?,
+    )))
+}
+
+async fn require_discord_catalog(user: &UserContext, perms: &Permissions) -> Result<(), AppError> {
+    let allowed = [
+        Permission::RolesManage,
+        Permission::AutoroleManage,
+        Permission::AdminSettingsManage,
+        Permission::ProgressionSettingsManage,
+        Permission::ProgressionSettingsEdit,
+        Permission::EventsManage,
+        Permission::EventsCreate,
+        Permission::EventsEdit,
+    ];
+    for perm in allowed {
+        if perms.check(user.is_superadmin(), &user.roles, perm).await {
+            return Ok(());
+        }
+    }
+    Err(AppError::Forbidden(
+        "Missing permission to list Discord channels and roles".to_string(),
+    ))
 }
 
 /// Read the guild's Discord integration settings.

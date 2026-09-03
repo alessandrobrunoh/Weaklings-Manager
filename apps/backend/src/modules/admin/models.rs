@@ -243,11 +243,41 @@ pub struct DiscordRoleView {
     pub managed: bool,
 }
 
+/// One tag on a Discord forum channel.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct DiscordForumTagView {
+    /// Forum tag snowflake.
+    pub id: String,
+    /// Tag name shown in Discord.
+    pub name: String,
+}
+
+/// A Discord guild channel, category, or forum the admin can pick from.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct DiscordChannelView {
+    /// Channel snowflake.
+    pub id: String,
+    /// Channel name without the leading `#`.
+    pub name: String,
+    /// Coarse kind used by searchable pickers: `text`, `voice`, `category`, or `forum`.
+    pub kind: String,
+    /// Raw Discord channel type integer.
+    pub type_id: i32,
+    /// Parent category snowflake, when the channel sits in one.
+    pub parent_id: Option<String>,
+    /// Discord position within the parent.
+    pub position: i32,
+    /// Forum tags, populated only for forum channels.
+    pub available_tags: Vec<DiscordForumTagView>,
+}
+
 /// Current AutoRole configuration.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct AutoRoleSettingsView {
     /// Configured Discord role snowflake, or `null` when disabled.
     pub discord_auto_role_id: Option<String>,
+    /// Discord role linked to the gestionale default role, if any.
+    pub default_role_discord_id: Option<String>,
 }
 
 /// Request body for the AutoRole configuration endpoint.

@@ -4,6 +4,7 @@ import type { EventDetailView } from "../api/types.js";
 import { buildEventMassMessage, buildEventStartMessage } from "../embeds/event.embed.js";
 import { config } from "../config.js";
 import { getSettingsService } from "./settings.js";
+import { withUnarchivedThread } from "./discord-thread.js";
 
 export interface MassedDiscordEvent {
   event: EventDetailView;
@@ -35,7 +36,11 @@ async function massDiscordEventLocked(client: Client, api: ApiClient, discordUse
   const hadVoiceChannel = Boolean(event.discord_voice_channel_id);
   const voiceChannelId = event.discord_voice_channel_id ?? await createAndBindVoice(client, api, discordUserId, event);
   event = await api.get<EventDetailView>(`api/events/${eventId}`, discordUserId);
-  if (thread) await thread.send(buildEventMassMessage(event, event.participants, voiceChannelId));
+  if (thread) {
+    await withUnarchivedThread(thread, `Event #${eventId} mass`, (active) =>
+      active.send(buildEventMassMessage(event, event.participants, voiceChannelId)),
+    );
+  }
   return { event, voiceChannelId, createdVoiceChannel: !hadVoiceChannel };
 }
 
@@ -59,7 +64,11 @@ async function startDiscordEventLocked(client: Client, api: ApiClient, discordUs
   const hadVoiceChannel = Boolean(event.discord_voice_channel_id);
   const voiceChannelId = event.discord_voice_channel_id ?? await createAndBindVoice(client, api, discordUserId, event);
   event = await api.get<EventDetailView>(`api/events/${eventId}`, discordUserId);
-  if (thread) await thread.send(buildEventStartMessage(event, event.participants, voiceChannelId));
+  if (thread) {
+    await withUnarchivedThread(thread, `Event #${eventId} start`, (active) =>
+      active.send(buildEventStartMessage(event, event.participants, voiceChannelId)),
+    );
+  }
   return { event, voiceChannelId, createdVoiceChannel: !hadVoiceChannel };
 }
 

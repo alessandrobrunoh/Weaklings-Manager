@@ -15,6 +15,11 @@ import {
   buildSplitThreadName,
 } from "./split-summary.js";
 import { getSettingsService } from "./settings.js";
+import {
+  isUnknownDiscordChannel,
+  lockAndArchiveThread,
+  withUnarchivedThread,
+} from "./discord-thread.js";
 
 /** Creates and maintains Discord Forum posts. It never creates message-based text-channel threads. */
 export class SplitForumAdapter {
@@ -138,11 +143,20 @@ export class SplitForumAdapter {
     item: SplitDiscordSync,
   ): Promise<boolean> {
     try {
-      const message = await thread.messages.fetch(messageId);
-      await message.edit(buildSplitSummary(item.detail));
-      if (thread.name !== buildSplitThreadName(item.detail)) {
-        await thread.setName(buildSplitThreadName(item.detail), `Update split #${item.split_id} Forum post`);
-      }
+      await withUnarchivedThread(
+        thread,
+        `Update split #${item.split_id} Forum post`,
+        async (active) => {
+          const message = await active.messages.fetch(messageId);
+          await message.edit(buildSplitSummary(item.detail));
+          if (active.name !== buildSplitThreadName(item.detail)) {
+            await active.setName(
+              buildSplitThreadName(item.detail),
+              `Update split #${item.split_id} Forum post`,
+            );
+          }
+        },
+      );
       return true;
     } catch (error) {
       console.warn(`[SplitForum] Could not update summary for split #${item.split_id}:`, error);
@@ -167,7 +181,11 @@ export class SplitForumAdapter {
       // An unset tag means this lifecycle state is intentionally not configured yet.
       if (!tagId) return true;
       if (!thread.appliedTags.includes(tagId)) {
-        await thread.setAppliedTags([tagId], `Set split #${item.split_id} status tag`);
+        await withUnarchivedThread(
+          thread,
+          `Set split #${item.split_id} status tag`,
+          (active) => active.setAppliedTags([tagId], `Set split #${item.split_id} status tag`),
+        );
       }
       return true;
     } catch (error) {
@@ -178,10 +196,10 @@ export class SplitForumAdapter {
 
   private async closeForumPost(thread: ThreadChannel, splitId: number): Promise<boolean> {
     try {
-      await thread.setLocked(true, `Split #${splitId} closed`);
-      await thread.setArchived(true, `Split #${splitId} closed`);
+      await lockAndArchiveThread(thread, `Split #${splitId} closed`);
       return true;
     } catch (error) {
+      if (isUnknownDiscordChannel(error)) return true;
       console.warn(`[SplitForum] Could not close Forum post for split #${splitId}:`, error);
       return false;
     }

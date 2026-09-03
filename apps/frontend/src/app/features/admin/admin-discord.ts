@@ -3,6 +3,8 @@ import { firstValueFrom } from 'rxjs';
 
 import type {
   AutoRoleSettingsView,
+  DiscordChannelKind,
+  DiscordChannelView,
   DiscordRoleView,
   GuildSettingsView,
   UpdateAutoRoleRequest,
@@ -16,6 +18,12 @@ import type { TranslationKey } from '../../i18n/en';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { SearchableSelect } from '../../shared/components/searchable-select/searchable-select';
+import {
+  channelSelectOptions,
+  roleSelectOptions,
+  tagSelectOptions,
+} from '../../shared/discord/discord-options';
 
 const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
   discord_events_channel_id: '',
@@ -70,7 +78,7 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
 @Component({
   selector: 'app-admin-discord',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Loading, PageHeader, PageStack],
+  imports: [Loading, PageHeader, PageStack, SearchableSelect],
   template: `
     <app-page-header [title]="t('admin.discord.title')" [subtitle]="t('admin.discord.hint')" />
 
@@ -88,12 +96,17 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
           <form class="grid gap-4 sm:grid-cols-2" (submit)="saveGuildSettings($event)">
             <label>
               <span class="label">{{ t('admin.discord.eventsChannel') }}</span>
-              <input
-                class="input mono"
-                type="text"
-                [placeholder]="t('admin.discord.placeholder')"
+              <app-searchable-select
+                class="mt-1 block"
+                [options]="channelOptions(['text'], guildSettingsDraft().discord_events_channel_id)"
                 [value]="guildSettingsDraft().discord_events_channel_id"
-                (input)="updateDraftField('discord_events_channel_id', $event)"
+                [emptyLabel]="t('admin.discord.placeholder')"
+                [searchPlaceholder]="t('common.search')"
+                [noMatchesLabel]="t('picker.noMatches')"
+                [emptyOptionsLabel]="t('picker.empty')"
+                [loading]="catalogLoading()"
+                [ariaLabel]="t('admin.discord.eventsChannel')"
+                (valueChange)="setDraftValue('discord_events_channel_id', $event)"
               />
               <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
                 {{ t('admin.discord.eventsChannelHint') }}
@@ -101,12 +114,17 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
             </label>
             <label>
               <span class="label">{{ t('admin.discord.battlesChannel') }}</span>
-              <input
-                class="input mono"
-                type="text"
-                [placeholder]="t('admin.discord.placeholder')"
+              <app-searchable-select
+                class="mt-1 block"
+                [options]="channelOptions(['text'], guildSettingsDraft().discord_battles_channel_id)"
                 [value]="guildSettingsDraft().discord_battles_channel_id"
-                (input)="updateDraftField('discord_battles_channel_id', $event)"
+                [emptyLabel]="t('admin.discord.placeholder')"
+                [searchPlaceholder]="t('common.search')"
+                [noMatchesLabel]="t('picker.noMatches')"
+                [emptyOptionsLabel]="t('picker.empty')"
+                [loading]="catalogLoading()"
+                [ariaLabel]="t('admin.discord.battlesChannel')"
+                (valueChange)="setDraftValue('discord_battles_channel_id', $event)"
               />
               <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
                 {{ t('admin.discord.battlesChannelHint') }}
@@ -114,12 +132,17 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
             </label>
             <label>
               <span class="label">{{ t('admin.discord.ctaChannel') }}</span>
-              <input
-                class="input mono"
-                type="text"
-                [placeholder]="t('admin.discord.placeholder')"
+              <app-searchable-select
+                class="mt-1 block"
+                [options]="channelOptions(['text'], guildSettingsDraft().discord_battles_cta_channel_id)"
                 [value]="guildSettingsDraft().discord_battles_cta_channel_id"
-                (input)="updateDraftField('discord_battles_cta_channel_id', $event)"
+                [emptyLabel]="t('admin.discord.placeholder')"
+                [searchPlaceholder]="t('common.search')"
+                [noMatchesLabel]="t('picker.noMatches')"
+                [emptyOptionsLabel]="t('picker.empty')"
+                [loading]="catalogLoading()"
+                [ariaLabel]="t('admin.discord.ctaChannel')"
+                (valueChange)="setDraftValue('discord_battles_cta_channel_id', $event)"
               />
               <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
                 {{ t('admin.discord.ctaChannelHint') }}
@@ -127,12 +150,17 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
             </label>
             <label>
               <span class="label">{{ t('admin.discord.splitsForumChannel') }}</span>
-              <input
-                class="input mono"
-                type="text"
-                [placeholder]="t('admin.discord.placeholder')"
+              <app-searchable-select
+                class="mt-1 block"
+                [options]="channelOptions(['forum'], guildSettingsDraft().discord_splits_forum_channel_id)"
                 [value]="guildSettingsDraft().discord_splits_forum_channel_id"
-                (input)="updateDraftField('discord_splits_forum_channel_id', $event)"
+                [emptyLabel]="t('admin.discord.placeholder')"
+                [searchPlaceholder]="t('common.search')"
+                [noMatchesLabel]="t('picker.noMatches')"
+                [emptyOptionsLabel]="t('picker.empty')"
+                [loading]="catalogLoading()"
+                [ariaLabel]="t('admin.discord.splitsForumChannel')"
+                (valueChange)="setDraftValue('discord_splits_forum_channel_id', $event)"
               />
               <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
                 {{ t('admin.discord.splitsForumChannelHint') }}
@@ -140,43 +168,85 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
             </label>
             <label>
               <span class="label">{{ t('admin.discord.splitPendingTag') }}</span>
-              <input class="input mono" type="text" [placeholder]="t('admin.discord.placeholder')"
+              <app-searchable-select
+                class="mt-1 block"
+                [options]="tagOptions(guildSettingsDraft().discord_split_pending_tag_id)"
                 [value]="guildSettingsDraft().discord_split_pending_tag_id"
-                (input)="updateDraftField('discord_split_pending_tag_id', $event)" />
+                [emptyLabel]="t('admin.discord.placeholder')"
+                [searchPlaceholder]="t('common.search')"
+                [noMatchesLabel]="t('picker.noMatches')"
+                [emptyOptionsLabel]="t('picker.empty')"
+                [disabled]="!guildSettingsDraft().discord_splits_forum_channel_id"
+                [loading]="catalogLoading()"
+                [ariaLabel]="t('admin.discord.splitPendingTag')"
+                (valueChange)="setDraftValue('discord_split_pending_tag_id', $event)"
+              />
               <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">{{ t('admin.discord.splitTagHint') }}</span>
             </label>
             <label>
               <span class="label">{{ t('admin.discord.splitCompletedTag') }}</span>
-              <input class="input mono" type="text" [placeholder]="t('admin.discord.placeholder')"
+              <app-searchable-select
+                class="mt-1 block"
+                [options]="tagOptions(guildSettingsDraft().discord_split_completed_tag_id)"
                 [value]="guildSettingsDraft().discord_split_completed_tag_id"
-                (input)="updateDraftField('discord_split_completed_tag_id', $event)" />
+                [emptyLabel]="t('admin.discord.placeholder')"
+                [searchPlaceholder]="t('common.search')"
+                [noMatchesLabel]="t('picker.noMatches')"
+                [emptyOptionsLabel]="t('picker.empty')"
+                [disabled]="!guildSettingsDraft().discord_splits_forum_channel_id"
+                [loading]="catalogLoading()"
+                [ariaLabel]="t('admin.discord.splitCompletedTag')"
+                (valueChange)="setDraftValue('discord_split_completed_tag_id', $event)"
+              />
               <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">{{ t('admin.discord.splitTagHint') }}</span>
             </label>
             <label>
               <span class="label">{{ t('admin.discord.splitNotCompletedTag') }}</span>
-              <input class="input mono" type="text" [placeholder]="t('admin.discord.placeholder')"
+              <app-searchable-select
+                class="mt-1 block"
+                [options]="tagOptions(guildSettingsDraft().discord_split_not_completed_tag_id)"
                 [value]="guildSettingsDraft().discord_split_not_completed_tag_id"
-                (input)="updateDraftField('discord_split_not_completed_tag_id', $event)" />
+                [emptyLabel]="t('admin.discord.placeholder')"
+                [searchPlaceholder]="t('common.search')"
+                [noMatchesLabel]="t('picker.noMatches')"
+                [emptyOptionsLabel]="t('picker.empty')"
+                [disabled]="!guildSettingsDraft().discord_splits_forum_channel_id"
+                [loading]="catalogLoading()"
+                [ariaLabel]="t('admin.discord.splitNotCompletedTag')"
+                (valueChange)="setDraftValue('discord_split_not_completed_tag_id', $event)"
+              />
               <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">{{ t('admin.discord.splitTagHint') }}</span>
             </label>
             <label>
               <span class="label">{{ t('admin.discord.splitLostTag') }}</span>
-              <input class="input mono" type="text" [placeholder]="t('admin.discord.placeholder')"
+              <app-searchable-select
+                class="mt-1 block"
+                [options]="tagOptions(guildSettingsDraft().discord_split_lost_tag_id)"
                 [value]="guildSettingsDraft().discord_split_lost_tag_id"
-                (input)="updateDraftField('discord_split_lost_tag_id', $event)" />
+                [emptyLabel]="t('admin.discord.placeholder')"
+                [searchPlaceholder]="t('common.search')"
+                [noMatchesLabel]="t('picker.noMatches')"
+                [emptyOptionsLabel]="t('picker.empty')"
+                [disabled]="!guildSettingsDraft().discord_splits_forum_channel_id"
+                [loading]="catalogLoading()"
+                [ariaLabel]="t('admin.discord.splitLostTag')"
+                (valueChange)="setDraftValue('discord_split_lost_tag_id', $event)"
+              />
               <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">{{ t('admin.discord.splitTagHint') }}</span>
             </label>
             <label>
               <span class="label">{{ t('admin.discord.eventVoiceCategory') }}</span>
-              <input
-                class="input mono"
-                type="text"
-                name="discord-event-voice-category-id"
-                inputmode="numeric"
-                [placeholder]="t('admin.discord.placeholder')"
+              <app-searchable-select
+                class="mt-1 block"
+                [options]="channelOptions(['category'], guildSettingsDraft().discord_event_voice_category_id)"
                 [value]="guildSettingsDraft().discord_event_voice_category_id"
-                [attr.aria-describedby]="'discord-event-voice-category-hint'"
-                (input)="updateDraftField('discord_event_voice_category_id', $event)"
+                [emptyLabel]="t('admin.discord.placeholder')"
+                [searchPlaceholder]="t('common.search')"
+                [noMatchesLabel]="t('picker.noMatches')"
+                [emptyOptionsLabel]="t('picker.empty')"
+                [loading]="catalogLoading()"
+                [ariaLabel]="t('admin.discord.eventVoiceCategory')"
+                (valueChange)="setDraftValue('discord_event_voice_category_id', $event)"
               />
               <span id="discord-event-voice-category-hint" class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
                 {{ t('admin.discord.eventVoiceCategoryHint') }}
@@ -184,12 +254,17 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
             </label>
             <label>
               <span class="label">{{ t('admin.discord.eventRole') }}</span>
-              <input
-                class="input mono"
-                type="text"
-                [placeholder]="t('admin.discord.placeholder')"
+              <app-searchable-select
+                class="mt-1 block"
+                [options]="roleOptions(guildSettingsDraft().discord_event_role_id)"
                 [value]="guildSettingsDraft().discord_event_role_id"
-                (input)="updateDraftField('discord_event_role_id', $event)"
+                [emptyLabel]="t('admin.discord.placeholder')"
+                [searchPlaceholder]="t('common.search')"
+                [noMatchesLabel]="t('picker.noMatches')"
+                [emptyOptionsLabel]="t('picker.empty')"
+                [loading]="catalogLoading()"
+                [ariaLabel]="t('admin.discord.eventRole')"
+                (valueChange)="setDraftValue('discord_event_role_id', $event)"
               />
               <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
                 {{ t('admin.discord.eventRoleHint') }}
@@ -197,12 +272,17 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
             </label>
             <label>
               <span class="label">{{ t('admin.discord.auditLogChannel') }}</span>
-              <input
-                class="input mono"
-                type="text"
-                [placeholder]="t('admin.discord.placeholder')"
+              <app-searchable-select
+                class="mt-1 block"
+                [options]="channelOptions(['text'], guildSettingsDraft().discord_audit_log_channel_id)"
                 [value]="guildSettingsDraft().discord_audit_log_channel_id"
-                (input)="updateDraftField('discord_audit_log_channel_id', $event)"
+                [emptyLabel]="t('admin.discord.placeholder')"
+                [searchPlaceholder]="t('common.search')"
+                [noMatchesLabel]="t('picker.noMatches')"
+                [emptyOptionsLabel]="t('picker.empty')"
+                [loading]="catalogLoading()"
+                [ariaLabel]="t('admin.discord.auditLogChannel')"
+                (valueChange)="setDraftValue('discord_audit_log_channel_id', $event)"
               />
               <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
                 {{ t('admin.discord.auditLogChannelHint') }}
@@ -210,12 +290,17 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
             </label>
             <label>
               <span class="label">{{ t('admin.discord.transactionSpamChannel') }}</span>
-              <input
-                class="input mono"
-                type="text"
-                [placeholder]="t('admin.discord.placeholder')"
+              <app-searchable-select
+                class="mt-1 block"
+                [options]="channelOptions(['text'], guildSettingsDraft().discord_transaction_spam_channel_id)"
                 [value]="guildSettingsDraft().discord_transaction_spam_channel_id"
-                (input)="updateDraftField('discord_transaction_spam_channel_id', $event)"
+                [emptyLabel]="t('admin.discord.placeholder')"
+                [searchPlaceholder]="t('common.search')"
+                [noMatchesLabel]="t('picker.noMatches')"
+                [emptyOptionsLabel]="t('picker.empty')"
+                [loading]="catalogLoading()"
+                [ariaLabel]="t('admin.discord.transactionSpamChannel')"
+                (valueChange)="setDraftValue('discord_transaction_spam_channel_id', $event)"
               />
               <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
                 {{ t('admin.discord.transactionSpamChannelHint') }}
@@ -224,38 +309,82 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
 
             <label>
               <span class="label">{{ t('admin.discord.applicationPanelChannel') }}</span>
-              <input class="input mono" type="text" inputmode="numeric" [placeholder]="t('admin.discord.placeholder')"
+              <app-searchable-select
+                class="mt-1 block"
+                [options]="channelOptions(['text'], guildSettingsDraft().discord_applications_channel_id)"
                 [value]="guildSettingsDraft().discord_applications_channel_id"
-                [attr.aria-describedby]="'application-panel-channel-hint'"
-                (input)="updateDraftField('discord_applications_channel_id', $event)" />
+                [emptyLabel]="t('admin.discord.placeholder')"
+                [searchPlaceholder]="t('common.search')"
+                [noMatchesLabel]="t('picker.noMatches')"
+                [emptyOptionsLabel]="t('picker.empty')"
+                [loading]="catalogLoading()"
+                [ariaLabel]="t('admin.discord.applicationPanelChannel')"
+                (valueChange)="setDraftValue('discord_applications_channel_id', $event)"
+              />
               <span id="application-panel-channel-hint" class="mt-1 block text-xs" style="color: var(--color-text-secondary)">{{ t('admin.discord.applicationPanelChannelHint') }}</span>
             </label>
             <label>
               <span class="label">{{ t('admin.discord.applicationCategory') }}</span>
-              <input class="input mono" type="text" inputmode="numeric" [placeholder]="t('admin.discord.placeholder')"
+              <app-searchable-select
+                class="mt-1 block"
+                [options]="channelOptions(['category'], guildSettingsDraft().discord_applications_category_id)"
                 [value]="guildSettingsDraft().discord_applications_category_id"
-                (input)="updateDraftField('discord_applications_category_id', $event)" />
+                [emptyLabel]="t('admin.discord.placeholder')"
+                [searchPlaceholder]="t('common.search')"
+                [noMatchesLabel]="t('picker.noMatches')"
+                [emptyOptionsLabel]="t('picker.empty')"
+                [loading]="catalogLoading()"
+                [ariaLabel]="t('admin.discord.applicationCategory')"
+                (valueChange)="setDraftValue('discord_applications_category_id', $event)"
+              />
               <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">{{ t('admin.discord.applicationCategoryHint') }}</span>
             </label>
             <label>
               <span class="label">{{ t('admin.discord.applicationArchiveCategory') }}</span>
-              <input class="input mono" type="text" inputmode="numeric" [placeholder]="t('admin.discord.placeholder')"
+              <app-searchable-select
+                class="mt-1 block"
+                [options]="channelOptions(['category'], guildSettingsDraft().discord_applications_archive_category_id)"
                 [value]="guildSettingsDraft().discord_applications_archive_category_id"
-                (input)="updateDraftField('discord_applications_archive_category_id', $event)" />
+                [emptyLabel]="t('admin.discord.placeholder')"
+                [searchPlaceholder]="t('common.search')"
+                [noMatchesLabel]="t('picker.noMatches')"
+                [emptyOptionsLabel]="t('picker.empty')"
+                [loading]="catalogLoading()"
+                [ariaLabel]="t('admin.discord.applicationArchiveCategory')"
+                (valueChange)="setDraftValue('discord_applications_archive_category_id', $event)"
+              />
               <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">{{ t('admin.discord.applicationArchiveCategoryHint') }}</span>
             </label>
             <label>
               <span class="label">{{ t('admin.discord.applicationManageRole') }}</span>
-              <input class="input mono" type="text" inputmode="numeric" [placeholder]="t('admin.discord.placeholder')"
+              <app-searchable-select
+                class="mt-1 block"
+                [options]="roleOptions(guildSettingsDraft().discord_applications_manage_role_id)"
                 [value]="guildSettingsDraft().discord_applications_manage_role_id"
-                (input)="updateDraftField('discord_applications_manage_role_id', $event)" />
+                [emptyLabel]="t('admin.discord.placeholder')"
+                [searchPlaceholder]="t('common.search')"
+                [noMatchesLabel]="t('picker.noMatches')"
+                [emptyOptionsLabel]="t('picker.empty')"
+                [loading]="catalogLoading()"
+                [ariaLabel]="t('admin.discord.applicationManageRole')"
+                (valueChange)="setDraftValue('discord_applications_manage_role_id', $event)"
+              />
               <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">{{ t('admin.discord.applicationManageRoleHint') }}</span>
             </label>
             <label>
               <span class="label">{{ t('admin.discord.applicationStatusChannel') }}</span>
-              <input class="input mono" type="text" inputmode="numeric" [placeholder]="t('admin.discord.placeholder')"
+              <app-searchable-select
+                class="mt-1 block"
+                [options]="channelOptions(['text'], guildSettingsDraft().discord_applications_status_channel_id)"
                 [value]="guildSettingsDraft().discord_applications_status_channel_id"
-                (input)="updateDraftField('discord_applications_status_channel_id', $event)" />
+                [emptyLabel]="t('admin.discord.placeholder')"
+                [searchPlaceholder]="t('common.search')"
+                [noMatchesLabel]="t('picker.noMatches')"
+                [emptyOptionsLabel]="t('picker.empty')"
+                [loading]="catalogLoading()"
+                [ariaLabel]="t('admin.discord.applicationStatusChannel')"
+                (valueChange)="setDraftValue('discord_applications_status_channel_id', $event)"
+              />
               <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">{{ t('admin.discord.applicationStatusChannelHint') }}</span>
             </label>
             <label class="flex items-center gap-3 sm:col-span-2">
@@ -440,19 +569,18 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
           <form class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" (submit)="saveAutoRole($event)">
             <label>
               <span class="label">{{ t('admin.autorole.role') }}</span>
-              <select
-                class="select mt-1 w-full"
+              <app-searchable-select
+                class="mt-1 block"
+                [options]="roleOptions(autoRoleDraft())"
                 [value]="autoRoleDraft()"
-                (change)="updateAutoRoleDraft($event)"
-                [attr.aria-label]="t('admin.autorole.role')"
-              >
-                <option value="">{{ t('admin.autorole.disabled') }}</option>
-                @for (role of discordRoles(); track role.id) {
-                  <option [value]="role.id">
-                    {{ role.name }} ({{ role.id }})
-                  </option>
-                }
-              </select>
+                [emptyLabel]="t('admin.autorole.disabled')"
+                [searchPlaceholder]="t('common.search')"
+                [noMatchesLabel]="t('picker.noMatches')"
+                [emptyOptionsLabel]="t('picker.empty')"
+                [loading]="catalogLoading() || autoRoleLoading()"
+                [ariaLabel]="t('admin.autorole.role')"
+                (valueChange)="autoRoleDraft.set($event)"
+              />
               <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
                 {{ t('admin.autorole.roleHint') }}
               </span>
@@ -485,7 +613,9 @@ export class AdminDiscord {
   protected readonly canManageAutoRole = computed(() => this.auth.hasPermission('autorole.manage'));
   protected readonly autoRoleLoading = signal(true);
   protected readonly autoRoleSaving = signal(false);
+  protected readonly catalogLoading = signal(false);
   protected readonly discordRoles = signal<DiscordRoleView[]>([]);
+  protected readonly discordChannels = signal<DiscordChannelView[]>([]);
   protected readonly autoRoleDraft = signal('');
 
   protected t = (key: TranslationKey) => this.translate.t(key);
@@ -496,10 +626,79 @@ export class AdminDiscord {
     } else {
       this.guildSettingsLoading.set(false);
     }
+    if (this.canManageDiscordSettings() || this.canManageAutoRole()) {
+      void this.loadCatalog();
+    }
     if (this.canManageAutoRole()) {
       void this.loadAutoRole();
     } else {
       this.autoRoleLoading.set(false);
+    }
+  }
+
+  protected channelOptions(kinds: DiscordChannelKind[], selectedId: string) {
+    return channelSelectOptions(this.discordChannels(), kinds, selectedId);
+  }
+
+  protected roleOptions(selectedId: string) {
+    return roleSelectOptions(this.discordRoles(), selectedId);
+  }
+
+  protected tagOptions(selectedId: string) {
+    return tagSelectOptions(
+      this.discordChannels(),
+      this.guildSettingsDraft().discord_splits_forum_channel_id,
+      selectedId,
+    );
+  }
+
+  protected setDraftValue(field: keyof GuildSettingsView, value: string): void {
+    this.guildSettingsDraft.update((draft) => ({ ...draft, [field]: value }));
+    if (field === 'discord_splits_forum_channel_id') {
+      this.clearInvalidSplitTags(value);
+    }
+  }
+
+  private clearInvalidSplitTags(forumId: string): void {
+    const valid = new Set(
+      this.discordChannels()
+        .find((channel) => channel.id === forumId)
+        ?.available_tags.map((tag) => tag.id) ?? [],
+    );
+    const tagFields = [
+      'discord_split_pending_tag_id',
+      'discord_split_completed_tag_id',
+      'discord_split_not_completed_tag_id',
+      'discord_split_lost_tag_id',
+    ] as const;
+    this.guildSettingsDraft.update((draft) => {
+      const next = { ...draft };
+      for (const field of tagFields) {
+        if (next[field] && !valid.has(next[field])) {
+          next[field] = '';
+        }
+      }
+      return next;
+    });
+  }
+
+  private async loadCatalog(): Promise<void> {
+    this.catalogLoading.set(true);
+    try {
+      const [roles, channels] = await Promise.all([
+        firstValueFrom(this.api.get<DiscordRoleView[]>('api/admin/discord/roles')).catch(() =>
+          firstValueFrom(this.api.get<DiscordRoleView[]>('api/admin/autorole/roles')),
+        ),
+        this.canManageDiscordSettings()
+          ? firstValueFrom(this.api.get<DiscordChannelView[]>('api/admin/discord/channels'))
+          : Promise.resolve([] as DiscordChannelView[]),
+      ]);
+      this.discordRoles.set(roles);
+      this.discordChannels.set(channels);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.catalogLoading.set(false);
     }
   }
 
@@ -596,27 +795,15 @@ export class AdminDiscord {
         firstValueFrom(this.api.get<DiscordRoleView[]>('api/admin/autorole/roles')),
         firstValueFrom(this.api.get<AutoRoleSettingsView>('api/admin/autorole')),
       ]);
-      this.discordRoles.set(roles);
-      const savedRoleId = settings.discord_auto_role_id ?? '';
-      this.autoRoleDraft.set(savedRoleId);
-
-      // Keep a saved selection visible even if the Discord role list is temporarily
-      // incomplete (for example while the bot cache/token is being refreshed).
-      if (savedRoleId && !roles.some((role) => role.id === savedRoleId)) {
-        this.discordRoles.update((current) => [
-          ...current,
-          { id: savedRoleId, name: `Linked role (${savedRoleId})`, position: 0, managed: false },
-        ]);
+      if (roles.length && this.discordRoles().length === 0) {
+        this.discordRoles.set(roles);
       }
+      this.autoRoleDraft.set(settings.discord_auto_role_id ?? '');
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.autoRoleLoading.set(false);
     }
-  }
-
-  protected updateAutoRoleDraft(event: Event): void {
-    this.autoRoleDraft.set((event.target as HTMLSelectElement).value);
   }
 
   protected async saveAutoRole(submit: SubmitEvent): Promise<void> {

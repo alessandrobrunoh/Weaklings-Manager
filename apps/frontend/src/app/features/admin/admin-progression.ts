@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { firstValueFrom } from 'rxjs';
 
 import type {
+  DiscordChannelView,
   ProgressionSeasonView,
   ProgressionSettingsView,
   UpdateProgressionSettingsRequest,
@@ -14,6 +15,8 @@ import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { SearchableSelect } from '../../shared/components/searchable-select/searchable-select';
+import { channelSelectOptions } from '../../shared/discord/discord-options';
 
 interface ProgressionDraft {
   xp_base: number;
@@ -64,7 +67,7 @@ const EMPTY_PROGRESSION_DRAFT: ProgressionDraft = {
 @Component({
   selector: 'app-admin-progression',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ErrorState, Loading, PageHeader, PageStack],
+  imports: [ErrorState, Loading, PageHeader, PageStack, SearchableSelect],
   template: `
     <app-page-header
       [title]="t('admin.progression.title')"
@@ -138,8 +141,17 @@ const EMPTY_PROGRESSION_DRAFT: ProgressionDraft = {
           </label>
           <label class="sm:col-span-3">
             <span class="label">{{ t('admin.progression.vodForum') }}</span>
-            <input class="input mono" type="text" [value]="progressionDraft().vod_forum_channel_id"
-              (input)="updateProgressionString('vod_forum_channel_id', $event)" />
+            <app-searchable-select
+              class="mt-1 block"
+              [options]="forumChannelOptions()"
+              [value]="progressionDraft().vod_forum_channel_id"
+              [emptyLabel]="t('admin.discord.placeholder')"
+              [searchPlaceholder]="t('common.search')"
+              [noMatchesLabel]="t('picker.noMatches')"
+              [emptyOptionsLabel]="t('picker.empty')"
+              [ariaLabel]="t('admin.progression.vodForum')"
+              (valueChange)="setVodForumChannel($event)"
+            />
           </label>
           <div class="sm:col-span-3">
             <button type="submit" class="btn btn--primary" [disabled]="progressionSaving()">
@@ -262,6 +274,7 @@ export class AdminProgression {
   protected readonly progressionSettings = signal<ProgressionSettingsView | null>(null);
   protected readonly progressionDraft = signal<ProgressionDraft>({ ...EMPTY_PROGRESSION_DRAFT });
   protected readonly progressionSeasons = signal<ProgressionSeasonView[]>([]);
+  protected readonly discordChannels = signal<DiscordChannelView[]>([]);
   protected readonly seasonEdits = signal<Record<number, SeasonEdit>>({});
   protected readonly newSeason = signal<NewSeasonDraft>({
     name: '',
@@ -286,6 +299,7 @@ export class AdminProgression {
       this.progressionSettings.set(settings);
       this.progressionDraft.set(toProgressionDraft(settings));
       this.progressionSeasons.set(seasons);
+      void this.loadDiscordChannels();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -298,9 +312,27 @@ export class AdminProgression {
     this.progressionDraft.update((draft) => ({ ...draft, [field]: value }));
   }
 
-  protected updateProgressionString(field: 'vod_forum_channel_id', event: Event): void {
-    const value = (event.target as HTMLInputElement).value;
-    this.progressionDraft.update((draft) => ({ ...draft, [field]: value }));
+  protected forumChannelOptions() {
+    return channelSelectOptions(
+      this.discordChannels(),
+      ['forum'],
+      this.progressionDraft().vod_forum_channel_id,
+    );
+  }
+
+  protected setVodForumChannel(channelId: string): void {
+    this.progressionDraft.update((draft) => ({ ...draft, vod_forum_channel_id: channelId }));
+  }
+
+  private async loadDiscordChannels(): Promise<void> {
+    try {
+      const channels = await firstValueFrom(
+        this.api.get<DiscordChannelView[]>('api/admin/discord/channels'),
+      );
+      this.discordChannels.set(channels);
+    } catch {
+      // The VOD picker stays empty until Discord listing is available.
+    }
   }
 
   protected async saveProgressionSettings(submit: SubmitEvent): Promise<void> {
