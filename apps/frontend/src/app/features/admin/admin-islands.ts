@@ -75,14 +75,14 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.islands.title') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                 {{ islands().length }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 Registered guild islands
               </p>
             </div>
-            <div class="icon-capsule bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+            <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
               <app-icon name="bank" size="1.25rem" />
             </div>
           </div>
@@ -94,14 +94,14 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.islands.tabs') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-emerald-400 mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
                 {{ totalTabsCount() }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 Loot split deposit tabs
               </p>
             </div>
-            <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
               <app-icon name="list" size="1.25rem" />
             </div>
           </div>
@@ -113,14 +113,14 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.islands.location') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-amber-400 mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-warning mt-1">
                 {{ uniqueCitiesCount() }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 Royal cities & portals
               </p>
             </div>
-            <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
               <app-icon name="sparkles" size="1.25rem" />
             </div>
           </div>
@@ -140,7 +140,7 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
       >
         <ng-template dataTableCell="name" let-row>
           <a
-            class="font-medium text-white no-underline hover:underline cursor-pointer"
+            class="font-medium text-(--color-text) no-underline hover:underline cursor-pointer"
             [routerLink]="['/admin/islands', row.id]"
           >
             {{ row.name }}

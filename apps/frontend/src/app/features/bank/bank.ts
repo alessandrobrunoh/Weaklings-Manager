@@ -118,24 +118,24 @@ function emptyPageChange(): DataTablePageChange {
       letter-spacing: 0.02em;
     }
     .status-pill--withdrawn {
-      background: rgba(34, 197, 94, 0.12);
-      color: #4ade80;
-      border: 1px solid rgba(34, 197, 94, 0.25);
+      background: var(--color-success-container);
+      color: var(--color-success);
+      border: 1px solid var(--color-success);
     }
     .status-pill--requested {
-      background: rgba(234, 179, 8, 0.12);
-      color: #facc15;
-      border: 1px solid rgba(234, 179, 8, 0.25);
+      background: var(--color-warning-container);
+      color: var(--color-warning);
+      border: 1px solid var(--color-warning);
     }
     .status-pill--pending {
-      background: rgba(56, 189, 248, 0.12);
-      color: #38bdf8;
-      border: 1px solid rgba(56, 189, 248, 0.25);
+      background: var(--color-surface-2);
+      color: var(--color-primary);
+      border: 1px solid var(--color-primary);
     }
     .status-pill--rejected {
-      background: rgba(239, 68, 68, 0.12);
-      color: #f87171;
-      border: 1px solid rgba(239, 68, 68, 0.25);
+      background: var(--color-error-container);
+      color: var(--color-error);
+      border: 1px solid var(--color-error);
     }
   `,
   template: `
@@ -187,14 +187,14 @@ function emptyPageChange(): DataTablePageChange {
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('bank.balance.pending') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                 {{ formatCompact(balance()?.pending_total) }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 {{ t('bank.creditsAvailable', { count: balance()?.pending_count ?? 0 }) }}
               </p>
             </div>
-            <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
               <app-icon name="bank" size="1.25rem" />
             </div>
           </div>
@@ -207,14 +207,14 @@ function emptyPageChange(): DataTablePageChange {
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('bank.balance.requested') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                 {{ formatCompact(balance()?.requested_total) }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 {{ t('bank.withdrawalsInReview', { count: balance()?.requested_count ?? 0 }) }}
               </p>
             </div>
-            <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
               <app-icon name="alert" size="1.25rem" />
             </div>
           </div>
@@ -227,14 +227,14 @@ function emptyPageChange(): DataTablePageChange {
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('bank.status.withdrawn') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                 {{ formatCompact(totalWithdrawn()) }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 {{ t('bank.balance.payouts') }}
               </p>
             </div>
-            <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
               <app-icon name="coins" size="1.25rem" />
             </div>
           </div>
@@ -247,14 +247,14 @@ function emptyPageChange(): DataTablePageChange {
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('bank.transactions.title') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                 {{ transactionTotal() }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 {{ t('bank.queue.entryCount', { count: transactionTotal() }) }}
               </p>
             </div>
-            <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+            <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
               <app-icon name="users" size="1.25rem" />
             </div>
           </div>
@@ -282,7 +282,7 @@ function emptyPageChange(): DataTablePageChange {
             [class.status-tab--active]="statusFilter() === 'requested'"
             (click)="setStatusFilter('requested')"
           >
-            <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+            <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
             <span>{{ t('bank.status.requested') }}</span>
           </button>
 
@@ -292,7 +292,7 @@ function emptyPageChange(): DataTablePageChange {
             [class.status-tab--active]="statusFilter() === 'pending'"
             (click)="setStatusFilter('pending')"
           >
-            <span class="h-1.5 w-1.5 rounded-full bg-sky-400"></span>
+            <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-primary)]"></span>
             <span>{{ t('bank.status.pending') }}</span>
           </button>
 
@@ -302,7 +302,7 @@ function emptyPageChange(): DataTablePageChange {
             [class.status-tab--active]="statusFilter() === 'withdrawn'"
             (click)="setStatusFilter('withdrawn')"
           >
-            <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+            <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-success)]"></span>
             <span>{{ t('bank.status.withdrawn') }}</span>
           </button>
 
@@ -312,7 +312,7 @@ function emptyPageChange(): DataTablePageChange {
             [class.status-tab--active]="statusFilter() === 'rejected'"
             (click)="setStatusFilter('rejected')"
           >
-            <span class="h-1.5 w-1.5 rounded-full bg-red-400"></span>
+            <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-error)]"></span>
             <span>{{ t('bank.status.rejected') }}</span>
           </button>
         </nav>
@@ -320,7 +320,7 @@ function emptyPageChange(): DataTablePageChange {
         @if (statusFilter() !== '') {
           <button
             type="button"
-            class="btn btn--ghost btn--sm text-xs py-1 px-2 text-[var(--color-text-secondary)] hover:text-white inline-flex items-center gap-1"
+            class="btn btn--ghost btn--sm text-xs py-1 px-2 text-[var(--color-text-secondary)] hover:text-(--color-text) inline-flex items-center gap-1"
             (click)="setStatusFilter('')"
           >
             <app-icon name="close" size="0.75rem" />
@@ -353,7 +353,7 @@ function emptyPageChange(): DataTablePageChange {
             }
             @case ('requested') {
               <span class="status-pill status-pill--requested">
-                <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
                 {{ statusLabel(row.status) }}
               </span>
             }
@@ -380,9 +380,9 @@ function emptyPageChange(): DataTablePageChange {
         <ng-template dataTableCell="amount" let-row>
           <span
             class="font-mono text-sm font-semibold"
-            [class.text-emerald-400]="row.status === 'withdrawn' || row.status === 'pending'"
-            [class.text-amber-400]="row.status === 'requested'"
-            [class.text-red-400]="row.status === 'rejected'"
+            [class.text-success]="row.status === 'withdrawn' || row.status === 'pending'"
+            [class.text-warning]="row.status === 'requested'"
+            [class.text-error]="row.status === 'rejected'"
           >
             {{ formatAmount(row.amount) }}
           </span>
@@ -416,7 +416,7 @@ function emptyPageChange(): DataTablePageChange {
               </p>
             </div>
             <div class="text-right">
-              <span class="font-mono text-2xl font-bold text-emerald-400">
+              <span class="font-mono text-2xl font-bold text-success">
                 {{ formatAmount(balance()?.pending_total) }}
               </span>
               <span class="block text-[0.6875rem] font-mono text-[var(--color-text-secondary)] uppercase">
@@ -427,7 +427,7 @@ function emptyPageChange(): DataTablePageChange {
 
           <!-- Info Card -->
           <div class="p-3.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] flex items-start gap-3">
-            <app-icon name="info" size="1.125rem" class="text-amber-400 flex-shrink-0 mt-0.5" />
+            <app-icon name="info" size="1.125rem" class="text-warning flex-shrink-0 mt-0.5" />
             <div class="text-xs text-[var(--color-text-secondary)] space-y-1">
               <p class="text-[var(--color-text)] font-medium">
                 {{ t('bank.withdraw.requestConfirmBody') }}

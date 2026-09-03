@@ -162,7 +162,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
 
             <!-- Albion Character Link Badge -->
             <div
-              class="flex items-center gap-3 rounded-xl p-3 border"
+              class="flex items-center gap-3 rounded-[var(--radius-cards)] p-3 border"
               style="background: var(--color-surface-2); border-color: var(--color-border)"
             >
               <div class="flex items-center gap-2">
@@ -315,7 +315,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
                     @for (fight of pi.recent_fights; track fight.battle_id) {
                       <li>
                         <a
-                          class="flex items-center justify-between gap-3 rounded-lg px-3 py-2 no-underline transition-colors hover:opacity-90"
+                          class="flex items-center justify-between gap-3 rounded-[var(--radius-md)] px-3 py-2 no-underline transition-colors hover:opacity-90"
                           [style.background-color]="fight.is_win ? 'var(--color-success-container)' : 'var(--color-error-container)'"
                           [routerLink]="['/battles', fight.battle_id]"
                         >
@@ -461,7 +461,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
           @if (specLoading()) {
             <div class="p-8 flex justify-center"><app-loading label="Caricamento specializzazioni..." /></div>
           } @else if (specLoadFailed()) {
-            <div class="p-4 rounded-xl border" style="border-color: var(--color-border); background: var(--color-surface-2)">
+            <div class="p-4 rounded-[var(--radius-cards)] border" style="border-color: var(--color-border); background: var(--color-surface-2)">
               <p class="text-sm" style="color: var(--color-text-secondary)">Catalogo Albion non disponibile.</p>
               <button type="button" class="btn btn--ghost btn--sm mt-2" (click)="loadSpecializations()">Riprova</button>
             </div>
@@ -475,7 +475,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
               </select>
             </div>
 
-            <div class="rounded-2xl border p-4 mb-4 text-center" style="border-color: var(--color-border); background: radial-gradient(circle, var(--color-surface-2), transparent 72%)">
+            <div class="rounded-[var(--radius-cards)] border p-4 mb-4 text-center" style="border-color: var(--color-border); background: radial-gradient(circle, var(--color-surface-2), transparent 72%)">
               <span class="inline-flex items-center gap-2 chip chip--info font-mono">
                 <span class="h-2 w-2 rounded-full bg-[var(--color-primary)]"></span>
                 COMBAT BOARD · {{ masteredSpecializations() }}/{{ specializationNodes().length }} nodi allenati
@@ -484,15 +484,18 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
 
             <div class="grid gap-4 lg:grid-cols-2">
               @for (group of specializationGroups(); track group.category) {
-                <section class="rounded-2xl border p-4" [attr.aria-label]="group.category === 'weapon' ? 'Armi' : 'Armature'" style="border-color: var(--color-border); background: var(--color-surface-2)">
+                <section class="rounded-[var(--radius-cards)] border p-4" [attr.aria-label]="group.category === 'weapon' ? 'Armi' : 'Armature'" style="border-color: var(--color-border); background: var(--color-surface-2)">
                   <div class="flex items-center gap-2 mb-3">
-                    <span class="h-3 w-3 rounded-full" [class.bg-orange-500]="group.category === 'weapon'" [class.bg-cyan-400]="group.category === 'armor'"></span>
+                    <span
+                                          class="h-3 w-3 rounded-full"
+                                          [style.background-color]="group.category === 'weapon' ? 'var(--color-warning)' : 'var(--color-info)'"
+                                        ></span>
                     <h3 class="font-semibold" style="color: var(--color-text)">{{ group.category === 'weapon' ? 'Armi' : 'Armature' }}</h3>
                     <span class="text-xs ml-auto" style="color: var(--color-text-secondary)">{{ group.items.length }} nodi</span>
                   </div>
                   <div class="grid gap-2 sm:grid-cols-2">
                     @for (node of group.items; track node.node_key) {
-                      <div class="relative rounded-xl border p-3" style="border-color: var(--color-border); background: var(--color-surface-1)">
+                      <div class="relative rounded-[var(--radius-cards)] border p-3" style="border-color: var(--color-border); background: var(--color-surface-1)">
                         <div class="flex items-center gap-2 min-w-0">
                           @if (node.icon) {
                             <img class="h-8 w-8 rounded object-contain" [src]="node.icon" [alt]="node.node_name" loading="lazy" />
@@ -539,7 +542,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
             </div>
 
             @if (warns().length === 0) {
-              <div class="p-6 text-center rounded-xl border" style="background: var(--color-surface-2); border-color: var(--color-border)">
+              <div class="p-6 text-center rounded-[var(--radius-cards)] border" style="background: var(--color-surface-2); border-color: var(--color-border)">
                 <p class="text-sm" style="color: var(--color-text-secondary)">
                   Nessun warn o sanzione registrata per questo membro.
                 </p>
@@ -548,7 +551,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
               <ul class="grid gap-2.5">
                 @for (warn of warns(); track warn.id) {
                   <li
-                    class="rounded-xl p-3.5 border text-sm transition-colors"
+                    class="rounded-[var(--radius-cards)] p-3.5 border text-sm transition-colors"
                     style="background: var(--color-surface-2); border-color: var(--color-border)"
                   >
                     <div class="flex items-center justify-between gap-2">
@@ -618,7 +621,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
               @for (player of filteredRoster(); track player.id) {
                 <button
                   type="button"
-                  class="flex items-center justify-between p-2.5 rounded-xl border text-left transition-colors hover:border-primary hover:bg-surface-2"
+                  class="flex items-center justify-between p-2.5 rounded-[var(--radius-cards)] border text-left transition-colors hover:border-primary hover:bg-surface-2"
                   style="border-color: var(--color-border); background: var(--color-surface-1)"
                   (click)="confirmLink(player)"
                   [disabled]="savingLink()"
@@ -664,7 +667,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
           </button>
           <button
             type="button"
-            class="btn btn--outline btn--sm text-red-400 border-red-500/30 hover:bg-red-500/10"
+            class="btn btn--outline btn--sm text-error border-[var(--color-error)]/30 hover:bg-[var(--color-error-container)]"
             (click)="confirmUnlink()"
             [disabled]="savingLink()"
           >

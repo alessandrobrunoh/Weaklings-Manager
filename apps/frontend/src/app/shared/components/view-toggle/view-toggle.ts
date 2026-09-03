@@ -42,10 +42,10 @@ export interface ViewToggleOption {
     .toggle-container {
       background-color: var(--color-surface);
       border: 1px solid var(--color-border);
-      border-radius: 8px;
+      border-radius: var(--radius-md, 6px);
       padding: 3px;
       display: inline-flex;
-      gap: 3px;
+      gap: var(--spacing-4, 3px);
     }
     .toggle-btn {
       display: inline-flex;
@@ -59,7 +59,7 @@ export interface ViewToggleOption {
       font-weight: 500;
       border: 1px solid transparent;
       cursor: pointer;
-      transition: all var(--motion-fast);
+      transition: color var(--motion-fast), background-color var(--motion-fast), border-color var(--motion-fast);
       color: var(--color-text-secondary);
       background: transparent;
     }
@@ -69,10 +69,10 @@ export interface ViewToggleOption {
     }
     .toggle-btn[aria-selected="true"] {
       background: var(--color-surface-hover);
-      color: #ffffff;
+      color: var(--color-text-heading);
       font-weight: 600;
-      border-color: var(--color-border-hover);
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+      border-color: var(--color-border-strong);
+      box-shadow: var(--shadow-subtle-2);
     }
   `,
   template: `

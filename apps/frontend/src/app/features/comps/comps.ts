@@ -179,14 +179,14 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('comps.stat.comps') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
                   {{ comps().length }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Total compositions
                 </p>
               </div>
-              <div class="icon-capsule bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-info)] border border-[var(--color-border)]">
                 <app-icon name="swords" size="1.25rem" />
               </div>
             </div>
@@ -198,14 +198,14 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('comps.stat.parentComps') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
                   {{ parentCompsCount() }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Base archetypes
                 </p>
               </div>
-              <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-info)] border border-[var(--color-border)]">
                 <app-icon name="shield" size="1.25rem" />
               </div>
             </div>
@@ -217,14 +217,14 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('comps.stat.variantComps') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
                   {{ variantCompsCount() }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Scale & role adaptations
                 </p>
               </div>
-              <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+              <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-info)] border border-[var(--color-border)]">
                 <app-icon name="sparkles" size="1.25rem" />
               </div>
             </div>
@@ -236,14 +236,14 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('comps.stat.compCategories') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
                   {{ compCategories().length }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Active tags
                 </p>
               </div>
-              <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-border)]">
                 <app-icon name="list" size="1.25rem" />
               </div>
             </div>
@@ -255,14 +255,14 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('comps.stat.comps') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
                   {{ compsTotal() }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Compositions
                 </p>
               </div>
-              <div class="icon-capsule bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-info)] border border-[var(--color-border)]">
                 <app-icon name="swords" size="1.25rem" />
               </div>
             </div>
@@ -274,14 +274,14 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('comps.stat.builds') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-emerald-400 mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
                   {{ buildsTotal() }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Equipment loadouts
                 </p>
               </div>
-              <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-border)]">
                 <app-icon name="shield" size="1.25rem" />
               </div>
             </div>
@@ -293,14 +293,14 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('comps.stat.buildCategories') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
                   {{ buildCategories().length }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Build categories
                 </p>
               </div>
-              <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-info)] border border-[var(--color-border)]">
                 <app-icon name="list" size="1.25rem" />
               </div>
             </div>
@@ -312,14 +312,14 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('comps.stat.compCategories') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
                   {{ compCategories().length }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Comp categories
                 </p>
               </div>
-              <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-border)]">
                 <app-icon name="list" size="1.25rem" />
               </div>
             </div>
@@ -433,7 +433,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                     ) {
                       <button
                         type="button"
-                        class="flex shrink-0 items-center justify-center w-7 h-7 rounded-lg bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-transform"
+                        class="flex shrink-0 items-center justify-center w-7 h-7 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-transform"
                         (click)="$event.stopPropagation(); toggleParentExpand(item.comp.id)"
                         [appTooltip]="
                           isExpanded(item.comp.id) ? t('comps.collapseAll') : t('comps.expandAll')
@@ -867,7 +867,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                 <div class="grid gap-2">
                   @for (entry of draftBuildEntries(); track entry.build_id) {
                     <div
-                      class="flex items-center justify-between gap-3 rounded-lg px-3 py-2"
+                      class="flex items-center justify-between gap-3 rounded-[var(--radius-md)] px-3 py-2"
                       style="background-color: var(--color-surface-1)"
                     >
                       <span>{{ buildName(entry.build_id) }}</span>

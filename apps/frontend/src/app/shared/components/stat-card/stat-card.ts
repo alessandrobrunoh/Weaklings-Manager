@@ -17,10 +17,10 @@ import { Icon, type IconName } from '../icon/icon';
     .kpi-card {
       position: relative;
       overflow: hidden;
-      border-radius: var(--radius-cards);
+      border-radius: var(--radius-xl, 12px);
       border: 1px solid var(--color-border);
       background: var(--color-surface);
-      padding: 1.125rem 1.25rem;
+      padding: var(--spacing-16, 1rem) var(--spacing-20, 1.25rem);
       height: 100%;
       display: flex;
       flex-direction: column;
@@ -28,7 +28,7 @@ import { Icon, type IconName } from '../icon/icon';
       transition: border-color var(--motion-fast), transform var(--motion-fast);
     }
     .kpi-card:hover {
-      border-color: var(--color-border-hover);
+      border-color: var(--color-border-strong);
     }
     .icon-capsule {
       display: inline-flex;
@@ -36,24 +36,30 @@ import { Icon, type IconName } from '../icon/icon';
       justify-content: center;
       width: 2.25rem;
       height: 2.25rem;
-      border-radius: 0.5rem;
+      border-radius: var(--radius-md, 6px);
       flex-shrink: 0;
+      border: 1px solid transparent;
     }
+    .icon-capsule--success { background: var(--color-success-container); color: var(--color-success); border-color: color-mix(in oklab, var(--color-success) 24%, transparent); }
+    .icon-capsule--warning { background: var(--color-warning-container); color: var(--color-warning); border-color: color-mix(in oklab, var(--color-warning) 24%, transparent); }
+    .icon-capsule--danger { background: var(--color-error-container); color: var(--color-error); border-color: color-mix(in oklab, var(--color-error) 24%, transparent); }
+    .icon-capsule--primary { background: var(--color-primary-container); color: var(--color-primary-hover); border-color: color-mix(in oklab, var(--color-primary) 24%, transparent); }
+    .icon-capsule--neutral { background: var(--color-surface-2); color: var(--color-text-secondary); border-color: var(--color-border); }
   `,
   template: `
     <article class="kpi-card">
       <div class="flex items-start justify-between gap-2.5">
         <div class="min-w-0 flex-1">
-          <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase truncate">
+          <p class="text-[var(--text-caption)] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase truncate">
             {{ label() }}
           </p>
           <div class="flex items-baseline gap-2 mt-1">
-            <p class="font-mono text-2xl font-bold tracking-tight" [style.color]="valueColor()">
+            <p class="font-mono text-2xl font-medium tracking-tight" [style.color]="valueColor()">
               {{ value() !== null && value() !== undefined ? value() : '—' }}
             </p>
             @if (delta()) {
               <span
-                class="chip text-[10px] font-mono font-bold"
+                class="chip text-[10px] font-mono font-medium"
                 [class.chip--success]="deltaDirection() === 'up'"
                 [class.chip--error]="deltaDirection() === 'down'"
                 [class.chip--neutral]="deltaDirection() === 'neutral'"
@@ -63,7 +69,7 @@ import { Icon, type IconName } from '../icon/icon';
             }
           </div>
           @if (sub()) {
-            <p class="mt-1 text-xs text-[var(--color-text-secondary)] truncate">{{ sub() }}</p>
+            <p class="mt-1 text-xs text-[var(--color-text-tertiary)] truncate">{{ sub() }}</p>
           }
         </div>
         @if (icon()) {
@@ -87,30 +93,30 @@ export class StatCard {
   protected iconCapsuleClass(): string {
     switch (this.tone()) {
       case 'success':
-        return 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+        return 'icon-capsule--success';
       case 'warning':
-        return 'bg-amber-500/10 text-amber-400 border border-amber-500/20';
+        return 'icon-capsule--warning';
       case 'danger':
-        return 'bg-red-500/10 text-red-400 border border-red-500/20';
+        return 'icon-capsule--danger';
       case 'primary':
-        return 'bg-sky-500/10 text-sky-400 border border-sky-500/20';
+        return 'icon-capsule--primary';
       case 'neutral':
-        return 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20';
+        return 'icon-capsule--neutral';
       default:
-        return 'bg-sky-500/10 text-sky-400 border border-sky-500/20';
+        return 'icon-capsule--primary';
     }
   }
 
   protected valueColor(): string {
     switch (this.tone()) {
       case 'success':
-        return '#4ade80';
+        return 'var(--color-success)';
       case 'warning':
-        return '#facc15';
+        return 'var(--color-warning)';
       case 'danger':
-        return '#f87171';
+        return 'var(--color-error)';
       case 'primary':
-        return '#38bdf8';
+        return 'var(--color-primary-hover)';
       case 'neutral':
         return 'var(--color-text)';
       default:

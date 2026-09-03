@@ -241,8 +241,8 @@ const ROLE_LABELS: Record<BuildRole, string> = {
 
         <!-- ================= EDIT MODE BANNER ================= -->
         @if (mode() === 'edit') {
-          <div class="p-3.5 rounded-xl border border-amber-500/40 bg-amber-500/10 flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div class="flex items-center gap-2 text-amber-300">
+          <div class="p-3.5 rounded-[var(--radius-cards)] border border-[var(--color-warning)]/40 bg-[var(--color-warning-container)] flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div class="flex items-center gap-2 text-warning">
               <app-icon name="edit" size="1rem" />
               <span><strong>Modalità Modifica Roster:</strong> Regola le quantità dei ruoli tramite i selettori nelle card, rimuovi build o aggiungine di nuove con il pulsante "Aggiungi Build".</span>
             </div>
@@ -264,8 +264,8 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                     <!-- Party Card Header -->
                     <div class="flex items-center justify-between gap-2 pb-2 border-b border-[var(--color-border)]">
                       <div class="flex items-center gap-2">
-                        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-                        <h3 class="text-xs font-bold uppercase tracking-wider text-white">
+                        <span class="w-2 h-2 rounded-full bg-[var(--color-success)]"></span>
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text)]">
                           Party {{ party.partyNumber }}
                         </h3>
                       </div>
@@ -278,7 +278,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                     <div class="space-y-2">
                       @for (seat of party.seats; track seat.globalIndex) {
                         <div
-                          class="p-2 rounded-lg bg-[var(--color-surface-2)] border border-[var(--color-border)] flex items-center justify-between gap-2.5 transition-all hover:border-[var(--color-border-strong)] cursor-pointer"
+                          class="p-2 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] border border-[var(--color-border)] flex items-center justify-between gap-2.5 transition-all hover:border-[var(--color-border-strong)] cursor-pointer"
                           (click)="inspectedBuildId.set(seat.buildId)"
                         >
                           <div class="flex items-center gap-2.5 min-w-0">
@@ -289,7 +289,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
 
                             <!-- Weapon Icon -->
                             <div
-                              class="shrink-0 w-8 h-8 rounded-lg bg-black/40 border border-[var(--color-border)] grid place-items-center overflow-hidden"
+                              class="shrink-0 w-8 h-8 rounded-[var(--radius-md)] bg-[var(--color-surface-1)] border border-[var(--color-border)] grid place-items-center overflow-hidden"
                               (mouseenter)="onWeaponMouseEnter(seat.buildId, $event)"
                               (mouseleave)="onWeaponMouseLeave()"
                             >
@@ -308,7 +308,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
 
                             <!-- Build Info -->
                             <div class="min-w-0">
-                              <span class="font-bold text-xs text-white block truncate hover:text-[var(--color-primary)]">
+                              <span class="font-bold text-xs text-[var(--color-text)] block truncate hover:text-[var(--color-primary)]">
                                 {{ seat.build.name }}
                               </span>
                               <div class="flex items-center gap-1.5 mt-0.5">
@@ -325,7 +325,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
 
                           <button
                             type="button"
-                            class="btn btn--ghost btn--xs text-secondary hover:text-white shrink-0"
+                            class="btn btn--ghost btn--xs text-secondary hover:text-[var(--color-text)] shrink-0"
                             (click)="inspectedBuildId.set(seat.buildId); $event.stopPropagation()"
                           >
                             Ispeziona
@@ -388,7 +388,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                           <div class="flex items-start gap-2.5 min-w-0">
                             <!-- Weapon Icon -->
                             <div
-                              class="shrink-0 w-10 h-10 rounded-lg bg-[var(--color-surface-2)] border border-[var(--color-border)] grid place-items-center overflow-hidden cursor-pointer"
+                              class="shrink-0 w-10 h-10 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] border border-[var(--color-border)] grid place-items-center overflow-hidden cursor-pointer"
                               (mouseenter)="onWeaponMouseEnter(entry.build_id, $event)"
                               (mouseleave)="onWeaponMouseLeave()"
                               (click)="inspectedBuildId.set(entry.build_id)"
@@ -408,7 +408,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
 
                             <div class="min-w-0">
                               <span
-                                class="font-bold text-sm text-white block truncate hover:text-[var(--color-primary)] cursor-pointer"
+                                class="font-bold text-sm text-[var(--color-text)] block truncate hover:text-[var(--color-primary)] cursor-pointer"
                                 (click)="inspectedBuildId.set(entry.build_id)"
                               >
                                 {{ entry.build.name }}
@@ -447,7 +447,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                             </div>
                           } @else {
                             <div class="flex items-center gap-1.5">
-                              <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[var(--color-surface-2)] text-white border border-[var(--color-border)] font-mono">
+                              <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[var(--color-surface-2)] text-[var(--color-text)] border border-[var(--color-border)] font-mono">
                                 x{{ entry.quantity }}
                               </span>
                               @if (canManage() && mode() === 'edit') {
@@ -460,7 +460,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                                 </button>
                                 <button
                                   type="button"
-                                  class="btn btn--ghost btn--xs text-rose-400"
+                                  class="btn btn--ghost btn--xs text-error"
                                   (click)="removeBuild(entry.build_id)"
                                   [disabled]="saving()"
                                 >
@@ -482,7 +482,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                             Ispeziona Equip
                           </button>
                           <a
-                            class="text-xs text-secondary hover:text-white"
+                            class="text-xs text-secondary hover:text-[var(--color-text)]"
                             [routerLink]="['/comps', 'builds', entry.build_id]"
                           >
                             Vai alla build &rarr;
@@ -520,12 +520,12 @@ const ROLE_LABELS: Record<BuildRole, string> = {
 
                 <div class="grid grid-cols-2 gap-2 text-xs">
                   @for (dist of compositionStats().roleDistribution; track dist.role) {
-                    <div class="flex items-center justify-between p-2.5 rounded-lg bg-[var(--color-surface-2)] border border-[var(--color-border)]">
+                    <div class="flex items-center justify-between p-2.5 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] border border-[var(--color-border)]">
                       <div class="flex items-center gap-1.5">
                         <span class="w-2 h-2 rounded-full" [style.background-color]="roleColorHex(dist.role)"></span>
-                        <span class="text-white font-medium">{{ roleLabel(dist.role) }}</span>
+                        <span class="text-[var(--color-text)] font-medium">{{ roleLabel(dist.role) }}</span>
                       </div>
-                      <span class="font-bold text-white font-mono">
+                      <span class="font-bold text-[var(--color-text)] font-mono">
                         {{ dist.quantity }} ({{ formatRolePercent(dist.quantity, current.total_quantity) }}%)
                       </span>
                     </div>
@@ -556,14 +556,14 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                   </h3>
 
                   <div class="grid grid-cols-2 gap-3">
-                    <div class="p-3 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)]">
+                    <div class="p-3 bg-[var(--color-surface-2)] rounded-[var(--radius-cards)] border border-[var(--color-border)]">
                       <span class="text-[10px] text-disabled block">{{ t('comps.kdRatio') }}</span>
-                      <strong class="text-lg font-bold text-white font-mono">{{ formatRatio(perf.stats.kill_death_ratio) }}</strong>
+                      <strong class="text-lg font-bold text-[var(--color-text)] font-mono">{{ formatRatio(perf.stats.kill_death_ratio) }}</strong>
                       <span class="text-[10px] text-secondary block mt-0.5">{{ perf.stats.wins }}W - {{ perf.stats.losses }}L</span>
                     </div>
-                    <div class="p-3 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)]">
+                    <div class="p-3 bg-[var(--color-surface-2)] rounded-[var(--radius-cards)] border border-[var(--color-border)]">
                       <span class="text-[10px] text-disabled block">{{ t('comps.killFame') }}</span>
-                      <strong class="text-lg font-bold text-amber-400 font-mono">{{ formatNumber(perf.stats.total_kill_fame) }}</strong>
+                      <strong class="text-lg font-bold text-warning font-mono">{{ formatNumber(perf.stats.total_kill_fame) }}</strong>
                       <span class="text-[10px] text-secondary block mt-0.5">{{ perf.stats.total_battles }} battaglie</span>
                     </div>
                   </div>
@@ -585,7 +585,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                           <tbody>
                             @for (opponent of perf.stats.top_opponents; track opponentKey(opponent)) {
                               <tr>
-                                <td class="font-medium text-white">{{ opponent.guild_name }}</td>
+                                <td class="font-medium text-[var(--color-text)]">{{ opponent.guild_name }}</td>
                                 <td class="text-right font-mono">{{ opponent.wins }}-{{ opponent.losses }}</td>
                                 <td class="text-right font-mono font-bold" [style.color]="winRateColor(opponentBattlesWinRate(opponent))">
                                   {{ formatPercent(opponentBattlesWinRate(opponent)) }}
@@ -618,12 +618,12 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                   &bull; {{ inspected.category_name || t('comps.noCategory') }}
                 </span>
               </div>
-              <div class="flex items-center gap-1 bg-[var(--color-surface-2)] p-0.5 rounded-lg border border-[var(--color-border)]">
+              <div class="flex items-center gap-1 bg-[var(--color-surface-2)] p-0.5 rounded-[var(--radius-md)] border border-[var(--color-border)]">
                 <button
                   type="button"
-                  class="px-2.5 py-1 text-xs rounded-md font-medium"
-                  [class.bg-white/10]="inspectedBuildLoadout() === 'main'"
-                  [class.text-white]="inspectedBuildLoadout() === 'main'"
+                  class="px-2.5 py-1 text-xs rounded-[var(--radius-md)] font-medium"
+                  [class.bg-[var(--color-surface-hover)]]="inspectedBuildLoadout() === 'main'"
+                  [class.text-[var(--color-text)]]="inspectedBuildLoadout() === 'main'"
                   [class.text-secondary]="inspectedBuildLoadout() !== 'main'"
                   (click)="inspectedBuildLoadout.set('main')"
                 >
@@ -631,9 +631,9 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                 </button>
                 <button
                   type="button"
-                  class="px-2.5 py-1 text-xs rounded-md font-medium"
-                  [class.bg-white/10]="inspectedBuildLoadout() === 'swap'"
-                  [class.text-white]="inspectedBuildLoadout() === 'swap'"
+                  class="px-2.5 py-1 text-xs rounded-[var(--radius-md)] font-medium"
+                  [class.bg-[var(--color-surface-hover)]]="inspectedBuildLoadout() === 'swap'"
+                  [class.text-[var(--color-text)]]="inspectedBuildLoadout() === 'swap'"
                   [class.text-secondary]="inspectedBuildLoadout() !== 'swap'"
                   (click)="inspectedBuildLoadout.set('swap')"
                 >
@@ -662,8 +662,8 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                 <span class="text-[10px] font-bold text-disabled uppercase tracking-wider block">Incantesimi Equipaggiati</span>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   @for (row of inspectedAbilityRows(); track row.slot) {
-                    <div class="p-2.5 bg-[var(--color-surface-2)] rounded-lg border border-[var(--color-border)] flex items-center justify-between gap-2">
-                      <span class="text-xs text-white font-medium truncate">{{ row.itemName }}</span>
+                    <div class="p-2.5 bg-[var(--color-surface-2)] rounded-[var(--radius-md)] border border-[var(--color-border)] flex items-center justify-between gap-2">
+                      <span class="text-xs text-[var(--color-text)] font-medium truncate">{{ row.itemName }}</span>
                       <app-ability-bar [slots]="row.slots" [canManage]="false" [emptyLabel]="t('comps.noAbility')" />
                     </div>
                   }
@@ -722,7 +722,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
             <div class="max-h-64 overflow-y-auto space-y-1.5 pr-1">
               @for (build of filteredAvailableBuilds(); track build.id) {
                 <div
-                  class="p-2.5 rounded-lg border flex items-center justify-between gap-2.5 transition-all cursor-pointer"
+                  class="p-2.5 rounded-[var(--radius-md)] border flex items-center justify-between gap-2.5 transition-all cursor-pointer"
                   [class.border-[var(--color-primary)]]="isSelectedBuild(build.id)"
                   [class.bg-[var(--color-primary)]/10]="isSelectedBuild(build.id)"
                   [class.border-[var(--color-border)]]="!isSelectedBuild(build.id)"
@@ -730,7 +730,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                   (click)="selectAddBuild(build)"
                 >
                   <div class="flex items-center gap-2.5 min-w-0">
-                    <div class="shrink-0 w-8 h-8 rounded bg-black/40 border border-[var(--color-border)] grid place-items-center overflow-hidden">
+                    <div class="shrink-0 w-8 h-8 rounded bg-[var(--color-surface-1)] border border-[var(--color-border)] grid place-items-center overflow-hidden">
                       @if (weaponIconFor(build.id); as weaponIcon) {
                         <img [src]="weaponIcon" [alt]="build.name" class="w-full h-full object-contain p-0.5" />
                       } @else {
@@ -738,7 +738,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                       }
                     </div>
                     <div class="min-w-0">
-                      <span class="text-xs font-bold text-white block truncate">{{ build.name }}</span>
+                      <span class="text-xs font-bold text-[var(--color-text)] block truncate">{{ build.name }}</span>
                       <span class="text-[10px] text-secondary">{{ build.category_name || t('comps.noCategory') }}</span>
                     </div>
                   </div>
@@ -757,8 +757,8 @@ const ROLE_LABELS: Record<BuildRole, string> = {
 
             <!-- Quantity Selector -->
             @if (newBuildId()) {
-              <div class="flex items-center justify-between p-3 rounded-lg bg-[var(--color-surface-2)] border border-[var(--color-border)]">
-                <span class="text-xs font-bold text-white">Quantità da inserire:</span>
+              <div class="flex items-center justify-between p-3 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] border border-[var(--color-border)]">
+                <span class="text-xs font-bold text-[var(--color-text)]">Quantità da inserire:</span>
                 <div class="flex items-center gap-2">
                   <button
                     type="button"
@@ -768,7 +768,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                   >
                     -
                   </button>
-                  <span class="font-mono font-bold text-white text-sm w-6 text-center">{{ newBuildQuantity() }}</span>
+                  <span class="font-mono font-bold text-[var(--color-text)] text-sm w-6 text-center">{{ newBuildQuantity() }}</span>
                   <button
                     type="button"
                     class="btn btn--outline btn--xs w-7 h-7 p-0"
@@ -866,7 +866,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
       <!-- Weapon Spell Fixed Tooltip -->
       @if (activeWeaponTooltip(); as tip) {
         <div
-          class="fixed z-50 pointer-events-none rounded-xl p-3 border border-[var(--color-border)] shadow-2xl backdrop-blur-md bg-[#0f1011]/95 text-xs space-y-2 max-w-[280px]"
+          class="fixed z-50 pointer-events-none rounded-[var(--radius-cards)] p-3 border border-[var(--color-border)] shadow-2xl backdrop-blur-md bg-[var(--color-surface-1)] text-xs space-y-2 max-w-[280px]"
           [style.left.px]="tip.x"
           [style.top.px]="tip.y"
         >
@@ -875,7 +875,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
               <img [src]="tip.icon" [alt]="tip.name" class="w-8 h-8 object-contain rounded bg-[var(--color-surface-2)] p-0.5 border border-[var(--color-border)]" />
             }
             <div class="min-w-0">
-              <p class="font-bold text-white text-xs truncate">{{ tip.name }}</p>
+              <p class="font-bold text-[var(--color-text)] text-xs truncate">{{ tip.name }}</p>
               <p class="text-[10px] text-secondary truncate">{{ tip.buildName }} &bull; {{ roleLabel(tip.role) }}</p>
             </div>
           </div>
@@ -888,7 +888,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                     @if (spell.iconUrl) {
                       <img [src]="spell.iconUrl" [alt]="spell.name" class="w-5 h-5 object-contain rounded bg-[var(--color-surface-2)]" />
                     }
-                    <span class="text-[11px] text-white font-medium truncate">{{ spell.name }}</span>
+                    <span class="text-[11px] text-[var(--color-text)] font-medium truncate">{{ spell.name }}</span>
                   </div>
                 }
               </div>

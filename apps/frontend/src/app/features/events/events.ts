@@ -49,7 +49,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
       margin: 0 auto;
     }
     .kpi-card {
-      background-color: #141517;
+      background-color: var(--color-surface);
       border: 1px solid var(--color-border);
       border-radius: 0.75rem;
       padding: 1.125rem 1.25rem;
@@ -67,8 +67,8 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
       <!-- Header -->
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
         <div>
-          <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white m-0">Events</h1>
-          <p class="text-sm text-[#8a8f98] mt-1 mb-0">Schedule and manage all guild activities.</p>
+          <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--color-text)] m-0">Events</h1>
+          <p class="text-sm text-[var(--color-text-tertiary)] mt-1 mb-0">Schedule and manage all guild activities.</p>
         </div>
 
         @if (canCreate()) {
@@ -88,15 +88,15 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
         <!-- Card 1: TOTAL EVENTS -->
         <article class="kpi-card">
           <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-sky-500/10 text-sky-400 border border-sky-500/20">
+            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-[var(--color-info-container)] text-[var(--color-info)] border border-[var(--color-info)]">
               <app-icon name="calendar" size="1.125rem" />
             </div>
-            <span class="text-[10px] font-bold uppercase tracking-wider text-[#8a8f98]">TOTAL EVENTS</span>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-tertiary)]">TOTAL EVENTS</span>
           </div>
-          <div class="text-3xl font-bold tracking-tight text-white mt-3.5">
+          <div class="text-3xl font-bold tracking-tight text-[var(--color-text)] mt-3.5">
             {{ totalEventsCount() }}
           </div>
-          <div class="text-xs text-[#8a8f98] mt-1.5 truncate">
+          <div class="text-xs text-[var(--color-text-tertiary)] mt-1.5 truncate">
             All scheduled & past events
           </div>
         </article>
@@ -104,17 +104,17 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
         <!-- Card 2: LIVE EVENTS -->
         <article class="kpi-card">
           <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
               <app-icon name="zap" size="1.125rem" />
             </div>
-            <span class="text-[10px] font-bold uppercase tracking-wider text-[#8a8f98]">LIVE EVENTS</span>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-tertiary)]">LIVE EVENTS</span>
           </div>
-          <div class="text-3xl font-bold tracking-tight text-white mt-3.5">
+          <div class="text-3xl font-bold tracking-tight text-[var(--color-text)] mt-3.5">
             {{ liveEventsCount() }}
           </div>
-          <div class="text-xs text-emerald-400 mt-1.5 truncate flex items-center gap-1.5 font-medium">
+          <div class="text-xs text-success mt-1.5 truncate flex items-center gap-1.5 font-medium">
             @if (liveEventsCount() > 0) {
-              <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-success)] animate-pulse"></span>
               <span>Active war rooms</span>
             } @else {
               <span>No events live</span>
@@ -125,15 +125,15 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
         <!-- Card 3: SCHEDULED -->
         <article class="kpi-card">
           <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-[var(--color-primary-container)] text-[var(--color-primary)] border border-[var(--color-primary)]">
               <app-icon name="calendar" size="1.125rem" />
             </div>
-            <span class="text-[10px] font-bold uppercase tracking-wider text-[#8a8f98]">SCHEDULED</span>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-tertiary)]">SCHEDULED</span>
           </div>
-          <div class="text-3xl font-bold tracking-tight text-white mt-3.5">
+          <div class="text-3xl font-bold tracking-tight text-[var(--color-text)] mt-3.5">
             {{ scheduledEventsCount() }}
           </div>
-          <div class="text-xs text-[#8a8f98] mt-1.5 truncate">
+          <div class="text-xs text-[var(--color-text-tertiary)] mt-1.5 truncate">
             Upcoming deployments
           </div>
         </article>
@@ -141,15 +141,15 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
         <!-- Card 4: CALL TO ARMS -->
         <article class="kpi-card">
           <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
               <app-icon name="alert" size="1.125rem" />
             </div>
-            <span class="text-[10px] font-bold uppercase tracking-wider text-[#8a8f98]">CALL TO ARMS</span>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-tertiary)]">CALL TO ARMS</span>
           </div>
-          <div class="text-3xl font-bold tracking-tight text-white mt-3.5">
+          <div class="text-3xl font-bold tracking-tight text-[var(--color-text)] mt-3.5">
             {{ ctaEventsCount() }}
           </div>
-          <div class="text-xs text-amber-400 mt-1.5 truncate font-medium">
+          <div class="text-xs text-warning mt-1.5 truncate font-medium">
             Mandatory guild CTA
           </div>
         </article>
@@ -160,11 +160,11 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
         <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto flex-1 max-w-xl">
           <!-- Search Input -->
           <div class="relative flex-1 min-w-[240px]">
-            <app-icon name="search" size="0.875rem" class="absolute left-3 top-1/2 -translate-y-1/2 text-[#525866]" />
+            <app-icon name="search" size="0.875rem" class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-disabled)]" />
             <input
               type="text"
               placeholder="Search events..."
-              class="w-full bg-[#141517] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-[#525866] focus:border-[#dc2626] outline-none transition-all"
+              class="w-full bg-[var(--color-surface)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-lg pl-9 pr-3 py-2 text-xs text-[var(--color-text)] placeholder-[var(--color-text-disabled)] focus:border-[var(--color-primary)] outline-none transition-all"
               [value]="search()"
               (input)="onSearchInput($event)"
             />
@@ -173,15 +173,15 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
           <!-- Status Dropdown -->
           <div class="relative">
             <select
-              class="bg-[#141517] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-lg px-3 py-2 text-xs text-[#c4c7cc] cursor-pointer outline-none transition-all"
+              class="bg-[var(--color-surface)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-lg px-3 py-2 text-xs text-[var(--color-text-secondary)] cursor-pointer outline-none transition-all"
               [value]="statusFilter()"
               (change)="onStatusDropdownChange($event)"
             >
-              <option value="" class="bg-[#141517] text-white">Status: All</option>
-              <option value="live" class="bg-[#141517] text-white">Status: Live</option>
-              <option value="scheduled" class="bg-[#141517] text-white">Status: Scheduled</option>
-              <option value="stopped" class="bg-[#141517] text-white">Status: Stopped</option>
-              <option value="cancelled" class="bg-[#141517] text-white">Status: Cancelled</option>
+              <option value="" class="bg-[var(--color-surface)] text-[var(--color-text)]">Status: All</option>
+              <option value="live" class="bg-[var(--color-surface)] text-[var(--color-text)]">Status: Live</option>
+              <option value="scheduled" class="bg-[var(--color-surface)] text-[var(--color-text)]">Status: Scheduled</option>
+              <option value="stopped" class="bg-[var(--color-surface)] text-[var(--color-text)]">Status: Stopped</option>
+              <option value="cancelled" class="bg-[var(--color-surface)] text-[var(--color-text)]">Status: Cancelled</option>
             </select>
           </div>
         </div>
@@ -193,22 +193,22 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
         <button
           type="button"
           class="flex items-center gap-2 pb-3 text-xs font-semibold transition-all border-b-2 cursor-pointer shrink-0"
-          [class.border-[#dc2626]]="statusFilter() === ''"
-          [class.text-white]="statusFilter() === ''"
+          [class.border-[var(--color-primary)]]="statusFilter() === ''"
+          [class.text-[var(--color-text)]]="statusFilter() === ''"
           [class.border-transparent]="statusFilter() !== ''"
-          [class.text-[#8a8f98]]="statusFilter() !== ''"
-          [class.hover:text-white]="statusFilter() !== ''"
+          [class.text-[var(--color-text-tertiary)]]="statusFilter() !== ''"
+          [class.hover:text-[var(--color-text)]]="statusFilter() !== ''"
           (click)="setStatusFilter('')"
         >
           <span>All</span>
           <span
             class="rounded-full px-2 py-0.5 text-[11px] font-mono border"
             [class.bg-white/10]="statusFilter() === ''"
-            [class.border-white/20]="statusFilter() === ''"
-            [class.text-white]="statusFilter() === ''"
-            [class.bg-white/[0.04]]="statusFilter() !== ''"
-            [class.border-white/10]="statusFilter() !== ''"
-            [class.text-[#8a8f98]]="statusFilter() !== ''"
+            [class.border-[var(--color-border-strong)]]="statusFilter() === ''"
+            [class.text-[var(--color-text)]]="statusFilter() === ''"
+            [class.bg-[var(--color-surface-2)]]="statusFilter() !== ''"
+            [class.border-[var(--color-border)]]="statusFilter() !== ''"
+            [class.text-[var(--color-text-tertiary)]]="statusFilter() !== ''"
           >
             {{ totalEventsCount() }}
           </span>
@@ -218,23 +218,23 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
         <button
           type="button"
           class="flex items-center gap-2 pb-3 text-xs font-semibold transition-all border-b-2 cursor-pointer shrink-0"
-          [class.border-[#dc2626]]="statusFilter() === 'live'"
-          [class.text-white]="statusFilter() === 'live'"
+          [class.border-[var(--color-primary)]]="statusFilter() === 'live'"
+          [class.text-[var(--color-text)]]="statusFilter() === 'live'"
           [class.border-transparent]="statusFilter() !== 'live'"
-          [class.text-[#8a8f98]]="statusFilter() !== 'live'"
-          [class.hover:text-white]="statusFilter() !== 'live'"
+          [class.text-[var(--color-text-tertiary)]]="statusFilter() !== 'live'"
+          [class.hover:text-[var(--color-text)]]="statusFilter() !== 'live'"
           (click)="setStatusFilter('live')"
         >
-          <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+          <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-success)]"></span>
           <span>Live</span>
           <span
             class="rounded-full px-2 py-0.5 text-[11px] font-mono border"
             [class.bg-white/10]="statusFilter() === 'live'"
-            [class.border-white/20]="statusFilter() === 'live'"
-            [class.text-white]="statusFilter() === 'live'"
-            [class.bg-white/[0.04]]="statusFilter() !== 'live'"
-            [class.border-white/10]="statusFilter() !== 'live'"
-            [class.text-[#8a8f98]]="statusFilter() !== 'live'"
+            [class.border-[var(--color-border-strong)]]="statusFilter() === 'live'"
+            [class.text-[var(--color-text)]]="statusFilter() === 'live'"
+            [class.bg-[var(--color-surface-2)]]="statusFilter() !== 'live'"
+            [class.border-[var(--color-border)]]="statusFilter() !== 'live'"
+            [class.text-[var(--color-text-tertiary)]]="statusFilter() !== 'live'"
           >
             {{ liveEventsCount() }}
           </span>
@@ -244,23 +244,23 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
         <button
           type="button"
           class="flex items-center gap-2 pb-3 text-xs font-semibold transition-all border-b-2 cursor-pointer shrink-0"
-          [class.border-[#dc2626]]="statusFilter() === 'scheduled'"
-          [class.text-white]="statusFilter() === 'scheduled'"
+          [class.border-[var(--color-primary)]]="statusFilter() === 'scheduled'"
+          [class.text-[var(--color-text)]]="statusFilter() === 'scheduled'"
           [class.border-transparent]="statusFilter() !== 'scheduled'"
-          [class.text-[#8a8f98]]="statusFilter() !== 'scheduled'"
-          [class.hover:text-white]="statusFilter() !== 'scheduled'"
+          [class.text-[var(--color-text-tertiary)]]="statusFilter() !== 'scheduled'"
+          [class.hover:text-[var(--color-text)]]="statusFilter() !== 'scheduled'"
           (click)="setStatusFilter('scheduled')"
         >
-          <span class="h-1.5 w-1.5 rounded-full bg-sky-400"></span>
+          <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-info)]"></span>
           <span>Scheduled</span>
           <span
             class="rounded-full px-2 py-0.5 text-[11px] font-mono border"
             [class.bg-white/10]="statusFilter() === 'scheduled'"
-            [class.border-white/20]="statusFilter() === 'scheduled'"
-            [class.text-white]="statusFilter() === 'scheduled'"
-            [class.bg-white/[0.04]]="statusFilter() !== 'scheduled'"
-            [class.border-white/10]="statusFilter() !== 'scheduled'"
-            [class.text-[#8a8f98]]="statusFilter() !== 'scheduled'"
+            [class.border-[var(--color-border-strong)]]="statusFilter() === 'scheduled'"
+            [class.text-[var(--color-text)]]="statusFilter() === 'scheduled'"
+            [class.bg-[var(--color-surface-2)]]="statusFilter() !== 'scheduled'"
+            [class.border-[var(--color-border)]]="statusFilter() !== 'scheduled'"
+            [class.text-[var(--color-text-tertiary)]]="statusFilter() !== 'scheduled'"
           >
             {{ scheduledEventsCount() }}
           </span>
@@ -270,11 +270,11 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
         <button
           type="button"
           class="flex items-center gap-2 pb-3 text-xs font-semibold transition-all border-b-2 cursor-pointer shrink-0"
-          [class.border-[#dc2626]]="statusFilter() === 'stopped'"
-          [class.text-white]="statusFilter() === 'stopped'"
+          [class.border-[var(--color-primary)]]="statusFilter() === 'stopped'"
+          [class.text-[var(--color-text)]]="statusFilter() === 'stopped'"
           [class.border-transparent]="statusFilter() !== 'stopped'"
-          [class.text-[#8a8f98]]="statusFilter() !== 'stopped'"
-          [class.hover:text-white]="statusFilter() !== 'stopped'"
+          [class.text-[var(--color-text-tertiary)]]="statusFilter() !== 'stopped'"
+          [class.hover:text-[var(--color-text)]]="statusFilter() !== 'stopped'"
           (click)="setStatusFilter('stopped')"
         >
           <span class="h-1.5 w-1.5 rounded-full bg-neutral-400"></span>
@@ -282,11 +282,11 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
           <span
             class="rounded-full px-2 py-0.5 text-[11px] font-mono border"
             [class.bg-white/10]="statusFilter() === 'stopped'"
-            [class.border-white/20]="statusFilter() === 'stopped'"
-            [class.text-white]="statusFilter() === 'stopped'"
-            [class.bg-white/[0.04]]="statusFilter() !== 'stopped'"
-            [class.border-white/10]="statusFilter() !== 'stopped'"
-            [class.text-[#8a8f98]]="statusFilter() !== 'stopped'"
+            [class.border-[var(--color-border-strong)]]="statusFilter() === 'stopped'"
+            [class.text-[var(--color-text)]]="statusFilter() === 'stopped'"
+            [class.bg-[var(--color-surface-2)]]="statusFilter() !== 'stopped'"
+            [class.border-[var(--color-border)]]="statusFilter() !== 'stopped'"
+            [class.text-[var(--color-text-tertiary)]]="statusFilter() !== 'stopped'"
           >
             {{ finishedEventsCount() }}
           </span>
@@ -297,12 +297,12 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
       <div class="overflow-x-auto w-full">
         <table class="w-full text-left border-collapse">
           <thead>
-            <tr class="border-b border-[var(--color-border)] text-[11px] font-bold uppercase tracking-wider text-[#8a8f98]">
+            <tr class="border-b border-[var(--color-border)] text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-tertiary)]">
               <th class="py-3 px-4 font-bold">EVENT</th>
               <th class="py-3 px-4 font-bold cursor-pointer select-none" (click)="toggleDateSort()">
-                <div class="inline-flex items-center gap-1 hover:text-white transition-colors">
+                <div class="inline-flex items-center gap-1 hover:text-[var(--color-text)] transition-colors">
                   <span>DATE</span>
-                  <span class="text-xs text-[#525866]">⇅</span>
+                  <span class="text-xs text-[var(--color-text-disabled)]">⇅</span>
                 </div>
               </th>
               <th class="py-3 px-4 font-bold">COMPOSITION</th>
@@ -313,16 +313,16 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
           <tbody class="divide-y divide-[var(--color-border)]">
             @if (loading() && events().length === 0) {
               <tr>
-                <td colspan="5" class="py-12 text-center text-xs text-[#8a8f98]">
+                <td colspan="5" class="py-12 text-center text-xs text-[var(--color-text-tertiary)]">
                   <app-icon name="loader" size="1.5rem" class="animate-spin inline-block mb-2" />
                   <p class="m-0">Loading events...</p>
                 </td>
               </tr>
             } @else if (events().length === 0) {
               <tr>
-                <td colspan="5" class="py-12 text-center text-xs text-[#8a8f98]">
-                  <p class="m-0 font-medium text-sm text-white">No events found</p>
-                  <p class="m-0 text-xs text-[#8a8f98] mt-1">There are no events matching the selected filters.</p>
+                <td colspan="5" class="py-12 text-center text-xs text-[var(--color-text-tertiary)]">
+                  <p class="m-0 font-medium text-sm text-[var(--color-text)]">No events found</p>
+                  <p class="m-0 text-xs text-[var(--color-text-tertiary)] mt-1">There are no events matching the selected filters.</p>
                 </td>
               </tr>
             } @else {
@@ -332,34 +332,34 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
                   <td class="py-3.5 px-4 min-w-[220px]">
                     <div class="flex items-center gap-1.5">
                       @if (event.call_to_arms) {
-                        <span class="text-amber-400 font-bold text-sm select-none" title="Call To Arms">★</span>
+                        <span class="text-warning font-bold text-sm select-none" title="Call To Arms">★</span>
                       }
                       <a
                         [routerLink]="['/events', event.id]"
-                        class="text-sm font-semibold text-white hover:text-red-400 transition-colors no-underline truncate max-w-xs"
+                        class="text-sm font-semibold text-[var(--color-text)] hover:text-error transition-colors no-underline truncate max-w-xs"
                       >
                         {{ event.title }}
                       </a>
                     </div>
-                    <div class="text-xs text-[#8a8f98] mt-0.5">
+                    <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">
                       Mass: {{ formatMassTime(event) }}
                     </div>
                   </td>
 
                   <!-- DATE Column -->
                   <td class="py-3.5 px-4 whitespace-nowrap">
-                    <div class="text-xs font-medium text-white">
+                    <div class="text-xs font-medium text-[var(--color-text)]">
                       {{ formatDateDay(event.start_time_utc ?? event.event_date_utc) }}
                     </div>
-                    <div class="text-xs text-[#8a8f98] mt-0.5">
+                    <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">
                       {{ formatDateTime(event.start_time_utc ?? event.event_date_utc) }}
                     </div>
                   </td>
 
                   <!-- COMPOSITION Column -->
                   <td class="py-3.5 px-4 whitespace-nowrap">
-                    <div class="inline-flex items-center gap-1.5 text-xs text-white">
-                      <app-icon name="swords" size="0.875rem" class="text-[#8a8f98] shrink-0" />
+                    <div class="inline-flex items-center gap-1.5 text-xs text-[var(--color-text)]">
+                      <app-icon name="swords" size="0.875rem" class="text-[var(--color-text-tertiary)] shrink-0" />
                       <span>{{ event.comp_name || 'Fill' }}</span>
                     </div>
                   </td>
@@ -368,25 +368,25 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
                   <td class="py-3.5 px-4 whitespace-nowrap">
                     @switch (event.status) {
                       @case ('live') {
-                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                          <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
+                          <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-success)] animate-pulse"></span>
                           <span>Live</span>
                         </span>
                       }
                       @case ('scheduled') {
-                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-info-container)] text-[var(--color-info)] border border-[var(--color-info)]">
                           <app-icon name="calendar" size="0.75rem" />
                           <span>Scheduled</span>
                         </span>
                       }
                       @case ('cancelled') {
-                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">
+                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-error-container)] text-error border border-[var(--color-error)]">
                           <app-icon name="close" size="0.75rem" />
                           <span>Cancelled</span>
                         </span>
                       }
                       @default {
-                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white/[0.04] text-[#8a8f98] border border-white/10">
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-[var(--color-surface-2)] text-[var(--color-text-tertiary)] border border-[var(--color-border)]">
                           <span>Stopped</span>
                         </span>
                       }
@@ -398,7 +398,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
                     <div class="inline-flex items-center justify-end gap-1.5">
                       <button
                         type="button"
-                        class="px-3 py-1 text-xs font-medium text-[#c4c7cc] bg-white/[0.04] hover:bg-white/[0.08] hover:text-white border border-white/10 rounded-md transition-all cursor-pointer"
+                        class="px-3 py-1 text-xs font-medium text-[var(--color-text-secondary)] bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)] border border-[var(--color-border)] rounded-md transition-all cursor-pointer"
                         (click)="openEventDetail(event.id)"
                       >
                         Open
@@ -407,7 +407,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
                       @if (event.status === 'scheduled') {
                         <button
                           type="button"
-                          class="px-3 py-1 text-xs font-semibold text-white bg-[#991b1b] hover:bg-[#b91c1c] rounded-md transition-all cursor-pointer"
+                          class="px-3 py-1 text-xs font-semibold text-[var(--color-text)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] rounded-md transition-all cursor-pointer"
                           (click)="join(event.id)"
                         >
                           Join
@@ -417,7 +417,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
                       @if (canDelete() || event.status === 'stopped' || event.status === 'cancelled') {
                         <button
                           type="button"
-                          class="px-3 py-1 text-xs font-medium text-red-400 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-md transition-all cursor-pointer"
+                          class="px-3 py-1 text-xs font-medium text-error bg-[var(--color-error-container)] hover:bg-[var(--color-error-container)] border border-[var(--color-error)] rounded-md transition-all cursor-pointer"
                           (click)="requestDelete(event)"
                         >
                           Delete
@@ -426,7 +426,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
 
                       <button
                         type="button"
-                        class="w-7 h-7 flex items-center justify-center text-[#8a8f98] hover:text-white hover:bg-white/[0.05] rounded-md transition-colors cursor-pointer"
+                        class="w-7 h-7 flex items-center justify-center text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] hover:bg-white/[0.05] rounded-md transition-colors cursor-pointer"
                         (click)="openEventDetail(event.id)"
                         [appTooltip]="'Details & Roster'"
                         tooltipPosition="left"
@@ -443,7 +443,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
       </div>
 
       <!-- Pagination Footer -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-[var(--color-border)] text-xs text-[#8a8f98]">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-[var(--color-border)] text-xs text-[var(--color-text-tertiary)]">
         <div>
           Showing {{ paginationFrom() }} to {{ paginationTo() }} of {{ totalItems() }} events
         </div>
@@ -451,7 +451,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
         <div class="flex items-center gap-1.5 self-center sm:self-auto">
           <button
             type="button"
-            class="w-7 h-7 flex items-center justify-center rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-[#8a8f98] hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
+            class="w-7 h-7 flex items-center justify-center rounded-md bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
             [disabled]="page() <= 1"
             (click)="goToPage(page() - 1)"
             aria-label="Previous page"
@@ -463,12 +463,12 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
             <button
               type="button"
               class="w-7 h-7 flex items-center justify-center rounded-md text-xs font-medium transition-all cursor-pointer"
-              [class.bg-[#dc2626]]="p === page()"
-              [class.text-white]="p === page()"
+              [class.bg-[var(--color-primary)]]="p === page()"
+              [class.text-[var(--color-text)]]="p === page()"
               [class.font-bold]="p === page()"
-              [class.text-[#8a8f98]]="p !== page()"
-              [class.hover:text-white]="p !== page()"
-              [class.hover:bg-white/[0.04]]="p !== page()"
+              [class.text-[var(--color-text-tertiary)]]="p !== page()"
+              [class.hover:text-[var(--color-text)]]="p !== page()"
+              [class.hover:bg-[var(--color-surface-2)]]="p !== page()"
               (click)="goToPage(p)"
             >
               {{ p }}
@@ -477,7 +477,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
 
           <button
             type="button"
-            class="w-7 h-7 flex items-center justify-center rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-[#8a8f98] hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
+            class="w-7 h-7 flex items-center justify-center rounded-md bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
             [disabled]="page() >= totalPages()"
             (click)="goToPage(page() + 1)"
             aria-label="Next page"
@@ -488,13 +488,13 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
 
         <div class="flex items-center gap-2 self-end sm:self-auto">
           <select
-            class="bg-white/[0.04] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-md px-2.5 py-1 text-xs text-[#8a8f98] hover:text-white cursor-pointer outline-none transition-all"
+            class="bg-[var(--color-surface-2)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-md px-2.5 py-1 text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] cursor-pointer outline-none transition-all"
             [value]="pageSize()"
             (change)="onPageSizeChange($event)"
           >
-            <option value="10" class="bg-[#141517] text-white">10 per page</option>
-            <option value="20" class="bg-[#141517] text-white">20 per page</option>
-            <option value="50" class="bg-[#141517] text-white">50 per page</option>
+            <option value="10" class="bg-[var(--color-surface)] text-[var(--color-text)]">10 per page</option>
+            <option value="20" class="bg-[var(--color-surface)] text-[var(--color-text)]">20 per page</option>
+            <option value="50" class="bg-[var(--color-surface)] text-[var(--color-text)]">50 per page</option>
           </select>
         </div>
       </div>

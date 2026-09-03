@@ -147,7 +147,7 @@ interface AttentionItem {
       <!-- Top Greeting & Personal Profile Header -->
       <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-1">
         <div>
-          <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white m-0">
+          <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) m-0">
             {{ greeting() }}, {{ username() }}
           </h1>
           <p class="text-sm text-[var(--color-text-tertiary)] mt-1 mb-0">
@@ -159,7 +159,7 @@ interface AttentionItem {
         <div class="flex items-center gap-3 self-end sm:self-center">
           <button
             type="button"
-            class="btn btn--ghost btn--icon shrink-0 text-[var(--color-text-tertiary)] hover:text-white"
+            class="btn btn--ghost btn--icon shrink-0 text-[var(--color-text-tertiary)] hover:text-(--color-text)"
             [disabled]="loading()"
             (click)="refreshNow()"
             [appTooltip]="'Refresh snapshot'"
@@ -201,17 +201,17 @@ interface AttentionItem {
               <div class="icon-capsule icon-capsule--red">
                 <app-icon name="bank" size="1.125rem" />
               </div>
-              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-white transition-colors">
+              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-(--color-text) transition-colors">
                 Bank requested
               </span>
             </div>
             <app-icon
               name="chevron-right"
               size="0.875rem"
-              class="text-[var(--color-text-disabled)] group-hover:text-white group-hover:translate-x-0.5 transition-all"
+              class="text-[var(--color-text-disabled)] group-hover:text-(--color-text) group-hover:translate-x-0.5 transition-all"
             />
           </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-white mt-3.5">
+          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5">
             {{ bankRequestedValue() }}
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
@@ -230,17 +230,17 @@ interface AttentionItem {
               <div class="icon-capsule icon-capsule--green">
                 <app-icon name="percent" size="1.125rem" />
               </div>
-              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-white transition-colors">
+              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-(--color-text) transition-colors">
                 Splits completed
               </span>
             </div>
             <app-icon
               name="chevron-right"
               size="0.875rem"
-              class="text-[var(--color-text-disabled)] group-hover:text-white group-hover:translate-x-0.5 transition-all"
+              class="text-[var(--color-text-disabled)] group-hover:text-(--color-text) group-hover:translate-x-0.5 transition-all"
             />
           </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-white mt-3.5">
+          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5">
             {{ splitsCompletedCount() }}
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
@@ -259,17 +259,17 @@ interface AttentionItem {
               <div class="icon-capsule icon-capsule--amber">
                 <app-icon name="alert" size="1.125rem" />
               </div>
-              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-white transition-colors">
+              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-(--color-text) transition-colors">
                 Splits pending
               </span>
             </div>
             <app-icon
               name="chevron-right"
               size="0.875rem"
-              class="text-[var(--color-text-disabled)] group-hover:text-white group-hover:translate-x-0.5 transition-all"
+              class="text-[var(--color-text-disabled)] group-hover:text-(--color-text) group-hover:translate-x-0.5 transition-all"
             />
           </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-white mt-3.5">
+          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5">
             {{ splitsPendingCount() }}
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
@@ -288,17 +288,17 @@ interface AttentionItem {
               <div class="icon-capsule icon-capsule--purple">
                 <app-icon name="coins" size="1.125rem" />
               </div>
-              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-white transition-colors">
+              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-(--color-text) transition-colors">
                 Season paid out
               </span>
             </div>
             <app-icon
               name="chevron-right"
               size="0.875rem"
-              class="text-[var(--color-text-disabled)] group-hover:text-white group-hover:translate-x-0.5 transition-all"
+              class="text-[var(--color-text-disabled)] group-hover:text-(--color-text) group-hover:translate-x-0.5 transition-all"
             />
           </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-white mt-3.5">
+          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5">
             {{ seasonPaidOutValue() }}
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
@@ -313,8 +313,8 @@ interface AttentionItem {
         <div class="action-panel p-5 sm:p-6 flex flex-col justify-between">
           <div>
             <div class="flex items-center gap-2 mb-4">
-              <h2 class="text-base font-bold text-white m-0">Requires your attention</h2>
-              <span class="inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold rounded-full bg-[#dc2626] text-white">
+              <h2 class="text-base font-bold text-(--color-text) m-0">Requires your attention</h2>
+              <span class="inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold rounded-full bg-[#dc2626] text-(--color-text)">
                 {{ attentionItems().length }}
               </span>
             </div>
@@ -329,7 +329,7 @@ interface AttentionItem {
                     >
                       <app-icon [name]="item.icon" size="1.125rem" />
                     </div>
-                    <span class="text-xs sm:text-sm font-medium text-white truncate">
+                    <span class="text-xs sm:text-sm font-medium text-(--color-text) truncate">
                       {{ item.text }}
                     </span>
                   </div>
@@ -351,7 +351,7 @@ interface AttentionItem {
               <app-icon name="check" size="1rem" />
             </div>
             <div class="min-w-0">
-              <p class="text-sm font-semibold text-white m-0">You're all caught up!</p>
+              <p class="text-sm font-semibold text-(--color-text) m-0">You're all caught up!</p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-0.5 mb-0">No critical alerts right now.</p>
             </div>
           </div>
@@ -374,14 +374,14 @@ interface AttentionItem {
                 <span class="text-[10px] font-bold text-red-500 tracking-wider uppercase">
                   {{ nextMass().dayLabel }}
                 </span>
-                <span class="text-2xl sm:text-3xl font-bold text-white tracking-tight leading-none mt-1">
+                <span class="text-2xl sm:text-3xl font-bold text-(--color-text) tracking-tight leading-none mt-1">
                   {{ nextMass().time }}
                 </span>
               </div>
 
               <!-- Event Details -->
               <div class="flex flex-col justify-center min-w-0">
-                <h3 class="text-lg sm:text-2xl font-bold text-white truncate m-0">
+                <h3 class="text-lg sm:text-2xl font-bold text-(--color-text) truncate m-0">
                   {{ nextMass().title }}
                 </h3>
                 <div class="flex items-center gap-2 text-xs sm:text-sm text-[var(--color-text-secondary)] mt-2">

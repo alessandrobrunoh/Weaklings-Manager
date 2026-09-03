@@ -30,8 +30,8 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
       .spinner {
         display: inline-block;
         border-style: solid;
-        border-color: rgba(255, 255, 255, 0.08);
-        border-top-color: #38bdf8;
+        border-color: var(--color-border);
+        border-top-color: var(--color-primary);
         border-radius: 50%;
         animation: spin 0.75s cubic-bezier(0.4, 0, 0.2, 1) infinite;
       }

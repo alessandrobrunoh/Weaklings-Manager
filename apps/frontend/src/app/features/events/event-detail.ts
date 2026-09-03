@@ -287,7 +287,7 @@ interface AddEventMemberRequest {
                 <span
                   class="chip chip--success font-mono text-xs font-semibold inline-flex items-center gap-1.5 animate-pulse"
                 >
-                  <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                  <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-success)]"></span>
                   {{ t('events.detail.countdown_live') }}
                 </span>
               } @else if (detail.status === 'scheduled') {
@@ -333,7 +333,7 @@ interface AddEventMemberRequest {
                 </span>
                 <div class="h-1 w-10 bg-[var(--color-border)] rounded-full overflow-hidden">
                   <div
-                    class="h-full bg-emerald-500 rounded-full transition-all"
+                    class="h-full bg-[var(--color-success)] rounded-full transition-all"
                     [style.width.%]="
                       rosterSeatCount() > 0 ? (rosterFilledSeats() / rosterSeatCount()) * 100 : 0
                     "
@@ -353,12 +353,12 @@ interface AddEventMemberRequest {
           <div class="flex-shrink-0">
             @if (currentParticipant(); as participation) {
               <div
-                class="rounded-xl px-3 py-2 border border-emerald-500/30 bg-emerald-500/5 min-w-[240px] space-y-1.5"
+                class="rounded-xl px-3 py-2 border border-[var(--color-success)] bg-[var(--color-success-container)] min-w-[240px] space-y-1.5"
               >
                 <div class="flex items-center justify-between gap-2">
                   <div class="flex items-center gap-1.5">
-                    <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                    <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-success)] animate-pulse"></span>
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-success">
                       {{ t('events.detail.registered_as') }}
                     </span>
                   </div>
@@ -386,7 +386,7 @@ interface AddEventMemberRequest {
                   </p>
                 </div>
 
-                <div class="flex items-center gap-1 pt-1.5 border-t border-emerald-500/20">
+                <div class="flex items-center gap-1 pt-1.5 border-t border-[var(--color-success)]">
                   <button
                     type="button"
                     class="btn btn--outline btn--sm text-[10px] py-0.5 px-2 flex-1"
@@ -396,7 +396,7 @@ interface AddEventMemberRequest {
                   </button>
                   <button
                     type="button"
-                    class="btn btn--ghost btn--sm text-[10px] py-0.5 px-2 text-rose-400 hover:bg-rose-500/10"
+                    class="btn btn--ghost btn--sm text-[10px] py-0.5 px-2 text-error hover:bg-[var(--color-error-container)]"
                     (click)="leave(detail.id)"
                   >
                     {{ t('events.leave') }}
@@ -452,11 +452,11 @@ interface AddEventMemberRequest {
                     <div
                       class="card p-0 overflow-hidden transition-all shadow-sm"
                       [class.border-[var(--color-border)]]="!isDropTargetBench()"
-                      [class.border-amber-500]="isDropTargetBench()"
+                      [class.border-[var(--color-warning)]]="isDropTargetBench()"
                       [class.border-dashed]="isDropTargetBench()"
                       [class.ring-2]="isDropTargetBench()"
                       [class.ring-amber-500/50]="isDropTargetBench()"
-                      [class.bg-amber-500/5]="isDropTargetBench()"
+                      [class.bg-[var(--color-warning-container)]]="isDropTargetBench()"
                       (dragover)="onBenchDragOver($event)"
                       (dragleave)="onBenchDragLeave($event)"
                       (drop)="onBenchDrop($event)"
@@ -491,7 +491,7 @@ interface AddEventMemberRequest {
 
                       @if (isDropTargetBench()) {
                         <div
-                          class="m-2 p-2.5 rounded-lg border-2 border-dashed border-amber-500 bg-amber-500/15 text-amber-400 text-xs font-bold text-center animate-pulse flex items-center justify-center gap-2"
+                          class="m-2 p-2.5 rounded-lg border-2 border-dashed border-[var(--color-warning)] bg-[var(--color-warning-container)] text-warning text-xs font-bold text-center animate-pulse flex items-center justify-center gap-2"
                         >
                           <app-icon name="users" size="0.875rem" />
                           Rilascia per spostare in panchina
@@ -503,8 +503,8 @@ interface AddEventMemberRequest {
                         @for (member of filteredRosterBench(); track member.user_id) {
                           <div
                             class="surface p-2 hover:border-[var(--color-primary)] transition-all space-y-1 select-none rounded-lg"
-                            [class.border-amber-500]="rosterAssignTarget() !== null"
-                            [class.bg-amber-500/5]="rosterAssignTarget() !== null"
+                            [class.border-[var(--color-warning)]]="rosterAssignTarget() !== null"
+                            [class.bg-[var(--color-warning-container)]]="rosterAssignTarget() !== null"
                             [class.opacity-40]="draggedBenchMember()?.user_id === member.user_id"
                             [attr.draggable]="canManageParticipants() && !rosterCommandSaving()"
                             (dragstart)="onBenchMemberDragStart($event, member)"
@@ -582,7 +582,7 @@ interface AddEventMemberRequest {
                         class="h-1.5 w-full bg-[var(--color-surface-2)] rounded-full overflow-hidden"
                       >
                         <div
-                          class="h-full bg-emerald-500 rounded-full transition-all"
+                          class="h-full bg-[var(--color-success)] rounded-full transition-all"
                           [style.width.%]="
                             rosterSeatCount() > 0
                               ? (rosterFilledSeats() / rosterSeatCount()) * 100
@@ -765,7 +765,7 @@ interface AddEventMemberRequest {
                               class="h-1.5 w-14 bg-[var(--color-surface-2)] rounded-full overflow-hidden"
                             >
                               <div
-                                class="h-full bg-emerald-500 rounded-full transition-all"
+                                class="h-full bg-[var(--color-success)] rounded-full transition-all"
                                 [style.width.%]="
                                   (rosterPartyFilledSeats(party) / party.seats.length) * 100
                                 "
@@ -894,17 +894,17 @@ interface AddEventMemberRequest {
                                         @if (selectedSpecializationKey()) {
                                           <span
                                             class="font-mono text-[9px] font-bold px-1 py-0.2 rounded"
-                                            [class.bg-emerald-500/10]="
+                                            [class.bg-[var(--color-success)]/10]="
                                               participantSpecLevel(participant) >= 100
                                             "
-                                            [class.text-emerald-400]="
+                                            [class.text-success]="
                                               participantSpecLevel(participant) >= 100
                                             "
-                                            [class.bg-amber-500/10]="
+                                            [class.bg-[var(--color-warning-container)]]="
                                               participantSpecLevel(participant) > 0 &&
                                               participantSpecLevel(participant) < 100
                                             "
-                                            [class.text-amber-400]="
+                                            [class.text-warning]="
                                               participantSpecLevel(participant) > 0 &&
                                               participantSpecLevel(participant) < 100
                                             "
@@ -956,7 +956,7 @@ interface AddEventMemberRequest {
                                     </button>
                                     <button
                                       type="button"
-                                      class="btn btn--ghost btn--sm p-1 text-rose-400 hover:bg-rose-500/10"
+                                      class="btn btn--ghost btn--sm p-1 text-error hover:bg-[var(--color-error-container)]"
                                       [disabled]="rosterCommandSaving()"
                                       (click)="clearServerRosterSeat(seat)"
                                       [appTooltip]="'Sposta in panchina'"
@@ -1445,7 +1445,7 @@ interface AddEventMemberRequest {
                             {{ formatDate(fight.started_at) }} &middot; {{ fight.grouping_method }}
                             @if (fight.needs_review) {
                               &middot;
-                              <span class="text-amber-500 font-semibold">necessita revisione</span>
+                              <span class="text-warning font-semibold">necessita revisione</span>
                             }
                           </p>
                         </div>
@@ -2497,7 +2497,7 @@ interface AddEventMemberRequest {
     <!-- 9. FLOATING WEAPON SPELLS TOOLTIP (on hover) -->
     @if (activeWeaponTooltip(); as tip) {
       <div
-        class="fixed z-50 pointer-events-none rounded-xl border border-white/15 bg-[#0f1011]/95 p-3 shadow-2xl backdrop-blur-md max-w-xs transition-opacity duration-150"
+        class="fixed z-50 pointer-events-none rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-surface)] p-3 shadow-2xl backdrop-blur-md max-w-xs transition-opacity duration-150"
         [style.left.px]="tip.x"
         [style.top.px]="tip.y"
       >
@@ -3891,19 +3891,19 @@ export class EventDetailPage {
   protected roleBorderClass(role: string): string {
     switch (role) {
       case 'tank':
-        return 'border-l-4 border-l-blue-500 bg-blue-500/[0.02]';
+        return 'border border-[var(--color-info)] bg-[var(--color-info-container)]';
       case 'healer':
-        return 'border-l-4 border-l-emerald-500 bg-emerald-500/[0.02]';
+        return 'border border-[var(--color-success)] bg-[var(--color-success-container)]';
       case 'support':
-        return 'border-l-4 border-l-amber-500 bg-amber-500/[0.02]';
+        return 'border border-[var(--color-warning)] bg-[var(--color-warning-container)]';
       case 'dps':
-        return 'border-l-4 border-l-rose-500 bg-rose-500/[0.02]';
+        return 'border border-[var(--color-error)] bg-[var(--color-error-container)]';
       case 'battle_mount':
-        return 'border-l-4 border-l-purple-500 bg-purple-500/[0.02]';
+        return 'border border-[var(--color-primary)] bg-[var(--color-primary-container)]';
       case 'brawler':
-        return 'border-l-4 border-l-cyan-500 bg-cyan-500/[0.02]';
+        return 'border border-[var(--color-info)] bg-[var(--color-info-container)]';
       default:
-        return 'border-l-4 border-l-[var(--color-border)]';
+        return 'border border-[var(--color-border)]';
     }
   }
 
@@ -3911,17 +3911,17 @@ export class EventDetailPage {
   protected roleSpotlightClass(role: string): string {
     switch (role) {
       case 'tank':
-        return 'border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400';
+        return 'border-[var(--color-info)] bg-[var(--color-info-container)] text-[var(--color-info)]';
       case 'healer':
-        return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400';
+        return 'border-[var(--color-success)] bg-[var(--color-success)]/10 text-success';
       case 'support':
-        return 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400';
+        return 'border-[var(--color-warning)]/40 bg-[var(--color-warning-container)] text-warning';
       case 'dps':
-        return 'border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400';
+        return 'border-[var(--color-error)] bg-[var(--color-error-container)] text-error';
       case 'battle_mount':
-        return 'border-purple-500/40 bg-purple-500/10 text-purple-600 dark:text-purple-400';
+        return 'border-[var(--color-primary)] bg-[var(--color-primary-container)] text-[var(--color-primary)]';
       case 'brawler':
-        return 'border-cyan-500/40 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400';
+        return 'border-[var(--color-info)] bg-[var(--color-info-container)] text-[var(--color-info)]';
       default:
         return 'border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-text)]';
     }
@@ -4036,14 +4036,14 @@ export class EventDetailPage {
   protected roleGlyphColor(role: string): string {
     switch (role.toLowerCase()) {
       case 'tank':
-        return 'text-sky-400';
+        return 'text-[var(--color-info)]';
       case 'healer':
-        return 'text-emerald-400';
+        return 'text-success';
       case 'support':
-        return 'text-purple-400';
+        return 'text-[var(--color-primary)]';
       case 'dps':
       default:
-        return 'text-rose-400';
+        return 'text-error';
     }
   }
 

@@ -88,14 +88,14 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('admin.regears.maxPerEvent') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                   {{ s.max_regears_per_event }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Claims allowed per event
                 </p>
               </div>
-              <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
                 <app-icon name="shield" size="1.25rem" />
               </div>
             </div>
@@ -107,14 +107,14 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('admin.regears.maxPerMonth') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                   {{ s.max_regears_per_month }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Monthly quota per member
                 </p>
               </div>
-              <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+              <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
                 <app-icon name="calendar" size="1.25rem" />
               </div>
             </div>
@@ -126,14 +126,14 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('admin.regears.pricingLocation') }}
                 </p>
-                <p class="font-mono text-xl font-bold tracking-tight text-amber-400 mt-1 truncate max-w-[170px]">
+                <p class="font-mono text-xl font-bold tracking-tight text-warning mt-1 truncate max-w-[170px]">
                   {{ s.pricing_location }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Market price source
                 </p>
               </div>
-              <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
                 <app-icon name="bank" size="1.25rem" />
               </div>
             </div>
@@ -145,14 +145,14 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('admin.regears.slots') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-emerald-400 mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
                   {{ enabledSlotsCount(s.enabled_slots_mask) }} / {{ slotBits.length }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Reimbursed equipment slots
                 </p>
               </div>
-              <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
                 <app-icon name="check" size="1.25rem" />
               </div>
             </div>

@@ -196,10 +196,10 @@ function toDateInput(date: Date): string {
                 </p>
                 <p
                   class="font-mono text-2xl font-bold tracking-tight mt-1"
-                  [class.text-white]="stat.tone === 'default'"
-                  [class.text-emerald-400]="stat.tone === 'success'"
-                  [class.text-amber-400]="stat.tone === 'warning'"
-                  [class.text-red-400]="stat.tone === 'danger'"
+                  [class.text-[var(--color-text)]]="stat.tone === 'default'"
+                  [class.text-success]="stat.tone === 'success'"
+                  [class.text-warning]="stat.tone === 'warning'"
+                  [class.text-error]="stat.tone === 'danger'"
                 >
                   {{ stat.value }}
                 </p>
@@ -212,18 +212,18 @@ function toDateInput(date: Date): string {
               @if (stat.icon) {
                 <div
                   class="icon-capsule"
-                  [class.bg-sky-500/10]="stat.tone === 'default'"
-                  [class.text-sky-400]="stat.tone === 'default'"
-                  [class.border-sky-500/20]="stat.tone === 'default'"
-                  [class.bg-emerald-500/10]="stat.tone === 'success'"
-                  [class.text-emerald-400]="stat.tone === 'success'"
-                  [class.border-emerald-500/20]="stat.tone === 'success'"
-                  [class.bg-amber-500/10]="stat.tone === 'warning'"
-                  [class.text-amber-400]="stat.tone === 'warning'"
-                  [class.border-amber-500/20]="stat.tone === 'warning'"
-                  [class.bg-red-500/10]="stat.tone === 'danger'"
-                  [class.text-red-400]="stat.tone === 'danger'"
-                  [class.border-red-500/20]="stat.tone === 'danger'"
+                  [class.bg-[var(--color-primary-container)]]="stat.tone === 'default'"
+                  [class.text-[var(--color-info)]]="stat.tone === 'default'"
+                  [class.border-[var(--color-border)]]="stat.tone === 'default'"
+                  [class.bg-[var(--color-success-container)]]="stat.tone === 'success'"
+                  [class.text-success]="stat.tone === 'success'"
+                  [class.border-[var(--color-border)]]="stat.tone === 'success'"
+                  [class.bg-[var(--color-warning-container)]]="stat.tone === 'warning'"
+                  [class.text-warning]="stat.tone === 'warning'"
+                  [class.border-[var(--color-border)]]="stat.tone === 'warning'"
+                  [class.bg-[var(--color-error-container)]]="stat.tone === 'danger'"
+                  [class.text-error]="stat.tone === 'danger'"
+                  [class.border-[var(--color-border)]]="stat.tone === 'danger'"
                   style="border-width: 1px; border-style: solid"
                 >
                   <app-icon [name]="stat.icon" size="1.25rem" />

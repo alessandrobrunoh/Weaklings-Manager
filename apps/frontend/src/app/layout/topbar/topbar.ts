@@ -43,7 +43,7 @@ import type { NavSection } from '../sidebar/sidebar';
     }
     .topbar {
       height: 3.5rem;
-      background: rgba(15, 16, 17, 0.95);
+      background: color-mix(in srgb, var(--color-surface) 95%, transparent);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--color-border);
@@ -65,7 +65,7 @@ import type { NavSection } from '../sidebar/sidebar';
         <!-- Mobile menu toggle -->
         <button
           type="button"
-          class="btn btn--ghost btn--icon md:hidden text-[var(--color-text-secondary)] hover:text-white"
+          class="btn btn--ghost btn--icon md:hidden text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
           (click)="menuToggle.emit()"
           [appTooltip]="t('nav.openMenu')"
           tooltipPosition="bottom"
@@ -78,7 +78,7 @@ import type { NavSection } from '../sidebar/sidebar';
         <div class="hidden sm:flex items-center gap-2 text-xs font-semibold select-none">
           <span class="text-[var(--color-text-tertiary)] font-normal">Weaklings</span>
           <span class="text-[var(--color-text-disabled)]">/</span>
-          <span class="text-white tracking-wide">{{ currentRouteTitle() }}</span>
+          <span class="text-[var(--color-text)] tracking-wide">{{ currentRouteTitle() }}</span>
         </div>
       </div>
 
@@ -86,7 +86,7 @@ import type { NavSection } from '../sidebar/sidebar';
         <!-- Language selector -->
         <div class="relative hidden items-center sm:flex">
           <select
-            class="cursor-pointer font-medium text-xs bg-white/[0.04] text-[var(--color-text-secondary)] hover:text-white border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-lg px-2.5 py-1.5 transition-all outline-none"
+            class="cursor-pointer font-medium text-xs bg-[color-mix(in_srgb,var(--color-paper)_4%,transparent)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-[var(--radius-buttons)] px-2.5 py-1.5 transition-all outline-none"
             [value]="translate.language()"
             (change)="onLanguageChange($event)"
             [appTooltip]="t('language.label')"
@@ -94,7 +94,7 @@ import type { NavSection } from '../sidebar/sidebar';
             [attr.aria-label]="t('language.label')"
           >
             @for (lang of translate.supportedLanguages; track lang) {
-              <option [value]="lang" class="bg-[#141517] text-white">{{ translate.languageLabels[lang] }}</option>
+              <option [value]="lang" class="bg-[var(--color-surface-2)] text-[var(--color-text)]">{{ translate.languageLabels[lang] }}</option>
             }
           </select>
         </div>
@@ -102,7 +102,7 @@ import type { NavSection } from '../sidebar/sidebar';
         <!-- Theme toggle -->
         <button
           type="button"
-          class="btn btn--ghost btn--icon shrink-0 text-[var(--color-text-secondary)] hover:text-white"
+          class="btn btn--ghost btn--icon shrink-0 text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
           (click)="theme.toggle()"
           [appTooltip]="theme.isDark() ? t('theme.toggleLight') : t('theme.toggleDark')"
           tooltipPosition="bottom"
@@ -119,7 +119,7 @@ import type { NavSection } from '../sidebar/sidebar';
           <div class="flex shrink-0 items-center gap-2 pl-2.5 border-l border-[var(--color-border)]">
             <a
               routerLink="/profile"
-              class="inline-flex rounded-full transition-transform hover:scale-105"
+              class="inline-flex rounded-[var(--radius-pills)] transition-transform hover:scale-105"
               [appTooltip]="profile.username + (profile.highest_role ? ' (' + profile.highest_role + ')' : '')"
               tooltipPosition="bottom"
               aria-label="User profile"
@@ -133,13 +133,13 @@ import type { NavSection } from '../sidebar/sidebar';
             </a>
 
             <div class="hidden xl:flex flex-col min-w-0 leading-tight">
-              <span class="text-xs font-bold text-white truncate max-w-[100px]">{{ profile.username }}</span>
+              <span class="text-xs font-medium text-[var(--color-text)] truncate max-w-[100px]">{{ profile.username }}</span>
               <span class="text-[10px] text-[var(--color-text-tertiary)] truncate max-w-[100px]">{{ profile.highest_role }}</span>
             </div>
 
             <button
               type="button"
-              class="btn btn--ghost btn--icon shrink-0 text-xs text-[var(--color-text-secondary)] hover:text-red-400"
+              class="btn btn--ghost btn--icon shrink-0 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-error)]"
               (click)="onLogout()"
               [appTooltip]="t('nav.logout')"
               tooltipPosition="bottom"
@@ -165,8 +165,7 @@ import type { NavSection } from '../sidebar/sidebar';
     >
       @for (toast of toasts.toasts(); track toast.id) {
         <div
-          class="pointer-events-auto flex items-center justify-between gap-3 rounded-xl px-3.5 py-2.5 shadow-2xl border transition-all"
-          style="background: rgba(15, 16, 17, 0.95); backdrop-filter: blur(12px);"
+          class="pointer-events-auto flex items-center justify-between gap-3 rounded-[var(--radius-cards)] px-3.5 py-2.5 shadow-2xl border transition-all bg-[var(--color-surface)]"
           [style.borderColor]="toastBorderColor(toast.kind)"
         >
           <div class="flex items-center gap-2.5 min-w-0">
@@ -176,11 +175,11 @@ import type { NavSection } from '../sidebar/sidebar';
             >
               <app-icon [name]="iconFor(toast.kind)" size="0.875rem" />
             </span>
-            <span class="text-xs font-medium text-white truncate">{{ toast.message }}</span>
+            <span class="text-xs font-medium text-[var(--color-text)] truncate">{{ toast.message }}</span>
           </div>
           <button
             type="button"
-            class="text-xs text-[var(--color-text-tertiary)] hover:text-white transition-colors p-1"
+            class="text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] transition-colors p-1"
             (click)="toasts.dismiss(toast.id)"
             aria-label="Dismiss"
           >
@@ -256,15 +255,15 @@ export class Topbar {
   }
 
   protected toastBorderColor(kind: 'success' | 'error' | 'info'): string {
-    if (kind === 'success') return 'rgba(74, 222, 128, 0.3)';
-    if (kind === 'error') return 'rgba(248, 113, 113, 0.3)';
-    return 'rgba(56, 189, 248, 0.3)';
+    if (kind === 'success') return 'color-mix(in srgb, var(--color-success) 30%, transparent)';
+    if (kind === 'error') return 'color-mix(in srgb, var(--color-error) 30%, transparent)';
+    return 'color-mix(in srgb, var(--color-info) 30%, transparent)';
   }
 
   protected toastIconClasses(kind: 'success' | 'error' | 'info'): string {
-    if (kind === 'success') return 'bg-emerald-500/15 text-emerald-400';
-    if (kind === 'error') return 'bg-red-500/15 text-red-400';
-    return 'bg-sky-500/15 text-sky-400';
+    if (kind === 'success') return 'bg-[var(--color-success-container)] text-[var(--color-success)]';
+    if (kind === 'error') return 'bg-[var(--color-error-container)] text-[var(--color-error)]';
+    return 'bg-[color-mix(in_srgb,var(--color-info)_15%,transparent)] text-[var(--color-info)]';
   }
 
   protected onLanguageChange(event: Event): void {

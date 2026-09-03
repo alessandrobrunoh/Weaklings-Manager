@@ -55,7 +55,7 @@ export type { NavItem, NavSection } from '../nav';
               @if (section.headingKey !== 'nav.section.main') {
                 <p
                   [id]="section.headingKey"
-                  class="px-3 pt-3.5 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-[#525866] select-none"
+                  class="px-3 pt-3.5 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-[var(--color-text-disabled)] select-none"
                 >
                   {{ t(section.headingKey) }}
                 </p>
@@ -99,7 +99,7 @@ export type { NavItem, NavSection } from '../nav';
       <div class="hidden md:flex px-3 py-3 border-t border-[var(--color-border)]">
         <button
           type="button"
-          class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[#8a8f98] hover:text-white hover:bg-white/[0.04] transition-all cursor-pointer"
+          class="w-full flex items-center gap-2.5 px-3 py-2 rounded-[var(--radius-buttons)] text-xs font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-all cursor-pointer"
           [class.justify-center]="collapsed()"
           (click)="toggleCollapse.emit()"
           [appTooltip]="collapsed() ? t('nav.expand') : t('nav.collapse')"

@@ -54,7 +54,7 @@ const BODY_MAX = 2000;
       border-radius: var(--radius-cards);
       background: var(--color-surface);
       border: 1px solid var(--color-border);
-      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.6);
+      box-shadow: var(--shadow-xl);
     }
     .inbox-list {
       overflow-y: auto;
@@ -64,8 +64,8 @@ const BODY_MAX = 2000;
   template: `
     <button
       type="button"
-      class="btn btn--ghost shrink-0 relative text-[var(--color-text-secondary)] hover:text-white transition-colors"
-      style="min-width: 36px; height: 36px; padding: 0.35rem; border-radius: 8px;"
+      class="btn btn--ghost shrink-0 relative text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors"
+      style="min-width: 36px; height: 36px; padding: 0.35rem;"
       (click)="togglePanel()"
       [appTooltip]="t('notifications.open')"
       tooltipPosition="bottom"
@@ -76,7 +76,7 @@ const BODY_MAX = 2000;
       <app-icon name="bell" size="1.125rem" />
       @if (unreadCount() > 0) {
         <span
-          class="absolute flex items-center justify-center rounded-full text-[9px] font-bold text-white bg-[#dc2626]"
+          class="absolute flex items-center justify-center rounded-full text-[9px] font-bold text-[var(--color-on-primary)] bg-[var(--color-primary)]"
           style="
             top: 2px;
             right: 2px;
@@ -149,12 +149,12 @@ const BODY_MAX = 2000;
                       <span
                         class="block text-xs truncate"
                         [style.font-weight]="row.read_at ? '400' : '600'"
-                        [style.color]="row.read_at ? 'var(--color-text-secondary)' : '#ffffff'"
+                        [style.color]="row.read_at ? 'var(--color-text-secondary)' : 'var(--color-text)'"
                       >
                         {{ row.title }}
                       </span>
                       @if (!row.read_at) {
-                        <span class="h-1.5 w-1.5 rounded-full bg-sky-400 shrink-0 mt-1" aria-hidden="true"></span>
+                        <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-info)] shrink-0 mt-1" aria-hidden="true"></span>
                       }
                     </div>
                     <span

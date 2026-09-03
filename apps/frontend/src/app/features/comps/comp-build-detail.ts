@@ -206,8 +206,8 @@ const ITEM_TIERS = [
       <app-page-stack>
         <!-- ================= EDIT MODE BANNER ================= -->
         @if (mode() === 'edit') {
-          <div class="p-3.5 rounded-xl border border-amber-500/40 bg-amber-500/10 flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div class="flex items-center gap-2 text-amber-300">
+          <div class="p-3.5 rounded-[var(--radius-cards)] border border-[var(--color-warning)]/40 bg-[var(--color-warning-container)] flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div class="flex items-center gap-2 text-warning">
               <app-icon name="edit" size="1rem" />
               <span><strong>Modalità Modifica Attiva:</strong> Clicca su uno slot dell'equipaggiamento per cambiare pezzo o livello, oppure cambia gli incantesimi direttamente nella lista sottostante.</span>
             </div>
@@ -250,7 +250,7 @@ const ITEM_TIERS = [
             <section class="card p-5 border border-[var(--color-border)] space-y-4">
               <div class="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-[var(--color-border)]">
                 <div>
-                  <h2 class="text-base font-bold text-white">
+                  <h2 class="text-base font-bold text-[var(--color-text)]">
                     Equipaggiamento Personaggio
                   </h2>
                   <p class="text-xs text-secondary">
@@ -291,7 +291,7 @@ const ITEM_TIERS = [
             <section class="card p-5 border border-[var(--color-border)] space-y-4">
               <div class="flex items-center justify-between gap-3">
                 <div>
-                  <h3 class="text-sm font-bold text-white">
+                  <h3 class="text-sm font-bold text-[var(--color-text)]">
                     Incantesimi & Abilità Selezionate ({{ activeLoadout() === 'main' ? 'Main Set' : 'Swap Set' }})
                   </h3>
                   <p class="text-xs text-secondary">
@@ -306,13 +306,13 @@ const ITEM_TIERS = [
               @if (activeAbilityRows().length > 0) {
                 <div class="space-y-3">
                   @for (row of activeAbilityRows(); track row.slot) {
-                    <div class="p-3 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="p-3 bg-[var(--color-surface-2)] rounded-[var(--radius-cards)] border border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div class="flex items-center gap-2.5 min-w-0">
                         @if (row.itemIcon) {
-                          <img [src]="row.itemIcon" [alt]="row.itemName" class="w-9 h-9 object-contain rounded bg-black/40 p-0.5 border border-[var(--color-border)] shrink-0" />
+                          <img [src]="row.itemIcon" [alt]="row.itemName" class="w-9 h-9 object-contain rounded bg-[var(--color-surface-1)] p-0.5 border border-[var(--color-border)] shrink-0" />
                         }
                         <div class="min-w-0">
-                          <span class="text-xs font-bold text-white block truncate">{{ row.itemName }}</span>
+                          <span class="text-xs font-bold text-[var(--color-text)] block truncate">{{ row.itemName }}</span>
                           <span class="text-[10px] text-secondary uppercase tracking-wider font-semibold">{{ slotLabel(row.slot) }}</span>
                         </div>
                       </div>
@@ -329,7 +329,7 @@ const ITEM_TIERS = [
                   }
                 </div>
               } @else {
-                <div class="p-6 text-center rounded-xl bg-[var(--color-surface-2)] border border-[var(--color-border)] text-xs text-secondary">
+                <div class="p-6 text-center rounded-[var(--radius-cards)] bg-[var(--color-surface-2)] border border-[var(--color-border)] text-xs text-secondary">
                   Nessuna abilità configurabile per questo set.
                 </div>
               }
@@ -353,7 +353,7 @@ const ITEM_TIERS = [
               </div>
 
               @if (current.description) {
-                <p class="text-xs text-white leading-relaxed whitespace-pre-line bg-[var(--color-surface-2)] p-3.5 rounded-xl border border-[var(--color-border)]">
+                <p class="text-xs text-[var(--color-text)] leading-relaxed whitespace-pre-line bg-[var(--color-surface-2)] p-3.5 rounded-[var(--radius-cards)] border border-[var(--color-border)]">
                   {{ current.description }}
                 </p>
               } @else {
@@ -377,14 +377,14 @@ const ITEM_TIERS = [
               @if (performance(); as report) {
                 @if (report.stats; as stats) {
                   <div class="grid grid-cols-2 gap-2.5">
-                    <div class="p-3 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)]">
+                    <div class="p-3 bg-[var(--color-surface-2)] rounded-[var(--radius-cards)] border border-[var(--color-border)]">
                       <span class="text-[10px] text-disabled block">Win Rate</span>
-                      <strong class="text-base font-bold text-white">{{ winRate(stats.wins, stats.losses) }}</strong>
+                      <strong class="text-base font-bold text-[var(--color-text)]">{{ winRate(stats.wins, stats.losses) }}</strong>
                       <span class="text-[10px] text-secondary block mt-0.5">{{ stats.wins }}W - {{ stats.losses }}L</span>
                     </div>
-                    <div class="p-3 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)]">
+                    <div class="p-3 bg-[var(--color-surface-2)] rounded-[var(--radius-cards)] border border-[var(--color-border)]">
                       <span class="text-[10px] text-disabled block">K / D Ratio</span>
-                      <strong class="text-base font-bold text-white">{{ kdRatioFormatted() }}</strong>
+                      <strong class="text-base font-bold text-[var(--color-text)]">{{ kdRatioFormatted() }}</strong>
                       <span class="text-[10px] text-secondary block mt-0.5">{{ stats.kills }}K / {{ stats.deaths }}D</span>
                     </div>
                   </div>
@@ -392,15 +392,15 @@ const ITEM_TIERS = [
                   <div class="text-xs space-y-2 pt-2 border-t border-[var(--color-border)] text-secondary">
                     <div class="flex justify-between">
                       <span>Battaglie Tracciate:</span>
-                      <strong class="text-white font-mono">{{ stats.battles }}</strong>
+                      <strong class="text-[var(--color-text)] font-mono">{{ stats.battles }}</strong>
                     </div>
                     <div class="flex justify-between">
                       <span>Giocatori Associati:</span>
-                      <strong class="text-white font-mono">{{ stats.matched_players }}</strong>
+                      <strong class="text-[var(--color-text)] font-mono">{{ stats.matched_players }}</strong>
                     </div>
                     <div class="flex justify-between">
                       <span>Kill Fame Accumulata:</span>
-                      <strong class="text-amber-400 font-mono">{{ stats.kill_fame }}</strong>
+                      <strong class="text-warning font-mono">{{ stats.kill_fame }}</strong>
                     </div>
                   </div>
                 } @else {
@@ -824,7 +824,7 @@ export class CompBuildDetailPage {
       case 'support': return 'var(--color-warning)';
       case 'dps': return 'var(--color-error)';
       case 'brawler': return 'var(--color-primary)';
-      case 'battle_mount': return '#8b5cf6';
+      case 'battle_mount': return 'var(--color-lavender)';
       default: return 'var(--color-text-secondary)';
     }
   }

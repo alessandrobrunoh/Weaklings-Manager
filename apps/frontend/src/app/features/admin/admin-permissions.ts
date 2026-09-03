@@ -147,14 +147,14 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('admin.permissions.permission') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                   {{ totalPermissionsCount() }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Available permission nodes
                 </p>
               </div>
-              <div class="icon-capsule bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
                 <app-icon name="shield" size="1.25rem" />
               </div>
             </div>
@@ -166,14 +166,14 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('admin.permissions.roles') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-emerald-400 mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
                   {{ data.roles.length }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Active authorization roles
                 </p>
               </div>
-              <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
                 <app-icon name="users" size="1.25rem" />
               </div>
             </div>
@@ -185,14 +185,14 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   Modules
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-amber-400 mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-warning mt-1">
                   {{ allModules().length }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Feature resource groups
                 </p>
               </div>
-              <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
                 <app-icon name="list" size="1.25rem" />
               </div>
             </div>

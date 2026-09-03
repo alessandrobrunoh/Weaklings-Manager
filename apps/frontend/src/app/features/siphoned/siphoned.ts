@@ -147,14 +147,14 @@ const STATS_FETCH_LIMIT = 1000;
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('siphoned.stat.deposited') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-emerald-400 mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
                 {{ formatAmount(totalDeposited()) }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 Total energy banked
               </p>
             </div>
-            <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-border)]">
               <app-icon name="bank" size="1.25rem" />
             </div>
           </div>
@@ -167,14 +167,14 @@ const STATS_FETCH_LIMIT = 1000;
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('siphoned.stat.withdrawn') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-amber-400 mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-warning mt-1">
                 {{ formatAmount(totalWithdrawn()) }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 Distributed energy
               </p>
             </div>
-            <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-border)]">
               <app-icon name="bank" size="1.25rem" />
             </div>
           </div>
@@ -189,8 +189,8 @@ const STATS_FETCH_LIMIT = 1000;
               </p>
               <p
                 class="font-mono text-2xl font-bold tracking-tight mt-1"
-                [class.text-emerald-400]="netTotal() >= 0"
-                [class.text-red-400]="netTotal() < 0"
+                [class.text-success]="netTotal() >= 0"
+                [class.text-error]="netTotal() < 0"
               >
                 {{ formatAmount(netTotal()) }}
               </p>
@@ -198,7 +198,7 @@ const STATS_FETCH_LIMIT = 1000;
                 {{ t('siphoned.lastUpdated') }}: {{ lastUpdatedLabel() }}
               </p>
             </div>
-            <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-info)] border border-[var(--color-border)]">
               <app-icon name="chart" size="1.25rem" />
             </div>
           </div>
@@ -211,14 +211,14 @@ const STATS_FETCH_LIMIT = 1000;
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('siphoned.stat.entries') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
                 {{ tab() === 'balances' ? balanceTotal() : tab() === 'entries' ? entryTotal() : batches().length }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 Logged transactions
               </p>
             </div>
-            <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+            <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-info)] border border-[var(--color-border)]">
               <app-icon name="list" size="1.25rem" />
             </div>
           </div>

@@ -100,19 +100,19 @@ const STATS_FETCH_LIMIT = 1000;
       letter-spacing: 0.02em;
     }
     .status-pill--approved {
-      background: rgba(34, 197, 94, 0.12);
-      color: #4ade80;
-      border: 1px solid rgba(34, 197, 94, 0.25);
+      background: var(--color-success-container);
+      color: var(--color-success);
+      border: 1px solid var(--color-success);
     }
     .status-pill--pending {
-      background: rgba(234, 179, 8, 0.12);
-      color: #facc15;
-      border: 1px solid rgba(234, 179, 8, 0.25);
+      background: var(--color-warning-container);
+      color: var(--color-warning);
+      border: 1px solid var(--color-warning);
     }
     .status-pill--rejected {
-      background: rgba(239, 68, 68, 0.12);
-      color: #f87171;
-      border: 1px solid rgba(239, 68, 68, 0.25);
+      background: var(--color-error-container);
+      color: var(--color-error);
+      border: 1px solid var(--color-error);
     }
   `,
   template: `
@@ -160,14 +160,14 @@ const STATS_FETCH_LIMIT = 1000;
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.budget.event') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                   {{ (summary()?.per_event_used ?? 0) }} / {{ (summary()?.per_event_max ?? 0) }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Event allowance
                 </p>
               </div>
-              <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
                 <app-icon name="shield" size="1.25rem" />
               </div>
             </div>
@@ -179,14 +179,14 @@ const STATS_FETCH_LIMIT = 1000;
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.budget.month') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                   {{ (summary()?.per_month_used ?? 0) }} / {{ (summary()?.per_month_max ?? 0) }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Monthly quota
                 </p>
               </div>
-              <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+              <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
                 <app-icon name="calendar" size="1.25rem" />
               </div>
             </div>
@@ -198,17 +198,17 @@ const STATS_FETCH_LIMIT = 1000;
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.status.pending') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                   {{ pendingMineCount() }}
                 </p>
-                <p class="text-xs text-amber-400/90 mt-1 truncate flex items-center gap-1.5">
+                <p class="text-xs text-warning mt-1 truncate flex items-center gap-1.5">
                   @if (pendingMineCount() > 0) {
-                    <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                    <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
                   }
                   Awaiting review
                 </p>
               </div>
-              <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
                 <app-icon name="alert" size="1.25rem" />
               </div>
             </div>
@@ -220,14 +220,14 @@ const STATS_FETCH_LIMIT = 1000;
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.status.approved') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                   {{ approvedMineCount() }}
                 </p>
-                <p class="text-xs text-emerald-400/90 mt-1 truncate">
+                <p class="text-xs text-success mt-1 truncate">
                   Approved & paid
                 </p>
               </div>
-              <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
                 <app-icon name="check" size="1.25rem" />
               </div>
             </div>
@@ -239,15 +239,15 @@ const STATS_FETCH_LIMIT = 1000;
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.stat.pending') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                   {{ tab() === 'queue' ? totalItems() : pendingMineCount() }}
                 </p>
-                <p class="text-xs text-amber-400/90 mt-1 truncate flex items-center gap-1.5">
-                  <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                <p class="text-xs text-warning mt-1 truncate flex items-center gap-1.5">
+                  <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
                   Queue to verify
                 </p>
               </div>
-              <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
                 <app-icon name="alert" size="1.25rem" />
               </div>
             </div>
@@ -259,14 +259,14 @@ const STATS_FETCH_LIMIT = 1000;
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.stat.approved') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                   {{ approvedMineCount() }}
                 </p>
-                <p class="text-xs text-emerald-400/90 mt-1 truncate">
+                <p class="text-xs text-success mt-1 truncate">
                   Reimbursed deaths
                 </p>
               </div>
-              <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
                 <app-icon name="check" size="1.25rem" />
               </div>
             </div>
@@ -278,14 +278,14 @@ const STATS_FETCH_LIMIT = 1000;
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.stat.rejected') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                   {{ rejectedMineCount() }}
                 </p>
-                <p class="text-xs text-red-400/90 mt-1 truncate">
+                <p class="text-xs text-error mt-1 truncate">
                   Ineligible deaths
                 </p>
               </div>
-              <div class="icon-capsule bg-red-500/10 text-red-400 border border-red-500/20">
+              <div class="icon-capsule bg-[var(--color-error-container)] text-error border border-[var(--color-error)]">
                 <app-icon name="close" size="1.25rem" />
               </div>
             </div>
@@ -297,14 +297,14 @@ const STATS_FETCH_LIMIT = 1000;
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.stat.totalReimbursed') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-purple-400 mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text-secondary)] mt-1">
                   {{ formatSilver(totalEstimatedValue()) }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Total silver estimated
                 </p>
               </div>
-              <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+              <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
                 <app-icon name="bank" size="1.25rem" />
               </div>
             </div>
@@ -330,7 +330,7 @@ const STATS_FETCH_LIMIT = 1000;
       >
         <ng-template dataTableCell="player_name" let-row>
           <div class="flex flex-col gap-0.5">
-            <span class="font-bold text-sm text-white hover:underline cursor-pointer">{{ row.player_name }}</span>
+            <span class="font-bold text-sm text-(--color-text) hover:underline cursor-pointer">{{ row.player_name }}</span>
             @if (row.primary_build_name) {
               <span class="text-xs text-[var(--color-text-secondary)] font-medium inline-flex items-center gap-1">
                 <app-icon name="shield" size="0.75rem" class="text-[var(--color-text-tertiary)]" />
@@ -354,7 +354,7 @@ const STATS_FETCH_LIMIT = 1000;
             }
             @case ('pending') {
               <span class="status-pill status-pill--pending">
-                <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
                 {{ statusLabel(row.status) }}
               </span>
             }
@@ -373,7 +373,7 @@ const STATS_FETCH_LIMIT = 1000;
         </ng-template>
 
         <ng-template dataTableCell="estimate" let-row>
-          <span class="font-mono text-sm font-semibold text-emerald-400">{{ formatSilver(row.auto_estimate_total) }}</span>
+          <span class="font-mono text-sm font-semibold text-success">{{ formatSilver(row.auto_estimate_total) }}</span>
         </ng-template>
 
         <ng-template dataTableCell="actions" let-row>

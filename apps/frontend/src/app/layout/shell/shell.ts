@@ -40,14 +40,14 @@ import { Topbar } from '../topbar/topbar';
     @media (min-width: 64rem) { .workspace-main { padding: 1.5rem; } }
   `,
   template: `
-    <div class="flex h-dvh overflow-hidden" style="background-color: var(--color-bg)">
+    <div class="flex h-dvh overflow-hidden bg-[var(--color-bg)]">
       <!-- Desktop sidebar -->
       <aside
         class="hidden md:flex flex-col shrink-0 transition-all duration-200 ease-in-out"
         [style.width]="isSidebarCollapsed() ? '56px' : '248px'"
         [style.min-width]="isSidebarCollapsed() ? '56px' : '248px'"
         [style.max-width]="isSidebarCollapsed() ? '56px' : '248px'"
-        style="background-color: #0d0e10; border-right: 1px solid var(--color-border)"
+        class="bg-[var(--color-surface)] border-r border-[var(--color-border)]"
       >
         <app-sidebar
           [sections]="navSections()"
@@ -62,14 +62,12 @@ import { Topbar } from '../topbar/topbar';
         <div class="md:hidden fixed inset-0 z-40 flex" role="dialog" aria-modal="true" aria-label="Navigation menu">
           <button
             type="button"
-            class="absolute inset-0"
-            style="background-color: rgba(0,0,0,0.45)"
+            class="absolute inset-0 bg-[color-mix(in_srgb,var(--color-void)_45%,transparent)]"
             (click)="closeDrawer()"
             aria-label="Close menu"
           ></button>
           <div
-            class="relative w-72 max-w-[80%] flex flex-col h-full"
-            style="background-color: #0d0e10; border-right: 1px solid var(--color-border)"
+            class="relative w-72 max-w-[80%] flex flex-col h-full bg-[var(--color-surface)] border-r border-[var(--color-border)]"
           >
             <app-sidebar
               [sections]="navSections()"

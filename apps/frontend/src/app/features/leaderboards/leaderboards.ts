@@ -643,11 +643,11 @@ const PODIUM_SIZE = 3;
         border-radius: var(--radius-full);
         background: linear-gradient(
           90deg,
-          color-mix(in srgb, var(--color-warning) 80%, #fbbf24),
+          color-mix(in srgb, var(--color-warning) 80%, var(--color-warning)),
           var(--color-warning)
         );
         transition: width 400ms cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 0 0 10px rgba(245, 158, 11, 0.35);
+        box-shadow: 0 0 10px color-mix(in srgb, var(--color-warning) 35%, transparent);
       }
 
       /* ---------- Metrics Grid ---------- */

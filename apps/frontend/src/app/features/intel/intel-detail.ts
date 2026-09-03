@@ -64,9 +64,8 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
     } @else {
       @if (scout(); as s) {
         <a
-          class="mb-4 inline-flex items-center gap-1.5 text-sm no-underline"
+          class="mb-4 inline-flex items-center gap-1.5 text-sm no-underline text-[var(--color-text-secondary)]"
           routerLink="/intel"
-          style="color: var(--color-text-secondary)"
         >
           <app-icon name="chevron-right" size="0.9rem" class="rotate-180" />
           {{ t('intel.detail.back') }}
@@ -139,7 +138,7 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
         } @else if (s.notes) {
           <section class="card p-4">
             <h2 class="eyebrow mb-2">{{ t('intel.detail.notes') }}</h2>
-            <p class="whitespace-pre-wrap text-sm" style="color: var(--color-text-secondary)">
+            <p class="whitespace-pre-wrap text-sm text-[var(--color-text-secondary)]">
               {{ s.notes }}
             </p>
           </section>
@@ -163,7 +162,7 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
         @if (!s.full_weapon_coverage) {
           <div
             class="mb-6 flex items-start gap-2.5 rounded-2xl border p-3.5 text-sm"
-            style="background-color: var(--color-warning-container); border-color: var(--color-warning); color: var(--color-warning)"
+            class="bg-[var(--color-warning-container)] border-[var(--color-warning)] text-warning"
             role="note"
           >
             <app-icon name="info" size="1rem" />
@@ -191,7 +190,7 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
           <section class="card p-4">
             <h2 class="eyebrow mb-2">{{ t('intel.detail.weapons') }}</h2>
             @if (weaponRows().length === 0) {
-              <p class="text-sm" style="color: var(--color-text-secondary)">—</p>
+              <p class="text-sm text-[var(--color-text-secondary)]">—</p>
             } @else {
               @for (weapon of weaponRows(); track weapon.name) {
                 <app-meter
@@ -210,25 +209,23 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
             <h2 class="eyebrow mb-2">{{ t('intel.detail.counters') }}</h2>
             @if (s.recommended_counter; as best) {
               <div
-                class="mb-3 rounded-2xl p-3"
-                style="background-color: var(--color-success-container)"
+                class="mb-3 rounded-2xl p-3 bg-[var(--color-success-container)]"
               >
-                <p class="eyebrow" style="color: var(--color-success)">
+                <p class="eyebrow text-success">
                   {{ t('intel.detail.recommended') }}
                 </p>
                 <a
-                  class="mt-0.5 block font-medium no-underline"
+                  class="mt-0.5 block font-medium no-underline text-[var(--color-text)]"
                   [routerLink]="['/comps', best.comp_id]"
-                  style="color: var(--color-text)"
                 >
                   {{ best.comp_name }}
                 </a>
-                <p class="mono mt-1 text-xs" style="color: var(--color-text-secondary)">
+                <p class="mono mt-1 text-xs text-[var(--color-text-secondary)]">
                   {{ best.wins }}–{{ best.losses }} · {{ best.win_rate | number: '1.0-0' }}%
                 </p>
               </div>
             } @else {
-              <p class="mb-3 text-sm" style="color: var(--color-text-secondary)">
+              <p class="mb-3 text-sm text-[var(--color-text-secondary)]">
                 {{ t('intel.detail.noCounter') }}
               </p>
             }
@@ -238,14 +235,14 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
                 <a
                   class="truncate text-sm no-underline"
                   [routerLink]="['/comps', row.our_comp_id]"
-                  style="color: var(--color-text)"
+                  class="text-[var(--color-text)]"
                 >
                   {{ row.our_comp_name }}
                 </a>
                 <span class="mono shrink-0 text-xs">
-                  <span style="color: var(--color-success)">{{ row.wins }}</span>
+                  <span class="text-success">{{ row.wins }}</span>
                   <span style="color: var(--color-text-disabled)">/</span>
-                  <span style="color: var(--color-error)">{{ row.losses }}</span>
+                  <span class="text-error">{{ row.losses }}</span>
                 </span>
               </div>
             }
@@ -254,7 +251,7 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
           <section class="card p-4">
             <h2 class="eyebrow mb-2">{{ t('intel.detail.similar') }}</h2>
             @if (similar().length === 0) {
-              <p class="text-sm" style="color: var(--color-text-secondary)">—</p>
+              <p class="text-sm text-[var(--color-text-secondary)]">—</p>
             } @else {
               @for (hit of similar(); track hit.id) {
                 <a
@@ -269,7 +266,7 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
                 </a>
               }
               @if (hasSampledSimilarity()) {
-                <p class="mt-2 text-[11px]" style="color: var(--color-text-secondary)">
+                <p class="mt-2 text-[11px] text-[var(--color-text-secondary)]">
                   * {{ t('intel.partialCoverage') }}
                 </p>
               }
@@ -309,7 +306,7 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
                         />
                       }
                     </td>
-                    <td class="text-sm" style="color: var(--color-text-secondary)">
+                    <td class="text-sm text-[var(--color-text-secondary)]">
                       {{ player.weapon ? prettyWeapon(player.weapon) : '—' }}
                     </td>
                     <td class="mono text-right">{{ player.item_power | number: '1.0-0' }}</td>
