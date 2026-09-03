@@ -1,7 +1,7 @@
 # Plan: Sistema Discord per le Application
 
 **Branch**: `feat/discord-applications`
-**Status**: Slice 1 implemented — awaiting commit approval; Slices 2–4 pending
+**Status**: Slices 1–2 implemented — awaiting commit approval; Slices 3–4 pending
 
 ## Goal
 
@@ -148,7 +148,7 @@ Ogni slice segue RED-GREEN-MUTATE-KILL MUTANTS-REFACTOR. Prima del codice carica
 
 **Done when**: l'admin configura la card e l'utente può distinguere application aperte e chiuse prima di poter creare canali.
 
-### Slice 2: Un membro apre una sola application in un canale privato
+### Slice 2: Un membro apre una sola application in un canale privato ✅
 
 **Value**: un membro può presentare la richiesta e solo i destinatari corretti possono leggerla.
 
