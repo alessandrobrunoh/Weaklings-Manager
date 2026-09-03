@@ -40,6 +40,58 @@ pub struct Model {
     pub discord_split_lost_tag_id: Option<String>,
     /// Category where the bot creates live event voice channels.
     pub discord_event_voice_category_id: Option<String>,
+    /// Channel where the application panel is published.
+    pub discord_applications_channel_id: Option<String>,
+    /// Category where active application channels are created.
+    pub discord_applications_category_id: Option<String>,
+    /// Optional archive category for resolved applications.
+    pub discord_applications_archive_category_id: Option<String>,
+    /// Role allowed to manage applications.
+    pub discord_applications_manage_role_id: Option<String>,
+    /// Channel where application open/closed announcements are published.
+    pub discord_applications_status_channel_id: Option<String>,
+    /// Whether new applications are currently accepted.
+    pub discord_applications_open: bool,
+    /// Application panel title.
+    pub discord_applications_panel_title: String,
+    /// Application panel message.
+    pub discord_applications_panel_message: String,
+    /// Title shown when a manager opens the application actions.
+    pub discord_applications_manage_title: String,
+    /// Message shown when a manager opens the application actions.
+    pub discord_applications_manage_message: String,
+    /// Message shown when applications are closed.
+    pub discord_applications_closed_message: String,
+    pub discord_applications_closed_title: String,
+    pub discord_applications_close_title: String,
+    pub discord_applications_close_message: String,
+    pub discord_applications_accept_title: String,
+    pub discord_applications_decline_title: String,
+    pub discord_applications_no_permission_title: String,
+    pub discord_applications_already_open_title: String,
+    pub discord_applications_final_title: String,
+    /// Message shown when the actor lacks application permissions.
+    pub discord_applications_no_permission_message: String,
+    /// Message shown when the applicant already has an open application.
+    pub discord_applications_already_open_message: String,
+    /// Message shown after accepting an application.
+    pub discord_applications_accept_message: String,
+    /// Message shown after declining an application.
+    pub discord_applications_decline_message: String,
+    /// Message shown when application processing fails.
+    pub discord_applications_error_message: String,
+    /// Message shown after an application action completes.
+    pub discord_applications_result_message: String,
+    /// Application welcome title.
+    pub discord_applications_welcome_title: String,
+    /// Application welcome message.
+    pub discord_applications_welcome_message: String,
+    /// Announcement sent when applications open.
+    pub discord_applications_status_open_message: String,
+    /// Announcement sent when applications close.
+    pub discord_applications_status_closed_message: String,
+    /// Message ID of the published application panel, when available.
+    pub discord_applications_panel_message_id: Option<String>,
     /// Default fee percentage applied to new loot splits when no fee is provided.
     pub default_split_fee: Decimal,
     /// Last admin edit.

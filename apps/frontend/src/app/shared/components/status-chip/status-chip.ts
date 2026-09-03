@@ -40,29 +40,29 @@ type ChipTone = 'neutral' | 'success' | 'warning' | 'error' | 'info';
       flex-shrink: 0;
     }
     .chip--success {
-      background: rgba(74, 222, 128, 0.12);
-      color: #4ade80;
-      border-color: rgba(74, 222, 128, 0.25);
+      background: var(--color-success-container);
+      color: var(--color-success);
+      border-color: color-mix(in oklab, var(--color-success) 24%, transparent);
     }
     .chip--warning {
-      background: rgba(250, 204, 21, 0.12);
-      color: #facc15;
-      border-color: rgba(250, 204, 21, 0.25);
+      background: var(--color-warning-container);
+      color: var(--color-warning);
+      border-color: color-mix(in oklab, var(--color-warning) 24%, transparent);
     }
     .chip--error {
-      background: rgba(248, 113, 113, 0.12);
-      color: #f87171;
-      border-color: rgba(248, 113, 113, 0.25);
+      background: var(--color-error-container);
+      color: var(--color-error);
+      border-color: color-mix(in oklab, var(--color-error) 24%, transparent);
     }
     .chip--info {
-      background: rgba(56, 189, 248, 0.12);
-      color: #38bdf8;
-      border-color: rgba(56, 189, 248, 0.25);
+      background: var(--color-primary-container);
+      color: var(--color-info);
+      border-color: color-mix(in oklab, var(--color-info) 24%, transparent);
     }
     .chip--neutral {
-      background: rgba(148, 163, 184, 0.1);
-      color: #94a3b8;
-      border-color: rgba(148, 163, 184, 0.2);
+      background: var(--color-surface-2);
+      color: var(--color-text-secondary);
+      border-color: var(--color-border);
     }
   `,
   template: `<span class="chip" [class]="'chip--' + tone()"><span class="status-dot"></span>{{ display() }}</span>`,

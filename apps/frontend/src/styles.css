@@ -15,20 +15,34 @@
    Tailwind v4 Theme Configuration
    ----------------------------------------------------------------- */
 @theme {
-  /* Colors */
-  --color-jet-ink: #0a0a0a;
-  --color-charcoal: #151515;
-  --color-fog: #858585;
-  --color-pewter: #9d9d9d;
-  --color-steel: #545454;
-  --color-dove: #d5d9e2;
-  --color-cream: #f9f8f6;
+  /* Midnight palette and compatibility aliases */
+  --color-void: #08090a;
+  --color-carbon: #0f1011;
+  --color-obsidian: #161718;
+  --color-graphite: #23252a;
+  --color-smoke: #383b3f;
+  --color-ash: #62666d;
+  --color-fog: #8a8f98;
+  --color-mist: #d0d6e0;
+  --color-bone: #e5e5e6;
   --color-paper: #ffffff;
-  --color-sand: #f2ede5;
-  --color-slate: #3b3b3b;
-  --color-ember: #ff5f57;
-  --color-sunbeam: #ffbd2e;
-  --color-sprout: #28c840;
+  --color-weaklings-red: #dc2626;
+  --color-pulse-green: #27a644;
+  --color-coral-red: #eb5757;
+  --color-signal-teal: #02b8cc;
+  --color-iris-violet: #6366f1;
+  --color-lavender: #8b5cf6;
+  --color-jet-ink: var(--color-void);
+  --color-charcoal: var(--color-carbon);
+  --color-pewter: var(--color-mist);
+  --color-steel: var(--color-ash);
+  --color-dove: var(--color-mist);
+  --color-cream: var(--color-bone);
+  --color-sand: var(--color-obsidian);
+  --color-slate: var(--color-graphite);
+  --color-ember: var(--color-coral-red);
+  --color-sunbeam: #eab308;
+  --color-sprout: var(--color-pulse-green);
 
   /* Typography */
   --font-universalsans: 'universalSans', 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -60,31 +74,17 @@
   --leading-display: 72px;
   --tracking-display: -1.8px;
 
-  /* Spacing */
-  --spacing-4: 4px;
-  --spacing-8: 8px;
-  --spacing-12: 12px;
-  --spacing-16: 16px;
-  --spacing-20: 20px;
-  --spacing-24: 24px;
-  --spacing-32: 32px;
-  --spacing-40: 40px;
-  --spacing-48: 48px;
-  --spacing-64: 64px;
-  --spacing-96: 96px;
-  --spacing-144: 144px;
-
   /* Border Radius */
-  --radius-sm: 3px;
+  --radius-sm: 2px;
   --radius-md: 6px;
   --radius-xl: 12px;
-  --radius-2xl: 16px;
+  --radius-2xl: 12px;
   --radius-full: 9999px;
-  --radius-cards: 16px;
+  --radius-cards: 12px;
   --radius-pills: 9999px;
   --radius-inputs: 6px;
-  --radius-buttons: 9999px;
-  --radius-smallcards: 8px;
+  --radius-buttons: 6px;
+  --radius-smallcards: 6px;
 
   /* Shadows */
   --shadow-subtle: rgba(10, 10, 10, 0.15) 0px 0px 0px 1px;
@@ -94,7 +94,7 @@
 
 /* -----------------------------------------------------------------
    Design tokens — semantic surface / text colors, radius, elevation.
-   Light theme is default; .dark block provides the tonal inversion.
+   Midnight is the base theme; html.light provides the accessible light override.
    ----------------------------------------------------------------- */
 @layer base {
   /* Everything theme-related (colors, radii, shadows, fonts) now lives in the
@@ -106,18 +106,12 @@
   :root {
     --font-wordmark: 'Cinzel', 'Times New Roman', serif;
     --page-max-width: 1200px;
-    --section-gap: 80px;
-    --card-padding: 40px;
-    --element-gap: 12px;
+    --section-gap: 96px;
+    --card-padding: 24px;
+    --element-gap: 8px;
     --shadow-1: var(--shadow-subtle);
     --shadow-2: var(--shadow-subtle-2);
     --shadow-3: var(--shadow-xl);
-
-    --color-accent-gold: #f59e0b;
-  }
-
-  .dark {
-    --color-accent-gold: #fbbf24;
   }
 
   html,
@@ -162,7 +156,7 @@
    Reusable Component Layer
    ----------------------------------------------------------------- */
 @layer components {
-  /* Cards and Surfaces: Flat cream #f9f8f6, radius 16px, hairline ring */
+  /* Cards and surfaces use the shared midnight tokens and a 12px card radius. */
   .surface,
   .card {
     background-color: var(--color-surface);
@@ -201,7 +195,7 @@
     border-radius: var(--radius-cards);
     background: var(--color-surface);
     color: var(--color-text);
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.6);
+    box-shadow: var(--shadow-xl);
     animation: dialogScaleIn 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
 
@@ -347,7 +341,7 @@
     box-shadow: var(--shadow-subtle-2);
   }
 
-  /* Buttons: Pill shape (9999px radius), 14px/20px universalSans 500 */
+  /* Buttons: compact 6px radius, 14px/20px Inter 510 */
   .btn {
     display: inline-flex;
     align-items: center;
@@ -640,14 +634,14 @@
     text-align: left;
   }
 
-  /* Sidebar nav link: 14px/20 universalSans 500, Fog -> Jet Ink */
+  /* Sidebar nav link: compact midnight navigation with semantic states. */
   .nav-link {
     display: flex;
     align-items: center;
     gap: 0.75rem;
     width: 100%;
-    padding: 0.5rem 0.875rem;
-    border-radius: var(--radius-pills);
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius-buttons);
     color: var(--color-text-secondary);
     text-decoration: none;
     font-family: var(--font-universalsans);
@@ -655,25 +649,34 @@
     font-weight: 500;
     line-height: 1.25rem;
     white-space: nowrap;
+    border: 1px solid transparent;
     transition:
       background-color 150ms ease,
+      border-color 150ms ease,
       color 150ms ease;
   }
 
   .nav-link:hover {
-    background-color: var(--color-surface-hover);
+    background-color: color-mix(in srgb, var(--color-paper) 5%, transparent);
     color: var(--color-text);
   }
 
   .nav-link--active {
-    background-color: var(--color-primary);
-    color: var(--color-on-primary);
-    font-weight: 500;
+    background-color: var(--color-primary-container);
+    border-color: color-mix(in srgb, var(--color-primary) 28%, transparent);
+    color: var(--color-text);
+    font-weight: 600;
   }
 
   .nav-link--active:hover {
-    background-color: var(--color-primary-hover);
-    color: var(--color-on-primary);
+    background-color: color-mix(in srgb, var(--color-primary) 22%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+    color: var(--color-text);
+  }
+
+  .nav-link--active app-icon,
+  .nav-link--active .app-icon {
+    color: var(--color-primary-hover);
   }
 
   .scrollbar-thin {
@@ -695,9 +698,9 @@
   .terminal-block,
   .code-block {
     background-color: var(--color-charcoal);
-    border-radius: var(--radius-xl);
+    border-radius: var(--radius-cards);
     font-family: var(--font-geistmono);
-    color: #ffffff;
+    color: var(--color-text);
     padding: 1rem 1.25rem;
   }
 
@@ -1162,8 +1165,7 @@
    These overrides deliberately keep the existing primitive API stable while
    bringing every route onto the same operational visual language.
    ----------------------------------------------------------------- */
-:root,
-.dark {
+:root {
   color-scheme: dark;
   --color-void: #08090a;
   --color-carbon: #0f1011;
@@ -1171,56 +1173,57 @@
   --color-graphite: #23252a;
   --color-smoke: #383b3f;
   --color-mist: #d0d6e0;
-  --color-bg: #08090a;
-  --color-surface: #0f1011;
-  --color-surface-1: #0f1011;
-  --color-surface-2: #161718;
-  --color-surface-3: #23252a;
-  --color-surface-muted: #161718;
+  --color-bg: var(--color-void);
+  --color-surface: var(--color-carbon);
+  --color-surface-1: var(--color-carbon);
+  --color-surface-2: var(--color-obsidian);
+  --color-surface-3: var(--color-graphite);
+  --color-surface-muted: var(--color-obsidian);
   --color-surface-hover: #1c1e21;
-  --color-surface-charcoal: #08090a;
-  --color-border: #23252a;
-  --color-border-strong: #383b3f;
-  --color-text: #ffffff;
-  --color-text-heading: #ffffff;
-  --color-text-secondary: #d0d6e0;
-  --color-text-tertiary: #8a8f98;
-  --color-text-steel: #8a8f98;
-  --color-text-disabled: #62666d;
+  --color-surface-charcoal: var(--color-void);
+  --color-border: var(--color-graphite);
+  --color-border-strong: var(--color-smoke);
+  --color-text: var(--color-paper);
+  --color-text-heading: var(--color-paper);
+  --color-text-secondary: var(--color-mist);
+  --color-text-tertiary: var(--color-fog);
+  --color-text-muted: var(--color-ash);
+  --color-text-steel: var(--color-fog);
+  --color-text-disabled: var(--color-ash);
   --color-weaklings-red: #dc2626;
   --color-primary: var(--color-weaklings-red);
   --color-primary-hover: #ef4444;
-  --color-primary-container: color-mix(in oklab, #dc2626 16%, transparent);
+  --color-primary-container: color-mix(in oklab, var(--color-primary) 16%, transparent);
   --color-primary-soft: var(--color-primary-container);
-  --color-on-primary: #ffffff;
-  --color-logo-glow: color-mix(in oklab, #eb5757 18%, transparent);
-  --color-success: #4cc36a;
-  --color-success-container: color-mix(in oklab, #4cc36a 13%, transparent);
+  --color-on-primary: var(--color-paper);
+  --color-logo-glow: color-mix(in oklab, var(--color-coral-red) 18%, transparent);
+  --color-success: var(--color-pulse-green);
+  --color-success-container: color-mix(in oklab, var(--color-success) 13%, transparent);
   --color-warning: #eab308;
-  --color-warning-container: color-mix(in oklab, #eab308 13%, transparent);
-  --color-error: #eb5757;
-  --color-error-container: color-mix(in oklab, #eb5757 13%, transparent);
+  --color-warning-container: color-mix(in oklab, var(--color-warning) 13%, transparent);
+  --color-error: var(--color-coral-red);
+  --color-error-container: color-mix(in oklab, var(--color-error) 13%, transparent);
   --color-danger: var(--color-error);
-  --color-info: #75b7ff;
+  --color-info: var(--color-signal-teal);
   --role-tank: #3b82f6;
   --role-healer: #22c55e;
   --role-support: #f59e0b;
   --role-dps: #ef4444;
   --role-bm: #a855f7;
   --role-brawler: #06b6d4;
-  --radius-sm: 4px;
+  --radius-sm: 2px;
   --radius-md: 6px;
-  --radius-lg: 8px;
+  --radius-lg: 6px;
   --radius-xl: 12px;
-  --radius-2xl: 16px;
+  --radius-2xl: 12px;
   --radius-cards: 12px;
   --radius-badges: 4px;
   --radius-inputs: 6px;
   --radius-buttons: 6px;
   --radius-smallcards: 6px;
-  --shadow-subtle: inset 0 0 0 1px #23252a;
-  --shadow-subtle-2: inset 0 0 0 1px #23252a;
-  --shadow-xl: 0 1rem 2rem color-mix(in srgb, #08090a 72%, transparent);
+  --shadow-subtle: inset 0 0 0 1px var(--color-graphite);
+  --shadow-subtle-2: inset 0 0 0 1px var(--color-graphite);
+  --shadow-xl: 0 4px 32px color-mix(in srgb, var(--color-void) 60%, transparent);
   --font-universalsans: 'Inter Variable', Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-universalsansdisplay: var(--font-universalsans);
   --font-geistmono: 'Berkeley Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -1228,6 +1231,22 @@
   --font-display: var(--font-universalsans);
   --font-mono: var(--font-geistmono);
   --page-gap: 1.5rem;
+  --motion-fast: 150ms ease;
+  --color-border-hover: var(--color-border-strong);
+
+  /* Component-level spacing token aliases (safe in :root, won't hijack Tailwind utilities) */
+  --spacing-4: 0.25rem;
+  --spacing-8: 0.5rem;
+  --spacing-12: 0.75rem;
+  --spacing-16: 1rem;
+  --spacing-20: 1.25rem;
+  --spacing-24: 1.5rem;
+  --spacing-32: 2rem;
+  --spacing-40: 2.5rem;
+  --spacing-48: 3rem;
+  --spacing-64: 4rem;
+  --spacing-96: 6rem;
+  --spacing-144: 9rem;
 
   /* Podium medal gradients — theme-invariant: each is a self-contained
      badge with its own internal contrast, not something that should
@@ -1247,9 +1266,13 @@
   --color-medal-bronze-text: #ffffff;
 }
 
-.light {
+html.dark {
+  color-scheme: dark;
+}
+
+html.light {
   color-scheme: light;
-  --color-bg: #f7f7f8;
+  --color-bg: #f5f6f8;
   --color-surface: #ffffff;
   --color-surface-1: #ffffff;
   --color-surface-2: #f1f2f4;
@@ -1264,6 +1287,7 @@
   --color-text-secondary: #42464d;
   --color-text-tertiary: #62666d;
   --color-text-steel: #4e5259;
+  --color-text-muted: #62666d;
   --color-text-disabled: #8a8f98;
   --color-weaklings-red: #b91c1c;
   --color-primary: var(--color-weaklings-red);
@@ -1397,18 +1421,6 @@
     flex-shrink: 0;
   }
 
-  .nav-link {
-    gap: 0.625rem;
-    min-height: 2.125rem;
-    padding: 0.375rem 0.625rem;
-    border-radius: var(--radius-md);
-    color: var(--color-text-tertiary);
-    font-family: var(--font-sans);
-    font-size: 0.8125rem;
-    font-weight: 400;
-  }
-  .nav-link:hover { background: var(--color-surface-hover); color: var(--color-text); }
-  .nav-link--active, .nav-link--active:hover { background: color-mix(in oklab, var(--color-primary) 14%, var(--color-surface)); color: var(--color-text); font-weight: 510; box-shadow: inset 2px 0 var(--color-primary); }
 
   /* .table already carries these exact values from its single definition
      earlier in this file (Reusable Component Layer). */
@@ -1495,21 +1507,22 @@ app-shell .table tbody tr:hover {
 }
 
 app-shell .data-table-card {
-  border-radius: 8px;
-  background: var(--color-surface);
+  background: transparent;
+  border: none;
+  border-radius: 0;
 }
 
 app-shell .data-table__toolbar,
 app-shell .data-table__footer {
-  background: var(--color-surface);
+  background: transparent;
 }
 
 app-shell .data-table__table thead th {
-  background: var(--color-surface-2);
+  background: transparent;
 }
 
 app-shell .data-table__row--clickable:hover,
 app-shell .data-table__row--clickable:focus-visible {
-  background: color-mix(in oklab, var(--color-primary) 5%, var(--color-surface));
+  background: rgba(255, 255, 255, 0.04);
 }
 

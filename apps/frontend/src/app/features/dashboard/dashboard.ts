@@ -12,10 +12,8 @@ import type {
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { TranslateService } from '../../core/services/translate.service';
-import { Avatar } from '../../shared/components/avatar/avatar';
 import { Icon, type IconName } from '../../shared/components/icon/icon';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
-import { NotificationsPanel } from '../../layout/topbar/notifications-panel';
 
 interface AttentionItem {
   readonly icon: IconName;
@@ -25,14 +23,6 @@ interface AttentionItem {
   readonly link: string;
 }
 
-interface DisplaySplit {
-  readonly id: number;
-  readonly title: string;
-  readonly relativeTime: string;
-  readonly amount: string;
-  readonly isCompleted: boolean;
-  readonly isPending: boolean;
-}
 
 /**
  * Command Center Dashboard following the precision midnight Linear/Weaklings design.
@@ -46,7 +36,7 @@ interface DisplaySplit {
 @Component({
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Avatar, Icon, NotificationsPanel, RouterLink, TooltipDirective],
+  imports: [Icon, RouterLink, TooltipDirective],
   styles: `
     :host {
       display: block;
@@ -149,25 +139,13 @@ interface DisplaySplit {
     .btn-open-event:hover {
       background-color: #b91c1c;
     }
-
-    .split-card {
-      background-color: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-cards);
-      transition: border-color 150ms ease, background-color 150ms ease;
-      text-decoration: none;
-    }
-    .split-card:hover {
-      border-color: var(--color-border-strong);
-      background-color: var(--color-surface-hover);
-    }
   `,
   template: `
     <div class="dashboard-page flex flex-col gap-6 max-w-7xl mx-auto pb-10">
       <!-- Top Greeting & Personal Profile Header -->
       <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-1">
         <div>
-          <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white m-0">
+          <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) m-0">
             {{ greeting() }}, {{ username() }}
           </h1>
           <p class="text-sm text-[var(--color-text-tertiary)] mt-1 mb-0">
@@ -175,11 +153,11 @@ interface DisplaySplit {
           </p>
         </div>
 
-        <!-- Header Actions: Refresh, Notification Inbox, Profile Avatar -->
+        <!-- Header Actions: Refresh -->
         <div class="flex items-center gap-3 self-end sm:self-center">
           <button
             type="button"
-            class="btn btn--ghost btn--icon shrink-0 text-[var(--color-text-tertiary)] hover:text-white"
+            class="btn btn--ghost btn--icon shrink-0 text-[var(--color-text-tertiary)] hover:text-(--color-text)"
             [disabled]="loading()"
             (click)="refreshNow()"
             [appTooltip]="'Refresh snapshot'"
@@ -188,28 +166,11 @@ interface DisplaySplit {
           >
             <app-icon name="refresh" size="1rem" [class.animate-spin]="loading()" />
           </button>
-
-          <app-notifications-panel />
-
-          <a
-            routerLink="/profile"
-            class="inline-flex rounded-full transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-            [appTooltip]="username() + (auth.profile()?.highest_role ? ' (' + auth.profile()?.highest_role + ')' : '')"
-            tooltipPosition="bottom"
-            aria-label="User profile"
-          >
-            <app-avatar
-              [userId]="auth.profile()?.id ?? 'default'"
-              [avatar]="auth.profile()?.avatar ?? null"
-              [username]="username()"
-              size="sm"
-            />
-          </a>
         </div>
       </header>
 
       <!-- Row 1: 4 Key Performance Indicators (KPI Cards) -->
-      <section aria-label="Key Performance Indicators" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <section aria-label="Key Performance Indicators" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5">
         <!-- Card 1: Bank requested -->
         <a
           [routerLink]="auth.hasPermission('bank.withdraw.accept') ? '/admin/withdrawals' : '/bank'"
@@ -221,17 +182,17 @@ interface DisplaySplit {
               <div class="icon-capsule icon-capsule--red">
                 <app-icon name="bank" size="1.125rem" />
               </div>
-              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-white transition-colors">
+              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-(--color-text) transition-colors">
                 Bank requested
               </span>
             </div>
             <app-icon
               name="chevron-right"
               size="0.875rem"
-              class="text-[var(--color-text-disabled)] group-hover:text-white group-hover:translate-x-0.5 transition-all"
+              class="text-[var(--color-text-disabled)] group-hover:text-(--color-text) group-hover:translate-x-0.5 transition-all"
             />
           </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-white mt-3.5">
+          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5">
             {{ bankRequestedValue() }}
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
@@ -250,17 +211,17 @@ interface DisplaySplit {
               <div class="icon-capsule icon-capsule--green">
                 <app-icon name="percent" size="1.125rem" />
               </div>
-              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-white transition-colors">
+              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-(--color-text) transition-colors">
                 Splits completed
               </span>
             </div>
             <app-icon
               name="chevron-right"
               size="0.875rem"
-              class="text-[var(--color-text-disabled)] group-hover:text-white group-hover:translate-x-0.5 transition-all"
+              class="text-[var(--color-text-disabled)] group-hover:text-(--color-text) group-hover:translate-x-0.5 transition-all"
             />
           </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-white mt-3.5">
+          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5">
             {{ splitsCompletedCount() }}
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
@@ -279,17 +240,17 @@ interface DisplaySplit {
               <div class="icon-capsule icon-capsule--amber">
                 <app-icon name="alert" size="1.125rem" />
               </div>
-              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-white transition-colors">
+              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-(--color-text) transition-colors">
                 Splits pending
               </span>
             </div>
             <app-icon
               name="chevron-right"
               size="0.875rem"
-              class="text-[var(--color-text-disabled)] group-hover:text-white group-hover:translate-x-0.5 transition-all"
+              class="text-[var(--color-text-disabled)] group-hover:text-(--color-text) group-hover:translate-x-0.5 transition-all"
             />
           </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-white mt-3.5">
+          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5">
             {{ splitsPendingCount() }}
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
@@ -308,17 +269,17 @@ interface DisplaySplit {
               <div class="icon-capsule icon-capsule--purple">
                 <app-icon name="coins" size="1.125rem" />
               </div>
-              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-white transition-colors">
+              <span class="text-xs font-medium text-[var(--color-text-secondary)] group-hover:text-(--color-text) transition-colors">
                 Season paid out
               </span>
             </div>
             <app-icon
               name="chevron-right"
               size="0.875rem"
-              class="text-[var(--color-text-disabled)] group-hover:text-white group-hover:translate-x-0.5 transition-all"
+              class="text-[var(--color-text-disabled)] group-hover:text-(--color-text) group-hover:translate-x-0.5 transition-all"
             />
           </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-white mt-3.5">
+          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5">
             {{ seasonPaidOutValue() }}
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
@@ -328,13 +289,13 @@ interface DisplaySplit {
       </section>
 
       <!-- Row 2: Two-column deck (Requires your attention & Next mass) -->
-      <section class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+      <section class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 items-stretch">
         <!-- Left Column: Requires your attention -->
         <div class="action-panel p-5 sm:p-6 flex flex-col justify-between">
           <div>
             <div class="flex items-center gap-2 mb-4">
-              <h2 class="text-base font-bold text-white m-0">Requires your attention</h2>
-              <span class="inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold rounded-full bg-[#dc2626] text-white">
+              <h2 class="text-base font-bold text-(--color-text) m-0">Requires your attention</h2>
+              <span class="inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold rounded-full bg-[#dc2626] text-(--color-text)">
                 {{ attentionItems().length }}
               </span>
             </div>
@@ -349,7 +310,7 @@ interface DisplaySplit {
                     >
                       <app-icon [name]="item.icon" size="1.125rem" />
                     </div>
-                    <span class="text-xs sm:text-sm font-medium text-white truncate">
+                    <span class="text-xs sm:text-sm font-medium text-(--color-text) truncate">
                       {{ item.text }}
                     </span>
                   </div>
@@ -371,7 +332,7 @@ interface DisplaySplit {
               <app-icon name="check" size="1rem" />
             </div>
             <div class="min-w-0">
-              <p class="text-sm font-semibold text-white m-0">You're all caught up!</p>
+              <p class="text-sm font-semibold text-(--color-text) m-0">You're all caught up!</p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-0.5 mb-0">No critical alerts right now.</p>
             </div>
           </div>
@@ -394,14 +355,14 @@ interface DisplaySplit {
                 <span class="text-[10px] font-bold text-red-500 tracking-wider uppercase">
                   {{ nextMass().dayLabel }}
                 </span>
-                <span class="text-2xl sm:text-3xl font-bold text-white tracking-tight leading-none mt-1">
+                <span class="text-2xl sm:text-3xl font-bold text-(--color-text) tracking-tight leading-none mt-1">
                   {{ nextMass().time }}
                 </span>
               </div>
 
               <!-- Event Details -->
               <div class="flex flex-col justify-center min-w-0">
-                <h3 class="text-lg sm:text-2xl font-bold text-white truncate m-0">
+                <h3 class="text-lg sm:text-2xl font-bold text-(--color-text) truncate m-0">
                   {{ nextMass().title }}
                 </h3>
                 <div class="flex items-center gap-2 text-xs sm:text-sm text-[var(--color-text-secondary)] mt-2">
@@ -440,58 +401,6 @@ interface DisplaySplit {
         </div>
       </section>
 
-      <!-- Row 3: RECENT SPLITS -->
-      <section aria-label="Recent splits">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)] m-0">
-            RECENT SPLITS
-          </h2>
-          <a
-            routerLink="/splits"
-            class="text-xs font-medium text-[var(--color-text-secondary)] hover:text-white flex items-center gap-1 transition-colors no-underline"
-          >
-            <span>View all</span>
-            <app-icon name="arrow-right" size="0.75rem" />
-          </a>
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          @for (split of displaySplits(); track split.id) {
-            <a
-              [routerLink]="['/splits', split.id]"
-              class="split-card flex items-center justify-between p-4 group"
-            >
-              <div class="min-w-0 flex-1 pr-3">
-                <p class="text-sm font-semibold text-white truncate m-0 group-hover:text-red-400 transition-colors">
-                  {{ split.title }}
-                </p>
-                <p class="text-xs text-[var(--color-text-tertiary)] mt-1 mb-0">
-                  {{ split.relativeTime }}
-                </p>
-              </div>
-
-              <div class="flex items-center gap-2 shrink-0">
-                <span
-                  class="text-sm font-bold font-mono"
-                  [class.text-emerald-400]="split.isCompleted"
-                  [class.text-[var(--color-text-tertiary)]]="!split.isCompleted"
-                >
-                  {{ split.amount }}
-                </span>
-                @if (split.isCompleted) {
-                  <div class="w-6 h-6 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0">
-                    <app-icon name="check" size="0.875rem" />
-                  </div>
-                } @else {
-                  <div class="w-6 h-6 text-amber-400 flex items-center justify-center shrink-0">
-                    <app-icon name="loader" size="1.125rem" />
-                  </div>
-                }
-              </div>
-            </a>
-          }
-        </div>
-      </section>
     </div>
   `,
 })
@@ -505,7 +414,6 @@ export class Dashboard {
   protected readonly pendingSplitCount = signal<number | null>(null);
   protected readonly completedSplitCount = signal<number | null>(null);
   protected readonly recentEvents = signal<ReadonlyArray<EventView>>([]);
-  protected readonly recentSplits = signal<ReadonlyArray<SplitSummary>>([]);
   protected readonly loading = signal(false);
 
   protected readonly username = computed(() => this.auth.profile()?.username ?? 'Galvdon');
@@ -627,58 +535,6 @@ export class Dashboard {
     ];
   });
 
-  protected readonly displaySplits = computed<ReadonlyArray<DisplaySplit>>(() => {
-    const splits = this.recentSplits();
-    if (splits.length > 0) {
-      return splits.slice(0, 4).map((s) => ({
-        id: s.id,
-        title: s.event_title || s.created_by_username || 'Split',
-        relativeTime: this.formatRelative(s.created_at),
-        amount:
-          s.status === 'completed'
-            ? this.formatCompactSilver(s.estimated_market_value, true)
-            : '—',
-        isCompleted: s.status === 'completed',
-        isPending: s.status === 'pending',
-      }));
-    }
-
-    return [
-      {
-        id: 1,
-        title: 'Galvdon',
-        relativeTime: '1 hour ago',
-        amount: '+10.80M',
-        isCompleted: true,
-        isPending: false,
-      },
-      {
-        id: 2,
-        title: 'Launch Terry Grove',
-        relativeTime: '8 hours ago',
-        amount: '—',
-        isCompleted: false,
-        isPending: true,
-      },
-      {
-        id: 3,
-        title: 'Galvdon',
-        relativeTime: 'Yesterday',
-        amount: '+4.85M',
-        isCompleted: true,
-        isPending: false,
-      },
-      {
-        id: 4,
-        title: 'FRATELLI E SORELLE',
-        relativeTime: 'Yesterday',
-        amount: '+30.34M',
-        isCompleted: true,
-        isPending: false,
-      },
-    ];
-  });
-
   constructor() {
     void this.loadSnapshot();
   }
@@ -693,7 +549,7 @@ export class Dashboard {
   }
 
   private async loadSnapshot(): Promise<void> {
-    const [balance, guildSummary, pendingSplits, completedSplits, events, recentSplits] =
+    const [balance, guildSummary, pendingSplits, completedSplits, events] =
       await Promise.allSettled([
         firstValueFrom(this.api.get<BalanceSummary>('api/bank/balance')),
         firstValueFrom(this.api.get<GuildBankSummary>('api/bank/guild/summary')),
@@ -714,9 +570,6 @@ export class Dashboard {
         firstValueFrom(
           this.api.get<PaginatedData<EventView>>('api/events', { page: 1, limit: 10 }),
         ),
-        firstValueFrom(
-          this.api.get<PaginatedData<SplitSummary>>('api/splits', { page: 1, limit: 10 }),
-        ),
       ]);
 
     if (balance.status === 'fulfilled') {
@@ -733,9 +586,6 @@ export class Dashboard {
     }
     if (events.status === 'fulfilled') {
       this.recentEvents.set(events.value.items);
-    }
-    if (recentSplits.status === 'fulfilled') {
-      this.recentSplits.set(recentSplits.value.items);
     }
   }
 

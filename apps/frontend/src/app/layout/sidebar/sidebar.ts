@@ -30,32 +30,41 @@ export type { NavItem, NavSection } from '../nav';
     }
   `,
   template: `
-    <nav class="flex h-full w-full flex-col py-1.5" [attr.aria-label]="t(ariaLabelKey())">
-      <!-- Brand -->
-      <div class="flex h-11 items-center px-3" [class.justify-center]="collapsed()">
-        <a routerLink="/dashboard" class="no-underline block" aria-label="Weaklings Manager dashboard" [appTooltip]="collapsed() ? 'Weaklings Manager' : null" tooltipPosition="right">
+    <nav class="flex h-full w-full flex-col" [attr.aria-label]="t(ariaLabelKey())">
+      <!-- Brand Header -->
+      <div
+        class="flex h-14 shrink-0 items-center px-4 border-b border-[var(--color-border)]"
+        [class.justify-center]="collapsed()"
+      >
+        <a
+          routerLink="/dashboard"
+          class="no-underline block group"
+          aria-label="Weaklings Manager dashboard"
+          [appTooltip]="collapsed() ? 'Weaklings Manager' : null"
+          tooltipPosition="right"
+        >
           <app-weaklings-logo [compact]="collapsed()" [dense]="!collapsed()" />
         </a>
       </div>
 
-      <!-- Sections -->
-      <div class="flex-1 overflow-y-auto px-2 pb-2 scrollbar-thin">
+      <!-- Scrollable Nav Sections -->
+      <div class="flex-1 overflow-y-auto px-3 py-2.5 scrollbar-thin">
         @for (section of visibleSections(); track section.headingKey) {
           <div class="mb-2">
             @if (!collapsed()) {
               @if (section.headingKey !== 'nav.section.main') {
                 <p
                   [id]="section.headingKey"
-                  class="px-2 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-disabled)]"
+                  class="px-3 pt-3.5 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-[var(--color-text-disabled)] select-none"
                 >
                   {{ t(section.headingKey) }}
                 </p>
               }
             } @else {
-              <div class="my-2 mx-auto w-6 border-t" style="border-color: var(--color-border)"></div>
+              <div class="my-2 mx-auto w-6 border-t border-[var(--color-border)]"></div>
             }
             <ul
-              class="flex flex-col gap-0.5"
+              class="flex flex-col gap-1"
               role="list"
               [attr.aria-labelledby]="collapsed() || section.headingKey === 'nav.section.main' ? null : section.headingKey"
               [attr.aria-label]="collapsed() ? t(section.headingKey) : null"
@@ -67,14 +76,14 @@ export type { NavItem, NavSection } from '../nav';
                     routerLinkActive="nav-link--active"
                     [routerLinkActiveOptions]="{ exact: item.exact === true }"
                     [ariaCurrentWhenActive]="'page'"
-                    class="nav-link"
+                    class="nav-link group"
                     [class.justify-center]="collapsed()"
                     [class.px-0]="collapsed()"
                     [appTooltip]="collapsed() ? t(item.labelKey) : null"
                     tooltipPosition="right"
                     (click)="navigate.emit()"
                   >
-                    <app-icon [name]="item.icon" size="1rem" class="shrink-0" />
+                    <app-icon [name]="item.icon" size="1.125rem" class="shrink-0 transition-colors" />
                     @if (!collapsed()) {
                       <span class="truncate">{{ t(item.labelKey) }}</span>
                     }
@@ -87,19 +96,19 @@ export type { NavItem, NavSection } from '../nav';
       </div>
 
       <!-- Bottom Collapse Toggle (Desktop only) -->
-      <div class="hidden md:flex px-2 pt-2 border-t" style="border-color: var(--color-border)">
+      <div class="hidden md:flex px-3 py-3 border-t border-[var(--color-border)]">
         <button
           type="button"
-          class="btn btn--ghost btn--sm w-full flex items-center gap-2 text-xs text-[var(--color-text-tertiary)] hover:text-white"
+          class="w-full flex items-center gap-2.5 px-3 py-2 rounded-[var(--radius-buttons)] text-xs font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-hover)] transition-all cursor-pointer"
           [class.justify-center]="collapsed()"
           (click)="toggleCollapse.emit()"
           [appTooltip]="collapsed() ? t('nav.expand') : t('nav.collapse')"
           tooltipPosition="right"
           [attr.aria-label]="collapsed() ? t('nav.expand') : t('nav.collapse')"
         >
-          <app-icon [name]="collapsed() ? 'chevron-right' : 'chevrons-left'" size="1rem" />
+          <app-icon [name]="collapsed() ? 'chevron-right' : 'chevrons-left'" size="1.125rem" />
           @if (!collapsed()) {
-            <span class="truncate">{{ t('nav.collapse') }}</span>
+            <span class="truncate font-medium">{{ t('nav.collapse') }}</span>
           }
         </button>
       </div>

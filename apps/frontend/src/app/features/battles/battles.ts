@@ -109,24 +109,24 @@ interface BattleScopeStats {
       text-transform: uppercase;
     }
     .outcome-pill--victory {
-      background: rgba(34, 197, 94, 0.15);
-      color: #4ade80;
-      border: 1px solid rgba(34, 197, 94, 0.3);
+      background: var(--color-success-container);
+      color: var(--color-success);
+      border: 1px solid var(--color-success);
     }
     .outcome-pill--defeat {
-      background: rgba(239, 68, 68, 0.15);
-      color: #f87171;
-      border: 1px solid rgba(239, 68, 68, 0.3);
+      background: var(--color-error-container);
+      color: var(--color-error);
+      border: 1px solid var(--color-error);
     }
     .outcome-pill--contested {
-      background: rgba(234, 179, 8, 0.15);
-      color: #facc15;
-      border: 1px solid rgba(234, 179, 8, 0.3);
+      background: var(--color-warning-container);
+      color: var(--color-warning);
+      border: 1px solid var(--color-warning);
     }
     .outcome-pill--draw {
-      background: rgba(148, 163, 184, 0.15);
-      color: #94a3b8;
-      border: 1px solid rgba(148, 163, 184, 0.3);
+      background: var(--color-surface-2);
+      color: var(--color-text-secondary);
+      border: 1px solid var(--color-border-strong);
     }
     .battle-list__refresh-chip {
       font-variant-numeric: tabular-nums;
@@ -163,7 +163,7 @@ interface BattleScopeStats {
 
     <app-page-stack>
       @if (!loading() || battles().length > 0) {
-        <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-5" aria-label="Battle totals">
+        <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-5" aria-label="Battle totals">
           <!-- Card 1: Visible Battles -->
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
@@ -171,14 +171,14 @@ interface BattleScopeStats {
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('battles.visible_battles') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
                   {{ scopeStats().battles }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Loaded engagements
                 </p>
               </div>
-              <div class="icon-capsule bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-primary)] border border-[var(--color-primary)]">
                 <app-icon name="shield" size="1.25rem" />
               </div>
             </div>
@@ -191,14 +191,14 @@ interface BattleScopeStats {
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('battles.total_fame') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-amber-400 mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-warning mt-1">
                   {{ formatCompact(scopeStats().fame) }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Kill fame generated
                 </p>
               </div>
-              <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
                 <app-icon name="sparkles" size="1.25rem" />
               </div>
             </div>
@@ -211,14 +211,14 @@ interface BattleScopeStats {
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('battles.kills') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-emerald-400 mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
                   {{ formatAmount(scopeStats().kills) }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Enemies dispatched
                 </p>
               </div>
-              <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
                 <app-icon name="swords" size="1.25rem" />
               </div>
             </div>
@@ -232,14 +232,14 @@ interface BattleScopeStats {
                   <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                     {{ t('battles.deaths') }}
                   </p>
-                  <p class="font-mono text-2xl font-bold tracking-tight text-red-400 mt-1">
+                  <p class="font-mono text-2xl font-bold tracking-tight text-error mt-1">
                     {{ formatAmount(scopeStats().deaths) }}
                   </p>
                   <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                     Casualties suffered
                   </p>
                 </div>
-                <div class="icon-capsule bg-red-500/10 text-red-400 border border-red-500/20">
+                <div class="icon-capsule bg-[var(--color-error-container)] text-error border border-[var(--color-error)]">
                   <app-icon name="alert" size="1.25rem" />
                 </div>
               </div>
@@ -251,14 +251,14 @@ interface BattleScopeStats {
                   <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                     Guild K/D
                   </p>
-                  <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                  <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
                     {{ scopeStats().deaths > 0 ? (scopeStats().kills / scopeStats().deaths).toFixed(2) : scopeStats().kills }}
                   </p>
                   <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                     Ratio in loaded battles
                   </p>
                 </div>
-                <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-primary)] border border-[var(--color-primary)]">
                   <app-icon name="coins" size="1.25rem" />
                 </div>
               </div>
@@ -272,14 +272,14 @@ interface BattleScopeStats {
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('battles.players') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
                   {{ formatAmount(scopeStats().players) }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Total participants
                 </p>
               </div>
-              <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <div class="icon-capsule bg-[var(--color-info-container)] text-[var(--color-info)] border border-[var(--color-info)]">
                 <app-icon name="users" size="1.25rem" />
               </div>
             </div>
@@ -317,7 +317,7 @@ interface BattleScopeStats {
           </ng-template>
 
           <ng-template dataTableCell="id" let-row>
-            <span class="font-mono font-medium text-xs text-white">#{{ rowId(row) }}</span>
+            <span class="font-mono font-medium text-xs text-[var(--color-text)]">#{{ rowId(row) }}</span>
           </ng-template>
 
           <ng-template dataTableCell="time" let-row>
@@ -357,16 +357,16 @@ interface BattleScopeStats {
           </ng-template>
 
           <ng-template dataTableCell="fame" let-row>
-            <span class="font-mono text-xs font-medium text-amber-400">{{ formatCompact(row.total_fame) }}</span>
+            <span class="font-mono text-xs font-medium text-warning">{{ formatCompact(row.total_fame) }}</span>
           </ng-template>
 
           <ng-template dataTableCell="kills" let-row>
-            <span class="font-mono text-xs font-semibold text-emerald-400">{{ formatAmount(row.total_kills) }}</span>
+            <span class="font-mono text-xs font-semibold text-success">{{ formatAmount(row.total_kills) }}</span>
           </ng-template>
 
           <ng-template dataTableCell="deaths" let-row>
             @if (isBattle(row)) {
-              <span class="font-mono text-xs text-red-400">{{ formatAmount(battleDeaths(row)) }}</span>
+              <span class="font-mono text-xs text-error">{{ formatAmount(battleDeaths(row)) }}</span>
             }
           </ng-template>
 
@@ -384,7 +384,7 @@ interface BattleScopeStats {
 
       @if (tab() === 'me' && selectedBattleIds().length > 0) {
         <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-2xl backdrop-blur">
-          <span class="font-mono text-xs font-bold text-white bg-sky-500/20 text-sky-300 border border-sky-500/30 px-2 py-0.5 rounded-full">
+          <span class="font-mono text-xs font-bold text-[var(--color-text)] bg-[var(--color-info-container)] text-[var(--color-info)] border border-[var(--color-info)] px-2 py-0.5 rounded-full">
             {{ selectedBattleIds().length }} {{ t('battles.selected') }}
           </span>
           <button

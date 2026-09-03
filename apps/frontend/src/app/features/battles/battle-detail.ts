@@ -399,7 +399,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
         </section>
 
         <!-- Charts Row -->
-        <section class="mt-5 grid gap-4 lg:grid-cols-3">
+        <section class="mt-5 grid gap-4 sm:gap-5 lg:grid-cols-3">
           <!-- Alliance & Guild Fame Distribution -->
           <article class="surface p-5">
             <h2 class="battle-detail__panel-title">{{ t('battles.fame_by_alliance') }}</h2>
@@ -443,9 +443,9 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
       @else if (tab() === 'guild_alliance') {
         <!-- Alliance & Guild Command Overview -->
         @if (ourGuild(); as guild) {
-          <section class="mt-5 grid gap-4 lg:grid-cols-3">
+          <section class="mt-5 grid gap-4 sm:gap-5 lg:grid-cols-3">
             <!-- Our Guild Performance Verdict Card -->
-            <article class="surface p-5 lg:col-span-2 border-l-4" [style.border-left-color]="'var(--color-primary)'">
+            <article class="surface p-5 lg:col-span-2 border" [style.border-color]="'var(--color-primary)'">
               <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
                 <h2 class="text-xl font-bold" style="color: var(--color-text)">
                   {{ guild.name }} Performance Report
@@ -518,7 +518,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
           <h2 class="eyebrow mb-3">SQUAD MVPs & NOTABLE HONORS</h2>
           <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <!-- Top Killer MVP -->
-            <article class="card p-4 border-l-4" style="border-left-color: var(--color-warning)">
+            <article class="card p-4 border" style="border-color: var(--color-warning)">
               <p class="text-xs text-disabled uppercase font-semibold">TOP EXECUTIONER</p>
               <div class="mt-2 flex items-center gap-3">
                 @if (guildMvpKiller(); as player) {
@@ -534,7 +534,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
             </article>
 
             <!-- Top Fame Hunter -->
-            <article class="card p-4 border-l-4" style="border-left-color: var(--color-accent-gold)">
+            <article class="card p-4 border" style="border-color: var(--color-accent-gold)">
               <p class="text-xs text-disabled uppercase font-semibold">FAME HUNTER</p>
               <div class="mt-2 flex items-center gap-3">
                 @if (guildMvpFame(); as player) {
@@ -550,7 +550,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
             </article>
 
             <!-- Iron Vanguard (Highest IP) -->
-            <article class="card p-4 border-l-4" style="border-left-color: var(--color-primary)">
+            <article class="card p-4 border" style="border-color: var(--color-primary)">
               <p class="text-xs text-disabled uppercase font-semibold">IRON VANGUARD</p>
               <div class="mt-2 flex items-center gap-3">
                 @if (guildMvpHighestIp(); as player) {
@@ -566,7 +566,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
             </article>
 
             <!-- Top Survivor -->
-            <article class="card p-4 border-l-4" style="border-left-color: var(--color-success)">
+            <article class="card p-4 border" style="border-color: var(--color-success)">
               <p class="text-xs text-disabled uppercase font-semibold">APEX SURVIVOR</p>
               <div class="mt-2 flex items-center gap-3">
                 @if (guildMvpSurvivor(); as player) {
@@ -582,7 +582,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
             </article>
 
             <!-- Heaviest Loss -->
-            <article class="card p-4 border-l-4" style="border-left-color: var(--color-error)">
+            <article class="card p-4 border" style="border-color: var(--color-error)">
               <p class="text-xs text-disabled uppercase font-semibold">HEAVIEST CASUALTY</p>
               <div class="mt-2 flex items-center gap-3">
                 @if (guildHeaviestLoss(); as player) {
@@ -680,7 +680,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
       <!-- TAB 3: ALLIANCES & GUILDS -->
       @else if (tab() === 'guilds') {
         <!-- Alliance Summary Cards -->
-        <section class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-label="Alliances in battle">
+        <section class="mt-5 grid gap-4 sm:gap-5 sm:grid-cols-2 xl:grid-cols-3" aria-label="Alliances in battle">
           @for (ally of alliances(); track ally.name) {
             <article class="card p-5" [class.border-2]="ally.isOurAlliance" [style.border-color]="ally.isOurAlliance ? 'var(--color-primary)' : 'var(--color-border)'">
               <div class="flex items-center justify-between mb-3">
@@ -1157,15 +1157,15 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
 
       /* Kill Feed Cards */
       .battle-detail__kill-card {
-        border-left: 3px solid transparent;
+        border: 1px solid var(--color-border);
         transition: border-color 120ms ease;
       }
       .battle-detail__kill-card--our-kill {
-        border-left-color: var(--color-success);
+        border-color: var(--color-success);
         background: color-mix(in srgb, var(--color-success-container) 15%, var(--color-surface));
       }
       .battle-detail__kill-card--our-death {
-        border-left-color: var(--color-error);
+        border-color: var(--color-error);
         background: color-mix(in srgb, var(--color-error-container) 15%, var(--color-surface));
       }
     }

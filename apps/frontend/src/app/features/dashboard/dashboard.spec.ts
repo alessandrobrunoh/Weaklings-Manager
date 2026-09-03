@@ -92,14 +92,6 @@ describe('Dashboard', () => {
     expect(text).toContain('Open event');
   });
 
-  it('renders the "RECENT SPLITS" section with 4 transaction cards', () => {
-    const text = fixture.nativeElement.textContent;
-    expect(text).toContain('RECENT SPLITS');
-    expect(text).toContain('View all');
-    expect(text).toContain('+10.80M');
-    expect(text).toContain('+4.85M');
-    expect(text).toContain('+30.34M');
-  });
 
   it('formats numbers to compact silver notation correctly', () => {
     expect(component.formatCompactSilver(1_700_000)).toBe('1.70M');

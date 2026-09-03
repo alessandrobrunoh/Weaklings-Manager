@@ -104,24 +104,24 @@ function isWarnsTab(value: string): value is WarnsTab {
       letter-spacing: 0.02em;
     }
     .status-pill--active {
-      background: rgba(250, 204, 21, 0.12);
-      color: #facc15;
-      border: 1px solid rgba(250, 204, 21, 0.25);
+      background: var(--color-warning-container);
+      color: var(--color-warning);
+      border: 1px solid color-mix(in srgb, var(--color-warning) 25%, transparent);
     }
     .status-pill--revoked {
-      background: rgba(148, 163, 184, 0.1);
-      color: #94a3b8;
-      border: 1px solid rgba(148, 163, 184, 0.2);
+      background: var(--color-surface-2);
+      color: var(--color-text-secondary);
+      border: 1px solid var(--color-border);
     }
     .status-pill--acked {
-      background: rgba(74, 222, 128, 0.12);
-      color: #4ade80;
-      border: 1px solid rgba(74, 222, 128, 0.25);
+      background: var(--color-success-container);
+      color: var(--color-success);
+      border: 1px solid color-mix(in srgb, var(--color-success) 25%, transparent);
     }
     .status-pill--escalated {
-      background: rgba(248, 113, 113, 0.12);
-      color: #f87171;
-      border: 1px solid rgba(248, 113, 113, 0.25);
+      background: var(--color-error-container);
+      color: var(--color-error);
+      border: 1px solid color-mix(in srgb, var(--color-error) 25%, transparent);
     }
     .warns-permission-note { margin: 0; padding: 0.75rem 0.875rem; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text-secondary); font-size: 0.75rem; line-height: 1.5; }
   `,
@@ -163,7 +163,7 @@ function isWarnsTab(value: string): value is WarnsTab {
       @if (!canIssue()) {
         <p class="warns-permission-note" role="status">{{ t('warns.missingManagePermission') }}</p>
       }
-      <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Warns summary">
+      <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Warns summary">
         <!-- Card 1: Active Warns -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
@@ -171,15 +171,15 @@ function isWarnsTab(value: string): value is WarnsTab {
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('warns.stat.active') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-amber-400 mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-warning mt-1">
                 {{ activeWarnsCount() }}
               </p>
-              <p class="text-xs text-amber-400/90 mt-1 truncate flex items-center gap-1.5">
-                <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+              <p class="text-xs text-warning/90 mt-1 truncate flex items-center gap-1.5">
+                <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
                 Disciplinary records
               </p>
             </div>
-            <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-border)]">
               <app-icon name="alert" size="1.25rem" />
             </div>
           </div>
@@ -192,14 +192,14 @@ function isWarnsTab(value: string): value is WarnsTab {
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('warns.stat.strikes') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-red-400 mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-error mt-1">
                 {{ strikesCount() }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 Major infractions
               </p>
             </div>
-            <div class="icon-capsule bg-red-500/10 text-red-400 border border-red-500/20">
+            <div class="icon-capsule bg-[var(--color-error-container)] text-error border border-[var(--color-border)]">
               <app-icon name="alert" size="1.25rem" />
             </div>
           </div>
@@ -212,14 +212,14 @@ function isWarnsTab(value: string): value is WarnsTab {
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('warns.stat.notes') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
                 {{ notesCount() }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 Informal warnings
               </p>
             </div>
-            <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+            <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-info)] border border-[var(--color-border)]">
               <app-icon name="list" size="1.25rem" />
             </div>
           </div>
@@ -232,14 +232,14 @@ function isWarnsTab(value: string): value is WarnsTab {
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('warns.stat.escalations') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-purple-400 mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-info)] mt-1">
                 {{ escalationTotal() }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 Threshold triggers
               </p>
             </div>
-            <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-info)] border border-[var(--color-border)]">
               <app-icon name="sparkles" size="1.25rem" />
             </div>
           </div>
@@ -261,7 +261,7 @@ function isWarnsTab(value: string): value is WarnsTab {
           (pageChange)="onWarnsChange($event)"
         >
           <ng-template dataTableCell="user" let-row>
-            <span class="font-medium text-white">{{ displayName(row.user_id, row.username) }}</span>
+            <span class="font-medium text-[var(--color-text)]">{{ displayName(row.user_id, row.username) }}</span>
           </ng-template>
           <ng-template dataTableCell="severity" let-row>
             <span class="chip" [class]="severityChip(row.severity)">{{
@@ -275,7 +275,7 @@ function isWarnsTab(value: string): value is WarnsTab {
               </span>
             } @else {
               <span class="status-pill status-pill--active">
-                <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
                 {{ t('warns.active') }}
               </span>
             }
@@ -316,7 +316,7 @@ function isWarnsTab(value: string): value is WarnsTab {
           (pageChange)="onEscalationsChange($event)"
         >
           <ng-template dataTableCell="user" let-row>
-            <span class="font-medium text-white">{{ displayName(row.user_id, row.username) }}</span>
+            <span class="font-medium text-[var(--color-text)]">{{ displayName(row.user_id, row.username) }}</span>
           </ng-template>
           <ng-template dataTableCell="opened_at" let-row>
             <span class="text-xs text-[var(--color-text-secondary)]">{{
@@ -326,14 +326,14 @@ function isWarnsTab(value: string): value is WarnsTab {
           <ng-template dataTableCell="status" let-row>
             @if (row.acknowledged_at) {
               <span class="status-pill status-pill--acked">
-                <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-success)]"></span>
                 {{ t('warns.acked') }}
               </span>
             } @else if (row.closed_reason) {
               <span class="status-pill status-pill--revoked">{{ row.closed_reason }}</span>
             } @else {
               <span class="status-pill status-pill--escalated">
-                <span class="h-1.5 w-1.5 rounded-full bg-red-400 animate-pulse"></span>
+                <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-error)] animate-pulse"></span>
                 {{ t('common.open') }}
               </span>
             }

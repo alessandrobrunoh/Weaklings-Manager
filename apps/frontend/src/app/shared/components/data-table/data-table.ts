@@ -7,6 +7,7 @@ import {
   effect,
   inject,
   input,
+  model,
   output,
   signal,
   untracked,
@@ -33,6 +34,13 @@ import type {
   SortDirection,
   SortState,
 } from './data-table-column';
+
+export interface DataTableTab {
+  readonly id: string;
+  readonly label: string;
+  readonly count?: number;
+  readonly dotClass?: string;
+}
 
 const DEFAULT_PAGE_SIZE = 10;
 const DEFAULT_PAGE_SIZES: readonly number[] = [10, 25, 50, 100];
@@ -76,6 +84,27 @@ export class DataTable<T> {
 
   /** Total number of items in the dataset. Ignored in client mode. */
   readonly totalItems = input<number>(0);
+
+  /** Optional custom noun for results (e.g. 'events', 'members'). Falls back to totalResults. */
+  readonly itemLabel = input<string>('');
+
+  /** Optional tabs rendered below the toolbar, matching the /events tab style. */
+  readonly tabs = input<readonly DataTableTab[] | null>(null);
+
+  /** Active tab ID. Can be two-way bound with [(activeTab)]. */
+  readonly activeTab = model<string>('');
+
+  /** Emitted when a tab is selected. */
+  readonly tabChange = output<string>();
+
+  /** Optional custom search placeholder. */
+  readonly searchPlaceholder = input<string>('');
+
+  /** Optional title for empty state. */
+  readonly emptyTitle = input<string>('');
+
+  /** Optional subtitle for empty state. */
+  readonly emptySubtitle = input<string>('');
 
   /** Page size. Defaults to 10. */
   readonly pageSize = input<number>(DEFAULT_PAGE_SIZE);
@@ -201,6 +230,26 @@ export class DataTable<T> {
     return Math.max(1, Math.ceil(total / this.currentPageSize()));
   });
 
+  protected readonly paginationFrom = computed<number>(() =>
+    this.visibleTotal() === 0 ? 0 : (this.page() - 1) * this.currentPageSize() + 1,
+  );
+
+  protected readonly paginationTo = computed<number>(() =>
+    Math.min(this.visibleTotal(), this.page() * this.currentPageSize()),
+  );
+
+  protected readonly displayedPages = computed<number[]>(() => {
+    const total = this.totalPages();
+    const current = this.page();
+    const pages: number[] = [];
+    for (let i = 1; i <= total; i++) {
+      if (i === 1 || i === total || (i >= current - 1 && i <= current + 1)) {
+        pages.push(i);
+      }
+    }
+    return pages;
+  });
+
   /** Active filter count (search + column filters). */
   protected readonly activeFilterCount = computed<number>(() => {
     let count = 0;
@@ -309,6 +358,24 @@ export class DataTable<T> {
       return;
     }
     this.page.update((p) => Math.max(1, p - 1));
+    this.emitChange();
+  }
+
+  protected goToPage(targetPage: number): void {
+    if (targetPage < 1 || targetPage > this.totalPages() || targetPage === this.page()) {
+      return;
+    }
+    this.page.set(targetPage);
+    this.emitChange();
+  }
+
+  protected onTabClick(tabId: string): void {
+    if (this.activeTab() === tabId) {
+      return;
+    }
+    this.activeTab.set(tabId);
+    this.tabChange.emit(tabId);
+    this.page.set(1);
     this.emitChange();
   }
 

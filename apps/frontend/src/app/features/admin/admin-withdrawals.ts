@@ -17,6 +17,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
+  type DataTableTab,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
@@ -84,37 +85,6 @@ const GROUPING_FETCH_LIMIT = 500;
       border-radius: 0.5rem;
       flex-shrink: 0;
     }
-    .status-tab-group {
-      display: flex;
-      align-items: center;
-      gap: 0.375rem;
-      overflow-x: auto;
-      padding: 0.25rem 0;
-    }
-    .status-tab {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.375rem 0.75rem;
-      border-radius: 0.5rem;
-      font-size: 0.8125rem;
-      font-weight: 500;
-      color: var(--color-text-secondary);
-      border: 1px solid transparent;
-      background: transparent;
-      transition: all var(--motion-fast);
-      white-space: nowrap;
-      cursor: pointer;
-    }
-    .status-tab:hover {
-      color: var(--color-text);
-      background: var(--color-surface-hover);
-    }
-    .status-tab--active {
-      color: var(--color-text);
-      background: var(--color-surface-1);
-      border-color: var(--color-border);
-    }
     .status-pill {
       display: inline-flex;
       align-items: center;
@@ -126,24 +96,24 @@ const GROUPING_FETCH_LIMIT = 500;
       letter-spacing: 0.02em;
     }
     .status-pill--withdrawn {
-      background: rgba(34, 197, 94, 0.12);
-      color: #4ade80;
-      border: 1px solid rgba(34, 197, 94, 0.25);
+      background: var(--color-success-container);
+      color: var(--color-success);
+      border: 1px solid var(--color-success);
     }
     .status-pill--requested {
-      background: rgba(234, 179, 8, 0.12);
-      color: #facc15;
-      border: 1px solid rgba(234, 179, 8, 0.25);
+      background: var(--color-warning-container);
+      color: var(--color-warning);
+      border: 1px solid var(--color-warning);
     }
     .status-pill--pending {
-      background: rgba(56, 189, 248, 0.12);
-      color: #38bdf8;
-      border: 1px solid rgba(56, 189, 248, 0.25);
+      background: var(--color-surface-2);
+      color: var(--color-primary);
+      border: 1px solid var(--color-primary);
     }
     .status-pill--rejected {
-      background: rgba(239, 68, 68, 0.12);
-      color: #f87171;
-      border: 1px solid rgba(239, 68, 68, 0.25);
+      background: var(--color-error-container);
+      color: var(--color-error);
+      border: 1px solid var(--color-error);
     }
   `,
   template: `
@@ -163,7 +133,7 @@ const GROUPING_FETCH_LIMIT = 500;
 
     <app-page-stack>
       <!-- KPI Row: 4 Modern Cards -->
-      <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('bank.queue.ariaLabel')">
+      <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" [attr.aria-label]="t('bank.queue.ariaLabel')">
         <!-- Card 1: Total Pending Payout -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
@@ -171,14 +141,14 @@ const GROUPING_FETCH_LIMIT = 500;
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 Pending Payout
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-emerald-400 mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
                 {{ formatCompact(pendingPayoutSilver()) }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 Silver to trade to members
               </p>
             </div>
-            <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
               <app-icon name="bank" size="1.25rem" />
             </div>
           </div>
@@ -191,15 +161,15 @@ const GROUPING_FETCH_LIMIT = 500;
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 Pending Requests
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                 {{ pendingRequestsCount() }}
               </p>
-              <p class="text-xs text-amber-400/90 mt-1 truncate flex items-center gap-1.5">
-                <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+              <p class="text-xs text-warning mt-1 truncate flex items-center gap-1.5">
+                <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
                 Awaiting officer review
               </p>
             </div>
-            <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
               <app-icon name="alert" size="1.25rem" />
             </div>
           </div>
@@ -212,14 +182,14 @@ const GROUPING_FETCH_LIMIT = 500;
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 Players Waiting
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                 {{ playersAwaitingCount() }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 Unique guild members
               </p>
             </div>
-            <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+            <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
               <app-icon name="users" size="1.25rem" />
             </div>
           </div>
@@ -232,81 +202,18 @@ const GROUPING_FETCH_LIMIT = 500;
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('bank.transactions.title') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                 {{ transactionTotal() }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 {{ t('bank.queue.entryCount', { count: transactionTotal() }) }}
               </p>
             </div>
-            <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
               <app-icon name="coins" size="1.25rem" />
             </div>
           </div>
         </article>
-      </section>
-
-      <!-- Status Filter Tabs -->
-      <section class="flex flex-wrap items-center justify-between gap-3 pt-1">
-        <nav class="status-tab-group" aria-label="Withdrawals status filter">
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === 'requested'"
-            (click)="setStatusFilter('requested')"
-          >
-            <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
-            <span>{{ t('bank.status.requested') }}</span>
-            @if (pendingRequestsCount() > 0) {
-              <span class="rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 text-[0.6875rem] font-mono">
-                {{ pendingRequestsCount() }}
-              </span>
-            }
-          </button>
-
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === ''"
-            (click)="setStatusFilter('')"
-          >
-            <span>{{ t('common.all') }}</span>
-            <span class="rounded-full bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[0.6875rem] font-mono">
-              {{ displayedRows().length }}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === 'withdrawn'"
-            (click)="setStatusFilter('withdrawn')"
-          >
-            <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
-            <span>{{ t('bank.status.withdrawn') }}</span>
-          </button>
-
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === 'rejected'"
-            (click)="setStatusFilter('rejected')"
-          >
-            <span class="h-1.5 w-1.5 rounded-full bg-red-400"></span>
-            <span>{{ t('bank.status.rejected') }}</span>
-          </button>
-        </nav>
-
-        @if (statusFilter() !== 'requested') {
-          <button
-            type="button"
-            class="btn btn--ghost btn--sm text-xs py-1 px-2 text-[var(--color-text-secondary)] hover:text-white inline-flex items-center gap-1"
-            (click)="setStatusFilter('requested')"
-          >
-            <app-icon name="close" size="0.75rem" />
-            <span>{{ t('common.clear') }}</span>
-          </button>
-        }
       </section>
 
       <app-data-table
@@ -320,8 +227,14 @@ const GROUPING_FETCH_LIMIT = 500;
         [totalItems]="displayedRows().length"
         [pageSize]="10"
         [rowClickable]="true"
+        searchPlaceholder="Search withdrawals..."
+        itemLabel="withdrawals"
         emptyIcon="bank"
-        [emptyLabel]="'bank.transactions.empty'"
+        emptyTitle="No withdrawal requests"
+        emptySubtitle="There are no withdrawal requests matching the selected filters."
+        [tabs]="withdrawalTabs()"
+        [activeTab]="statusFilter()"
+        (tabChange)="onTabSelect($event)"
         (rowClick)="onRowClick($event)"
         (pageChange)="onTableChange($event)"
       >
@@ -335,7 +248,7 @@ const GROUPING_FETCH_LIMIT = 500;
             }
             @case ('requested') {
               <span class="status-pill status-pill--requested">
-                <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
                 {{ statusLabel(row.status) }}
               </span>
             }
@@ -362,9 +275,9 @@ const GROUPING_FETCH_LIMIT = 500;
         <ng-template dataTableCell="amount" let-row>
           <span
             class="font-mono text-sm font-semibold"
-            [class.text-emerald-400]="row.status === 'withdrawn' || row.status === 'pending'"
-            [class.text-amber-400]="row.status === 'requested'"
-            [class.text-red-400]="row.status === 'rejected'"
+            [class.text-success]="row.status === 'withdrawn' || row.status === 'pending'"
+            [class.text-warning]="row.status === 'requested'"
+            [class.text-error]="row.status === 'rejected'"
           >
             {{ formatAmount(row.amount) }}
           </span>
@@ -380,10 +293,10 @@ const GROUPING_FETCH_LIMIT = 500;
           <div class="flex items-center gap-2.5 min-w-0">
             <app-avatar [userId]="row.to_user_id" [username]="row.to_username" size="sm" />
             <div class="flex items-center gap-1.5 min-w-0">
-              <span class="font-medium text-xs text-white truncate">{{ row.to_username }}</span>
+              <span class="font-medium text-xs text-(--color-text) truncate">{{ row.to_username }}</span>
               @if (row.count > 1) {
                 <span
-                  class="rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30 px-1.5 py-0.2 text-[0.625rem] font-mono font-bold"
+                  class="rounded-full bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)] px-1.5 py-0.2 text-[0.625rem] font-mono font-bold"
                   [appTooltip]="row.count + ' ' + t('bank.withdraw.requestCount', { count: row.count })"
                   tooltipPosition="top"
                 >
@@ -588,6 +501,34 @@ export class AdminWithdrawals {
   });
 
   protected readonly trackRow = (row: WithdrawalQueueRow): unknown => `${row.to_user_id}-${row.status}-${row.id}`;
+
+  protected readonly withdrawalTabs = computed<DataTableTab[]>(() => [
+    {
+      id: 'requested',
+      label: this.t('bank.status.requested'),
+      dotClass: 'bg-[var(--color-warning)] animate-pulse',
+      count: this.pendingRequestsCount(),
+    },
+    {
+      id: '',
+      label: this.t('common.all'),
+      count: this.displayedRows().length,
+    },
+    {
+      id: 'withdrawn',
+      label: this.t('bank.status.withdrawn'),
+      dotClass: 'bg-[var(--color-success)]',
+    },
+    {
+      id: 'rejected',
+      label: this.t('bank.status.rejected'),
+      dotClass: 'bg-[var(--color-error)]',
+    },
+  ]);
+
+  protected onTabSelect(tabId: string): void {
+    this.setStatusFilter(tabId as TransactionStatus | '');
+  }
 
   private readonly tableQuery = signal<DataTablePageChange>(emptyPageChange());
 

@@ -86,6 +86,136 @@ impl AdminService {
         if let Some(value) = &req.discord_event_voice_category_id {
             active.discord_event_voice_category_id = Set(normalize_discord_snowflake(value)?);
         }
+        if let Some(value) = &req.discord_applications_channel_id {
+            active.discord_applications_channel_id = Set(normalize_discord_snowflake(value)?);
+        }
+        if let Some(value) = &req.discord_applications_category_id {
+            active.discord_applications_category_id = Set(normalize_discord_snowflake(value)?);
+        }
+        if let Some(value) = &req.discord_applications_archive_category_id {
+            active.discord_applications_archive_category_id =
+                Set(normalize_discord_snowflake(value)?);
+        }
+        if let Some(value) = &req.discord_applications_manage_role_id {
+            active.discord_applications_manage_role_id = Set(normalize_discord_snowflake(value)?);
+        }
+        if let Some(value) = &req.discord_applications_status_channel_id {
+            active.discord_applications_status_channel_id =
+                Set(normalize_discord_snowflake(value)?);
+        }
+        if let Some(value) = req.discord_applications_open {
+            active.discord_applications_open = Set(value);
+        }
+        if let Some(value) = &req.discord_applications_panel_title {
+            active.discord_applications_panel_title =
+                Set(normalize_application_text(value, 256, "panel title")?);
+        }
+        if let Some(value) = &req.discord_applications_panel_message {
+            active.discord_applications_panel_message =
+                Set(normalize_application_text(value, 4000, "panel message")?);
+        }
+        if let Some(value) = &req.discord_applications_manage_title {
+            active.discord_applications_manage_title =
+                Set(normalize_application_text(value, 256, "manage title")?);
+        }
+        if let Some(value) = &req.discord_applications_manage_message {
+            active.discord_applications_manage_message =
+                Set(normalize_application_text(value, 4000, "manage message")?);
+        }
+        if let Some(value) = &req.discord_applications_closed_message {
+            active.discord_applications_closed_message =
+                Set(normalize_application_text(value, 4000, "closed message")?);
+        }
+        if let Some(value) = &req.discord_applications_closed_title {
+            active.discord_applications_closed_title =
+                Set(normalize_application_text(value, 256, "closed title")?);
+        }
+        if let Some(value) = &req.discord_applications_close_title {
+            active.discord_applications_close_title =
+                Set(normalize_application_text(value, 256, "close title")?);
+        }
+        if let Some(value) = &req.discord_applications_close_message {
+            active.discord_applications_close_message =
+                Set(normalize_application_text(value, 4000, "close message")?);
+        }
+        if let Some(value) = &req.discord_applications_accept_title {
+            active.discord_applications_accept_title =
+                Set(normalize_application_text(value, 256, "accept title")?);
+        }
+        if let Some(value) = &req.discord_applications_decline_title {
+            active.discord_applications_decline_title =
+                Set(normalize_application_text(value, 256, "decline title")?);
+        }
+        if let Some(value) = &req.discord_applications_no_permission_title {
+            active.discord_applications_no_permission_title =
+                Set(normalize_application_text(value, 256, "permission title")?);
+        }
+        if let Some(value) = &req.discord_applications_already_open_title {
+            active.discord_applications_already_open_title = Set(normalize_application_text(
+                value,
+                256,
+                "already-open title",
+            )?);
+        }
+        if let Some(value) = &req.discord_applications_final_title {
+            active.discord_applications_final_title =
+                Set(normalize_application_text(value, 256, "final title")?);
+        }
+        if let Some(value) = &req.discord_applications_no_permission_message {
+            active.discord_applications_no_permission_message = Set(normalize_application_text(
+                value,
+                4000,
+                "permission message",
+            )?);
+        }
+        if let Some(value) = &req.discord_applications_already_open_message {
+            active.discord_applications_already_open_message = Set(normalize_application_text(
+                value,
+                4000,
+                "already-open message",
+            )?);
+        }
+        if let Some(value) = &req.discord_applications_accept_message {
+            active.discord_applications_accept_message =
+                Set(normalize_application_text(value, 4000, "accept message")?);
+        }
+        if let Some(value) = &req.discord_applications_decline_message {
+            active.discord_applications_decline_message =
+                Set(normalize_application_text(value, 4000, "decline message")?);
+        }
+        if let Some(value) = &req.discord_applications_error_message {
+            active.discord_applications_error_message =
+                Set(normalize_application_text(value, 4000, "error message")?);
+        }
+        if let Some(value) = &req.discord_applications_result_message {
+            active.discord_applications_result_message =
+                Set(normalize_application_text(value, 4000, "result message")?);
+        }
+        if let Some(value) = &req.discord_applications_welcome_title {
+            active.discord_applications_welcome_title =
+                Set(normalize_application_text(value, 256, "welcome title")?);
+        }
+        if let Some(value) = &req.discord_applications_welcome_message {
+            active.discord_applications_welcome_message =
+                Set(normalize_application_text(value, 4000, "welcome message")?);
+        }
+        if let Some(value) = &req.discord_applications_status_open_message {
+            active.discord_applications_status_open_message = Set(normalize_application_text(
+                value,
+                4000,
+                "open status message",
+            )?);
+        }
+        if let Some(value) = &req.discord_applications_status_closed_message {
+            active.discord_applications_status_closed_message = Set(normalize_application_text(
+                value,
+                4000,
+                "closed status message",
+            )?);
+        }
+        if let Some(value) = &req.discord_applications_panel_message_id {
+            active.discord_applications_panel_message_id = Set(normalize_discord_snowflake(value)?);
+        }
         if let Some(value) = req.default_split_fee {
             if !(sea_orm::prelude::Decimal::ZERO..=sea_orm::prelude::Decimal::from(100))
                 .contains(&value)
@@ -119,6 +249,36 @@ impl AdminService {
                 "discord_split_not_completed_tag_id": req.discord_split_not_completed_tag_id,
                 "discord_split_lost_tag_id": req.discord_split_lost_tag_id,
                 "discord_event_voice_category_id": req.discord_event_voice_category_id,
+                "discord_applications_channel_id": req.discord_applications_channel_id,
+                "discord_applications_category_id": req.discord_applications_category_id,
+                "discord_applications_archive_category_id": req.discord_applications_archive_category_id,
+                "discord_applications_manage_role_id": req.discord_applications_manage_role_id,
+                "discord_applications_status_channel_id": req.discord_applications_status_channel_id,
+                "discord_applications_open": req.discord_applications_open,
+                "discord_applications_panel_title": req.discord_applications_panel_title,
+                "discord_applications_panel_message": req.discord_applications_panel_message,
+                "discord_applications_manage_title": req.discord_applications_manage_title,
+                "discord_applications_manage_message": req.discord_applications_manage_message,
+                "discord_applications_closed_message": req.discord_applications_closed_message,
+                "discord_applications_closed_title": req.discord_applications_closed_title,
+                "discord_applications_close_title": req.discord_applications_close_title,
+                "discord_applications_close_message": req.discord_applications_close_message,
+                "discord_applications_accept_title": req.discord_applications_accept_title,
+                "discord_applications_decline_title": req.discord_applications_decline_title,
+                "discord_applications_no_permission_title": req.discord_applications_no_permission_title,
+                "discord_applications_already_open_title": req.discord_applications_already_open_title,
+                "discord_applications_final_title": req.discord_applications_final_title,
+                "discord_applications_no_permission_message": req.discord_applications_no_permission_message,
+                "discord_applications_already_open_message": req.discord_applications_already_open_message,
+                "discord_applications_accept_message": req.discord_applications_accept_message,
+                "discord_applications_decline_message": req.discord_applications_decline_message,
+                "discord_applications_error_message": req.discord_applications_error_message,
+                "discord_applications_result_message": req.discord_applications_result_message,
+                "discord_applications_welcome_title": req.discord_applications_welcome_title,
+                "discord_applications_welcome_message": req.discord_applications_welcome_message,
+                "discord_applications_status_open_message": req.discord_applications_status_open_message,
+                "discord_applications_status_closed_message": req.discord_applications_status_closed_message,
+                "discord_applications_panel_message_id": req.discord_applications_panel_message_id,
                 "default_split_fee": req.default_split_fee,
             })),
         )
@@ -488,6 +648,25 @@ fn normalize(value: &str) -> Option<String> {
 }
 
 /// Validates a Discord snowflake while retaining the standard empty-string-means-clear convention.
+fn normalize_application_text(
+    value: &str,
+    max_len: usize,
+    field: &str,
+) -> Result<String, AppError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::Validation(format!(
+            "application {field} cannot be empty"
+        )));
+    }
+    if trimmed.chars().count() > max_len {
+        return Err(AppError::Validation(format!(
+            "application {field} exceeds {max_len} characters"
+        )));
+    }
+    Ok(trimmed.to_string())
+}
+
 fn normalize_discord_snowflake(value: &str) -> Result<Option<String>, AppError> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -695,6 +874,100 @@ mod tests {
         .await
         .expect_err("invalid snowflake must be rejected");
         assert!(matches!(error, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn guild_settings_round_trip_application_configuration() {
+        let db = seed_db().await;
+        let saved = AdminService::update_guild_settings(
+            &db,
+            1,
+            &UpdateGuildSettingsRequest {
+                discord_applications_channel_id: Some(" 123456789012345678 ".into()),
+                discord_applications_category_id: Some("123456789012345679".into()),
+                discord_applications_archive_category_id: Some("123456789012345680".into()),
+                discord_applications_manage_role_id: Some("123456789012345681".into()),
+                discord_applications_status_channel_id: Some("123456789012345682".into()),
+                discord_applications_open: Some(true),
+                discord_applications_panel_title: Some(" Recruitment ".into()),
+                discord_applications_panel_message: Some(" Click to apply ".into()),
+                discord_applications_manage_title: Some(" Manage ".into()),
+                discord_applications_manage_message: Some(" Choose an action ".into()),
+                discord_applications_closed_message: Some(" Closed ".into()),
+                discord_applications_no_permission_message: Some(" Denied ".into()),
+                discord_applications_already_open_message: Some(" Already open ".into()),
+                discord_applications_accept_message: Some(" Accepted ".into()),
+                discord_applications_decline_message: Some(" Declined ".into()),
+                discord_applications_error_message: Some(" Error ".into()),
+                discord_applications_result_message: Some(" Result ".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("save application settings");
+
+        assert_eq!(
+            saved.discord_applications_channel_id.as_deref(),
+            Some("123456789012345678")
+        );
+        assert_eq!(
+            saved.discord_applications_category_id.as_deref(),
+            Some("123456789012345679")
+        );
+        assert_eq!(
+            saved.discord_applications_archive_category_id.as_deref(),
+            Some("123456789012345680")
+        );
+        assert_eq!(
+            saved.discord_applications_manage_role_id.as_deref(),
+            Some("123456789012345681")
+        );
+        assert_eq!(
+            saved.discord_applications_status_channel_id.as_deref(),
+            Some("123456789012345682")
+        );
+        assert!(saved.discord_applications_open);
+        assert_eq!(saved.discord_applications_panel_title, "Recruitment");
+        assert_eq!(saved.discord_applications_panel_message, "Click to apply");
+        assert_eq!(saved.discord_applications_manage_title, "Manage");
+        assert_eq!(
+            saved.discord_applications_manage_message,
+            "Choose an action"
+        );
+        assert_eq!(saved.discord_applications_closed_message, "Closed");
+        assert_eq!(saved.discord_applications_no_permission_message, "Denied");
+        assert_eq!(
+            saved.discord_applications_already_open_message,
+            "Already open"
+        );
+        assert_eq!(saved.discord_applications_accept_message, "Accepted");
+        assert_eq!(saved.discord_applications_decline_message, "Declined");
+        assert_eq!(saved.discord_applications_error_message, "Error");
+        assert_eq!(saved.discord_applications_result_message, "Result");
+
+        let cleared = AdminService::update_guild_settings(
+            &db,
+            1,
+            &UpdateGuildSettingsRequest {
+                discord_applications_archive_category_id: Some("   ".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("clear archive category");
+        assert_eq!(cleared.discord_applications_archive_category_id, None);
+
+        let invalid = AdminService::update_guild_settings(
+            &db,
+            1,
+            &UpdateGuildSettingsRequest {
+                discord_applications_channel_id: Some("not-a-snowflake".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("invalid application channel must be rejected");
+        assert!(matches!(invalid, AppError::Validation(_)));
     }
 
     #[tokio::test]

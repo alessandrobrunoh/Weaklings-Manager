@@ -54,7 +54,7 @@ const BODY_MAX = 2000;
       border-radius: var(--radius-cards);
       background: var(--color-surface);
       border: 1px solid var(--color-border);
-      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.6);
+      box-shadow: var(--shadow-xl);
     }
     .inbox-list {
       overflow-y: auto;
@@ -64,8 +64,8 @@ const BODY_MAX = 2000;
   template: `
     <button
       type="button"
-      class="btn btn--ghost shrink-0 relative"
-      style="min-width: 34px; height: 34px; padding: 0.35rem; border-radius: 6px;"
+      class="btn btn--ghost shrink-0 relative text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors"
+      style="min-width: 36px; height: 36px; padding: 0.35rem;"
       (click)="togglePanel()"
       [appTooltip]="t('notifications.open')"
       tooltipPosition="bottom"
@@ -73,18 +73,16 @@ const BODY_MAX = 2000;
       [attr.aria-expanded]="panelOpen()"
       [attr.aria-controls]="panelOpen() ? panelId : null"
     >
-      <app-icon name="bell" size="1rem" />
+      <app-icon name="bell" size="1.125rem" />
       @if (unreadCount() > 0) {
         <span
-          class="absolute flex items-center justify-center rounded-full text-[9px] font-bold"
+          class="absolute flex items-center justify-center rounded-full text-[9px] font-bold text-[var(--color-on-primary)] bg-[var(--color-primary)]"
           style="
             top: 2px;
             right: 2px;
             min-width: 14px;
             height: 14px;
             padding: 0 3px;
-            background-color: var(--color-primary);
-            color: var(--color-on-primary);
           "
           aria-hidden="true"
         >
@@ -151,12 +149,12 @@ const BODY_MAX = 2000;
                       <span
                         class="block text-xs truncate"
                         [style.font-weight]="row.read_at ? '400' : '600'"
-                        [style.color]="row.read_at ? 'var(--color-text-secondary)' : '#ffffff'"
+                        [style.color]="row.read_at ? 'var(--color-text-secondary)' : 'var(--color-text)'"
                       >
                         {{ row.title }}
                       </span>
                       @if (!row.read_at) {
-                        <span class="h-1.5 w-1.5 rounded-full bg-sky-400 shrink-0 mt-1" aria-hidden="true"></span>
+                        <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-info)] shrink-0 mt-1" aria-hidden="true"></span>
                       }
                     </div>
                     <span

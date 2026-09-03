@@ -417,12 +417,12 @@ function parsePercentageInput(raw: string): number | null {
                   <span class="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
                     {{ t('splits.estimated') }}
                   </span>
-                  <span class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  <span class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
                     <app-icon name="coins" size="1rem" />
                   </span>
                 </div>
                 <div class="mt-3">
-                  <span class="font-mono text-lg font-bold text-amber-400">
+                  <span class="font-mono text-lg font-bold text-warning">
                     {{ formatAmount(detail.estimated_market_value) }}
                   </span>
                 </div>
@@ -450,12 +450,12 @@ function parsePercentageInput(raw: string): number | null {
                   <span class="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
                     {{ t('splits.repair_cost') }}
                   </span>
-                  <span class="icon-capsule bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                  <span class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
                     <app-icon name="hammer" size="1rem" />
                   </span>
                 </div>
                 <div class="mt-3">
-                  <span class="font-mono text-lg font-bold text-orange-400">
+                  <span class="font-mono text-lg font-bold text-warning">
                     -{{ formatAmount(detail.repair_value) }}
                   </span>
                 </div>
@@ -466,28 +466,28 @@ function parsePercentageInput(raw: string): number | null {
                   <span class="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
                     {{ t('splits.bags_value') }}
                   </span>
-                  <span class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                  <span class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
                     <app-icon name="package" size="1rem" />
                   </span>
                 </div>
                 <div class="mt-3">
-                  <span class="font-mono text-lg font-bold text-sky-400">
+                  <span class="font-mono text-lg font-bold text-[var(--color-primary)]">
                     +{{ formatAmount(detail.bags_value) }}
                   </span>
                 </div>
               </article>
 
-              <article class="kpi-card flex flex-col justify-between col-span-2 sm:col-span-1 border-emerald-500/30">
+              <article class="kpi-card flex flex-col justify-between col-span-2 sm:col-span-1 border-[var(--color-success)]">
                 <div class="flex items-center justify-between gap-2">
                   <span class="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
                     {{ t('splits.net_value') }}
                   </span>
-                  <span class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <span class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
                     <app-icon name="sparkles" size="1rem" />
                   </span>
                 </div>
                 <div class="mt-3">
-                  <span class="font-mono text-lg font-bold text-emerald-400">
+                  <span class="font-mono text-lg font-bold text-success">
                     {{ formatAmount(netOf(detail)) }}
                   </span>
                 </div>

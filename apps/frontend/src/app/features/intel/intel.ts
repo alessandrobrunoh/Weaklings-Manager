@@ -142,21 +142,21 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
     } @else {
       <app-page-stack>
         <!-- Top KPI headline strip -->
-        <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Intel summary">
+        <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Intel summary">
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div>
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('intel.stat.scouts') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
                   {{ headlineTotal() }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   Profiles tracked
                 </p>
               </div>
-              <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <div class="icon-capsule bg-[var(--color-info-container)] text-[var(--color-info)] border border-[var(--color-info)]">
                 <app-icon name="search" size="1.25rem" />
               </div>
             </div>
@@ -168,14 +168,14 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('intel.stat.topThreat') }}
                 </p>
-                <p class="font-bold text-base text-white mt-1 truncate max-w-[170px]" [title]="topThreat()?.opponent_guild_name ?? '—'">
+                <p class="font-bold text-base text-[var(--color-text)] mt-1 truncate max-w-[170px]" [title]="topThreat()?.opponent_guild_name ?? '—'">
                   {{ topThreat()?.opponent_guild_name ?? '—' }}
                 </p>
-                <p class="text-xs text-red-400 mt-1 truncate">
+                <p class="text-xs text-error mt-1 truncate">
                   {{ topThreat() ? t('intel.stat.threatScore') + ' ' + topThreat()!.threat_score : 'No active threat' }}
                 </p>
               </div>
-              <div class="icon-capsule bg-red-500/10 text-red-400 border border-red-500/20">
+              <div class="icon-capsule bg-[var(--color-error-container)] text-error border border-[var(--color-error)]">
                 <app-icon name="alert" size="1.25rem" />
               </div>
             </div>
@@ -187,14 +187,14 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('intel.stat.record') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-emerald-400 mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
                   {{ recordLabel() }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   {{ t('intel.stat.acrossFights') }}
                 </p>
               </div>
-              <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
                 <app-icon name="swords" size="1.25rem" />
               </div>
             </div>
@@ -206,14 +206,14 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('intel.stat.coverage') }}
                 </p>
-                <p class="font-mono text-2xl font-bold tracking-tight text-purple-400 mt-1">
+                <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-primary)] mt-1">
                   {{ coverageLabel() }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                   {{ t('intel.stat.coverageSub') }}
                 </p>
               </div>
-              <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+              <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-primary)] border border-[var(--color-primary)]">
                 <app-icon name="shield" size="1.25rem" />
               </div>
             </div>

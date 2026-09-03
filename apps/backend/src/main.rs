@@ -2,6 +2,8 @@
 //!
 //! Configures and runs the Axum web server exposing modular REST APIs and `OpenAPI` docs.
 
+#![recursion_limit = "256"]
+
 mod battle_sync;
 mod config;
 pub mod errors;

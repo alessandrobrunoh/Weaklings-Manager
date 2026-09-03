@@ -107,7 +107,7 @@ function emptyPageChange(): DataTablePageChange {
     </app-page-header>
 
     <app-page-stack>
-      <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Audit summary">
+      <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Audit summary">
         <app-stat-card
           [label]="t('audit.stat.total')"
           [value]="totalItems()"

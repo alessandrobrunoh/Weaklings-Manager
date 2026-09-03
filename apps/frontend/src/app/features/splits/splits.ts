@@ -27,6 +27,7 @@ import {
   DataTable,
   type DataTableColumn,
   type DataTablePageChange,
+  type DataTableTab,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
@@ -113,73 +114,20 @@ interface SplitParticipantDraft {
       flex-shrink: 0;
     }
     .icon-capsule--green {
-      background: rgba(34, 197, 94, 0.12);
-      color: #4cc36a;
+      background: var(--color-success-container);
+      color: var(--color-success);
     }
     .icon-capsule--amber {
-      background: rgba(234, 179, 8, 0.12);
-      color: #eab308;
+      background: var(--color-warning-container);
+      color: var(--color-warning);
     }
     .icon-capsule--purple {
-      background: rgba(168, 85, 247, 0.12);
-      color: #c084fc;
+      background: var(--color-surface-2);
+      color: var(--color-text-secondary);
     }
     .icon-capsule--blue {
-      background: rgba(56, 189, 248, 0.12);
-      color: #38bdf8;
-    }
-
-    .status-tab-group {
-      background-color: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: 10px;
-      padding: 3px;
-      display: inline-flex;
-      align-items: center;
-      gap: 2px;
-    }
-
-    .status-tab {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.375rem 0.75rem;
-      border-radius: 7px;
-      font-size: 0.75rem;
-      font-weight: 500;
-      color: var(--color-text-secondary);
-      background: transparent;
-      border: none;
-      cursor: pointer;
-      transition: all 120ms ease;
-      white-space: nowrap;
-    }
-    .status-tab:hover {
-      color: #ffffff;
-      background-color: var(--color-surface-hover);
-    }
-    .status-tab--active {
-      color: #ffffff;
-      background-color: var(--color-surface-2);
-      font-weight: 600;
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-    }
-
-    .status-tab__badge {
-      font-size: 0.6875rem;
-      font-family: var(--font-mono);
-      padding: 0.0625rem 0.375rem;
-      border-radius: 9999px;
-      background-color: var(--color-surface-3);
-      color: var(--color-text-secondary);
-    }
-    .status-tab__badge--amber {
-      background-color: rgba(234, 179, 8, 0.18);
-      color: #eab308;
-    }
-    .status-tab__badge--green {
-      background-color: rgba(34, 197, 94, 0.18);
-      color: #4cc36a;
+      background: var(--color-surface-2);
+      color: var(--color-primary);
     }
 
     .batch-bar {
@@ -189,8 +137,8 @@ interface SplitParticipantDraft {
       transition: all 150ms ease;
     }
     .batch-bar--active {
-      border-color: rgba(220, 38, 38, 0.4);
-      background: linear-gradient(180deg, rgba(220, 38, 38, 0.05) 0%, var(--color-surface) 100%);
+      border-color: var(--color-primary);
+      background: color-mix(in srgb, var(--color-primary-container) 35%, var(--color-surface));
     }
 
     .status-pill {
@@ -204,23 +152,23 @@ interface SplitParticipantDraft {
       line-height: 1;
     }
     .status-pill--completed {
-      background-color: rgba(34, 197, 94, 0.08);
-      border: 1px solid rgba(34, 197, 94, 0.25);
-      color: #4cc36a;
+      background-color: var(--color-success-container);
+      border: 1px solid var(--color-success);
+      color: var(--color-success);
     }
     .status-pill--pending {
-      background-color: rgba(234, 179, 8, 0.08);
-      border: 1px solid rgba(234, 179, 8, 0.25);
-      color: #eab308;
+      background-color: var(--color-warning-container);
+      border: 1px solid var(--color-warning);
+      color: var(--color-warning);
     }
     .status-pill--awaiting {
-      background-color: rgba(56, 189, 248, 0.08);
-      border: 1px solid rgba(56, 189, 248, 0.2);
-      color: #7dd3fc;
+      background-color: var(--color-surface-2);
+      border: 1px solid var(--color-primary);
+      color: var(--color-primary);
     }
     .status-pill--neutral {
-      background-color: rgba(148, 163, 184, 0.08);
-      border: 1px solid rgba(148, 163, 184, 0.2);
+      background-color: var(--color-surface-2);
+      border: 1px solid var(--color-border);
       color: var(--color-text-secondary);
     }
   `,
@@ -265,7 +213,7 @@ interface SplitParticipantDraft {
 
     <app-page-stack>
       <!-- Row 1: KPI Summary Cards -->
-      <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" aria-label="Split KPI Summary">
+      <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5" aria-label="Split KPI Summary">
         <!-- Card 1: Total Distributed -->
         <div class="kpi-card">
           <div class="flex items-center gap-3">
@@ -276,7 +224,7 @@ interface SplitParticipantDraft {
               {{ t('splits.total_distributed') }}
             </span>
           </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-white mt-3.5">
+          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5">
             {{ formatCompact(kpi()?.total_net_distributed ?? 0) }}
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
@@ -294,7 +242,7 @@ interface SplitParticipantDraft {
               {{ t('splits.pending_splits') }}
             </span>
           </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-white mt-3.5">
+          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5">
             {{ (kpi()?.pending_count ?? 0).toString() }}
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
@@ -312,7 +260,7 @@ interface SplitParticipantDraft {
               {{ t('splits.total_silver_volume') }}
             </span>
           </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-white mt-3.5">
+          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5">
             {{ formatCompact(kpi()?.total_estimated_volume ?? 0) }}
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
@@ -330,88 +278,12 @@ interface SplitParticipantDraft {
               {{ t('splits.participants') }}
             </span>
           </div>
-          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-white mt-3.5">
+          <div class="text-2xl sm:text-3xl font-bold tracking-tight text-(--color-text) mt-3.5">
             {{ (kpi()?.total_participants ?? 0).toString() }}
           </div>
           <div class="text-xs text-[var(--color-text-tertiary)] mt-1">
             {{ t('splits.kpi.recipients_sub') }}
           </div>
-        </div>
-      </section>
-
-      <!-- Row 2: Status Filter Tabs & Island Filter -->
-      <section class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
-        <div class="status-tab-group overflow-x-auto">
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === ''"
-            (click)="setStatusFilter('')"
-          >
-            <span>{{ t('common.all') }}</span>
-            <span class="status-tab__badge">{{ totalItems() }}</span>
-          </button>
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === 'pending'"
-            (click)="setStatusFilter('pending')"
-          >
-            <span class="h-1.5 w-1.5 rounded-full bg-amber-400"></span>
-            <span>{{ t('splits.status.pending') }}</span>
-            @if (kpi()?.pending_count) {
-              <span class="status-tab__badge status-tab__badge--amber">{{ kpi()?.pending_count }}</span>
-            }
-          </button>
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === 'awaiting_event'"
-            (click)="setStatusFilter('awaiting_event')"
-          >
-            <span class="h-1.5 w-1.5 rounded-full bg-sky-400"></span>
-            <span>{{ t('splits.status.awaiting_event') }}</span>
-          </button>
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === 'completed'"
-            (click)="setStatusFilter('completed')"
-          >
-            <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
-            <span>{{ t('splits.status.completed') }}</span>
-            @if (kpi()?.completed_count) {
-              <span class="status-tab__badge status-tab__badge--green">{{ kpi()?.completed_count }}</span>
-            }
-          </button>
-        </div>
-
-        <div class="flex items-center gap-2 self-start sm:self-center">
-          @if (islands().length > 0) {
-            <select
-              class="select text-xs py-1 px-2.5 bg-[var(--color-surface)] border-[var(--color-border)] rounded-lg"
-              [value]="islandFilter()"
-              (change)="onIslandFilterChange($event)"
-            >
-              <option value="">{{ t('splits.all_islands') }}</option>
-              @for (island of islands(); track island.id) {
-                <option [value]="island.id">
-                  {{ cityLabel(island.city) }} &middot; {{ island.name }}
-                </option>
-              }
-            </select>
-          }
-
-          @if (hasActiveFilters()) {
-            <button
-              type="button"
-              class="btn btn--ghost btn--sm text-xs py-1 px-2 text-[var(--color-text-secondary)] hover:text-white inline-flex items-center gap-1"
-              (click)="resetFilters()"
-            >
-              <app-icon name="close" size="0.75rem" />
-              <span>{{ t('common.clear') }}</span>
-            </button>
-          }
         </div>
       </section>
 
@@ -422,7 +294,7 @@ interface SplitParticipantDraft {
           [class.batch-bar--active]="selectedCount() > 0"
         >
           <div class="flex items-center gap-3 min-w-0">
-            <label class="flex cursor-pointer select-none items-center gap-2 text-sm text-white font-medium">
+            <label class="flex cursor-pointer select-none items-center gap-2 text-sm text-(--color-text) font-medium">
               <input
                 class="checkbox"
                 type="checkbox"
@@ -433,14 +305,14 @@ interface SplitParticipantDraft {
             </label>
 
             @if (selectedCount() > 0) {
-              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-[#dc2626] text-white">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-[var(--color-primary)] text-[var(--color-on-primary)]">
                 {{ selectedCount() }}
               </span>
 
               <div class="hidden sm:flex items-center gap-3 pl-3 border-l border-[var(--color-border)] text-xs text-[var(--color-text-secondary)]">
                 <span>
                   {{ t('splits.batch.totalNetPayout') }}:
-                  <strong class="text-emerald-400 font-mono font-bold">{{ formatAmount(selectedTotalNet()) }}</strong>
+                  <strong class="text-success font-mono font-bold">{{ formatAmount(selectedTotalNet()) }}</strong>
                 </span>
                 <span>&middot;</span>
                 <span>
@@ -454,7 +326,7 @@ interface SplitParticipantDraft {
             @if (selectedCount() > 0) {
               <button
                 type="button"
-                class="btn btn--ghost btn--sm text-xs text-[var(--color-text-secondary)] hover:text-white"
+                class="btn btn--ghost btn--sm text-xs text-[var(--color-text-secondary)] hover:text-(--color-text)"
                 (click)="clearSelection()"
               >
                 {{ t('common.clear') }}
@@ -475,7 +347,7 @@ interface SplitParticipantDraft {
           </div>
 
           @if (awaitingEventSplits().length > 0) {
-            <div class="basis-full flex items-center gap-2 pt-2 border-t border-[var(--color-border)] text-xs text-amber-400">
+            <div class="basis-full flex items-center gap-2 pt-2 border-t border-[var(--color-border)] text-xs text-warning">
               <app-icon name="alert" size="0.875rem" class="shrink-0" />
               <span>{{ t('splits.awaiting_event.message') }}</span>
             </div>
@@ -483,7 +355,7 @@ interface SplitParticipantDraft {
         </section>
       }
 
-      <!-- Row 4: Data Table -->
+      <!-- Row 4: Data Table with integrated Search and Status Tabs -->
       <app-data-table
         [columns]="columns()"
         [rows]="splits()"
@@ -497,8 +369,30 @@ interface SplitParticipantDraft {
         [rowClickable]="true"
         (rowClick)="openSplit($event)"
         (pageChange)="onPageChange($event)"
+        searchPlaceholder="Search splits by note or ID..."
+        itemLabel="splits"
         emptyIcon="swords"
+        emptyTitle="No splits found"
+        emptySubtitle="There are no splits matching the selected filters."
+        [tabs]="splitTabs()"
+        [activeTab]="statusFilter()"
+        (tabChange)="onTabSelect($event)"
       >
+        @if (islands().length > 0) {
+          <select
+            dataTableActions
+            class="bg-[var(--color-surface-2)] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-lg px-3 py-2 text-xs text-[var(--color-text)] cursor-pointer outline-none transition-all"
+            [value]="islandFilter()"
+            (change)="onIslandFilterChange($event)"
+          >
+            <option value="">{{ t('splits.all_islands') }}</option>
+            @for (island of islands(); track island.id) {
+              <option [value]="island.id" class="bg-[var(--color-surface)] text-[var(--color-text)]">
+                {{ cityLabel(island.city) }} &middot; {{ island.name }}
+              </option>
+            }
+          </select>
+        }
         <ng-template dataTableCell="select" let-row>
           @if (canAct() && row.status === 'pending') {
             <input
@@ -513,7 +407,7 @@ interface SplitParticipantDraft {
         </ng-template>
 
         <ng-template dataTableCell="note" let-row>
-          <span class="font-semibold text-white group-hover:text-red-400 transition-colors">
+          <span class="font-semibold text-(--color-text) group-hover:text-error transition-colors">
             {{ row.note || t('splits.untitled', { id: row.id }) }}
           </span>
         </ng-template>
@@ -528,7 +422,7 @@ interface SplitParticipantDraft {
             }
             @case ('pending') {
               <span class="status-pill status-pill--pending">
-                <span class="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
                 <span>{{ statusLabel(row.status) }}</span>
               </span>
             }
@@ -575,7 +469,7 @@ interface SplitParticipantDraft {
         </ng-template>
 
         <ng-template dataTableCell="net" let-row>
-          <span class="mono font-bold text-sm text-emerald-400">{{ formatAmount(netOf(row)) }}</span>
+          <span class="mono font-bold text-sm text-success">{{ formatAmount(netOf(row)) }}</span>
         </ng-template>
 
         <ng-template dataTableCell="participants" let-row>
@@ -605,7 +499,7 @@ interface SplitParticipantDraft {
             }
             <button
               type="button"
-              class="btn btn--ghost btn--sm py-1 px-2 text-xs flex items-center gap-1 text-[var(--color-text-secondary)] hover:text-white"
+              class="btn btn--ghost btn--sm py-1 px-2 text-xs flex items-center gap-1 text-[var(--color-text-secondary)] hover:text-(--color-text)"
               (click)="openSplit(row)"
             >
               <span>{{ t('common.open') }}</span>
@@ -614,7 +508,7 @@ interface SplitParticipantDraft {
             @if (canDelete()) {
               <button
                 type="button"
-                class="btn btn--ghost btn--icon btn--sm text-[var(--color-text-tertiary)] hover:text-red-400"
+                class="btn btn--ghost btn--icon btn--sm text-[var(--color-text-tertiary)] hover:text-error"
                 (click)="askDelete(row)"
                 [appTooltip]="t('common.delete')"
                 tooltipPosition="bottom"
@@ -1153,6 +1047,35 @@ export class Splits {
   protected readonly statusFilter = signal<SplitStatus | ''>('');
   protected readonly sortKey = signal<string | null>(null);
   protected readonly sortOrder = signal<'asc' | 'desc' | null>(null);
+
+  protected readonly splitTabs = computed<DataTableTab[]>(() => [
+    {
+      id: '',
+      label: this.t('common.all'),
+      count: this.totalItems(),
+    },
+    {
+      id: 'pending',
+      label: this.t('splits.status.pending'),
+      dotClass: 'bg-[var(--color-warning)]',
+      count: this.kpi()?.pending_count,
+    },
+    {
+      id: 'awaiting_event',
+      label: this.t('splits.status.awaiting_event'),
+      dotClass: 'bg-[var(--color-primary)]',
+    },
+    {
+      id: 'completed',
+      label: this.t('splits.status.completed'),
+      dotClass: 'bg-[var(--color-success)]',
+      count: this.kpi()?.completed_count,
+    },
+  ]);
+
+  protected onTabSelect(tabId: string): void {
+    this.setStatusFilter(tabId as SplitStatus | '');
+  }
 
   private readonly selectedIds = signal<ReadonlySet<number>>(new Set());
   protected readonly batchRunning = signal(false);

@@ -70,6 +70,14 @@ export class SettingsService {
     return (await this.get()).discord_event_voice_category_id;
   }
 
+  async applicationsSettings(): Promise<GuildSettingsView> {
+    return this.get();
+  }
+
+  async applicationsStatusChannelId(): Promise<string | null> {
+    return (await this.get()).discord_applications_status_channel_id;
+  }
+
   async splitsForumChannelId(): Promise<string | null> {
     return (await this.get()).discord_splits_forum_channel_id;
   }

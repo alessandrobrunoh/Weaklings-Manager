@@ -10,8 +10,17 @@ import type {
   SplitDiscoveryBatch,
   SplitDiscordSync,
 } from "../api/types.js";
-import { buildEventAnnouncementContent } from "../embeds/event.embed.js";
+import {
+  buildEventAnnouncementContent,
+  buildEventEmbed,
+  buildEventThreadActionRows,
+} from "../embeds/event.embed.js";
 import { buildBattleEmbed } from "../embeds/battle.embed.js";
+import {
+  buildApplicationPanelComponents,
+  buildApplicationPanelEmbed,
+  buildApplicationStatusAnnouncement,
+} from "../embeds/application.embed.js";
 import { GUILD_NAME } from "../embeds/theme.js";
 import { config } from "../config.js";
 import type { SettingsService } from "./settings.js";
@@ -37,6 +46,7 @@ interface PollerState {
   splitAfterId: number | null;
   massedEvents: number[];
   emptyLiveChecks: Record<string, number>;
+  applicationsOpen?: boolean;
 }
 
 function createDefaultState(): PollerState {
@@ -49,6 +59,7 @@ function createDefaultState(): PollerState {
     splitAfterId: null,
     massedEvents: [],
     emptyLiveChecks: {},
+    applicationsOpen: undefined,
   };
 }
 
@@ -113,6 +124,7 @@ function loadState(stateDirectory: string): PollerState {
       splitAfterId: parsedState.splitAfterId ?? null,
       massedEvents: parsedState.massedEvents ?? [],
       emptyLiveChecks: parsedState.emptyLiveChecks ?? {},
+      applicationsOpen: parsedState.applicationsOpen,
     };
   } catch (error) {
     console.warn(
@@ -197,6 +209,7 @@ export class Poller {
     }
     this.polling = true;
     try {
+      await this.checkApplicationStatus();
       // Event announcements must complete before checking reminders so a newly
       // created event already has its discussion thread recorded.
       await this.checkNewEvents();
@@ -209,6 +222,45 @@ export class Poller {
       ]);
     } finally {
       this.polling = false;
+    }
+  }
+
+  /** Announces only real application availability transitions. */
+  private async checkApplicationStatus(): Promise<void> {
+    try {
+      const settings = await this.settings.applicationsSettings();
+      const previous = this.state.applicationsOpen;
+      this.state.applicationsOpen = settings.discord_applications_open;
+      if (previous === undefined || previous === settings.discord_applications_open) return;
+      await this.updateApplicationPanel(settings);
+      const channelId = settings.discord_applications_status_channel_id;
+      if (!channelId) {
+        console.warn('[Poller] Application status changed but no status channel is configured');
+        return;
+      }
+      const channel = await this.client.channels.fetch(channelId);
+      if (!channel?.isTextBased() || channel.isDMBased()) return;
+      await channel.send(buildApplicationStatusAnnouncement(settings));
+      saveState(this.stateDirectory, this.state);
+    } catch (error) {
+      console.warn('[Poller] Could not announce application status:', error);
+    }
+  }
+
+  private async updateApplicationPanel(settings: import('../api/types.js').GuildSettingsView): Promise<void> {
+    const channelId = settings.discord_applications_channel_id;
+    const messageId = settings.discord_applications_panel_message_id;
+    if (!channelId || !messageId) return;
+    try {
+      const channel = await this.client.channels.fetch(channelId);
+      if (!channel?.isTextBased() || channel.isDMBased() || !('messages' in channel)) return;
+      const message = await channel.messages.fetch(messageId);
+      await message.edit({
+        embeds: [buildApplicationPanelEmbed(settings)],
+        components: buildApplicationPanelComponents(settings),
+      });
+    } catch (error) {
+      console.warn('[Poller] Could not update application panel:', error);
     }
   }
 
@@ -281,8 +333,13 @@ export class Poller {
         // next poll without leaving a partial announcement behind.
         const eventDetail = await this.api.get<EventDetailView>(`api/events/${event.id}`);
         const roleIds = eventDetail.discord_role_ids ?? [];
+        // Keep the announcement in the parent channel actionable. Previously the parent message
+        // was text-only and the controls were posted only in the discussion thread, making the
+        // event impossible to manage for users who never opened the thread.
         const announcementMessage = await channel.send({
           content: buildEventAnnouncementContent(eventDetail),
+          embeds: [buildEventEmbed(eventDetail)],
+          components: buildEventThreadActionRows(eventDetail),
           allowedMentions: roleIds.length > 0
             ? { roles: roleIds }
             : { parse: [] },

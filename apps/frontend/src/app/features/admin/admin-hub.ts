@@ -76,22 +76,6 @@ import type { AuditLog } from '../audit/audit';
     .admin-queue-card:hover {
       border-color: var(--color-border-hover);
     }
-    .admin-queue-card::before {
-      content: '';
-      position: absolute;
-      inset-inline-start: 0;
-      inset-block: 0;
-      inline-size: 3px;
-    }
-    .admin-queue-card--warning::before {
-      background: #facc15;
-    }
-    .admin-queue-card--primary::before {
-      background: #38bdf8;
-    }
-    .admin-queue-card--success::before {
-      background: #4ade80;
-    }
   `,
   template: `
     <app-page-header
@@ -113,7 +97,7 @@ import type { AuditLog } from '../audit/audit';
 
     <app-page-stack>
       <!-- Core Administrative KPIs: 6 Modern Cards -->
-      <section class="grid gap-3.5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6" aria-label="Admin KPI summary">
+      <section class="grid gap-3.5 sm:gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6" aria-label="Admin KPI summary">
         <!-- Card 1: Total Members -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-2">
@@ -121,14 +105,14 @@ import type { AuditLog } from '../audit/audit';
               <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.stat.totalMembers') }}
               </p>
-              <p class="font-mono text-xl font-bold tracking-tight text-white mt-1">
+              <p class="font-mono text-xl font-bold tracking-tight text-(--color-text) mt-1">
                 {{ formatCount(totalMembers()) }}
               </p>
               <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5 truncate">
                 Guild roster
               </p>
             </div>
-            <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+            <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
               <app-icon name="users" size="1.125rem" />
             </div>
           </div>
@@ -141,14 +125,14 @@ import type { AuditLog } from '../audit/audit';
               <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.stat.ledgerVolume') }}
               </p>
-              <p class="font-mono text-xl font-bold tracking-tight text-purple-400 mt-1">
+              <p class="font-mono text-xl font-bold tracking-tight text-[var(--color-text-secondary)] mt-1">
                 {{ formatCompact(bankSummary()?.ledger_volume) }}
               </p>
               <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5 truncate">
                 {{ bankSummary()?.transaction_count ?? 0 }} entries
               </p>
             </div>
-            <div class="icon-capsule bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
               <app-icon name="bank" size="1.125rem" />
             </div>
           </div>
@@ -161,15 +145,15 @@ import type { AuditLog } from '../audit/audit';
               <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.stat.openLiability') }}
               </p>
-              <p class="font-mono text-xl font-bold tracking-tight text-amber-400 mt-1">
+              <p class="font-mono text-xl font-bold tracking-tight text-warning mt-1">
                 {{ formatCompact(bankSummary()?.outstanding_total) }}
               </p>
-              <p class="text-[0.6875rem] text-amber-400/90 mt-0.5 truncate flex items-center gap-1">
-                <span class="h-1 w-1 rounded-full bg-amber-400 animate-pulse"></span>
+              <p class="text-[0.6875rem] text-warning mt-0.5 truncate flex items-center gap-1">
+                <span class="h-1 w-1 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
                 {{ bankSummary()?.outstanding_count ?? 0 }} requests
               </p>
             </div>
-            <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
               <app-icon name="alert" size="1.125rem" />
             </div>
           </div>
@@ -182,14 +166,14 @@ import type { AuditLog } from '../audit/audit';
               <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.stat.paidOut') }}
               </p>
-              <p class="font-mono text-xl font-bold tracking-tight text-emerald-400 mt-1">
+              <p class="font-mono text-xl font-bold tracking-tight text-success mt-1">
                 {{ formatCompact(bankSummary()?.paid_out_total) }}
               </p>
               <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5 truncate">
                 {{ bankSummary()?.paid_out_count ?? 0 }} paid
               </p>
             </div>
-            <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
               <app-icon name="coins" size="1.125rem" />
             </div>
           </div>
@@ -202,14 +186,14 @@ import type { AuditLog } from '../audit/audit';
               <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.stat.totalRoles') }}
               </p>
-              <p class="font-mono text-xl font-bold tracking-tight text-white mt-1">
+              <p class="font-mono text-xl font-bold tracking-tight text-(--color-text) mt-1">
                 {{ formatCount(matrix()?.roles?.length) }}
               </p>
               <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5 truncate">
                 Auth roles
               </p>
             </div>
-            <div class="icon-capsule bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+            <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
               <app-icon name="shield" size="1.125rem" />
             </div>
           </div>
@@ -222,14 +206,14 @@ import type { AuditLog } from '../audit/audit';
               <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.stat.totalEvents') }}
               </p>
-              <p class="font-mono text-xl font-bold tracking-tight text-white mt-1">
+              <p class="font-mono text-xl font-bold tracking-tight text-(--color-text) mt-1">
                 {{ formatCount(totalEvents()) }}
               </p>
               <p class="text-[0.6875rem] text-[var(--color-text-secondary)] mt-0.5 truncate">
                 Scheduled activities
               </p>
             </div>
-            <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+            <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
               <app-icon name="calendar" size="1.125rem" />
             </div>
           </div>
@@ -241,7 +225,7 @@ import type { AuditLog } from '../audit/audit';
         <section aria-labelledby="admin-queues-heading">
           <div class="flex items-center justify-between mb-3">
             <h2 id="admin-queues-heading" class="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)] flex items-center gap-2">
-              <span class="inline-block h-2 w-2 rounded-full bg-amber-400 animate-pulse"></span>
+              <span class="inline-block h-2 w-2 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
               {{ t('admin.hub.quickQueues') }}
             </h2>
           </div>
@@ -250,14 +234,14 @@ import type { AuditLog } from '../audit/audit';
             <div class="admin-queue-card admin-queue-card--warning">
               <div class="flex items-start justify-between gap-2 mb-2">
                 <div>
-                  <span class="text-[0.6875rem] font-semibold uppercase tracking-wider block text-amber-400">
+                  <span class="text-[0.6875rem] font-semibold uppercase tracking-wider block text-warning">
                     {{ t('admin.stat.pendingRegears') }}
                   </span>
-                  <div class="text-2xl font-mono font-bold mt-0.5 text-white">
+                  <div class="text-2xl font-mono font-bold mt-0.5 text-(--color-text)">
                     {{ formatCount(pendingRegearsCount()) }}
                   </div>
                 </div>
-                <span class="p-2 rounded-lg bg-amber-500/15 text-amber-400 border border-amber-500/25">
+                <span class="p-2 rounded-lg bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
                   <app-icon name="shield" size="1.25rem" />
                 </span>
               </div>
@@ -277,14 +261,14 @@ import type { AuditLog } from '../audit/audit';
             <div class="admin-queue-card admin-queue-card--primary">
               <div class="flex items-start justify-between gap-2 mb-2">
                 <div>
-                  <span class="text-[0.6875rem] font-semibold uppercase tracking-wider block text-sky-400">
+                  <span class="text-[0.6875rem] font-semibold uppercase tracking-wider block text-[var(--color-primary)]">
                     {{ t('admin.stat.pendingSplits') }}
                   </span>
-                  <div class="text-2xl font-mono font-bold mt-0.5 text-white">
+                  <div class="text-2xl font-mono font-bold mt-0.5 text-(--color-text)">
                     {{ formatCount(pendingSplitsCount()) }}
                   </div>
                 </div>
-                <span class="p-2 rounded-lg bg-sky-500/15 text-sky-400 border border-sky-500/25">
+                <span class="p-2 rounded-lg bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
                   <app-icon name="swords" size="1.25rem" />
                 </span>
               </div>
@@ -304,14 +288,14 @@ import type { AuditLog } from '../audit/audit';
             <div class="admin-queue-card admin-queue-card--success">
               <div class="flex items-start justify-between gap-2 mb-2">
                 <div>
-                  <span class="text-[0.6875rem] font-semibold uppercase tracking-wider block text-emerald-400">
+                  <span class="text-[0.6875rem] font-semibold uppercase tracking-wider block text-success">
                     {{ t('admin.stat.pendingWithdrawals') }}
                   </span>
-                  <div class="text-2xl font-mono font-bold mt-0.5 text-emerald-400">
+                  <div class="text-2xl font-mono font-bold mt-0.5 text-success">
                     {{ formatCount(pendingWithdrawalsCount()) }}
                   </div>
                 </div>
-                <span class="p-2 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
+                <span class="p-2 rounded-lg bg-[var(--color-success-container)] text-success border border-[var(--color-success)]">
                   <app-icon name="bank" size="1.25rem" />
                 </span>
               </div>
@@ -336,7 +320,7 @@ import type { AuditLog } from '../audit/audit';
           {{ t('admin.hub.panels') }}
         </h2>
         
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-3">
           @for (panel of visiblePanels(); track panel.path) {
             <a
               [routerLink]="panel.path"
@@ -621,7 +605,7 @@ export class AdminHub {
       return 'var(--color-success-container)';
     }
     if (action.includes('REJECT') || action.includes('DELETE') || action.includes('WARN')) {
-      return 'rgba(239, 68, 68, 0.15)';
+      return 'var(--color-error-container)';
     }
     if (action.includes('UPDATE') || action.includes('SET') || action.includes('REQUEST')) {
       return 'var(--color-warning-container)';

@@ -12,27 +12,35 @@ import { Icon, type IconName } from '../icon/icon';
   imports: [Icon],
   template: `
     <div
-      class="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center"
+      class="empty-state flex flex-col items-center justify-center gap-3 px-6 py-12 text-center"
       role="status"
       aria-live="polite"
     >
       @if (icon()) {
         <div
-          class="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-sky-400 shadow-sm"
-          style="box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.02)"
+          class="empty-state__icon flex h-12 w-12 items-center justify-center border shadow-sm"
           aria-hidden="true"
         >
           <app-icon [name]="icon()" size="1.5rem" />
         </div>
       }
       <div class="max-w-sm">
-        <p class="text-sm font-semibold tracking-tight text-white">{{ message() }}</p>
+        <p class="text-sm font-medium tracking-tight text-[var(--color-text-heading)]">{{ message() }}</p>
         @if (hint()) {
           <p class="mt-1 text-xs text-[var(--color-text-secondary)] leading-relaxed">{{ hint() }}</p>
         }
       </div>
       <ng-content />
     </div>
+  `,
+  styles: `
+    .empty-state__icon {
+      border-radius: var(--radius-xl, 12px);
+      border-color: var(--color-border);
+      background: var(--color-surface-2);
+      color: var(--color-info);
+      box-shadow: var(--shadow-subtle);
+    }
   `,
 })
 export class EmptyState {

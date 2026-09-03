@@ -74,24 +74,24 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
       letter-spacing: 0.02em;
     }
     .role-pill--superadmin {
-      background: rgba(168, 85, 247, 0.15);
-      color: #c084fc;
-      border: 1px solid rgba(168, 85, 247, 0.3);
+      background: var(--color-error-container);
+      color: var(--color-error);
+      border: 1px solid color-mix(in srgb, var(--color-error) 30%, transparent);
     }
     .role-pill--admin {
-      background: rgba(239, 68, 68, 0.15);
-      color: #f87171;
-      border: 1px solid rgba(239, 68, 68, 0.3);
+      background: var(--color-error-container);
+      color: var(--color-error);
+      border: 1px solid color-mix(in srgb, var(--color-error) 30%, transparent);
     }
     .role-pill--officer {
-      background: rgba(234, 179, 8, 0.15);
-      color: #facc15;
-      border: 1px solid rgba(234, 179, 8, 0.3);
+      background: var(--color-warning-container);
+      color: var(--color-warning);
+      border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
     }
     .role-pill--member {
-      background: rgba(56, 189, 248, 0.15);
-      color: #38bdf8;
-      border: 1px solid rgba(56, 189, 248, 0.3);
+      background: var(--color-success-container);
+      color: var(--color-success);
+      border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
     }
   `,
   template: `
@@ -113,7 +113,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
     </app-page-header>
 
     <app-page-stack>
-      <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Members summary">
+      <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Members summary">
         <!-- Card 1: Total -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
@@ -121,14 +121,14 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('users.stat.total') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] mt-1">
                 {{ totalItems() }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 {{ t('common.totalResults') }}
               </p>
             </div>
-            <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
+            <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-info)] border border-[var(--color-border)]">
               <app-icon name="users" size="1.25rem" />
             </div>
           </div>
@@ -141,14 +141,14 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('users.stat.admins') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-red-400 mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-error mt-1">
                 {{ adminCount() }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 System administrators
               </p>
             </div>
-            <div class="icon-capsule bg-red-500/10 text-red-400 border border-red-500/20">
+            <div class="icon-capsule bg-[var(--color-error-container)] text-error border border-[var(--color-border)]">
               <app-icon name="shield" size="1.25rem" />
             </div>
           </div>
@@ -161,14 +161,14 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('users.stat.officers') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-amber-400 mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-warning mt-1">
                 {{ officerCount() }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 Guild officers
               </p>
             </div>
-            <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-border)]">
               <app-icon name="sparkles" size="1.25rem" />
             </div>
           </div>
@@ -181,14 +181,14 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('users.stat.members') }}
               </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-emerald-400 mt-1">
+              <p class="font-mono text-2xl font-bold tracking-tight text-success mt-1">
                 {{ memberCount() }}
               </p>
               <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
                 Active roster members
               </p>
             </div>
-            <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <div class="icon-capsule bg-[var(--color-success-container)] text-success border border-[var(--color-border)]">
               <app-icon name="users" size="1.25rem" />
             </div>
           </div>
@@ -213,7 +213,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         <ng-template dataTableCell="username" let-row>
           <div class="flex items-center gap-2.5">
             <app-avatar [userId]="row.id" [username]="row.username" size="sm" />
-            <span class="font-medium text-white hover:underline cursor-pointer">{{ row.username }}</span>
+            <span class="font-medium text-[var(--color-text)] hover:underline cursor-pointer">{{ row.username }}</span>
           </div>
         </ng-template>
 

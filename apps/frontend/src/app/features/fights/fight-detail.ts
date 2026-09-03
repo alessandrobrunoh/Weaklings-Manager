@@ -225,8 +225,8 @@ type PendingFightMutation =
               K/D gilda:
               <strong
                 class="mono"
-                [class.text-emerald-400]="ourGuildKdRatio() >= 1"
-                [class.text-rose-400]="ourGuildKdRatio() < 1"
+                [class.text-success]="ourGuildKdRatio() >= 1"
+                [class.text-error]="ourGuildKdRatio() < 1"
               >
                 {{ formatDecimal(ourGuildKdRatio()) }}
               </strong>
@@ -251,7 +251,7 @@ type PendingFightMutation =
 
           <article class="surface p-3.5 sm:p-4 rounded-xl border border-[var(--color-border)]">
             <p class="battle-detail__label">{{ t('battles.silver_lost') }}</p>
-            <p class="battle-detail__value text-rose-400">
+            <p class="battle-detail__value text-error">
               {{ formatCompact(totalEstimatedLoss()) }}
             </p>
             <p class="battle-detail__sub">
@@ -281,7 +281,7 @@ type PendingFightMutation =
             </h2>
             <div class="grid gap-5 lg:grid-cols-11 lg:items-center">
               <!-- OUR FORCES -->
-              <div class="lg:col-span-5 rounded-xl p-4 border border-emerald-500/30 bg-emerald-500/5">
+              <div class="lg:col-span-5 rounded-xl p-4 border border-[var(--color-success)] bg-[var(--color-success-container)]">
                 <div class="flex items-center justify-between mb-2">
                   <span class="chip chip--success font-semibold text-xs">
                     {{ ourAllianceName() ? '[' + ourAllianceName() + '] ' + (ourGuild()?.name || ourGuildName()) : (ourGuild()?.name || ourGuildName()) }}
@@ -297,7 +297,7 @@ type PendingFightMutation =
                   </div>
                   <div class="surface p-2 rounded-lg">
                     <p class="text-[10px] uppercase font-bold text-disabled">K/D Ratio</p>
-                    <p class="font-bold text-sm mono" [class.text-emerald-400]="ourForcesKdRatio() >= 1" [class.text-rose-400]="ourForcesKdRatio() < 1">
+                    <p class="font-bold text-sm mono" [class.text-success]="ourForcesKdRatio() >= 1" [class.text-error]="ourForcesKdRatio() < 1">
                       {{ formatDecimal(ourForcesKdRatio()) }}
                     </p>
                   </div>
@@ -318,7 +318,7 @@ type PendingFightMutation =
               </div>
 
               <!-- ENEMY FORCES -->
-              <div class="lg:col-span-5 rounded-xl p-4 border border-rose-500/30 bg-rose-500/5">
+              <div class="lg:col-span-5 rounded-xl p-4 border border-[var(--color-error)] bg-[var(--color-error-container)]">
                 <div class="flex items-center justify-between mb-2">
                   <span class="chip chip--error font-semibold text-xs">
                     {{ topEnemyAlliance()?.name ? '[' + topEnemyAlliance()?.name + '] ' + (topEnemyAlliance()?.guilds?.[0]?.name || 'Enemies') : 'Hostile Coalition' }}
@@ -334,7 +334,7 @@ type PendingFightMutation =
                   </div>
                   <div class="surface p-2 rounded-lg">
                     <p class="text-[10px] uppercase font-bold text-disabled">K/D Ratio</p>
-                    <p class="font-bold text-sm mono" [class.text-emerald-400]="enemyForcesKdRatio() >= 1" [class.text-rose-400]="enemyForcesKdRatio() < 1">
+                    <p class="font-bold text-sm mono" [class.text-success]="enemyForcesKdRatio() >= 1" [class.text-error]="enemyForcesKdRatio() < 1">
                       {{ formatDecimal(enemyForcesKdRatio()) }}
                     </p>
                   </div>
@@ -356,7 +356,7 @@ type PendingFightMutation =
             </h2>
             <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <!-- Top Executioner -->
-              <article class="card p-4 border-l-4 border-l-amber-400">
+              <article class="card p-4 border border-[var(--color-warning)]">
                 <p class="text-[10px] text-disabled uppercase font-bold tracking-wider">TOP EXECUTIONER</p>
                 <div class="mt-2 flex items-center gap-3">
                   @if (mvpExecutioner(); as player) {
@@ -373,7 +373,7 @@ type PendingFightMutation =
               </article>
 
               <!-- Fame Hunter -->
-              <article class="card p-4 border-l-4 border-l-yellow-400">
+              <article class="card p-4 border border-[var(--color-warning)]">
                 <p class="text-[10px] text-disabled uppercase font-bold tracking-wider">FAME HUNTER</p>
                 <div class="mt-2 flex items-center gap-3">
                   @if (mvpFameHunter(); as player) {
@@ -390,7 +390,7 @@ type PendingFightMutation =
               </article>
 
               <!-- Iron Vanguard (Highest IP) -->
-              <article class="card p-4 border-l-4 border-l-sky-400">
+              <article class="card p-4 border border-[var(--color-info)]">
                 <p class="text-[10px] text-disabled uppercase font-bold tracking-wider">IRON VANGUARD</p>
                 <div class="mt-2 flex items-center gap-3">
                   @if (mvpIronVanguard(); as player) {
@@ -407,14 +407,14 @@ type PendingFightMutation =
               </article>
 
               <!-- Heaviest Casualty -->
-              <article class="card p-4 border-l-4 border-l-rose-400">
+              <article class="card p-4 border border-[var(--color-error)]">
                 <p class="text-[10px] text-disabled uppercase font-bold tracking-wider">HEAVIEST CASUALTY</p>
                 <div class="mt-2 flex items-center gap-3">
                   @if (mvpHeaviestLoss(); as player) {
                     <app-avatar [username]="player.name" size="md" />
                     <div class="truncate min-w-0">
                       <p class="font-bold text-sm truncate text-white">{{ player.name }}</p>
-                      <p class="text-xs text-rose-400 font-bold mono">{{ formatCompact(player.estimatedLoss) }} Lost</p>
+                      <p class="text-xs text-error font-bold mono">{{ formatCompact(player.estimatedLoss) }} Lost</p>
                       <p class="text-[10px] text-secondary truncate">{{ player.guild_name }}</p>
                     </div>
                   } @else {
@@ -519,7 +519,7 @@ type PendingFightMutation =
           <!-- Alliance Summary Cards -->
           <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             @for (alliance of alliances().slice(0, 6); track alliance.name) {
-              <article class="card p-4 border border-[var(--color-border)]" [class.border-l-4]="alliance.isOurAlliance" [class.border-l-emerald-500]="alliance.isOurAlliance">
+              <article class="card p-4 border border-[var(--color-border)]" [class.border]="alliance.isOurAlliance" [class.border-[var(--color-success)]]="alliance.isOurAlliance">
                 <div class="flex items-center justify-between gap-2 mb-2">
                   <span class="chip font-bold text-xs" [class.chip--success]="alliance.isOurAlliance" [class.chip--neutral]="!alliance.isOurAlliance">
                     {{ alliance.name }}
@@ -537,7 +537,7 @@ type PendingFightMutation =
                   </div>
                   <div class="surface p-2 rounded-lg">
                     <span class="text-[10px] text-disabled block">Loss</span>
-                    <strong class="mono text-rose-400">{{ formatCompact(alliance.estimatedLoss) }}</strong>
+                    <strong class="mono text-error">{{ formatCompact(alliance.estimatedLoss) }}</strong>
                   </div>
                 </div>
               </article>
@@ -584,7 +584,7 @@ type PendingFightMutation =
               </ng-template>
 
               <ng-template dataTableCell="kill_death" let-row>
-                <span class="font-mono text-xs font-bold" [class.text-emerald-400]="row.kdRatio >= 1" [class.text-rose-400]="row.kdRatio < 1">
+                <span class="font-mono text-xs font-bold" [class.text-success]="row.kdRatio >= 1" [class.text-error]="row.kdRatio < 1">
                   {{ formatDecimal(row.kdRatio) }}
                 </span>
               </ng-template>
@@ -596,7 +596,7 @@ type PendingFightMutation =
               </ng-template>
 
               <ng-template dataTableCell="loss" let-row>
-                <span class="font-mono text-xs text-rose-400">
+                <span class="font-mono text-xs text-error">
                   {{ formatCompact(row.estimatedLoss) }}
                 </span>
               </ng-template>
@@ -682,7 +682,7 @@ type PendingFightMutation =
               </ng-template>
 
               <ng-template dataTableCell="kill_death" let-row>
-                <span class="font-mono text-xs font-bold" [class.text-emerald-400]="row.kdRatio >= 1" [class.text-rose-400]="row.kdRatio < 1">
+                <span class="font-mono text-xs font-bold" [class.text-success]="row.kdRatio >= 1" [class.text-error]="row.kdRatio < 1">
                   {{ formatDecimal(row.kdRatio) }}
                 </span>
               </ng-template>
@@ -694,7 +694,7 @@ type PendingFightMutation =
               </ng-template>
 
               <ng-template dataTableCell="loss" let-row>
-                <span class="font-mono text-xs text-rose-400">
+                <span class="font-mono text-xs text-error">
                   {{ formatCompact(row.estimatedLoss) }}
                 </span>
               </ng-template>
@@ -725,7 +725,7 @@ type PendingFightMutation =
                 <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <div class="surface p-3 rounded-lg border border-[var(--color-border)]">
                     <p class="text-[10px] text-disabled uppercase font-bold">Membri Osservati</p>
-                    <p class="text-base font-bold mono text-emerald-400 mt-1">
+                    <p class="text-base font-bold mono text-success mt-1">
                       {{ coverage.observed_planned_participants }} / {{ coverage.matchable_planned_participants }}
                     </p>
                   </div>
@@ -890,12 +890,12 @@ type PendingFightMutation =
                 </div>
 
                 @if (mutationError(); as error) {
-                  <p class="text-xs text-rose-400 bg-rose-500/10 p-2.5 rounded-lg border border-rose-500/20" role="alert">
+                  <p class="text-xs text-error bg-[var(--color-error-container)] p-2.5 rounded-lg border border-[var(--color-error)]" role="alert">
                     {{ error }}
                   </p>
                 }
                 @if (mutationSuccess(); as message) {
-                  <p class="text-xs text-emerald-400 bg-emerald-500/10 p-2.5 rounded-lg border border-emerald-500/20" aria-live="polite">
+                  <p class="text-xs text-success bg-[var(--color-success-container)] p-2.5 rounded-lg border border-[var(--color-success)]" aria-live="polite">
                     {{ message }}
                   </p>
                 }
@@ -972,7 +972,7 @@ type PendingFightMutation =
             </div>
 
             @if (dialogError(); as error) {
-              <p class="text-xs text-rose-400 bg-rose-500/10 p-2 rounded-lg" role="alert">{{ error }}</p>
+              <p class="text-xs text-error bg-[var(--color-error-container)] p-2 rounded-lg" role="alert">{{ error }}</p>
             }
           </form>
 
@@ -1012,7 +1012,7 @@ type PendingFightMutation =
             </div>
 
             @if (dialogError(); as error) {
-              <p class="text-xs text-rose-400 bg-rose-500/10 p-2 rounded-lg" role="alert">{{ error }}</p>
+              <p class="text-xs text-error bg-[var(--color-error-container)] p-2 rounded-lg" role="alert">{{ error }}</p>
             }
           </form>
 
@@ -1054,7 +1054,7 @@ type PendingFightMutation =
             </div>
 
             @if (dialogError(); as error) {
-              <p class="text-xs text-rose-400 bg-rose-500/10 p-2 rounded-lg" role="alert">{{ error }}</p>
+              <p class="text-xs text-error bg-[var(--color-error-container)] p-2 rounded-lg" role="alert">{{ error }}</p>
             }
           </form>
 
@@ -1076,7 +1076,7 @@ type PendingFightMutation =
           <p class="text-xs text-secondary">Questa operazione modifica i raggruppamenti del database in modo permanente.</p>
 
           @if (dialogError(); as error) {
-            <p class="text-xs text-rose-400 bg-rose-500/10 p-2.5 rounded-lg mt-3" role="alert">{{ error }}</p>
+            <p class="text-xs text-error bg-[var(--color-error-container)] p-2.5 rounded-lg mt-3" role="alert">{{ error }}</p>
           }
 
           <div dialogFooter>
@@ -1114,7 +1114,7 @@ type PendingFightMutation =
               </div>
               <div class="surface p-2.5 rounded-lg">
                 <span class="text-[10px] text-disabled block">K/D Ratio</span>
-                <strong class="mono text-sm" [class.text-emerald-400]="p.kdRatio >= 1" [class.text-rose-400]="p.kdRatio < 1">
+                <strong class="mono text-sm" [class.text-success]="p.kdRatio >= 1" [class.text-error]="p.kdRatio < 1">
                   {{ formatDecimal(p.kdRatio) }}
                 </strong>
               </div>
@@ -1128,7 +1128,7 @@ type PendingFightMutation =
               </div>
               <div class="surface p-2.5 rounded-lg col-span-2">
                 <span class="text-[10px] text-disabled block">Perdite d'equipaggiamento stimate</span>
-                <strong class="mono text-rose-400 text-sm">{{ formatCompact(p.estimatedLoss) }} Silver</strong>
+                <strong class="mono text-error text-sm">{{ formatCompact(p.estimatedLoss) }} Silver</strong>
               </div>
             </div>
           </div>
@@ -1731,7 +1731,7 @@ export class FightDetailPage {
           radius: ['42%', '70%'],
           center: ['50%', '42%'],
           avoidLabelOverlap: false,
-          itemStyle: { borderRadius: 4, borderColor: '#0f1011', borderWidth: 2 },
+          itemStyle: { borderRadius: 4, borderColor: 'var(--color-surface)', borderWidth: 2 },
           label: { show: false },
           data: guilds.map((g) => ({
             value: g.kill_fame,

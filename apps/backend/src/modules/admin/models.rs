@@ -114,6 +114,58 @@ pub struct GuildSettingsView {
     pub discord_split_lost_tag_id: Option<String>,
     /// Category where the bot creates live event voice channels.
     pub discord_event_voice_category_id: Option<String>,
+    /// Channel where the application panel is published.
+    pub discord_applications_channel_id: Option<String>,
+    /// Category where active application channels are created.
+    pub discord_applications_category_id: Option<String>,
+    /// Optional archive category for resolved applications.
+    pub discord_applications_archive_category_id: Option<String>,
+    /// Role allowed to manage applications.
+    pub discord_applications_manage_role_id: Option<String>,
+    /// Channel for application open/closed announcements.
+    pub discord_applications_status_channel_id: Option<String>,
+    /// Whether new applications are accepted.
+    pub discord_applications_open: bool,
+    /// Application panel title.
+    pub discord_applications_panel_title: String,
+    /// Application panel message.
+    pub discord_applications_panel_message: String,
+    /// Title shown when a manager opens the application actions.
+    pub discord_applications_manage_title: String,
+    /// Message shown when a manager opens the application actions.
+    pub discord_applications_manage_message: String,
+    /// Message shown when applications are closed.
+    pub discord_applications_closed_message: String,
+    pub discord_applications_closed_title: String,
+    pub discord_applications_close_title: String,
+    pub discord_applications_close_message: String,
+    pub discord_applications_accept_title: String,
+    pub discord_applications_decline_title: String,
+    pub discord_applications_no_permission_title: String,
+    pub discord_applications_already_open_title: String,
+    pub discord_applications_final_title: String,
+    /// Message shown when the actor lacks application permissions.
+    pub discord_applications_no_permission_message: String,
+    /// Message shown when the applicant already has an open application.
+    pub discord_applications_already_open_message: String,
+    /// Message shown after accepting an application.
+    pub discord_applications_accept_message: String,
+    /// Message shown after declining an application.
+    pub discord_applications_decline_message: String,
+    /// Message shown when application processing fails.
+    pub discord_applications_error_message: String,
+    /// Message shown after an application action completes.
+    pub discord_applications_result_message: String,
+    /// Application welcome title.
+    pub discord_applications_welcome_title: String,
+    /// Application welcome message.
+    pub discord_applications_welcome_message: String,
+    /// Announcement sent when applications open.
+    pub discord_applications_status_open_message: String,
+    /// Announcement sent when applications close.
+    pub discord_applications_status_closed_message: String,
+    /// Message ID of the published application panel, when available.
+    pub discord_applications_panel_message_id: Option<String>,
     /// Default percentage fee applied to new splits.
     #[schema(value_type = String, example = "20.00")]
     pub default_split_fee: rust_decimal::Decimal,
@@ -137,6 +189,42 @@ impl GuildSettingsView {
             discord_split_not_completed_tag_id: model.discord_split_not_completed_tag_id,
             discord_split_lost_tag_id: model.discord_split_lost_tag_id,
             discord_event_voice_category_id: model.discord_event_voice_category_id,
+            discord_applications_channel_id: model.discord_applications_channel_id,
+            discord_applications_category_id: model.discord_applications_category_id,
+            discord_applications_archive_category_id: model
+                .discord_applications_archive_category_id,
+            discord_applications_manage_role_id: model.discord_applications_manage_role_id,
+            discord_applications_status_channel_id: model.discord_applications_status_channel_id,
+            discord_applications_open: model.discord_applications_open,
+            discord_applications_panel_title: model.discord_applications_panel_title,
+            discord_applications_panel_message: model.discord_applications_panel_message,
+            discord_applications_manage_title: model.discord_applications_manage_title,
+            discord_applications_manage_message: model.discord_applications_manage_message,
+            discord_applications_closed_message: model.discord_applications_closed_message,
+            discord_applications_closed_title: model.discord_applications_closed_title,
+            discord_applications_close_title: model.discord_applications_close_title,
+            discord_applications_close_message: model.discord_applications_close_message,
+            discord_applications_accept_title: model.discord_applications_accept_title,
+            discord_applications_decline_title: model.discord_applications_decline_title,
+            discord_applications_no_permission_title: model
+                .discord_applications_no_permission_title,
+            discord_applications_already_open_title: model.discord_applications_already_open_title,
+            discord_applications_final_title: model.discord_applications_final_title,
+            discord_applications_no_permission_message: model
+                .discord_applications_no_permission_message,
+            discord_applications_already_open_message: model
+                .discord_applications_already_open_message,
+            discord_applications_accept_message: model.discord_applications_accept_message,
+            discord_applications_decline_message: model.discord_applications_decline_message,
+            discord_applications_error_message: model.discord_applications_error_message,
+            discord_applications_result_message: model.discord_applications_result_message,
+            discord_applications_welcome_title: model.discord_applications_welcome_title,
+            discord_applications_welcome_message: model.discord_applications_welcome_message,
+            discord_applications_status_open_message: model
+                .discord_applications_status_open_message,
+            discord_applications_status_closed_message: model
+                .discord_applications_status_closed_message,
+            discord_applications_panel_message_id: model.discord_applications_panel_message_id,
             default_split_fee: model.default_split_fee,
         }
     }
@@ -204,6 +292,58 @@ pub struct UpdateGuildSettingsRequest {
     pub discord_split_lost_tag_id: Option<String>,
     /// New value. Omit to leave unchanged; send `""` to clear.
     pub discord_event_voice_category_id: Option<String>,
+    /// New application panel channel; empty clears it.
+    pub discord_applications_channel_id: Option<String>,
+    /// New active application category; empty clears it.
+    pub discord_applications_category_id: Option<String>,
+    /// New archive category; empty clears it.
+    pub discord_applications_archive_category_id: Option<String>,
+    /// New application manager role; empty clears it.
+    pub discord_applications_manage_role_id: Option<String>,
+    /// New application status channel; empty clears it.
+    pub discord_applications_status_channel_id: Option<String>,
+    /// New application open state.
+    pub discord_applications_open: Option<bool>,
+    /// New panel title.
+    pub discord_applications_panel_title: Option<String>,
+    /// New panel message.
+    pub discord_applications_panel_message: Option<String>,
+    /// New manager action title.
+    pub discord_applications_manage_title: Option<String>,
+    /// New manager action message.
+    pub discord_applications_manage_message: Option<String>,
+    /// New closed-application message.
+    pub discord_applications_closed_message: Option<String>,
+    pub discord_applications_closed_title: Option<String>,
+    pub discord_applications_close_title: Option<String>,
+    pub discord_applications_close_message: Option<String>,
+    pub discord_applications_accept_title: Option<String>,
+    pub discord_applications_decline_title: Option<String>,
+    pub discord_applications_no_permission_title: Option<String>,
+    pub discord_applications_already_open_title: Option<String>,
+    pub discord_applications_final_title: Option<String>,
+    /// New insufficient-permission message.
+    pub discord_applications_no_permission_message: Option<String>,
+    /// New already-open message.
+    pub discord_applications_already_open_message: Option<String>,
+    /// New accept result message.
+    pub discord_applications_accept_message: Option<String>,
+    /// New decline result message.
+    pub discord_applications_decline_message: Option<String>,
+    /// New application error message.
+    pub discord_applications_error_message: Option<String>,
+    /// New generic result message.
+    pub discord_applications_result_message: Option<String>,
+    /// New application welcome title.
+    pub discord_applications_welcome_title: Option<String>,
+    /// New application welcome message.
+    pub discord_applications_welcome_message: Option<String>,
+    /// New open announcement message.
+    pub discord_applications_status_open_message: Option<String>,
+    /// New closed announcement message.
+    pub discord_applications_status_closed_message: Option<String>,
+    /// New panel message ID; empty clears it.
+    pub discord_applications_panel_message_id: Option<String>,
     /// New default split fee percentage. Must be between 0 and 100.
     #[schema(value_type = Option<String>, example = "20.00")]
     pub default_split_fee: Option<rust_decimal::Decimal>,

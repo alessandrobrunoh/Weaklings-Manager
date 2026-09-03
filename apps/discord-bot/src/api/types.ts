@@ -394,6 +394,15 @@ export interface AlbionGuildMember {
  * Settings page instead of this process's own env vars. Every field is nullable: an unset
  * channel means "skip this notification", same as the env vars they replaced.
  */
+export interface ApplicationView {
+  id: number;
+  user_discord_id: string;
+  username: string;
+  channel_id: string;
+  status: 'open' | 'accepted' | 'declined' | 'closed';
+  default_role_discord_id?: string | null;
+}
+
 export interface GuildSettingsView {
   discord_events_channel_id: string | null;
   discord_battles_channel_id: string | null;
@@ -408,6 +417,37 @@ export interface GuildSettingsView {
   discord_split_not_completed_tag_id: string | null;
   discord_split_lost_tag_id: string | null;
   discord_event_voice_category_id: string | null;
+  discord_applications_channel_id: string | null;
+  discord_applications_category_id: string | null;
+  discord_applications_archive_category_id: string | null;
+  discord_applications_manage_role_id: string | null;
+  discord_applications_status_channel_id: string | null;
+  discord_applications_open: boolean;
+  discord_applications_panel_title: string;
+  discord_applications_panel_message: string;
+  discord_applications_welcome_title: string;
+  discord_applications_welcome_message: string;
+  discord_applications_status_open_message: string;
+  discord_applications_status_closed_message: string;
+  /** Optional workflow copy; absent on installations predating the application copy settings. */
+  discord_applications_manage_title?: string;
+  discord_applications_manage_message?: string;
+  discord_applications_closed_message?: string;
+  discord_applications_closed_title?: string;
+  discord_applications_close_title?: string;
+  discord_applications_close_message?: string;
+  discord_applications_accept_title?: string;
+  discord_applications_decline_title?: string;
+  discord_applications_no_permission_title?: string;
+  discord_applications_already_open_title?: string;
+  discord_applications_final_title?: string;
+  discord_applications_no_permission_message?: string;
+  discord_applications_already_open_message?: string;
+  discord_applications_accept_message?: string;
+  discord_applications_decline_message?: string;
+  discord_applications_error_message?: string;
+  discord_applications_result_message?: string;
+  discord_applications_panel_message_id: string | null;
   default_split_fee: number | string;
 }
 
