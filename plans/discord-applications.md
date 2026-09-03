@@ -1,7 +1,7 @@
 # Plan: Sistema Discord per le Application
 
 **Branch**: `feat/discord-applications`
-**Status**: Slices 1–2 implemented — awaiting commit approval; Slices 3–4 pending
+**Status**: Slices 1–3 implemented — awaiting commit approval; Slice 4 pending
 
 ## Goal
 
@@ -174,7 +174,7 @@ Ogni slice segue RED-GREEN-MUTATE-KILL MUTANTS-REFACTOR. Prima del codice carica
 
 **Done when**: un membro apre una application privata e non può aprirne due attive.
 
-### Slice 3: Un gestore accetta o rifiuta e l'application viene archiviata
+### Slice 3: Un gestore accetta o rifiuta e l'application viene archiviata ✅
 
 **Value**: gli officer possono decidere la richiesta e il canale esce dall'area privata attiva.
 

@@ -1,4 +1,11 @@
-import { ButtonInteraction } from "discord.js";
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonInteraction,
+  ButtonStyle,
+  PermissionFlagsBits,
+  ChannelType,
+} from "discord.js";
 import type { ApiClient } from "../api/client.js";
 import type {
   EventDetailView,
@@ -25,7 +32,7 @@ import { closeEventAnnouncementThread } from "../services/event-announcement-thr
 import { getSettingsService } from "../services/settings.js";
 import { buildApplicationWelcomeComponents, buildApplicationWelcomeEmbed } from "../embeds/application.embed.js";
 import type { ApplicationView, GuildSettingsView } from "../api/types.js";
-import { ChannelType, PermissionFlagsBits } from "discord.js";
+
 
 /**
  * Handles all button interactions.
@@ -47,7 +54,7 @@ export async function handleButton(
     } else if (ns === "bank") {
       await handleBankButton(interaction, api, action, rest);
     } else if (ns === "application") {
-      await handleApplicationButton(interaction, api, action);
+      await handleApplicationButton(interaction, api, action, rest);
     } else {
       const embed = createResponseEmbed(
         "warning",
@@ -79,69 +86,124 @@ async function handleApplicationButton(
   interaction: ButtonInteraction,
   api: ApiClient,
   action: string,
+  rest: string[],
 ): Promise<void> {
-  if (action !== 'create') {
+  if (action === 'create') {
+    await createApplicationChannel(interaction, api);
+    return;
+  }
+
+  const applicationId = Number(rest[0]);
+  if (!Number.isSafeInteger(applicationId) || applicationId <= 0) {
+    throw new Error('Invalid application ID.');
+  }
+  const settings = await getSettingsService().applicationsSettings();
+  const member = interaction.member;
+  const roleIds = member && 'roles' in member
+    ? Array.isArray(member.roles) ? member.roles : [...member.roles.cache.keys()]
+    : [];
+  const isManager = Boolean(
+    settings.discord_applications_manage_role_id && roleIds.includes(settings.discord_applications_manage_role_id),
+  ) || (member && !Array.isArray(member.roles) && typeof member.permissions !== 'string' && member.permissions.has(PermissionFlagsBits.ManageGuild));
+
+  if (action === 'manage') {
+    if (!isManager) {
+      await interaction.reply({
+        embeds: [createResponseEmbed('warning', 'Permessi insufficienti', 'Non hai i permessi per gestire questa application.', 'APPLICATIONS')],
+        flags: ['Ephemeral'],
+      });
+      return;
+    }
     await interaction.reply({
-      embeds: [createResponseEmbed('info', 'Coming soon', 'Questa azione sarà disponibile nella prossima fase.', 'APPLICATIONS')],
+      embeds: [createResponseEmbed('info', 'Gestione application', 'Scegli Accept o Decline.', 'APPLICATIONS')],
+      components: [new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId(`application:accept:${applicationId}`).setLabel('Accept').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`application:decline:${applicationId}`).setLabel('Decline').setStyle(ButtonStyle.Danger),
+      )],
       flags: ['Ephemeral'],
     });
     return;
   }
 
+  if (action !== 'close' && !isManager) {
+    await interaction.reply({
+      embeds: [createResponseEmbed('warning', 'Permessi insufficienti', 'Non hai i permessi per questa azione.', 'APPLICATIONS')],
+      flags: ['Ephemeral'],
+    });
+    return;
+  }
+  if (action === 'close' && !isManager) {
+    const active = await api.get<ApplicationView | null>('api/applications/active', interaction.user.id);
+    if (!active || active.id !== applicationId) {
+      await interaction.reply({ embeds: [createResponseEmbed('warning', 'Permessi insufficienti', 'Solo il proprietario può chiudere questa application.', 'APPLICATIONS')], flags: ['Ephemeral'] });
+      return;
+    }
+  }
+
+  await interaction.deferReply({ flags: ['Ephemeral'] });
+  const endpoint = action === 'accept' ? 'accept' : action === 'decline' ? 'decline' : 'close';
+  const resolved = await api.post<ApplicationView>(`api/applications/${applicationId}/${endpoint}`, {}, interaction.user.id);
+  if (action === 'accept' && interaction.guild) {
+    const applicant = await interaction.guild.members.fetch(resolved.user_discord_id);
+    if (settings.discord_auto_role_id) {
+      await applicant.roles.remove(settings.discord_auto_role_id, 'Application accepted');
+    }
+    if (resolved.default_role_discord_id) {
+      await applicant.roles.add(resolved.default_role_discord_id, 'Application accepted');
+    }
+  }
+  await finalizeApplicationChannel(interaction, settings, resolved, action);
+  await interaction.editReply({ embeds: [createResponseEmbed('success', 'Application aggiornata', `Application **${resolved.status}**.`, 'APPLICATIONS')] });
+}
+
+async function createApplicationChannel(interaction: ButtonInteraction, api: ApiClient): Promise<void> {
   await interaction.deferReply({ flags: ['Ephemeral'] });
   const guild = interaction.guild;
   if (!guild) throw new Error('Applications can only be opened inside a server.');
-
-  const settings: GuildSettingsView = await getSettingsService().applicationsSettings();
+  const settings = await getSettingsService().applicationsSettings();
   if (!settings.discord_applications_open) {
-    await interaction.editReply({
-      embeds: [createResponseEmbed('warning', 'Applications closed', 'Le application sono momentaneamente chiuse.', 'APPLICATIONS')],
-    });
+    await interaction.editReply({ embeds: [createResponseEmbed('warning', 'Applications closed', 'Le application sono momentaneamente chiuse.', 'APPLICATIONS')] });
     return;
   }
-  if (!settings.discord_applications_category_id) {
-    throw new Error('La categoria delle application non è configurata dal pannello admin.');
-  }
-
-  const active = await api.get<ApplicationView | null>(
-    'api/applications/active',
-    interaction.user.id,
-  );
+  if (!settings.discord_applications_category_id) throw new Error('La categoria delle application non è configurata dal pannello admin.');
+  const active = await api.get<ApplicationView | null>('api/applications/active', interaction.user.id);
   if (active) {
-    await interaction.editReply({
-      embeds: [createResponseEmbed('info', 'Application already open', `Hai già un'applicatione aperta: <#${active.channel_id}>.`, 'APPLICATIONS')],
-    });
+    await interaction.editReply({ embeds: [createResponseEmbed('info', 'Application already open', `Hai già un'applicatione aperta: <#${active.channel_id}>.`, 'APPLICATIONS')] });
     return;
   }
-
   const safeName = interaction.user.username.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 80) || interaction.user.id;
   const channel = await guild.channels.create({
-    name: `ticket-${safeName}`.slice(0, 100),
-    type: ChannelType.GuildText,
-    parent: settings.discord_applications_category_id,
+    name: `ticket-${safeName}`.slice(0, 100), type: ChannelType.GuildText, parent: settings.discord_applications_category_id,
     permissionOverwrites: [
       { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
       { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
       ...(settings.discord_applications_manage_role_id ? [{ id: settings.discord_applications_manage_role_id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }] : []),
       ...(interaction.client.user ? [{ id: interaction.client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels] }] : []),
-    ],
-    reason: `Application opened by ${interaction.user.tag}`,
+    ], reason: `Application opened by ${interaction.user.tag}`,
   });
-
   try {
-    await api.post<ApplicationView>('api/applications', channel.id, interaction.user.id);
-    await channel.send({
-      embeds: [buildApplicationWelcomeEmbed(settings)],
-      components: buildApplicationWelcomeComponents(),
-    });
+    const application = await api.post<ApplicationView>('api/applications', channel.id, interaction.user.id);
+    await channel.send({ embeds: [buildApplicationWelcomeEmbed(settings)], components: buildApplicationWelcomeComponents(application.id) });
   } catch (error) {
     await channel.delete('Application persistence failed').catch(() => undefined);
     throw error;
   }
+  await interaction.editReply({ embeds: [createResponseEmbed('success', 'Application created', `La tua application è stata aperta in <#${channel.id}>.`, 'APPLICATIONS')] });
+}
 
-  await interaction.editReply({
-    embeds: [createResponseEmbed('success', 'Application created', `La tua application è stata aperta in <#${channel.id}>.`, 'APPLICATIONS')],
-  });
+async function finalizeApplicationChannel(
+  interaction: ButtonInteraction,
+  settings: GuildSettingsView,
+  application: ApplicationView,
+  action: string,
+): Promise<void> {
+  const channel = interaction.channel;
+  if (!channel || !channel.isTextBased() || !('permissionOverwrites' in channel)) return;
+  await channel.permissionOverwrites.edit(application.user_discord_id, { ViewChannel: false }).catch(() => undefined);
+  if (settings.discord_applications_archive_category_id && 'setParent' in channel) {
+    await channel.setParent(settings.discord_applications_archive_category_id, { lockPermissions: false }).catch(() => undefined);
+  }
+  await channel.send({ content: `Application ${action === 'accept' ? 'accettata' : action === 'decline' ? 'rifiutata' : 'chiusa'}.` }).catch(() => undefined);
 }
 
 async function handleEventButton(

@@ -400,6 +400,7 @@ export interface ApplicationView {
   username: string;
   channel_id: string;
   status: 'open' | 'accepted' | 'declined' | 'closed';
+  default_role_discord_id?: string | null;
 }
 
 export interface GuildSettingsView {

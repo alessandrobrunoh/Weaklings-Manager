@@ -25,11 +25,11 @@ export function buildApplicationWelcomeEmbed(settings: GuildSettingsView): APIEm
   }).toJSON();
 }
 
-export function buildApplicationWelcomeComponents(): ActionRowBuilder<ButtonBuilder>[] {
+export function buildApplicationWelcomeComponents(applicationId?: number): ActionRowBuilder<ButtonBuilder>[] {
   return [
     new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId('application:manage').setLabel('Manage').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('application:close').setLabel('Close').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`application:manage${applicationId ? `:${applicationId}` : ''}`).setLabel('Manage').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`application:close${applicationId ? `:${applicationId}` : ''}`).setLabel('Close').setStyle(ButtonStyle.Danger),
     ),
   ];
 }
