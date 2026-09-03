@@ -37,7 +37,11 @@ import { VersionDiffList } from '../../shared/components/version-diff-list/versi
 import { diffCompVersions } from './version-diff';
 import type { VersionDiffEntry } from './version-diff';
 import { AbilityBar } from '../../shared/components/ability-bar/ability-bar';
-import { abilityKeyForItem, abilitySlotsFor } from '../../shared/data/albion-abilities';
+import { EquipmentGrid } from '../../shared/components/equipment-grid/equipment-grid';
+import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { itemsForLoadout } from './build-loadouts';
+import type { BuildLoadout } from '../../core/models/api.models';
+import { abilityKeyForItem, abilitySlotsFor, albionAbilityIconUrl } from '../../shared/data/albion-abilities';
 import type { AbilitySlotView } from '../../shared/data/albion-abilities';
 import { AlbionAbilitiesService } from '../../shared/services/albion-abilities.service';
 import { Icon } from '../../shared/components/icon/icon';
@@ -81,6 +85,8 @@ const ROLE_LABELS: Record<BuildRole, string> = {
     VersionSwitcher,
     VersionDiffList,
     AbilityBar,
+    EquipmentGrid,
+    ViewToggle,
     Icon,
     TooltipDirective,
   ],
@@ -189,8 +195,612 @@ const ROLE_LABELS: Record<BuildRole, string> = {
           />
         </div>
 
-        @if (mode() === 'edit' && canManage()) {
-          <form class="card grid gap-4 p-5" (submit)="saveEdit($event)">
+        <!-- ================= ROSTER CONTROL & VIEW TOGGLE ================= -->
+        <div class="card p-4 border border-[var(--color-border)] flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <app-view-toggle
+              [options]="viewModeOptions()"
+              [active]="viewMode()"
+              (activeChange)="onViewModeChange($event)"
+            />
+          </div>
+
+          <div class="flex items-center gap-2">
+            @if (canManage()) {
+              <button
+                type="button"
+                class="btn btn--sm"
+                [class.btn--primary]="mode() === 'edit'"
+                [class.btn--outline]="mode() === 'view'"
+                (click)="toggleEditMode()"
+                [disabled]="saving()"
+              >
+                <app-icon [name]="mode() === 'edit' ? 'check' : 'edit'" size="0.75rem" />
+                {{ mode() === 'edit' ? 'Termina Modifiche' : 'Modifica Roster' }}
+              </button>
+              <button
+                type="button"
+                class="btn btn--sm btn--primary"
+                (click)="openAddBuildModal()"
+                [disabled]="saving()"
+              >
+                <app-icon name="plus" size="0.75rem" />
+                {{ t('comps.addBuild') }}
+              </button>
+              <button
+                type="button"
+                class="btn btn--sm btn--outline"
+                (click)="openEditMeta()"
+                [disabled]="saving()"
+              >
+                Info Comp
+              </button>
+            }
+          </div>
+        </div>
+
+        <!-- ================= EDIT MODE BANNER ================= -->
+        @if (mode() === 'edit') {
+          <div class="p-3.5 rounded-xl border border-amber-500/40 bg-amber-500/10 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div class="flex items-center gap-2 text-amber-300">
+              <app-icon name="edit" size="1rem" />
+              <span><strong>Modalità Modifica Roster:</strong> Regola le quantità dei ruoli tramite i selettori nelle card, rimuovi build o aggiungine di nuove con il pulsante "Aggiungi Build".</span>
+            </div>
+            <button type="button" class="btn btn--sm btn--primary" (click)="mode.set('view')">
+              Fatto
+            </button>
+          </div>
+        }
+
+        <!-- ================= VIEW 1: PARTIES ROSTER ================= -->
+        @if (viewMode() === 'parties') {
+          <div class="space-y-6">
+            @if (partySimulation().length === 0) {
+              <app-empty-state icon="package" [message]="t('comps.noBuilds')" />
+            } @else {
+              <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+                @for (party of partySimulation(); track party.partyNumber) {
+                  <div class="card p-4 border border-[var(--color-border)] space-y-3 bg-[var(--color-surface)]">
+                    <!-- Party Card Header -->
+                    <div class="flex items-center justify-between gap-2 pb-2 border-b border-[var(--color-border)]">
+                      <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-white">
+                          Party {{ party.partyNumber }}
+                        </h3>
+                      </div>
+                      <span class="chip chip--neutral text-[10px] font-mono">
+                        {{ party.seats.length }}/5 Posti
+                      </span>
+                    </div>
+
+                    <!-- 5 Seats List -->
+                    <div class="space-y-2">
+                      @for (seat of party.seats; track seat.globalIndex) {
+                        <div
+                          class="p-2 rounded-lg bg-[var(--color-surface-2)] border border-[var(--color-border)] flex items-center justify-between gap-2.5 transition-all hover:border-[var(--color-border-strong)] cursor-pointer"
+                          (click)="inspectedBuildId.set(seat.buildId)"
+                        >
+                          <div class="flex items-center gap-2.5 min-w-0">
+                            <!-- Seat index indicator -->
+                            <span class="font-mono text-[10px] text-disabled w-4 text-center shrink-0">
+                              #{{ seat.seatNumber }}
+                            </span>
+
+                            <!-- Weapon Icon -->
+                            <div
+                              class="shrink-0 w-8 h-8 rounded-lg bg-black/40 border border-[var(--color-border)] grid place-items-center overflow-hidden"
+                              (mouseenter)="onWeaponMouseEnter(seat.buildId, $event)"
+                              (mouseleave)="onWeaponMouseLeave()"
+                            >
+                              @if (weaponIconFor(seat.buildId); as weaponIcon) {
+                                <img
+                                  class="w-full h-full object-contain p-0.5"
+                                  [src]="weaponIcon"
+                                  [alt]="seat.build.name"
+                                  loading="lazy"
+                                  (error)="hideBrokenIcon($event)"
+                                />
+                              } @else {
+                                <app-icon name="swords" size="0.875rem" color="var(--color-text-secondary)" />
+                              }
+                            </div>
+
+                            <!-- Build Info -->
+                            <div class="min-w-0">
+                              <span class="font-bold text-xs text-white block truncate hover:text-[var(--color-primary)]">
+                                {{ seat.build.name }}
+                              </span>
+                              <div class="flex items-center gap-1.5 mt-0.5">
+                                <span
+                                  class="text-[9px] font-bold uppercase px-1.5 py-0.2 rounded"
+                                  [style.background-color]="roleBadgeBg(seat.role)"
+                                  [style.color]="roleColorHex(seat.role)"
+                                >
+                                  {{ roleLabel(seat.role) }}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            class="btn btn--ghost btn--xs text-secondary hover:text-white shrink-0"
+                            (click)="inspectedBuildId.set(seat.buildId); $event.stopPropagation()"
+                          >
+                            Ispeziona
+                          </button>
+                        </div>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        }
+
+        <!-- ================= VIEW 2: ROLES MATRIX ================= -->
+        @if (viewMode() === 'roles') {
+          <div class="space-y-6">
+            @if (current.builds.length === 0) {
+              <app-empty-state icon="package" [message]="t('comps.noBuilds')" />
+            } @else {
+              @for (roleGroup of groupedBuildsByRole(); track roleGroup.role) {
+                <section class="space-y-3">
+                  <!-- Role Group Header -->
+                  <div class="flex flex-wrap items-center justify-between gap-2 px-1">
+                    <div
+                      class="inline-flex items-center gap-1.5 rounded-full px-3 py-1"
+                      [style.background-color]="roleBadgeBg(roleGroup.role)"
+                    >
+                      <span
+                        class="w-2 h-2 rounded-full"
+                        [style.background-color]="roleColorHex(roleGroup.role)"
+                      ></span>
+                      <h3
+                        class="text-xs font-bold uppercase tracking-wider"
+                        [style.color]="roleColorHex(roleGroup.role)"
+                      >
+                        {{ roleLabel(roleGroup.role) }}
+                      </h3>
+                      <span
+                        class="text-xs font-semibold"
+                        [style.color]="roleColorHex(roleGroup.role)"
+                      >
+                        · {{ roleGroup.totalSlots }} {{ t('comps.slotsShort') }}
+                      </span>
+                    </div>
+                    <span class="text-xs text-secondary">
+                      {{ roleGroup.entries.length }} {{ t('comps.buildVariants') }}
+                    </span>
+                  </div>
+
+                  <!-- Builds Grid for this Role -->
+                  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    @for (entry of roleGroup.entries; track entry.build_id) {
+                      <div
+                        class="card p-4 border border-[var(--color-border)] flex flex-col justify-between gap-3 transition-all hover:border-[var(--color-border-strong)]"
+                        [style.border-left-width]="'4px'"
+                        [style.border-left-color]="roleColorHex(entry.build.role)"
+                      >
+                        <div class="flex items-start justify-between gap-2">
+                          <div class="flex items-start gap-2.5 min-w-0">
+                            <!-- Weapon Icon -->
+                            <div
+                              class="shrink-0 w-10 h-10 rounded-lg bg-[var(--color-surface-2)] border border-[var(--color-border)] grid place-items-center overflow-hidden cursor-pointer"
+                              (mouseenter)="onWeaponMouseEnter(entry.build_id, $event)"
+                              (mouseleave)="onWeaponMouseLeave()"
+                              (click)="inspectedBuildId.set(entry.build_id)"
+                            >
+                              @if (weaponIconFor(entry.build_id); as weaponIcon) {
+                                <img
+                                  class="w-full h-full object-contain p-1"
+                                  [src]="weaponIcon"
+                                  [alt]="entry.build.name"
+                                  loading="lazy"
+                                  (error)="hideBrokenIcon($event)"
+                                />
+                              } @else {
+                                <app-icon name="swords" size="1rem" color="var(--color-text-secondary)" />
+                              }
+                            </div>
+
+                            <div class="min-w-0">
+                              <span
+                                class="font-bold text-sm text-white block truncate hover:text-[var(--color-primary)] cursor-pointer"
+                                (click)="inspectedBuildId.set(entry.build_id)"
+                              >
+                                {{ entry.build.name }}
+                              </span>
+                              <span class="text-[11px] text-secondary truncate block">
+                                {{ entry.build.category_name || t('comps.noCategory') }}
+                              </span>
+                            </div>
+                          </div>
+
+                          <!-- Quantity Stepper / Badge -->
+                          @if (mode() === 'edit' && editingBuildId() === entry.build_id) {
+                            <div class="flex items-center gap-1">
+                              <input
+                                class="input text-center w-14"
+                                type="number"
+                                min="1"
+                                [value]="editingBuildQty()"
+                                (input)="onEditingBuildQtyChange($event)"
+                              />
+                              <button
+                                type="button"
+                                class="btn btn--primary btn--xs"
+                                (click)="saveBuildQty(entry.build_id)"
+                                [disabled]="saving()"
+                              >
+                                ✓
+                              </button>
+                              <button
+                                type="button"
+                                class="btn btn--ghost btn--xs"
+                                (click)="cancelEditBuild()"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          } @else {
+                            <div class="flex items-center gap-1.5">
+                              <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[var(--color-surface-2)] text-white border border-[var(--color-border)] font-mono">
+                                x{{ entry.quantity }}
+                              </span>
+                              @if (canManage() && mode() === 'edit') {
+                                <button
+                                  type="button"
+                                  class="btn btn--ghost btn--xs"
+                                  (click)="startEditBuild(entry.build_id, entry.quantity)"
+                                >
+                                  <app-icon name="edit" size="0.75rem" />
+                                </button>
+                                <button
+                                  type="button"
+                                  class="btn btn--ghost btn--xs text-rose-400"
+                                  (click)="removeBuild(entry.build_id)"
+                                  [disabled]="saving()"
+                                >
+                                  <app-icon name="close" size="0.75rem" />
+                                </button>
+                              }
+                            </div>
+                          }
+                        </div>
+
+                        <!-- Action Footer -->
+                        <div class="flex items-center justify-between gap-2 pt-2 border-t border-[var(--color-border)] text-xs">
+                          <button
+                            type="button"
+                            class="text-xs text-[var(--color-primary)] hover:underline font-medium inline-flex items-center gap-1"
+                            (click)="inspectedBuildId.set(entry.build_id)"
+                          >
+                            <app-icon name="scan" size="0.75rem" />
+                            Ispeziona Equip
+                          </button>
+                          <a
+                            class="text-xs text-secondary hover:text-white"
+                            [routerLink]="['/comps', 'builds', entry.build_id]"
+                          >
+                            Vai alla build &rarr;
+                          </a>
+                        </div>
+                      </div>
+                    }
+                  </div>
+                </section>
+              }
+            }
+          </div>
+        }
+
+        <!-- ================= VIEW 3: ANALYTICS & BLUEPRINT ================= -->
+        @if (viewMode() === 'analytics') {
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            <div class="lg:col-span-6 space-y-6">
+              <!-- Blueprint Stats Card -->
+              <section class="card p-5 border border-[var(--color-border)] space-y-4">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-secondary">
+                  {{ t('comps.roleBalance') }}
+                </h3>
+
+                <!-- Role Balance Progress Bar -->
+                <div class="flex h-3 w-full rounded-full overflow-hidden bg-[var(--color-surface-2)]">
+                  @for (dist of compositionStats().roleDistribution; track dist.role) {
+                    <div
+                      [style.width.%]="formatRolePercent(dist.quantity, current.total_quantity)"
+                      [style.background-color]="roleColorHex(dist.role)"
+                      [appTooltip]="roleLabel(dist.role) + ': ' + dist.quantity"
+                    ></div>
+                  }
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                  @for (dist of compositionStats().roleDistribution; track dist.role) {
+                    <div class="flex items-center justify-between p-2.5 rounded-lg bg-[var(--color-surface-2)] border border-[var(--color-border)]">
+                      <div class="flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full" [style.background-color]="roleColorHex(dist.role)"></span>
+                        <span class="text-white font-medium">{{ roleLabel(dist.role) }}</span>
+                      </div>
+                      <span class="font-bold text-white font-mono">
+                        {{ dist.quantity }} ({{ formatRolePercent(dist.quantity, current.total_quantity) }}%)
+                      </span>
+                    </div>
+                  }
+                </div>
+
+                @if (compositionStats().weaponNames.length > 0) {
+                  <div class="pt-3 border-t border-[var(--color-border)]">
+                    <span class="text-xs font-semibold text-secondary block mb-2">
+                      {{ t('comps.weaponsInComp') }} ({{ compositionStats().weaponCount }})
+                    </span>
+                    <div class="flex flex-wrap gap-1.5">
+                      @for (wName of compositionStats().weaponNames; track wName) {
+                        <span class="chip chip--neutral text-xs">{{ wName }}</span>
+                      }
+                    </div>
+                  </div>
+                }
+              </section>
+            </div>
+
+            <div class="lg:col-span-6 space-y-6">
+              <!-- Performance Telemetry Card -->
+              @if (performance(); as perf) {
+                <section class="card p-5 border border-[var(--color-border)] space-y-4">
+                  <h3 class="text-xs font-bold uppercase tracking-wider text-secondary">
+                    {{ t('comps.battlePerformance') }}
+                  </h3>
+
+                  <div class="grid grid-cols-2 gap-3">
+                    <div class="p-3 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)]">
+                      <span class="text-[10px] text-disabled block">{{ t('comps.kdRatio') }}</span>
+                      <strong class="text-lg font-bold text-white font-mono">{{ formatRatio(perf.stats.kill_death_ratio) }}</strong>
+                      <span class="text-[10px] text-secondary block mt-0.5">{{ perf.stats.wins }}W - {{ perf.stats.losses }}L</span>
+                    </div>
+                    <div class="p-3 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)]">
+                      <span class="text-[10px] text-disabled block">{{ t('comps.killFame') }}</span>
+                      <strong class="text-lg font-bold text-amber-400 font-mono">{{ formatNumber(perf.stats.total_kill_fame) }}</strong>
+                      <span class="text-[10px] text-secondary block mt-0.5">{{ perf.stats.total_battles }} battaglie</span>
+                    </div>
+                  </div>
+
+                  @if (perf.stats.top_opponents.length > 0) {
+                    <div class="pt-3 border-t border-[var(--color-border)]">
+                      <span class="text-xs font-semibold text-secondary block mb-2">
+                        {{ t('comps.topOpponents') }}
+                      </span>
+                      <div class="overflow-x-auto">
+                        <table class="table text-xs">
+                          <thead>
+                            <tr>
+                              <th class="text-left">{{ t('comps.opponent') }}</th>
+                              <th class="text-right">W-L</th>
+                              <th class="text-right">{{ t('comps.winPercent') }}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            @for (opponent of perf.stats.top_opponents; track opponentKey(opponent)) {
+                              <tr>
+                                <td class="font-medium text-white">{{ opponent.guild_name }}</td>
+                                <td class="text-right font-mono">{{ opponent.wins }}-{{ opponent.losses }}</td>
+                                <td class="text-right font-mono font-bold" [style.color]="winRateColor(opponentBattlesWinRate(opponent))">
+                                  {{ formatPercent(opponentBattlesWinRate(opponent)) }}
+                                </td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  }
+                </section>
+              }
+            </div>
+          </div>
+        }
+      </app-page-stack>
+
+      <!-- Quick Build Inspect Modal -->
+      @if (inspectedBuild(); as inspected) {
+        <app-dialog [title]="inspected.name" size="lg" (closed)="inspectedBuildId.set(null)">
+          <div class="space-y-4">
+            <div class="flex items-center justify-between gap-3 pb-3 border-b border-[var(--color-border)]">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full" [style.background-color]="roleColorHex(inspected.role)"></span>
+                <span class="text-xs font-bold uppercase tracking-wider" [style.color]="roleColorHex(inspected.role)">
+                  {{ roleLabel(inspected.role) }}
+                </span>
+                <span class="text-xs text-secondary">
+                  &bull; {{ inspected.category_name || t('comps.noCategory') }}
+                </span>
+              </div>
+              <div class="flex items-center gap-1 bg-[var(--color-surface-2)] p-0.5 rounded-lg border border-[var(--color-border)]">
+                <button
+                  type="button"
+                  class="px-2.5 py-1 text-xs rounded-md font-medium"
+                  [class.bg-white/10]="inspectedBuildLoadout() === 'main'"
+                  [class.text-white]="inspectedBuildLoadout() === 'main'"
+                  [class.text-secondary]="inspectedBuildLoadout() !== 'main'"
+                  (click)="inspectedBuildLoadout.set('main')"
+                >
+                  Main Set
+                </button>
+                <button
+                  type="button"
+                  class="px-2.5 py-1 text-xs rounded-md font-medium"
+                  [class.bg-white/10]="inspectedBuildLoadout() === 'swap'"
+                  [class.text-white]="inspectedBuildLoadout() === 'swap'"
+                  [class.text-secondary]="inspectedBuildLoadout() !== 'swap'"
+                  (click)="inspectedBuildLoadout.set('swap')"
+                >
+                  Swap Set
+                </button>
+              </div>
+            </div>
+
+            <!-- Paperdoll Equipment Grid -->
+            <app-equipment-grid
+              [items]="inspectedItems()"
+              [canManage]="false"
+              [editingSlot]="null"
+              [draftTier]="'T8'"
+              [draftSearch]="''"
+              [draftItemId]="''"
+              [searchResults]="[]"
+              [searchLoading]="false"
+              [tiers]="[]"
+              [draftAbilitySlots]="[]"
+            />
+
+            <!-- Selected Abilities -->
+            @if (inspectedAbilityRows().length > 0) {
+              <div class="space-y-2 pt-2 border-t border-[var(--color-border)]">
+                <span class="text-[10px] font-bold text-disabled uppercase tracking-wider block">Incantesimi Equipaggiati</span>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  @for (row of inspectedAbilityRows(); track row.slot) {
+                    <div class="p-2.5 bg-[var(--color-surface-2)] rounded-lg border border-[var(--color-border)] flex items-center justify-between gap-2">
+                      <span class="text-xs text-white font-medium truncate">{{ row.itemName }}</span>
+                      <app-ability-bar [slots]="row.slots" [canManage]="false" [emptyLabel]="t('comps.noAbility')" />
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+
+          <div dialogFooter class="flex items-center justify-between w-full">
+            <button type="button" class="btn btn--outline btn--sm" (click)="inspectedBuildId.set(null)">
+              Chiudi
+            </button>
+            <a class="btn btn--primary btn--sm" [routerLink]="['/comps', 'builds', inspected.id]" (click)="inspectedBuildId.set(null)">
+              Apri Scheda Build Completa &rarr;
+            </a>
+          </div>
+        </app-dialog>
+      }
+
+      <!-- Add Build Modal Dialog -->
+      @if (addBuildModalOpen()) {
+        <app-dialog [title]="t('comps.addBuild')" size="md" (closed)="closeAddBuildModal()">
+          <div class="space-y-4">
+            <!-- Search & Filters -->
+            <div class="space-y-2">
+              <input
+                type="search"
+                class="input input--sm w-full text-xs"
+                placeholder="Cerca build per nome o categoria..."
+                [value]="newBuildSearch()"
+                (input)="onNewBuildSearchChange($event)"
+              />
+              <div class="flex flex-wrap gap-1">
+                <button
+                  type="button"
+                  class="chip text-[11px]"
+                  [class.chip--primary]="addBuildRoleFilter() === 'all'"
+                  (click)="addBuildRoleFilter.set('all')"
+                >
+                  Tutti
+                </button>
+                @for (role of roles; track role) {
+                  <button
+                    type="button"
+                    class="chip text-[11px]"
+                    [class.chip--primary]="addBuildRoleFilter() === role"
+                    (click)="addBuildRoleFilter.set(role)"
+                  >
+                    {{ roleLabel(role) }}
+                  </button>
+                }
+              </div>
+            </div>
+
+            <!-- Available Builds List -->
+            <div class="max-h-64 overflow-y-auto space-y-1.5 pr-1">
+              @for (build of filteredAvailableBuilds(); track build.id) {
+                <div
+                  class="p-2.5 rounded-lg border flex items-center justify-between gap-2.5 transition-all cursor-pointer"
+                  [class.border-[var(--color-primary)]]="isSelectedBuild(build.id)"
+                  [class.bg-[var(--color-primary)]/10]="isSelectedBuild(build.id)"
+                  [class.border-[var(--color-border)]]="!isSelectedBuild(build.id)"
+                  [class.bg-[var(--color-surface-2)]]="!isSelectedBuild(build.id)"
+                  (click)="selectAddBuild(build)"
+                >
+                  <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="shrink-0 w-8 h-8 rounded bg-black/40 border border-[var(--color-border)] grid place-items-center overflow-hidden">
+                      @if (weaponIconFor(build.id); as weaponIcon) {
+                        <img [src]="weaponIcon" [alt]="build.name" class="w-full h-full object-contain p-0.5" />
+                      } @else {
+                        <app-icon name="swords" size="0.875rem" color="var(--color-text-secondary)" />
+                      }
+                    </div>
+                    <div class="min-w-0">
+                      <span class="text-xs font-bold text-white block truncate">{{ build.name }}</span>
+                      <span class="text-[10px] text-secondary">{{ build.category_name || t('comps.noCategory') }}</span>
+                    </div>
+                  </div>
+                  <span
+                    class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0"
+                    [style.background-color]="roleBadgeBg(build.role)"
+                    [style.color]="roleColorHex(build.role)"
+                  >
+                    {{ roleLabel(build.role) }}
+                  </span>
+                </div>
+              } @empty {
+                <p class="text-xs text-secondary text-center py-6">Nessuna build disponibile trovata.</p>
+              }
+            </div>
+
+            <!-- Quantity Selector -->
+            @if (newBuildId()) {
+              <div class="flex items-center justify-between p-3 rounded-lg bg-[var(--color-surface-2)] border border-[var(--color-border)]">
+                <span class="text-xs font-bold text-white">Quantità da inserire:</span>
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="btn btn--outline btn--xs w-7 h-7 p-0"
+                    [disabled]="newBuildQuantity() <= 1"
+                    (click)="newBuildQuantity.set(newBuildQuantity() - 1)"
+                  >
+                    -
+                  </button>
+                  <span class="font-mono font-bold text-white text-sm w-6 text-center">{{ newBuildQuantity() }}</span>
+                  <button
+                    type="button"
+                    class="btn btn--outline btn--xs w-7 h-7 p-0"
+                    (click)="newBuildQuantity.set(newBuildQuantity() + 1)"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            }
+          </div>
+
+          <div dialogFooter class="flex justify-end gap-2">
+            <button type="button" class="btn btn--ghost btn--sm" (click)="closeAddBuildModal()">
+              {{ t('common.cancel') }}
+            </button>
+            <button
+              type="button"
+              class="btn btn--primary btn--sm"
+              [disabled]="!newBuildId() || saving()"
+              (click)="submitAddBuildModal()"
+            >
+              {{ t('common.add') }}
+            </button>
+          </div>
+        </app-dialog>
+      }
+
+      <!-- Edit Metadata Modal Dialog -->
+      @if (editMetaOpen()) {
+        <app-dialog [title]="'Modifica Composizione'" size="md" (closed)="closeEditMeta()">
+          <form class="grid gap-4" (submit)="saveEdit($event)">
             <div class="grid gap-4 md:grid-cols-2">
               <label>
                 <span class="label">{{ t('common.name') }}</span>
@@ -222,7 +832,7 @@ const ROLE_LABELS: Record<BuildRole, string> = {
               <span class="label">{{ t('common.description') }}</span>
               <textarea
                 class="textarea"
-                rows="2"
+                rows="3"
                 [value]="editDescription()"
                 (input)="onEditDescriptionChange($event)"
               ></textarea>
@@ -241,8 +851,8 @@ const ROLE_LABELS: Record<BuildRole, string> = {
                 }
               </select>
             </label>
-            <div class="flex justify-end gap-2">
-              <button type="button" class="btn btn--ghost" (click)="cancelEdit()">
+            <div class="flex justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
+              <button type="button" class="btn btn--ghost" (click)="closeEditMeta()">
                 {{ t('common.cancel') }}
               </button>
               <button type="submit" class="btn btn--primary" [disabled]="saving()">
@@ -250,375 +860,44 @@ const ROLE_LABELS: Record<BuildRole, string> = {
               </button>
             </div>
           </form>
-        }
+        </app-dialog>
+      }
 
-        <!-- 2-COLUMN MAIN VIEWPORT -->
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <!-- LEFT COLUMN: Albion-Native Party Matrix (8 cols) -->
-          <div class="lg:col-span-8 grid gap-6">
-            <!-- Section Header & Add Build Controller -->
-            <div class="card flex flex-wrap items-center justify-between gap-3 p-4">
-              <div class="flex items-center gap-2">
-                <app-icon name="users" size="1.1rem" color="var(--color-text-secondary)" />
-                <div>
-                  <h2 class="text-base font-bold text-[var(--color-text)]">
-                    {{ t('comps.rosterTitle') }}
-                  </h2>
-                  <p class="text-xs text-[var(--color-text-secondary)]">
-                    {{
-                      t('comps.rosterSubtitle', {
-                        slots: current.total_quantity,
-                        builds: current.builds.length,
-                      })
-                    }}
-                  </p>
-                </div>
-              </div>
-
-              @if (canManage() && mode() === 'edit') {
-                <button type="button" class="btn btn--primary btn--sm" (click)="toggleAddBuild()">
-                  <app-icon name="plus" size="0.75rem" />
-                  {{ addingBuild() ? t('common.close') : t('comps.addBuild') }}
-                </button>
-              }
+      <!-- Weapon Spell Fixed Tooltip -->
+      @if (activeWeaponTooltip(); as tip) {
+        <div
+          class="fixed z-50 pointer-events-none rounded-xl p-3 border border-[var(--color-border)] shadow-2xl backdrop-blur-md bg-[#0f1011]/95 text-xs space-y-2 max-w-[280px]"
+          [style.left.px]="tip.x"
+          [style.top.px]="tip.y"
+        >
+          <div class="flex items-center gap-2.5 pb-2 border-b border-[var(--color-border)]">
+            @if (tip.icon) {
+              <img [src]="tip.icon" [alt]="tip.name" class="w-8 h-8 object-contain rounded bg-[var(--color-surface-2)] p-0.5 border border-[var(--color-border)]" />
+            }
+            <div class="min-w-0">
+              <p class="font-bold text-white text-xs truncate">{{ tip.name }}</p>
+              <p class="text-[10px] text-secondary truncate">{{ tip.buildName }} &bull; {{ roleLabel(tip.role) }}</p>
             </div>
-
-            <!-- Add Build Panel (when active) -->
-            @if (addingBuild() && canManage() && mode() === 'edit') {
-              <form
-                class="p-4 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border-strong)] grid gap-3"
-                (submit)="addBuild($event)"
-              >
-                <div class="grid gap-3 sm:grid-cols-[1fr_8rem_auto]">
-                  <label class="grid gap-1">
-                    <span class="label">{{ t('comps.selectBuild') }}</span>
-                    <input
-                      class="input"
-                      type="search"
-                      name="build-search"
-                      list="available-composition-builds"
-                      autocomplete="off"
-                      [placeholder]="t('comps.selectBuild')"
-                      [value]="newBuildSearch()"
-                      (input)="onNewBuildSearchChange($event)"
-                    />
-                  </label>
-                  <datalist id="available-composition-builds">
-                    @for (build of availableBuildOptions(); track build.id) {
-                      <option [value]="buildOptionLabel(build)"></option>
-                    }
-                  </datalist>
-                  <label class="grid gap-1">
-                    <span class="label">{{ t('comps.quantity') }}</span>
-                    <input
-                      class="input"
-                      type="number"
-                      min="1"
-                      [value]="newBuildQuantity()"
-                      (input)="onNewBuildQtyChange($event)"
-                    />
-                  </label>
-                  <div class="flex items-end">
-                    <button type="submit" class="btn btn--primary" [disabled]="saving()">
-                      {{ t('common.add') }}
-                    </button>
-                  </div>
-                </div>
-              </form>
-            }
-
-            @if (current.builds.length === 0) {
-              <app-empty-state icon="package" [message]="t('comps.noBuilds')" />
-            } @else {
-              <!-- Role Grouped Matrix Cards -->
-              @for (roleGroup of groupedBuildsByRole(); track roleGroup.role) {
-                <section class="grid gap-3">
-                  <div class="flex flex-wrap items-center justify-between gap-2 px-1">
-                    <div
-                      class="inline-flex items-center gap-1.5 rounded-full px-3 py-1"
-                      [style.background-color]="roleBadgeBg(roleGroup.role)"
-                    >
-                      <span
-                        class="w-2 h-2 rounded-full"
-                        [style.background-color]="roleColorHex(roleGroup.role)"
-                      ></span>
-                      <h3
-                        class="text-xs font-bold uppercase tracking-wider"
-                        [style.color]="roleColorHex(roleGroup.role)"
-                      >
-                        {{ roleLabel(roleGroup.role) }}
-                      </h3>
-                      <span
-                        class="text-xs font-semibold"
-                        [style.color]="roleColorHex(roleGroup.role)"
-                      >
-                        · {{ roleGroup.totalSlots }} {{ t('comps.slotsShort') }}
-                      </span>
-                    </div>
-                    <span class="text-xs text-[var(--color-text-secondary)]">
-                      {{ roleGroup.entries.length }} {{ t('comps.buildVariants') }}
-                    </span>
-                  </div>
-
-                  <div class="grid gap-3 sm:grid-cols-2">
-                    @for (entry of roleGroup.entries; track entry.build_id) {
-                      <div
-                        class="card flex flex-col justify-between p-4 transition-all"
-                        [style.border-left-width]="'4px'"
-                        [style.border-left-color]="roleColorHex(entry.build.role)"
-                      >
-                        <!-- Card Header -->
-                        <div class="flex items-start justify-between gap-2">
-                          <div class="flex items-start gap-2 min-w-0">
-                            <!-- Weapon Icon -->
-                            <div
-                              class="shrink-0 w-10 h-10 rounded-lg bg-[var(--color-surface-2)] border border-[var(--color-border)] grid place-items-center overflow-hidden"
-                              [appTooltip]="weaponNameFor(entry.build_id) || t('comps.noWeapon')"
-                            >
-                              @if (weaponIconFor(entry.build_id); as weaponIcon) {
-                                <img
-                                  class="w-full h-full object-contain p-1"
-                                  [src]="weaponIcon"
-                                  [alt]="weaponNameFor(entry.build_id) ?? ''"
-                                  loading="lazy"
-                                  (error)="hideBrokenIcon($event)"
-                                />
-                              } @else {
-                                <app-icon
-                                  name="swords"
-                                  size="1rem"
-                                  color="var(--color-text-secondary)"
-                                />
-                              }
-                            </div>
-
-                            <div class="flex flex-col gap-0.5 min-w-0">
-                              <a
-                                class="font-semibold text-base text-[var(--color-text)] hover:underline truncate"
-                                [routerLink]="['/comps', 'builds', entry.build_id]"
-                              >
-                                {{ entry.build.name }}
-                              </a>
-                              <span class="text-xs text-[var(--color-text-secondary)] truncate">
-                                {{ entry.build.category_name || t('comps.noCategory') }}
-                              </span>
-                            </div>
-                          </div>
-
-                          <!-- Quantity Pill / Stepper -->
-                          @if (mode() === 'edit' && editingBuildId() === entry.build_id) {
-                            <div class="flex items-center gap-1">
-                              <input
-                                class="input text-center w-14"
-                                type="number"
-                                min="1"
-                                [value]="editingBuildQty()"
-                                (input)="onEditingBuildQtyChange($event)"
-                              />
-                              <button
-                                type="button"
-                                class="btn btn--primary btn--sm"
-                                (click)="saveBuildQty(entry.build_id)"
-                                [disabled]="saving()"
-                              >
-                                ✓
-                              </button>
-                              <button
-                                type="button"
-                                class="btn btn--ghost btn--sm"
-                                (click)="cancelEditBuild()"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          } @else {
-                            <div class="flex items-center gap-1.5">
-                              <span
-                                class="px-2.5 py-1 rounded-full text-xs font-bold bg-[var(--color-surface-2)] text-[var(--color-text)] border border-[var(--color-border)]"
-                              >
-                                x{{ entry.quantity }}
-                              </span>
-                              @if (canManage() && mode() === 'edit') {
-                                <button
-                                  type="button"
-                                  class="btn btn--ghost btn--sm"
-                                  (click)="startEditBuild(entry.build_id, entry.quantity)"
-                                >
-                                  <app-icon name="edit" size="0.75rem" />
-                                </button>
-                                <button
-                                  type="button"
-                                  class="btn btn--ghost btn--sm text-[var(--color-error)]"
-                                  (click)="removeBuild(entry.build_id)"
-                                  [disabled]="saving()"
-                                >
-                                  <app-icon name="close" size="0.75rem" />
-                                </button>
-                              }
-                            </div>
-                          }
-                        </div>
-
-                        <!-- Weapon & Ability Preview Bar -->
-                        @if (abilityRowsFor(entry.build_id); as rows) {
-                          @if (rows.length > 0) {
-                            <div class="mt-3 pt-3 border-t border-[var(--color-border)] grid gap-2">
-                              @for (row of rows; track row.slot) {
-                                <div class="flex items-center justify-between gap-2">
-                                  <span
-                                    class="text-xs font-medium text-[var(--color-text-secondary)] truncate max-w-[120px]"
-                                  >
-                                    {{ row.itemName }}
-                                  </span>
-                                  <app-ability-bar
-                                    [slots]="row.slots"
-                                    [emptyLabel]="t('comps.noAbility')"
-                                  />
-                                </div>
-                              }
-                            </div>
-                          }
-                        }
-                      </div>
-                    }
-                  </div>
-                </section>
-              }
-            }
           </div>
-
-          <!-- RIGHT COLUMN: Tactical Analytics & Blueprint Sidebar (4 cols) -->
-          <aside class="lg:col-span-4 grid gap-5">
-            <!-- Blueprint Stats Card -->
-            <div class="card p-5 grid gap-4">
-              <h3
-                class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
-              >
-                {{ t('comps.roleBalance') }}
-              </h3>
-
-              <!-- Role Balance Progress Bar -->
-              <div class="flex h-3 w-full rounded-full overflow-hidden bg-[var(--color-surface-2)]">
-                @for (dist of compositionStats().roleDistribution; track dist.role) {
-                  <div
-                    [style.width.%]="formatRolePercent(dist.quantity, current.total_quantity)"
-                    [style.background-color]="roleColorHex(dist.role)"
-                    [appTooltip]="roleLabel(dist.role) + ': ' + dist.quantity"
-                  ></div>
-                }
-              </div>
-
-              <div class="grid grid-cols-2 gap-2 text-xs">
-                @for (dist of compositionStats().roleDistribution; track dist.role) {
-                  <div
-                    class="flex items-center justify-between p-2 rounded-lg bg-[var(--color-surface-2)]"
-                  >
-                    <div class="flex items-center gap-1.5">
-                      <span
-                        class="w-2 h-2 rounded-full"
-                        [style.background-color]="roleColorHex(dist.role)"
-                      ></span>
-                      <span>{{ roleLabel(dist.role) }}</span>
-                    </div>
-                    <span class="font-bold"
-                      >{{ dist.quantity }} ({{
-                        formatRolePercent(dist.quantity, current.total_quantity)
-                      }}%)</span
-                    >
-                  </div>
-                }
-              </div>
-
-              @if (compositionStats().weaponNames.length > 0) {
-                <div class="pt-3 border-t border-[var(--color-border)]">
-                  <span
-                    class="text-xs font-semibold text-[var(--color-text-secondary)] block mb-1"
-                    >{{ t('comps.weaponsInComp') }}</span
-                  >
-                  <div class="flex flex-wrap gap-1">
-                    @for (wName of compositionStats().weaponNames; track wName) {
-                      <span class="chip text-xs">{{ wName }}</span>
+          @if (tip.spells.length > 0) {
+            <div class="space-y-1.5">
+              <span class="text-[9px] font-bold text-disabled uppercase tracking-wider block">Incantesimi Selezionati</span>
+              <div class="space-y-1">
+                @for (spell of tip.spells; track spell.key) {
+                  <div class="flex items-center gap-2">
+                    @if (spell.iconUrl) {
+                      <img [src]="spell.iconUrl" [alt]="spell.name" class="w-5 h-5 object-contain rounded bg-[var(--color-surface-2)]" />
                     }
-                  </div>
-                </div>
-              }
-            </div>
-
-            <!-- Performance Telemetry Card -->
-            @if (performance(); as perf) {
-              <div class="card p-5 grid gap-4">
-                <h3
-                  class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
-                >
-                  {{ t('comps.battlePerformance') }}
-                </h3>
-
-                <!-- Win rate & total battles already headline the page in the KPI strip above;
-                     this card adds the detail that strip has no room for. -->
-                <div
-                  class="flex items-center justify-between p-3 bg-[var(--color-surface-2)] rounded-lg"
-                >
-                  <span class="text-xs text-[var(--color-text-secondary)]">
-                    {{ t('comps.kdRatio') }}
-                  </span>
-                  <span class="text-xl font-bold text-[var(--color-text)]">
-                    {{ formatRatio(perf.stats.kill_death_ratio) }}
-                  </span>
-                </div>
-
-                <div class="text-xs space-y-1.5 text-[var(--color-text-secondary)]">
-                  <div class="flex justify-between">
-                    <span>{{ t('comps.winsLosses') }}:</span>
-                    <strong class="text-[var(--color-text)]"
-                      >{{ perf.stats.wins }}W - {{ perf.stats.losses }}L</strong
-                    >
-                  </div>
-                  <div class="flex justify-between">
-                    <span>{{ t('comps.killFame') }}:</span>
-                    <strong class="text-[var(--color-text)]">{{
-                      formatNumber(perf.stats.total_kill_fame)
-                    }}</strong>
-                  </div>
-                </div>
-
-                @if (perf.stats.top_opponents.length > 0) {
-                  <div class="pt-3 border-t border-[var(--color-border)]">
-                    <span
-                      class="text-xs font-semibold text-[var(--color-text-secondary)] block mb-2"
-                      >{{ t('comps.topOpponents') }}</span
-                    >
-                    <div class="overflow-x-auto">
-                      <table class="table text-xs">
-                        <thead>
-                          <tr>
-                            <th class="text-left">{{ t('comps.opponent') }}</th>
-                            <th class="text-right">W-L</th>
-                            <th class="text-right">{{ t('comps.winPercent') }}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          @for (opponent of perf.stats.top_opponents; track opponentKey(opponent)) {
-                            <tr>
-                              <td>{{ opponent.guild_name }}</td>
-                              <td class="text-right">{{ opponent.wins }}-{{ opponent.losses }}</td>
-                              <td
-                                class="text-right"
-                                [style.color]="winRateColor(opponentBattlesWinRate(opponent))"
-                              >
-                                {{ formatPercent(opponentBattlesWinRate(opponent)) }}
-                              </td>
-                            </tr>
-                          }
-                        </tbody>
-                      </table>
-                    </div>
+                    <span class="text-[11px] text-white font-medium truncate">{{ spell.name }}</span>
                   </div>
                 }
               </div>
-            }
-          </aside>
+            </div>
+          } @else {
+            <p class="text-[10px] text-disabled italic">Nessun incantesimo salvato</p>
+          }
         </div>
-      </app-page-stack>
+      }
 
       @if (comparing()) {
         <app-dialog [title]="t('comps.compare')" size="lg" (closed)="closeCompare()">
@@ -739,6 +1018,50 @@ export class CompDetailPage {
   protected readonly buildDetailsLoading = signal(false);
 
   protected readonly mode = signal<'view' | 'edit'>('view');
+  protected readonly viewMode = signal<'parties' | 'roles' | 'analytics'>('parties');
+  protected readonly viewModeOptions = computed<readonly ViewToggleOption[]>(() => [
+    { id: 'parties', label: `Parties Roster (${this.totalPartyCount()} Party)` },
+    { id: 'roles', label: `Matrice Ruoli (${this.comp()?.builds.length ?? 0} Build)` },
+    { id: 'analytics', label: 'Analisi & Tattica' },
+  ]);
+
+  protected readonly editMetaOpen = signal(false);
+  protected readonly addBuildModalOpen = signal(false);
+  protected readonly addBuildRoleFilter = signal<BuildRole | 'all'>('all');
+
+  protected readonly inspectedBuildId = signal<number | null>(null);
+  protected readonly inspectedBuild = computed(() =>
+    this.inspectedBuildId() ? this.buildDetails().get(this.inspectedBuildId()!) ?? null : null,
+  );
+  protected readonly inspectedBuildLoadout = signal<BuildLoadout>('main');
+  protected readonly inspectedItems = computed<BuildItemSlot[]>(() => {
+    const b = this.inspectedBuild();
+    if (!b) return [];
+    return itemsForLoadout(b.items, this.inspectedBuildLoadout());
+  });
+  protected readonly inspectedAbilityRows = computed(() => {
+    const b = this.inspectedBuild();
+    if (!b) return [];
+    const catalog = this.abilityCatalog();
+    return this.inspectedItems().flatMap((item) => {
+      const key = abilityKeyForItem(item);
+      const slots = abilitySlotsFor(item.slot, key ? catalog[key] : undefined, item.spells);
+      return slots.length === 0
+        ? []
+        : [{ slot: item.slot, itemName: item.openalbion_item_name, slots }];
+    });
+  });
+
+  protected readonly activeWeaponTooltip = signal<{
+    x: number;
+    y: number;
+    name: string;
+    buildName: string;
+    role: BuildRole;
+    icon: string | null;
+    spells: { key: string; name: string; iconUrl: string }[];
+  } | null>(null);
+
   protected readonly pendingArchive = signal(false);
   protected readonly editName = signal('');
   protected readonly editDescription = signal('');
@@ -752,6 +1075,8 @@ export class CompDetailPage {
 
   protected readonly editingBuildId = signal<number | null>(null);
   protected readonly editingBuildQty = signal(1);
+
+  protected readonly roles: BuildRole[] = ['tank', 'healer', 'support', 'dps', 'brawler', 'battle_mount'];
 
   protected readonly t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);
@@ -860,6 +1185,191 @@ export class CompDetailPage {
     }
     return groups;
   });
+
+  protected readonly filteredAvailableBuilds = computed(() => {
+    let list = this.availableBuildOptions();
+    const role = this.addBuildRoleFilter();
+    if (role !== 'all') {
+      list = list.filter((b) => b.role === role);
+    }
+    const q = this.newBuildSearch().trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (b) => b.name.toLowerCase().includes(q) || (b.category_name ?? '').toLowerCase().includes(q),
+      );
+    }
+    return list;
+  });
+
+  protected readonly partySimulation = computed(() => {
+    const comp = this.comp();
+    if (!comp || comp.builds.length === 0) return [];
+
+    const allSeats: { buildId: number; build: BuildSummary; role: BuildRole }[] = [];
+    for (const entry of comp.builds) {
+      for (let i = 0; i < entry.quantity; i++) {
+        allSeats.push({
+          buildId: entry.build_id,
+          build: entry.build,
+          role: entry.build.role,
+        });
+      }
+    }
+
+    const rolePriority: Record<BuildRole, number> = {
+      tank: 0,
+      healer: 1,
+      support: 2,
+      brawler: 3,
+      dps: 4,
+      battle_mount: 5,
+    };
+
+    allSeats.sort((a, b) => (rolePriority[a.role] ?? 99) - (rolePriority[b.role] ?? 99));
+
+    const partySize = 5;
+    const totalParties = Math.max(1, Math.ceil(allSeats.length / partySize));
+    const parties: {
+      partyNumber: number;
+      seats: {
+        seatNumber: number;
+        globalIndex: number;
+        buildId: number;
+        build: BuildSummary;
+        role: BuildRole;
+      }[];
+    }[] = [];
+
+    for (let p = 0; p < totalParties; p++) {
+      parties.push({ partyNumber: p + 1, seats: [] });
+    }
+
+    allSeats.forEach((seat, idx) => {
+      const partyIdx = Math.floor(idx / partySize);
+      if (parties[partyIdx]) {
+        parties[partyIdx].seats.push({
+          seatNumber: (idx % partySize) + 1,
+          globalIndex: idx + 1,
+          buildId: seat.buildId,
+          build: seat.build,
+          role: seat.role,
+        });
+      }
+    });
+
+    return parties;
+  });
+
+  protected readonly totalPartyCount = computed(() => this.partySimulation().length);
+
+  protected onViewModeChange(id: string): void {
+    this.viewMode.set(id as 'parties' | 'roles' | 'analytics');
+  }
+
+  protected toggleEditMode(): void {
+    this.mode.set(this.mode() === 'edit' ? 'view' : 'edit');
+    if (this.mode() === 'view') {
+      this.cancelEditBuild();
+    }
+  }
+
+  protected isSelectedBuild(id: number): boolean {
+    return this.newBuildId() === String(id);
+  }
+
+  protected openEditMeta(): void {
+    const current = this.comp();
+    if (!current) return;
+    this.editName.set(current.name);
+    this.editCategoryId.set(current.category_id ? String(current.category_id) : '');
+    this.editParentId.set(current.parent_id ? String(current.parent_id) : '');
+    this.editDescription.set(current.description ?? '');
+    this.editMetaOpen.set(true);
+  }
+
+  protected closeEditMeta(): void {
+    this.editMetaOpen.set(false);
+  }
+
+  protected openAddBuildModal(): void {
+    this.newBuildId.set('');
+    this.newBuildSearch.set('');
+    this.newBuildQuantity.set(1);
+    this.addBuildRoleFilter.set('all');
+    this.addBuildModalOpen.set(true);
+  }
+
+  protected closeAddBuildModal(): void {
+    this.addBuildModalOpen.set(false);
+  }
+
+  protected selectAddBuild(build: BuildSummary): void {
+    this.newBuildId.set(String(build.id));
+  }
+
+  protected async submitAddBuildModal(): Promise<void> {
+    const comp = this.comp();
+    const buildId = Number(this.newBuildId());
+    const isAvailable = this.availableBuildOptions().some((build) => build.id === buildId);
+    if (!comp || !buildId || !isAvailable) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      const updated = await firstValueFrom(
+        this.api.post<CompDetail>(`api/comps/${comp.id}/builds`, {
+          build_id: buildId,
+          quantity: this.newBuildQuantity(),
+        }),
+      );
+      this.comp.set(updated);
+      void this.loadBuildDetails(updated);
+      this.closeAddBuildModal();
+      this.toasts.success(this.t('comps.buildAdded'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected itemSelectedSpells(item: BuildItemSlot): { key: string; name: string; iconUrl: string }[] {
+    const catalog = this.abilityCatalog();
+    const key = abilityKeyForItem(item);
+    const slots = abilitySlotsFor(item.slot, key ? catalog[key] : undefined, item.spells);
+    return slots
+      .filter((s) => s.selected !== null)
+      .map((s) => {
+        const choice = s.choices.find((c) => c.id === s.selected);
+        return {
+          key: `${s.kind}-${s.index}`,
+          name: choice?.name ?? s.label,
+          iconUrl: s.selected ? albionAbilityIconUrl(s.selected) : '',
+        };
+      });
+  }
+
+  protected onWeaponMouseEnter(buildId: number, event: MouseEvent): void {
+    const weapon = this.weaponItemFor(buildId);
+    const detail = this.buildDetails().get(buildId);
+    if (!weapon || !detail) return;
+
+    const spells = this.itemSelectedSpells(weapon);
+    const rect = (event.target as HTMLElement).getBoundingClientRect();
+    this.activeWeaponTooltip.set({
+      x: Math.min(window.innerWidth - 300, Math.max(10, rect.left - 40)),
+      y: rect.bottom + 8,
+      name: weapon.openalbion_item_name,
+      buildName: detail.name,
+      role: detail.role,
+      icon: weapon.openalbion_item_icon ?? null,
+      spells,
+    });
+  }
+
+  protected onWeaponMouseLeave(): void {
+    this.activeWeaponTooltip.set(null);
+  }
 
   protected formatRolePercent(quantity: number, total: number): number {
     return total > 0 ? Math.round((quantity / total) * 100) : 0;
@@ -1042,6 +1552,7 @@ export class CompDetailPage {
 
   protected cancelEdit(): void {
     this.mode.set('view');
+    this.editMetaOpen.set(false);
     this.addingBuild.set(false);
     this.cancelEditBuild();
     void this.load(this.compId());
@@ -1154,6 +1665,7 @@ export class CompDetailPage {
 
     if (Object.keys(request).length === 0) {
       this.mode.set('view');
+      this.editMetaOpen.set(false);
       return;
     }
 
@@ -1161,6 +1673,7 @@ export class CompDetailPage {
     try {
       await firstValueFrom(this.api.patch<CompDetail>(`api/comps/${comp.id}`, request));
       this.mode.set('view');
+      this.editMetaOpen.set(false);
       this.addingBuild.set(false);
       this.cancelEditBuild();
       await this.load(this.compId());

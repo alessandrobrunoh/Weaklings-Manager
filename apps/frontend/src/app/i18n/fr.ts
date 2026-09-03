@@ -1150,6 +1150,8 @@ export const fr: TranslationDict = {
   'admin.discord.applicationsOpenHint': 'Autorise les membres à créer des candidatures.',
   'admin.discord.applicationPanelTitle': 'Titre du panneau des candidatures',
   'admin.discord.applicationPanelMessage': 'Message du panneau des candidatures',
+  'admin.discord.applicationWelcomeTitle': 'Titre de bienvenue',
+  'admin.discord.applicationWelcomeMessage': 'Message de bienvenue',
   'admin.discord.placeholder': 'Not set',
   'admin.discord.save': 'Save',
   'admin.discord.saved': 'Discord settings saved.',

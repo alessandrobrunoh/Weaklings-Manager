@@ -114,6 +114,14 @@ impl AdminService {
             active.discord_applications_panel_message =
                 Set(normalize_application_text(value, 4000, "panel message")?);
         }
+        if let Some(value) = &req.discord_applications_welcome_title {
+            active.discord_applications_welcome_title =
+                Set(normalize_application_text(value, 256, "welcome title")?);
+        }
+        if let Some(value) = &req.discord_applications_welcome_message {
+            active.discord_applications_welcome_message =
+                Set(normalize_application_text(value, 4000, "welcome message")?);
+        }
         if let Some(value) = req.default_split_fee {
             if !(sea_orm::prelude::Decimal::ZERO..=sea_orm::prelude::Decimal::from(100))
                 .contains(&value)
@@ -155,6 +163,8 @@ impl AdminService {
                 "discord_applications_open": req.discord_applications_open,
                 "discord_applications_panel_title": req.discord_applications_panel_title,
                 "discord_applications_panel_message": req.discord_applications_panel_message,
+                "discord_applications_welcome_title": req.discord_applications_welcome_title,
+                "discord_applications_welcome_message": req.discord_applications_welcome_message,
                 "default_split_fee": req.default_split_fee,
             })),
         )

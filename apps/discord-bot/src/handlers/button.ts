@@ -22,6 +22,10 @@ import { startDiscordEvent, stopDiscordEvent } from "../services/event-lifecycle
 import { getPoller } from "../services/poller.js";
 import { buildSignupRoleOptions, signupRoles } from "../services/event-signup.js";
 import { closeEventAnnouncementThread } from "../services/event-announcement-thread.js";
+import { getSettingsService } from "../services/settings.js";
+import { buildApplicationWelcomeComponents, buildApplicationWelcomeEmbed } from "../embeds/application.embed.js";
+import type { ApplicationView, GuildSettingsView } from "../api/types.js";
+import { ChannelType, PermissionFlagsBits } from "discord.js";
 
 /**
  * Handles all button interactions.
@@ -42,6 +46,8 @@ export async function handleButton(
       await handleBattlesNav(interaction, api, action, rest);
     } else if (ns === "bank") {
       await handleBankButton(interaction, api, action, rest);
+    } else if (ns === "application") {
+      await handleApplicationButton(interaction, api, action);
     } else {
       const embed = createResponseEmbed(
         "warning",
@@ -67,6 +73,75 @@ export async function handleButton(
       await interaction.reply(reply);
     }
   }
+}
+
+async function handleApplicationButton(
+  interaction: ButtonInteraction,
+  api: ApiClient,
+  action: string,
+): Promise<void> {
+  if (action !== 'create') {
+    await interaction.reply({
+      embeds: [createResponseEmbed('info', 'Coming soon', 'Questa azione sarà disponibile nella prossima fase.', 'APPLICATIONS')],
+      flags: ['Ephemeral'],
+    });
+    return;
+  }
+
+  await interaction.deferReply({ flags: ['Ephemeral'] });
+  const guild = interaction.guild;
+  if (!guild) throw new Error('Applications can only be opened inside a server.');
+
+  const settings: GuildSettingsView = await getSettingsService().applicationsSettings();
+  if (!settings.discord_applications_open) {
+    await interaction.editReply({
+      embeds: [createResponseEmbed('warning', 'Applications closed', 'Le application sono momentaneamente chiuse.', 'APPLICATIONS')],
+    });
+    return;
+  }
+  if (!settings.discord_applications_category_id) {
+    throw new Error('La categoria delle application non è configurata dal pannello admin.');
+  }
+
+  const active = await api.get<ApplicationView | null>(
+    'api/applications/active',
+    interaction.user.id,
+  );
+  if (active) {
+    await interaction.editReply({
+      embeds: [createResponseEmbed('info', 'Application already open', `Hai già un'applicatione aperta: <#${active.channel_id}>.`, 'APPLICATIONS')],
+    });
+    return;
+  }
+
+  const safeName = interaction.user.username.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 80) || interaction.user.id;
+  const channel = await guild.channels.create({
+    name: `ticket-${safeName}`.slice(0, 100),
+    type: ChannelType.GuildText,
+    parent: settings.discord_applications_category_id,
+    permissionOverwrites: [
+      { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+      { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+      ...(settings.discord_applications_manage_role_id ? [{ id: settings.discord_applications_manage_role_id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }] : []),
+      ...(interaction.client.user ? [{ id: interaction.client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels] }] : []),
+    ],
+    reason: `Application opened by ${interaction.user.tag}`,
+  });
+
+  try {
+    await api.post<ApplicationView>('api/applications', channel.id, interaction.user.id);
+    await channel.send({
+      embeds: [buildApplicationWelcomeEmbed(settings)],
+      components: buildApplicationWelcomeComponents(),
+    });
+  } catch (error) {
+    await channel.delete('Application persistence failed').catch(() => undefined);
+    throw error;
+  }
+
+  await interaction.editReply({
+    embeds: [createResponseEmbed('success', 'Application created', `La tua application è stata aperta in <#${channel.id}>.`, 'APPLICATIONS')],
+  });
 }
 
 async function handleEventButton(
@@ -218,8 +293,9 @@ async function handleEventButton(
     if (!Number.isSafeInteger(eventId) || eventId <= 0) {
       throw new Error("Invalid event ID.");
     }
-    if (!interaction.channel?.isThread()) {
-      throw new Error("Event reminders can only be sent from the event thread.");
+    const channel = interaction.channel;
+    if (!channel?.isTextBased() || !("send" in channel)) {
+      throw new Error("Event reminders can only be sent from a text channel.");
     }
 
     const event = await api.post<EventView>(
@@ -227,12 +303,12 @@ async function handleEventButton(
       {},
       interaction.user.id,
     );
-    await interaction.channel.send(buildEventReminderMessage(event));
+    await channel.send(buildEventReminderMessage(event));
 
     const successEmbed = createResponseEmbed(
       "success",
       "Reminder Sent",
-      `The reminder for event **#${eventId}** was posted in this thread.`,
+      `The reminder for event **#${eventId}** was posted in this channel.`,
       "GUILD EVENT",
     );
     await interaction.editReply({ embeds: [successEmbed] });
@@ -247,16 +323,12 @@ async function handleEventButton(
     if (!Number.isSafeInteger(eventId) || eventId <= 0) {
       throw new Error("Invalid event ID.");
     }
-    if (!interaction.channel?.isThread()) {
-      throw new Error("Events can only be started from their announcement thread.");
-    }
-
     const result = await startDiscordEvent(
       interaction.client,
       api,
       interaction.user.id,
       eventId,
-      interaction.channel,
+      interaction.channel?.isThread() ? interaction.channel : undefined,
     );
     await interaction.message.edit({
       embeds: [buildEventEmbed(result.event)],

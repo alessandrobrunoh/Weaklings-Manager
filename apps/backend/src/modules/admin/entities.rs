@@ -56,6 +56,10 @@ pub struct Model {
     pub discord_applications_panel_title: String,
     /// Application panel message.
     pub discord_applications_panel_message: String,
+    /// Application welcome title.
+    pub discord_applications_welcome_title: String,
+    /// Application welcome message.
+    pub discord_applications_welcome_message: String,
     /// Default fee percentage applied to new loot splits when no fee is provided.
     pub default_split_fee: Decimal,
     /// Last admin edit.

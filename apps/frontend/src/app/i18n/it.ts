@@ -1140,6 +1140,8 @@ export const it: TranslationDict = {
   'admin.discord.applicationsOpenHint': 'Permette ai membri di creare nuove application.',
   'admin.discord.applicationPanelTitle': 'Titolo pannello application',
   'admin.discord.applicationPanelMessage': 'Messaggio pannello application',
+  'admin.discord.applicationWelcomeTitle': 'Titolo benvenuto application',
+  'admin.discord.applicationWelcomeMessage': 'Messaggio benvenuto application',
   'admin.discord.placeholder': 'Non impostato',
   'admin.discord.save': 'Salva',
   'admin.discord.saved': 'Impostazioni Discord salvate.',

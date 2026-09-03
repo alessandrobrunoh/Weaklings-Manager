@@ -81,9 +81,9 @@ export async function closeEventAnnouncementThread(
 /**
  * Posts the interactive signup card inside an event thread.
  *
- * The announcement message remains clean in the parent channel, while thread participants get the
- * same `Manage Participation` workflow used by `/event-join`. Discord failures are isolated to this
- * follow-up so the event and parent announcement still exist.
+ * The parent announcement already contains the event controls; the thread gets a second copy so
+ * discussion participants can manage the event without leaving the thread. Discord failures are
+ * isolated to this follow-up so the event and parent announcement still exist.
  *
  * @example
  * const thread = await createEventAnnouncementThread(message, event, 'Poller');

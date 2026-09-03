@@ -39,6 +39,8 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
   discord_applications_open: 'false',
   discord_applications_panel_title: 'Applications',
   discord_applications_panel_message: 'Clicca il pulsante per creare una application.',
+  discord_applications_welcome_title: 'Benvenuto',
+  discord_applications_welcome_message: 'Di cosa hai bisogno?',
   default_split_fee: '20',
 };
 
@@ -256,6 +258,17 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
             </label>
 
             <label>
+              <span class="label">{{ t('admin.discord.applicationWelcomeTitle') }}</span>
+              <input class="input" type="text" maxlength="256" [value]="guildSettingsDraft().discord_applications_welcome_title"
+                (input)="updateDraftField('discord_applications_welcome_title', $event)" />
+            </label>
+            <label>
+              <span class="label">{{ t('admin.discord.applicationWelcomeMessage') }}</span>
+              <textarea class="input min-h-24" maxlength="4000" [value]="guildSettingsDraft().discord_applications_welcome_message"
+                (input)="updateDraftField('discord_applications_welcome_message', $event)"></textarea>
+            </label>
+
+            <label>
               <span class="label">{{ t('admin.split.defaultFee') }}</span>
               <div class="flex items-center gap-2">
                 <input
@@ -412,6 +425,8 @@ export class AdminDiscord {
         discord_applications_open: draft.discord_applications_open === 'true',
         discord_applications_panel_title: draft.discord_applications_panel_title.trim(),
         discord_applications_panel_message: draft.discord_applications_panel_message.trim(),
+        discord_applications_welcome_title: draft.discord_applications_welcome_title.trim(),
+        discord_applications_welcome_message: draft.discord_applications_welcome_message.trim(),
         default_split_fee: Number(draft.default_split_fee),
       };
       const updated = await firstValueFrom(
@@ -500,6 +515,8 @@ function toDraft(settings: GuildSettingsView): Record<keyof GuildSettingsView, s
     discord_applications_open: String(settings.discord_applications_open),
     discord_applications_panel_title: settings.discord_applications_panel_title ?? 'Applications',
     discord_applications_panel_message: settings.discord_applications_panel_message ?? 'Clicca il pulsante per creare una application.',
+    discord_applications_welcome_title: settings.discord_applications_welcome_title ?? 'Benvenuto',
+    discord_applications_welcome_message: settings.discord_applications_welcome_message ?? 'Di cosa hai bisogno?',
     default_split_fee: String(settings.default_split_fee ?? 20),
   };
 }

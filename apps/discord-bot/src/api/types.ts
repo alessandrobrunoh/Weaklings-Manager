@@ -394,6 +394,14 @@ export interface AlbionGuildMember {
  * Settings page instead of this process's own env vars. Every field is nullable: an unset
  * channel means "skip this notification", same as the env vars they replaced.
  */
+export interface ApplicationView {
+  id: number;
+  user_discord_id: string;
+  username: string;
+  channel_id: string;
+  status: 'open' | 'accepted' | 'declined' | 'closed';
+}
+
 export interface GuildSettingsView {
   discord_events_channel_id: string | null;
   discord_battles_channel_id: string | null;
@@ -416,6 +424,8 @@ export interface GuildSettingsView {
   discord_applications_open: boolean;
   discord_applications_panel_title: string;
   discord_applications_panel_message: string;
+  discord_applications_welcome_title: string;
+  discord_applications_welcome_message: string;
   default_split_fee: number | string;
 }
 

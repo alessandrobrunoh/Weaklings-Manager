@@ -25,6 +25,8 @@ const settings: GuildSettingsView = {
   discord_applications_open: true,
   discord_applications_panel_title: 'Candidature Weaklings',
   discord_applications_panel_message: 'Clicca per creare una application',
+  discord_applications_welcome_title: 'Benvenuto',
+  discord_applications_welcome_message: 'Di cosa hai bisogno?',
   default_split_fee: '20.00',
 };
 

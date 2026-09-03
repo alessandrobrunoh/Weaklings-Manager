@@ -86,6 +86,8 @@ mod m20260902_000011_add_default_split_fee;
 mod m20260902_000011_add_split_forum_tag_ids;
 mod m20260902_000012_add_event_mass_start_times;
 mod m20260903_000001_add_discord_application_settings;
+mod m20260903_000002_create_discord_applications;
+mod m20260903_000003_add_discord_application_welcome_copy;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -176,6 +178,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260902_000011_add_default_split_fee::Migration),
             Box::new(m20260902_000012_add_event_mass_start_times::Migration),
             Box::new(m20260903_000001_add_discord_application_settings::Migration),
+            Box::new(m20260903_000002_create_discord_applications::Migration),
+            Box::new(m20260903_000003_add_discord_application_welcome_copy::Migration),
         ]
     }
 }

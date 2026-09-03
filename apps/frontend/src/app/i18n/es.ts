@@ -1137,6 +1137,8 @@ export const es: TranslationDict = {
   'admin.discord.applicationsOpenHint': 'Permite a los miembros crear nuevas solicitudes.',
   'admin.discord.applicationPanelTitle': 'Título del panel de solicitudes',
   'admin.discord.applicationPanelMessage': 'Mensaje del panel de solicitudes',
+  'admin.discord.applicationWelcomeTitle': 'Título de bienvenida',
+  'admin.discord.applicationWelcomeMessage': 'Mensaje de bienvenida',
   'admin.discord.placeholder': 'No configurado',
   'admin.discord.save': 'Guardar',
   'admin.discord.saved': 'Ajustes de Discord guardados.',

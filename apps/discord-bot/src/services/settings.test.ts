@@ -26,6 +26,8 @@ const settings: GuildSettingsView = {
   discord_applications_open: false,
   discord_applications_panel_title: "Applications",
   discord_applications_panel_message: "Clicca il pulsante per creare una application.",
+  discord_applications_welcome_title: "Benvenuto",
+  discord_applications_welcome_message: "Di cosa hai bisogno?",
   default_split_fee: "20.00",
 };
 

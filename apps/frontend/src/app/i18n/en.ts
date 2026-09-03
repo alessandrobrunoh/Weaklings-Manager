@@ -1315,6 +1315,8 @@ export const en = {
   'admin.discord.applicationsOpenHint': 'Allow members to create new applications.',
   'admin.discord.applicationPanelTitle': 'Application panel title',
   'admin.discord.applicationPanelMessage': 'Application panel message',
+  'admin.discord.applicationWelcomeTitle': 'Application welcome title',
+  'admin.discord.applicationWelcomeMessage': 'Application welcome message',
   'admin.discord.placeholder': 'Not set',
   'admin.discord.save': 'Save',
   'admin.discord.saved': 'Discord settings saved.',

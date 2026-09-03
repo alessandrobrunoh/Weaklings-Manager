@@ -56,6 +56,8 @@ import { AlbionCatalogService } from '../../shared/services/albion-catalog.servi
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { StatCard } from '../../shared/components/stat-card/stat-card';
+import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
 import { Icon } from '../../shared/components/icon/icon';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
@@ -127,6 +129,8 @@ const ITEM_TIERS = [
     Dialog,
     Icon,
     TooltipDirective,
+    StatCard,
+    ViewToggle,
   ],
   template: `
     @if (loading()) {
@@ -134,9 +138,7 @@ const ITEM_TIERS = [
     } @else if (build(); as current) {
       <app-page-header
         [title]="current.name"
-        [subtitle]="
-          roleLabel(current.role) + ' · ' + (current.category_name || t('comps.noCategory'))
-        "
+        [subtitle]="roleLabel(current.role) + ' · ' + (current.category_name || t('comps.noCategory'))"
         [badge]="current.archived_at ? t('comps.archived') : undefined"
       >
         <div pageActions class="flex flex-wrap items-center gap-2">
@@ -156,14 +158,25 @@ const ITEM_TIERS = [
               {{ t('comps.compare') }}
             </button>
           }
-          @if (canManage() && mode() === 'view') {
+          @if (canManage()) {
+            <button
+              type="button"
+              class="btn"
+              [class.btn--primary]="mode() === 'edit'"
+              [class.btn--outline]="mode() === 'view'"
+              (click)="toggleEditMode()"
+              [disabled]="saving()"
+            >
+              <app-icon [name]="mode() === 'edit' ? 'check' : 'edit'" size="0.75rem" />
+              {{ mode() === 'edit' ? 'Termina Modifiche' : 'Modifica Equip' }}
+            </button>
             <button
               type="button"
               class="btn btn--outline"
-              (click)="enterEdit()"
+              (click)="openEditMeta()"
               [disabled]="saving()"
             >
-              {{ t('common.edit') }}
+              Info Build
             </button>
           }
           @if (canDelete() && mode() === 'view') {
@@ -191,8 +204,218 @@ const ITEM_TIERS = [
       </app-page-header>
 
       <app-page-stack>
-        @if (mode() === 'edit' && canManage()) {
-          <form class="card grid gap-4 p-5" (submit)="saveEdit($event)">
+        <!-- ================= EDIT MODE BANNER ================= -->
+        @if (mode() === 'edit') {
+          <div class="p-3.5 rounded-xl border border-amber-500/40 bg-amber-500/10 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div class="flex items-center gap-2 text-amber-300">
+              <app-icon name="edit" size="1rem" />
+              <span><strong>Modalità Modifica Attiva:</strong> Clicca su uno slot dell'equipaggiamento per cambiare pezzo o livello, oppure cambia gli incantesimi direttamente nella lista sottostante.</span>
+            </div>
+            <button type="button" class="btn btn--sm btn--primary" (click)="mode.set('view')">
+              Fatto
+            </button>
+          </div>
+        }
+
+        <!-- ================= 4 CORE KPI CARDS ================= -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <app-stat-card
+            label="Win Rate"
+            [value]="winRateFormatted()"
+            [tone]="performance() && (performance()!.stats?.wins ?? 0) >= (performance()!.stats?.losses ?? 0) ? 'success' : 'default'"
+            icon="trophy"
+          />
+          <app-stat-card
+            label="K / D Ratio"
+            [value]="kdRatioFormatted()"
+            icon="swords"
+          />
+          <app-stat-card
+            label="Stato Equipaggiamento"
+            [value]="equipmentCompletion()"
+            icon="shield"
+          />
+          <app-stat-card
+            label="Registrazioni Giocatori"
+            [value]="totalSignups()"
+            icon="users"
+          />
+        </div>
+
+        <!-- ================= 2-COLUMN MAIN WORKSPACE ================= -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <!-- LEFT COLUMN: Paperdoll Forge & Spells Deck (7 cols) -->
+          <div class="lg:col-span-7 space-y-6">
+            <!-- Loadout Card with Tabs -->
+            <section class="card p-5 border border-[var(--color-border)] space-y-4">
+              <div class="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-[var(--color-border)]">
+                <div>
+                  <h2 class="text-base font-bold text-white">
+                    Equipaggiamento Personaggio
+                  </h2>
+                  <p class="text-xs text-secondary">
+                    Configurazione visuale Albion Online per slot principali e pezzi swap tattici.
+                  </p>
+                </div>
+                <app-view-toggle
+                  [options]="loadoutOptions()"
+                  [active]="activeLoadout()"
+                  (activeChange)="onLoadoutChange($event)"
+                />
+              </div>
+
+              <!-- Equipment Paperdoll Grid -->
+              <app-equipment-grid
+                [items]="activeItems()"
+                [canManage]="canManage() && mode() === 'edit'"
+                [editingSlot]="editingSlotFor(activeLoadout())"
+                [draftTier]="draftTier()"
+                [draftSearch]="draftSearch()"
+                [draftItemId]="draftItemId()"
+                [searchResults]="searchResults()"
+                [searchLoading]="searchLoading()"
+                [tiers]="ITEM_TIERS"
+                [draftAbilitySlots]="draftAbilitySlots()"
+                (slotToggle)="onSlotToggle(activeLoadout(), $event)"
+                (tierChange)="onDraftTierChangeValue($event)"
+                (searchChange)="onDraftSearchChangeValue($event)"
+                (itemSelect)="onDraftItemChangeValue($event)"
+                (saveSlot)="saveSlot(activeLoadout(), $event)"
+                (cancelEdit)="cancelSlotEdit()"
+                (removeItem)="askRemoveItem(activeLoadout(), $event)"
+                (abilityChoice)="onDraftAbilityChange($event)"
+              />
+            </section>
+
+            <!-- Spells & Abilities Deck (Right underneath paperdoll) -->
+            <section class="card p-5 border border-[var(--color-border)] space-y-4">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <h3 class="text-sm font-bold text-white">
+                    Incantesimi & Abilità Selezionate ({{ activeLoadout() === 'main' ? 'Main Set' : 'Swap Set' }})
+                  </h3>
+                  <p class="text-xs text-secondary">
+                    Abilità attive (Q, W, E, R, F) e passive legate agli oggetti equipaggiati.
+                  </p>
+                </div>
+                <span class="chip chip--neutral text-[10px] font-mono">
+                  {{ activeAbilityRows().length }} pezzi con abilità
+                </span>
+              </div>
+
+              @if (activeAbilityRows().length > 0) {
+                <div class="space-y-3">
+                  @for (row of activeAbilityRows(); track row.slot) {
+                    <div class="p-3 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div class="flex items-center gap-2.5 min-w-0">
+                        @if (row.itemIcon) {
+                          <img [src]="row.itemIcon" [alt]="row.itemName" class="w-9 h-9 object-contain rounded bg-black/40 p-0.5 border border-[var(--color-border)] shrink-0" />
+                        }
+                        <div class="min-w-0">
+                          <span class="text-xs font-bold text-white block truncate">{{ row.itemName }}</span>
+                          <span class="text-[10px] text-secondary uppercase tracking-wider font-semibold">{{ slotLabel(row.slot) }}</span>
+                        </div>
+                      </div>
+
+                      <div class="shrink-0">
+                        <app-ability-bar
+                          [slots]="row.slots"
+                          [canManage]="canManage() && mode() === 'edit'"
+                          [emptyLabel]="t('comps.noAbility')"
+                          (choiceChange)="onAbilityChange(activeLoadout(), row.slot, $event)"
+                        />
+                      </div>
+                    </div>
+                  }
+                </div>
+              } @else {
+                <div class="p-6 text-center rounded-xl bg-[var(--color-surface-2)] border border-[var(--color-border)] text-xs text-secondary">
+                  Nessuna abilità configurabile per questo set.
+                </div>
+              }
+            </section>
+          </div>
+
+          <!-- RIGHT COLUMN: Tactical Analytics & Guide (5 cols) -->
+          <div class="lg:col-span-5 space-y-6">
+            <!-- Tactical Guide & Role Card -->
+            <section class="card p-5 border border-[var(--color-border)] space-y-3">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                  <span class="w-2.5 h-2.5 rounded-full" [style.background-color]="roleColorHex(current.role)"></span>
+                  <h3 class="text-xs font-bold uppercase tracking-wider text-secondary">
+                    Ruolo & Note Tattiche
+                  </h3>
+                </div>
+                <span class="chip font-semibold text-xs" [style.color]="roleColorHex(current.role)">
+                  {{ roleLabel(current.role) }}
+                </span>
+              </div>
+
+              @if (current.description) {
+                <p class="text-xs text-white leading-relaxed whitespace-pre-line bg-[var(--color-surface-2)] p-3.5 rounded-xl border border-[var(--color-border)]">
+                  {{ current.description }}
+                </p>
+              } @else {
+                <p class="text-xs text-disabled italic">
+                  Nessuna descrizione o linea guida tattica inserita per questa build.
+                </p>
+              }
+            </section>
+
+            <!-- Combat Telemetry Card -->
+            <section class="card p-5 border border-[var(--color-border)] space-y-4">
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-secondary">
+                  Telemetria di Combattimento · v{{ current.version }}
+                </h3>
+                <span class="chip text-xs font-mono">
+                  {{ totalSignups() }} Registrazioni
+                </span>
+              </div>
+
+              @if (performance(); as report) {
+                @if (report.stats; as stats) {
+                  <div class="grid grid-cols-2 gap-2.5">
+                    <div class="p-3 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)]">
+                      <span class="text-[10px] text-disabled block">Win Rate</span>
+                      <strong class="text-base font-bold text-white">{{ winRate(stats.wins, stats.losses) }}</strong>
+                      <span class="text-[10px] text-secondary block mt-0.5">{{ stats.wins }}W - {{ stats.losses }}L</span>
+                    </div>
+                    <div class="p-3 bg-[var(--color-surface-2)] rounded-xl border border-[var(--color-border)]">
+                      <span class="text-[10px] text-disabled block">K / D Ratio</span>
+                      <strong class="text-base font-bold text-white">{{ kdRatioFormatted() }}</strong>
+                      <span class="text-[10px] text-secondary block mt-0.5">{{ stats.kills }}K / {{ stats.deaths }}D</span>
+                    </div>
+                  </div>
+
+                  <div class="text-xs space-y-2 pt-2 border-t border-[var(--color-border)] text-secondary">
+                    <div class="flex justify-between">
+                      <span>Battaglie Tracciate:</span>
+                      <strong class="text-white font-mono">{{ stats.battles }}</strong>
+                    </div>
+                    <div class="flex justify-between">
+                      <span>Giocatori Associati:</span>
+                      <strong class="text-white font-mono">{{ stats.matched_players }}</strong>
+                    </div>
+                    <div class="flex justify-between">
+                      <span>Kill Fame Accumulata:</span>
+                      <strong class="text-amber-400 font-mono">{{ stats.kill_fame }}</strong>
+                    </div>
+                  </div>
+                } @else {
+                  <p class="text-xs text-secondary">{{ t('comps.noBattleData') }}</p>
+                }
+              }
+            </section>
+          </div>
+        </div>
+      </app-page-stack>
+
+      <!-- Edit Metadata Modal Dialog -->
+      @if (editMetaOpen()) {
+        <app-dialog [title]="'Modifica Informazioni Build'" size="md" (closed)="closeEditMeta()">
+          <form class="grid gap-4" (submit)="saveEdit($event)">
             <div class="grid gap-4 md:grid-cols-2">
               <label>
                 <span class="label">{{ t('common.name') }}</span>
@@ -230,13 +453,13 @@ const ITEM_TIERS = [
               <span class="label">{{ t('common.description') }}</span>
               <textarea
                 class="textarea"
-                rows="3"
+                rows="4"
                 [value]="editDescription()"
                 (input)="onEditDescriptionChange($event)"
               ></textarea>
             </label>
-            <div class="flex justify-end gap-2">
-              <button type="button" class="btn btn--ghost" (click)="cancelEdit()">
+            <div class="flex justify-end gap-2 pt-2 border-t border-[var(--color-border)]">
+              <button type="button" class="btn btn--ghost" (click)="closeEditMeta()">
                 {{ t('common.cancel') }}
               </button>
               <button type="submit" class="btn btn--primary" [disabled]="saving()">
@@ -244,236 +467,8 @@ const ITEM_TIERS = [
               </button>
             </div>
           </form>
-        }
-
-        <!-- 3-COLUMN CHARACTER FORGE -->
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <!-- COLUMN 1: Equipment Paperdoll (5 cols) -->
-          <div class="lg:col-span-5 grid gap-6">
-            <section class="card p-5 grid gap-4">
-              <header class="flex items-center justify-between gap-3">
-                <div>
-                  <h2 class="text-base font-bold text-[var(--color-text)]">
-                    {{ t('comps.mainLoadout') }}
-                  </h2>
-                  <p class="text-xs text-[var(--color-text-secondary)]">
-                    {{ mainItems().length }}/{{ SLOT_ORDER.length }} slots equipped ·
-                    {{ current.item_count }} items total
-                  </p>
-                </div>
-                <span class="chip font-semibold">{{ roleLabel(current.role) }}</span>
-              </header>
-
-              <app-equipment-grid
-                [items]="mainItems()"
-                [canManage]="canManage() && mode() === 'edit'"
-                [editingSlot]="editingSlotFor('main')"
-                [draftTier]="draftTier()"
-                [draftSearch]="draftSearch()"
-                [draftItemId]="draftItemId()"
-                [searchResults]="searchResults()"
-                [searchLoading]="searchLoading()"
-                [tiers]="ITEM_TIERS"
-                [draftAbilitySlots]="draftAbilitySlots()"
-                (slotToggle)="onSlotToggle('main', $event)"
-                (tierChange)="onDraftTierChangeValue($event)"
-                (searchChange)="onDraftSearchChangeValue($event)"
-                (itemSelect)="onDraftItemChangeValue($event)"
-                (saveSlot)="saveSlot('main', $event)"
-                (cancelEdit)="cancelSlotEdit()"
-                (removeItem)="askRemoveItem('main', $event)"
-                (abilityChoice)="onDraftAbilityChange($event)"
-              />
-            </section>
-
-            <!-- Swap Loadout Accordion / Card -->
-            @if (swapItems().length > 0 || (canManage() && mode() === 'edit')) {
-              <section class="card p-5 grid gap-4">
-                <header class="flex items-center justify-between gap-3">
-                  <div>
-                    <h2 class="text-base font-bold text-[var(--color-text)]">
-                      {{ t('comps.swapLoadout') }}
-                    </h2>
-                    <p class="text-xs text-[var(--color-text-secondary)]">
-                      {{ swapItems().length }}/{{ SLOT_ORDER.length }} optional tactical swap items
-                    </p>
-                  </div>
-                </header>
-
-                @if (swapItems().length === 0 && mode() !== 'edit') {
-                  <p class="text-xs text-[var(--color-text-secondary)]">
-                    {{ t('comps.noSwap') }}
-                  </p>
-                } @else {
-                  <app-equipment-grid
-                    [items]="swapItems()"
-                    [canManage]="canManage() && mode() === 'edit'"
-                    [editingSlot]="editingSlotFor('swap')"
-                    [draftTier]="draftTier()"
-                    [draftSearch]="draftSearch()"
-                    [draftItemId]="draftItemId()"
-                    [searchResults]="searchResults()"
-                    [searchLoading]="searchLoading()"
-                    [tiers]="ITEM_TIERS"
-                    [draftAbilitySlots]="draftAbilitySlots()"
-                    (slotToggle)="onSlotToggle('swap', $event)"
-                    (tierChange)="onDraftTierChangeValue($event)"
-                    (searchChange)="onDraftSearchChangeValue($event)"
-                    (itemSelect)="onDraftItemChangeValue($event)"
-                    (saveSlot)="saveSlot('swap', $event)"
-                    (cancelEdit)="cancelSlotEdit()"
-                    (removeItem)="askRemoveItem('swap', $event)"
-                    (abilityChoice)="onDraftAbilityChange($event)"
-                  />
-                }
-              </section>
-            }
-          </div>
-
-          <!-- COLUMN 2: Spell & Ability Deck (4 cols) -->
-          <div class="lg:col-span-4 grid gap-5">
-            <section class="card p-5 grid gap-4">
-              <header>
-                <h2 class="text-base font-bold text-[var(--color-text)]">
-                  {{ t('comps.abilities') }}
-                </h2>
-                <p class="text-xs text-[var(--color-text-secondary)]">
-                  {{ t('comps.abilitiesHint') }}
-                </p>
-              </header>
-
-              <!-- Main Loadout Spells -->
-              @if (abilityRows('main'); as rows) {
-                @if (rows.length > 0) {
-                  <div class="grid gap-3">
-                    @for (row of rows; track row.slot) {
-                      <div
-                        class="p-3 bg-[var(--color-surface-2)] rounded-lg grid gap-1.5 border border-[var(--color-border)]"
-                      >
-                        <span
-                          class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
-                        >
-                          {{ row.itemName }}
-                        </span>
-                        <app-ability-bar
-                          [slots]="row.slots"
-                          [canManage]="canManage() && mode() === 'edit'"
-                          [emptyLabel]="t('comps.noAbility')"
-                          (choiceChange)="onAbilityChange('main', row.slot, $event)"
-                        />
-                      </div>
-                    }
-                  </div>
-                } @else {
-                  <p class="text-xs text-[var(--color-text-secondary)]">
-                    No abilities configured for main set.
-                  </p>
-                }
-              }
-
-              <!-- Swap Loadout Spells -->
-              @if (abilityRows('swap'); as swapRows) {
-                @if (swapRows.length > 0) {
-                  <div class="pt-4 border-t border-[var(--color-border)] grid gap-3">
-                    <span
-                      class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
-                    >
-                      Swap Set Abilities
-                    </span>
-                    @for (row of swapRows; track row.slot) {
-                      <div
-                        class="p-3 bg-[var(--color-surface-2)] rounded-lg grid gap-1.5 border border-[var(--color-border)]"
-                      >
-                        <span
-                          class="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider"
-                        >
-                          {{ row.itemName }}
-                        </span>
-                        <app-ability-bar
-                          [slots]="row.slots"
-                          [canManage]="canManage() && mode() === 'edit'"
-                          [emptyLabel]="t('comps.noAbility')"
-                          (choiceChange)="onAbilityChange('swap', row.slot, $event)"
-                        />
-                      </div>
-                    }
-                  </div>
-                }
-              }
-            </section>
-          </div>
-
-          <!-- COLUMN 3: Performance & Signups Sidebar (3 cols) -->
-          <aside class="lg:col-span-3 grid gap-5">
-            <section class="card p-5 grid gap-4">
-              <header class="flex items-center justify-between gap-2">
-                <h2
-                  class="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]"
-                >
-                  {{ t('comps.performance') }} · v{{ current.version }}
-                </h2>
-                <span class="chip text-xs">
-                  {{
-                    (performance()?.signups_as_primary ?? 0) +
-                      (performance()?.signups_as_secondary ?? 0)
-                  }}
-                  Signups
-                </span>
-              </header>
-
-              @if (performance(); as report) {
-                @if (report.stats; as stats) {
-                  <div class="grid grid-cols-2 gap-3 text-center">
-                    <div class="p-2.5 bg-[var(--color-surface-2)] rounded-lg">
-                      <div class="text-base font-bold text-[var(--color-text)]">
-                        {{ winRate(stats.wins, stats.losses) }}
-                      </div>
-                      <div class="text-[10px] text-[var(--color-text-secondary)]">
-                        {{ t('comps.winrate') }}
-                      </div>
-                    </div>
-                    <div class="p-2.5 bg-[var(--color-surface-2)] rounded-lg">
-                      <div class="text-base font-bold text-[var(--color-text)]">
-                        {{ stats.kills }}/{{ stats.deaths }}
-                      </div>
-                      <div class="text-[10px] text-[var(--color-text-secondary)]">K / D Ratio</div>
-                    </div>
-                  </div>
-
-                  <div
-                    class="text-xs space-y-1.5 text-[var(--color-text-secondary)] pt-2 border-t border-[var(--color-border)]"
-                  >
-                    <div class="flex justify-between">
-                      <span>Battles Tracked:</span>
-                      <strong class="text-[var(--color-text)]">{{ stats.battles }}</strong>
-                    </div>
-                    <div class="flex justify-between">
-                      <span>{{ t('comps.matchedPlayers') }}:</span>
-                      <strong class="text-[var(--color-text)]">{{ stats.matched_players }}</strong>
-                    </div>
-                    <div class="flex justify-between">
-                      <span>Kill Fame:</span>
-                      <strong class="text-[var(--color-text)]">{{ stats.kill_fame }}</strong>
-                    </div>
-                  </div>
-
-                  @if (report.players_without_an_albion_link > 0) {
-                    <div
-                      class="text-xs text-[var(--color-warning)] pt-2 border-t border-[var(--color-border)]"
-                    >
-                      {{ t('comps.unlinkedPlayers') }}: {{ report.players_without_an_albion_link }}
-                    </div>
-                  }
-                } @else {
-                  <p class="text-xs text-[var(--color-text-secondary)]">
-                    {{ t('comps.noBattleData') }}
-                  </p>
-                }
-              }
-            </section>
-          </aside>
-        </div>
-      </app-page-stack>
+        </app-dialog>
+      }
 
       @if (comparing()) {
         <app-dialog [title]="t('comps.compare')" size="lg" (closed)="closeCompare()">
@@ -628,6 +623,40 @@ export class CompBuildDetailPage {
   });
 
   protected readonly mode = signal<'view' | 'edit'>('view');
+  protected readonly activeLoadout = signal<BuildLoadout>('main');
+  protected readonly editMetaOpen = signal(false);
+
+  protected readonly loadoutOptions = computed<readonly ViewToggleOption[]>(() => [
+    { id: 'main', label: `Main Set (${this.mainItems().length}/${this.SLOT_ORDER.length})` },
+    { id: 'swap', label: `Tactical Swap (${this.swapItems().length} Pezzi)` },
+  ]);
+
+  protected readonly activeItems = computed(() =>
+    this.activeLoadout() === 'main' ? this.mainItems() : this.swapItems(),
+  );
+
+  protected readonly activeAbilityRows = computed(() => this.abilityRows(this.activeLoadout()));
+
+  protected readonly winRateFormatted = computed(() => {
+    const stats = this.performance()?.stats;
+    return stats ? this.winRate(stats.wins, stats.losses) : '—';
+  });
+
+  protected readonly kdRatioFormatted = computed(() => {
+    const stats = this.performance()?.stats;
+    if (!stats) return '—';
+    return stats.deaths > 0 ? (stats.kills / stats.deaths).toFixed(2) : String(stats.kills);
+  });
+
+  protected readonly equipmentCompletion = computed(() => {
+    return `${this.mainItems().length}/${this.SLOT_ORDER.length}`;
+  });
+
+  protected readonly totalSignups = computed(() => {
+    const p = this.performance();
+    return (p?.signups_as_primary ?? 0) + (p?.signups_as_secondary ?? 0);
+  });
+
   protected readonly pendingDelete = signal<{ loadout: BuildLoadout; slot: BuildSlot } | null>(
     null,
   );
@@ -788,8 +817,47 @@ export class CompBuildDetailPage {
     }
   }
 
+  protected roleColorHex(role: BuildRole): string {
+    switch (role) {
+      case 'tank': return 'var(--color-info)';
+      case 'healer': return 'var(--color-success)';
+      case 'support': return 'var(--color-warning)';
+      case 'dps': return 'var(--color-error)';
+      case 'brawler': return 'var(--color-primary)';
+      case 'battle_mount': return '#8b5cf6';
+      default: return 'var(--color-text-secondary)';
+    }
+  }
+
+  protected onLoadoutChange(id: string): void {
+    this.activeLoadout.set(id as BuildLoadout);
+  }
+
+  protected toggleEditMode(): void {
+    this.mode.set(this.mode() === 'edit' ? 'view' : 'edit');
+    if (this.mode() === 'view') {
+      this.cancelSlotEdit();
+    }
+  }
+
+  protected openEditMeta(): void {
+    const current = this.build();
+    if (!current) return;
+    this.editName.set(current.name);
+    this.editCategoryId.set(current.category_id ? String(current.category_id) : '');
+    this.editRole.set(current.role);
+    this.editDescription.set(current.description ?? '');
+    this.editMetaOpen.set(true);
+    void this.loadExistingBuildNames();
+  }
+
+  protected closeEditMeta(): void {
+    this.editMetaOpen.set(false);
+  }
+
   protected cancelEdit(): void {
     this.mode.set('view');
+    this.editMetaOpen.set(false);
     this.cancelSlotEdit();
     void this.load(this.buildId());
   }
@@ -970,6 +1038,7 @@ export class CompBuildDetailPage {
 
     if (Object.keys(request).length === 0) {
       this.mode.set('view');
+      this.editMetaOpen.set(false);
       return;
     }
 
@@ -977,6 +1046,7 @@ export class CompBuildDetailPage {
     try {
       await firstValueFrom(this.api.patch<BuildDetail>(`api/comps/builds/${build.id}`, request));
       this.mode.set('view');
+      this.editMetaOpen.set(false);
       this.cancelSlotEdit();
       await this.load(this.buildId());
       this.toasts.success(this.t('common.save'));
@@ -1055,14 +1125,14 @@ export class CompBuildDetailPage {
    */
   protected abilityRows(
     loadout: BuildLoadout,
-  ): { slot: BuildSlot; itemName: string; slots: AbilitySlotView[] }[] {
+  ): { slot: BuildSlot; itemName: string; itemIcon?: string | null; slots: AbilitySlotView[] }[] {
     const catalog = this.abilityCatalog();
     return this.itemsFor(loadout).flatMap((item) => {
       const key = abilityKeyForItem(item);
       const slots = abilitySlotsFor(item.slot, key ? catalog[key] : undefined, item.spells);
       return slots.length === 0
         ? []
-        : [{ slot: item.slot, itemName: item.openalbion_item_name, slots }];
+        : [{ slot: item.slot, itemName: item.openalbion_item_name, itemIcon: item.openalbion_item_icon, slots }];
     });
   }
 

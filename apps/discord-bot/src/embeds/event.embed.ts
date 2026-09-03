@@ -8,16 +8,20 @@ import type { EventView, EventDetailView } from "../api/types.js";
 import { BOT_COLORS, createBaseEmbed } from "./theme.js";
 
 /**
- * Plain Discord announcement copy for channels where users should only be pinged.
- *
- * The message intentionally avoids embeds, buttons, and reaction-driven UI because event creation
- * is only an announcement surface here; participation flows stay in slash commands/detail views.
+ * Plain Discord announcement copy used together with the interactive event card in the parent
+ * channel. The text keeps role mentions and timestamps compact, while the embed and components
+ * provide the event details and management controls.
  * Discord's timestamp tokens render in each user's local timezone while keeping a compact
  * `time | date` layout.
  *
  * @example
  * const content = buildEventAnnouncementContent(event);
- * await channel.send({ content, allowedMentions: { roles: event.discord_role_ids } });
+ * await channel.send({
+ *   content,
+ *   embeds: [buildEventEmbed(event)],
+ *   components: buildEventThreadActionRows(event),
+ *   allowedMentions: { roles: event.discord_role_ids },
+ * });
  */
 export function buildEventAnnouncementContent(event: EventView): string {
   const massTimestamp = eventTimestamp(event, "mass");

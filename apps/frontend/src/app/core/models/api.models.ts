@@ -1884,6 +1884,8 @@ export interface GuildSettingsView {
   discord_applications_open: boolean;
   discord_applications_panel_title: string;
   discord_applications_panel_message: string;
+  discord_applications_welcome_title: string;
+  discord_applications_welcome_message: string;
   default_split_fee: number | string;
 }
 
