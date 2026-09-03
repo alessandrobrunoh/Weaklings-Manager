@@ -138,6 +138,8 @@ pub struct GuildSettingsView {
     pub discord_applications_status_open_message: String,
     /// Announcement sent when applications close.
     pub discord_applications_status_closed_message: String,
+    /// Message ID of the published application panel, when available.
+    pub discord_applications_panel_message_id: Option<String>,
     /// Default percentage fee applied to new splits.
     #[schema(value_type = String, example = "20.00")]
     pub default_split_fee: rust_decimal::Decimal,
@@ -176,6 +178,7 @@ impl GuildSettingsView {
                 .discord_applications_status_open_message,
             discord_applications_status_closed_message: model
                 .discord_applications_status_closed_message,
+            discord_applications_panel_message_id: model.discord_applications_panel_message_id,
             default_split_fee: model.default_split_fee,
         }
     }
@@ -267,6 +270,8 @@ pub struct UpdateGuildSettingsRequest {
     pub discord_applications_status_open_message: Option<String>,
     /// New closed announcement message.
     pub discord_applications_status_closed_message: Option<String>,
+    /// New panel message ID; empty clears it.
+    pub discord_applications_panel_message_id: Option<String>,
     /// New default split fee percentage. Must be between 0 and 100.
     #[schema(value_type = Option<String>, example = "20.00")]
     pub default_split_fee: Option<rust_decimal::Decimal>,

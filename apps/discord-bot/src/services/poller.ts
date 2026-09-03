@@ -16,7 +16,11 @@ import {
   buildEventThreadActionRows,
 } from "../embeds/event.embed.js";
 import { buildBattleEmbed } from "../embeds/battle.embed.js";
-import { buildApplicationStatusAnnouncement } from "../embeds/application.embed.js";
+import {
+  buildApplicationPanelComponents,
+  buildApplicationPanelEmbed,
+  buildApplicationStatusAnnouncement,
+} from "../embeds/application.embed.js";
 import { GUILD_NAME } from "../embeds/theme.js";
 import { config } from "../config.js";
 import type { SettingsService } from "./settings.js";
@@ -228,6 +232,7 @@ export class Poller {
       const previous = this.state.applicationsOpen;
       this.state.applicationsOpen = settings.discord_applications_open;
       if (previous === undefined || previous === settings.discord_applications_open) return;
+      await this.updateApplicationPanel(settings);
       const channelId = settings.discord_applications_status_channel_id;
       if (!channelId) {
         console.warn('[Poller] Application status changed but no status channel is configured');
@@ -239,6 +244,23 @@ export class Poller {
       saveState(this.stateDirectory, this.state);
     } catch (error) {
       console.warn('[Poller] Could not announce application status:', error);
+    }
+  }
+
+  private async updateApplicationPanel(settings: import('../api/types.js').GuildSettingsView): Promise<void> {
+    const channelId = settings.discord_applications_channel_id;
+    const messageId = settings.discord_applications_panel_message_id;
+    if (!channelId || !messageId) return;
+    try {
+      const channel = await this.client.channels.fetch(channelId);
+      if (!channel?.isTextBased() || channel.isDMBased() || !('messages' in channel)) return;
+      const message = await channel.messages.fetch(messageId);
+      await message.edit({
+        embeds: [buildApplicationPanelEmbed(settings)],
+        components: buildApplicationPanelComponents(settings),
+      });
+    } catch (error) {
+      console.warn('[Poller] Could not update application panel:', error);
     }
   }
 

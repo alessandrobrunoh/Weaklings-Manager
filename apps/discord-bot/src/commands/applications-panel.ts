@@ -30,10 +30,11 @@ export async function execute(
     throw new Error('Il canale delle application non è un canale testuale del server.');
   }
 
-  await channel.send({
+  const panel = await channel.send({
     embeds: [buildApplicationPanelEmbed(settings)],
     components: buildApplicationPanelComponents(settings),
   });
+  await _api.put('api/admin/settings', { discord_applications_panel_message_id: panel.id });
   await interaction.editReply({
     embeds: [createResponseEmbed('success', 'Application panel', 'La card delle application è stata pubblicata.', 'APPLICATIONS')],
   });

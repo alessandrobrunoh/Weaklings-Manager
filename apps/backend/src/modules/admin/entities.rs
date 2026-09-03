@@ -64,6 +64,8 @@ pub struct Model {
     pub discord_applications_status_open_message: String,
     /// Announcement sent when applications close.
     pub discord_applications_status_closed_message: String,
+    /// Message ID of the published application panel, when available.
+    pub discord_applications_panel_message_id: Option<String>,
     /// Default fee percentage applied to new loot splits when no fee is provided.
     pub default_split_fee: Decimal,
     /// Last admin edit.

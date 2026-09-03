@@ -136,6 +136,9 @@ impl AdminService {
                 "closed status message",
             )?);
         }
+        if let Some(value) = &req.discord_applications_panel_message_id {
+            active.discord_applications_panel_message_id = Set(normalize_discord_snowflake(value)?);
+        }
         if let Some(value) = req.default_split_fee {
             if !(sea_orm::prelude::Decimal::ZERO..=sea_orm::prelude::Decimal::from(100))
                 .contains(&value)
@@ -181,6 +184,7 @@ impl AdminService {
                 "discord_applications_welcome_message": req.discord_applications_welcome_message,
                 "discord_applications_status_open_message": req.discord_applications_status_open_message,
                 "discord_applications_status_closed_message": req.discord_applications_status_closed_message,
+                "discord_applications_panel_message_id": req.discord_applications_panel_message_id,
                 "default_split_fee": req.default_split_fee,
             })),
         )

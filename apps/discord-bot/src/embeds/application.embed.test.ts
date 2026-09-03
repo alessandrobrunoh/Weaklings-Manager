@@ -29,6 +29,7 @@ const settings: GuildSettingsView = {
   discord_applications_welcome_message: 'Di cosa hai bisogno?',
   discord_applications_status_open_message: 'Le application sono aperte.',
   discord_applications_status_closed_message: 'Le application sono chiuse.',
+  discord_applications_panel_message_id: null,
   default_split_fee: '20.00',
 };
 

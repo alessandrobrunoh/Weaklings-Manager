@@ -43,6 +43,7 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
   discord_applications_welcome_message: 'Di cosa hai bisogno?',
   discord_applications_status_open_message: 'Le application sono aperte.',
   discord_applications_status_closed_message: 'Le application sono chiuse.',
+  discord_applications_panel_message_id: '',
   default_split_fee: '20',
 };
 
@@ -442,6 +443,7 @@ export class AdminDiscord {
         discord_applications_welcome_message: draft.discord_applications_welcome_message.trim(),
         discord_applications_status_open_message: draft.discord_applications_status_open_message.trim(),
         discord_applications_status_closed_message: draft.discord_applications_status_closed_message.trim(),
+        discord_applications_panel_message_id: draft.discord_applications_panel_message_id.trim(),
         default_split_fee: Number(draft.default_split_fee),
       };
       const updated = await firstValueFrom(
@@ -534,6 +536,7 @@ function toDraft(settings: GuildSettingsView): Record<keyof GuildSettingsView, s
     discord_applications_welcome_message: settings.discord_applications_welcome_message ?? 'Di cosa hai bisogno?',
     discord_applications_status_open_message: settings.discord_applications_status_open_message ?? 'Le application sono aperte.',
     discord_applications_status_closed_message: settings.discord_applications_status_closed_message ?? 'Le application sono chiuse.',
+    discord_applications_panel_message_id: settings.discord_applications_panel_message_id ?? '',
     default_split_fee: String(settings.default_split_fee ?? 20),
   };
 }
