@@ -34,6 +34,24 @@ export function buildApplicationWelcomeComponents(applicationId?: number): Actio
   ];
 }
 
+export function buildApplicationStatusAnnouncement(settings: GuildSettingsView): {
+  content: '@everyone';
+  embeds: APIEmbed[];
+  allowedMentions: { parse: ['everyone'] };
+} {
+  const open = settings.discord_applications_open;
+  return {
+    content: '@everyone',
+    embeds: [createBaseEmbed({
+      category: 'APPLICATIONS',
+      title: open ? 'Application aperte' : 'Application chiuse',
+      description: open ? settings.discord_applications_status_open_message : settings.discord_applications_status_closed_message,
+      color: open ? BOT_COLORS.SUCCESS : BOT_COLORS.DANGER,
+    }).toJSON()],
+    allowedMentions: { parse: ['everyone'] },
+  };
+}
+
 export function buildApplicationPanelComponents(
   settings: GuildSettingsView,
 ): ActionRowBuilder<ButtonBuilder>[] {

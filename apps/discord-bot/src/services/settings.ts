@@ -74,6 +74,10 @@ export class SettingsService {
     return this.get();
   }
 
+  async applicationsStatusChannelId(): Promise<string | null> {
+    return (await this.get()).discord_applications_status_channel_id;
+  }
+
   async splitsForumChannelId(): Promise<string | null> {
     return (await this.get()).discord_splits_forum_channel_id;
   }

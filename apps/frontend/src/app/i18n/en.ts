@@ -1317,6 +1317,8 @@ export const en = {
   'admin.discord.applicationPanelMessage': 'Application panel message',
   'admin.discord.applicationWelcomeTitle': 'Application welcome title',
   'admin.discord.applicationWelcomeMessage': 'Application welcome message',
+  'admin.discord.applicationStatusOpenMessage': 'Application open announcement',
+  'admin.discord.applicationStatusClosedMessage': 'Application closed announcement',
   'admin.discord.placeholder': 'Not set',
   'admin.discord.save': 'Save',
   'admin.discord.saved': 'Discord settings saved.',

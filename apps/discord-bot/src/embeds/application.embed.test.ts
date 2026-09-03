@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { GuildSettingsView } from '../api/types.js';
-import { buildApplicationPanelComponents, buildApplicationPanelEmbed } from './application.embed.js';
+import { buildApplicationPanelComponents, buildApplicationPanelEmbed, buildApplicationStatusAnnouncement } from './application.embed.js';
 
 const settings: GuildSettingsView = {
   discord_events_channel_id: null,
@@ -27,6 +27,8 @@ const settings: GuildSettingsView = {
   discord_applications_panel_message: 'Clicca per creare una application',
   discord_applications_welcome_title: 'Benvenuto',
   discord_applications_welcome_message: 'Di cosa hai bisogno?',
+  discord_applications_status_open_message: 'Le application sono aperte.',
+  discord_applications_status_closed_message: 'Le application sono chiuse.',
   default_split_fee: '20.00',
 };
 
@@ -36,6 +38,16 @@ test('application panel shows configured copy and open state', () => {
   assert.match(embed.description ?? '', /Clicca per creare/);
   assert.match(embed.description ?? '', /APERTE/);
   assert.equal(buildApplicationPanelComponents(settings)[0].components[0].data.disabled, false);
+});
+
+test('status announcement mentions everyone and uses the matching configured copy', () => {
+  const announcement = buildApplicationStatusAnnouncement(settings);
+  assert.equal(announcement.content, '@everyone');
+  assert.deepEqual(announcement.allowedMentions, { parse: ['everyone'] });
+  assert.equal(announcement.embeds[0].description, 'Le application sono aperte.');
+
+  const closed = buildApplicationStatusAnnouncement({ ...settings, discord_applications_open: false });
+  assert.equal(closed.embeds[0].description, 'Le application sono chiuse.');
 });
 
 test('closed application panel disables creation', () => {

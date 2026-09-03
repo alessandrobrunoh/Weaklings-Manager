@@ -134,6 +134,10 @@ pub struct GuildSettingsView {
     pub discord_applications_welcome_title: String,
     /// Application welcome message.
     pub discord_applications_welcome_message: String,
+    /// Announcement sent when applications open.
+    pub discord_applications_status_open_message: String,
+    /// Announcement sent when applications close.
+    pub discord_applications_status_closed_message: String,
     /// Default percentage fee applied to new splits.
     #[schema(value_type = String, example = "20.00")]
     pub default_split_fee: rust_decimal::Decimal,
@@ -168,6 +172,10 @@ impl GuildSettingsView {
             discord_applications_panel_message: model.discord_applications_panel_message,
             discord_applications_welcome_title: model.discord_applications_welcome_title,
             discord_applications_welcome_message: model.discord_applications_welcome_message,
+            discord_applications_status_open_message: model
+                .discord_applications_status_open_message,
+            discord_applications_status_closed_message: model
+                .discord_applications_status_closed_message,
             default_split_fee: model.default_split_fee,
         }
     }
@@ -255,6 +263,10 @@ pub struct UpdateGuildSettingsRequest {
     pub discord_applications_welcome_title: Option<String>,
     /// New application welcome message.
     pub discord_applications_welcome_message: Option<String>,
+    /// New open announcement message.
+    pub discord_applications_status_open_message: Option<String>,
+    /// New closed announcement message.
+    pub discord_applications_status_closed_message: Option<String>,
     /// New default split fee percentage. Must be between 0 and 100.
     #[schema(value_type = Option<String>, example = "20.00")]
     pub default_split_fee: Option<rust_decimal::Decimal>,

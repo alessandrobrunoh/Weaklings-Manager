@@ -1,7 +1,7 @@
 # Plan: Sistema Discord per le Application
 
 **Branch**: `feat/discord-applications`
-**Status**: Slices 1–3 implemented — awaiting commit approval; Slice 4 pending
+**Status**: Slices 1–4 implemented — awaiting final review; feature complete
 
 ## Goal
 
@@ -200,7 +200,7 @@ Ogni slice segue RED-GREEN-MUTATE-KILL MUTANTS-REFACTOR. Prima del codice carica
 
 **Done when**: il workflow termina senza lasciare application falsamente aperte o canali visibili all'utente.
 
-### Slice 4: L'admin apre/chiude le application e il bot annuncia ogni cambio
+### Slice 4: L'admin apre/chiude le application e il bot annuncia ogni cambio ✅
 
 **Value**: la gilda controlla la disponibilità del recruiting e tutti ricevono un avviso chiaro.
 

@@ -16,6 +16,7 @@ import {
   buildEventThreadActionRows,
 } from "../embeds/event.embed.js";
 import { buildBattleEmbed } from "../embeds/battle.embed.js";
+import { buildApplicationStatusAnnouncement } from "../embeds/application.embed.js";
 import { GUILD_NAME } from "../embeds/theme.js";
 import { config } from "../config.js";
 import type { SettingsService } from "./settings.js";
@@ -41,6 +42,7 @@ interface PollerState {
   splitAfterId: number | null;
   massedEvents: number[];
   emptyLiveChecks: Record<string, number>;
+  applicationsOpen?: boolean;
 }
 
 function createDefaultState(): PollerState {
@@ -53,6 +55,7 @@ function createDefaultState(): PollerState {
     splitAfterId: null,
     massedEvents: [],
     emptyLiveChecks: {},
+    applicationsOpen: undefined,
   };
 }
 
@@ -117,6 +120,7 @@ function loadState(stateDirectory: string): PollerState {
       splitAfterId: parsedState.splitAfterId ?? null,
       massedEvents: parsedState.massedEvents ?? [],
       emptyLiveChecks: parsedState.emptyLiveChecks ?? {},
+      applicationsOpen: parsedState.applicationsOpen,
     };
   } catch (error) {
     console.warn(
@@ -201,6 +205,7 @@ export class Poller {
     }
     this.polling = true;
     try {
+      await this.checkApplicationStatus();
       // Event announcements must complete before checking reminders so a newly
       // created event already has its discussion thread recorded.
       await this.checkNewEvents();
@@ -213,6 +218,27 @@ export class Poller {
       ]);
     } finally {
       this.polling = false;
+    }
+  }
+
+  /** Announces only real application availability transitions. */
+  private async checkApplicationStatus(): Promise<void> {
+    try {
+      const settings = await this.settings.applicationsSettings();
+      const previous = this.state.applicationsOpen;
+      this.state.applicationsOpen = settings.discord_applications_open;
+      if (previous === undefined || previous === settings.discord_applications_open) return;
+      const channelId = settings.discord_applications_status_channel_id;
+      if (!channelId) {
+        console.warn('[Poller] Application status changed but no status channel is configured');
+        return;
+      }
+      const channel = await this.client.channels.fetch(channelId);
+      if (!channel?.isTextBased() || channel.isDMBased()) return;
+      await channel.send(buildApplicationStatusAnnouncement(settings));
+      saveState(this.stateDirectory, this.state);
+    } catch (error) {
+      console.warn('[Poller] Could not announce application status:', error);
     }
   }
 

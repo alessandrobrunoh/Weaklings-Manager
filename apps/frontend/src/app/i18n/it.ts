@@ -1142,6 +1142,8 @@ export const it: TranslationDict = {
   'admin.discord.applicationPanelMessage': 'Messaggio pannello application',
   'admin.discord.applicationWelcomeTitle': 'Titolo benvenuto application',
   'admin.discord.applicationWelcomeMessage': 'Messaggio benvenuto application',
+  'admin.discord.applicationStatusOpenMessage': 'Annuncio application aperte',
+  'admin.discord.applicationStatusClosedMessage': 'Annuncio application chiuse',
   'admin.discord.placeholder': 'Non impostato',
   'admin.discord.save': 'Salva',
   'admin.discord.saved': 'Impostazioni Discord salvate.',

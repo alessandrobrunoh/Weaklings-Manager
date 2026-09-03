@@ -41,6 +41,8 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
   discord_applications_panel_message: 'Clicca il pulsante per creare una application.',
   discord_applications_welcome_title: 'Benvenuto',
   discord_applications_welcome_message: 'Di cosa hai bisogno?',
+  discord_applications_status_open_message: 'Le application sono aperte.',
+  discord_applications_status_closed_message: 'Le application sono chiuse.',
   default_split_fee: '20',
 };
 
@@ -269,6 +271,17 @@ const EMPTY_GUILD_SETTINGS_DRAFT: Record<keyof GuildSettingsView, string> = {
             </label>
 
             <label>
+              <span class="label">{{ t('admin.discord.applicationStatusOpenMessage') }}</span>
+              <textarea class="input min-h-24" maxlength="4000" [value]="guildSettingsDraft().discord_applications_status_open_message"
+                (input)="updateDraftField('discord_applications_status_open_message', $event)"></textarea>
+            </label>
+            <label>
+              <span class="label">{{ t('admin.discord.applicationStatusClosedMessage') }}</span>
+              <textarea class="input min-h-24" maxlength="4000" [value]="guildSettingsDraft().discord_applications_status_closed_message"
+                (input)="updateDraftField('discord_applications_status_closed_message', $event)"></textarea>
+            </label>
+
+            <label>
               <span class="label">{{ t('admin.split.defaultFee') }}</span>
               <div class="flex items-center gap-2">
                 <input
@@ -427,6 +440,8 @@ export class AdminDiscord {
         discord_applications_panel_message: draft.discord_applications_panel_message.trim(),
         discord_applications_welcome_title: draft.discord_applications_welcome_title.trim(),
         discord_applications_welcome_message: draft.discord_applications_welcome_message.trim(),
+        discord_applications_status_open_message: draft.discord_applications_status_open_message.trim(),
+        discord_applications_status_closed_message: draft.discord_applications_status_closed_message.trim(),
         default_split_fee: Number(draft.default_split_fee),
       };
       const updated = await firstValueFrom(
@@ -517,6 +532,8 @@ function toDraft(settings: GuildSettingsView): Record<keyof GuildSettingsView, s
     discord_applications_panel_message: settings.discord_applications_panel_message ?? 'Clicca il pulsante per creare una application.',
     discord_applications_welcome_title: settings.discord_applications_welcome_title ?? 'Benvenuto',
     discord_applications_welcome_message: settings.discord_applications_welcome_message ?? 'Di cosa hai bisogno?',
+    discord_applications_status_open_message: settings.discord_applications_status_open_message ?? 'Le application sono aperte.',
+    discord_applications_status_closed_message: settings.discord_applications_status_closed_message ?? 'Le application sono chiuse.',
     default_split_fee: String(settings.default_split_fee ?? 20),
   };
 }

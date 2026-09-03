@@ -122,6 +122,20 @@ impl AdminService {
             active.discord_applications_welcome_message =
                 Set(normalize_application_text(value, 4000, "welcome message")?);
         }
+        if let Some(value) = &req.discord_applications_status_open_message {
+            active.discord_applications_status_open_message = Set(normalize_application_text(
+                value,
+                4000,
+                "open status message",
+            )?);
+        }
+        if let Some(value) = &req.discord_applications_status_closed_message {
+            active.discord_applications_status_closed_message = Set(normalize_application_text(
+                value,
+                4000,
+                "closed status message",
+            )?);
+        }
         if let Some(value) = req.default_split_fee {
             if !(sea_orm::prelude::Decimal::ZERO..=sea_orm::prelude::Decimal::from(100))
                 .contains(&value)
@@ -165,6 +179,8 @@ impl AdminService {
                 "discord_applications_panel_message": req.discord_applications_panel_message,
                 "discord_applications_welcome_title": req.discord_applications_welcome_title,
                 "discord_applications_welcome_message": req.discord_applications_welcome_message,
+                "discord_applications_status_open_message": req.discord_applications_status_open_message,
+                "discord_applications_status_closed_message": req.discord_applications_status_closed_message,
                 "default_split_fee": req.default_split_fee,
             })),
         )

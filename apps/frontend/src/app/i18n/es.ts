@@ -1139,6 +1139,8 @@ export const es: TranslationDict = {
   'admin.discord.applicationPanelMessage': 'Mensaje del panel de solicitudes',
   'admin.discord.applicationWelcomeTitle': 'Título de bienvenida',
   'admin.discord.applicationWelcomeMessage': 'Mensaje de bienvenida',
+  'admin.discord.applicationStatusOpenMessage': 'Aviso de solicitudes abiertas',
+  'admin.discord.applicationStatusClosedMessage': 'Aviso de solicitudes cerradas',
   'admin.discord.placeholder': 'No configurado',
   'admin.discord.save': 'Guardar',
   'admin.discord.saved': 'Ajustes de Discord guardados.',

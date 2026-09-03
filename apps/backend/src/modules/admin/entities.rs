@@ -60,6 +60,10 @@ pub struct Model {
     pub discord_applications_welcome_title: String,
     /// Application welcome message.
     pub discord_applications_welcome_message: String,
+    /// Announcement sent when applications open.
+    pub discord_applications_status_open_message: String,
+    /// Announcement sent when applications close.
+    pub discord_applications_status_closed_message: String,
     /// Default fee percentage applied to new loot splits when no fee is provided.
     pub default_split_fee: Decimal,
     /// Last admin edit.

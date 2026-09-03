@@ -427,6 +427,8 @@ export interface GuildSettingsView {
   discord_applications_panel_message: string;
   discord_applications_welcome_title: string;
   discord_applications_welcome_message: string;
+  discord_applications_status_open_message: string;
+  discord_applications_status_closed_message: string;
   default_split_fee: number | string;
 }
 

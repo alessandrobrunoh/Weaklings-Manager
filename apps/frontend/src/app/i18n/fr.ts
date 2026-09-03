@@ -1152,6 +1152,8 @@ export const fr: TranslationDict = {
   'admin.discord.applicationPanelMessage': 'Message du panneau des candidatures',
   'admin.discord.applicationWelcomeTitle': 'Titre de bienvenue',
   'admin.discord.applicationWelcomeMessage': 'Message de bienvenue',
+  'admin.discord.applicationStatusOpenMessage': 'Annonce candidatures ouvertes',
+  'admin.discord.applicationStatusClosedMessage': 'Annonce candidatures fermées',
   'admin.discord.placeholder': 'Not set',
   'admin.discord.save': 'Save',
   'admin.discord.saved': 'Discord settings saved.',
