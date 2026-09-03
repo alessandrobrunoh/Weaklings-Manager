@@ -141,8 +141,6 @@ interface AttentionItem {
     .btn-open-event:hover {
       background-color: #b91c1c;
     }
-
-    }
   `,
   template: `
     <div class="dashboard-page flex flex-col gap-6 max-w-7xl mx-auto pb-10">
@@ -435,7 +433,6 @@ export class Dashboard {
   protected readonly pendingSplitCount = signal<number | null>(null);
   protected readonly completedSplitCount = signal<number | null>(null);
   protected readonly recentEvents = signal<ReadonlyArray<EventView>>([]);
-  protected readonly recentSplits = signal<ReadonlyArray<SplitSummary>>([]);
   protected readonly loading = signal(false);
 
   protected readonly username = computed(() => this.auth.profile()?.username ?? 'Galvdon');

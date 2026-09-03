@@ -52,20 +52,21 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
     }
 
     .brand--dense {
-      gap: 0.5rem;
+      gap: 0.75rem;
     }
 
     .brand--dense .brand__mark {
-      width: 1.75rem;
-      height: 1.75rem;
+      width: 1.625rem;
+      height: 1.625rem;
       filter: none;
     }
 
     .brand--dense .brand__name {
       font-family: var(--font-sans);
-      font-size: 0.8125rem;
-      font-weight: 510;
-      letter-spacing: -0.012em;
+      font-size: 0.875rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: #ffffff;
     }
 
     .brand--dense .brand__tagline {

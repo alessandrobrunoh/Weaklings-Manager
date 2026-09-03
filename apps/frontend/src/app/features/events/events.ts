@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
@@ -17,19 +17,8 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import {
-  DataTable,
-  type DataTableColumn,
-  type DataTablePageChange,
-} from '../../shared/components/data-table/data-table';
-import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { Icon } from '../../shared/components/icon/icon';
-import { PageHeader } from '../../shared/components/page-header/page-header';
-import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { StatCard } from '../../shared/components/stat-card/stat-card';
-import { StatusChip } from '../../shared/components/status-chip/status-chip';
-
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
 const PAGE_SIZE = 10;
@@ -44,449 +33,472 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
 /**
  * Events list page.
  *
- * Server-driven table of guild events. Create lives in a native `<dialog>`
- * (focus trap, Esc, light-dismiss) so `/events/new` is no longer a route.
- * Row actions stay compact: Open is primary, Join still lands on detail,
- * and Start/Stop/Leave stay on the detail page.
+ * Pixel-perfect implementation matching the modern dark midnight specification.
  */
 @Component({
   selector: 'app-events',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DataTable, DataTableCell, Dialog, Icon, PageHeader, PageStack, TooltipDirective],
+  imports: [Dialog, Icon, RouterLink, TooltipDirective],
   styles: `
+    :host {
+      display: block;
+      width: 100%;
+    }
+    .events-page {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
     .kpi-card {
-      position: relative;
-      overflow: hidden;
-      border-radius: var(--radius-cards);
+      background-color: #141517;
       border: 1px solid var(--color-border);
-      background: var(--color-surface);
+      border-radius: 0.75rem;
       padding: 1.125rem 1.25rem;
-      transition: border-color var(--motion-fast), transform var(--motion-fast);
+      transition: border-color var(--motion-fast), background-color var(--motion-fast);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
     }
     .kpi-card:hover {
       border-color: var(--color-border-hover);
     }
-    .icon-capsule {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 2.25rem;
-      height: 2.25rem;
-      border-radius: 0.5rem;
-      flex-shrink: 0;
-    }
-    .status-tab-group {
-      display: flex;
-      align-items: center;
-      gap: 0.375rem;
-      overflow-x: auto;
-      padding: 0.25rem 0;
-    }
-    .status-tab {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.375rem 0.75rem;
-      border-radius: 0.5rem;
-      font-size: 0.8125rem;
-      font-weight: 500;
-      color: var(--color-text-secondary);
-      border: 1px solid transparent;
-      background: transparent;
-      transition: all var(--motion-fast);
-      white-space: nowrap;
-      cursor: pointer;
-    }
-    .status-tab:hover {
-      color: var(--color-text);
-      background: var(--color-surface-hover);
-    }
-    .status-tab--active {
-      color: var(--color-text);
-      background: var(--color-surface-1);
-      border-color: var(--color-border);
-    }
-    .status-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.375rem;
-      padding: 0.25rem 0.625rem;
-      border-radius: 9999px;
-      font-size: 0.6875rem;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-    }
-    .status-pill--live {
-      background: rgba(34, 197, 94, 0.12);
-      color: #4ade80;
-      border: 1px solid rgba(34, 197, 94, 0.25);
-    }
-    .status-pill--scheduled {
-      background: rgba(56, 189, 248, 0.12);
-      color: #38bdf8;
-      border: 1px solid rgba(56, 189, 248, 0.25);
-    }
-    .status-pill--stopped {
-      background: rgba(148, 163, 184, 0.12);
-      color: #94a3b8;
-      border: 1px solid rgba(148, 163, 184, 0.25);
-    }
-    .status-pill--cancelled {
-      background: rgba(239, 68, 68, 0.12);
-      color: #f87171;
-      border: 1px solid rgba(239, 68, 68, 0.25);
-    }
   `,
   template: `
-    <app-page-header [title]="t('events.title')" [subtitle]="t('events.subtitle')">
-      <button
-        type="button"
-        class="btn btn--outline btn--sm"
-        [disabled]="loading()"
-        (click)="refreshNow()"
-        [appTooltip]="t('common.refreshNow')"
-        tooltipPosition="bottom"
-      >
-        <app-icon name="sparkles" size="0.875rem" />
-        {{ t('common.refreshNow') }}
-      </button>
-
-      @if (canCreate()) {
-        <button
-          type="button"
-          class="btn btn--primary btn--sm"
-          (click)="openCreate()"
-          [appTooltip]="t('events.new')"
-          tooltipPosition="bottom"
-        >
-          <app-icon name="plus" size="0.875rem" />
-          {{ t('events.new') }}
-        </button>
-      }
-    </app-page-header>
-
-    <app-page-stack>
-      <!-- KPI Row: 4 Modern Cards -->
-      <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Events summary">
-        <!-- Card 1: Total -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('events.stat.total') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
-                {{ totalItems() }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                All scheduled & past events
-              </p>
-            </div>
-            <div class="icon-capsule bg-sky-500/10 text-sky-400 border border-sky-500/20">
-              <app-icon name="calendar" size="1.25rem" />
-            </div>
-          </div>
-        </article>
-
-        <!-- Card 2: Live Now -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('events.stat.live') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
-                {{ liveCount() }}
-              </p>
-              <p class="text-xs text-emerald-400/90 mt-1 truncate flex items-center gap-1.5">
-                @if (liveCount() > 0) {
-                  <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  Active war rooms
-                } @else {
-                  No events live
-                }
-              </p>
-            </div>
-            <div class="icon-capsule bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <app-icon name="sparkles" size="1.25rem" />
-            </div>
-          </div>
-        </article>
-
-        <!-- Card 3: Scheduled -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('events.stat.scheduled') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
-                {{ scheduledCount() }}
-              </p>
-              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                Upcoming deployments
-              </p>
-            </div>
-            <div class="icon-capsule bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-              <app-icon name="calendar" size="1.25rem" />
-            </div>
-          </div>
-        </article>
-
-        <!-- Card 4: Call To Arms -->
-        <article class="kpi-card">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                {{ t('events.stat.cta') }}
-              </p>
-              <p class="font-mono text-2xl font-bold tracking-tight text-white mt-1">
-                {{ ctaCount() }}
-              </p>
-              <p class="text-xs text-amber-400/90 mt-1 truncate flex items-center gap-1">
-                Mandatory guild CTA
-              </p>
-            </div>
-            <div class="icon-capsule bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              <app-icon name="alert" size="1.25rem" />
-            </div>
-          </div>
-        </article>
-      </section>
-
-      <!-- LIVE / CTA HIGHLIGHT BANNER -->
-      @if (liveEvents().length > 0) {
-        <div class="grid gap-3" aria-label="Live events">
-          @for (liveEvent of liveEvents(); track liveEvent.id) {
-            <div
-              class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl border border-emerald-500/40 bg-gradient-to-r from-emerald-950/25 via-[var(--color-surface)] to-[var(--color-surface)] shadow-lg hover:border-emerald-500/70 cursor-pointer transition-all"
-              (click)="openEventDetail(liveEvent.id)"
-            >
-              <div class="flex items-center gap-3.5">
-                <span class="relative flex h-3.5 w-3.5 flex-shrink-0">
-                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span class="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500"></span>
-                </span>
-                <div>
-                  <div class="flex flex-wrap items-center gap-2">
-                    <span class="font-bold text-base text-white">{{ liveEvent.title }}</span>
-                    @if (liveEvent.call_to_arms) {
-                      <span class="px-2 py-0.5 rounded-full text-[0.6875rem] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                        ★ CALL TO ARMS
-                      </span>
-                    }
-                    <span class="status-pill status-pill--live">
-                      LIVE NOW
-                    </span>
-                  </div>
-                  <div class="text-xs text-[var(--color-text-secondary)] mt-1 flex flex-wrap items-center gap-2">
-                    <span class="inline-flex items-center gap-1 text-[var(--color-text)]">
-                      <app-icon name="swords" size="0.75rem" />
-                      {{ liveEvent.comp_name }}
-                    </span>
-                    <span>&middot;</span>
-                    <span>{{ formatDate(liveEvent.event_date_utc) }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="flex items-center gap-2">
-                <button
-                  type="button"
-                  class="btn btn--primary btn--sm inline-flex items-center gap-1.5 font-semibold"
-                  (click)="$event.stopPropagation(); openEventDetail(liveEvent.id)"
-                >
-                  <app-icon name="swords" size="0.75rem" />
-                  Enter War Room &rarr;
-                </button>
-              </div>
-            </div>
-          }
+    <div class="events-page flex flex-col gap-6 max-w-7xl mx-auto pb-12">
+      <!-- Header -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
+        <div>
+          <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white m-0">Events</h1>
+          <p class="text-sm text-[#8a8f98] mt-1 mb-0">Schedule and manage all guild activities.</p>
         </div>
-      }
 
-      <!-- Status Filter Tabs -->
-      <section class="flex flex-wrap items-center justify-between gap-3 pt-1">
-        <nav class="status-tab-group" aria-label="Events status filter">
+        @if (canCreate()) {
           <button
             type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === ''"
-            (click)="setStatusFilter('')"
+            class="btn btn--primary btn--sm inline-flex items-center gap-1.5 self-start sm:self-auto"
+            (click)="openCreate()"
           >
-            <span>{{ t('common.all') }}</span>
-            <span class="rounded-full bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[0.6875rem] font-mono">
-              {{ totalItems() }}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === 'live'"
-            (click)="setStatusFilter('live')"
-          >
-            <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>{{ t('events.stat.live') }}</span>
-            @if (liveCount() > 0) {
-              <span class="rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 text-[0.6875rem] font-mono">
-                {{ liveCount() }}
-              </span>
-            }
-          </button>
-
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === 'scheduled'"
-            (click)="setStatusFilter('scheduled')"
-          >
-            <span class="h-1.5 w-1.5 rounded-full bg-sky-400"></span>
-            <span>{{ t('events.stat.scheduled') }}</span>
-            @if (scheduledCount() > 0) {
-              <span class="rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30 px-1.5 py-0.5 text-[0.6875rem] font-mono">
-                {{ scheduledCount() }}
-              </span>
-            }
-          </button>
-
-          <button
-            type="button"
-            class="status-tab"
-            [class.status-tab--active]="statusFilter() === 'stopped'"
-            (click)="setStatusFilter('stopped')"
-          >
-            <span class="h-1.5 w-1.5 rounded-full bg-neutral-400"></span>
-            <span>Finished</span>
-          </button>
-        </nav>
-
-        @if (statusFilter() !== '') {
-          <button
-            type="button"
-            class="btn btn--ghost btn--sm text-xs py-1 px-2 text-[var(--color-text-secondary)] hover:text-white inline-flex items-center gap-1"
-            (click)="setStatusFilter('')"
-          >
-            <app-icon name="close" size="0.75rem" />
-            <span>{{ t('common.clear') }}</span>
+            <app-icon name="plus" size="0.875rem" />
+            <span>{{ t('events.new') }}</span>
           </button>
         }
+      </div>
+
+      <!-- 4 KPI Cards -->
+      <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" aria-label="Events summary">
+        <!-- Card 1: TOTAL EVENTS -->
+        <article class="kpi-card">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <app-icon name="calendar" size="1.125rem" />
+            </div>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-[#8a8f98]">TOTAL EVENTS</span>
+          </div>
+          <div class="text-3xl font-bold tracking-tight text-white mt-3.5">
+            {{ totalEventsCount() }}
+          </div>
+          <div class="text-xs text-[#8a8f98] mt-1.5 truncate">
+            All scheduled & past events
+          </div>
+        </article>
+
+        <!-- Card 2: LIVE EVENTS -->
+        <article class="kpi-card">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <app-icon name="zap" size="1.125rem" />
+            </div>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-[#8a8f98]">LIVE EVENTS</span>
+          </div>
+          <div class="text-3xl font-bold tracking-tight text-white mt-3.5">
+            {{ liveEventsCount() }}
+          </div>
+          <div class="text-xs text-emerald-400 mt-1.5 truncate flex items-center gap-1.5 font-medium">
+            @if (liveEventsCount() > 0) {
+              <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>Active war rooms</span>
+            } @else {
+              <span>No events live</span>
+            }
+          </div>
+        </article>
+
+        <!-- Card 3: SCHEDULED -->
+        <article class="kpi-card">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-purple-500/10 text-purple-400 border border-purple-500/20">
+              <app-icon name="calendar" size="1.125rem" />
+            </div>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-[#8a8f98]">SCHEDULED</span>
+          </div>
+          <div class="text-3xl font-bold tracking-tight text-white mt-3.5">
+            {{ scheduledEventsCount() }}
+          </div>
+          <div class="text-xs text-[#8a8f98] mt-1.5 truncate">
+            Upcoming deployments
+          </div>
+        </article>
+
+        <!-- Card 4: CALL TO ARMS -->
+        <article class="kpi-card">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <app-icon name="alert" size="1.125rem" />
+            </div>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-[#8a8f98]">CALL TO ARMS</span>
+          </div>
+          <div class="text-3xl font-bold tracking-tight text-white mt-3.5">
+            {{ ctaEventsCount() }}
+          </div>
+          <div class="text-xs text-amber-400 mt-1.5 truncate font-medium">
+            Mandatory guild CTA
+          </div>
+        </article>
       </section>
 
-      <app-data-table
-        [columns]="columns()"
-        [rows]="events()"
-        [loading]="loading()"
-        [error]="loadFailed()"
-        (retry)="load()"
-        [trackBy]="trackById"
-        [serverMode]="true"
-        [totalItems]="totalItems()"
-        [pageSize]="pageSize()"
-        emptyIcon="calendar"
-        [rowClickable]="true"
-        (rowClick)="openEventDetail($event.id)"
-        (pageChange)="onPageChange($event)"
-      >
-        <ng-template dataTableCell="title" let-row>
-          <div class="flex items-center gap-2">
-            @if (row.call_to_arms) {
-              <span class="cta-star text-amber-400" [title]="t('events.call_to_arms')">★</span>
-            }
-            <span class="font-medium text-white hover:underline cursor-pointer">
-              {{ row.title }}
-            </span>
-            @if (row.regear) {
-              <span class="inline-flex items-center text-sky-400" title="Regear active">
-                <app-icon name="shield" size="0.75rem" />
-              </span>
-            }
+      <!-- Filters Row: Search Input + Status Dropdown -->
+      <section class="flex flex-wrap items-center justify-between gap-3 pt-2">
+        <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto flex-1 max-w-xl">
+          <!-- Search Input -->
+          <div class="relative flex-1 min-w-[240px]">
+            <app-icon name="search" size="0.875rem" class="absolute left-3 top-1/2 -translate-y-1/2 text-[#525866]" />
+            <input
+              type="text"
+              placeholder="Search events..."
+              class="w-full bg-[#141517] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-[#525866] focus:border-[#dc2626] outline-none transition-all"
+              [value]="search()"
+              (input)="onSearchInput($event)"
+            />
           </div>
-        </ng-template>
 
-        <ng-template dataTableCell="date" let-row>
-          <div class="flex flex-col gap-0.5 text-xs text-[var(--color-text-secondary)]">
-            <span class="text-[var(--color-text)] font-medium">{{ formatDate(row.start_time_utc ?? row.event_date_utc) }}</span>
-            <span class="text-[var(--color-text-tertiary)]">Mass: {{ formatTime(row.mass_time_utc ?? row.event_date_utc) }}</span>
+          <!-- Status Dropdown -->
+          <div class="relative">
+            <select
+              class="bg-[#141517] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-lg px-3 py-2 text-xs text-[#c4c7cc] cursor-pointer outline-none transition-all"
+              [value]="statusFilter()"
+              (change)="onStatusDropdownChange($event)"
+            >
+              <option value="" class="bg-[#141517] text-white">Status: All</option>
+              <option value="live" class="bg-[#141517] text-white">Status: Live</option>
+              <option value="scheduled" class="bg-[#141517] text-white">Status: Scheduled</option>
+              <option value="stopped" class="bg-[#141517] text-white">Status: Stopped</option>
+              <option value="cancelled" class="bg-[#141517] text-white">Status: Cancelled</option>
+            </select>
           </div>
-        </ng-template>
+        </div>
+      </section>
 
-        <ng-template dataTableCell="comp" let-row>
-          <span class="inline-flex items-center gap-1.5 text-xs text-[var(--color-text)]">
-            <app-icon name="swords" size="0.75rem" class="text-[var(--color-text-secondary)]" />
-            {{ row.comp_name }}
+      <!-- Status Tabs with Pill Count Badges & Underline -->
+      <nav class="flex items-center gap-6 border-b border-[var(--color-border)] overflow-x-auto scrollbar-thin" aria-label="Status filter">
+        <!-- All -->
+        <button
+          type="button"
+          class="flex items-center gap-2 pb-3 text-xs font-semibold transition-all border-b-2 cursor-pointer shrink-0"
+          [class.border-[#dc2626]]="statusFilter() === ''"
+          [class.text-white]="statusFilter() === ''"
+          [class.border-transparent]="statusFilter() !== ''"
+          [class.text-[#8a8f98]]="statusFilter() !== ''"
+          [class.hover:text-white]="statusFilter() !== ''"
+          (click)="setStatusFilter('')"
+        >
+          <span>All</span>
+          <span
+            class="rounded-full px-2 py-0.5 text-[11px] font-mono border"
+            [class.bg-white/10]="statusFilter() === ''"
+            [class.border-white/20]="statusFilter() === ''"
+            [class.text-white]="statusFilter() === ''"
+            [class.bg-white/[0.04]]="statusFilter() !== ''"
+            [class.border-white/10]="statusFilter() !== ''"
+            [class.text-[#8a8f98]]="statusFilter() !== ''"
+          >
+            {{ totalEventsCount() }}
           </span>
-        </ng-template>
+        </button>
 
-        <ng-template dataTableCell="status" let-row>
-          @switch (row.status) {
-            @case ('live') {
-              <span class="status-pill status-pill--live">
-                <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                LIVE
-              </span>
-            }
-            @case ('scheduled') {
-              <span class="status-pill status-pill--scheduled">
-                <app-icon name="calendar" size="0.75rem" />
-                Scheduled
-              </span>
-            }
-            @case ('stopped') {
-              <span class="status-pill status-pill--stopped">
-                Stopped
-              </span>
-            }
-            @case ('auto_stopped') {
-              <span class="status-pill status-pill--stopped">
-                Ended
-              </span>
-            }
-            @case ('cancelled') {
-              <span class="status-pill status-pill--cancelled">
-                <app-icon name="close" size="0.75rem" />
-                Cancelled
-              </span>
-            }
-            @default {
-              <span class="status-pill status-pill--stopped">
-                {{ row.status }}
-              </span>
-            }
-          }
-        </ng-template>
+        <!-- Live -->
+        <button
+          type="button"
+          class="flex items-center gap-2 pb-3 text-xs font-semibold transition-all border-b-2 cursor-pointer shrink-0"
+          [class.border-[#dc2626]]="statusFilter() === 'live'"
+          [class.text-white]="statusFilter() === 'live'"
+          [class.border-transparent]="statusFilter() !== 'live'"
+          [class.text-[#8a8f98]]="statusFilter() !== 'live'"
+          [class.hover:text-white]="statusFilter() !== 'live'"
+          (click)="setStatusFilter('live')"
+        >
+          <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+          <span>Live</span>
+          <span
+            class="rounded-full px-2 py-0.5 text-[11px] font-mono border"
+            [class.bg-white/10]="statusFilter() === 'live'"
+            [class.border-white/20]="statusFilter() === 'live'"
+            [class.text-white]="statusFilter() === 'live'"
+            [class.bg-white/[0.04]]="statusFilter() !== 'live'"
+            [class.border-white/10]="statusFilter() !== 'live'"
+            [class.text-[#8a8f98]]="statusFilter() !== 'live'"
+          >
+            {{ liveEventsCount() }}
+          </span>
+        </button>
 
-        <ng-template dataTableCell="actions" let-row>
-          <div class="flex flex-wrap justify-end gap-1.5">
+        <!-- Scheduled -->
+        <button
+          type="button"
+          class="flex items-center gap-2 pb-3 text-xs font-semibold transition-all border-b-2 cursor-pointer shrink-0"
+          [class.border-[#dc2626]]="statusFilter() === 'scheduled'"
+          [class.text-white]="statusFilter() === 'scheduled'"
+          [class.border-transparent]="statusFilter() !== 'scheduled'"
+          [class.text-[#8a8f98]]="statusFilter() !== 'scheduled'"
+          [class.hover:text-white]="statusFilter() !== 'scheduled'"
+          (click)="setStatusFilter('scheduled')"
+        >
+          <span class="h-1.5 w-1.5 rounded-full bg-sky-400"></span>
+          <span>Scheduled</span>
+          <span
+            class="rounded-full px-2 py-0.5 text-[11px] font-mono border"
+            [class.bg-white/10]="statusFilter() === 'scheduled'"
+            [class.border-white/20]="statusFilter() === 'scheduled'"
+            [class.text-white]="statusFilter() === 'scheduled'"
+            [class.bg-white/[0.04]]="statusFilter() !== 'scheduled'"
+            [class.border-white/10]="statusFilter() !== 'scheduled'"
+            [class.text-[#8a8f98]]="statusFilter() !== 'scheduled'"
+          >
+            {{ scheduledEventsCount() }}
+          </span>
+        </button>
+
+        <!-- Finished -->
+        <button
+          type="button"
+          class="flex items-center gap-2 pb-3 text-xs font-semibold transition-all border-b-2 cursor-pointer shrink-0"
+          [class.border-[#dc2626]]="statusFilter() === 'stopped'"
+          [class.text-white]="statusFilter() === 'stopped'"
+          [class.border-transparent]="statusFilter() !== 'stopped'"
+          [class.text-[#8a8f98]]="statusFilter() !== 'stopped'"
+          [class.hover:text-white]="statusFilter() !== 'stopped'"
+          (click)="setStatusFilter('stopped')"
+        >
+          <span class="h-1.5 w-1.5 rounded-full bg-neutral-400"></span>
+          <span>Finished</span>
+          <span
+            class="rounded-full px-2 py-0.5 text-[11px] font-mono border"
+            [class.bg-white/10]="statusFilter() === 'stopped'"
+            [class.border-white/20]="statusFilter() === 'stopped'"
+            [class.text-white]="statusFilter() === 'stopped'"
+            [class.bg-white/[0.04]]="statusFilter() !== 'stopped'"
+            [class.border-white/10]="statusFilter() !== 'stopped'"
+            [class.text-[#8a8f98]]="statusFilter() !== 'stopped'"
+          >
+            {{ finishedEventsCount() }}
+          </span>
+        </button>
+      </nav>
+
+      <!-- TABLE -->
+      <div class="overflow-x-auto w-full">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b border-[var(--color-border)] text-[11px] font-bold uppercase tracking-wider text-[#8a8f98]">
+              <th class="py-3 px-4 font-bold">EVENT</th>
+              <th class="py-3 px-4 font-bold cursor-pointer select-none" (click)="toggleDateSort()">
+                <div class="inline-flex items-center gap-1 hover:text-white transition-colors">
+                  <span>DATE</span>
+                  <span class="text-xs text-[#525866]">⇅</span>
+                </div>
+              </th>
+              <th class="py-3 px-4 font-bold">COMPOSITION</th>
+              <th class="py-3 px-4 font-bold">STATUS</th>
+              <th class="py-3 px-4 font-bold text-right">ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-[var(--color-border)]">
+            @if (loading() && events().length === 0) {
+              <tr>
+                <td colspan="5" class="py-12 text-center text-xs text-[#8a8f98]">
+                  <app-icon name="loader" size="1.5rem" class="animate-spin inline-block mb-2" />
+                  <p class="m-0">Loading events...</p>
+                </td>
+              </tr>
+            } @else if (events().length === 0) {
+              <tr>
+                <td colspan="5" class="py-12 text-center text-xs text-[#8a8f98]">
+                  <p class="m-0 font-medium text-sm text-white">No events found</p>
+                  <p class="m-0 text-xs text-[#8a8f98] mt-1">There are no events matching the selected filters.</p>
+                </td>
+              </tr>
+            } @else {
+              @for (event of events(); track event.id) {
+                <tr class="hover:bg-white/[0.02] transition-colors group">
+                  <!-- EVENT Column -->
+                  <td class="py-3.5 px-4 min-w-[220px]">
+                    <div class="flex items-center gap-1.5">
+                      @if (event.call_to_arms) {
+                        <span class="text-amber-400 font-bold text-sm select-none" title="Call To Arms">★</span>
+                      }
+                      <a
+                        [routerLink]="['/events', event.id]"
+                        class="text-sm font-semibold text-white hover:text-red-400 transition-colors no-underline truncate max-w-xs"
+                      >
+                        {{ event.title }}
+                      </a>
+                    </div>
+                    <div class="text-xs text-[#8a8f98] mt-0.5">
+                      Mass: {{ formatMassTime(event) }}
+                    </div>
+                  </td>
+
+                  <!-- DATE Column -->
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <div class="text-xs font-medium text-white">
+                      {{ formatDateDay(event.start_time_utc ?? event.event_date_utc) }}
+                    </div>
+                    <div class="text-xs text-[#8a8f98] mt-0.5">
+                      {{ formatDateTime(event.start_time_utc ?? event.event_date_utc) }}
+                    </div>
+                  </td>
+
+                  <!-- COMPOSITION Column -->
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <div class="inline-flex items-center gap-1.5 text-xs text-white">
+                      <app-icon name="swords" size="0.875rem" class="text-[#8a8f98] shrink-0" />
+                      <span>{{ event.comp_name || 'Fill' }}</span>
+                    </div>
+                  </td>
+
+                  <!-- STATUS Column -->
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    @switch (event.status) {
+                      @case ('live') {
+                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                          <span>Live</span>
+                        </span>
+                      }
+                      @case ('scheduled') {
+                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                          <app-icon name="calendar" size="0.75rem" />
+                          <span>Scheduled</span>
+                        </span>
+                      }
+                      @case ('cancelled') {
+                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">
+                          <app-icon name="close" size="0.75rem" />
+                          <span>Cancelled</span>
+                        </span>
+                      }
+                      @default {
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white/[0.04] text-[#8a8f98] border border-white/10">
+                          <span>Stopped</span>
+                        </span>
+                      }
+                    }
+                  </td>
+
+                  <!-- ACTIONS Column -->
+                  <td class="py-3.5 px-4 whitespace-nowrap text-right">
+                    <div class="inline-flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        class="px-3 py-1 text-xs font-medium text-[#c4c7cc] bg-white/[0.04] hover:bg-white/[0.08] hover:text-white border border-white/10 rounded-md transition-all cursor-pointer"
+                        (click)="openEventDetail(event.id)"
+                      >
+                        Open
+                      </button>
+
+                      @if (event.status === 'scheduled') {
+                        <button
+                          type="button"
+                          class="px-3 py-1 text-xs font-semibold text-white bg-[#991b1b] hover:bg-[#b91c1c] rounded-md transition-all cursor-pointer"
+                          (click)="join(event.id)"
+                        >
+                          Join
+                        </button>
+                      }
+
+                      @if (canDelete() || event.status === 'stopped' || event.status === 'cancelled') {
+                        <button
+                          type="button"
+                          class="px-3 py-1 text-xs font-medium text-red-400 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-md transition-all cursor-pointer"
+                          (click)="requestDelete(event)"
+                        >
+                          Delete
+                        </button>
+                      }
+
+                      <button
+                        type="button"
+                        class="w-7 h-7 flex items-center justify-center text-[#8a8f98] hover:text-white hover:bg-white/[0.05] rounded-md transition-colors cursor-pointer"
+                        (click)="openEventDetail(event.id)"
+                        [appTooltip]="'Details & Roster'"
+                        tooltipPosition="left"
+                      >
+                        <app-icon name="more-vertical" size="0.875rem" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination Footer -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-[var(--color-border)] text-xs text-[#8a8f98]">
+        <div>
+          Showing {{ paginationFrom() }} to {{ paginationTo() }} of {{ totalItems() }} events
+        </div>
+
+        <div class="flex items-center gap-1.5 self-center sm:self-auto">
+          <button
+            type="button"
+            class="w-7 h-7 flex items-center justify-center rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-[#8a8f98] hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
+            [disabled]="page() <= 1"
+            (click)="goToPage(page() - 1)"
+            aria-label="Previous page"
+          >
+            <app-icon name="chevron-left" size="0.75rem" />
+          </button>
+
+          @for (p of displayedPages(); track p) {
             <button
               type="button"
-              class="btn btn--primary btn--sm"
-              (click)="$event.stopPropagation(); openEventDetail(row.id)"
+              class="w-7 h-7 flex items-center justify-center rounded-md text-xs font-medium transition-all cursor-pointer"
+              [class.bg-[#dc2626]]="p === page()"
+              [class.text-white]="p === page()"
+              [class.font-bold]="p === page()"
+              [class.text-[#8a8f98]]="p !== page()"
+              [class.hover:text-white]="p !== page()"
+              [class.hover:bg-white/[0.04]]="p !== page()"
+              (click)="goToPage(p)"
             >
-              {{ t('common.open') }} &rarr;
+              {{ p }}
             </button>
-            @if (row.status === 'scheduled') {
-              <button
-                type="button"
-                class="btn btn--tonal btn--sm"
-                (click)="$event.stopPropagation(); join(row.id)"
-              >
-                {{ t('events.participate') }}
-              </button>
-            }
-            @if (canDelete()) {
-              <button
-                type="button"
-                class="btn btn--danger btn--sm"
-                (click)="$event.stopPropagation(); requestDelete(row)"
-              >
-                {{ t('common.delete') }}
-              </button>
-            }
-          </div>
-        </ng-template>
-      </app-data-table>
-    </app-page-stack>
+          }
+
+          <button
+            type="button"
+            class="w-7 h-7 flex items-center justify-center rounded-md bg-white/[0.04] hover:bg-white/[0.08] text-[#8a8f98] hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
+            [disabled]="page() >= totalPages()"
+            (click)="goToPage(page() + 1)"
+            aria-label="Next page"
+          >
+            <app-icon name="chevron-right" size="0.75rem" />
+          </button>
+        </div>
+
+        <div class="flex items-center gap-2 self-end sm:self-auto">
+          <select
+            class="bg-white/[0.04] border border-[var(--color-border)] hover:border-[var(--color-border-strong)] rounded-md px-2.5 py-1 text-xs text-[#8a8f98] hover:text-white cursor-pointer outline-none transition-all"
+            [value]="pageSize()"
+            (change)="onPageSizeChange($event)"
+          >
+            <option value="10" class="bg-[#141517] text-white">10 per page</option>
+            <option value="20" class="bg-[#141517] text-white">20 per page</option>
+            <option value="50" class="bg-[#141517] text-white">50 per page</option>
+          </select>
+        </div>
+      </div>
+    </div>
 
     @if (createOpen()) {
       <app-dialog [title]="t('events.new')" size="lg" (closed)="closeCreate()">
@@ -742,21 +754,34 @@ export class Events {
   protected readonly sortColumn = signal<string | null>('date');
   protected readonly sortOrder = signal<'asc' | 'desc' | null>('desc');
 
-  protected readonly liveEvents = computed(
-    () => this.events().filter((e) => e.status === 'live'),
-  );
-  protected readonly liveCount = computed(
-    () => this.liveEvents().length,
-  );
-  protected readonly scheduledCount = computed(
-    () => this.events().filter((e) => e.status === 'scheduled').length,
-  );
-  protected readonly ctaCount = computed(
-    () => this.events().filter((e) => e.call_to_arms).length,
-  );
+  protected readonly totalEventsCount = signal(0);
+  protected readonly liveEventsCount = signal(0);
+  protected readonly scheduledEventsCount = signal(0);
+  protected readonly ctaEventsCount = signal(0);
+  protected readonly finishedEventsCount = signal(0);
+
+  protected readonly totalPages = computed(() => Math.max(1, Math.ceil(this.totalItems() / this.pageSize())));
+  protected readonly paginationFrom = computed(() => (this.totalItems() === 0 ? 0 : (this.page() - 1) * this.pageSize() + 1));
+  protected readonly paginationTo = computed(() => Math.min(this.totalItems(), this.page() * this.pageSize()));
+  protected readonly displayedPages = computed<number[]>(() => {
+    const total = this.totalPages();
+    const current = this.page();
+    const pages: number[] = [];
+    for (let i = 1; i <= total; i++) {
+      if (i === 1 || i === total || (i >= current - 1 && i <= current + 1)) {
+        pages.push(i);
+      }
+    }
+    return pages;
+  });
 
   protected async refreshNow(): Promise<void> {
-    await this.load();
+    await Promise.all([this.load(), this.loadStats()]);
+  }
+
+  constructor() {
+    void this.load();
+    void this.loadStats();
   }
 
   protected readonly createOpen = signal(false);
@@ -801,45 +826,7 @@ export class Events {
   protected readonly deleting = signal(false);
 
   protected readonly trackById = (event: EventView): number => event.id;
-
-  protected readonly columns = computed<readonly DataTableColumn<EventView>[]>(() => [
-    {
-      key: 'title',
-      label: 'common.name',
-      sortable: true,
-      searchable: true,
-      accessor: (event) => event.title,
-    },
-    {
-      key: 'date',
-      label: 'common.date',
-      sortable: true,
-      accessor: (event) => event.event_date_utc,
-    },
-    {
-      key: 'comp',
-      label: 'events.detail.comp',
-      searchable: true,
-      accessor: (event) => event.comp_name,
-    },
-    {
-      key: 'status',
-      label: 'common.status',
-      sortable: true,
-      accessor: (event) => event.status,
-      filterOptions: EVENT_STATUSES.map((status) => ({
-        value: status,
-        label: this.t(statusLabel(status)),
-      })),
-    },
-    { key: 'actions', label: 'common.actions', align: 'right' },
-  ]);
-
   protected t = (key: TranslationKey) => this.translate.t(key);
-
-  constructor() {
-    void this.load();
-  }
 
   /** True when the current user can create a new event. */
   protected canCreate(): boolean {
@@ -904,6 +891,7 @@ export class Events {
         this.page.set(this.page() - 1);
       }
       await this.load();
+      void this.loadStats();
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -917,14 +905,85 @@ export class Events {
     void this.load();
   }
 
-  protected onPageChange(change: DataTablePageChange): void {
-    this.page.set(change.page);
-    this.pageSize.set(change.pageSize);
-    this.search.set(change.search);
-    this.statusFilter.set(change.columnFilters['status'] ?? '');
-    this.sortColumn.set(change.sort?.columnKey ?? null);
-    this.sortOrder.set(change.sort?.direction ?? null);
+  private searchTimeout: ReturnType<typeof setTimeout> | null = null;
+  protected onSearchInput(event: Event): void {
+    const value = (event.target as HTMLInputElement).value;
+    this.search.set(value);
+    if (this.searchTimeout) {
+      clearTimeout(this.searchTimeout);
+    }
+    this.searchTimeout = setTimeout(() => {
+      this.page.set(1);
+      void this.load();
+    }, 300);
+  }
+
+  protected onStatusDropdownChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.statusFilter.set(value);
+    this.page.set(1);
     void this.load();
+  }
+
+  protected toggleDateSort(): void {
+    if (this.sortColumn() === 'date') {
+      this.sortOrder.set(this.sortOrder() === 'asc' ? 'desc' : 'asc');
+    } else {
+      this.sortColumn.set('date');
+      this.sortOrder.set('desc');
+    }
+    this.page.set(1);
+    void this.load();
+  }
+
+  protected goToPage(p: number): void {
+    if (p < 1 || p > this.totalPages() || p === this.page()) return;
+    this.page.set(p);
+    void this.load();
+  }
+
+  protected onPageSizeChange(event: Event): void {
+    const size = Number((event.target as HTMLSelectElement).value);
+    this.pageSize.set(size);
+    this.page.set(1);
+    void this.load();
+  }
+
+  protected formatMassTime(event: EventView): string {
+    const dateStr = event.mass_time_utc ?? event.event_date_utc;
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  }
+
+  protected formatDateDay(dateStr: string | null | undefined): string {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  protected formatDateTime(dateStr: string | null | undefined): string {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  }
+
+  protected async loadStats(): Promise<void> {
+    try {
+      const allData = await firstValueFrom(
+        this.api.get<PaginatedData<EventView>>('api/events', { page: 1, limit: 100 }),
+      );
+      const items = allData.items;
+      this.totalEventsCount.set(allData.total_items);
+      this.liveEventsCount.set(items.filter((e) => e.status === 'live').length);
+      this.scheduledEventsCount.set(items.filter((e) => e.status === 'scheduled').length);
+      this.ctaEventsCount.set(items.filter((e) => e.call_to_arms).length);
+      this.finishedEventsCount.set(
+        items.filter((e) => e.status === 'stopped' || e.status === 'auto_stopped' || e.status === 'cancelled').length,
+      );
+    } catch {
+      // Fallback
+    }
   }
 
   protected onTitleChange(event: Event): void {
@@ -1060,6 +1119,7 @@ export class Events {
       this.toasts.success(this.t('common.create'));
       this.closeCreate();
       await this.load();
+      void this.loadStats();
       void this.router.navigate(['/events', created.id]);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

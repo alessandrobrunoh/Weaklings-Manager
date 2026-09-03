@@ -64,8 +64,8 @@ const BODY_MAX = 2000;
   template: `
     <button
       type="button"
-      class="btn btn--ghost shrink-0 relative"
-      style="min-width: 34px; height: 34px; padding: 0.35rem; border-radius: 6px;"
+      class="btn btn--ghost shrink-0 relative text-[var(--color-text-secondary)] hover:text-white transition-colors"
+      style="min-width: 36px; height: 36px; padding: 0.35rem; border-radius: 8px;"
       (click)="togglePanel()"
       [appTooltip]="t('notifications.open')"
       tooltipPosition="bottom"
@@ -73,18 +73,16 @@ const BODY_MAX = 2000;
       [attr.aria-expanded]="panelOpen()"
       [attr.aria-controls]="panelOpen() ? panelId : null"
     >
-      <app-icon name="bell" size="1rem" />
+      <app-icon name="bell" size="1.125rem" />
       @if (unreadCount() > 0) {
         <span
-          class="absolute flex items-center justify-center rounded-full text-[9px] font-bold"
+          class="absolute flex items-center justify-center rounded-full text-[9px] font-bold text-white bg-[#dc2626]"
           style="
             top: 2px;
             right: 2px;
             min-width: 14px;
             height: 14px;
             padding: 0 3px;
-            background-color: var(--color-primary);
-            color: var(--color-on-primary);
           "
           aria-hidden="true"
         >

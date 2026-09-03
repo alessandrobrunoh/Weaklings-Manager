@@ -47,7 +47,7 @@ import { Topbar } from '../topbar/topbar';
         [style.width]="isSidebarCollapsed() ? '56px' : '248px'"
         [style.min-width]="isSidebarCollapsed() ? '56px' : '248px'"
         [style.max-width]="isSidebarCollapsed() ? '56px' : '248px'"
-        style="background-color: var(--color-surface); border-right: 1px solid var(--color-border)"
+        style="background-color: #0d0e10; border-right: 1px solid var(--color-border)"
       >
         <app-sidebar
           [sections]="navSections()"
@@ -69,7 +69,7 @@ import { Topbar } from '../topbar/topbar';
           ></button>
           <div
             class="relative w-72 max-w-[80%] flex flex-col h-full"
-            style="background-color: var(--color-surface); border-right: 1px solid var(--color-border)"
+            style="background-color: #0d0e10; border-right: 1px solid var(--color-border)"
           >
             <app-sidebar
               [sections]="navSections()"
