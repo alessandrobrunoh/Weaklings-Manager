@@ -31,7 +31,9 @@ impl AdminService {
         db: &DatabaseConnection,
     ) -> Result<GuildSettingsView, AppError> {
         let model = load_settings(db).await?;
-        Ok(GuildSettingsView::from_model(model))
+        let mut view = GuildSettingsView::from_model(model);
+        view.default_role_discord_id = default_role_discord_id(db).await?;
+        Ok(view)
     }
 
     /// Updates the singleton `guild_settings` row with the non-`None` fields of `req`.
@@ -67,6 +69,9 @@ impl AdminService {
         }
         if let Some(value) = &req.discord_event_role_id {
             active.discord_event_role_id = Set(normalize(value));
+        }
+        if let Some(value) = &req.discord_auto_role_id {
+            active.discord_auto_role_id = Set(normalize_discord_snowflake(value)?);
         }
         if let Some(value) = &req.discord_splits_forum_channel_id {
             active.discord_splits_forum_channel_id = Set(normalize(value));
@@ -243,6 +248,7 @@ impl AdminService {
                 "discord_audit_log_channel_id": req.discord_audit_log_channel_id,
                 "discord_transaction_spam_channel_id": req.discord_transaction_spam_channel_id,
                 "discord_event_role_id": req.discord_event_role_id,
+                "discord_auto_role_id": req.discord_auto_role_id,
                 "discord_splits_forum_channel_id": req.discord_splits_forum_channel_id,
                 "discord_split_pending_tag_id": req.discord_split_pending_tag_id,
                 "discord_split_completed_tag_id": req.discord_split_completed_tag_id,
@@ -284,7 +290,9 @@ impl AdminService {
         )
         .await;
 
-        Ok(GuildSettingsView::from_model(updated))
+        let mut view = GuildSettingsView::from_model(updated);
+        view.default_role_discord_id = default_role_discord_id(db).await?;
+        Ok(view)
     }
 
     /// Returns the AutoRole configuration without exposing unrelated guild settings.
@@ -636,18 +644,21 @@ struct DiscordChannelPayload {
     available_tags: Vec<DiscordForumTagPayload>,
 }
 
+async fn default_role_discord_id(db: &DatabaseConnection) -> Result<Option<String>, AppError> {
+    Ok(role::Entity::find()
+        .filter(role::Column::IsDefault.eq(true))
+        .one(db)
+        .await?
+        .and_then(|row| row.discord_role_id))
+}
+
 async fn autorole_view(
     db: &DatabaseConnection,
 ) -> Result<super::models::AutoRoleSettingsView, AppError> {
     let settings = load_settings(db).await?;
-    let default_role_discord_id = role::Entity::find()
-        .filter(role::Column::IsDefault.eq(true))
-        .one(db)
-        .await?
-        .and_then(|row| row.discord_role_id);
     Ok(super::models::AutoRoleSettingsView {
         discord_auto_role_id: settings.discord_auto_role_id,
-        default_role_discord_id,
+        default_role_discord_id: default_role_discord_id(db).await?,
     })
 }
 
@@ -997,6 +1008,105 @@ mod tests {
         .await
         .expect_err("invalid snowflake must be rejected");
         assert!(matches!(error, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn guild_settings_round_trip_discord_auto_role_id() {
+        let db = seed_db().await;
+        let saved = AdminService::update_guild_settings(
+            &db,
+            1,
+            &UpdateGuildSettingsRequest {
+                discord_auto_role_id: Some(" 123456789012345678 ".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("save auto role");
+        assert_eq!(
+            saved.discord_auto_role_id.as_deref(),
+            Some("123456789012345678")
+        );
+        assert_eq!(
+            AdminService::get_guild_settings(&db)
+                .await
+                .expect("load auto role")
+                .discord_auto_role_id
+                .as_deref(),
+            Some("123456789012345678")
+        );
+        assert_eq!(
+            AdminService::get_autorole_settings(&db)
+                .await
+                .expect("autorole view")
+                .discord_auto_role_id
+                .as_deref(),
+            Some("123456789012345678")
+        );
+
+        let cleared = AdminService::update_guild_settings(
+            &db,
+            1,
+            &UpdateGuildSettingsRequest {
+                discord_auto_role_id: Some("   ".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("clear auto role");
+        assert_eq!(cleared.discord_auto_role_id, None);
+
+        let error = AdminService::update_guild_settings(
+            &db,
+            1,
+            &UpdateGuildSettingsRequest {
+                discord_auto_role_id: Some("invalid-role".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("invalid snowflake must be rejected");
+        assert!(matches!(error, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn guild_settings_includes_default_role_discord_id() {
+        let db = seed_db().await;
+        let matrix = AdminService::permission_matrix(&db).await.expect("matrix");
+        let default = matrix
+            .roles
+            .iter()
+            .find(|role| role.is_default)
+            .expect("seeded default role");
+        AdminService::update_role(
+            &db,
+            1,
+            &default.role_id,
+            &UpdateRoleRequest {
+                name: None,
+                priority: None,
+                discord_role_id: Some("123456789012345679".into()),
+                is_default: None,
+            },
+        )
+        .await
+        .expect("link default role");
+
+        let settings = AdminService::get_guild_settings(&db)
+            .await
+            .expect("load settings");
+        assert_eq!(
+            settings.default_role_discord_id.as_deref(),
+            Some("123456789012345679")
+        );
+        assert_eq!(
+            AdminService::get_autorole_settings(&db)
+                .await
+                .expect("autorole view")
+                .default_role_discord_id
+                .as_deref(),
+            Some("123456789012345679")
+        );
     }
 
     #[tokio::test]

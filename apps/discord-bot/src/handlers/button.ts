@@ -188,24 +188,40 @@ async function createApplicationChannel(interaction: ButtonInteraction, api: Api
     await interaction.editReply({ embeds: [buildApplicationClosedEmbed(settings)] });
     return;
   }
-  if (!settings.discord_applications_category_id) throw new Error('La categoria delle application non è configurata dal pannello admin.');
+  const categoryId = settings.discord_applications_category_id;
+  if (!categoryId) {
+    throw new Error('La categoria delle application non è configurata. Aprila da Impostazioni Discord e scegli una categoria.');
+  }
+  const parent = guild.channels.cache.get(categoryId) ?? await guild.channels.fetch(categoryId).catch(() => null);
+  if (!parent || parent.type !== ChannelType.GuildCategory) {
+    throw new Error('La categoria delle application non è valida. Riapri Impostazioni Discord e seleziona una categoria, non un canale.');
+  }
   const active = await api.get<ApplicationView | null>('api/applications/active', interaction.user.id);
   if (active) {
     await interaction.editReply({ embeds: [buildApplicationAlreadyOpenEmbed(settings, active.channel_id)] });
     return;
   }
   const safeName = interaction.user.username.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 80) || interaction.user.id;
+  const manageRoleId = settings.discord_applications_manage_role_id;
+  const manageRole = manageRoleId ? guild.roles.cache.get(manageRoleId) ?? await guild.roles.fetch(manageRoleId).catch(() => null) : null;
   const channel = await guild.channels.create({
-    name: `ticket-${safeName}`.slice(0, 100), type: ChannelType.GuildText, parent: settings.discord_applications_category_id,
+    name: `ticket-${safeName}`.slice(0, 100),
+    type: ChannelType.GuildText,
+    parent: parent.id,
     permissionOverwrites: [
       { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
       { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
-      ...(settings.discord_applications_manage_role_id ? [{ id: settings.discord_applications_manage_role_id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }] : []),
+      ...(manageRole ? [{ id: manageRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }] : []),
       ...(interaction.client.user ? [{ id: interaction.client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels] }] : []),
-    ], reason: `Application opened by ${interaction.user.tag}`,
+    ],
+    reason: `Application opened by ${interaction.user.tag}`,
   });
   try {
-    const application = await api.post<ApplicationView>('api/applications', channel.id, interaction.user.id);
+    const application = await api.post<ApplicationView>(
+      'api/applications',
+      { channel_id: channel.id, username: interaction.user.username },
+      interaction.user.id,
+    );
     await channel.send({
       embeds: [buildApplicationWelcomeEmbed(settings)],
       components: buildApplicationWelcomeComponents(application.id),

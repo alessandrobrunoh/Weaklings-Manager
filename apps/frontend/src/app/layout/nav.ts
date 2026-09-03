@@ -188,6 +188,13 @@ export const ADMIN_PANELS: readonly AdminPanel[] = [
     permissions: ['admin.settings.manage', 'autorole.manage'],
   },
   {
+    path: '/admin/applications',
+    icon: 'users',
+    labelKey: 'nav.admin.applications',
+    hintKey: 'admin.hub.applicationsHint',
+    permissions: ['admin.settings.manage'],
+  },
+  {
     path: '/admin/progression',
     icon: 'trophy',
     labelKey: 'nav.admin.progression',

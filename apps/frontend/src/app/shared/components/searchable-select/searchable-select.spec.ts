@@ -35,6 +35,33 @@ describe('SearchableSelect', () => {
     expect(trigger.textContent).not.toContain('Disabled');
   });
 
+  it('keeps a saved value while the option list is still loading', () => {
+    fixture.componentRef.setInput('value', 'role-99');
+    fixture.componentRef.setInput('options', []);
+    fixture.componentRef.setInput('loading', true);
+    fixture.detectChanges();
+    const trigger = fixture.nativeElement.querySelector('.ss__trigger') as HTMLButtonElement;
+    expect(trigger.textContent).toContain('role-99');
+    expect(trigger.textContent).not.toContain('Disabled');
+    expect(trigger.disabled).toBe(false);
+  });
+
+  it('emits valueChange when an option is chosen', async () => {
+    const emitted: string[] = [];
+    fixture.componentInstance.valueChange.subscribe((id) => emitted.push(id));
+    const trigger = fixture.nativeElement.querySelector('.ss__trigger') as HTMLButtonElement;
+    trigger.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const options = [...fixture.nativeElement.querySelectorAll('.ss__option')] as HTMLButtonElement[];
+    const officers = options.find((el) => el.textContent?.includes('Officers'));
+    expect(officers).toBeTruthy();
+    officers?.click();
+    fixture.detectChanges();
+    expect(emitted).toEqual(['b']);
+  });
+
   it('filters options from the search field', async () => {
     const trigger = fixture.nativeElement.querySelector('.ss__trigger') as HTMLButtonElement;
     trigger.click();

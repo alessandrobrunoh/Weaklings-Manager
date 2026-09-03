@@ -102,6 +102,10 @@ pub struct GuildSettingsView {
     pub discord_event_role_id: Option<String>,
     /// Role assigned automatically to human members joining the Discord guild.
     pub discord_auto_role_id: Option<String>,
+    /// Discord snowflake linked to the unique gestionale `is_default` role, if any.
+    ///
+    /// Computed from `roles` on read; not stored on `guild_settings`.
+    pub default_role_discord_id: Option<String>,
     /// Forum Channel where the bot creates one thread per loot split.
     pub discord_splits_forum_channel_id: Option<String>,
     /// Forum tag applied to pending split posts.
@@ -183,6 +187,7 @@ impl GuildSettingsView {
             discord_transaction_spam_channel_id: model.discord_transaction_spam_channel_id,
             discord_event_role_id: model.discord_event_role_id,
             discord_auto_role_id: model.discord_auto_role_id,
+            default_role_discord_id: None,
             discord_splits_forum_channel_id: model.discord_splits_forum_channel_id,
             discord_split_pending_tag_id: model.discord_split_pending_tag_id,
             discord_split_completed_tag_id: model.discord_split_completed_tag_id,
@@ -310,6 +315,8 @@ pub struct UpdateGuildSettingsRequest {
     pub discord_transaction_spam_channel_id: Option<String>,
     /// New value. Omit to leave unchanged; send `""` to clear.
     pub discord_event_role_id: Option<String>,
+    /// Base guild role assigned on Discord join. Omit to leave unchanged; send `""` to clear.
+    pub discord_auto_role_id: Option<String>,
     /// New value. Omit to leave unchanged; send `""` to clear.
     pub discord_splits_forum_channel_id: Option<String>,
     /// New value. Omit to leave unchanged; send `""` to clear.

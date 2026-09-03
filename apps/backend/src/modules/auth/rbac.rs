@@ -299,6 +299,84 @@ where
     }
 }
 
+/// Bot-authenticated Discord actor identified by `X-Discord-Id`.
+///
+/// Unlike [`UserContext`], a missing local `users` row is not an error: application tickets are
+/// opened by people who have not logged into the web app yet. `user_id` / `roles` are populated
+/// only when that Discord id is already linked.
+#[derive(Debug, Clone)]
+pub struct BotDiscordUser {
+    /// Discord snowflake from `X-Discord-Id`.
+    pub discord_id: String,
+    /// Local `users.id` when this Discord member has logged in before.
+    pub user_id: Option<i64>,
+    /// Local username when a `users` row exists.
+    pub username: Option<String>,
+    /// Gestionale role names used for permission checks when the member is linked.
+    pub roles: Vec<String>,
+    /// Whether this Discord id is the configured super-admin.
+    pub is_superadmin: bool,
+}
+
+impl<S> FromRequestParts<S> for BotDiscordUser
+where
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let _secret = BotSecret::from_request_parts(parts, state).await?;
+        let discord_id = parts
+            .headers
+            .get("X-Discord-Id")
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| AppError::Unauthorized("Missing X-Discord-Id".to_string()))?
+            .to_string();
+
+        let cfg = parts
+            .extensions
+            .get::<Config>()
+            .ok_or_else(|| AppError::Internal("Config extension missing".to_string()))?;
+        let is_superadmin = cfg.super_admin_discord_id == discord_id;
+
+        let db = parts
+            .extensions
+            .get::<DatabaseConnection>()
+            .ok_or_else(|| AppError::Internal("Database extension missing".to_string()))?;
+
+        use crate::modules::users::entities::{Column as UserCol, Entity as UserEntity};
+
+        let user = UserEntity::find()
+            .filter(UserCol::DiscordId.eq(&discord_id))
+            .one(db)
+            .await
+            .map_err(|error| {
+                AppError::Internal(format!("DB error resolving Discord ID: {error}"))
+            })?;
+
+        let (user_id, username, roles) = if let Some(user) = user {
+            let roles = if is_superadmin {
+                vec!["SuperAdmin".to_string(), user.role.clone()]
+            } else {
+                vec![user.role.clone()]
+            };
+            (Some(user.id), Some(user.username), roles)
+        } else {
+            (None, None, Vec::new())
+        };
+
+        Ok(Self {
+            discord_id,
+            user_id,
+            username,
+            roles,
+            is_superadmin,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

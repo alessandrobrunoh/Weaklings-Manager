@@ -8,8 +8,9 @@ use serde::Serialize;
 
 use crate::errors::AppError;
 use crate::modules::auth::entities::role;
-use crate::modules::auth::{Permission, Permissions, UserContext};
+use crate::modules::auth::{BotDiscordUser, Permission, Permissions, UserContext};
 use crate::responses::ApiResponse;
+use serde::Deserialize;
 
 use super::entities::{Column, Entity, Model};
 use super::service::ApplicationService;
@@ -46,21 +47,61 @@ pub fn router() -> Router {
         .route("/{id}/close", post(close_application))
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum CreateApplicationBody {
+    ChannelId(String),
+    Payload {
+        channel_id: String,
+        #[serde(default)]
+        username: Option<String>,
+    },
+}
+
+impl CreateApplicationBody {
+    fn channel_id(&self) -> &str {
+        match self {
+            Self::ChannelId(channel_id) | Self::Payload { channel_id, .. } => channel_id,
+        }
+    }
+
+    fn username<'a>(&'a self, actor: &'a BotDiscordUser) -> &'a str {
+        match self {
+            Self::Payload {
+                username: Some(username),
+                ..
+            } if !username.trim().is_empty() => username.trim(),
+            _ => actor
+                .username
+                .as_deref()
+                .filter(|value| !value.is_empty())
+                .unwrap_or(&actor.discord_id),
+        }
+    }
+}
+
 async fn create_application(
-    user: UserContext,
+    actor: BotDiscordUser,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
-    Json(channel_id): Json<String>,
+    Json(body): Json<CreateApplicationBody>,
 ) -> Result<Json<ApiResponse<ApplicationView>>, AppError> {
-    let application = ApplicationService::create(&db, &user, &channel_id).await?;
+    let application = ApplicationService::create(
+        &db,
+        &actor.discord_id,
+        actor.user_id,
+        body.username(&actor),
+        body.channel_id(),
+    )
+    .await?;
     Ok(Json(ApiResponse::new(application.into())))
 }
 
 async fn get_active_application(
-    user: UserContext,
+    actor: BotDiscordUser,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<Option<ApplicationView>>>, AppError> {
     let application = Entity::find()
-        .filter(Column::UserDiscordId.eq(user.id))
+        .filter(Column::UserDiscordId.eq(&actor.discord_id))
         .filter(Column::Status.eq("open"))
         .one(&db)
         .await?
@@ -86,7 +127,7 @@ async fn accept_application(
             .ok()
             .and_then(|settings| settings.discord_auto_role_id);
     let assigned_role = default_role_discord_id.or(fallback_auto_role);
-    let application = ApplicationService::resolve(&db, id, &user, "accepted").await?;
+    let application = ApplicationService::resolve(&db, id, &user.id, "accepted").await?;
     let mut view: ApplicationView = application.into();
     view.default_role_discord_id = assigned_role;
     Ok(Json(ApiResponse::new(view)))
@@ -99,13 +140,13 @@ async fn decline_application(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<ApplicationView>>, AppError> {
     user.require(&perms, Permission::ApplicationsManage).await?;
-    let application = ApplicationService::resolve(&db, id, &user, "declined").await?;
+    let application = ApplicationService::resolve(&db, id, &user.id, "declined").await?;
     Ok(Json(ApiResponse::new(application.into())))
 }
 
 async fn close_application(
     Path(id): Path<i64>,
-    user: UserContext,
+    actor: BotDiscordUser,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<ApplicationView>>, AppError> {
@@ -114,9 +155,15 @@ async fn close_application(
         .one(&db)
         .await?
         .ok_or_else(|| AppError::NotFound("Application not found".into()))?;
-    if existing.user_discord_id != user.id {
-        user.require(&perms, Permission::ApplicationsManage).await?;
+    if existing.user_discord_id != actor.discord_id {
+        perms
+            .require(
+                actor.is_superadmin,
+                &actor.roles,
+                Permission::ApplicationsManage,
+            )
+            .await?;
     }
-    let application = ApplicationService::resolve(&db, id, &user, "closed").await?;
+    let application = ApplicationService::resolve(&db, id, &actor.discord_id, "closed").await?;
     Ok(Json(ApiResponse::new(application.into())))
 }

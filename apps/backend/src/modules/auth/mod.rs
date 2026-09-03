@@ -14,5 +14,5 @@ pub mod service;
 
 pub use permission_cache::Permissions;
 pub use permissions::Permission;
-pub use rbac::{BotSecret, UserContext};
+pub use rbac::{BotDiscordUser, BotSecret, UserContext};
 pub use router::router;

@@ -192,6 +192,12 @@ export const routes: Routes = [
             loadComponent: () => import('./features/admin/admin-discord').then((m) => m.AdminDiscord),
           },
           {
+            path: 'applications',
+            canActivate: [permissionGuardTo('/admin', 'admin.settings.manage')],
+            loadComponent: () =>
+              import('./features/admin/admin-applications').then((m) => m.AdminApplications),
+          },
+          {
             path: 'progression',
             canActivate: [permissionGuardTo('/admin', 'progression.settings.manage')],
             loadComponent: () =>

@@ -142,7 +142,8 @@ let nextSelectId = 0;
       type="button"
       class="input ss__trigger"
       [id]="triggerId"
-      [disabled]="disabled() || loading()"
+      [disabled]="disabled()"
+      [attr.aria-busy]="loading() ? 'true' : null"
       [attr.aria-label]="ariaLabel() || null"
       [attr.aria-expanded]="open()"
       [attr.aria-controls]="listboxId"
@@ -260,12 +261,17 @@ export class SearchableSelect {
 
   protected readonly selectedOption = computed(() => {
     const id = this.value();
-    return this.options().find((option) => option.id === id) ?? null;
+    if (!id) {
+      return null;
+    }
+    return this.options().find((option) => option.id === id) ?? { id, label: id };
   });
 
   protected readonly selectedOptions = computed(() => {
-    const ids = new Set(this.selectedIds());
-    return this.options().filter((option) => ids.has(option.id));
+    const options = this.options();
+    return this.selectedIds().map(
+      (id) => options.find((option) => option.id === id) ?? { id, label: id },
+    );
   });
 
   protected readonly filtered = computed(() => {
