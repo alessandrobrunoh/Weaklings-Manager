@@ -1,7 +1,7 @@
 import { writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Client, TextChannel } from "discord.js";
-import type { ApiClient } from "../api/client.js";
+import { ApiError, type ApiClient } from "../api/client.js";
 import type {
   PaginatedData,
   EventView,
@@ -32,6 +32,10 @@ import {
 } from "./event-announcement-thread.js";
 import { massDiscordEvent, startDiscordEvent, stopDiscordEvent } from "./event-lifecycle.js";
 import { SplitForumAdapter } from "./split-forum.js";
+import {
+  isUnknownDiscordChannel,
+  withUnarchivedThread,
+} from "./discord-thread.js";
 
 const STATE_FILE_NAME = "poller-state.json";
 
@@ -161,8 +165,8 @@ function saveState(stateDirectory: string, state: PollerState): void {
  * to the configured Discord channels.
  */
 export class Poller {
+  private readonly stateDirectory: string;
   private readonly state: PollerState;
-  private readonly stateDirectory = config.POLLER_STATE_DIR;
   private timer: NodeJS.Timeout | undefined;
   /** Guards against a manually-triggered check overlapping a scheduled one —
    *  both would otherwise read the same stale `lastEventId`/`lastBattleId`
@@ -174,7 +178,9 @@ export class Poller {
     private readonly api: ApiClient,
     private readonly settings: SettingsService,
     private readonly intervalMs: number,
+    stateDirectory: string = config.POLLER_STATE_DIR,
   ) {
+    this.stateDirectory = stateDirectory;
     this.state = loadState(this.stateDirectory);
     console.log(
       `[Poller] Starting — last event ID: ${this.state.lastEventId}, last battle ID: ${this.state.lastBattleId}`,
@@ -372,14 +378,21 @@ export class Poller {
 
     try {
       const channel = await this.client.channels.fetch(threadId);
-      if (!channel?.isThread()) return false;
-      const closed = await closeEventAnnouncementThread(channel, eventId, "Poller");
-      if (closed) {
-        delete this.state.eventThreadIds[String(eventId)];
-        saveState(this.stateDirectory, this.state);
+      if (!channel?.isThread()) {
+        this.forgetEventThread(eventId);
+        return true;
       }
+      const closed = await closeEventAnnouncementThread(channel, eventId, "Poller");
+      if (closed) this.forgetEventThread(eventId);
       return closed;
     } catch (error) {
+      if (isUnknownDiscordChannel(error)) {
+        console.warn(
+          `[Poller] Discord thread for event #${eventId} is gone; dropping mapping`,
+        );
+        this.forgetEventThread(eventId);
+        return true;
+      }
       console.warn(`[Poller] Could not close event thread for #${eventId}:`, error);
       return false;
     }
@@ -393,14 +406,29 @@ export class Poller {
         const event = await this.api.get<EventView>(`api/events/${eventId}`);
         if (!terminalStatuses.has(event.status)) continue;
 
-        if (threadId && await this.closeEventThread(event.id)) {
+        if (threadId) await this.closeEventThread(event.id);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          // The backend record is gone (deleted event). Close leftover Discord
+          // state once, then drop the mapping so the next poll does not 404 forever.
+          console.warn(
+            `[Poller] Event #${eventId} no longer exists; closing leftover Discord thread`,
+          );
+          await this.closeEventThread(Number(eventId));
+          this.forgetEventThread(eventId);
           continue;
         }
-      } catch (error) {
         // Keep the mapping so a temporary Discord/API failure is retried on the next poll.
         console.warn(`[Poller] Could not close event thread for #${eventId}:`, error);
       }
     }
+  }
+
+  private forgetEventThread(eventId: number | string): void {
+    const key = String(eventId);
+    if (!(key in this.state.eventThreadIds)) return;
+    delete this.state.eventThreadIds[key];
+    saveState(this.stateDirectory, this.state);
   }
 
   /** Executes Mass and Start automatically, then auto-stops only live empty events. */
@@ -554,10 +582,14 @@ export class Poller {
         this.state.eventThreadIds[String(event.id)] = thread.id;
         const roleIds = event.discord_role_ids ?? [];
         const roleMentions = roleIds.map((roleId) => `<@&${roleId}>`).join(" ");
-        await thread.send({
-          content: `🚨 ${roleMentions} The event **${event.title}** starts in less than 1 hour! Get ready!`,
-          allowedMentions: roleIds.length > 0 ? { roles: roleIds } : { parse: [] },
-        });
+        await withUnarchivedThread(
+          thread,
+          `Event #${event.id} 1h warning`,
+          (active) => active.send({
+            content: `🚨 ${roleMentions} The event **${event.title}** starts in less than 1 hour! Get ready!`,
+            allowedMentions: roleIds.length > 0 ? { roles: roleIds } : { parse: [] },
+          }),
+        );
 
         this.state.pinged1hEvents.push(event.id);
         saveState(this.stateDirectory, this.state);

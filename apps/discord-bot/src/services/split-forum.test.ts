@@ -107,3 +107,56 @@ test("split sync updates only the summary and acknowledges both incremental curs
     last_transaction_id: 9,
   }]);
 });
+
+test("split sync unarchives an auto-archived Forum post before updating and closing it", async () => {
+  const edits: unknown[] = [];
+  const archiveCalls: boolean[] = [];
+  const thread = {
+    id: "123456789012345678",
+    parentId: "forum-channel",
+    name: "Split #42 — No event",
+    archived: true,
+    locked: false,
+    isThread: () => true,
+    messages: {
+      fetch: async () => ({
+        edit: async (payload: unknown) => edits.push(payload),
+      }),
+    },
+    setName: async () => undefined,
+    setArchived: async (value: boolean) => {
+      archiveCalls.push(value);
+      thread.archived = value;
+      return thread;
+    },
+    setLocked: async (value: boolean) => {
+      if (thread.archived) {
+        throw Object.assign(new Error("Thread is archived"), { code: 50083 });
+      }
+      thread.locked = value;
+      return thread;
+    },
+  };
+  const client = {
+    channels: { fetch: async () => thread },
+  } as unknown as Client;
+  const states: UpdateSplitDiscordSyncState[] = [];
+  const api = {
+    put: async (_path: string, state: UpdateSplitDiscordSyncState) => {
+      states.push(state);
+      return undefined;
+    },
+  } as unknown as ApiClient;
+
+  const result = await new SplitForumAdapter(client, api, "forum-channel").sync({
+    ...syncItem(),
+    detail: { ...detail, status: "completed" },
+  });
+
+  assert.equal(result, true);
+  assert.equal(edits.length, 1);
+  assert.deepEqual(archiveCalls, [false, true]);
+  assert.equal(thread.locked, true);
+  assert.equal(thread.archived, true);
+  assert.equal(states.length, 1);
+});

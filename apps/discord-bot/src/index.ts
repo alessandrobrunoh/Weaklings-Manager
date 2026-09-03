@@ -6,7 +6,8 @@ import { commands } from "./commands/index.js";
 import { handleButton } from "./handlers/button.js";
 import { handleSelectMenu } from "./handlers/select.js";
 import { Poller, registerPoller } from "./services/poller.js";
-import { initSettingsService } from "./services/settings.js";
+import { assignJoinRole } from "./services/join-role.js";
+import { initSettingsService, getSettingsService } from "./services/settings.js";
 import { registerCommands } from "./services/registry.js";
 import { createResponseEmbed } from "./embeds/theme.js";
 
@@ -92,6 +93,15 @@ async function main(): Promise<void> {
       await handleSelectMenu(interaction, api);
       return;
     }
+  });
+
+  client.on(Events.GuildMemberAdd, (member) => {
+    void getSettingsService()
+      .get()
+      .then((guildSettings) => assignJoinRole(member, guildSettings))
+      .catch((err: unknown) => {
+        console.error("[Bot] Base guild role assignment failed:", err);
+      });
   });
 
   // ── Message XP (fire-and-forget; never reply in-channel) ─────────────────

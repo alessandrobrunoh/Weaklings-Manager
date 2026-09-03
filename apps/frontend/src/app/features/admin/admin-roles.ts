@@ -17,6 +17,8 @@ import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { SearchableSelect } from '../../shared/components/searchable-select/searchable-select';
+import { roleSelectOptions } from '../../shared/discord/discord-options';
 
 interface RoleDraft {
   name: string;
@@ -37,7 +39,7 @@ interface NewRoleDraft {
 @Component({
   selector: 'app-admin-roles',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Dialog, EmptyState, ErrorState, Loading, PageHeader, PageStack],
+  imports: [Dialog, EmptyState, ErrorState, Loading, PageHeader, PageStack, SearchableSelect],
   template: `
     <app-page-header [title]="t('admin.roles.title')" [subtitle]="t('admin.roles.hint')">
       @if (matrix()) {
@@ -86,36 +88,31 @@ interface NewRoleDraft {
                     <span class="block text-xs" style="color: var(--color-text-secondary)">
                       {{ t('admin.roles.discordId') }}
                     </span>
-                    @if (discordRoles().length) {
-                      <select
-                        class="input mt-1 w-full"
-                        [value]="roleDiscordRoleId(role)"
-                        (change)="updateRoleDraft(role, 'discord_role_id', $event)"
-                      >
-                        <option value="">{{ t('admin.roles.unlinked') }}</option>
-                        @for (drole of discordRoleOptions(role); track drole.id) {
-                          <option [value]="drole.id">{{ drole.name }}</option>
-                        }
-                      </select>
-                    } @else {
-                      <input
-                        class="input mt-1 w-full mono"
-                        [value]="
-                          roleDiscordRoleId(role)
-                        "
-                        [attr.placeholder]="t('admin.roles.discordIdPlaceholder')"
-                        (input)="updateRoleDraft(role, 'discord_role_id', $event)"
-                      />
-                    }
+                    <app-searchable-select
+                      class="mt-1 block"
+                      [options]="roleLinkOptions(role)"
+                      [value]="roleDiscordRoleId(role)"
+                      [emptyLabel]="t('admin.roles.unlinked')"
+                      [searchPlaceholder]="t('common.search')"
+                      [noMatchesLabel]="t('picker.noMatches')"
+                      [emptyOptionsLabel]="t('picker.empty')"
+                      [ariaLabel]="t('admin.roles.discordId')"
+                      (valueChange)="setRoleDiscordId(role, $event)"
+                    />
                   </label>
-                  <label class="flex items-center gap-2 pb-2">
+                  <label class="flex items-start gap-2 pb-2">
                     <input
-                      class="checkbox"
+                      class="checkbox mt-0.5"
                       type="checkbox"
                       [checked]="roleDrafts()[role.role_id]?.is_default ?? role.is_default"
                       (change)="updateRoleDraftDefault(role, $event)"
                     />
-                    <span class="text-xs">{{ t('admin.roles.default') }}</span>
+                    <span>
+                      <span class="text-xs">{{ t('admin.roles.default') }}</span>
+                      <span class="mt-0.5 block text-[11px]" style="color: var(--color-text-secondary)">
+                        {{ t('admin.roles.defaultHint') }}
+                      </span>
+                    </span>
                   </label>
                   <div class="flex gap-2 pb-1">
                     <button
@@ -174,25 +171,16 @@ interface NewRoleDraft {
           </label>
           <label>
             <span class="label">{{ t('admin.roles.discordId') }}</span>
-            @if (discordRoles().length) {
-              <select
-                class="select"
-                [value]="newRole().discord_role_id"
-                (change)="updateNewRole('discord_role_id', $event)"
-              >
-                <option value="">{{ t('admin.roles.unlinked') }}</option>
-                @for (drole of discordRoleOptions(null); track drole.id) {
-                  <option [value]="drole.id">{{ drole.name }}</option>
-                }
-              </select>
-            } @else {
-              <input
-                class="input mono"
-                [value]="newRole().discord_role_id"
-                [attr.placeholder]="t('admin.roles.discordIdPlaceholder')"
-                (input)="updateNewRole('discord_role_id', $event)"
-              />
-            }
+            <app-searchable-select
+              [options]="roleLinkOptions(null)"
+              [value]="newRole().discord_role_id"
+              [emptyLabel]="t('admin.roles.unlinked')"
+              [searchPlaceholder]="t('common.search')"
+              [noMatchesLabel]="t('picker.noMatches')"
+              [emptyOptionsLabel]="t('picker.empty')"
+              [ariaLabel]="t('admin.roles.discordId')"
+              (valueChange)="setNewRoleDiscordId($event)"
+            />
           </label>
         </form>
         <div dialogFooter>
@@ -257,6 +245,27 @@ export class AdminRoles {
     return this.roleDrafts()[role.role_id]?.discord_role_id ?? role.discord_role_id ?? '';
   }
 
+  protected roleLinkOptions(role: RolePermissionsView | null) {
+    const currentId = role ? this.roleDiscordRoleId(role) : this.newRole().discord_role_id;
+    return roleSelectOptions(this.discordRoleOptions(role), currentId);
+  }
+
+  protected setRoleDiscordId(role: RolePermissionsView, discordRoleId: string): void {
+    this.roleDrafts.update((drafts) => {
+      const current = drafts[role.role_id] ?? {
+        name: role.role_name,
+        priority: role.priority,
+        discord_role_id: role.discord_role_id ?? '',
+        is_default: role.is_default,
+      };
+      return { ...drafts, [role.role_id]: { ...current, discord_role_id: discordRoleId } };
+    });
+  }
+
+  protected setNewRoleDiscordId(discordRoleId: string): void {
+    this.newRole.update((draft) => ({ ...draft, discord_role_id: discordRoleId }));
+  }
+
   protected discordRoleOptions(role: RolePermissionsView | null): DiscordRoleView[] {
     const currentId = role ? this.roleDiscordRoleId(role) : this.newRole().discord_role_id;
     const linked = new Set(
@@ -301,17 +310,17 @@ export class AdminRoles {
       // endpoint requires a separate permission and made valid links appear
       // as "Not linked" when only autorole.manage was available.
       const roles = await firstValueFrom(
-        this.api.get<DiscordRoleView[]>('api/admin/autorole/roles'),
+        this.api.get<DiscordRoleView[]>('api/admin/discord/roles'),
       );
       this.discordRoles.set(roles);
     } catch {
       try {
         const roles = await firstValueFrom(
-          this.api.get<DiscordRoleView[]>('api/admin/discord/roles'),
+          this.api.get<DiscordRoleView[]>('api/admin/autorole/roles'),
         );
         this.discordRoles.set(roles);
       } catch {
-        // Snowflake text field remains usable when Discord listing is unavailable.
+        this.toasts.error(this.t('picker.empty'));
       }
     }
   }

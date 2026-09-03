@@ -4,6 +4,10 @@ import {
   buildEventEmbed,
   buildEventThreadActionRows,
 } from "../embeds/event.embed.js";
+import {
+  isUnknownDiscordChannel,
+  lockAndArchiveThread,
+} from "./discord-thread.js";
 
 export type EventAnnouncementThread = Awaited<
   ReturnType<Message["startThread"]>
@@ -67,12 +71,18 @@ export async function closeEventAnnouncementThread(
   eventId: number,
   sourceLabel: string,
 ): Promise<boolean> {
+  const reason = `Event #${eventId} closed (${sourceLabel})`;
   try {
-    await thread.setLocked(true, `Event #${eventId} closed (${sourceLabel})`);
-    await thread.setArchived(true, `Event #${eventId} closed (${sourceLabel})`);
+    await lockAndArchiveThread(thread, reason);
     console.log(`[${sourceLabel}] Closed Discord thread for event #${eventId}`);
     return true;
   } catch (error: unknown) {
+    if (isUnknownDiscordChannel(error)) {
+      console.warn(
+        `[${sourceLabel}] Discord thread for event #${eventId} is already gone`,
+      );
+      return true;
+    }
     console.warn(`[${sourceLabel}] Failed to close Discord thread for event #${eventId}:`, error);
     return false;
   }
