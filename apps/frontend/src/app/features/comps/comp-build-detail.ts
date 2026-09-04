@@ -22,6 +22,7 @@ import type {
   BuildSlot,
   BuildPerformanceView,
   BuildSummary,
+  ItemPowerView,
   OpenAlbionItem,
   OpenAlbionItemAbilities,
   PaginatedData,
@@ -225,8 +226,14 @@ const ITEM_TIERS = [
           </div>
         }
 
-        <!-- ================= 4 CORE KPI CARDS ================= -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <!-- ================= CORE KPI CARDS ================= -->
+        <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <app-stat-card
+            label="Item Power (spec 100)"
+            [value]="itemPowerAtMaxFormatted()"
+            [sub]="itemPowerAtMax()?.breakdown?.mastery_levels_known === false ? 'limite inferiore — maestria non nota' : undefined"
+            icon="zap"
+          />
           <app-stat-card
             label="Win Rate"
             [value]="winRateFormatted()"
@@ -372,6 +379,51 @@ const ITEM_TIERS = [
                 <p class="text-xs text-disabled italic">
                   Nessuna descrizione o linea guida tattica inserita per questa build.
                 </p>
+              }
+            </section>
+
+            <!-- Item Power Breakdown Card -->
+            <section class="card p-5 border border-[var(--color-border)] space-y-4">
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-secondary">
+                  Item Power (spec 100)
+                </h3>
+                @if (itemPowerAtMax(); as view) {
+                  <span class="chip text-xs font-mono">{{ itemPowerAtMaxFormatted() }}</span>
+                }
+              </div>
+
+              @if (itemPowerAtMax(); as view) {
+                @if (view.breakdown.mastery_levels_known === false) {
+                  <p class="text-[10px] text-warning">
+                    ⚠ Limite inferiore — i livelli di maestria non sono ancora registrati.
+                  </p>
+                }
+                <div class="space-y-1.5">
+                  @for (item of view.breakdown.items; track item.slot) {
+                    <div class="flex items-center justify-between gap-2 p-2 bg-[var(--color-surface-2)] rounded-[var(--radius-cards)] border border-[var(--color-border)] text-xs">
+                      <div class="min-w-0">
+                        <span class="font-semibold text-[var(--color-text)]">{{ slotLabel(item.slot) }}</span>
+                        <span class="text-[10px] text-secondary block">
+                          {{ ipTierLabel(item) }}
+                          @if (item.unknown_item) {
+                            · item sconosciuto al dataset
+                          } @else if (!item.spec_node) {
+                            · nessuna spec per questo slot
+                          }
+                        </span>
+                      </div>
+                      <strong class="font-mono text-[var(--color-text)] shrink-0">{{ Math.round(item.total) }}</strong>
+                    </div>
+                  }
+                  @if (view.breakdown.empty_slots.length > 0) {
+                    <p class="text-[10px] text-secondary pt-1">
+                      Slot vuoti: {{ view.breakdown.empty_slots.length }} (contano comunque nella media)
+                    </p>
+                  }
+                </div>
+              } @else {
+                <p class="text-xs text-disabled italic">Calcolo Item Power non disponibile.</p>
               }
             </section>
 
@@ -664,6 +716,11 @@ export class CompBuildDetailPage {
     return `${this.mainItems().length}/${this.SLOT_ORDER.length}`;
   });
 
+  protected readonly itemPowerAtMaxFormatted = computed(() => {
+    const view = this.itemPowerAtMax();
+    return view ? Math.round(view.breakdown.average).toLocaleString() : '—';
+  });
+
   protected readonly totalSignups = computed(() => {
     const p = this.performance();
     return (p?.signups_as_primary ?? 0) + (p?.signups_as_secondary ?? 0);
@@ -699,11 +756,20 @@ export class CompBuildDetailPage {
 
   protected readonly t = (key: TranslationKey) => this.translate.t(key);
 
+  /** Exposed for the Item Power breakdown template, which rounds figures inline. */
+  protected readonly Math = Math;
+
   protected readonly canManage = computed(() => this.auth.hasPermission('comps.builds.edit'));
   protected readonly canDelete = computed(() => this.auth.hasPermission('comps.builds.delete'));
   /** The bundled ability catalog, loaded once and keyed by tier-stripped base identifier. */
   protected readonly abilityCatalog = signal<Record<string, OpenAlbionItemAbilities>>({});
   protected readonly performance = signal<BuildPerformanceView | null>(null);
+  /**
+   * This build's Item Power with every Destiny Board node at 100 — the ceiling every member is
+   * measured against, not any one person's actual figure. `null` while loading or on failure, so
+   * the KPI card and breakdown panel can render nothing rather than a stale number.
+   */
+  protected readonly itemPowerAtMax = signal<ItemPowerView | null>(null);
   protected readonly comparing = signal(false);
   protected readonly compareWithId = signal('');
   protected readonly compareWith = signal<BuildDetail | null>(null);
@@ -998,6 +1064,7 @@ export class CompBuildDetailPage {
         );
       }
       this.build.set(updated);
+      void this.loadItemPowerAtMax(build.id);
       this.cancelSlotEdit();
       this.toasts.success('Item saved');
     } catch (error) {
@@ -1297,6 +1364,24 @@ export class CompBuildDetailPage {
     }
   }
 
+  private async loadItemPowerAtMax(buildId: number): Promise<void> {
+    try {
+      const itemPower = await firstValueFrom(
+        this.api.get<ItemPowerView>(`api/comps/builds/${buildId}/item-power?spec=max`),
+      );
+      if (buildId !== this.buildId()) return;
+      this.itemPowerAtMax.set(itemPower);
+    } catch {
+      if (buildId !== this.buildId()) return;
+      this.itemPowerAtMax.set(null);
+    }
+  }
+
+  /** `T8.2` from a tier and an enchantment, the way the game writes it. */
+  protected ipTierLabel(entry: { tier: number; enchantment: number }): string {
+    return entry.enchantment > 0 ? `T${entry.tier}.${entry.enchantment}` : `T${entry.tier}`;
+  }
+
   private async runItemSearch(): Promise<void> {
     const slot = this.editing()?.slot;
     if (!slot) {
@@ -1337,6 +1422,7 @@ export class CompBuildDetailPage {
       this.build.set(build);
       this.buildCategories.set(categories);
       void this.loadPerformance(buildId);
+      void this.loadItemPowerAtMax(buildId);
     } catch (error) {
       if (buildId !== this.buildId()) return;
       this.loadFailed.set(true);
