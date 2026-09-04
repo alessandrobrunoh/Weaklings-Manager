@@ -2659,7 +2659,7 @@ impl EventService {
         self.to_event_view(db, model).await
     }
 
-    /// Persists the Discord voice channel created for a live event.
+    /// Persists the Discord voice channel created at Mass or Start.
     pub async fn bind_event_voice_channel(
         &self,
         db: &DatabaseConnection,
@@ -2682,9 +2682,11 @@ impl EventService {
             .await
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
-        if model.status != "live" {
+        // Mass provisions the voice channel while the event is still scheduled; Start reuses it
+        // after the transition to live. Terminal statuses cannot receive a new binding.
+        if model.status != "scheduled" && model.status != "live" {
             return Err(AppError::Conflict(format!(
-                "Event {id} is not live (status={})",
+                "Event {id} cannot bind a Discord voice channel (status={})",
                 model.status
             )));
         }
@@ -2715,9 +2717,12 @@ impl EventService {
             .await
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
-        if model.status != "stopped" && model.status != "auto_stopped" {
+        if model.status != "stopped"
+            && model.status != "auto_stopped"
+            && model.status != "cancelled"
+        {
             return Err(AppError::Conflict(format!(
-                "Event {id} is not stopped (status={})",
+                "Event {id} cannot clear a Discord voice channel (status={})",
                 model.status
             )));
         }
@@ -5086,7 +5091,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bind_event_voice_channel_requires_live_event_and_never_overwrites() {
+    async fn bind_event_voice_channel_allows_mass_while_scheduled_and_never_overwrites() {
         let db = seed_db().await;
         let admin = insert_user(&db, "voice-admin", "voice-admin@example.com").await;
         let cat = create_comp_category(&db, "Voice ZvZ").await;
@@ -5114,18 +5119,11 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(matches!(
-            service
-                .bind_event_voice_channel(&db, event.id, "111111111111111111")
-                .await,
-            Err(AppError::Conflict(_))
-        ));
-
-        service.start_event(&db, event.id).await.unwrap();
         let bound = service
             .bind_event_voice_channel(&db, event.id, "111111111111111111")
             .await
             .unwrap();
+        assert_eq!(bound.status, "scheduled");
         assert_eq!(
             bound.discord_voice_channel_id.as_deref(),
             Some("111111111111111111")
@@ -5146,7 +5144,19 @@ mod tests {
             Err(AppError::Conflict(_))
         ));
 
+        let started = service.start_event(&db, event.id).await.unwrap();
+        assert_eq!(
+            started.discord_voice_channel_id.as_deref(),
+            Some("111111111111111111")
+        );
+
         service.stop_event(&db, event.id, false).await.unwrap();
+        assert!(matches!(
+            service
+                .bind_event_voice_channel(&db, event.id, "333333333333333333")
+                .await,
+            Err(AppError::Conflict(_))
+        ));
         assert_eq!(
             service
                 .clear_event_voice_channel(&db, event.id)
@@ -5155,6 +5165,50 @@ mod tests {
                 .discord_voice_channel_id,
             None
         );
+        assert_eq!(
+            service
+                .clear_event_voice_channel(&db, event.id)
+                .await
+                .unwrap()
+                .discord_voice_channel_id,
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn clear_event_voice_channel_allows_cancelled_mass_cleanup() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "voice-cancel", "voice-cancel@example.com").await;
+        let cat = create_comp_category(&db, "Cancel ZvZ").await;
+        let comp_id = create_comp(&db, "Cancel Comp", cat, None, vec![]).await;
+        let service = EventService::new();
+        let event = service
+            .create_event(
+                &db,
+                admin,
+                CreateEventRequest {
+                    title: "Cancel Voice Event".to_string(),
+                    description: None,
+                    call_to_arms: false,
+                    regear: false,
+                    comp_id,
+                    player_cap: None,
+                    event_date_utc: Some("2026-09-01T20:00:00Z".to_string()),
+                    mass_time_utc: None,
+                    start_time_utc: None,
+                    discord_role_ids: vec![],
+                    create_split: false,
+                    island_tab_id: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        service
+            .bind_event_voice_channel(&db, event.id, "111111111111111111")
+            .await
+            .unwrap();
+        service.cancel_event(&db, event.id).await.unwrap();
         assert_eq!(
             service
                 .clear_event_voice_channel(&db, event.id)

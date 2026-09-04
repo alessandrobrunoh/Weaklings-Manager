@@ -956,14 +956,14 @@ async fn remind_event(
     Ok(Json(ApiResponse::new(event)))
 }
 
-/// Associates the Discord voice channel created by the bot with a live event.
+/// Associates the Discord voice channel created by the bot at Mass or Start.
 ///
 /// Requires `events.edit` permission.
 #[utoipa::path(
     put,
     path = "/api/events/{id}/discord-voice-channel",
     tag = "events",
-    summary = "Bind a Discord voice channel to a live event",
+    summary = "Bind a Discord voice channel to a scheduled or live event",
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Event ID")),
     request_body = SetEventVoiceChannelRequest,
@@ -973,7 +973,7 @@ async fn remind_event(
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
-        (status = 409, description = "Event is not live or has another voice channel", body = ProblemDetails)
+        (status = 409, description = "Event is not scheduled/live or has another voice channel", body = ProblemDetails)
     )
 )]
 async fn set_event_voice_channel(
@@ -1014,7 +1014,7 @@ async fn set_event_voice_channel(
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails),
-        (status = 409, description = "Event is not stopped", body = ProblemDetails)
+        (status = 409, description = "Event is not stopped, auto-stopped, or cancelled", body = ProblemDetails)
     )
 )]
 async fn clear_event_voice_channel(

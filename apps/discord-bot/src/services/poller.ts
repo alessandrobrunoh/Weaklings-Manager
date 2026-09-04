@@ -428,16 +428,24 @@ export class Poller {
         if (event.status === "scheduled") {
           const massAt = new Date(event.mass_time_utc ?? event.event_date_utc).getTime();
           if (Number.isFinite(massAt) && now >= massAt && !this.state.massedEvents.includes(event.id)) {
-            const thread = await this.getEventThread(event.id);
-            await massDiscordEvent(this.client, this.api, "", event.id, thread ?? undefined);
-            this.state.massedEvents.push(event.id);
-            saveState(this.stateDirectory, this.state);
+            try {
+              const thread = await this.getEventThread(event.id);
+              await massDiscordEvent(this.client, this.api, "", event.id, thread ?? undefined);
+              this.state.massedEvents.push(event.id);
+              saveState(this.stateDirectory, this.state);
+            } catch (error) {
+              console.warn(`[Poller] Could not mass event #${event.id}:`, error);
+            }
           }
           const startAt = new Date(event.start_time_utc ?? event.event_date_utc).getTime();
           if (Number.isFinite(startAt) && now >= startAt) {
-            const thread = await this.getEventThread(event.id);
-            await startDiscordEvent(this.client, this.api, "", event.id, thread ?? undefined);
-            saveState(this.stateDirectory, this.state);
+            try {
+              const thread = await this.getEventThread(event.id);
+              await startDiscordEvent(this.client, this.api, "", event.id, thread ?? undefined);
+              saveState(this.stateDirectory, this.state);
+            } catch (error) {
+              console.warn(`[Poller] Could not start event #${event.id}:`, error);
+            }
           }
           continue;
         }
