@@ -585,8 +585,11 @@ export interface DestinyRadialLayout {
   edges: DestinyRadialEdge[];
 }
 
-const RADIAL_SIZE = 800;
-const RADIAL_RADIUS = [0, 92, 188, 278, 358] as const;
+const RADIAL_SIZE = 1600;
+/** Concentric rings: hub, branch, family/material, slot or item, armor item. */
+const RADIAL_RADIUS = [0, 140, 320, 560, 780] as const;
+/** Fraction of a parent's angle reserved as gutters between sibling fans. */
+const SIBLING_GAP = 0.18;
 
 /**
  * Lays the Destiny Board out as a radial fan: weapons on the left, armor on the
@@ -637,7 +640,7 @@ export function layoutDestinyRadial(tree: readonly DestinyGroupNode[]): DestinyR
   ): void => {
     const id = destinyNodeId(node);
     const mid = (startAngle + endAngle) / 2;
-    const radius = RADIAL_RADIUS[Math.min(depth, RADIAL_RADIUS.length - 1)] ?? 358;
+    const radius = RADIAL_RADIUS[Math.min(depth, RADIAL_RADIUS.length - 1)] ?? RADIAL_RADIUS[RADIAL_RADIUS.length - 1];
     const x = cx + radius * Math.cos(mid);
     const y = cy + radius * Math.sin(mid);
     const summary = masterySummary(node);
@@ -671,11 +674,16 @@ export function layoutDestinyRadial(tree: readonly DestinyGroupNode[]): DestinyR
     if (!isDestinyGroup(node) || node.children.length === 0) return;
     const weights = node.children.map((child) => Math.max(1, collectLeaves(child).length));
     const weightSum = weights.reduce((acc, value) => acc + value, 0);
+    const parentSpan = endAngle - startAngle;
+    const gapCount = Math.max(0, node.children.length - 1);
+    const gapSpan = parentSpan * SIBLING_GAP;
+    const usable = parentSpan - gapSpan;
+    const gapEach = gapCount > 0 ? gapSpan / gapCount : 0;
     let cursor = startAngle;
     node.children.forEach((child, index) => {
-      const span = (endAngle - startAngle) * (weights[index] / weightSum);
+      const span = usable * (weights[index] / weightSum);
       place(child, cursor, cursor + span, depth + 1, id, hue);
-      cursor += span;
+      cursor += span + (index < gapCount ? gapEach : 0);
     });
   };
 
@@ -694,11 +702,9 @@ export function layoutDestinyRadial(tree: readonly DestinyGroupNode[]): DestinyR
 }
 
 function firstNodeIcon(node: DestinyTreeNode): string | null {
-  if (!isDestinyGroup(node)) return node.icon;
-  for (const leaf of collectLeaves(node)) {
-    if (leaf.icon) return leaf.icon;
-  }
-  return null;
+  if (!isDestinyGroup(node)) return albionCombatIconUrl(node.identifier);
+  const leaf = collectLeaves(node)[0];
+  return leaf ? albionCombatIconUrl(leaf.identifier) : null;
 }
 
 function filterNode(node: DestinyTreeNode, query: string): DestinyTreeNode | null {

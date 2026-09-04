@@ -92,8 +92,6 @@ const HUE_COLOR: Record<DestinyHue, string> = {
     .destiny-scene {
       width: 100%;
       height: 100%;
-      transform-origin: center center;
-      will-change: transform;
     }
     .destiny-map svg {
       display: block;
@@ -260,25 +258,14 @@ const HUE_COLOR: Record<DestinyHue, string> = {
             (pointercancel)="onMapPointerUp($event)"
             (dblclick)="zoomAt($event, 1.35)"
           >
-            <div class="destiny-scene" [style.transform]="sceneTransform()">
+            <div class="destiny-scene">
             <svg
-              [attr.viewBox]="'0 0 ' + layout().width + ' ' + layout().height"
+              #destinySvg
+              [attr.viewBox]="viewBoxAttr()"
+              preserveAspectRatio="xMidYMid meet"
               role="img"
               [attr.aria-label]="t('destiny.mapLabel')"
             >
-              <defs>
-                @for (node of layout().nodes; track node.id) {
-                  @if (node.icon) {
-                    <clipPath [attr.id]="iconClipId(node.id)">
-                      <circle
-                        [attr.cx]="node.x"
-                        [attr.cy]="node.y"
-                        [attr.r]="iconRadius(node)"
-                      />
-                    </clipPath>
-                  }
-                }
-              </defs>
               @for (edge of layout().edges; track edge.id) {
                 <line
                   [attr.x1]="edge.x1"
@@ -287,7 +274,7 @@ const HUE_COLOR: Record<DestinyHue, string> = {
                   [attr.y2]="edge.y2"
                   [attr.stroke]="hueColor(edge.hue)"
                   [attr.stroke-opacity]="edgeOpacity(edge.fill, edge.id)"
-                  stroke-width="1.4"
+                  stroke-width="2.4"
                   stroke-linecap="round"
                 />
               }
@@ -304,7 +291,7 @@ const HUE_COLOR: Record<DestinyHue, string> = {
                   <circle
                     [attr.cx]="node.x"
                     [attr.cy]="node.y"
-                    r="12"
+                    [attr.r]="nodeRadius(node) + 8"
                     fill="transparent"
                   />
                   <circle
@@ -313,7 +300,7 @@ const HUE_COLOR: Record<DestinyHue, string> = {
                     [attr.r]="nodeRadius(node)"
                     [attr.fill]="node.icon ? '#0f1011' : nodeFill(node)"
                     [attr.stroke]="selectedId() === node.id ? '#ffffff' : hueColor(node.hue)"
-                    [attr.stroke-width]="selectedId() === node.id ? 2.4 : 1.2"
+                    [attr.stroke-width]="selectedId() === node.id ? 3.5 : 2.2"
                     [attr.opacity]="nodeOpacity(node)"
                   />
                   @if (node.icon) {
@@ -323,19 +310,18 @@ const HUE_COLOR: Record<DestinyHue, string> = {
                       [attr.y]="node.y - iconRadius(node)"
                       [attr.width]="iconRadius(node) * 2"
                       [attr.height]="iconRadius(node) * 2"
-                      [attr.clip-path]="'url(#' + iconClipId(node.id) + ')'"
                       [attr.opacity]="nodeOpacity(node)"
-                      preserveAspectRatio="xMidYMid slice"
+                      preserveAspectRatio="xMidYMid meet"
                       style="pointer-events: none"
                     />
                   }
                   @if (node.depth <= 2 && nodeLabel(node); as label) {
                     <text
                       [attr.x]="node.x"
-                      [attr.y]="node.y + nodeRadius(node) + 11"
+                      [attr.y]="node.y + nodeRadius(node) + 22"
                       text-anchor="middle"
                       fill="var(--color-mist, #d0d6e0)"
-                      font-size="12"
+                      font-size="22"
                       font-weight="500"
                       style="pointer-events: none"
                     >
@@ -486,12 +472,13 @@ export class DestinyBoard {
   protected readonly category = signal<AlbionCombatCategory | 'all'>('all');
   protected readonly selectedId = signal('root');
   protected readonly confirmResetBoard = signal(false);
-  protected readonly zoom = signal(1.7);
+  protected readonly zoom = signal(1);
   protected readonly panX = signal(0);
   protected readonly panY = signal(0);
   protected readonly panning = signal(false);
   private readonly draft = signal<DestinyItemNode[]>([]);
   private readonly mapEl = viewChild<ElementRef<HTMLElement>>('destinyMap');
+  private readonly svgEl = viewChild<ElementRef<SVGSVGElement>>('destinySvg');
   private drag: { id: number; x: number; y: number; moved: boolean } | null = null;
   private skipClick = false;
 
@@ -511,11 +498,16 @@ export class DestinyBoard {
     });
   }
 
-  protected readonly sceneTransform = computed(
-    () => `translate(${this.panX()}px, ${this.panY()}px) scale(${this.zoom()})`,
-  );
-
   protected readonly zoomPercent = computed(() => Math.round(this.zoom() * 100));
+
+  protected readonly viewBoxAttr = computed(() => {
+    const size = this.layout().width;
+    const zoom = this.zoom();
+    const width = size / zoom;
+    const x = (size - width) / 2 + this.panX();
+    const y = (size - width) / 2 + this.panY();
+    return `${x} ${y} ${width} ${width}`;
+  });
 
   protected readonly visibleTree = computed(() =>
     filterDestinyTree(buildDestinyBoardTree(this.draft()), this.search(), this.category()),
@@ -550,19 +542,17 @@ export class DestinyBoard {
   }
 
   protected nodeRadius(node: DestinyRadialNode): number {
-    if (node.depth === 0) return 16;
-    if (node.depth === 1) return 13;
-    if (node.item) return 9;
-    return 11;
+    if (node.depth === 0) return 34;
+    if (node.depth === 1) return 28;
+    if (node.item) return 20;
+    return 24;
   }
 
   protected iconRadius(node: DestinyRadialNode): number {
-    return Math.max(4, this.nodeRadius(node) - 1.2);
+    return Math.max(4, this.nodeRadius(node) - 1);
   }
 
-  protected iconClipId(id: string): string {
-    return `destiny-icon-${id.replaceAll(/[^a-zA-Z0-9_-]/g, '-')}`;
-  }
+
 
   protected nodeFill(node: DestinyRadialNode): string {
     const amount = node.leafCount <= 0 ? 0 : node.sum / (node.leafCount * 120);
@@ -614,23 +604,26 @@ export class DestinyBoard {
   }
 
   protected nudgeZoom(factor: number): void {
-    this.setZoom(this.zoom() * factor, 0, 0);
+    const size = this.layout().width;
+    const width = size / this.zoom();
+    const focusX = (size - width) / 2 + this.panX() + width / 2;
+    const focusY = (size - width) / 2 + this.panY() + width / 2;
+    this.zoomAround(this.zoom() * factor, focusX, focusY);
   }
 
   protected resetView(): void {
-    this.zoom.set(1.7);
+    this.zoom.set(1);
     this.panX.set(0);
     this.panY.set(0);
   }
 
   protected zoomAt(event: MouseEvent, factor: number): void {
-    const map = this.mapEl()?.nativeElement;
-    if (!map) {
+    const point = this.clientToViewBox(event.clientX, event.clientY);
+    if (!point) {
       this.nudgeZoom(factor);
       return;
     }
-    const rect = map.getBoundingClientRect();
-    this.setZoom(this.zoom() * factor, event.clientX - rect.left - rect.width / 2, event.clientY - rect.top - rect.height / 2);
+    this.zoomAround(this.zoom() * factor, point.x, point.y);
   }
 
   protected onMapPointerDown(event: PointerEvent): void {
@@ -650,8 +643,11 @@ export class DestinyBoard {
     this.panning.set(true);
     this.drag.x = event.clientX;
     this.drag.y = event.clientY;
-    this.panX.update((value) => value + dx);
-    this.panY.update((value) => value + dy);
+    const svg = this.svgEl()?.nativeElement;
+    const ctm = svg?.getScreenCTM();
+    const scale = ctm?.a || 1;
+    this.panX.update((value) => value - dx / scale);
+    this.panY.update((value) => value - dy / scale);
   }
 
   protected onMapPointerUp(event: PointerEvent): void {
@@ -663,25 +659,40 @@ export class DestinyBoard {
 
   private onMapWheel(event: WheelEvent): void {
     event.preventDefault();
-    const map = this.mapEl()?.nativeElement;
-    if (!map) return;
-    const rect = map.getBoundingClientRect();
     const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
-    this.setZoom(
-      this.zoom() * factor,
-      event.clientX - rect.left - rect.width / 2,
-      event.clientY - rect.top - rect.height / 2,
-    );
+    const point = this.clientToViewBox(event.clientX, event.clientY);
+    if (!point) {
+      this.nudgeZoom(factor);
+      return;
+    }
+    this.zoomAround(this.zoom() * factor, point.x, point.y);
   }
 
-  private setZoom(next: number, originX: number, originY: number): void {
-    const zoom = Math.min(6, Math.max(0.75, next));
+  private zoomAround(next: number, focusX: number, focusY: number): void {
+    const size = this.layout().width;
     const previous = this.zoom();
+    const zoom = Math.min(6, Math.max(0.75, next));
     if (zoom === previous) return;
-    const ratio = zoom / previous;
-    this.panX.update((value) => originX - (originX - value) * ratio);
-    this.panY.update((value) => originY - (originY - value) * ratio);
+    const oldWidth = size / previous;
+    const oldX = (size - oldWidth) / 2 + this.panX();
+    const oldY = (size - oldWidth) / 2 + this.panY();
+    const fx = (focusX - oldX) / oldWidth;
+    const fy = (focusY - oldY) / oldWidth;
+    const width = size / zoom;
+    this.panX.set(focusX - fx * width - (size - width) / 2);
+    this.panY.set(focusY - fy * width - (size - width) / 2);
     this.zoom.set(zoom);
+  }
+
+  private clientToViewBox(clientX: number, clientY: number): { x: number; y: number } | null {
+    const svg = this.svgEl()?.nativeElement;
+    const ctm = svg?.getScreenCTM();
+    if (!svg || !ctm) return null;
+    const point = svg.createSVGPoint();
+    point.x = clientX;
+    point.y = clientY;
+    const mapped = point.matrixTransform(ctm.inverse());
+    return { x: mapped.x, y: mapped.y };
   }
 
   protected onNodeKey(event: KeyboardEvent, id: string): void {

@@ -894,9 +894,10 @@ export function albionEquipmentIconUrl(identifier: string, quality = 4): string 
  * 404 for most weapons — hunter/mage lines don't exist until T3/T4 — so the
  * Destiny Board always requests T8, which every combat item has.
  */
-export function albionCombatIconUrl(identifier: string, quality = 4): string {
-  const base = albionSpecializationIdentifier(identifier);
-  return albionEquipmentIconUrl(`T8_${base}`, quality);
+export function albionCombatIconUrl(identifier: string, quality = 1): string {
+  const base = albionSpecializationIdentifier(identifier).replace(/^T\d+_/, '');
+  const grade = quality >= 1 && quality <= 5 ? quality : 1;
+  return `https://render.albiononline.com/v1/item/${encodeURIComponent(`T8_${base}`)}.png?quality=${grade}&size=256`;
 }
 
 function toOpenAlbionItem(fileName: string, tier: string): OpenAlbionItem {
