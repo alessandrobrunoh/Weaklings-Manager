@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { EventDetailView, EventView } from "../api/types.js";
 import {
+  buildEventAnnouncementMessage,
   buildEventEmbed,
   buildEventMassMessage,
   buildEventReminderMessage,
@@ -175,4 +176,34 @@ test("reminder without roles disables generic mentions", () => {
 
   assert.doesNotMatch(message.content, /<@&/);
   assert.deepEqual(message.allowedMentions, { parse: [] });
+});
+
+test("parent announcement payload is text-only and never includes roster controls", () => {
+  const message = buildEventAnnouncementMessage(
+    event({
+      discord_role_ids: [
+        "111111111111111111",
+        "111111111111111111",
+        "222222222222222222",
+      ],
+    }),
+  );
+
+  assert.match(message.content, /Castle Fight/);
+  assert.match(message.content, /<@&111111111111111111> <@&222222222222222222>/);
+  assert.deepEqual(message.allowedMentions, {
+    parse: [],
+    roles: ["111111111111111111", "222222222222222222"],
+  });
+  assert.equal("embeds" in message, false);
+  assert.equal("components" in message, false);
+});
+
+test("parent announcement without roles disables generic mentions", () => {
+  const message = buildEventAnnouncementMessage(event({ discord_role_ids: [] }));
+
+  assert.doesNotMatch(message.content, /<@&/);
+  assert.deepEqual(message.allowedMentions, { parse: [] });
+  assert.equal("embeds" in message, false);
+  assert.equal("components" in message, false);
 });

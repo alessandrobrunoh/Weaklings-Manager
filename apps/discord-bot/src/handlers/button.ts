@@ -29,7 +29,10 @@ import { formatSilver } from '../format.js';
 import { startDiscordEvent, stopDiscordEvent } from "../services/event-lifecycle.js";
 import { getPoller } from "../services/poller.js";
 import { buildSignupRoleOptions, signupRoles } from "../services/event-signup.js";
-import { closeEventAnnouncementThread } from "../services/event-announcement-thread.js";
+import {
+  closeEventAnnouncementThread,
+  resolveEventReminderThread,
+} from "../services/event-announcement-thread.js";
 import { getSettingsService } from "../services/settings.js";
 import {
   buildApplicationAlreadyOpenEmbed,
@@ -421,22 +424,19 @@ async function handleEventButton(
     if (!Number.isSafeInteger(eventId) || eventId <= 0) {
       throw new Error("Invalid event ID.");
     }
-    const channel = interaction.channel;
-    if (!channel?.isTextBased() || !("send" in channel)) {
-      throw new Error("Event reminders can only be sent from a text channel.");
-    }
+    const thread = resolveEventReminderThread(interaction);
 
     const event = await api.post<EventView>(
       `api/events/${eventId}/remind`,
       {},
       interaction.user.id,
     );
-    await channel.send(buildEventReminderMessage(event));
+    await thread.send(buildEventReminderMessage(event));
 
     const successEmbed = createResponseEmbed(
       "success",
       "Reminder Sent",
-      `The reminder for event **#${eventId}** was posted in this channel.`,
+      `The reminder for event **#${eventId}** was posted in this thread.`,
       "GUILD EVENT",
     );
     await interaction.editReply({ embeds: [successEmbed] });

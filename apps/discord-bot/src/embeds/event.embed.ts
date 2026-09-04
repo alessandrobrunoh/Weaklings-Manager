@@ -8,20 +8,15 @@ import type { EventView, EventDetailView } from "../api/types.js";
 import { BOT_COLORS, createBaseEmbed } from "./theme.js";
 
 /**
- * Plain Discord announcement copy used together with the interactive event card in the parent
- * channel. The text keeps role mentions and timestamps compact, while the embed and components
- * provide the event details and management controls.
+ * Plain Discord announcement copy for the parent events channel.
+ *
+ * The parent message is only a ping + thread starter: no embed, buttons, or roster. Sign-up
+ * controls live exclusively in the discussion thread created from this message.
  * Discord's timestamp tokens render in each user's local timezone while keeping a compact
  * `time | date` layout.
  *
  * @example
- * const content = buildEventAnnouncementContent(event);
- * await channel.send({
- *   content,
- *   embeds: [buildEventEmbed(event)],
- *   components: buildEventThreadActionRows(event),
- *   allowedMentions: { roles: event.discord_role_ids },
- * });
+ * await channel.send(buildEventAnnouncementMessage(event));
  */
 export function buildEventAnnouncementContent(event: EventView): string {
   const massTimestamp = eventTimestamp(event, "mass");
@@ -43,6 +38,19 @@ export function buildEventAnnouncementContent(event: EventView): string {
 export interface EventReminderMessage {
   content: string;
   allowedMentions: { parse: []; roles?: string[] };
+}
+
+export type EventAnnouncementMessage = EventReminderMessage;
+
+/** Parent-channel payload: text and role mentions only, never embeds or components. */
+export function buildEventAnnouncementMessage(event: EventView): EventAnnouncementMessage {
+  const roleIds = [...new Set(event.discord_role_ids ?? [])];
+  return {
+    content: buildEventAnnouncementContent(event),
+    allowedMentions: roleIds.length > 0
+      ? { parse: [], roles: roleIds }
+      : { parse: [] },
+  };
 }
 
 export interface EventStartMessage {

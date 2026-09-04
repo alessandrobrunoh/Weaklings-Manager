@@ -10,11 +10,7 @@ import type {
   SplitDiscoveryBatch,
   SplitDiscordSync,
 } from "../api/types.js";
-import {
-  buildEventAnnouncementContent,
-  buildEventEmbed,
-  buildEventThreadActionRows,
-} from "../embeds/event.embed.js";
+import { buildEventAnnouncementMessage } from "../embeds/event.embed.js";
 import { buildBattleEmbed } from "../embeds/battle.embed.js";
 import {
   buildApplicationPanelComponents,
@@ -338,18 +334,10 @@ export class Poller {
         // current roster, including empty slots. A failed detail fetch is retried safely on the
         // next poll without leaving a partial announcement behind.
         const eventDetail = await this.api.get<EventDetailView>(`api/events/${event.id}`);
-        const roleIds = eventDetail.discord_role_ids ?? [];
-        // Keep the announcement in the parent channel actionable. Previously the parent message
-        // was text-only and the controls were posted only in the discussion thread, making the
-        // event impossible to manage for users who never opened the thread.
-        const announcementMessage = await channel.send({
-          content: buildEventAnnouncementContent(eventDetail),
-          embeds: [buildEventEmbed(eventDetail)],
-          components: buildEventThreadActionRows(eventDetail),
-          allowedMentions: roleIds.length > 0
-            ? { roles: roleIds }
-            : { parse: [] },
-        });
+        // Parent channel: ping + thread starter only. Roster and action buttons go in the thread.
+        const announcementMessage = await channel.send(
+          buildEventAnnouncementMessage(eventDetail),
+        );
         const thread = await createEventAnnouncementThread(
           announcementMessage,
           eventDetail,
