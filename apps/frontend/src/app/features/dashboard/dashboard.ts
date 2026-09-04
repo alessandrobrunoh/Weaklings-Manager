@@ -466,41 +466,37 @@ export class Dashboard {
   });
 
   protected readonly nextMass = computed(() => {
-    const events = this.recentEvents();
-    const liveOrScheduled =
-      events.find((e) => e.status === 'live' || e.status === 'scheduled') ?? events[0];
-
-    if (liveOrScheduled) {
-      const date = new Date(liveOrScheduled.event_date_utc);
-      const isToday =
-        !Number.isNaN(date.getTime()) && date.toDateString() === new Date().toDateString();
-      const timeStr = !Number.isNaN(date.getTime())
-        ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-        : '22:00';
-
+    const selected = selectNextMass(this.recentEvents());
+    if (!selected) {
       return {
-        id: liveOrScheduled.id,
-        title: liveOrScheduled.title || 'Launch Terry Grove',
-        dayLabel: isToday
-          ? 'TODAY'
-          : (date.toLocaleDateString([], { weekday: 'short' }).toUpperCase() || 'TODAY'),
-        time: timeStr,
-        compName: liveOrScheduled.comp_name || 'Brawl 10v10',
-        participantsText: liveOrScheduled.player_cap
-          ? `18 / ${liveOrScheduled.player_cap} participants`
-          : '18 / 20 participants',
-        raw: liveOrScheduled,
+        id: 1,
+        title: 'Launch Terry Grove',
+        dayLabel: 'TODAY',
+        time: '22:00',
+        compName: 'Brawl 10v10',
+        participantsText: '18 / 20 participants',
+        raw: null,
       };
     }
 
+    const massAt = eventMassAt(selected);
+    const isToday = massAt !== null && massAt.toDateString() === new Date().toDateString();
+    const timeStr = massAt
+      ? massAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+      : '22:00';
+
     return {
-      id: 1,
-      title: 'Launch Terry Grove',
-      dayLabel: 'TODAY',
-      time: '22:00',
-      compName: 'Brawl 10v10',
-      participantsText: '18 / 20 participants',
-      raw: null,
+      id: selected.id,
+      title: selected.title || 'Launch Terry Grove',
+      dayLabel: isToday
+        ? 'TODAY'
+        : (massAt?.toLocaleDateString([], { weekday: 'short' }).toUpperCase() || 'TODAY'),
+      time: timeStr,
+      compName: selected.comp_name || 'Brawl 10v10',
+      participantsText: selected.player_cap
+        ? `18 / ${selected.player_cap} participants`
+        : '18 / 20 participants',
+      raw: selected,
     };
   });
 
@@ -549,7 +545,7 @@ export class Dashboard {
   }
 
   private async loadSnapshot(): Promise<void> {
-    const [balance, guildSummary, pendingSplits, completedSplits, events] =
+    const [balance, guildSummary, pendingSplits, completedSplits, scheduledEvents, liveEvents] =
       await Promise.allSettled([
         firstValueFrom(this.api.get<BalanceSummary>('api/bank/balance')),
         firstValueFrom(this.api.get<GuildBankSummary>('api/bank/guild/summary')),
@@ -568,7 +564,22 @@ export class Dashboard {
           }),
         ),
         firstValueFrom(
-          this.api.get<PaginatedData<EventView>>('api/events', { page: 1, limit: 10 }),
+          this.api.get<PaginatedData<EventView>>('api/events', {
+            page: 1,
+            limit: 20,
+            status: 'scheduled',
+            sort: 'mass_time_utc',
+            order: 'asc',
+          }),
+        ),
+        firstValueFrom(
+          this.api.get<PaginatedData<EventView>>('api/events', {
+            page: 1,
+            limit: 10,
+            status: 'live',
+            sort: 'mass_time_utc',
+            order: 'asc',
+          }),
         ),
       ]);
 
@@ -584,9 +595,14 @@ export class Dashboard {
     if (completedSplits.status === 'fulfilled') {
       this.completedSplitCount.set(completedSplits.value.total_items);
     }
-    if (events.status === 'fulfilled') {
-      this.recentEvents.set(events.value.items);
+    const upcoming: EventView[] = [];
+    if (liveEvents.status === 'fulfilled') {
+      upcoming.push(...liveEvents.value.items);
     }
+    if (scheduledEvents.status === 'fulfilled') {
+      upcoming.push(...scheduledEvents.value.items);
+    }
+    this.recentEvents.set(upcoming);
   }
 
   formatCompactSilver(
@@ -630,4 +646,52 @@ export function formatCompactSilver(
     return `${sign}${(num / 1_000).toFixed(1)}k`;
   }
   return `${sign}${num.toLocaleString()}`;
+}
+
+/** Mass gather time for an event — the first clock time of that event day. */
+export function eventMassAt(event: EventView): Date | null {
+  const raw = event.mass_time_utc ?? event.event_date_utc;
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function eventStartAt(event: EventView): Date | null {
+  const raw = event.start_time_utc ?? event.event_date_utc;
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function byMassTime(left: EventView, right: EventView): number {
+  const leftTime = eventMassAt(left)?.getTime() ?? Number.POSITIVE_INFINITY;
+  const rightTime = eventMassAt(right)?.getTime() ?? Number.POSITIVE_INFINITY;
+  return leftTime - rightTime;
+}
+
+/**
+ * Next mass is the live event if one is running, otherwise the soonest scheduled
+ * event whose start has not passed yet — on that day, the first (mass) time.
+ */
+export function selectNextMass(
+  events: readonly EventView[],
+  now: Date = new Date(),
+): EventView | null {
+  const nowMs = now.getTime();
+  const actionable = events.filter(
+    (event) => event.status === 'live' || event.status === 'scheduled',
+  );
+
+  const live = actionable.filter((event) => event.status === 'live').sort(byMassTime);
+  if (live[0]) {
+    return live[0];
+  }
+
+  const upcoming = actionable
+    .filter((event) => event.status === 'scheduled')
+    .filter((event) => {
+      const startAt = eventStartAt(event);
+      return startAt !== null && startAt.getTime() >= nowMs;
+    })
+    .sort(byMassTime);
+
+  return upcoming[0] ?? null;
 }
