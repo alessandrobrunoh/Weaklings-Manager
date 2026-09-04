@@ -174,14 +174,19 @@ describe('layoutDestinyRadial', () => {
     expect(layout.edges.some((edge) => edge.id.includes('weapon:bows->weapon:2H_BOW_HELL'))).toBe(
       true,
     );
+    const bows = layout.nodes.find((node) => node.id === 'weapon:bows');
+    expect(bows && wailing).toBeTruthy();
+    if (!bows || !wailing) return;
+    const familyR = Math.hypot(bows.x - layout.cx, bows.y - layout.cy);
+    const leafR = Math.hypot(wailing.x - layout.cx, wailing.y - layout.cy);
+    expect(leafR).toBeGreaterThan(familyR * 1.5);
   });
 
-  it('copies a leaf icon onto its family hub', () => {
+  it('copies a T8 leaf icon onto its family hub', () => {
     const bow = item('2H_BOW', 'Bow', 'weapon', 0);
-    bow.icon = 'https://render.example/bow.png';
     const layout = layoutDestinyRadial(buildDestinyBoardTree([bow]));
-    expect(layout.nodes.find((node) => node.id === 'weapon:2H_BOW')?.icon).toBe(bow.icon);
-    expect(layout.nodes.find((node) => node.id === 'weapon:bows')?.icon).toBe(bow.icon);
+    expect(layout.nodes.find((node) => node.id === 'weapon:2H_BOW')?.icon).toContain('T8_2H_BOW');
+    expect(layout.nodes.find((node) => node.id === 'weapon:bows')?.icon).toContain('T8_2H_BOW');
   });
 });
 

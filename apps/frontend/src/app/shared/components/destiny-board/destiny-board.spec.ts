@@ -59,20 +59,20 @@ describe('DestinyBoard', () => {
   }
 
   it('zooms the map from the overlay controls', () => {
-    const scene = () => fixture.nativeElement.querySelector('.destiny-scene') as HTMLElement;
-    expect(scene().style.transform).toContain('scale(1.7)');
+    const svg = () => fixture.nativeElement.querySelector('svg') as SVGSVGElement;
+    expect(svg().getAttribute('viewBox')?.trim()).toBe('0 0 1600 1600');
     const zoomIn = [...fixture.nativeElement.querySelectorAll('button')].find(
       (button) => (button as HTMLButtonElement).getAttribute('aria-label') === 'Zoom in',
     ) as HTMLButtonElement;
     zoomIn.click();
     fixture.detectChanges();
-    expect(scene().style.transform).toContain('scale(2.125)');
+    expect(svg().getAttribute('viewBox')?.trim()).toBe('160 160 1280 1280');
     const reset = [...fixture.nativeElement.querySelectorAll('button')].find(
       (button) => (button as HTMLButtonElement).getAttribute('aria-label') === 'Fit',
     ) as HTMLButtonElement;
     reset.click();
     fixture.detectChanges();
-    expect(scene().style.transform).toContain('scale(1.7)');
+    expect(svg().getAttribute('viewBox')?.trim()).toBe('0 0 1600 1600');
   });
 
   it('renders a radial map with Weapons and Armor hubs', () => {
@@ -82,9 +82,7 @@ describe('DestinyBoard', () => {
     expect(text).toContain('Armor');
     expect(text).toContain('Bows');
     expect(nodeButton('Wailing Bow')).toBeTruthy();
-    const icon = fixture.nativeElement.querySelector(
-      'image[href="https://render.example/wailing.png"]',
-    );
+    const icon = fixture.nativeElement.querySelector('image[href*="T8_2H_BOW_HELL"]');
     expect(icon).toBeTruthy();
   });
 
