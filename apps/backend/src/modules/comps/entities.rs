@@ -164,6 +164,9 @@ pub mod build_item {
         pub openalbion_item_tier: Option<String>,
         /// Albion item quality (`1` Normal through `5` Masterpiece). Defaults to Excellent (`4`).
         pub openalbion_item_quality: i16,
+        /// Albion enchantment level (`0` plain through `4`). Independent of quality: together
+        /// with the tier, this is what fixes the item's Item Power.
+        pub openalbion_item_enchantment: i16,
         /// The timestamp when the build item was created.
         pub created_at: DateTimeWithTimeZone,
     }

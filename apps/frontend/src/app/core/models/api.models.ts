@@ -1092,6 +1092,11 @@ export interface BuildItemSlot {
   openalbion_item_tier?: string | null;
   /** Albion quality 1..=5. Omitted on older rows; treat as Excellent (4). */
   openalbion_item_quality?: number | null;
+  /**
+   * Albion enchantment 0..=4. Omitted on rows saved before enchantment was recorded; treat as
+   * plain (0). With the tier, this is what fixes the item's Item Power.
+   */
+  openalbion_item_enchantment?: number | null;
 }
 
 export interface BuildSummary {

@@ -29,6 +29,10 @@ import type {
 } from '../../core/models/api.models';
 import { filterAlbionEquipmentCatalog } from '../../shared/data/albion-equipment-catalog';
 import {
+  DEFAULT_ALBION_ITEM_ENCHANTMENT,
+  normalizeAlbionItemEnchantment,
+} from '../../shared/data/albion-item-enchantment';
+import {
   DEFAULT_ALBION_ITEM_QUALITY,
   normalizeAlbionItemQuality,
 } from '../../shared/data/albion-item-quality';
@@ -275,6 +279,7 @@ const ITEM_TIERS = [
                 [editingSlot]="editingSlotFor(activeLoadout())"
                 [draftTier]="draftTier()"
                 [draftQuality]="draftQuality()"
+                [draftEnchantment]="draftEnchantment()"
                 [draftSearch]="draftSearch()"
                 [draftItemId]="draftItemId()"
                 [searchResults]="searchResults()"
@@ -284,6 +289,7 @@ const ITEM_TIERS = [
                 (slotToggle)="onSlotToggle(activeLoadout(), $event)"
                 (tierChange)="onDraftTierChangeValue($event)"
                 (qualityChange)="onDraftQualityChangeValue($event)"
+                (enchantmentChange)="onDraftEnchantmentChangeValue($event)"
                 (searchChange)="onDraftSearchChangeValue($event)"
                 (itemSelect)="onDraftItemChangeValue($event)"
                 (saveSlot)="saveSlot(activeLoadout(), $event)"
@@ -678,6 +684,7 @@ export class CompBuildDetailPage {
   protected readonly editing = signal<{ loadout: BuildLoadout; slot: BuildSlot } | null>(null);
   protected readonly draftTier = signal('T8');
   protected readonly draftQuality = signal(DEFAULT_ALBION_ITEM_QUALITY);
+  protected readonly draftEnchantment = signal<number>(DEFAULT_ALBION_ITEM_ENCHANTMENT);
   protected readonly draftSearch = signal('');
   protected readonly draftItemId = signal('');
   protected readonly draftItemName = signal('');
@@ -890,6 +897,9 @@ export class CompBuildDetailPage {
     this.editing.set({ loadout, slot });
     this.draftTier.set(current?.openalbion_item_tier ?? 'T8');
     this.draftQuality.set(normalizeAlbionItemQuality(current?.openalbion_item_quality));
+    this.draftEnchantment.set(
+      normalizeAlbionItemEnchantment(current?.openalbion_item_enchantment),
+    );
     this.draftSearch.set(current?.openalbion_item_name ?? '');
     this.draftItemId.set(current ? String(current.openalbion_item_id) : '');
     this.draftItemName.set(current?.openalbion_item_name ?? '');
@@ -919,6 +929,10 @@ export class CompBuildDetailPage {
 
   protected onDraftQualityChangeValue(quality: number): void {
     this.draftQuality.set(normalizeAlbionItemQuality(quality));
+  }
+
+  protected onDraftEnchantmentChangeValue(enchantment: number): void {
+    this.draftEnchantment.set(normalizeAlbionItemEnchantment(enchantment));
   }
 
   protected onDraftSearchChangeValue(query: string): void {
@@ -969,6 +983,7 @@ export class CompBuildDetailPage {
           openalbion_item_icon: this.draftItemIcon(),
           openalbion_item_tier: this.draftTier(),
           openalbion_item_quality: this.draftQuality(),
+          openalbion_item_enchantment: this.draftEnchantment(),
         }),
       );
       // Abilities picked in the same popover, applied right after the item exists to fill —

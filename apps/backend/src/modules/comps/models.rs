@@ -64,6 +64,10 @@ pub struct BuildItemView {
     /// Albion item quality (`1` Normal through `5` Masterpiece). Defaults to Excellent (`4`).
     #[schema(example = 4)]
     pub openalbion_item_quality: i16,
+    /// Albion enchantment level (`0` plain through `4`). Together with the tier this is what
+    /// fixes the item's Item Power.
+    #[schema(example = 2)]
+    pub openalbion_item_enchantment: i16,
 }
 
 /// The abilities chosen on one equipped item, keyed by 1-based slot index.
@@ -340,6 +344,9 @@ pub struct CreateBuildItemRequest {
     /// Albion item quality. Omitted values become Excellent (`4`).
     #[schema(example = 4)]
     pub openalbion_item_quality: Option<i16>,
+    /// Albion enchantment level. Omitted values become plain (`0`).
+    #[schema(example = 2)]
+    pub openalbion_item_enchantment: Option<i16>,
 }
 
 /// Request body to upsert a build item.
@@ -365,6 +372,9 @@ pub struct UpsertBuildItemRequest {
     /// Albion item quality. Omitted values become Excellent (`4`).
     #[schema(example = 4)]
     pub openalbion_item_quality: Option<i16>,
+    /// Albion enchantment level. Omitted values become plain (`0`).
+    #[schema(example = 2)]
+    pub openalbion_item_enchantment: Option<i16>,
 }
 
 /// Request body to create a comp.

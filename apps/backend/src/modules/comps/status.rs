@@ -208,6 +208,28 @@ pub fn parse_item_quality(value: Option<i16>) -> Result<i16, String> {
     }
 }
 
+/// Plain, unenchanted gear — the value every pre-existing build item carries.
+pub const DEFAULT_ITEM_ENCHANTMENT: i16 = 0;
+
+/// Accepts an optional enchantment from a request body and rejects anything outside `0..=4`.
+///
+/// Omitted values become [`DEFAULT_ITEM_ENCHANTMENT`]. Unlike quality the floor is zero, because
+/// plain gear is a real choice rather than a missing one.
+///
+/// # Errors
+///
+/// Returns a human-readable message when `value` is present but not in `0..=4`.
+pub fn parse_item_enchantment(value: Option<i16>) -> Result<i16, String> {
+    let enchantment = value.unwrap_or(DEFAULT_ITEM_ENCHANTMENT);
+    if (0..=4).contains(&enchantment) {
+        Ok(enchantment)
+    } else {
+        Err(format!(
+            "item enchantment must be between 0 and 4, got {enchantment}"
+        ))
+    }
+}
+
 /// Rewrites an Albion render URL so its `quality` query matches `quality`.
 ///
 /// Catalog icons are stored with `quality=1`. Builds persist a separate quality column, so
@@ -236,7 +258,7 @@ pub fn icon_url_with_quality(icon: Option<&str>, quality: i16) -> Option<String>
 
 #[cfg(test)]
 mod item_quality_tests {
-    use super::{icon_url_with_quality, parse_item_quality};
+    use super::{icon_url_with_quality, parse_item_enchantment, parse_item_quality};
 
     #[test]
     fn omitted_quality_is_excellent() {
@@ -246,6 +268,23 @@ mod item_quality_tests {
     #[test]
     fn masterpiece_is_accepted() {
         assert_eq!(parse_item_quality(Some(5)).unwrap(), 5);
+    }
+
+    #[test]
+    fn omitted_enchantment_is_plain() {
+        assert_eq!(parse_item_enchantment(None).unwrap(), 0);
+    }
+
+    #[test]
+    fn plain_and_fully_enchanted_are_both_accepted() {
+        assert_eq!(parse_item_enchantment(Some(0)).unwrap(), 0);
+        assert_eq!(parse_item_enchantment(Some(4)).unwrap(), 4);
+    }
+
+    #[test]
+    fn an_enchantment_outside_the_ladder_is_rejected() {
+        assert!(parse_item_enchantment(Some(5)).is_err());
+        assert!(parse_item_enchantment(Some(-1)).is_err());
     }
 
     #[test]

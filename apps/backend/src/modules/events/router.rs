@@ -52,6 +52,7 @@ pub fn router() -> Router {
         .route("/discord-roles", get(list_event_discord_roles))
         .route("/{id}/signup-options", get(get_event_signup_options))
         .route("/{id}/roster", get(get_roster))
+        .route("/{id}/roster/suggestions", get(get_roster_suggestions))
         .route("/{id}/roster/live", get(roster_live))
         .route(
             "/{id}/roster/seats/{seat_key}",
@@ -207,6 +208,40 @@ async fn get_roster(
     Ok(Json(ApiResponse::new(
         EventService::new().get_roster(&db, id).await?,
     )))
+}
+
+/// Previews an Item-Power-optimal roster assignment without applying it.
+///
+/// Gated the same way as [`combat::readiness.view`] rather than open to every member: it scores
+/// the whole guild's specializations against every open seat at once, which is roster management
+/// rather than something a member needs about themselves.
+#[utoipa::path(
+    get,
+    path = "/api/events/{id}/roster/suggestions",
+    tag = "events",
+    summary = "Preview an optimal roster assignment",
+    description = "Solves every unassigned participant against every open seat with the Hungarian \
+                   algorithm, maximising total Item-Power readiness plus signup preference. Never \
+                   applied automatically — `POST .../roster/auto-fill` with \
+                   `strategy: \"spec_optimal\"` applies the same solve for real.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    responses(
+        (status = 200, description = "Proposed assignment", body = crate::responses::ApiResponseRosterSuggestions),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Missing combat.readiness.view", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails)
+    )
+)]
+async fn get_roster_suggestions(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<crate::modules::combat::fit::Assignment>>, AppError> {
+    user.require(&perms, Permission::CombatReadinessView).await?;
+    let suggestions = EventService::new().get_roster_suggestions(&db, id).await?;
+    Ok(Json(ApiResponse::new(suggestions)))
 }
 
 async fn assign_roster_seat(

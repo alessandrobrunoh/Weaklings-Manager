@@ -1,0 +1,9148 @@
+{
+ "dataset_version": {
+  "source": "ao-data/ao-bin-dumps",
+  "dumps_commit": "c726131a2d49c919e07b703e060838b332701dbf",
+  "dumps_committed_at": "2026-09-03T11:47:54Z",
+  "generated_at": "2026-09-04T14:59:20+00:00",
+  "generator_version": 1
+ },
+ "quality_item_power": {
+  "1": 0,
+  "2": 20,
+  "3": 40,
+  "4": 60,
+  "5": 100
+ },
+ "item_power_progression": {
+  "mainhand_1h": {
+   "armorbase": 100,
+   "ccrbase": 100,
+   "attackdamageprogression": 1.0825,
+   "abilitypowerprogression": 1.0825,
+   "ccpowerprogression": 1.0474,
+   "hitpointsprogression": 1.06,
+   "energyprogression": 1.0918,
+   "armorprogression": 1.03,
+   "crowdcontrolresistanceprogression": 1.0564,
+   "fishingspeedprogression": 1.3,
+   "multipliers": {
+    "attackrangebonus": 1,
+    "attackspeedbonus": 1,
+    "bonusccdurationvsmobs": 1,
+    "bonusccdurationvsplayers": 1,
+    "bonusdamagevsmobs": 1,
+    "bonusdamagevsplayers": 1,
+    "bonusdefensevsmobs": 1,
+    "bonusdefensevsplayers": 1,
+    "energycostreduction": 1,
+    "energyregenerationbonus": 1,
+    "healbonus": 1,
+    "healmodifier": 1,
+    "hitpointsregenerationbonus": 1,
+    "magicattackdamagebonus": 1,
+    "magicspelldamagebonus": 1,
+    "movespeedbonus": 1,
+    "physicalattackdamagebonus": 1,
+    "physicalspelldamagebonus": 1,
+    "threatbonus": 1
+   },
+   "flags": {
+    "magiccasttimereduction": false,
+    "magiccooldownreduction": false
+   }
+  },
+  "mainhand_2h": {
+   "armorbase": 100,
+   "ccrbase": 100,
+   "attackdamageprogression": 1.0918,
+   "abilitypowerprogression": 1.0918,
+   "ccpowerprogression": 1.0564,
+   "hitpointsprogression": 1.06,
+   "energyprogression": 1.0918,
+   "armorprogression": 1.03,
+   "crowdcontrolresistanceprogression": 1.0564,
+   "fishingspeedprogression": 1.3,
+   "multipliers": {
+    "attackrangebonus": 1,
+    "attackspeedbonus": 1,
+    "bonusccdurationvsmobs": 1,
+    "bonusccdurationvsplayers": 1,
+    "bonusdamagevsmobs": 1,
+    "bonusdamagevsplayers": 1,
+    "bonusdefensevsmobs": 1,
+    "bonusdefensevsplayers": 1,
+    "energycostreduction": 1,
+    "energyregenerationbonus": 1,
+    "healbonus": 1,
+    "healmodifier": 1,
+    "hitpointsregenerationbonus": 1,
+    "magicattackdamagebonus": 1,
+    "magicspelldamagebonus": 1,
+    "movespeedbonus": 1,
+    "physicalattackdamagebonus": 1,
+    "physicalspelldamagebonus": 1,
+    "threatbonus": 1.16
+   },
+   "flags": {
+    "magiccasttimereduction": false,
+    "magiccooldownreduction": false
+   }
+  },
+  "offhand": {
+   "armorbase": 100,
+   "ccrbase": 100,
+   "attackdamageprogression": 1.0918,
+   "abilitypowerprogression": 1.0918,
+   "ccpowerprogression": 1.0564,
+   "hitpointsprogression": 1.06,
+   "energyprogression": 1.0918,
+   "armorprogression": 1.03,
+   "crowdcontrolresistanceprogression": 1.0564,
+   "fishingspeedprogression": 1.3,
+   "multipliers": {
+    "attackrangebonus": 1,
+    "attackspeedbonus": 1.16,
+    "bonusccdurationvsmobs": 1.16,
+    "bonusccdurationvsplayers": 1.16,
+    "bonusdamagevsmobs": 1.16,
+    "bonusdamagevsplayers": 1.16,
+    "bonusdefensevsmobs": 1.16,
+    "bonusdefensevsplayers": 1.16,
+    "energycostreduction": 1.16,
+    "energyregenerationbonus": 1,
+    "healbonus": 1.16,
+    "healmodifier": 1.16,
+    "hitpointsregenerationbonus": 1,
+    "magicattackdamagebonus": 1.16,
+    "magicspelldamagebonus": 1.16,
+    "movespeedbonus": 1,
+    "physicalattackdamagebonus": 1.16,
+    "physicalspelldamagebonus": 1.16,
+    "threatbonus": 1.16
+   },
+   "flags": {
+    "magiccasttimereduction": true,
+    "magiccooldownreduction": true
+   }
+  },
+  "head": {
+   "armorbase": 100,
+   "ccrbase": 100,
+   "attackdamageprogression": 1.0918,
+   "abilitypowerprogression": 1.0918,
+   "ccpowerprogression": 1.0564,
+   "hitpointsprogression": 1.06,
+   "energyprogression": 1.0918,
+   "armorprogression": 1.03,
+   "crowdcontrolresistanceprogression": 1.0564,
+   "fishingspeedprogression": 1.3,
+   "multipliers": {
+    "attackrangebonus": 1,
+    "attackspeedbonus": 1,
+    "bonusccdurationvsmobs": 1,
+    "bonusccdurationvsplayers": 1,
+    "bonusdamagevsmobs": 1,
+    "bonusdamagevsplayers": 1,
+    "bonusdefensevsmobs": 1,
+    "bonusdefensevsplayers": 1,
+    "energycostreduction": 1,
+    "energyregenerationbonus": 1,
+    "healbonus": 1,
+    "healmodifier": 1,
+    "hitpointsregenerationbonus": 1,
+    "magicattackdamagebonus": 1,
+    "magicspelldamagebonus": 1,
+    "movespeedbonus": 1,
+    "physicalattackdamagebonus": 1,
+    "physicalspelldamagebonus": 1,
+    "threatbonus": 1
+   },
+   "flags": {
+    "magiccasttimereduction": false,
+    "magiccooldownreduction": false
+   }
+  },
+  "armor": {
+   "armorbase": 100,
+   "ccrbase": 100,
+   "attackdamageprogression": 1.0918,
+   "abilitypowerprogression": 1.0918,
+   "ccpowerprogression": 1.0564,
+   "hitpointsprogression": 1.06,
+   "energyprogression": 1.0918,
+   "armorprogression": 1.03,
+   "crowdcontrolresistanceprogression": 1.0564,
+   "fishingspeedprogression": 1.3,
+   "multipliers": {
+    "attackrangebonus": 1,
+    "attackspeedbonus": 1,
+    "bonusccdurationvsmobs": 1,
+    "bonusccdurationvsplayers": 1,
+    "bonusdamagevsmobs": 1,
+    "bonusdamagevsplayers": 1,
+    "bonusdefensevsmobs": 1,
+    "bonusdefensevsplayers": 1,
+    "energycostreduction": 1,
+    "energyregenerationbonus": 1,
+    "healbonus": 1,
+    "healmodifier": 1,
+    "hitpointsregenerationbonus": 1,
+    "magicattackdamagebonus": 1,
+    "magicspelldamagebonus": 1,
+    "movespeedbonus": 1,
+    "physicalattackdamagebonus": 1,
+    "physicalspelldamagebonus": 1,
+    "threatbonus": 1
+   },
+   "flags": {
+    "magiccasttimereduction": false,
+    "magiccooldownreduction": false
+   }
+  },
+  "shoes": {
+   "armorbase": 100,
+   "ccrbase": 100,
+   "attackdamageprogression": 1.0918,
+   "abilitypowerprogression": 1.0918,
+   "ccpowerprogression": 1.0564,
+   "hitpointsprogression": 1.06,
+   "energyprogression": 1.0918,
+   "armorprogression": 1.03,
+   "crowdcontrolresistanceprogression": 1.0564,
+   "fishingspeedprogression": 1.3,
+   "multipliers": {
+    "attackrangebonus": 1,
+    "attackspeedbonus": 1,
+    "bonusccdurationvsmobs": 1,
+    "bonusccdurationvsplayers": 1,
+    "bonusdamagevsmobs": 1,
+    "bonusdamagevsplayers": 1,
+    "bonusdefensevsmobs": 1,
+    "bonusdefensevsplayers": 1,
+    "energycostreduction": 1,
+    "energyregenerationbonus": 1,
+    "healbonus": 1,
+    "healmodifier": 1,
+    "hitpointsregenerationbonus": 1,
+    "magicattackdamagebonus": 1,
+    "magicspelldamagebonus": 1,
+    "movespeedbonus": 1,
+    "physicalattackdamagebonus": 1,
+    "physicalspelldamagebonus": 1,
+    "threatbonus": 1
+   },
+   "flags": {
+    "magiccasttimereduction": false,
+    "magiccooldownreduction": false
+   }
+  },
+  "bag": {
+   "armorbase": 100,
+   "ccrbase": 100,
+   "attackdamageprogression": 1.0918,
+   "abilitypowerprogression": 1.0918,
+   "ccpowerprogression": 1.0564,
+   "hitpointsprogression": 1.06,
+   "energyprogression": 1.0918,
+   "armorprogression": 1.03,
+   "crowdcontrolresistanceprogression": 1.0564,
+   "fishingspeedprogression": 1.3,
+   "multipliers": {
+    "attackrangebonus": 1,
+    "attackspeedbonus": 1,
+    "bonusccdurationvsmobs": 1,
+    "bonusccdurationvsplayers": 1,
+    "bonusdamagevsmobs": 1,
+    "bonusdamagevsplayers": 1,
+    "bonusdefensevsmobs": 1,
+    "bonusdefensevsplayers": 1,
+    "energycostreduction": 1,
+    "energyregenerationbonus": 1,
+    "healbonus": 1,
+    "healmodifier": 1,
+    "hitpointsregenerationbonus": 1,
+    "magicattackdamagebonus": 1,
+    "magicspelldamagebonus": 1,
+    "movespeedbonus": 1,
+    "physicalattackdamagebonus": 1,
+    "physicalspelldamagebonus": 1,
+    "threatbonus": 1
+   },
+   "flags": {
+    "magiccasttimereduction": false,
+    "magiccooldownreduction": false
+   }
+  },
+  "cape": {
+   "armorbase": 100,
+   "ccrbase": 100,
+   "attackdamageprogression": 1.0918,
+   "abilitypowerprogression": 1.0918,
+   "ccpowerprogression": 1.0564,
+   "hitpointsprogression": 1.06,
+   "energyprogression": 1.0918,
+   "armorprogression": 1.03,
+   "crowdcontrolresistanceprogression": 1.0564,
+   "fishingspeedprogression": 1.3,
+   "multipliers": {
+    "attackrangebonus": 1,
+    "attackspeedbonus": 1,
+    "bonusccdurationvsmobs": 1,
+    "bonusccdurationvsplayers": 1,
+    "bonusdamagevsmobs": 1,
+    "bonusdamagevsplayers": 1,
+    "bonusdefensevsmobs": 1,
+    "bonusdefensevsplayers": 1,
+    "energycostreduction": 1,
+    "energyregenerationbonus": 1,
+    "healbonus": 1,
+    "healmodifier": 1,
+    "hitpointsregenerationbonus": 1,
+    "magicattackdamagebonus": 1,
+    "magicspelldamagebonus": 1,
+    "movespeedbonus": 1,
+    "physicalattackdamagebonus": 1,
+    "physicalspelldamagebonus": 1,
+    "threatbonus": 1
+   },
+   "flags": {
+    "magiccasttimereduction": false,
+    "magiccooldownreduction": false
+   }
+  },
+  "mount": {
+   "armorbase": 100,
+   "ccrbase": 100,
+   "attackdamageprogression": 1.0918,
+   "abilitypowerprogression": 1.0918,
+   "ccpowerprogression": 1.0564,
+   "hitpointsprogression": 1.06,
+   "energyprogression": 1.0918,
+   "armorprogression": 1.03,
+   "crowdcontrolresistanceprogression": 1.0564,
+   "fishingspeedprogression": 1.3,
+   "multipliers": {
+    "attackrangebonus": 1,
+    "attackspeedbonus": 1,
+    "bonusccdurationvsmobs": 1,
+    "bonusccdurationvsplayers": 1,
+    "bonusdamagevsmobs": 1,
+    "bonusdamagevsplayers": 1,
+    "bonusdefensevsmobs": 1,
+    "bonusdefensevsplayers": 1,
+    "energycostreduction": 1,
+    "energyregenerationbonus": 1,
+    "healbonus": 1,
+    "healmodifier": 1,
+    "hitpointsregenerationbonus": 1,
+    "magicattackdamagebonus": 1,
+    "magicspelldamagebonus": 1,
+    "movespeedbonus": 1,
+    "physicalattackdamagebonus": 1,
+    "physicalspelldamagebonus": 1,
+    "threatbonus": 1
+   },
+   "flags": {
+    "magiccasttimereduction": false,
+    "magiccooldownreduction": false
+   }
+  },
+  "potion": {
+   "armorbase": 100,
+   "ccrbase": 100,
+   "attackdamageprogression": 1.0918,
+   "abilitypowerprogression": 1.0918,
+   "ccpowerprogression": 1.0564,
+   "hitpointsprogression": 1.06,
+   "energyprogression": 1.0918,
+   "armorprogression": 1.03,
+   "crowdcontrolresistanceprogression": 1.0564,
+   "fishingspeedprogression": 1.3,
+   "multipliers": {
+    "attackrangebonus": 1,
+    "attackspeedbonus": 1,
+    "bonusccdurationvsmobs": 1,
+    "bonusccdurationvsplayers": 1,
+    "bonusdamagevsmobs": 1,
+    "bonusdamagevsplayers": 1,
+    "bonusdefensevsmobs": 1,
+    "bonusdefensevsplayers": 1,
+    "energycostreduction": 1,
+    "energyregenerationbonus": 1,
+    "healbonus": 1,
+    "healmodifier": 1,
+    "hitpointsregenerationbonus": 1,
+    "magicattackdamagebonus": 1,
+    "magicspelldamagebonus": 1,
+    "movespeedbonus": 1,
+    "physicalattackdamagebonus": 1,
+    "physicalspelldamagebonus": 1,
+    "threatbonus": 1
+   },
+   "flags": {
+    "magiccasttimereduction": false,
+    "magiccooldownreduction": false
+   }
+  },
+  "food": {
+   "armorbase": 100,
+   "ccrbase": 100,
+   "attackdamageprogression": 1.0918,
+   "abilitypowerprogression": 1.0918,
+   "ccpowerprogression": 1.0564,
+   "hitpointsprogression": 1.06,
+   "energyprogression": 1.0918,
+   "armorprogression": 1.03,
+   "crowdcontrolresistanceprogression": 1.0564,
+   "fishingspeedprogression": 1.3,
+   "multipliers": {
+    "attackrangebonus": 1,
+    "attackspeedbonus": 1,
+    "bonusccdurationvsmobs": 1,
+    "bonusccdurationvsplayers": 1,
+    "bonusdamagevsmobs": 1,
+    "bonusdamagevsplayers": 1,
+    "bonusdefensevsmobs": 1,
+    "bonusdefensevsplayers": 1,
+    "energycostreduction": 1,
+    "energyregenerationbonus": 1,
+    "healbonus": 1,
+    "healmodifier": 1,
+    "hitpointsregenerationbonus": 1,
+    "magicattackdamagebonus": 1,
+    "magicspelldamagebonus": 1,
+    "movespeedbonus": 1,
+    "physicalattackdamagebonus": 1,
+    "physicalspelldamagebonus": 1,
+    "threatbonus": 1
+   },
+   "flags": {
+    "magiccasttimereduction": false,
+    "magiccooldownreduction": false
+   }
+  },
+  "transformation": {
+   "armorbase": 100,
+   "ccrbase": 100,
+   "attackdamageprogression": 1.0918,
+   "abilitypowerprogression": 1.0918,
+   "ccpowerprogression": 1.0564,
+   "hitpointsprogression": 1.06,
+   "energyprogression": 1.0918,
+   "armorprogression": 1.03,
+   "crowdcontrolresistanceprogression": 1.0564,
+   "fishingspeedprogression": 1.3,
+   "multipliers": {
+    "attackrangebonus": 1,
+    "attackspeedbonus": 1,
+    "bonusccdurationvsmobs": 1,
+    "bonusccdurationvsplayers": 1,
+    "bonusdamagevsmobs": 1,
+    "bonusdamagevsplayers": 1,
+    "bonusdefensevsmobs": 1.16,
+    "bonusdefensevsplayers": 1.16,
+    "energycostreduction": 1,
+    "energyregenerationbonus": 1,
+    "healbonus": 1,
+    "healmodifier": 1,
+    "hitpointsregenerationbonus": 1,
+    "magicattackdamagebonus": 1,
+    "magicspelldamagebonus": 1,
+    "movespeedbonus": 1,
+    "physicalattackdamagebonus": 1,
+    "physicalspelldamagebonus": 1,
+    "threatbonus": 1.16
+   },
+   "flags": {
+    "magiccasttimereduction": false,
+    "magiccooldownreduction": false
+   }
+  },
+  "legendaryitemtraits": {
+   "armorbase": 100,
+   "ccrbase": 100,
+   "attackdamageprogression": 1.0918,
+   "abilitypowerprogression": 1.0918,
+   "ccpowerprogression": 1.0564,
+   "hitpointsprogression": 1.06,
+   "energyprogression": 1.0918,
+   "armorprogression": 1.03,
+   "crowdcontrolresistanceprogression": 1.0564,
+   "fishingspeedprogression": 1.3,
+   "multipliers": {
+    "attackrangebonus": 1,
+    "attackspeedbonus": 1,
+    "bonusccdurationvsmobs": 1,
+    "bonusccdurationvsplayers": 1,
+    "bonusdamagevsmobs": 1,
+    "bonusdamagevsplayers": 1,
+    "bonusdefensevsmobs": 1,
+    "bonusdefensevsplayers": 1,
+    "energycostreduction": 1,
+    "energyregenerationbonus": 1,
+    "healbonus": 1,
+    "healmodifier": 1,
+    "hitpointsregenerationbonus": 1,
+    "magicattackdamagebonus": 1,
+    "magicspelldamagebonus": 1,
+    "movespeedbonus": 1,
+    "physicalattackdamagebonus": 1,
+    "physicalspelldamagebonus": 1,
+    "threatbonus": 1.16
+   },
+   "flags": {
+    "magiccasttimereduction": false,
+    "magiccooldownreduction": false
+   }
+  }
+ },
+ "stat_shares": {
+  "armor": {
+   "head": 0,
+   "armor": 1.0,
+   "shoes": 0,
+   "mainhand": 0,
+   "cape": 0,
+   "shield": 0,
+   "towershield": 0,
+   "skullshield": 0,
+   "spikedshield": 0,
+   "avalonshield": 0,
+   "torch": 0,
+   "horn": 0,
+   "cane": 0,
+   "lamp": 0,
+   "talisman": 0,
+   "book": 0,
+   "orb": 0,
+   "demonskull": 0,
+   "totem": 0,
+   "censer": 0,
+   "crystalshield": 0,
+   "crystaltorch": 0,
+   "crystalbook": 0,
+   "transformation": 1.0,
+   "prototype": 0
+  },
+  "ccr": {
+   "head": 0,
+   "armor": 1.0,
+   "shoes": 0,
+   "mainhand": 0,
+   "cape": 0,
+   "shield": 0.6,
+   "towershield": 0,
+   "skullshield": 0,
+   "spikedshield": 0,
+   "avalonshield": 0,
+   "torch": 0,
+   "horn": 0,
+   "cane": 0,
+   "lamp": 0,
+   "talisman": 1.8,
+   "book": 0,
+   "orb": 0,
+   "demonskull": 0,
+   "totem": 0,
+   "censer": 0,
+   "crystalshield": 0,
+   "crystaltorch": -1.2,
+   "crystalbook": 0,
+   "transformation": 1.0,
+   "prototype": 0
+  },
+  "hitpoints": {
+   "head": 0.25,
+   "armor": 0.5,
+   "shoes": 0.25,
+   "mainhand": 0,
+   "cape": 0,
+   "shield": 0,
+   "towershield": 0,
+   "skullshield": 0,
+   "spikedshield": 0,
+   "avalonshield": 0,
+   "torch": 0,
+   "horn": 0,
+   "cane": 0,
+   "lamp": 0,
+   "talisman": 0,
+   "book": 0,
+   "orb": 0,
+   "demonskull": 0,
+   "totem": 0.25,
+   "censer": 0,
+   "crystalshield": 0,
+   "crystaltorch": 0,
+   "crystalbook": 0,
+   "transformation": 1.0,
+   "prototype": 0.125
+  },
+  "energy": {
+   "head": 0.5,
+   "armor": 0.25,
+   "shoes": 0.15,
+   "mainhand": 0,
+   "cape": 0.1,
+   "shield": 0,
+   "towershield": 0,
+   "skullshield": 0,
+   "spikedshield": 0,
+   "avalonshield": 0,
+   "torch": 0,
+   "horn": 0,
+   "cane": 0,
+   "lamp": 0,
+   "talisman": 0,
+   "book": 0.15,
+   "orb": 0.5,
+   "demonskull": 0,
+   "totem": 0,
+   "censer": 0,
+   "crystalshield": 0.125,
+   "crystaltorch": 0,
+   "crystalbook": 0,
+   "transformation": 1.0,
+   "prototype": 0
+  }
+ },
+ "ability_power_progression": {
+  "basedamage": 100,
+  "baseload": 25,
+  "resistanceprogression": 0.336554399,
+  "hitpointprogression": 0.663445601,
+  "loadprogression": 2.264101591,
+  "ccdurationfactorplayers": 0.7,
+  "ccdurationfactormobs": 0.5
+ },
+ "spec_nodes": {
+  "COMBAT_ARCANESTAFFS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_ARCANESTAFF",
+      "T?_2H_ARCANESTAFF",
+      "T?_2H_ENIGMATICSTAFF",
+      "T?_MAIN_ARCANESTAFF_UNDEAD",
+      "T?_2H_ARCANESTAFF_HELL",
+      "T?_2H_ENIGMATICORB_MORGANA",
+      "T?_2H_ARCANE_RINGPAIR_AVALON",
+      "T?_2H_ARCANESTAFF_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_ARCANESTAFFS_ARCANE": {
+   "kind": "spec",
+   "parent": "COMBAT_ARCANESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_ARCANESTAFF*",
+      "T?_2H_ARCANESTAFF*",
+      "T?_2H_ENIGMATICSTAFF*",
+      "T?_2H_ENIGMATICORB*",
+      "T?_2H_ARCANE_RINGPAIR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_ARCANESTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_ARCANESTAFFS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_ARCANESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_ARCANESTAFF*",
+      "T?_2H_ARCANESTAFF*",
+      "T?_2H_ENIGMATICSTAFF*",
+      "T?_2H_ENIGMATICORB*",
+      "T?_2H_ARCANE_RINGPAIR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_ARCANE_RINGPAIR_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_ARCANESTAFFS_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_ARCANESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FIRESTAFF*",
+      "T?_2H_FIRESTAFF*",
+      "T?_2H_INFERNOSTAFF*",
+      "T?_2H_FIRE_RINGPAIR*",
+      "T?_MAIN_HOLYSTAFF*",
+      "T?_2H_HOLYSTAFF*",
+      "T?_2H_DIVINESTAFF*",
+      "T?_MAIN_ARCANESTAFF*",
+      "T?_2H_ARCANESTAFF*",
+      "T?_2H_ENIGMATICSTAFF*",
+      "T?_2H_ENIGMATICORB*",
+      "T?_2H_ARCANE_RINGPAIR*",
+      "T?_MAIN_FROSTSTAFF*",
+      "T?_2H_FROSTSTAFF*",
+      "T?_2H_GLACIALSTAFF*",
+      "T?_2H_ICEGAUNTLETS*",
+      "T?_2H_ICECRYSTAL*",
+      "T?_MAIN_CURSEDSTAFF*",
+      "T?_2H_CURSEDSTAFF*",
+      "T?_2H_DEMONICSTAFF*",
+      "T?_2H_SKULLORB*",
+      "T?_OFF_BOOK*",
+      "T?_OFF_ORB*",
+      "T?_OFF_DEMONSKULL*",
+      "T?_OFF_TOTEM*",
+      "T?_OFF_CENSER*",
+      "T?_OFF_TOME*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_ARCANESTAFF_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_ARCANESTAFFS_ENIGMATIC": {
+   "kind": "spec",
+   "parent": "COMBAT_ARCANESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_ARCANESTAFF*",
+      "T?_2H_ARCANESTAFF*",
+      "T?_2H_ENIGMATICSTAFF*",
+      "T?_2H_ENIGMATICORB*",
+      "T?_2H_ARCANE_RINGPAIR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_ENIGMATICSTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_ARCANESTAFFS_GREAT": {
+   "kind": "spec",
+   "parent": "COMBAT_ARCANESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_ARCANESTAFF*",
+      "T?_2H_ARCANESTAFF*",
+      "T?_2H_ENIGMATICSTAFF*",
+      "T?_2H_ENIGMATICORB*",
+      "T?_2H_ARCANE_RINGPAIR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_ARCANESTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_ARCANESTAFFS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_ARCANESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_ARCANESTAFF*",
+      "T?_2H_ARCANESTAFF*",
+      "T?_2H_ENIGMATICSTAFF*",
+      "T?_2H_ENIGMATICORB*",
+      "T?_2H_ARCANE_RINGPAIR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_ARCANESTAFF_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_ARCANESTAFFS_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_ARCANESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_ARCANESTAFF*",
+      "T?_2H_ARCANESTAFF*",
+      "T?_2H_ENIGMATICSTAFF*",
+      "T?_2H_ENIGMATICORB*",
+      "T?_2H_ARCANE_RINGPAIR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_ENIGMATICORB_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_ARCANESTAFFS_UNDEAD": {
+   "kind": "spec",
+   "parent": "COMBAT_ARCANESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_ARCANESTAFF*",
+      "T?_2H_ARCANESTAFF*",
+      "T?_2H_ENIGMATICSTAFF*",
+      "T?_2H_ENIGMATICORB*",
+      "T?_2H_ARCANE_RINGPAIR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_ARCANESTAFF_UNDEAD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_AXES": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_AXE",
+      "T?_2H_AXE",
+      "T?_2H_HALBERD",
+      "T?_2H_HALBERD_MORGANA",
+      "T?_2H_SCYTHE_HELL",
+      "T?_2H_DUALAXE_KEEPER",
+      "T?_2H_AXE_AVALON",
+      "T?_2H_SCYTHE_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_AXES_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_AXES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_AXE*",
+      "T?_2H_AXE*",
+      "T?_2H_HALBERD*",
+      "T?_2H_SCYTHE*",
+      "T?_2H_DUALAXE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_AXE_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_AXES_AXE": {
+   "kind": "spec",
+   "parent": "COMBAT_AXES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_AXE*",
+      "T?_2H_AXE*",
+      "T?_2H_HALBERD*",
+      "T?_2H_SCYTHE*",
+      "T?_2H_DUALAXE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_AXE"
+     ]
+    }
+   ]
+  },
+  "COMBAT_AXES_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_AXES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SWORD*",
+      "T?_2H_CLAYMORE*",
+      "T?_2H_DUALSWORD*",
+      "T?_MAIN_SCIMITAR*",
+      "T?_2H_CLEAVER*",
+      "T?_2H_DUALSCIMITAR*",
+      "T?_MAIN_AXE*",
+      "T?_2H_AXE*",
+      "T?_2H_HALBERD*",
+      "T?_2H_SCYTHE*",
+      "T?_2H_DUALAXE*",
+      "T?_MAIN_MACE*",
+      "T?_2H_MACE*",
+      "T?_2H_FLAIL*",
+      "T?_MAIN_ROCKMACE*",
+      "T?_2H_DUALMACE*",
+      "T?_MAIN_HAMMER*",
+      "T?_2H_HAMMER*",
+      "T?_2H_POLEHAMMER*",
+      "T?_2H_DUALHAMMER*",
+      "T?_2H_RAM*",
+      "T?_2H_KNUCKLES*",
+      "T?_2H_CROSSBOW*",
+      "T?_2H_CROSSBOWLARGE*",
+      "T?_MAIN_1HCROSSBOW*",
+      "T?_2H_REPEATINGCROSSBOW*",
+      "T?_2H_DUALCROSSBOW*",
+      "T?_OFF_SHIELD*",
+      "T?_OFF_TOWERSHIELD*",
+      "T?_OFF_SPIKEDSHIELD*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SCYTHE_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_AXES_GREAT": {
+   "kind": "spec",
+   "parent": "COMBAT_AXES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_AXE*",
+      "T?_2H_AXE*",
+      "T?_2H_HALBERD*",
+      "T?_2H_SCYTHE*",
+      "T?_2H_DUALAXE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_AXE"
+     ]
+    }
+   ]
+  },
+  "COMBAT_AXES_HALBERD": {
+   "kind": "spec",
+   "parent": "COMBAT_AXES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_AXE*",
+      "T?_2H_AXE*",
+      "T?_2H_HALBERD*",
+      "T?_2H_SCYTHE*",
+      "T?_2H_DUALAXE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_HALBERD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_AXES_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_AXES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_AXE*",
+      "T?_2H_AXE*",
+      "T?_2H_HALBERD*",
+      "T?_2H_SCYTHE*",
+      "T?_2H_DUALAXE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SCYTHE_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_AXES_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_AXES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_AXE*",
+      "T?_2H_AXE*",
+      "T?_2H_HALBERD*",
+      "T?_2H_SCYTHE*",
+      "T?_2H_DUALAXE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_DUALAXE_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_AXES_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_AXES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_AXE*",
+      "T?_2H_AXE*",
+      "T?_2H_HALBERD*",
+      "T?_2H_SCYTHE*",
+      "T?_2H_DUALAXE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_HALBERD_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_BOOKS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_BOOK",
+      "T?_OFF_ORB_MORGANA",
+      "T?_OFF_DEMONSKULL_HELL",
+      "T?_OFF_TOTEM_KEEPER",
+      "T?_OFF_CENSER_AVALON",
+      "T?_OFF_TOME_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_BOOKS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_BOOKS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_BOOK*",
+      "T?_OFF_ORB*",
+      "T?_OFF_DEMONSKULL*",
+      "T?_OFF_TOTEM*",
+      "T?_OFF_CENSER*",
+      "T?_OFF_TOME*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_CENSER_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_BOOKS_BOOK": {
+   "kind": "spec",
+   "parent": "COMBAT_BOOKS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.6,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_BOOK*",
+      "T?_OFF_ORB*",
+      "T?_OFF_DEMONSKULL*",
+      "T?_OFF_TOTEM*",
+      "T?_OFF_CENSER*",
+      "T?_OFF_TOME*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_BOOK"
+     ]
+    }
+   ]
+  },
+  "COMBAT_BOOKS_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_BOOKS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FIRESTAFF*",
+      "T?_2H_FIRESTAFF*",
+      "T?_2H_INFERNOSTAFF*",
+      "T?_2H_FIRE_RINGPAIR*",
+      "T?_MAIN_HOLYSTAFF*",
+      "T?_2H_HOLYSTAFF*",
+      "T?_2H_DIVINESTAFF*",
+      "T?_MAIN_ARCANESTAFF*",
+      "T?_2H_ARCANESTAFF*",
+      "T?_2H_ENIGMATICSTAFF*",
+      "T?_2H_ENIGMATICORB*",
+      "T?_2H_ARCANE_RINGPAIR*",
+      "T?_MAIN_FROSTSTAFF*",
+      "T?_2H_FROSTSTAFF*",
+      "T?_2H_GLACIALSTAFF*",
+      "T?_2H_ICEGAUNTLETS*",
+      "T?_2H_ICECRYSTAL*",
+      "T?_MAIN_CURSEDSTAFF*",
+      "T?_2H_CURSEDSTAFF*",
+      "T?_2H_DEMONICSTAFF*",
+      "T?_2H_SKULLORB*",
+      "T?_OFF_BOOK*",
+      "T?_OFF_ORB*",
+      "T?_OFF_DEMONSKULL*",
+      "T?_OFF_TOTEM*",
+      "T?_OFF_CENSER*",
+      "T?_OFF_TOME*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_TOME_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_BOOKS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_BOOKS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_BOOK*",
+      "T?_OFF_ORB*",
+      "T?_OFF_DEMONSKULL*",
+      "T?_OFF_TOTEM*",
+      "T?_OFF_CENSER*",
+      "T?_OFF_TOME*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_DEMONSKULL_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_BOOKS_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_BOOKS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_BOOK*",
+      "T?_OFF_ORB*",
+      "T?_OFF_DEMONSKULL*",
+      "T?_OFF_TOTEM*",
+      "T?_OFF_CENSER*",
+      "T?_OFF_TOME*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_TOTEM_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_BOOKS_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_BOOKS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_BOOK*",
+      "T?_OFF_ORB*",
+      "T?_OFF_DEMONSKULL*",
+      "T?_OFF_TOTEM*",
+      "T?_OFF_CENSER*",
+      "T?_OFF_TOME*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_ORB_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_BOWS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW",
+      "T?_2H_WARBOW",
+      "T?_2H_LONGBOW",
+      "T?_2H_LONGBOW_UNDEAD",
+      "T?_2H_BOW_HELL",
+      "T?_2H_BOW_KEEPER",
+      "T?_2H_BOW_AVALON",
+      "T?_2H_BOW_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_BOWS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_BOWS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW*",
+      "T?_2H_WARBOW*",
+      "T?_2H_LONGBOW*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_BOWS_BOW": {
+   "kind": "spec",
+   "parent": "COMBAT_BOWS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW*",
+      "T?_2H_WARBOW*",
+      "T?_2H_LONGBOW*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW"
+     ]
+    }
+   ]
+  },
+  "COMBAT_BOWS_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_BOWS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW*",
+      "T?_2H_WARBOW*",
+      "T?_2H_LONGBOW*",
+      "T?_MAIN_DAGGER*",
+      "T?_2H_DAGGER*",
+      "T?_2H_CLAWPAIR*",
+      "T?_MAIN_RAPIER*",
+      "T?_2H_DUALSICKLE*",
+      "T?_MAIN_SPEAR*",
+      "T?_2H_SPEAR*",
+      "T?_2H_GLAIVE*",
+      "T?_2H_HARPOON*",
+      "T?_2H_TRIDENT*",
+      "T?_2H_QUARTERSTAFF*",
+      "T?_2H_IRONCLADEDSTAFF*",
+      "T?_2H_DOUBLEBLADEDSTAFF*",
+      "T?_2H_COMBATSTAFF*",
+      "T?_2H_TWINSCYTHE*",
+      "T?_2H_ROCKSTAFF*",
+      "T?_2H_SHAPESHIFTER*",
+      "T?_MAIN_NATURESTAFF*",
+      "T?_2H_NATURESTAFF*",
+      "T?_2H_WILDSTAFF*",
+      "T?_OFF_TORCH*",
+      "T?_OFF_HORN*",
+      "T?_OFF_JESTERCANE*",
+      "T?_OFF_LAMP*",
+      "T?_OFF_TALISMAN*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_BOWS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_BOWS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW*",
+      "T?_2H_WARBOW*",
+      "T?_2H_LONGBOW*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_BOWS_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_BOWS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW*",
+      "T?_2H_WARBOW*",
+      "T?_2H_LONGBOW*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_BOWS_LONG": {
+   "kind": "spec",
+   "parent": "COMBAT_BOWS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW*",
+      "T?_2H_WARBOW*",
+      "T?_2H_LONGBOW*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_LONGBOW"
+     ]
+    }
+   ]
+  },
+  "COMBAT_BOWS_UNDEAD": {
+   "kind": "spec",
+   "parent": "COMBAT_BOWS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW*",
+      "T?_2H_WARBOW*",
+      "T?_2H_LONGBOW*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_LONGBOW_UNDEAD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_BOWS_WAR": {
+   "kind": "spec",
+   "parent": "COMBAT_BOWS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW*",
+      "T?_2H_WARBOW*",
+      "T?_2H_LONGBOW*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_WARBOW"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_ARMORS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH_SET1",
+      "T?_ARMOR_CLOTH_SET2",
+      "T?_ARMOR_CLOTH_SET3",
+      "T?_ARMOR_CLOTH_ROYAL",
+      "T?_ARMOR_CLOTH_KEEPER",
+      "T?_ARMOR_CLOTH_HELL",
+      "T?_ARMOR_CLOTH_MORGANA",
+      "T?_ARMOR_CLOTH_FEY",
+      "T?_ARMOR_CLOTH_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_ARMORS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_ARMORS_FEY": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH_FEY"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_ARMORS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_ARMORS_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_ARMORS_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_ARMORS_ROYAL": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH_ROYAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_ARMORS_SET1": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH_SET1"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_ARMORS_SET2": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH_SET2"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_ARMORS_SET3": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_CLOTH_SET3"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_HEADS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH_SET1",
+      "T?_HEAD_CLOTH_SET2",
+      "T?_HEAD_CLOTH_SET3",
+      "T?_HEAD_CLOTH_ROYAL",
+      "T?_HEAD_CLOTH_KEEPER",
+      "T?_HEAD_CLOTH_HELL",
+      "T?_HEAD_CLOTH_MORGANA",
+      "T?_HEAD_CLOTH_FEY",
+      "T?_HEAD_CLOTH_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_HEADS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_HEADS_FEY": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH_FEY"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_HEADS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_HEADS_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_HEADS_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_HEADS_ROYAL": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH_ROYAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_HEADS_SET1": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH_SET1"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_HEADS_SET2": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH_SET2"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_HEADS_SET3": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_CLOTH_SET3"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_SHOES": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH_SET1",
+      "T?_SHOES_CLOTH_SET2",
+      "T?_SHOES_CLOTH_SET3",
+      "T?_SHOES_CLOTH_ROYAL",
+      "T?_SHOES_CLOTH_KEEPER",
+      "T?_SHOES_CLOTH_HELL",
+      "T?_SHOES_CLOTH_MORGANA",
+      "T?_SHOES_CLOTH_FEY",
+      "T?_SHOES_CLOTH_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_SHOES_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_SHOES_FEY": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH_FEY"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_SHOES_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_SHOES_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_SHOES_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_SHOES_ROYAL": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH_ROYAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_SHOES_SET1": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH_SET1"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_SHOES_SET2": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH_SET2"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CLOTH_SHOES_SET3": {
+   "kind": "spec",
+   "parent": "COMBAT_CLOTH_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_CLOTH_SET3"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CROSSBOWS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_CROSSBOW",
+      "T?_2H_CROSSBOWLARGE",
+      "T?_MAIN_1HCROSSBOW",
+      "T?_2H_REPEATINGCROSSBOW_UNDEAD",
+      "T?_2H_DUALCROSSBOW_HELL",
+      "T?_2H_CROSSBOWLARGE_MORGANA",
+      "T?_2H_CROSSBOW_CANNON_AVALON",
+      "T?_2H_DUALCROSSBOW_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CROSSBOWS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_CROSSBOWS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_CROSSBOW*",
+      "T?_2H_CROSSBOWLARGE*",
+      "T?_MAIN_1HCROSSBOW*",
+      "T?_2H_REPEATINGCROSSBOW*",
+      "T?_2H_DUALCROSSBOW*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_CROSSBOW_CANNON_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CROSSBOWS_CROSSBOW": {
+   "kind": "spec",
+   "parent": "COMBAT_CROSSBOWS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_CROSSBOW*",
+      "T?_2H_CROSSBOWLARGE*",
+      "T?_MAIN_1HCROSSBOW*",
+      "T?_2H_REPEATINGCROSSBOW*",
+      "T?_2H_DUALCROSSBOW*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_CROSSBOW"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CROSSBOWS_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_CROSSBOWS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SWORD*",
+      "T?_2H_CLAYMORE*",
+      "T?_2H_DUALSWORD*",
+      "T?_MAIN_SCIMITAR*",
+      "T?_2H_CLEAVER*",
+      "T?_2H_DUALSCIMITAR*",
+      "T?_MAIN_AXE*",
+      "T?_2H_AXE*",
+      "T?_2H_HALBERD*",
+      "T?_2H_SCYTHE*",
+      "T?_2H_DUALAXE*",
+      "T?_MAIN_MACE*",
+      "T?_2H_MACE*",
+      "T?_2H_FLAIL*",
+      "T?_MAIN_ROCKMACE*",
+      "T?_2H_DUALMACE*",
+      "T?_MAIN_HAMMER*",
+      "T?_2H_HAMMER*",
+      "T?_2H_POLEHAMMER*",
+      "T?_2H_DUALHAMMER*",
+      "T?_2H_RAM*",
+      "T?_2H_KNUCKLES*",
+      "T?_2H_CROSSBOW*",
+      "T?_2H_CROSSBOWLARGE*",
+      "T?_MAIN_1HCROSSBOW*",
+      "T?_2H_REPEATINGCROSSBOW*",
+      "T?_2H_DUALCROSSBOW*",
+      "T?_OFF_SHIELD*",
+      "T?_OFF_TOWERSHIELD*",
+      "T?_OFF_SPIKEDSHIELD*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_DUALCROSSBOW_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CROSSBOWS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_CROSSBOWS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_CROSSBOW*",
+      "T?_2H_CROSSBOWLARGE*",
+      "T?_MAIN_1HCROSSBOW*",
+      "T?_2H_REPEATINGCROSSBOW*",
+      "T?_2H_DUALCROSSBOW*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_DUALCROSSBOW_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CROSSBOWS_LARGE": {
+   "kind": "spec",
+   "parent": "COMBAT_CROSSBOWS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_CROSSBOW*",
+      "T?_2H_CROSSBOWLARGE*",
+      "T?_MAIN_1HCROSSBOW*",
+      "T?_2H_REPEATINGCROSSBOW*",
+      "T?_2H_DUALCROSSBOW*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_CROSSBOWLARGE"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CROSSBOWS_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_CROSSBOWS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_CROSSBOW*",
+      "T?_2H_CROSSBOWLARGE*",
+      "T?_MAIN_1HCROSSBOW*",
+      "T?_2H_REPEATINGCROSSBOW*",
+      "T?_2H_DUALCROSSBOW*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_CROSSBOWLARGE_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CROSSBOWS_ONEHAND": {
+   "kind": "spec",
+   "parent": "COMBAT_CROSSBOWS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_CROSSBOW*",
+      "T?_2H_CROSSBOWLARGE*",
+      "T?_MAIN_1HCROSSBOW*",
+      "T?_2H_REPEATINGCROSSBOW*",
+      "T?_2H_DUALCROSSBOW*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_1HCROSSBOW"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CROSSBOWS_UNDEAD": {
+   "kind": "spec",
+   "parent": "COMBAT_CROSSBOWS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_CROSSBOW*",
+      "T?_2H_CROSSBOWLARGE*",
+      "T?_MAIN_1HCROSSBOW*",
+      "T?_2H_REPEATINGCROSSBOW*",
+      "T?_2H_DUALCROSSBOW*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_REPEATINGCROSSBOW_UNDEAD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CURSEDSTAFFS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_CURSEDSTAFF",
+      "T?_2H_CURSEDSTAFF",
+      "T?_2H_DEMONICSTAFF",
+      "T?_MAIN_CURSEDSTAFF_UNDEAD",
+      "T?_2H_SKULLORB_HELL",
+      "T?_2H_CURSEDSTAFF_MORGANA",
+      "T?_MAIN_CURSEDSTAFF_AVALON",
+      "T?_MAIN_CURSEDSTAFF_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CURSEDSTAFFS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_CURSEDSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_CURSEDSTAFF*",
+      "T?_2H_CURSEDSTAFF*",
+      "T?_2H_DEMONICSTAFF*",
+      "T?_2H_SKULLORB*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_CURSEDSTAFF_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CURSEDSTAFFS_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_CURSEDSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FIRESTAFF*",
+      "T?_2H_FIRESTAFF*",
+      "T?_2H_INFERNOSTAFF*",
+      "T?_2H_FIRE_RINGPAIR*",
+      "T?_MAIN_HOLYSTAFF*",
+      "T?_2H_HOLYSTAFF*",
+      "T?_2H_DIVINESTAFF*",
+      "T?_MAIN_ARCANESTAFF*",
+      "T?_2H_ARCANESTAFF*",
+      "T?_2H_ENIGMATICSTAFF*",
+      "T?_2H_ENIGMATICORB*",
+      "T?_2H_ARCANE_RINGPAIR*",
+      "T?_MAIN_FROSTSTAFF*",
+      "T?_2H_FROSTSTAFF*",
+      "T?_2H_GLACIALSTAFF*",
+      "T?_2H_ICEGAUNTLETS*",
+      "T?_2H_ICECRYSTAL*",
+      "T?_MAIN_CURSEDSTAFF*",
+      "T?_2H_CURSEDSTAFF*",
+      "T?_2H_DEMONICSTAFF*",
+      "T?_2H_SKULLORB*",
+      "T?_OFF_BOOK*",
+      "T?_OFF_ORB*",
+      "T?_OFF_DEMONSKULL*",
+      "T?_OFF_TOTEM*",
+      "T?_OFF_CENSER*",
+      "T?_OFF_TOME*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_CURSEDSTAFF_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CURSEDSTAFFS_CURSED": {
+   "kind": "spec",
+   "parent": "COMBAT_CURSEDSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_CURSEDSTAFF*",
+      "T?_2H_CURSEDSTAFF*",
+      "T?_2H_DEMONICSTAFF*",
+      "T?_2H_SKULLORB*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_CURSEDSTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CURSEDSTAFFS_DEMONIC": {
+   "kind": "spec",
+   "parent": "COMBAT_CURSEDSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_CURSEDSTAFF*",
+      "T?_2H_CURSEDSTAFF*",
+      "T?_2H_DEMONICSTAFF*",
+      "T?_2H_SKULLORB*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_DEMONICSTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CURSEDSTAFFS_GREAT": {
+   "kind": "spec",
+   "parent": "COMBAT_CURSEDSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_CURSEDSTAFF*",
+      "T?_2H_CURSEDSTAFF*",
+      "T?_2H_DEMONICSTAFF*",
+      "T?_2H_SKULLORB*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_CURSEDSTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CURSEDSTAFFS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_CURSEDSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_CURSEDSTAFF*",
+      "T?_2H_CURSEDSTAFF*",
+      "T?_2H_DEMONICSTAFF*",
+      "T?_2H_SKULLORB*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SKULLORB_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CURSEDSTAFFS_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_CURSEDSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_CURSEDSTAFF*",
+      "T?_2H_CURSEDSTAFF*",
+      "T?_2H_DEMONICSTAFF*",
+      "T?_2H_SKULLORB*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_CURSEDSTAFF_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_CURSEDSTAFFS_UNDEAD": {
+   "kind": "spec",
+   "parent": "COMBAT_CURSEDSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_CURSEDSTAFF*",
+      "T?_2H_CURSEDSTAFF*",
+      "T?_2H_DEMONICSTAFF*",
+      "T?_2H_SKULLORB*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_CURSEDSTAFF_UNDEAD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_DAGGERS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_DAGGER",
+      "T?_2H_DAGGERPAIR",
+      "T?_2H_CLAWPAIR",
+      "T?_MAIN_RAPIER_MORGANA",
+      "T?_MAIN_DAGGER_HELL",
+      "T?_2H_DUALSICKLE_UNDEAD",
+      "T?_2H_DAGGER_KATAR_AVALON",
+      "T?_2H_DAGGERPAIR_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_DAGGERS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_DAGGERS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_DAGGER*",
+      "T?_2H_DAGGER*",
+      "T?_2H_CLAWPAIR*",
+      "T?_MAIN_RAPIER*",
+      "T?_2H_DUALSICKLE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_DAGGER_KATAR_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_DAGGERS_CLAWS": {
+   "kind": "spec",
+   "parent": "COMBAT_DAGGERS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_DAGGER*",
+      "T?_2H_DAGGER*",
+      "T?_2H_CLAWPAIR*",
+      "T?_MAIN_RAPIER*",
+      "T?_2H_DUALSICKLE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_CLAWPAIR"
+     ]
+    }
+   ]
+  },
+  "COMBAT_DAGGERS_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_DAGGERS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW*",
+      "T?_2H_WARBOW*",
+      "T?_2H_LONGBOW*",
+      "T?_MAIN_DAGGER*",
+      "T?_2H_DAGGER*",
+      "T?_2H_CLAWPAIR*",
+      "T?_MAIN_RAPIER*",
+      "T?_2H_DUALSICKLE*",
+      "T?_MAIN_SPEAR*",
+      "T?_2H_SPEAR*",
+      "T?_2H_GLAIVE*",
+      "T?_2H_HARPOON*",
+      "T?_2H_TRIDENT*",
+      "T?_2H_QUARTERSTAFF*",
+      "T?_2H_IRONCLADEDSTAFF*",
+      "T?_2H_DOUBLEBLADEDSTAFF*",
+      "T?_2H_COMBATSTAFF*",
+      "T?_2H_TWINSCYTHE*",
+      "T?_2H_ROCKSTAFF*",
+      "T?_2H_SHAPESHIFTER*",
+      "T?_MAIN_NATURESTAFF*",
+      "T?_2H_NATURESTAFF*",
+      "T?_2H_WILDSTAFF*",
+      "T?_OFF_TORCH*",
+      "T?_OFF_HORN*",
+      "T?_OFF_JESTERCANE*",
+      "T?_OFF_LAMP*",
+      "T?_OFF_TALISMAN*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_DAGGERPAIR_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_DAGGERS_DAGGER": {
+   "kind": "spec",
+   "parent": "COMBAT_DAGGERS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_DAGGER*",
+      "T?_2H_DAGGER*",
+      "T?_2H_CLAWPAIR*",
+      "T?_MAIN_RAPIER*",
+      "T?_2H_DUALSICKLE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_DAGGER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_DAGGERS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_DAGGERS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_DAGGER*",
+      "T?_2H_DAGGER*",
+      "T?_2H_CLAWPAIR*",
+      "T?_MAIN_RAPIER*",
+      "T?_2H_DUALSICKLE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_DAGGER_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_DAGGERS_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_DAGGERS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_DAGGER*",
+      "T?_2H_DAGGER*",
+      "T?_2H_CLAWPAIR*",
+      "T?_MAIN_RAPIER*",
+      "T?_2H_DUALSICKLE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_RAPIER_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_DAGGERS_PAIR": {
+   "kind": "spec",
+   "parent": "COMBAT_DAGGERS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_DAGGER*",
+      "T?_2H_DAGGER*",
+      "T?_2H_CLAWPAIR*",
+      "T?_MAIN_RAPIER*",
+      "T?_2H_DUALSICKLE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_DAGGERPAIR"
+     ]
+    }
+   ]
+  },
+  "COMBAT_DAGGERS_UNDEAD": {
+   "kind": "spec",
+   "parent": "COMBAT_DAGGERS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_DAGGER*",
+      "T?_2H_DAGGER*",
+      "T?_2H_CLAWPAIR*",
+      "T?_MAIN_RAPIER*",
+      "T?_2H_DUALSICKLE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_DUALSICKLE_UNDEAD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_FIRESTAFFS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FIRESTAFF",
+      "T?_2H_FIRESTAFF",
+      "T?_2H_INFERNOSTAFF",
+      "T?_MAIN_FIRESTAFF_KEEPER",
+      "T?_2H_FIRESTAFF_HELL",
+      "T?_2H_INFERNOSTAFF_MORGANA",
+      "T?_2H_FIRE_RINGPAIR_AVALON",
+      "T?_MAIN_FIRESTAFF_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_FIRESTAFFS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_FIRESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FIRESTAFF*",
+      "T?_2H_FIRESTAFF*",
+      "T?_2H_INFERNOSTAFF*",
+      "T?_2H_FIRE_RINGPAIR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_FIRE_RINGPAIR_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_FIRESTAFFS_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_FIRESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FIRESTAFF*",
+      "T?_2H_FIRESTAFF*",
+      "T?_2H_INFERNOSTAFF*",
+      "T?_2H_FIRE_RINGPAIR*",
+      "T?_MAIN_HOLYSTAFF*",
+      "T?_2H_HOLYSTAFF*",
+      "T?_2H_DIVINESTAFF*",
+      "T?_MAIN_ARCANESTAFF*",
+      "T?_2H_ARCANESTAFF*",
+      "T?_2H_ENIGMATICSTAFF*",
+      "T?_2H_ENIGMATICORB*",
+      "T?_2H_ARCANE_RINGPAIR*",
+      "T?_MAIN_FROSTSTAFF*",
+      "T?_2H_FROSTSTAFF*",
+      "T?_2H_GLACIALSTAFF*",
+      "T?_2H_ICEGAUNTLETS*",
+      "T?_2H_ICECRYSTAL*",
+      "T?_MAIN_CURSEDSTAFF*",
+      "T?_2H_CURSEDSTAFF*",
+      "T?_2H_DEMONICSTAFF*",
+      "T?_2H_SKULLORB*",
+      "T?_OFF_BOOK*",
+      "T?_OFF_ORB*",
+      "T?_OFF_DEMONSKULL*",
+      "T?_OFF_TOTEM*",
+      "T?_OFF_CENSER*",
+      "T?_OFF_TOME*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FIRESTAFF_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_FIRESTAFFS_FIRE": {
+   "kind": "spec",
+   "parent": "COMBAT_FIRESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FIRESTAFF*",
+      "T?_2H_FIRESTAFF*",
+      "T?_2H_INFERNOSTAFF*",
+      "T?_2H_FIRE_RINGPAIR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FIRESTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_FIRESTAFFS_GREAT": {
+   "kind": "spec",
+   "parent": "COMBAT_FIRESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FIRESTAFF*",
+      "T?_2H_FIRESTAFF*",
+      "T?_2H_INFERNOSTAFF*",
+      "T?_2H_FIRE_RINGPAIR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_FIRESTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_FIRESTAFFS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_FIRESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FIRESTAFF*",
+      "T?_2H_FIRESTAFF*",
+      "T?_2H_INFERNOSTAFF*",
+      "T?_2H_FIRE_RINGPAIR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_FIRESTAFF_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_FIRESTAFFS_INFERNO": {
+   "kind": "spec",
+   "parent": "COMBAT_FIRESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FIRESTAFF*",
+      "T?_2H_FIRESTAFF*",
+      "T?_2H_INFERNOSTAFF*",
+      "T?_2H_FIRE_RINGPAIR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_INFERNOSTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_FIRESTAFFS_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_FIRESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FIRESTAFF*",
+      "T?_2H_FIRESTAFF*",
+      "T?_2H_INFERNOSTAFF*",
+      "T?_2H_FIRE_RINGPAIR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FIRESTAFF_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_FIRESTAFFS_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_FIRESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FIRESTAFF*",
+      "T?_2H_FIRESTAFF*",
+      "T?_2H_INFERNOSTAFF*",
+      "T?_2H_FIRE_RINGPAIR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_INFERNOSTAFF_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_FROSTSTAFFS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FROSTSTAFF",
+      "T?_2H_FROSTSTAFF",
+      "T?_2H_GLACIALSTAFF",
+      "T?_MAIN_FROSTSTAFF_KEEPER",
+      "T?_2H_ICEGAUNTLETS_HELL",
+      "T?_2H_ICECRYSTAL_UNDEAD",
+      "T?_MAIN_FROSTSTAFF_AVALON",
+      "T?_2H_FROSTSTAFF_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_FROSTSTAFFS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_FROSTSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FROSTSTAFF*",
+      "T?_2H_FROSTSTAFF*",
+      "T?_2H_GLACIALSTAFF*",
+      "T?_2H_ICEGAUNTLETS*",
+      "T?_2H_ICECRYSTAL*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FROSTSTAFF_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_FROSTSTAFFS_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_FROSTSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FIRESTAFF*",
+      "T?_2H_FIRESTAFF*",
+      "T?_2H_INFERNOSTAFF*",
+      "T?_2H_FIRE_RINGPAIR*",
+      "T?_MAIN_HOLYSTAFF*",
+      "T?_2H_HOLYSTAFF*",
+      "T?_2H_DIVINESTAFF*",
+      "T?_MAIN_ARCANESTAFF*",
+      "T?_2H_ARCANESTAFF*",
+      "T?_2H_ENIGMATICSTAFF*",
+      "T?_2H_ENIGMATICORB*",
+      "T?_2H_ARCANE_RINGPAIR*",
+      "T?_MAIN_FROSTSTAFF*",
+      "T?_2H_FROSTSTAFF*",
+      "T?_2H_GLACIALSTAFF*",
+      "T?_2H_ICEGAUNTLETS*",
+      "T?_2H_ICECRYSTAL*",
+      "T?_MAIN_CURSEDSTAFF*",
+      "T?_2H_CURSEDSTAFF*",
+      "T?_2H_DEMONICSTAFF*",
+      "T?_2H_SKULLORB*",
+      "T?_OFF_BOOK*",
+      "T?_OFF_ORB*",
+      "T?_OFF_DEMONSKULL*",
+      "T?_OFF_TOTEM*",
+      "T?_OFF_CENSER*",
+      "T?_OFF_TOME*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_FROSTSTAFF_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_FROSTSTAFFS_FROST": {
+   "kind": "spec",
+   "parent": "COMBAT_FROSTSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FROSTSTAFF*",
+      "T?_2H_FROSTSTAFF*",
+      "T?_2H_GLACIALSTAFF*",
+      "T?_2H_ICEGAUNTLETS*",
+      "T?_2H_ICECRYSTAL*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FROSTSTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_FROSTSTAFFS_GLACIAL": {
+   "kind": "spec",
+   "parent": "COMBAT_FROSTSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FROSTSTAFF*",
+      "T?_2H_FROSTSTAFF*",
+      "T?_2H_GLACIALSTAFF*",
+      "T?_2H_ICEGAUNTLETS*",
+      "T?_2H_ICECRYSTAL*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_GLACIALSTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_FROSTSTAFFS_GREAT": {
+   "kind": "spec",
+   "parent": "COMBAT_FROSTSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FROSTSTAFF*",
+      "T?_2H_FROSTSTAFF*",
+      "T?_2H_GLACIALSTAFF*",
+      "T?_2H_ICEGAUNTLETS*",
+      "T?_2H_ICECRYSTAL*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_FROSTSTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_FROSTSTAFFS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_FROSTSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FROSTSTAFF*",
+      "T?_2H_FROSTSTAFF*",
+      "T?_2H_GLACIALSTAFF*",
+      "T?_2H_ICEGAUNTLETS*",
+      "T?_2H_ICECRYSTAL*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_ICEGAUNTLETS_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_FROSTSTAFFS_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_FROSTSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FROSTSTAFF*",
+      "T?_2H_FROSTSTAFF*",
+      "T?_2H_GLACIALSTAFF*",
+      "T?_2H_ICEGAUNTLETS*",
+      "T?_2H_ICECRYSTAL*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FROSTSTAFF_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_FROSTSTAFFS_UNDEAD": {
+   "kind": "spec",
+   "parent": "COMBAT_FROSTSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FROSTSTAFF*",
+      "T?_2H_FROSTSTAFF*",
+      "T?_2H_GLACIALSTAFF*",
+      "T?_2H_ICEGAUNTLETS*",
+      "T?_2H_ICECRYSTAL*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_ICECRYSTAL_UNDEAD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_HAMMERS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HAMMER",
+      "T?_2H_POLEHAMMER",
+      "T?_2H_HAMMER",
+      "T?_2H_HAMMER_UNDEAD",
+      "T?_2H_DUALHAMMER_HELL",
+      "T?_2H_RAM_KEEPER",
+      "T?_2H_HAMMER_AVALON",
+      "T?_2H_HAMMER_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_HAMMERS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_HAMMERS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HAMMER*",
+      "T?_2H_HAMMER*",
+      "T?_2H_POLEHAMMER*",
+      "T?_2H_DUALHAMMER*",
+      "T?_2H_RAM*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_HAMMER_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_HAMMERS_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_HAMMERS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SWORD*",
+      "T?_2H_CLAYMORE*",
+      "T?_2H_DUALSWORD*",
+      "T?_MAIN_SCIMITAR*",
+      "T?_2H_CLEAVER*",
+      "T?_2H_DUALSCIMITAR*",
+      "T?_MAIN_AXE*",
+      "T?_2H_AXE*",
+      "T?_2H_HALBERD*",
+      "T?_2H_SCYTHE*",
+      "T?_2H_DUALAXE*",
+      "T?_MAIN_MACE*",
+      "T?_2H_MACE*",
+      "T?_2H_FLAIL*",
+      "T?_MAIN_ROCKMACE*",
+      "T?_2H_DUALMACE*",
+      "T?_MAIN_HAMMER*",
+      "T?_2H_HAMMER*",
+      "T?_2H_POLEHAMMER*",
+      "T?_2H_DUALHAMMER*",
+      "T?_2H_RAM*",
+      "T?_2H_KNUCKLES*",
+      "T?_2H_CROSSBOW*",
+      "T?_2H_CROSSBOWLARGE*",
+      "T?_MAIN_1HCROSSBOW*",
+      "T?_2H_REPEATINGCROSSBOW*",
+      "T?_2H_DUALCROSSBOW*",
+      "T?_OFF_SHIELD*",
+      "T?_OFF_TOWERSHIELD*",
+      "T?_OFF_SPIKEDSHIELD*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_HAMMER_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_HAMMERS_GREAT": {
+   "kind": "spec",
+   "parent": "COMBAT_HAMMERS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HAMMER*",
+      "T?_2H_HAMMER*",
+      "T?_2H_POLEHAMMER*",
+      "T?_2H_DUALHAMMER*",
+      "T?_2H_RAM*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_HAMMER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_HAMMERS_HAMMER": {
+   "kind": "spec",
+   "parent": "COMBAT_HAMMERS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HAMMER*",
+      "T?_2H_HAMMER*",
+      "T?_2H_POLEHAMMER*",
+      "T?_2H_DUALHAMMER*",
+      "T?_2H_RAM*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HAMMER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_HAMMERS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_HAMMERS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HAMMER*",
+      "T?_2H_HAMMER*",
+      "T?_2H_POLEHAMMER*",
+      "T?_2H_DUALHAMMER*",
+      "T?_2H_RAM*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_DUALHAMMER_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_HAMMERS_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_HAMMERS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HAMMER*",
+      "T?_2H_HAMMER*",
+      "T?_2H_POLEHAMMER*",
+      "T?_2H_DUALHAMMER*",
+      "T?_2H_RAM*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_RAM_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_HAMMERS_POLE": {
+   "kind": "spec",
+   "parent": "COMBAT_HAMMERS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HAMMER*",
+      "T?_2H_HAMMER*",
+      "T?_2H_POLEHAMMER*",
+      "T?_2H_DUALHAMMER*",
+      "T?_2H_RAM*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_POLEHAMMER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_HAMMERS_UNDEAD": {
+   "kind": "spec",
+   "parent": "COMBAT_HAMMERS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HAMMER*",
+      "T?_2H_HAMMER*",
+      "T?_2H_POLEHAMMER*",
+      "T?_2H_DUALHAMMER*",
+      "T?_2H_RAM*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_HAMMER_UNDEAD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_HOLYSTAFFS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HOLYSTAFF",
+      "T?_2H_HOLYSTAFF",
+      "T?_2H_DIVINESTAFF",
+      "T?_MAIN_HOLYSTAFF_MORGANA",
+      "T?_2H_HOLYSTAFF_HELL",
+      "T?_2H_HOLYSTAFF_UNDEAD",
+      "T?_MAIN_HOLYSTAFF_AVALON",
+      "T?_2H_HOLYSTAFF_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_HOLYSTAFFS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_HOLYSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HOLYSTAFF*",
+      "T?_2H_HOLYSTAFF*",
+      "T?_2H_DIVINESTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HOLYSTAFF_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_HOLYSTAFFS_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_HOLYSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_FIRESTAFF*",
+      "T?_2H_FIRESTAFF*",
+      "T?_2H_INFERNOSTAFF*",
+      "T?_2H_FIRE_RINGPAIR*",
+      "T?_MAIN_HOLYSTAFF*",
+      "T?_2H_HOLYSTAFF*",
+      "T?_2H_DIVINESTAFF*",
+      "T?_MAIN_ARCANESTAFF*",
+      "T?_2H_ARCANESTAFF*",
+      "T?_2H_ENIGMATICSTAFF*",
+      "T?_2H_ENIGMATICORB*",
+      "T?_2H_ARCANE_RINGPAIR*",
+      "T?_MAIN_FROSTSTAFF*",
+      "T?_2H_FROSTSTAFF*",
+      "T?_2H_GLACIALSTAFF*",
+      "T?_2H_ICEGAUNTLETS*",
+      "T?_2H_ICECRYSTAL*",
+      "T?_MAIN_CURSEDSTAFF*",
+      "T?_2H_CURSEDSTAFF*",
+      "T?_2H_DEMONICSTAFF*",
+      "T?_2H_SKULLORB*",
+      "T?_OFF_BOOK*",
+      "T?_OFF_ORB*",
+      "T?_OFF_DEMONSKULL*",
+      "T?_OFF_TOTEM*",
+      "T?_OFF_CENSER*",
+      "T?_OFF_TOME*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_HOLYSTAFF_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_HOLYSTAFFS_DIVINE": {
+   "kind": "spec",
+   "parent": "COMBAT_HOLYSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HOLYSTAFF*",
+      "T?_2H_HOLYSTAFF*",
+      "T?_2H_DIVINESTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_DIVINESTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_HOLYSTAFFS_GREAT": {
+   "kind": "spec",
+   "parent": "COMBAT_HOLYSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HOLYSTAFF*",
+      "T?_2H_HOLYSTAFF*",
+      "T?_2H_DIVINESTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_HOLYSTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_HOLYSTAFFS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_HOLYSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HOLYSTAFF*",
+      "T?_2H_HOLYSTAFF*",
+      "T?_2H_DIVINESTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_HOLYSTAFF_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_HOLYSTAFFS_HOLY": {
+   "kind": "spec",
+   "parent": "COMBAT_HOLYSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HOLYSTAFF*",
+      "T?_2H_HOLYSTAFF*",
+      "T?_2H_DIVINESTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HOLYSTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_HOLYSTAFFS_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_HOLYSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HOLYSTAFF*",
+      "T?_2H_HOLYSTAFF*",
+      "T?_2H_DIVINESTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HOLYSTAFF_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_HOLYSTAFFS_UNDEAD": {
+   "kind": "spec",
+   "parent": "COMBAT_HOLYSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_HOLYSTAFF*",
+      "T?_2H_HOLYSTAFF*",
+      "T?_2H_DIVINESTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_HOLYSTAFF_UNDEAD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_KNUCKLES": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_KNUCKLES_SET1",
+      "T?_2H_KNUCKLES_SET2",
+      "T?_2H_KNUCKLES_SET3",
+      "T?_2H_KNUCKLES_KEEPER",
+      "T?_2H_KNUCKLES_HELL",
+      "T?_2H_KNUCKLES_MORGANA",
+      "T?_2H_KNUCKLES_AVALON",
+      "T?_2H_KNUCKLES_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_KNUCKLES_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_KNUCKLES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_KNUCKLES*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_KNUCKLES_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_KNUCKLES_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_KNUCKLES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SWORD*",
+      "T?_2H_CLAYMORE*",
+      "T?_2H_DUALSWORD*",
+      "T?_MAIN_SCIMITAR*",
+      "T?_2H_CLEAVER*",
+      "T?_2H_DUALSCIMITAR*",
+      "T?_MAIN_AXE*",
+      "T?_2H_AXE*",
+      "T?_2H_HALBERD*",
+      "T?_2H_SCYTHE*",
+      "T?_2H_DUALAXE*",
+      "T?_MAIN_MACE*",
+      "T?_2H_MACE*",
+      "T?_2H_FLAIL*",
+      "T?_MAIN_ROCKMACE*",
+      "T?_2H_DUALMACE*",
+      "T?_MAIN_HAMMER*",
+      "T?_2H_HAMMER*",
+      "T?_2H_POLEHAMMER*",
+      "T?_2H_DUALHAMMER*",
+      "T?_2H_RAM*",
+      "T?_2H_KNUCKLES*",
+      "T?_2H_CROSSBOW*",
+      "T?_2H_CROSSBOWLARGE*",
+      "T?_MAIN_1HCROSSBOW*",
+      "T?_2H_REPEATINGCROSSBOW*",
+      "T?_2H_DUALCROSSBOW*",
+      "T?_OFF_SHIELD*",
+      "T?_OFF_TOWERSHIELD*",
+      "T?_OFF_SPIKEDSHIELD*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_KNUCKLES_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_KNUCKLES_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_KNUCKLES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_KNUCKLES*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_KNUCKLES_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_KNUCKLES_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_KNUCKLES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_KNUCKLES*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_KNUCKLES_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_KNUCKLES_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_KNUCKLES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_KNUCKLES*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_KNUCKLES_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_KNUCKLES_SET1": {
+   "kind": "spec",
+   "parent": "COMBAT_KNUCKLES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_KNUCKLES*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_KNUCKLES_SET1"
+     ]
+    }
+   ]
+  },
+  "COMBAT_KNUCKLES_SET2": {
+   "kind": "spec",
+   "parent": "COMBAT_KNUCKLES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_KNUCKLES*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_KNUCKLES_SET2"
+     ]
+    }
+   ]
+  },
+  "COMBAT_KNUCKLES_SET3": {
+   "kind": "spec",
+   "parent": "COMBAT_KNUCKLES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_KNUCKLES*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_KNUCKLES_SET3"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_ARMORS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER_SET1",
+      "T?_ARMOR_LEATHER_SET2",
+      "T?_ARMOR_LEATHER_SET3",
+      "T?_ARMOR_LEATHER_ROYAL",
+      "T?_ARMOR_LEATHER_MORGANA",
+      "T?_ARMOR_LEATHER_HELL",
+      "T?_ARMOR_LEATHER_UNDEAD",
+      "T?_ARMOR_LEATHER_FEY",
+      "T?_ARMOR_LEATHER_AVALON",
+      "T?_ARMOR_LEATHER_DRAGON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_ARMORS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_ARMORS_DRAGON": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER_DRAGON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_ARMORS_FEY": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER_FEY"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_ARMORS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_ARMORS_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_ARMORS_ROYAL": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER_ROYAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_ARMORS_SET1": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER_SET1"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_ARMORS_SET2": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER_SET2"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_ARMORS_SET3": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER_SET3"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_ARMORS_UNDEAD": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_LEATHER_UNDEAD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_HEADS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER_SET1",
+      "T?_HEAD_LEATHER_SET2",
+      "T?_HEAD_LEATHER_SET3",
+      "T?_HEAD_LEATHER_ROYAL",
+      "T?_HEAD_LEATHER_MORGANA",
+      "T?_HEAD_LEATHER_HELL",
+      "T?_HEAD_LEATHER_UNDEAD",
+      "T?_HEAD_LEATHER_FEY",
+      "T?_HEAD_LEATHER_AVALON",
+      "T?_HEAD_LEATHER_DRAGON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_HEADS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_HEADS_DRAGON": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER_DRAGON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_HEADS_FEY": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER_FEY"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_HEADS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_HEADS_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_HEADS_ROYAL": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER_ROYAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_HEADS_SET1": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER_SET1"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_HEADS_SET2": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER_SET2"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_HEADS_SET3": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER_SET3"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_HEADS_UNDEAD": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_LEATHER_UNDEAD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_SHOES": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER_SET1",
+      "T?_SHOES_LEATHER_SET2",
+      "T?_SHOES_LEATHER_SET3",
+      "T?_SHOES_LEATHER_ROYAL",
+      "T?_SHOES_LEATHER_MORGANA",
+      "T?_SHOES_LEATHER_HELL",
+      "T?_SHOES_LEATHER_UNDEAD",
+      "T?_SHOES_LEATHER_FEY",
+      "T?_SHOES_LEATHER_AVALON",
+      "T?_SHOES_LEATHER_DRAGON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_SHOES_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_SHOES_DRAGON": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER_DRAGON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_SHOES_FEY": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER_FEY"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_SHOES_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_SHOES_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_SHOES_ROYAL": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER_ROYAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_SHOES_SET1": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER_SET1"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_SHOES_SET2": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER_SET2"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_SHOES_SET3": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER_SET3"
+     ]
+    }
+   ]
+  },
+  "COMBAT_LEATHER_SHOES_UNDEAD": {
+   "kind": "spec",
+   "parent": "COMBAT_LEATHER_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_LEATHER_UNDEAD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_MACES": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_MACE",
+      "T?_2H_MACE",
+      "T?_2H_FLAIL",
+      "T?_MAIN_ROCKMACE_KEEPER",
+      "T?_MAIN_MACE_HELL",
+      "T?_2H_MACE_MORGANA",
+      "T?_2H_DUALMACE_AVALON",
+      "T?_MAIN_MACE_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_MACES_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_MACES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_MACE*",
+      "T?_2H_MACE*",
+      "T?_2H_FLAIL*",
+      "T?_MAIN_ROCKMACE*",
+      "T?_2H_DUALMACE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_DUALMACE_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_MACES_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_MACES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SWORD*",
+      "T?_2H_CLAYMORE*",
+      "T?_2H_DUALSWORD*",
+      "T?_MAIN_SCIMITAR*",
+      "T?_2H_CLEAVER*",
+      "T?_2H_DUALSCIMITAR*",
+      "T?_MAIN_AXE*",
+      "T?_2H_AXE*",
+      "T?_2H_HALBERD*",
+      "T?_2H_SCYTHE*",
+      "T?_2H_DUALAXE*",
+      "T?_MAIN_MACE*",
+      "T?_2H_MACE*",
+      "T?_2H_FLAIL*",
+      "T?_MAIN_ROCKMACE*",
+      "T?_2H_DUALMACE*",
+      "T?_MAIN_HAMMER*",
+      "T?_2H_HAMMER*",
+      "T?_2H_POLEHAMMER*",
+      "T?_2H_DUALHAMMER*",
+      "T?_2H_RAM*",
+      "T?_2H_KNUCKLES*",
+      "T?_2H_CROSSBOW*",
+      "T?_2H_CROSSBOWLARGE*",
+      "T?_MAIN_1HCROSSBOW*",
+      "T?_2H_REPEATINGCROSSBOW*",
+      "T?_2H_DUALCROSSBOW*",
+      "T?_OFF_SHIELD*",
+      "T?_OFF_TOWERSHIELD*",
+      "T?_OFF_SPIKEDSHIELD*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_MACE_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_MACES_FLAIL": {
+   "kind": "spec",
+   "parent": "COMBAT_MACES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_MACE*",
+      "T?_2H_MACE*",
+      "T?_2H_FLAIL*",
+      "T?_MAIN_ROCKMACE*",
+      "T?_2H_DUALMACE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_FLAIL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_MACES_HEAVY": {
+   "kind": "spec",
+   "parent": "COMBAT_MACES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_MACE*",
+      "T?_2H_MACE*",
+      "T?_2H_FLAIL*",
+      "T?_MAIN_ROCKMACE*",
+      "T?_2H_DUALMACE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_MACE"
+     ]
+    }
+   ]
+  },
+  "COMBAT_MACES_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_MACES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_MACE*",
+      "T?_2H_MACE*",
+      "T?_2H_FLAIL*",
+      "T?_MAIN_ROCKMACE*",
+      "T?_2H_DUALMACE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_MACE_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_MACES_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_MACES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_MACE*",
+      "T?_2H_MACE*",
+      "T?_2H_FLAIL*",
+      "T?_MAIN_ROCKMACE*",
+      "T?_2H_DUALMACE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_ROCKMACE_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_MACES_MACE": {
+   "kind": "spec",
+   "parent": "COMBAT_MACES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_MACE*",
+      "T?_2H_MACE*",
+      "T?_2H_FLAIL*",
+      "T?_MAIN_ROCKMACE*",
+      "T?_2H_DUALMACE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_MACE"
+     ]
+    }
+   ]
+  },
+  "COMBAT_MACES_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_MACES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_MACE*",
+      "T?_2H_MACE*",
+      "T?_2H_FLAIL*",
+      "T?_MAIN_ROCKMACE*",
+      "T?_2H_DUALMACE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_MACE_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_NATURESTAFFS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_NATURESTAFF",
+      "T?_2H_NATURESTAFF",
+      "T?_2H_WILDSTAFF",
+      "T?_MAIN_NATURESTAFF_KEEPER",
+      "T?_2H_NATURESTAFF_HELL",
+      "T?_2H_NATURESTAFF_KEEPER",
+      "T?_MAIN_NATURESTAFF_AVALON",
+      "T?_MAIN_NATURESTAFF_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_NATURESTAFFS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_NATURESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_NATURESTAFF*",
+      "T?_2H_NATURESTAFF*",
+      "T?_2H_WILDSTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_NATURESTAFF_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_NATURESTAFFS_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_NATURESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW*",
+      "T?_2H_WARBOW*",
+      "T?_2H_LONGBOW*",
+      "T?_MAIN_DAGGER*",
+      "T?_2H_DAGGER*",
+      "T?_2H_CLAWPAIR*",
+      "T?_MAIN_RAPIER*",
+      "T?_2H_DUALSICKLE*",
+      "T?_MAIN_SPEAR*",
+      "T?_2H_SPEAR*",
+      "T?_2H_GLAIVE*",
+      "T?_2H_HARPOON*",
+      "T?_2H_TRIDENT*",
+      "T?_2H_QUARTERSTAFF*",
+      "T?_2H_IRONCLADEDSTAFF*",
+      "T?_2H_DOUBLEBLADEDSTAFF*",
+      "T?_2H_COMBATSTAFF*",
+      "T?_2H_TWINSCYTHE*",
+      "T?_2H_ROCKSTAFF*",
+      "T?_2H_SHAPESHIFTER*",
+      "T?_MAIN_NATURESTAFF*",
+      "T?_2H_NATURESTAFF*",
+      "T?_2H_WILDSTAFF*",
+      "T?_OFF_TORCH*",
+      "T?_OFF_HORN*",
+      "T?_OFF_JESTERCANE*",
+      "T?_OFF_LAMP*",
+      "T?_OFF_TALISMAN*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_NATURESTAFF_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_NATURESTAFFS_GREAT": {
+   "kind": "spec",
+   "parent": "COMBAT_NATURESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_NATURESTAFF*",
+      "T?_2H_NATURESTAFF*",
+      "T?_2H_WILDSTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_NATURESTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_NATURESTAFFS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_NATURESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_NATURESTAFF*",
+      "T?_2H_NATURESTAFF*",
+      "T?_2H_WILDSTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_NATURESTAFF_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_NATURESTAFFS_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_NATURESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_NATURESTAFF*",
+      "T?_2H_NATURESTAFF*",
+      "T?_2H_WILDSTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_NATURESTAFF_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_NATURESTAFFS_KEEPER2": {
+   "kind": "spec",
+   "parent": "COMBAT_NATURESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_NATURESTAFF*",
+      "T?_2H_NATURESTAFF*",
+      "T?_2H_WILDSTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_NATURESTAFF_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_NATURESTAFFS_NATURE": {
+   "kind": "spec",
+   "parent": "COMBAT_NATURESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_NATURESTAFF*",
+      "T?_2H_NATURESTAFF*",
+      "T?_2H_WILDSTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_NATURESTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_NATURESTAFFS_WILD": {
+   "kind": "spec",
+   "parent": "COMBAT_NATURESTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_NATURESTAFF*",
+      "T?_2H_NATURESTAFF*",
+      "T?_2H_WILDSTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_WILDSTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_ARMORS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE_SET1",
+      "T?_ARMOR_PLATE_SET2",
+      "T?_ARMOR_PLATE_SET3",
+      "T?_ARMOR_PLATE_ROYAL",
+      "T?_ARMOR_PLATE_UNDEAD",
+      "T?_ARMOR_PLATE_HELL",
+      "T?_ARMOR_PLATE_KEEPER",
+      "T?_ARMOR_PLATE_FEY",
+      "T?_ARMOR_PLATE_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_ARMORS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_ARMORS_FEY": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE_FEY"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_ARMORS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_ARMORS_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_ARMORS_ROYAL": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE_ROYAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_ARMORS_SET1": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE_SET1"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_ARMORS_SET2": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE_SET2"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_ARMORS_SET3": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE_SET3"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_ARMORS_UNDEAD": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_ARMORS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_ARMOR_PLATE_UNDEAD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_HEADS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE_SET1",
+      "T?_HEAD_PLATE_SET2",
+      "T?_HEAD_PLATE_SET3",
+      "T?_HEAD_PLATE_ROYAL",
+      "T?_HEAD_PLATE_UNDEAD",
+      "T?_HEAD_PLATE_HELL",
+      "T?_HEAD_PLATE_KEEPER",
+      "T?_HEAD_PLATE_FEY",
+      "T?_HEAD_PLATE_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_HEADS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_HEADS_FEY": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE_FEY"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_HEADS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_HEADS_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_HEADS_ROYAL": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE_ROYAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_HEADS_SET1": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE_SET1"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_HEADS_SET2": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE_SET2"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_HEADS_SET3": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE_SET3"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_HEADS_UNDEAD": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_HEADS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_HEAD_PLATE_UNDEAD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_SHOES": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE_SET1",
+      "T?_SHOES_PLATE_SET2",
+      "T?_SHOES_PLATE_SET3",
+      "T?_SHOES_PLATE_ROYAL",
+      "T?_SHOES_PLATE_UNDEAD",
+      "T?_SHOES_PLATE_HELL",
+      "T?_SHOES_PLATE_KEEPER",
+      "T?_SHOES_PLATE_FEY",
+      "T?_SHOES_PLATE_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_SHOES_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_SHOES_FEY": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE_FEY"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_SHOES_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_SHOES_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_SHOES_ROYAL": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE_ROYAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_SHOES_SET1": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE_SET1"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_SHOES_SET2": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE_SET2"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_SHOES_SET3": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE_SET3"
+     ]
+    }
+   ]
+  },
+  "COMBAT_PLATE_SHOES_UNDEAD": {
+   "kind": "spec",
+   "parent": "COMBAT_PLATE_SHOES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_SHOES_PLATE_UNDEAD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_QUARTERSTAFFS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_QUARTERSTAFF",
+      "T?_2H_IRONCLADEDSTAFF",
+      "T?_2H_DOUBLEBLADEDSTAFF",
+      "T?_2H_COMBATSTAFF_MORGANA",
+      "T?_2H_TWINSCYTHE_HELL",
+      "T?_2H_ROCKSTAFF_KEEPER",
+      "T?_2H_QUARTERSTAFF_AVALON",
+      "T?_2H_DOUBLEBLADEDSTAFF_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_QUARTERSTAFFS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_QUARTERSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_QUARTERSTAFF*",
+      "T?_2H_IRONCLADEDSTAFF*",
+      "T?_2H_DOUBLEBLADEDSTAFF*",
+      "T?_2H_COMBATSTAFF*",
+      "T?_2H_TWINSCYTHE*",
+      "T?_2H_ROCKSTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_QUARTERSTAFF_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_QUARTERSTAFFS_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_QUARTERSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW*",
+      "T?_2H_WARBOW*",
+      "T?_2H_LONGBOW*",
+      "T?_MAIN_DAGGER*",
+      "T?_2H_DAGGER*",
+      "T?_2H_CLAWPAIR*",
+      "T?_MAIN_RAPIER*",
+      "T?_2H_DUALSICKLE*",
+      "T?_MAIN_SPEAR*",
+      "T?_2H_SPEAR*",
+      "T?_2H_GLAIVE*",
+      "T?_2H_HARPOON*",
+      "T?_2H_TRIDENT*",
+      "T?_2H_QUARTERSTAFF*",
+      "T?_2H_IRONCLADEDSTAFF*",
+      "T?_2H_DOUBLEBLADEDSTAFF*",
+      "T?_2H_COMBATSTAFF*",
+      "T?_2H_TWINSCYTHE*",
+      "T?_2H_ROCKSTAFF*",
+      "T?_2H_SHAPESHIFTER*",
+      "T?_MAIN_NATURESTAFF*",
+      "T?_2H_NATURESTAFF*",
+      "T?_2H_WILDSTAFF*",
+      "T?_OFF_TORCH*",
+      "T?_OFF_HORN*",
+      "T?_OFF_JESTERCANE*",
+      "T?_OFF_LAMP*",
+      "T?_OFF_TALISMAN*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_DOUBLEBLADEDSTAFF_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_QUARTERSTAFFS_DOUBLEBLADED": {
+   "kind": "spec",
+   "parent": "COMBAT_QUARTERSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_QUARTERSTAFF*",
+      "T?_2H_IRONCLADEDSTAFF*",
+      "T?_2H_DOUBLEBLADEDSTAFF*",
+      "T?_2H_COMBATSTAFF*",
+      "T?_2H_TWINSCYTHE*",
+      "T?_2H_ROCKSTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_DOUBLEBLADEDSTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_QUARTERSTAFFS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_QUARTERSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_QUARTERSTAFF*",
+      "T?_2H_IRONCLADEDSTAFF*",
+      "T?_2H_DOUBLEBLADEDSTAFF*",
+      "T?_2H_COMBATSTAFF*",
+      "T?_2H_TWINSCYTHE*",
+      "T?_2H_ROCKSTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_TWINSCYTHE_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_QUARTERSTAFFS_IRONCLAD": {
+   "kind": "spec",
+   "parent": "COMBAT_QUARTERSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_QUARTERSTAFF*",
+      "T?_2H_IRONCLADEDSTAFF*",
+      "T?_2H_DOUBLEBLADEDSTAFF*",
+      "T?_2H_COMBATSTAFF*",
+      "T?_2H_TWINSCYTHE*",
+      "T?_2H_ROCKSTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_IRONCLADEDSTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_QUARTERSTAFFS_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_QUARTERSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_QUARTERSTAFF*",
+      "T?_2H_IRONCLADEDSTAFF*",
+      "T?_2H_DOUBLEBLADEDSTAFF*",
+      "T?_2H_COMBATSTAFF*",
+      "T?_2H_TWINSCYTHE*",
+      "T?_2H_ROCKSTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_ROCKSTAFF_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_QUARTERSTAFFS_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_QUARTERSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_QUARTERSTAFF*",
+      "T?_2H_IRONCLADEDSTAFF*",
+      "T?_2H_DOUBLEBLADEDSTAFF*",
+      "T?_2H_COMBATSTAFF*",
+      "T?_2H_TWINSCYTHE*",
+      "T?_2H_ROCKSTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_COMBATSTAFF_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_QUARTERSTAFFS_QUARTERSTAFF": {
+   "kind": "spec",
+   "parent": "COMBAT_QUARTERSTAFFS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_QUARTERSTAFF*",
+      "T?_2H_IRONCLADEDSTAFF*",
+      "T?_2H_DOUBLEBLADEDSTAFF*",
+      "T?_2H_COMBATSTAFF*",
+      "T?_2H_TWINSCYTHE*",
+      "T?_2H_ROCKSTAFF*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_QUARTERSTAFF"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SHAPESHIFTER": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SHAPESHIFTER_SET1",
+      "T?_2H_SHAPESHIFTER_SET2",
+      "T?_2H_SHAPESHIFTER_SET3",
+      "T?_2H_SHAPESHIFTER_MORGANA",
+      "T?_2H_SHAPESHIFTER_HELL",
+      "T?_2H_SHAPESHIFTER_KEEPER",
+      "T?_2H_SHAPESHIFTER_AVALON",
+      "T?_2H_SHAPESHIFTER_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SHAPESHIFTER_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_SHAPESHIFTER",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SHAPESHIFTER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SHAPESHIFTER_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SHAPESHIFTER_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_SHAPESHIFTER",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW*",
+      "T?_2H_WARBOW*",
+      "T?_2H_LONGBOW*",
+      "T?_MAIN_DAGGER*",
+      "T?_2H_DAGGER*",
+      "T?_2H_CLAWPAIR*",
+      "T?_MAIN_RAPIER*",
+      "T?_2H_DUALSICKLE*",
+      "T?_MAIN_SPEAR*",
+      "T?_2H_SPEAR*",
+      "T?_2H_GLAIVE*",
+      "T?_2H_HARPOON*",
+      "T?_2H_TRIDENT*",
+      "T?_2H_QUARTERSTAFF*",
+      "T?_2H_IRONCLADEDSTAFF*",
+      "T?_2H_DOUBLEBLADEDSTAFF*",
+      "T?_2H_COMBATSTAFF*",
+      "T?_2H_TWINSCYTHE*",
+      "T?_2H_ROCKSTAFF*",
+      "T?_2H_SHAPESHIFTER*",
+      "T?_MAIN_NATURESTAFF*",
+      "T?_2H_NATURESTAFF*",
+      "T?_2H_WILDSTAFF*",
+      "T?_OFF_TORCH*",
+      "T?_OFF_HORN*",
+      "T?_OFF_JESTERCANE*",
+      "T?_OFF_LAMP*",
+      "T?_OFF_TALISMAN*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SHAPESHIFTER_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SHAPESHIFTER_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_SHAPESHIFTER",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SHAPESHIFTER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SHAPESHIFTER_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SHAPESHIFTER_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_SHAPESHIFTER",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SHAPESHIFTER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SHAPESHIFTER_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SHAPESHIFTER_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_SHAPESHIFTER",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SHAPESHIFTER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SHAPESHIFTER_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SHAPESHIFTER_SET1": {
+   "kind": "spec",
+   "parent": "COMBAT_SHAPESHIFTER",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SHAPESHIFTER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SHAPESHIFTER_SET1"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SHAPESHIFTER_SET2": {
+   "kind": "spec",
+   "parent": "COMBAT_SHAPESHIFTER",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SHAPESHIFTER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SHAPESHIFTER_SET2"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SHAPESHIFTER_SET3": {
+   "kind": "spec",
+   "parent": "COMBAT_SHAPESHIFTER",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SHAPESHIFTER*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SHAPESHIFTER_SET3"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SHIELDS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_SHIELD",
+      "T?_OFF_TOWERSHIELD_UNDEAD",
+      "T?_OFF_SHIELD_HELL",
+      "T?_OFF_SPIKEDSHIELD_MORGANA",
+      "T?_OFF_SHIELD_AVALON",
+      "T?_OFF_SHIELD_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SHIELDS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_SHIELDS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_SHIELD*",
+      "T?_OFF_TOWERSHIELD*",
+      "T?_OFF_SPIKEDSHIELD*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_SHIELD_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SHIELDS_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_SHIELDS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SWORD*",
+      "T?_2H_CLAYMORE*",
+      "T?_2H_DUALSWORD*",
+      "T?_MAIN_SCIMITAR*",
+      "T?_2H_CLEAVER*",
+      "T?_2H_DUALSCIMITAR*",
+      "T?_MAIN_AXE*",
+      "T?_2H_AXE*",
+      "T?_2H_HALBERD*",
+      "T?_2H_SCYTHE*",
+      "T?_2H_DUALAXE*",
+      "T?_MAIN_MACE*",
+      "T?_2H_MACE*",
+      "T?_2H_FLAIL*",
+      "T?_MAIN_ROCKMACE*",
+      "T?_2H_DUALMACE*",
+      "T?_MAIN_HAMMER*",
+      "T?_2H_HAMMER*",
+      "T?_2H_POLEHAMMER*",
+      "T?_2H_DUALHAMMER*",
+      "T?_2H_RAM*",
+      "T?_2H_KNUCKLES*",
+      "T?_2H_CROSSBOW*",
+      "T?_2H_CROSSBOWLARGE*",
+      "T?_MAIN_1HCROSSBOW*",
+      "T?_2H_REPEATINGCROSSBOW*",
+      "T?_2H_DUALCROSSBOW*",
+      "T?_OFF_SHIELD*",
+      "T?_OFF_TOWERSHIELD*",
+      "T?_OFF_SPIKEDSHIELD*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_SHIELD_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SHIELDS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_SHIELDS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_SHIELD*",
+      "T?_OFF_TOWERSHIELD*",
+      "T?_OFF_SPIKEDSHIELD*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_SHIELD_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SHIELDS_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_SHIELDS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_SHIELD*",
+      "T?_OFF_TOWERSHIELD*",
+      "T?_OFF_SPIKEDSHIELD*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_SPIKEDSHIELD_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SHIELDS_SHIELD": {
+   "kind": "spec",
+   "parent": "COMBAT_SHIELDS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.6,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_SHIELD*",
+      "T?_OFF_TOWERSHIELD*",
+      "T?_OFF_SPIKEDSHIELD*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_SHIELD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SHIELDS_UNDEAD": {
+   "kind": "spec",
+   "parent": "COMBAT_SHIELDS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_SHIELD*",
+      "T?_OFF_TOWERSHIELD*",
+      "T?_OFF_SPIKEDSHIELD*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_TOWERSHIELD_UNDEAD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SPEARS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SPEAR",
+      "T?_2H_SPEAR",
+      "T?_2H_GLAIVE",
+      "T?_MAIN_SPEAR_KEEPER",
+      "T?_2H_HARPOON_HELL",
+      "T?_2H_TRIDENT_UNDEAD",
+      "T?_MAIN_SPEAR_LANCE_AVALON",
+      "T?_2H_GLAIVE_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SPEARS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_SPEARS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SPEAR*",
+      "T?_2H_SPEAR*",
+      "T?_2H_GLAIVE*",
+      "T?_2H_HARPOON*",
+      "T?_2H_TRIDENT*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SPEAR_LANCE_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SPEARS_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_SPEARS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW*",
+      "T?_2H_WARBOW*",
+      "T?_2H_LONGBOW*",
+      "T?_MAIN_DAGGER*",
+      "T?_2H_DAGGER*",
+      "T?_2H_CLAWPAIR*",
+      "T?_MAIN_RAPIER*",
+      "T?_2H_DUALSICKLE*",
+      "T?_MAIN_SPEAR*",
+      "T?_2H_SPEAR*",
+      "T?_2H_GLAIVE*",
+      "T?_2H_HARPOON*",
+      "T?_2H_TRIDENT*",
+      "T?_2H_QUARTERSTAFF*",
+      "T?_2H_IRONCLADEDSTAFF*",
+      "T?_2H_DOUBLEBLADEDSTAFF*",
+      "T?_2H_COMBATSTAFF*",
+      "T?_2H_TWINSCYTHE*",
+      "T?_2H_ROCKSTAFF*",
+      "T?_2H_SHAPESHIFTER*",
+      "T?_MAIN_NATURESTAFF*",
+      "T?_2H_NATURESTAFF*",
+      "T?_2H_WILDSTAFF*",
+      "T?_OFF_TORCH*",
+      "T?_OFF_HORN*",
+      "T?_OFF_JESTERCANE*",
+      "T?_OFF_LAMP*",
+      "T?_OFF_TALISMAN*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_GLAIVE_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SPEARS_GLAIVE": {
+   "kind": "spec",
+   "parent": "COMBAT_SPEARS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SPEAR*",
+      "T?_2H_SPEAR*",
+      "T?_2H_GLAIVE*",
+      "T?_2H_HARPOON*",
+      "T?_2H_TRIDENT*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_GLAIVE"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SPEARS_GREAT": {
+   "kind": "spec",
+   "parent": "COMBAT_SPEARS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SPEAR*",
+      "T?_2H_SPEAR*",
+      "T?_2H_GLAIVE*",
+      "T?_2H_HARPOON*",
+      "T?_2H_TRIDENT*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_SPEAR"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SPEARS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_SPEARS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SPEAR*",
+      "T?_2H_SPEAR*",
+      "T?_2H_GLAIVE*",
+      "T?_2H_HARPOON*",
+      "T?_2H_TRIDENT*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_HARPOON_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SPEARS_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_SPEARS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SPEAR*",
+      "T?_2H_SPEAR*",
+      "T?_2H_GLAIVE*",
+      "T?_2H_HARPOON*",
+      "T?_2H_TRIDENT*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SPEAR_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SPEARS_SPEAR": {
+   "kind": "spec",
+   "parent": "COMBAT_SPEARS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SPEAR*",
+      "T?_2H_SPEAR*",
+      "T?_2H_GLAIVE*",
+      "T?_2H_HARPOON*",
+      "T?_2H_TRIDENT*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SPEAR"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SPEARS_UNDEAD": {
+   "kind": "spec",
+   "parent": "COMBAT_SPEARS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SPEAR*",
+      "T?_2H_SPEAR*",
+      "T?_2H_GLAIVE*",
+      "T?_2H_HARPOON*",
+      "T?_2H_TRIDENT*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_TRIDENT_UNDEAD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SWORDS": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SWORD",
+      "T?_2H_CLAYMORE",
+      "T?_2H_DUALSWORD",
+      "T?_MAIN_SCIMITAR_MORGANA",
+      "T?_2H_CLEAVER_HELL",
+      "T?_2H_DUALSCIMITAR_UNDEAD",
+      "T?_2H_CLAYMORE_AVALON",
+      "T?_MAIN_SWORD_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SWORDS_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_SWORDS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SWORD*",
+      "T?_2H_CLAYMORE*",
+      "T?_2H_DUALSWORD*",
+      "T?_MAIN_SCIMITAR*",
+      "T?_2H_CLEAVER*",
+      "T?_2H_DUALSCIMITAR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_CLAYMORE_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SWORDS_CLAYMORE": {
+   "kind": "spec",
+   "parent": "COMBAT_SWORDS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SWORD*",
+      "T?_2H_CLAYMORE*",
+      "T?_2H_DUALSWORD*",
+      "T?_MAIN_SCIMITAR*",
+      "T?_2H_CLEAVER*",
+      "T?_2H_DUALSCIMITAR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_CLAYMORE"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SWORDS_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_SWORDS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SWORD*",
+      "T?_2H_CLAYMORE*",
+      "T?_2H_DUALSWORD*",
+      "T?_MAIN_SCIMITAR*",
+      "T?_2H_CLEAVER*",
+      "T?_2H_DUALSCIMITAR*",
+      "T?_MAIN_AXE*",
+      "T?_2H_AXE*",
+      "T?_2H_HALBERD*",
+      "T?_2H_SCYTHE*",
+      "T?_2H_DUALAXE*",
+      "T?_MAIN_MACE*",
+      "T?_2H_MACE*",
+      "T?_2H_FLAIL*",
+      "T?_MAIN_ROCKMACE*",
+      "T?_2H_DUALMACE*",
+      "T?_MAIN_HAMMER*",
+      "T?_2H_HAMMER*",
+      "T?_2H_POLEHAMMER*",
+      "T?_2H_DUALHAMMER*",
+      "T?_2H_RAM*",
+      "T?_2H_KNUCKLES*",
+      "T?_2H_CROSSBOW*",
+      "T?_2H_CROSSBOWLARGE*",
+      "T?_MAIN_1HCROSSBOW*",
+      "T?_2H_REPEATINGCROSSBOW*",
+      "T?_2H_DUALCROSSBOW*",
+      "T?_OFF_SHIELD*",
+      "T?_OFF_TOWERSHIELD*",
+      "T?_OFF_SPIKEDSHIELD*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SWORD_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SWORDS_DUAL": {
+   "kind": "spec",
+   "parent": "COMBAT_SWORDS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SWORD*",
+      "T?_2H_CLAYMORE*",
+      "T?_2H_DUALSWORD*",
+      "T?_MAIN_SCIMITAR*",
+      "T?_2H_CLEAVER*",
+      "T?_2H_DUALSCIMITAR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_DUALSWORD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SWORDS_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_SWORDS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SWORD*",
+      "T?_2H_CLAYMORE*",
+      "T?_2H_DUALSWORD*",
+      "T?_MAIN_SCIMITAR*",
+      "T?_2H_CLEAVER*",
+      "T?_2H_DUALSCIMITAR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_CLEAVER_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SWORDS_MORGANA": {
+   "kind": "spec",
+   "parent": "COMBAT_SWORDS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SWORD*",
+      "T?_2H_CLAYMORE*",
+      "T?_2H_DUALSWORD*",
+      "T?_MAIN_SCIMITAR*",
+      "T?_2H_CLEAVER*",
+      "T?_2H_DUALSCIMITAR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SCIMITAR_MORGANA"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SWORDS_SWORD": {
+   "kind": "spec",
+   "parent": "COMBAT_SWORDS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SWORD*",
+      "T?_2H_CLAYMORE*",
+      "T?_2H_DUALSWORD*",
+      "T?_MAIN_SCIMITAR*",
+      "T?_2H_CLEAVER*",
+      "T?_2H_DUALSCIMITAR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SWORD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_SWORDS_UNDEAD": {
+   "kind": "spec",
+   "parent": "COMBAT_SWORDS",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_MAIN_SWORD*",
+      "T?_2H_CLAYMORE*",
+      "T?_2H_DUALSWORD*",
+      "T?_MAIN_SCIMITAR*",
+      "T?_2H_CLEAVER*",
+      "T?_2H_DUALSCIMITAR*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_DUALSCIMITAR_UNDEAD"
+     ]
+    }
+   ]
+  },
+  "COMBAT_TORCHES": {
+   "kind": "mastery",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.2,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_TORCH",
+      "T?_OFF_HORN_KEEPER",
+      "T?_OFF_JESTERCANE_HELL",
+      "T?_OFF_LAMP_UNDEAD",
+      "T?_OFF_TALISMAN_AVALON",
+      "T?_OFF_TORCH_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_TORCHES_AVALON": {
+   "kind": "spec",
+   "parent": "COMBAT_TORCHES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_TORCH*",
+      "T?_OFF_HORN*",
+      "T?_OFF_JESTERCANE*",
+      "T?_OFF_LAMP*",
+      "T?_OFF_TALISMAN*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_TALISMAN_AVALON"
+     ]
+    }
+   ]
+  },
+  "COMBAT_TORCHES_CRYSTAL": {
+   "kind": "spec",
+   "parent": "COMBAT_TORCHES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.025,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_2H_BOW*",
+      "T?_2H_WARBOW*",
+      "T?_2H_LONGBOW*",
+      "T?_MAIN_DAGGER*",
+      "T?_2H_DAGGER*",
+      "T?_2H_CLAWPAIR*",
+      "T?_MAIN_RAPIER*",
+      "T?_2H_DUALSICKLE*",
+      "T?_MAIN_SPEAR*",
+      "T?_2H_SPEAR*",
+      "T?_2H_GLAIVE*",
+      "T?_2H_HARPOON*",
+      "T?_2H_TRIDENT*",
+      "T?_2H_QUARTERSTAFF*",
+      "T?_2H_IRONCLADEDSTAFF*",
+      "T?_2H_DOUBLEBLADEDSTAFF*",
+      "T?_2H_COMBATSTAFF*",
+      "T?_2H_TWINSCYTHE*",
+      "T?_2H_ROCKSTAFF*",
+      "T?_2H_SHAPESHIFTER*",
+      "T?_MAIN_NATURESTAFF*",
+      "T?_2H_NATURESTAFF*",
+      "T?_2H_WILDSTAFF*",
+      "T?_OFF_TORCH*",
+      "T?_OFF_HORN*",
+      "T?_OFF_JESTERCANE*",
+      "T?_OFF_LAMP*",
+      "T?_OFF_TALISMAN*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_TORCH_CRYSTAL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_TORCHES_HELL": {
+   "kind": "spec",
+   "parent": "COMBAT_TORCHES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_TORCH*",
+      "T?_OFF_HORN*",
+      "T?_OFF_JESTERCANE*",
+      "T?_OFF_LAMP*",
+      "T?_OFF_TALISMAN*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_JESTERCANE_HELL"
+     ]
+    }
+   ]
+  },
+  "COMBAT_TORCHES_KEEPER": {
+   "kind": "spec",
+   "parent": "COMBAT_TORCHES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_TORCH*",
+      "T?_OFF_HORN*",
+      "T?_OFF_JESTERCANE*",
+      "T?_OFF_LAMP*",
+      "T?_OFF_TALISMAN*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_HORN_KEEPER"
+     ]
+    }
+   ]
+  },
+  "COMBAT_TORCHES_TORCH": {
+   "kind": "spec",
+   "parent": "COMBAT_TORCHES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.6,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_TORCH*",
+      "T?_OFF_HORN*",
+      "T?_OFF_JESTERCANE*",
+      "T?_OFF_LAMP*",
+      "T?_OFF_TALISMAN*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_TORCH"
+     ]
+    }
+   ]
+  },
+  "COMBAT_TORCHES_UNDEAD": {
+   "kind": "spec",
+   "parent": "COMBAT_TORCHES",
+   "max_level": 100,
+   "bonuses": [
+    {
+     "bonus": 0.1,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_TORCH*",
+      "T?_OFF_HORN*",
+      "T?_OFF_JESTERCANE*",
+      "T?_OFF_LAMP*",
+      "T?_OFF_TALISMAN*"
+     ]
+    },
+    {
+     "bonus": 2.0,
+     "min_tier": 4,
+     "max_tier": 8,
+     "patterns": [
+      "T?_OFF_LAMP_UNDEAD"
+     ]
+    }
+   ]
+  }
+ },
+ "character_defaults": {
+  "inventorysize": 48,
+  "collisionradius": 0.75,
+  "attackcollisionradius": 0.75,
+  "harvestrange": 2.0,
+  "useobjectrange": 2.0,
+  "useobjectrangeclose": 1.0,
+  "usecraftbuildingrange": 30.0,
+  "barehandrange": 2,
+  "barehandphysicaldamage": 20,
+  "barehandattackspeed": 1,
+  "hitpointsmax": 1200.0,
+  "hitpointsregeneration": 12.0,
+  "energymax": 120.0,
+  "energyregeneration": 1.5,
+  "craftingfocusmax": 30000,
+  "premiumcraftingfocusmax": 30000,
+  "craftingfocusatstart": 0,
+  "craftingfocusregenerationperday": 0,
+  "premiumcraftingfocusregenerationperday": 10000,
+  "learningpointsmax": 999999,
+  "learningpointsatstart": 0,
+  "learningpointsecondsperpoint": 0,
+  "learningpointsmaxpremium": 999999,
+  "learningpointsecondsperpointpremium": 2880,
+  "learningpointfamefactor": 5,
+  "premiumdestinyboardprogressionfactor": 1.5,
+  "premiumsilverlootfactor": 1.5,
+  "premiummoblootfactor": 1.5,
+  "premiumgatheringyieldbonuschance": 0.5,
+  "premiumcropyieldfactor": 2.0,
+  "premiumanimalgrowthfactor": 0.5,
+  "premiummarkettransactionfeefactor": 0.5,
+  "movespeed": 5.5,
+  "maxload": 50,
+  "meleeattackdamagetime": 0.25,
+  "rangedattackdamagetime": 0.32,
+  "magicattackdamagetime": 0.36,
+  "warcamprange": 8.0,
+  "monolithrange": 6.0,
+  "orbclaimrange": 3.0,
+  "claimpowercrystalhideoutrange": 8.0,
+  "claimpowercrystalterritoryrange": 4.0,
+  "claimcarriableonsmugglersdestinationrange": 5.0,
+  "claimcarriableonhelldungeonshrinerange": 8.5,
+  "freecagedsmugglerrange": 2.0,
+  "treasurechestrange": 2.0,
+  "maxfoodslotstacksize": 10,
+  "maxpotionslotstacksize": 10,
+  "prefab": "PLACEHOLDER"
+ },
+ "global_cast_delay": 0.5,
+ "AoeEscalation": {
+  "defaulttargetcountthresholdmin": 1,
+  "defaulttargetcountthresholdmax": 7
+ },
+ "CrowdControlDiminishingReturns": {
+  "breaksondamagefactor": 0.7,
+  "diminishingreturnmax": 0.8,
+  "typefactorstun": 0.3,
+  "typefactorroot": 0.3,
+  "typefactorknockback": 0.08,
+  "typefactorsilence": 0.3,
+  "typefactorslow": 0.3,
+  "typefactorforcedmovement": 0.3,
+  "typefactortransformationcc": 0.3,
+  "decreasetimestun": 5,
+  "decreasetimeroot": 5,
+  "decreasetimeknockback": 10,
+  "decreasetimesilence": 5,
+  "decreasetimeslow": 10,
+  "decreasetimeforcedmovement": 10,
+  "decreasetimetransformationcc": 5
+ },
+ "Casting": {
+  "globaldisruptionfactor": 1,
+  "globalcastrangetolerance": 7,
+  "minchanneldurationbeforecancelpossible": 0.75,
+  "mintoggledurationbeforecancelpossible": 0.75
+ },
+ "SpellCooldowns": {
+  "onequipmentchange": 10,
+  "onspellchange": 5,
+  "OnMountUp": {
+   "mainhand1": 0,
+   "mainhand2": 0,
+   "offhandormainhand3": 0,
+   "armor": 0,
+   "head": 0,
+   "shoes": 0,
+   "potion": 0,
+   "food": 0
+  },
+  "OnDismount": {
+   "mainhand1": 0,
+   "mainhand2": 0,
+   "offhandormainhand3": 0,
+   "armor": 5,
+   "head": 5,
+   "shoes": 5,
+   "potion": 5,
+   "food": 5
+  },
+  "OnHostileDismount": {
+   "mainhand1": 5,
+   "mainhand2": 5,
+   "offhandormainhand3": 5,
+   "armor": 5,
+   "head": 5,
+   "shoes": 5,
+   "potion": 5,
+   "food": 5
+  },
+  "OnLongHostileDismount": {
+   "mainhand1": 15,
+   "mainhand2": 15,
+   "offhandormainhand3": 15,
+   "armor": 15,
+   "head": 15,
+   "shoes": 15,
+   "potion": 15,
+   "food": 15
+  }
+ },
+ "ReflectedDamage": {
+  "maxReflectCapacityFactorOfMaxHp": 2
+ },
+ "PlayerFocusFire": {
+  "lookbackseconds": 10,
+  "effectdurationinsec": 5,
+  "attackers": [
+   {
+    "numbergreaterorequal": 2,
+    "meleemodifier": 0.143,
+    "rangedmodifier": 0.143,
+    "mountedmodifier": 0.143
+   },
+   {
+    "numbergreaterorequal": 3,
+    "meleemodifier": 0.259,
+    "rangedmodifier": 0.259,
+    "mountedmodifier": 0.259
+   },
+   {
+    "numbergreaterorequal": 4,
+    "meleemodifier": 0.353,
+    "rangedmodifier": 0.353,
+    "mountedmodifier": 0.353
+   },
+   {
+    "numbergreaterorequal": 5,
+    "meleemodifier": 0.42,
+    "rangedmodifier": 0.42,
+    "mountedmodifier": 0.43
+   },
+   {
+    "numbergreaterorequal": 6,
+    "meleemodifier": 0.466,
+    "rangedmodifier": 0.466,
+    "mountedmodifier": 0.494
+   },
+   {
+    "numbergreaterorequal": 7,
+    "meleemodifier": 0.5,
+    "rangedmodifier": 0.5,
+    "mountedmodifier": 0.547
+   },
+   {
+    "numbergreaterorequal": 8,
+    "meleemodifier": 0.524,
+    "rangedmodifier": 0.524,
+    "mountedmodifier": 0.592
+   },
+   {
+    "numbergreaterorequal": 9,
+    "meleemodifier": 0.546,
+    "rangedmodifier": 0.546,
+    "mountedmodifier": 0.63
+   },
+   {
+    "numbergreaterorequal": 10,
+    "meleemodifier": 0.566,
+    "rangedmodifier": 0.566,
+    "mountedmodifier": 0.662
+   },
+   {
+    "numbergreaterorequal": 11,
+    "meleemodifier": 0.585,
+    "rangedmodifier": 0.585,
+    "mountedmodifier": 0.69
+   },
+   {
+    "numbergreaterorequal": 12,
+    "meleemodifier": 0.602,
+    "rangedmodifier": 0.602,
+    "mountedmodifier": 0.713
+   },
+   {
+    "numbergreaterorequal": 13,
+    "meleemodifier": 0.618,
+    "rangedmodifier": 0.618,
+    "mountedmodifier": 0.734
+   },
+   {
+    "numbergreaterorequal": 14,
+    "meleemodifier": 0.633,
+    "rangedmodifier": 0.633,
+    "mountedmodifier": 0.752
+   },
+   {
+    "numbergreaterorequal": 15,
+    "meleemodifier": 0.646,
+    "rangedmodifier": 0.646,
+    "mountedmodifier": 0.768
+   },
+   {
+    "numbergreaterorequal": 16,
+    "meleemodifier": 0.659,
+    "rangedmodifier": 0.659,
+    "mountedmodifier": 0.782
+   },
+   {
+    "numbergreaterorequal": 17,
+    "meleemodifier": 0.671,
+    "rangedmodifier": 0.671,
+    "mountedmodifier": 0.795
+   },
+   {
+    "numbergreaterorequal": 18,
+    "meleemodifier": 0.682,
+    "rangedmodifier": 0.682,
+    "mountedmodifier": 0.8
+   },
+   {
+    "numbergreaterorequal": 19,
+    "meleemodifier": 0.692,
+    "rangedmodifier": 0.692,
+    "mountedmodifier": 0.8
+   },
+   {
+    "numbergreaterorequal": 20,
+    "meleemodifier": 0.702,
+    "rangedmodifier": 0.702,
+    "mountedmodifier": 0.8
+   },
+   {
+    "numbergreaterorequal": 21,
+    "meleemodifier": 0.711,
+    "rangedmodifier": 0.711,
+    "mountedmodifier": 0.8
+   },
+   {
+    "numbergreaterorequal": 22,
+    "meleemodifier": 0.72,
+    "rangedmodifier": 0.72,
+    "mountedmodifier": 0.8
+   },
+   {
+    "numbergreaterorequal": 23,
+    "meleemodifier": 0.728,
+    "rangedmodifier": 0.728,
+    "mountedmodifier": 0.8
+   },
+   {
+    "numbergreaterorequal": 24,
+    "meleemodifier": 0.736,
+    "rangedmodifier": 0.736,
+    "mountedmodifier": 0.8
+   },
+   {
+    "numbergreaterorequal": 25,
+    "meleemodifier": 0.743,
+    "rangedmodifier": 0.743,
+    "mountedmodifier": 0.8
+   },
+   {
+    "numbergreaterorequal": 26,
+    "meleemodifier": 0.75,
+    "rangedmodifier": 0.75,
+    "mountedmodifier": 0.8
+   },
+   {
+    "numbergreaterorequal": 27,
+    "meleemodifier": 0.75,
+    "rangedmodifier": 0.75,
+    "mountedmodifier": 0.8
+   },
+   {
+    "numbergreaterorequal": 28,
+    "meleemodifier": 0.75,
+    "rangedmodifier": 0.75,
+    "mountedmodifier": 0.8
+   },
+   {
+    "numbergreaterorequal": 29,
+    "meleemodifier": 0.75,
+    "rangedmodifier": 0.75,
+    "mountedmodifier": 0.8
+   },
+   {
+    "numbergreaterorequal": 30,
+    "meleemodifier": 0.75,
+    "rangedmodifier": 0.75,
+    "mountedmodifier": 0.8
+   }
+  ]
+ },
+ "PlayerHealingSickness": {
+  "lookbackseconds": 10,
+  "attackers": [
+   {
+    "numbergreaterorequal": 2,
+    "buff": "HEALINGSICKNESS_2"
+   },
+   {
+    "numbergreaterorequal": 3,
+    "buff": "HEALINGSICKNESS_3"
+   },
+   {
+    "numbergreaterorequal": 4,
+    "buff": "HEALINGSICKNESS_4"
+   },
+   {
+    "numbergreaterorequal": 5,
+    "buff": "HEALINGSICKNESS_5"
+   },
+   {
+    "numbergreaterorequal": 6,
+    "buff": "HEALINGSICKNESS_6"
+   },
+   {
+    "numbergreaterorequal": 7,
+    "buff": "HEALINGSICKNESS_7"
+   },
+   {
+    "numbergreaterorequal": 8,
+    "buff": "HEALINGSICKNESS_8"
+   },
+   {
+    "numbergreaterorequal": 9,
+    "buff": "HEALINGSICKNESS_9"
+   },
+   {
+    "numbergreaterorequal": 10,
+    "buff": "HEALINGSICKNESS_10"
+   },
+   {
+    "numbergreaterorequal": 11,
+    "buff": "HEALINGSICKNESS_11"
+   },
+   {
+    "numbergreaterorequal": 12,
+    "buff": "HEALINGSICKNESS_12"
+   },
+   {
+    "numbergreaterorequal": 13,
+    "buff": "HEALINGSICKNESS_13"
+   },
+   {
+    "numbergreaterorequal": 14,
+    "buff": "HEALINGSICKNESS_14"
+   },
+   {
+    "numbergreaterorequal": 15,
+    "buff": "HEALINGSICKNESS_15"
+   },
+   {
+    "numbergreaterorequal": 16,
+    "buff": "HEALINGSICKNESS_16"
+   },
+   {
+    "numbergreaterorequal": 17,
+    "buff": "HEALINGSICKNESS_17"
+   },
+   {
+    "numbergreaterorequal": 18,
+    "buff": "HEALINGSICKNESS_18"
+   },
+   {
+    "numbergreaterorequal": 19,
+    "buff": "HEALINGSICKNESS_19"
+   },
+   {
+    "numbergreaterorequal": 20,
+    "buff": "HEALINGSICKNESS_20"
+   }
+  ]
+ },
+ "ZergDebuff": {
+  "checkfrequency": 20,
+  "mountdisarrayfreeallotment": 15,
+  "allies": [
+   {
+    "numbergreaterorequal": 21,
+    "debuff": "ZERGDEBUFF_LVL1",
+    "damagemodifier": 0.99,
+    "ccdurationmodifier": 0.99,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL1",
+    "amplifieddamagemodifier": 0.79,
+    "amplifiedccdurationmodifier": 0.79
+   },
+   {
+    "numbergreaterorequal": 22,
+    "debuff": "ZERGDEBUFF_LVL2",
+    "damagemodifier": 0.98,
+    "ccdurationmodifier": 0.98,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL2",
+    "amplifieddamagemodifier": 0.78,
+    "amplifiedccdurationmodifier": 0.78
+   },
+   {
+    "numbergreaterorequal": 23,
+    "debuff": "ZERGDEBUFF_LVL3",
+    "damagemodifier": 0.97,
+    "ccdurationmodifier": 0.97,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL3",
+    "amplifieddamagemodifier": 0.77,
+    "amplifiedccdurationmodifier": 0.77
+   },
+   {
+    "numbergreaterorequal": 24,
+    "debuff": "ZERGDEBUFF_LVL4",
+    "damagemodifier": 0.96,
+    "ccdurationmodifier": 0.96,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL4",
+    "amplifieddamagemodifier": 0.76,
+    "amplifiedccdurationmodifier": 0.76
+   },
+   {
+    "numbergreaterorequal": 25,
+    "debuff": "ZERGDEBUFF_LVL5",
+    "damagemodifier": 0.95,
+    "ccdurationmodifier": 0.95,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL5",
+    "amplifieddamagemodifier": 0.75,
+    "amplifiedccdurationmodifier": 0.75
+   },
+   {
+    "numbergreaterorequal": 26,
+    "debuff": "ZERGDEBUFF_LVL6",
+    "damagemodifier": 0.94,
+    "ccdurationmodifier": 0.94,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL6",
+    "amplifieddamagemodifier": 0.74,
+    "amplifiedccdurationmodifier": 0.74
+   },
+   {
+    "numbergreaterorequal": 27,
+    "debuff": "ZERGDEBUFF_LVL7",
+    "damagemodifier": 0.93,
+    "ccdurationmodifier": 0.93,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL7",
+    "amplifieddamagemodifier": 0.73,
+    "amplifiedccdurationmodifier": 0.73
+   },
+   {
+    "numbergreaterorequal": 28,
+    "debuff": "ZERGDEBUFF_LVL8",
+    "damagemodifier": 0.92,
+    "ccdurationmodifier": 0.92,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL8",
+    "amplifieddamagemodifier": 0.72,
+    "amplifiedccdurationmodifier": 0.72
+   },
+   {
+    "numbergreaterorequal": 29,
+    "debuff": "ZERGDEBUFF_LVL9",
+    "damagemodifier": 0.91,
+    "ccdurationmodifier": 0.91,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL9",
+    "amplifieddamagemodifier": 0.71,
+    "amplifiedccdurationmodifier": 0.71
+   },
+   {
+    "numbergreaterorequal": 30,
+    "debuff": "ZERGDEBUFF_LVL10",
+    "damagemodifier": 0.9,
+    "ccdurationmodifier": 0.9,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL10",
+    "amplifieddamagemodifier": 0.7,
+    "amplifiedccdurationmodifier": 0.7
+   },
+   {
+    "numbergreaterorequal": 31,
+    "debuff": "ZERGDEBUFF_LVL11",
+    "damagemodifier": 0.89,
+    "ccdurationmodifier": 0.89,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL11",
+    "amplifieddamagemodifier": 0.69,
+    "amplifiedccdurationmodifier": 0.69
+   },
+   {
+    "numbergreaterorequal": 32,
+    "debuff": "ZERGDEBUFF_LVL12",
+    "damagemodifier": 0.88,
+    "ccdurationmodifier": 0.88,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL12",
+    "amplifieddamagemodifier": 0.68,
+    "amplifiedccdurationmodifier": 0.68
+   },
+   {
+    "numbergreaterorequal": 33,
+    "debuff": "ZERGDEBUFF_LVL13",
+    "damagemodifier": 0.87,
+    "ccdurationmodifier": 0.87,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL13",
+    "amplifieddamagemodifier": 0.67,
+    "amplifiedccdurationmodifier": 0.67
+   },
+   {
+    "numbergreaterorequal": 34,
+    "debuff": "ZERGDEBUFF_LVL14",
+    "damagemodifier": 0.86,
+    "ccdurationmodifier": 0.86,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL14",
+    "amplifieddamagemodifier": 0.66,
+    "amplifiedccdurationmodifier": 0.66
+   },
+   {
+    "numbergreaterorequal": 36,
+    "debuff": "ZERGDEBUFF_LVL15",
+    "damagemodifier": 0.85,
+    "ccdurationmodifier": 0.85,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL15",
+    "amplifieddamagemodifier": 0.65,
+    "amplifiedccdurationmodifier": 0.65
+   },
+   {
+    "numbergreaterorequal": 37,
+    "debuff": "ZERGDEBUFF_LVL16",
+    "damagemodifier": 0.84,
+    "ccdurationmodifier": 0.84,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL16",
+    "amplifieddamagemodifier": 0.64,
+    "amplifiedccdurationmodifier": 0.64
+   },
+   {
+    "numbergreaterorequal": 39,
+    "debuff": "ZERGDEBUFF_LVL17",
+    "damagemodifier": 0.83,
+    "ccdurationmodifier": 0.83,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL17",
+    "amplifieddamagemodifier": 0.63,
+    "amplifiedccdurationmodifier": 0.63
+   },
+   {
+    "numbergreaterorequal": 41,
+    "debuff": "ZERGDEBUFF_LVL18",
+    "damagemodifier": 0.82,
+    "ccdurationmodifier": 0.82,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL18",
+    "amplifieddamagemodifier": 0.62,
+    "amplifiedccdurationmodifier": 0.62
+   },
+   {
+    "numbergreaterorequal": 44,
+    "debuff": "ZERGDEBUFF_LVL19",
+    "damagemodifier": 0.81,
+    "ccdurationmodifier": 0.81,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL19",
+    "amplifieddamagemodifier": 0.61,
+    "amplifiedccdurationmodifier": 0.61
+   },
+   {
+    "numbergreaterorequal": 46,
+    "debuff": "ZERGDEBUFF_LVL20",
+    "damagemodifier": 0.8,
+    "ccdurationmodifier": 0.8,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL20",
+    "amplifieddamagemodifier": 0.6,
+    "amplifiedccdurationmodifier": 0.6
+   },
+   {
+    "numbergreaterorequal": 48,
+    "debuff": "ZERGDEBUFF_LVL21",
+    "damagemodifier": 0.79,
+    "ccdurationmodifier": 0.79,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL21",
+    "amplifieddamagemodifier": 0.59,
+    "amplifiedccdurationmodifier": 0.59
+   },
+   {
+    "numbergreaterorequal": 49,
+    "debuff": "ZERGDEBUFF_LVL22",
+    "damagemodifier": 0.78,
+    "ccdurationmodifier": 0.78,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL22",
+    "amplifieddamagemodifier": 0.58,
+    "amplifiedccdurationmodifier": 0.58
+   },
+   {
+    "numbergreaterorequal": 51,
+    "debuff": "ZERGDEBUFF_LVL23",
+    "damagemodifier": 0.77,
+    "ccdurationmodifier": 0.77,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL23",
+    "amplifieddamagemodifier": 0.57,
+    "amplifiedccdurationmodifier": 0.57
+   },
+   {
+    "numbergreaterorequal": 54,
+    "debuff": "ZERGDEBUFF_LVL24",
+    "damagemodifier": 0.76,
+    "ccdurationmodifier": 0.76,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL24",
+    "amplifieddamagemodifier": 0.56,
+    "amplifiedccdurationmodifier": 0.56
+   },
+   {
+    "numbergreaterorequal": 56,
+    "debuff": "ZERGDEBUFF_LVL25",
+    "damagemodifier": 0.75,
+    "ccdurationmodifier": 0.75,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL25",
+    "amplifieddamagemodifier": 0.55,
+    "amplifiedccdurationmodifier": 0.55
+   },
+   {
+    "numbergreaterorequal": 58,
+    "debuff": "ZERGDEBUFF_LVL26",
+    "damagemodifier": 0.74,
+    "ccdurationmodifier": 0.74,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL26",
+    "amplifieddamagemodifier": 0.54,
+    "amplifiedccdurationmodifier": 0.54
+   },
+   {
+    "numbergreaterorequal": 61,
+    "debuff": "ZERGDEBUFF_LVL27",
+    "damagemodifier": 0.73,
+    "ccdurationmodifier": 0.73,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL27",
+    "amplifieddamagemodifier": 0.53,
+    "amplifiedccdurationmodifier": 0.53
+   },
+   {
+    "numbergreaterorequal": 64,
+    "debuff": "ZERGDEBUFF_LVL28",
+    "damagemodifier": 0.72,
+    "ccdurationmodifier": 0.72,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL28",
+    "amplifieddamagemodifier": 0.52,
+    "amplifiedccdurationmodifier": 0.52
+   },
+   {
+    "numbergreaterorequal": 67,
+    "debuff": "ZERGDEBUFF_LVL29",
+    "damagemodifier": 0.71,
+    "ccdurationmodifier": 0.71,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL29",
+    "amplifieddamagemodifier": 0.51,
+    "amplifiedccdurationmodifier": 0.51
+   },
+   {
+    "numbergreaterorequal": 70,
+    "debuff": "ZERGDEBUFF_LVL30",
+    "damagemodifier": 0.7,
+    "ccdurationmodifier": 0.7,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL30",
+    "amplifieddamagemodifier": 0.5,
+    "amplifiedccdurationmodifier": 0.5
+   },
+   {
+    "numbergreaterorequal": 74,
+    "debuff": "ZERGDEBUFF_LVL31",
+    "damagemodifier": 0.69,
+    "ccdurationmodifier": 0.69,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL31",
+    "amplifieddamagemodifier": 0.49,
+    "amplifiedccdurationmodifier": 0.49
+   },
+   {
+    "numbergreaterorequal": 79,
+    "debuff": "ZERGDEBUFF_LVL32",
+    "damagemodifier": 0.68,
+    "ccdurationmodifier": 0.68,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL32",
+    "amplifieddamagemodifier": 0.48,
+    "amplifiedccdurationmodifier": 0.48
+   },
+   {
+    "numbergreaterorequal": 83,
+    "debuff": "ZERGDEBUFF_LVL33",
+    "damagemodifier": 0.67,
+    "ccdurationmodifier": 0.67,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL33",
+    "amplifieddamagemodifier": 0.47,
+    "amplifiedccdurationmodifier": 0.47
+   },
+   {
+    "numbergreaterorequal": 89,
+    "debuff": "ZERGDEBUFF_LVL34",
+    "damagemodifier": 0.66,
+    "ccdurationmodifier": 0.66,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL34",
+    "amplifieddamagemodifier": 0.46,
+    "amplifiedccdurationmodifier": 0.46
+   },
+   {
+    "numbergreaterorequal": 95,
+    "debuff": "ZERGDEBUFF_LVL35",
+    "damagemodifier": 0.65,
+    "ccdurationmodifier": 0.65,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL35",
+    "amplifieddamagemodifier": 0.45,
+    "amplifiedccdurationmodifier": 0.45
+   },
+   {
+    "numbergreaterorequal": 99,
+    "debuff": "ZERGDEBUFF_LVL36",
+    "damagemodifier": 0.64,
+    "ccdurationmodifier": 0.64,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL36",
+    "amplifieddamagemodifier": 0.44,
+    "amplifiedccdurationmodifier": 0.44
+   },
+   {
+    "numbergreaterorequal": 103,
+    "debuff": "ZERGDEBUFF_LVL37",
+    "damagemodifier": 0.63,
+    "ccdurationmodifier": 0.63,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL37",
+    "amplifieddamagemodifier": 0.43,
+    "amplifiedccdurationmodifier": 0.43
+   },
+   {
+    "numbergreaterorequal": 108,
+    "debuff": "ZERGDEBUFF_LVL38",
+    "damagemodifier": 0.62,
+    "ccdurationmodifier": 0.62,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL38",
+    "amplifieddamagemodifier": 0.42,
+    "amplifiedccdurationmodifier": 0.42
+   },
+   {
+    "numbergreaterorequal": 114,
+    "debuff": "ZERGDEBUFF_LVL39",
+    "damagemodifier": 0.61,
+    "ccdurationmodifier": 0.61,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL39",
+    "amplifieddamagemodifier": 0.41,
+    "amplifiedccdurationmodifier": 0.41
+   },
+   {
+    "numbergreaterorequal": 119,
+    "debuff": "ZERGDEBUFF_LVL40",
+    "damagemodifier": 0.6,
+    "ccdurationmodifier": 0.6,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL40",
+    "amplifieddamagemodifier": 0.4,
+    "amplifiedccdurationmodifier": 0.4
+   },
+   {
+    "numbergreaterorequal": 126,
+    "debuff": "ZERGDEBUFF_LVL41",
+    "damagemodifier": 0.59,
+    "ccdurationmodifier": 0.59,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL41",
+    "amplifieddamagemodifier": 0.39,
+    "amplifiedccdurationmodifier": 0.39
+   },
+   {
+    "numbergreaterorequal": 133,
+    "debuff": "ZERGDEBUFF_LVL42",
+    "damagemodifier": 0.58,
+    "ccdurationmodifier": 0.58,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL42",
+    "amplifieddamagemodifier": 0.38,
+    "amplifiedccdurationmodifier": 0.38
+   },
+   {
+    "numbergreaterorequal": 141,
+    "debuff": "ZERGDEBUFF_LVL43",
+    "damagemodifier": 0.57,
+    "ccdurationmodifier": 0.57,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL43",
+    "amplifieddamagemodifier": 0.37,
+    "amplifiedccdurationmodifier": 0.37
+   },
+   {
+    "numbergreaterorequal": 148,
+    "debuff": "ZERGDEBUFF_LVL44",
+    "damagemodifier": 0.56,
+    "ccdurationmodifier": 0.56,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL44",
+    "amplifieddamagemodifier": 0.36,
+    "amplifiedccdurationmodifier": 0.36
+   },
+   {
+    "numbergreaterorequal": 154,
+    "debuff": "ZERGDEBUFF_LVL45",
+    "damagemodifier": 0.55,
+    "ccdurationmodifier": 0.55,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL45",
+    "amplifieddamagemodifier": 0.35,
+    "amplifiedccdurationmodifier": 0.35
+   },
+   {
+    "numbergreaterorequal": 160,
+    "debuff": "ZERGDEBUFF_LVL46",
+    "damagemodifier": 0.54,
+    "ccdurationmodifier": 0.54,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL46",
+    "amplifieddamagemodifier": 0.34,
+    "amplifiedccdurationmodifier": 0.34
+   },
+   {
+    "numbergreaterorequal": 167,
+    "debuff": "ZERGDEBUFF_LVL47",
+    "damagemodifier": 0.53,
+    "ccdurationmodifier": 0.53,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL47",
+    "amplifieddamagemodifier": 0.33,
+    "amplifiedccdurationmodifier": 0.33
+   },
+   {
+    "numbergreaterorequal": 175,
+    "debuff": "ZERGDEBUFF_LVL48",
+    "damagemodifier": 0.52,
+    "ccdurationmodifier": 0.52,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL48",
+    "amplifieddamagemodifier": 0.32,
+    "amplifiedccdurationmodifier": 0.32
+   },
+   {
+    "numbergreaterorequal": 183,
+    "debuff": "ZERGDEBUFF_LVL49",
+    "damagemodifier": 0.51,
+    "ccdurationmodifier": 0.51,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL49",
+    "amplifieddamagemodifier": 0.31,
+    "amplifiedccdurationmodifier": 0.31
+   },
+   {
+    "numbergreaterorequal": 192,
+    "debuff": "ZERGDEBUFF_LVL50",
+    "damagemodifier": 0.5,
+    "ccdurationmodifier": 0.5,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL50",
+    "amplifieddamagemodifier": 0.3,
+    "amplifiedccdurationmodifier": 0.3
+   },
+   {
+    "numbergreaterorequal": 200,
+    "debuff": "ZERGDEBUFF_LVL51",
+    "damagemodifier": 0.49,
+    "ccdurationmodifier": 0.49,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL51",
+    "amplifieddamagemodifier": 0.29,
+    "amplifiedccdurationmodifier": 0.29
+   },
+   {
+    "numbergreaterorequal": 207,
+    "debuff": "ZERGDEBUFF_LVL52",
+    "damagemodifier": 0.48,
+    "ccdurationmodifier": 0.48,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL52",
+    "amplifieddamagemodifier": 0.28,
+    "amplifiedccdurationmodifier": 0.28
+   },
+   {
+    "numbergreaterorequal": 215,
+    "debuff": "ZERGDEBUFF_LVL53",
+    "damagemodifier": 0.47,
+    "ccdurationmodifier": 0.47,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL53",
+    "amplifieddamagemodifier": 0.27,
+    "amplifiedccdurationmodifier": 0.27
+   },
+   {
+    "numbergreaterorequal": 223,
+    "debuff": "ZERGDEBUFF_LVL54",
+    "damagemodifier": 0.46,
+    "ccdurationmodifier": 0.46,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL54",
+    "amplifieddamagemodifier": 0.26,
+    "amplifiedccdurationmodifier": 0.26
+   },
+   {
+    "numbergreaterorequal": 232,
+    "debuff": "ZERGDEBUFF_LVL55",
+    "damagemodifier": 0.45,
+    "ccdurationmodifier": 0.45,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL55",
+    "amplifieddamagemodifier": 0.25,
+    "amplifiedccdurationmodifier": 0.25
+   },
+   {
+    "numbergreaterorequal": 242,
+    "debuff": "ZERGDEBUFF_LVL56",
+    "damagemodifier": 0.44,
+    "ccdurationmodifier": 0.44,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL56",
+    "amplifieddamagemodifier": 0.24,
+    "amplifiedccdurationmodifier": 0.24
+   },
+   {
+    "numbergreaterorequal": 252,
+    "debuff": "ZERGDEBUFF_LVL57",
+    "damagemodifier": 0.43,
+    "ccdurationmodifier": 0.43,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL57",
+    "amplifieddamagemodifier": 0.23,
+    "amplifiedccdurationmodifier": 0.23
+   },
+   {
+    "numbergreaterorequal": 264,
+    "debuff": "ZERGDEBUFF_LVL58",
+    "damagemodifier": 0.42,
+    "ccdurationmodifier": 0.42,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL58",
+    "amplifieddamagemodifier": 0.22,
+    "amplifiedccdurationmodifier": 0.22
+   },
+   {
+    "numbergreaterorequal": 276,
+    "debuff": "ZERGDEBUFF_LVL59",
+    "damagemodifier": 0.41,
+    "ccdurationmodifier": 0.41,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL59",
+    "amplifieddamagemodifier": 0.21,
+    "amplifiedccdurationmodifier": 0.21
+   },
+   {
+    "numbergreaterorequal": 290,
+    "debuff": "ZERGDEBUFF_LVL60",
+    "damagemodifier": 0.4,
+    "ccdurationmodifier": 0.4,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL60",
+    "amplifieddamagemodifier": 0.2,
+    "amplifiedccdurationmodifier": 0.2
+   },
+   {
+    "numbergreaterorequal": 305,
+    "debuff": "ZERGDEBUFF_LVL61",
+    "damagemodifier": 0.39,
+    "ccdurationmodifier": 0.39,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL61",
+    "amplifieddamagemodifier": 0.19,
+    "amplifiedccdurationmodifier": 0.19
+   },
+   {
+    "numbergreaterorequal": 322,
+    "debuff": "ZERGDEBUFF_LVL62",
+    "damagemodifier": 0.38,
+    "ccdurationmodifier": 0.38,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL62",
+    "amplifieddamagemodifier": 0.18,
+    "amplifiedccdurationmodifier": 0.18
+   },
+   {
+    "numbergreaterorequal": 341,
+    "debuff": "ZERGDEBUFF_LVL63",
+    "damagemodifier": 0.37,
+    "ccdurationmodifier": 0.37,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL63",
+    "amplifieddamagemodifier": 0.17,
+    "amplifiedccdurationmodifier": 0.17
+   },
+   {
+    "numbergreaterorequal": 361,
+    "debuff": "ZERGDEBUFF_LVL64",
+    "damagemodifier": 0.36,
+    "ccdurationmodifier": 0.36,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL64",
+    "amplifieddamagemodifier": 0.16,
+    "amplifiedccdurationmodifier": 0.16
+   },
+   {
+    "numbergreaterorequal": 385,
+    "debuff": "ZERGDEBUFF_LVL65",
+    "damagemodifier": 0.35,
+    "ccdurationmodifier": 0.35,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL65",
+    "amplifieddamagemodifier": 0.15,
+    "amplifiedccdurationmodifier": 0.15
+   },
+   {
+    "numbergreaterorequal": 412,
+    "debuff": "ZERGDEBUFF_LVL66",
+    "damagemodifier": 0.34,
+    "ccdurationmodifier": 0.34,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL66",
+    "amplifieddamagemodifier": 0.14,
+    "amplifiedccdurationmodifier": 0.14
+   },
+   {
+    "numbergreaterorequal": 445,
+    "debuff": "ZERGDEBUFF_LVL67",
+    "damagemodifier": 0.33,
+    "ccdurationmodifier": 0.33,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL67",
+    "amplifieddamagemodifier": 0.13,
+    "amplifiedccdurationmodifier": 0.13
+   },
+   {
+    "numbergreaterorequal": 480,
+    "debuff": "ZERGDEBUFF_LVL68",
+    "damagemodifier": 0.32,
+    "ccdurationmodifier": 0.32,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL68",
+    "amplifieddamagemodifier": 0.12,
+    "amplifiedccdurationmodifier": 0.12
+   },
+   {
+    "numbergreaterorequal": 522,
+    "debuff": "ZERGDEBUFF_LVL69",
+    "damagemodifier": 0.31,
+    "ccdurationmodifier": 0.31,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL69",
+    "amplifieddamagemodifier": 0.11,
+    "amplifiedccdurationmodifier": 0.11
+   },
+   {
+    "numbergreaterorequal": 572,
+    "debuff": "ZERGDEBUFF_LVL70",
+    "damagemodifier": 0.3,
+    "ccdurationmodifier": 0.3,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL70",
+    "amplifieddamagemodifier": 0.1,
+    "amplifiedccdurationmodifier": 0.1
+   },
+   {
+    "numbergreaterorequal": 632,
+    "debuff": "ZERGDEBUFF_LVL71",
+    "damagemodifier": 0.29,
+    "ccdurationmodifier": 0.29,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL71",
+    "amplifieddamagemodifier": 0.09,
+    "amplifiedccdurationmodifier": 0.09
+   },
+   {
+    "numbergreaterorequal": 706,
+    "debuff": "ZERGDEBUFF_LVL72",
+    "damagemodifier": 0.28,
+    "ccdurationmodifier": 0.28,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL72",
+    "amplifieddamagemodifier": 0.08,
+    "amplifiedccdurationmodifier": 0.08
+   },
+   {
+    "numbergreaterorequal": 800,
+    "debuff": "ZERGDEBUFF_LVL73",
+    "damagemodifier": 0.27,
+    "ccdurationmodifier": 0.27,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL73",
+    "amplifieddamagemodifier": 0.07,
+    "amplifiedccdurationmodifier": 0.07
+   },
+   {
+    "numbergreaterorequal": 924,
+    "debuff": "ZERGDEBUFF_LVL74",
+    "damagemodifier": 0.26,
+    "ccdurationmodifier": 0.26,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL74",
+    "amplifieddamagemodifier": 0.06,
+    "amplifiedccdurationmodifier": 0.06
+   },
+   {
+    "numbergreaterorequal": 1091,
+    "debuff": "ZERGDEBUFF_LVL75",
+    "damagemodifier": 0.25,
+    "ccdurationmodifier": 0.25,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL75",
+    "amplifieddamagemodifier": 0.05,
+    "amplifiedccdurationmodifier": 0.05
+   },
+   {
+    "numbergreaterorequal": 1334,
+    "debuff": "ZERGDEBUFF_LVL76",
+    "damagemodifier": 0.24,
+    "ccdurationmodifier": 0.24,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL76",
+    "amplifieddamagemodifier": 0.04,
+    "amplifiedccdurationmodifier": 0.04
+   },
+   {
+    "numbergreaterorequal": 1715,
+    "debuff": "ZERGDEBUFF_LVL77",
+    "damagemodifier": 0.23,
+    "ccdurationmodifier": 0.23,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL77",
+    "amplifieddamagemodifier": 0.03,
+    "amplifiedccdurationmodifier": 0.03
+   },
+   {
+    "numbergreaterorequal": 2400,
+    "debuff": "ZERGDEBUFF_LVL78",
+    "damagemodifier": 0.22,
+    "ccdurationmodifier": 0.22,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL78",
+    "amplifieddamagemodifier": 0.02,
+    "amplifiedccdurationmodifier": 0.02
+   },
+   {
+    "numbergreaterorequal": 2500,
+    "debuff": "ZERGDEBUFF_LVL79",
+    "damagemodifier": 0.21,
+    "ccdurationmodifier": 0.21,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL79",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 2600,
+    "debuff": "ZERGDEBUFF_LVL80",
+    "damagemodifier": 0.2,
+    "ccdurationmodifier": 0.2,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL80",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 2700,
+    "debuff": "ZERGDEBUFF_LVL81",
+    "damagemodifier": 0.19,
+    "ccdurationmodifier": 0.19,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL81",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 2800,
+    "debuff": "ZERGDEBUFF_LVL82",
+    "damagemodifier": 0.18,
+    "ccdurationmodifier": 0.18,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL82",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 2900,
+    "debuff": "ZERGDEBUFF_LVL83",
+    "damagemodifier": 0.17,
+    "ccdurationmodifier": 0.17,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL83",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 3000,
+    "debuff": "ZERGDEBUFF_LVL84",
+    "damagemodifier": 0.16,
+    "ccdurationmodifier": 0.16,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL84",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 3100,
+    "debuff": "ZERGDEBUFF_LVL85",
+    "damagemodifier": 0.15,
+    "ccdurationmodifier": 0.15,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL85",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 3200,
+    "debuff": "ZERGDEBUFF_LVL86",
+    "damagemodifier": 0.14,
+    "ccdurationmodifier": 0.14,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL86",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 3300,
+    "debuff": "ZERGDEBUFF_LVL87",
+    "damagemodifier": 0.13,
+    "ccdurationmodifier": 0.13,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL87",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 3400,
+    "debuff": "ZERGDEBUFF_LVL88",
+    "damagemodifier": 0.12,
+    "ccdurationmodifier": 0.12,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL88",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 3500,
+    "debuff": "ZERGDEBUFF_LVL89",
+    "damagemodifier": 0.11,
+    "ccdurationmodifier": 0.11,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL89",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 3600,
+    "debuff": "ZERGDEBUFF_LVL90",
+    "damagemodifier": 0.1,
+    "ccdurationmodifier": 0.1,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL90",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 3700,
+    "debuff": "ZERGDEBUFF_LVL91",
+    "damagemodifier": 0.09,
+    "ccdurationmodifier": 0.09,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL91",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 3800,
+    "debuff": "ZERGDEBUFF_LVL92",
+    "damagemodifier": 0.08,
+    "ccdurationmodifier": 0.08,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL92",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 3900,
+    "debuff": "ZERGDEBUFF_LVL93",
+    "damagemodifier": 0.07,
+    "ccdurationmodifier": 0.07,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL93",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 4000,
+    "debuff": "ZERGDEBUFF_LVL94",
+    "damagemodifier": 0.06,
+    "ccdurationmodifier": 0.06,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL94",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 4100,
+    "debuff": "ZERGDEBUFF_LVL95",
+    "damagemodifier": 0.05,
+    "ccdurationmodifier": 0.05,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL95",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 4200,
+    "debuff": "ZERGDEBUFF_LVL96",
+    "damagemodifier": 0.04,
+    "ccdurationmodifier": 0.04,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL96",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 4300,
+    "debuff": "ZERGDEBUFF_LVL97",
+    "damagemodifier": 0.03,
+    "ccdurationmodifier": 0.03,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL97",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 4400,
+    "debuff": "ZERGDEBUFF_LVL98",
+    "damagemodifier": 0.02,
+    "ccdurationmodifier": 0.02,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL98",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   },
+   {
+    "numbergreaterorequal": 4500,
+    "debuff": "ZERGDEBUFF_LVL99",
+    "damagemodifier": 0.01,
+    "ccdurationmodifier": 0.01,
+    "amplifieddebuff": "ZERGDEBUFF_AMPLIFIED_LVL99",
+    "amplifieddamagemodifier": 0.01,
+    "amplifiedccdurationmodifier": 0.01
+   }
+  ]
+ },
+ "ActiveBuffScaling": {
+  "attribute": [
+   {
+    "name": "HitpointsMax",
+    "min": -0.5,
+    "max": "unrestricted",
+    "absolutemin": 1000,
+    "mobs": {
+     "min": -0.25
+    }
+   },
+   {
+    "name": "HitpointsMaxBonus",
+    "min": -0.5,
+    "max": "unrestricted",
+    "mobs": {
+     "min": -0.25
+    }
+   },
+   {
+    "name": "HitpointsRegeneration",
+    "min": -0.5,
+    "max": "unrestricted",
+    "absolutemin": 5
+   },
+   {
+    "name": "HitpointsRegenerationBonus",
+    "min": -1,
+    "max": "unrestricted"
+   },
+   {
+    "name": "EnergyMax",
+    "min": -0.5,
+    "max": "unrestricted",
+    "absolutemin": 100
+   },
+   {
+    "name": "EnergyMaxBonus",
+    "min": -0.5,
+    "max": "unrestricted"
+   },
+   {
+    "name": "EnergyRegeneration",
+    "min": -1,
+    "max": "unrestricted",
+    "absolutemin": 1.5
+   },
+   {
+    "name": "EnergyRegenerationBonus",
+    "min": -1,
+    "max": "unrestricted"
+   },
+   {
+    "name": "AttackDamage",
+    "min": -0.8,
+    "max": 1.5,
+    "absolutemin": 1
+   },
+   {
+    "name": "AttackSpeedBonus",
+    "min": -1,
+    "max": 1.2
+   },
+   {
+    "name": "PhysicalAttackDamageBonus",
+    "min": -0.8,
+    "max": 3,
+    "mobs": {
+     "min": -0.5
+    }
+   },
+   {
+    "name": "MagicAttackDamageBonus",
+    "min": -0.8,
+    "max": 3,
+    "mobs": {
+     "min": -0.5
+    }
+   },
+   {
+    "name": "PhysicalSpellDamageBonus",
+    "min": -0.8,
+    "max": 1,
+    "mobs": {
+     "min": -0.5
+    }
+   },
+   {
+    "name": "MagicSpellDamageBonus",
+    "min": -0.8,
+    "max": 1,
+    "mobs": {
+     "min": -0.5
+    }
+   },
+   {
+    "name": "HealBonus",
+    "min": -0.7,
+    "max": "unrestricted"
+   },
+   {
+    "name": "HealModifier",
+    "min": -0.7,
+    "max": "unrestricted"
+   },
+   {
+    "name": "AbilityPower",
+    "min": -0.5,
+    "max": 2,
+    "absolutemin": 1
+   },
+   {
+    "name": "PhysicalArmor",
+    "min": -0.6,
+    "max": "unrestricted",
+    "absolutemin": 100
+   },
+   {
+    "name": "MagicResistance",
+    "min": -0.6,
+    "max": "unrestricted",
+    "absolutemin": 100
+   },
+   {
+    "name": "CrowdControlResistance",
+    "min": -0.6,
+    "max": "unrestricted",
+    "absolutemin": 100
+   },
+   {
+    "name": "MaxLoad",
+    "min": "unrestricted",
+    "max": "unrestricted",
+    "absolutemin": 1
+   },
+   {
+    "name": "MoveSpeed",
+    "min": 0,
+    "max": "unrestricted",
+    "absolutemin": 1
+   },
+   {
+    "name": "MoveSpeedBonus",
+    "min": -0.8,
+    "max": "unrestricted",
+    "absolutemin": 1
+   },
+   {
+    "name": "CraftingQuality",
+    "min": "unrestricted",
+    "max": "unrestricted",
+    "absolutemin": 1
+   },
+   {
+    "name": "CraftingFocusMax",
+    "min": "unrestricted",
+    "max": "unrestricted",
+    "absolutemin": 1
+   },
+   {
+    "name": "CraftingFocusRegeneration",
+    "min": "unrestricted",
+    "max": "unrestricted",
+    "absolutemin": 1
+   },
+   {
+    "name": "GatheringSpeed",
+    "min": "unrestricted",
+    "max": 0.4,
+    "absolutemin": 1
+   }
+  ]
+ }
+}

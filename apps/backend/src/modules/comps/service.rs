@@ -38,7 +38,8 @@ use super::models::{
     UpdateCompRequest, UpsertBuildItemRequest,
 };
 use super::status::{
-    BuildLoadout, BuildRole, BuildSlot, icon_url_with_quality, parse_item_quality,
+    BuildLoadout, BuildRole, BuildSlot, icon_url_with_quality, parse_item_enchantment,
+    parse_item_quality,
 };
 
 /// The two kinds of ability slot, as stored in `build_item_spells.kind`.
@@ -622,6 +623,7 @@ impl CompService {
                 ),
                 openalbion_item_tier: item.openalbion_item_tier.clone(),
                 openalbion_item_quality: item.openalbion_item_quality,
+                openalbion_item_enchantment: item.openalbion_item_enchantment,
             });
         }
 
@@ -948,6 +950,8 @@ impl CompService {
                 let spells = item.spells;
                 let quality = parse_item_quality(item.openalbion_item_quality)
                     .map_err(AppError::Validation)?;
+                let enchantment = parse_item_enchantment(item.openalbion_item_enchantment)
+                    .map_err(AppError::Validation)?;
                 let active = build_item::ActiveModel {
                     build_id: Set(inserted.id),
                     // Items supplied at creation time are always the main loadout; the swap is
@@ -963,6 +967,7 @@ impl CompService {
                     )),
                     openalbion_item_tier: Set(item.openalbion_item_tier),
                     openalbion_item_quality: Set(quality),
+                    openalbion_item_enchantment: Set(enchantment),
                     ..Default::default()
                 };
                 let inserted_item = active.insert(&txn).await?;
@@ -1164,6 +1169,7 @@ impl CompService {
                 openalbion_item_icon: Set(item.openalbion_item_icon.clone()),
                 openalbion_item_tier: Set(item.openalbion_item_tier.clone()),
                 openalbion_item_quality: Set(item.openalbion_item_quality),
+                openalbion_item_enchantment: Set(item.openalbion_item_enchantment),
                 ..Default::default()
             }
             .insert(&txn)
@@ -1322,6 +1328,8 @@ impl CompService {
 
         let quality =
             parse_item_quality(req.openalbion_item_quality).map_err(AppError::Validation)?;
+        let enchantment = parse_item_enchantment(req.openalbion_item_enchantment)
+            .map_err(AppError::Validation)?;
         let icon = icon_url_with_quality(req.openalbion_item_icon.as_deref(), quality);
 
         if let Some(model) = existing {
@@ -1333,6 +1341,7 @@ impl CompService {
             active.openalbion_item_icon = Set(icon);
             active.openalbion_item_tier = Set(req.openalbion_item_tier);
             active.openalbion_item_quality = Set(quality);
+            active.openalbion_item_enchantment = Set(enchantment);
             let updated = active.update(db).await?;
             drop_abilities_the_item_no_longer_offers(db, &updated, item_id).await?;
         } else {
@@ -1346,6 +1355,7 @@ impl CompService {
                 openalbion_item_icon: Set(icon),
                 openalbion_item_tier: Set(req.openalbion_item_tier),
                 openalbion_item_quality: Set(quality),
+                openalbion_item_enchantment: Set(enchantment),
                 ..Default::default()
             };
             active.insert(db).await?;
@@ -2330,6 +2340,7 @@ mod tests {
             openalbion_item_icon: None,
             openalbion_item_tier: None,
             openalbion_item_quality: None,
+            openalbion_item_enchantment: None,
         }
     }
 
@@ -2399,6 +2410,66 @@ mod tests {
             stored.openalbion_item_icon.as_deref(),
             Some("https://render.albiononline.com/v1/item/T8_2H_POLEHAMMER.png?quality=5&size=64")
         );
+    }
+
+    #[tokio::test]
+    async fn upserting_a_build_item_persists_its_enchantment() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+        let mut enchanted = weapon("Polehammer");
+        enchanted.openalbion_item_enchantment = Some(2);
+
+        let detail = service
+            .upsert_build_item(&db, build_id, BuildLoadout::Main, BuildSlot::Weapon, enchanted)
+            .await
+            .expect("an enchanted weapon should be stored");
+
+        let stored = detail
+            .items
+            .iter()
+            .find(|item| item.slot == BuildSlot::Weapon)
+            .expect("weapon slot");
+        assert_eq!(stored.openalbion_item_enchantment, 2);
+        // Enchantment and quality are independent axes: setting one must not disturb the other.
+        assert_eq!(stored.openalbion_item_quality, super::super::status::DEFAULT_ITEM_QUALITY);
+    }
+
+    #[tokio::test]
+    async fn an_item_saved_without_an_enchantment_is_plain() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+
+        let detail = service
+            .upsert_build_item(
+                &db,
+                build_id,
+                BuildLoadout::Main,
+                BuildSlot::Weapon,
+                weapon("Polehammer"),
+            )
+            .await
+            .expect("a plain weapon should be stored");
+
+        let stored = detail
+            .items
+            .iter()
+            .find(|item| item.slot == BuildSlot::Weapon)
+            .expect("weapon slot");
+        assert_eq!(stored.openalbion_item_enchantment, 0);
+    }
+
+    #[tokio::test]
+    async fn upserting_a_build_item_rejects_an_enchantment_above_the_ladder() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+        let mut invalid = weapon("Polehammer");
+        invalid.openalbion_item_enchantment = Some(5);
+
+        let error = service
+            .upsert_build_item(&db, build_id, BuildLoadout::Main, BuildSlot::Weapon, invalid)
+            .await
+            .expect_err("enchantment 5 does not exist");
+        assert!(matches!(error, AppError::Validation(_)), "got {error:?}");
     }
 
     #[tokio::test]
@@ -2565,6 +2636,7 @@ mod tests {
             ),
             openalbion_item_tier: Some("8".to_string()),
             openalbion_item_quality: None,
+            openalbion_item_enchantment: None,
         }
     }
 
@@ -2582,6 +2654,7 @@ mod tests {
             ),
             openalbion_item_tier: Some("8".to_string()),
             openalbion_item_quality: None,
+            openalbion_item_enchantment: None,
             spells,
         }
     }
@@ -2597,6 +2670,7 @@ mod tests {
             ),
             openalbion_item_tier: Some("8".to_string()),
             openalbion_item_quality: None,
+            openalbion_item_enchantment: None,
         }
     }
 
@@ -2976,6 +3050,7 @@ mod tests {
                 openalbion_item_icon: copied_icon,
                 openalbion_item_tier: copied_tier,
                 openalbion_item_quality: copied_quality,
+                openalbion_item_enchantment: copied_enchantment,
             } = copied;
             assert_eq!(copied_loadout, source.loadout);
             assert_eq!(copied_slot, source.slot);
@@ -2985,6 +3060,7 @@ mod tests {
             assert_eq!(copied_icon, source.openalbion_item_icon);
             assert_eq!(copied_tier, source.openalbion_item_tier);
             assert_eq!(copied_quality, source.openalbion_item_quality);
+            assert_eq!(copied_enchantment, source.openalbion_item_enchantment);
         }
     }
 

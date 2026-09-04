@@ -468,6 +468,10 @@ pub struct AssignRosterSeatRequest {
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct RosterVersionRequest {
     pub expected_roster_version: i64,
+    /// How to pick a seat for each unassigned participant. Omitted means `greedy` — today's
+    /// first-fit-in-signup-order behaviour — so existing clients see no change in outcome.
+    #[serde(default)]
+    pub strategy: Option<crate::modules::combat::fit::FitStrategy>,
 }
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct SwapRosterSeatsRequest {

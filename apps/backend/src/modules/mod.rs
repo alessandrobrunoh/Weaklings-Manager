@@ -11,6 +11,7 @@ pub mod audit;
 pub mod auth;
 pub mod bank;
 pub mod battles;
+pub mod combat;
 pub mod comps;
 pub mod events;
 pub mod fights;
@@ -46,6 +47,7 @@ pub fn router() -> Router {
         .nest("/albiondata", albiondata::router())
         .nest("/battles", battles::router())
         .nest("/openalbion", openalbion::router())
+        .nest("/combat", combat::router())
         .nest("/comps", comps::router())
         .nest("/events", events::router())
         .nest("/fights", fights::router())
