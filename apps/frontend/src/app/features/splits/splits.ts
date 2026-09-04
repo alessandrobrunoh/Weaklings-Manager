@@ -174,6 +174,17 @@ interface SplitParticipantDraft {
   `,
   template: `
     <app-page-header [title]="t('splits.title')" [subtitle]="t('splits.subtitle')">
+      @if (canDelete()) {
+        <button
+          type="button"
+          class="btn btn--sm"
+          [class.btn--tonal]="showArchived()"
+          [class.btn--outline]="!showArchived()"
+          (click)="toggleShowArchived()"
+        >
+          {{ t('splits.showArchived') }}
+        </button>
+      }
       <button
         type="button"
         class="btn btn--outline btn--sm inline-flex items-center gap-1.5"
@@ -394,7 +405,7 @@ interface SplitParticipantDraft {
           </select>
         }
         <ng-template dataTableCell="select" let-row>
-          @if (canAct() && row.status === 'pending') {
+          @if (canAct() && row.status === 'pending' && !row.archived_at) {
             <input
               class="checkbox"
               type="checkbox"
@@ -407,8 +418,11 @@ interface SplitParticipantDraft {
         </ng-template>
 
         <ng-template dataTableCell="note" let-row>
-          <span class="font-semibold text-(--color-text) group-hover:text-error transition-colors">
-            {{ row.note || t('splits.untitled', { id: row.id }) }}
+          <span class="flex items-center gap-2 font-semibold text-(--color-text) group-hover:text-error transition-colors">
+            <span>{{ row.note || t('splits.untitled', { id: row.id }) }}</span>
+            @if (row.archived_at) {
+              <span class="chip chip--neutral text-xs">{{ t('splits.archived') }}</span>
+            }
           </span>
         </ng-template>
 
@@ -485,7 +499,7 @@ interface SplitParticipantDraft {
 
         <ng-template dataTableCell="actions" let-row>
           <div class="flex items-center justify-end gap-1.5" (click)="$event.stopPropagation()">
-            @if (canAct() && row.status === 'pending') {
+            @if (canAct() && row.status === 'pending' && !row.archived_at) {
               <button
                 type="button"
                 class="btn btn--primary btn--sm py-1 px-2.5 text-xs flex items-center gap-1"
@@ -506,15 +520,24 @@ interface SplitParticipantDraft {
               <app-icon name="arrow-right" size="0.75rem" />
             </button>
             @if (canDelete()) {
-              <button
-                type="button"
-                class="btn btn--ghost btn--icon btn--sm text-[var(--color-text-tertiary)] hover:text-error"
-                (click)="askDelete(row)"
-                [appTooltip]="t('common.delete')"
-                tooltipPosition="bottom"
-              >
-                <app-icon name="close" size="0.75rem" />
-              </button>
+              @if (row.archived_at) {
+                <button
+                  type="button"
+                  class="btn btn--outline btn--sm py-1 px-2 text-xs"
+                  [disabled]="saving()"
+                  (click)="unarchiveSplit(row)"
+                >
+                  {{ t('splits.unarchive') }}
+                </button>
+              } @else {
+                <button
+                  type="button"
+                  class="btn btn--outline btn--sm py-1 px-2 text-xs"
+                  (click)="askArchive(row)"
+                >
+                  {{ t('splits.archive') }}
+                </button>
+              }
             }
           </div>
         </ng-template>
@@ -874,21 +897,21 @@ interface SplitParticipantDraft {
       </app-dialog>
     }
 
-    @if (deleteTarget(); as split) {
-      <app-dialog [title]="t('common.delete')" size="sm" (closed)="deleteTarget.set(null)">
+    @if (archiveTarget(); as split) {
+      <app-dialog [title]="t('splits.archive')" size="sm" (closed)="archiveTarget.set(null)">
         <p>{{ t('splits.confirm_delete') }}</p>
         <p class="mt-2 font-medium">{{ split.note || t('splits.untitled', { id: split.id }) }}</p>
         <div dialogFooter>
-          <button type="button" class="btn btn--ghost" (click)="deleteTarget.set(null)">
+          <button type="button" class="btn btn--ghost" (click)="archiveTarget.set(null)">
             {{ t('common.cancel') }}
           </button>
           <button
             type="button"
-            class="btn btn--danger"
+            class="btn btn--tonal"
             [disabled]="saving()"
-            (click)="confirmDelete()"
+            (click)="confirmArchive()"
           >
-            {{ t('common.delete') }}
+            {{ t('splits.archive') }}
           </button>
         </div>
       </app-dialog>
@@ -1080,7 +1103,8 @@ export class Splits {
   private readonly selectedIds = signal<ReadonlySet<number>>(new Set());
   protected readonly batchRunning = signal(false);
   protected readonly showBatchConfirmDialog = signal(false);
-  protected readonly deleteTarget = signal<SplitSummary | null>(null);
+  protected readonly archiveTarget = signal<SplitSummary | null>(null);
+  protected readonly showArchived = signal(false);
 
   protected readonly showCreateForm = signal(false);
   protected readonly draftTitle = signal('');
@@ -1112,13 +1136,17 @@ export class Splits {
     this.translate.t(key, params);
 
   protected readonly pendingSplits = computed(() =>
-    this.splits().filter((split) => isSplitBatchSelectable(split.status)),
+    this.splits().filter(
+      (split) => isSplitBatchSelectable(split.status) && !split.archived_at,
+    ),
   );
   protected readonly awaitingEventSplits = computed(() =>
     this.splits().filter((split) => isSplitAwaitingEvent(split.status)),
   );
   protected readonly selectedSplits = computed(() =>
-    this.splits().filter((split) => split.status === 'pending' && this.selectedIds().has(split.id)),
+    this.splits().filter(
+      (split) => split.status === 'pending' && !split.archived_at && this.selectedIds().has(split.id),
+    ),
   );
   protected readonly selectedCount = computed(() => this.selectedSplits().length);
   protected readonly selectedTotalNet = computed(() =>
@@ -1315,20 +1343,39 @@ export class Splits {
     void this.router.navigate(['/splits', row.id]);
   }
 
-  protected askDelete(row: SplitSummary): void {
-    this.deleteTarget.set(row);
+  protected toggleShowArchived(): void {
+    this.showArchived.update((value) => !value);
+    this.page.set(1);
+    void this.load();
   }
 
-  protected async confirmDelete(): Promise<void> {
-    const target = this.deleteTarget();
+  protected askArchive(row: SplitSummary): void {
+    this.archiveTarget.set(row);
+  }
+
+  protected async confirmArchive(): Promise<void> {
+    const target = this.archiveTarget();
     if (!target) {
       return;
     }
     this.saving.set(true);
     try {
-      await firstValueFrom(this.api.delete(`api/splits/${target.id}`));
-      this.deleteTarget.set(null);
-      this.toasts.success(this.t('common.delete'));
+      await firstValueFrom(this.api.post(`api/splits/${target.id}/archive`, {}));
+      this.archiveTarget.set(null);
+      this.toasts.success(this.t('splits.archiveSuccess'));
+      await Promise.all([this.load(), this.loadKpi()]);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async unarchiveSplit(row: SplitSummary): Promise<void> {
+    this.saving.set(true);
+    try {
+      await firstValueFrom(this.api.post(`api/splits/${row.id}/unarchive`, {}));
+      this.toasts.success(this.t('splits.unarchiveSuccess'));
       await Promise.all([this.load(), this.loadKpi()]);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -1341,9 +1388,14 @@ export class Splits {
     this.page.set(event.page);
     this.pageSize.set(event.pageSize);
     this.searchQuery.set(event.search);
-    const status = event.columnFilters['status'] ?? '';
-    this.statusFilter.set(isSplitStatus(status) ? status : '');
-    this.islandFilter.set(event.columnFilters['island'] ?? '');
+    const status = event.columnFilters['status'];
+    if (isSplitStatus(status)) {
+      this.statusFilter.set(status);
+    }
+    const island = event.columnFilters['island'];
+    if (island) {
+      this.islandFilter.set(island);
+    }
     if (event.sort && SORT_WHITELIST.has(event.sort.columnKey)) {
       this.sortKey.set(event.sort.columnKey);
       this.sortOrder.set(event.sort.direction);
@@ -1679,6 +1731,9 @@ export class Splits {
       const search = this.searchQuery().trim();
       if (search) {
         params['search'] = search;
+      }
+      if (this.showArchived()) {
+        params['archived'] = 'true';
       }
       const sort = this.sortKey();
       if (sort) {

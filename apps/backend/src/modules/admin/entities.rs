@@ -92,6 +92,10 @@ pub struct Model {
     pub discord_applications_status_closed_message: String,
     /// Message ID of the published application panel, when available.
     pub discord_applications_panel_message_id: Option<String>,
+    /// Channel where the bot announces guild giveaways.
+    pub discord_giveaways_channel_id: Option<String>,
+    /// Optional role pinged on a new giveaway announcement.
+    pub discord_giveaways_role_id: Option<String>,
     /// Default fee percentage applied to new loot splits when no fee is provided.
     pub default_split_fee: Decimal,
     /// Last admin edit.

@@ -3,7 +3,7 @@ import type { ApiClient } from '../api/client.js';
 import { ApiError } from '../api/client.js';
 import { parseMultiplier, resolveInternalUserId } from '../api/resolve-user.js';
 import type { ProgressionMeView } from '../api/types.js';
-import { BOT_COLORS, createBaseEmbed, createResponseEmbed } from '../embeds/theme.js';
+import { BOT_COLORS, buildAsciiBar, createBaseEmbed, createResponseEmbed } from '../embeds/theme.js';
 
 export const data = new SlashCommandBuilder()
   .setName('rank')
@@ -11,13 +11,6 @@ export const data = new SlashCommandBuilder()
   .addUserOption((opt) =>
     opt.setName('member').setDescription('Guild member to look up').setRequired(false),
   );
-
-function xpBar(xp: number, nextAt: number): string {
-  const width = 10;
-  const filled = nextAt > 0 ? Math.max(0, Math.min(1, xp / nextAt)) : 1;
-  const n = Math.round(filled * width);
-  return `\`${'█'.repeat(n)}${'░'.repeat(width - n)}\``;
-}
 
 export async function execute(
   interaction: ChatInputCommandInteraction,
@@ -71,28 +64,44 @@ export async function execute(
   const multiplier = parseMultiplier(view.multiplier);
   const seasonName = view.season?.name ?? 'No active season';
   const rankText = view.rank != null ? `#${view.rank}` : '—';
-  const nextText =
-    view.xp_to_next > 0
-      ? `${view.xp.toLocaleString('en-US')} / ${view.next_level_at.toLocaleString('en-US')} (${view.xp_to_next.toLocaleString('en-US')} to next)`
-      : `${view.xp.toLocaleString('en-US')} XP (max level)`;
-
-  const lines = [
-    `• **Season:** **${seasonName}**`,
-    `• **Level:** **${view.level}**`,
-    `• **XP:** **${nextText}**`,
-    `• **Progress:** ${xpBar(view.xp, view.next_level_at)}`,
-    `• **Rank:** **${rankText}**`,
-  ];
-  if (multiplier !== 1) {
-    lines.push(`• **Multiplier:** **${multiplier}×**`);
-  }
 
   const embed = createBaseEmbed({
-    category: 'SEASON RANK',
+    category: 'SEASON PROGRESSION',
     title: `🏅 ${target.displayName}`,
-    description: lines.join('\n'),
+    description: `*Standing: Rank **${rankText}** · Active Season: **${seasonName}***`,
     color: BOT_COLORS.BRAND,
   });
+
+  embed.addFields(
+    {
+      name: '🎯 Current Standing',
+      value: [
+        `• 🌟 **Level:** **${view.level}**`,
+        `• 🏆 **Season Rank:** **${rankText}**`,
+        `• ⚡ **Multiplier:** **${multiplier}×**`,
+      ].join('\n'),
+      inline: true,
+    },
+    {
+      name: '📈 Season Stats',
+      value: [
+        `• ⭐ **Total XP:** **${view.xp.toLocaleString('en-US')}**`,
+        `• 🎯 **Target:** **${view.next_level_at.toLocaleString('en-US')}** XP`,
+        `• ⏳ **To Next Level:** **${view.xp_to_next > 0 ? view.xp_to_next.toLocaleString('en-US') : 'Max Level'}**`,
+      ].join('\n'),
+      inline: true,
+    },
+  );
+
+  if (view.next_level_at > 0) {
+    const pct = Math.min(100, Math.round((view.xp / view.next_level_at) * 100));
+    const bar = buildAsciiBar(view.xp, view.next_level_at, 18);
+    embed.addFields({
+      name: '⚡ LEVEL PROGRESSION',
+      value: `\`\`\`\nLevel ${view.level}  ${bar}  ${view.xp.toLocaleString('en-US')} / ${view.next_level_at.toLocaleString('en-US')} XP (${pct}%)\n[ ${view.xp_to_next > 0 ? `${view.xp_to_next.toLocaleString('en-US')} XP remaining until Level ${view.level + 1}` : 'Max level achieved!'} ]\n\`\`\``,
+      inline: false,
+    });
+  }
 
   await interaction.editReply({ embeds: [embed] });
 }

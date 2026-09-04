@@ -6,6 +6,7 @@ import type {
   CompDetail,
   OpenAlbionItemAbilities,
 } from '../../core/models/api.models';
+import { albionItemQualityLabel } from '../../shared/data/albion-item-quality';
 
 /** Maps a spell id to its player-facing name. */
 export type AbilityNames = Readonly<Record<string, string>>;
@@ -84,10 +85,11 @@ function describeItem(item: BuildItemSlot, names: AbilityNames): string {
   ]
     .sort(([left], [right]) => left - right)
     .map(([, text]) => text);
-  const tier = item.openalbion_item_tier ? ` (T${item.openalbion_item_tier})` : '';
-  return abilities.length > 0
-    ? `${item.openalbion_item_name}${tier} — ${abilities.join(', ')}`
-    : `${item.openalbion_item_name}${tier}`;
+  const tier = item.openalbion_item_tier ? `T${item.openalbion_item_tier}` : '';
+  const quality = albionItemQualityLabel(item.openalbion_item_quality);
+  const suffix = [tier, quality].filter(Boolean).join(' · ');
+  const labeled = suffix ? `${item.openalbion_item_name} (${suffix})` : item.openalbion_item_name;
+  return abilities.length > 0 ? `${labeled} — ${abilities.join(', ')}` : labeled;
 }
 
 /**

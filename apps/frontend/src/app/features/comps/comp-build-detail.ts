@@ -28,6 +28,10 @@ import type {
   UpdateBuildRequest,
 } from '../../core/models/api.models';
 import { filterAlbionEquipmentCatalog } from '../../shared/data/albion-equipment-catalog';
+import {
+  DEFAULT_ALBION_ITEM_QUALITY,
+  normalizeAlbionItemQuality,
+} from '../../shared/data/albion-item-quality';
 import { SLOT_ORDER, itemsForLoadout } from './build-loadouts';
 import {
   abilityCatalogKey,
@@ -270,6 +274,7 @@ const ITEM_TIERS = [
                 [canManage]="canManage() && mode() === 'edit'"
                 [editingSlot]="editingSlotFor(activeLoadout())"
                 [draftTier]="draftTier()"
+                [draftQuality]="draftQuality()"
                 [draftSearch]="draftSearch()"
                 [draftItemId]="draftItemId()"
                 [searchResults]="searchResults()"
@@ -278,6 +283,7 @@ const ITEM_TIERS = [
                 [draftAbilitySlots]="draftAbilitySlots()"
                 (slotToggle)="onSlotToggle(activeLoadout(), $event)"
                 (tierChange)="onDraftTierChangeValue($event)"
+                (qualityChange)="onDraftQualityChangeValue($event)"
                 (searchChange)="onDraftSearchChangeValue($event)"
                 (itemSelect)="onDraftItemChangeValue($event)"
                 (saveSlot)="saveSlot(activeLoadout(), $event)"
@@ -671,6 +677,7 @@ export class CompBuildDetailPage {
   /** The slot whose picker is open, together with the loadout it belongs to. */
   protected readonly editing = signal<{ loadout: BuildLoadout; slot: BuildSlot } | null>(null);
   protected readonly draftTier = signal('T8');
+  protected readonly draftQuality = signal(DEFAULT_ALBION_ITEM_QUALITY);
   protected readonly draftSearch = signal('');
   protected readonly draftItemId = signal('');
   protected readonly draftItemName = signal('');
@@ -882,6 +889,7 @@ export class CompBuildDetailPage {
     const current = this.itemForSlot(loadout, slot);
     this.editing.set({ loadout, slot });
     this.draftTier.set(current?.openalbion_item_tier ?? 'T8');
+    this.draftQuality.set(normalizeAlbionItemQuality(current?.openalbion_item_quality));
     this.draftSearch.set(current?.openalbion_item_name ?? '');
     this.draftItemId.set(current ? String(current.openalbion_item_id) : '');
     this.draftItemName.set(current?.openalbion_item_name ?? '');
@@ -907,6 +915,10 @@ export class CompBuildDetailPage {
   protected onDraftTierChangeValue(tier: string): void {
     this.draftTier.set(tier);
     void this.runItemSearch();
+  }
+
+  protected onDraftQualityChangeValue(quality: number): void {
+    this.draftQuality.set(normalizeAlbionItemQuality(quality));
   }
 
   protected onDraftSearchChangeValue(query: string): void {
@@ -956,6 +968,7 @@ export class CompBuildDetailPage {
           openalbion_item_name: this.draftItemName(),
           openalbion_item_icon: this.draftItemIcon(),
           openalbion_item_tier: this.draftTier(),
+          openalbion_item_quality: this.draftQuality(),
         }),
       );
       // Abilities picked in the same popover, applied right after the item exists to fill —

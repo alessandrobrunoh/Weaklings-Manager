@@ -61,6 +61,9 @@ pub struct BuildItemView {
     pub openalbion_item_icon: Option<String>,
     /// The OpenAlbion item tier.
     pub openalbion_item_tier: Option<String>,
+    /// Albion item quality (`1` Normal through `5` Masterpiece). Defaults to Excellent (`4`).
+    #[schema(example = 4)]
+    pub openalbion_item_quality: i16,
 }
 
 /// The abilities chosen on one equipped item, keyed by 1-based slot index.
@@ -334,6 +337,9 @@ pub struct CreateBuildItemRequest {
     pub spells: Option<BuildItemSpells>,
     /// The OpenAlbion item tier.
     pub openalbion_item_tier: Option<String>,
+    /// Albion item quality. Omitted values become Excellent (`4`).
+    #[schema(example = 4)]
+    pub openalbion_item_quality: Option<i16>,
 }
 
 /// Request body to upsert a build item.
@@ -356,6 +362,9 @@ pub struct UpsertBuildItemRequest {
     pub openalbion_item_icon: Option<String>,
     /// The OpenAlbion item tier.
     pub openalbion_item_tier: Option<String>,
+    /// Albion item quality. Omitted values become Excellent (`4`).
+    #[schema(example = 4)]
+    pub openalbion_item_quality: Option<i16>,
 }
 
 /// Request body to create a comp.

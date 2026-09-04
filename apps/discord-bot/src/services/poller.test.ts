@@ -66,7 +66,7 @@ test("poller drops deleted-event thread mappings and closes auto-archived thread
     const api = {
       get: async (path: string) => {
         apiGets.push(path);
-        if (path === "api/events" || path === "api/battles") return emptyPage();
+        if (path === "api/events" || path === "api/battles" || path === "api/giveaways") return emptyPage();
         if (path === "api/events/32") return { id: 32, status: "stopped" };
         if (path.startsWith("api/events/")) {
           throw new ApiError(404, `Event ${path.split("/")[2]} not found`);
@@ -81,6 +81,8 @@ test("poller drops deleted-event thread mappings and closes auto-archived thread
       eventsChannelId: async () => null,
       callToArmsChannelId: async () => null,
       battlesChannelId: async () => null,
+      giveawaysChannelId: async () => null,
+      giveawaysRoleId: async () => null,
     } as unknown as SettingsService;
 
     const client = {
@@ -187,7 +189,7 @@ test("new events announce text-only in the parent channel and put signup control
           return { items: [event], total_items: 1, total_pages: 1, current_page: 1, limit: 50 };
         }
         if (path === "api/events/41") return eventDetail;
-        if (path === "api/battles") return emptyPage();
+        if (path === "api/battles" || path === "api/giveaways") return emptyPage();
         throw new Error(`unexpected GET ${path}`);
       },
     } as unknown as ApiClient;
@@ -198,6 +200,8 @@ test("new events announce text-only in the parent channel and put signup control
       eventsChannelId: async () => "events-channel",
       callToArmsChannelId: async () => null,
       battlesChannelId: async () => null,
+      giveawaysChannelId: async () => null,
+      giveawaysRoleId: async () => null,
     } as unknown as SettingsService;
 
     const client = {

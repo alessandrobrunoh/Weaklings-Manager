@@ -609,6 +609,26 @@ pub struct ApiResponseNotificationView {
     pub data: crate::modules::notifications::models::NotificationView,
 }
 
+/// `OpenAPI` schema wrapper for a giveaway detail.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseGiveawayDetail {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Giveaway detail.
+    pub data: crate::modules::giveaways::models::GiveawayDetailView,
+}
+
+/// `OpenAPI` schema wrapper for a paginated giveaway list.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponsePaginatedGiveawayView {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Giveaway page.
+    pub data: crate::pagination::PaginatedGiveawayView,
+}
+
 /// `OpenAPI` schema wrapper for a paginated inbox.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponsePaginatedNotificationView {

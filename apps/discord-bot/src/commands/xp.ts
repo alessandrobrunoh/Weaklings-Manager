@@ -2,7 +2,7 @@ import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import { expiryFromDays, resolveInternalUserId } from '../api/resolve-user.js';
 import type { AdjustXpRequest, ProgressionMeView } from '../api/types.js';
-import { createResponseEmbed } from '../embeds/theme.js';
+import { BOT_COLORS, createBaseEmbed, createResponseEmbed } from '../embeds/theme.js';
 
 export const data = new SlashCommandBuilder()
   .setName('xp')
@@ -126,18 +126,27 @@ export async function execute(
     interaction.user.id,
   );
 
-  const summary = [
-    `• **Member:** <@${target.id}>`,
-    `• **Level:** **${view.level}**`,
-    `• **XP:** **${view.xp.toLocaleString('en-US')}**`,
-    `• **Reason:** ${reason}`,
-  ].join('\n');
-
-  const embed = createResponseEmbed(
-    'success',
-    'XP Adjusted',
-    summary,
-    'SEASON RANK',
+  const embed = createBaseEmbed({
+    category: 'SEASON PROGRESSION',
+    title: '⚡ Season XP Adjusted',
+    description: `*Progression adjustment recorded for <@${target.id}>*`,
+    color: BOT_COLORS.SUCCESS,
+  }).addFields(
+    {
+      name: '👤 Target Member',
+      value: `<@${target.id}> (\`${target.username}\`)`,
+      inline: true,
+    },
+    {
+      name: '🌟 New Level & XP',
+      value: `• **Level:** **${view.level}**\n• **Total XP:** **${view.xp.toLocaleString('en-US')}**`,
+      inline: true,
+    },
+    {
+      name: '📝 Stated Reason',
+      value: reason,
+      inline: false,
+    },
   );
   await interaction.editReply({ embeds: [embed] });
 }

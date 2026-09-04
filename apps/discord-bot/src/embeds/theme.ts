@@ -69,3 +69,33 @@ export function createResponseEmbed(
     .setFooter({ text: `${GUILD_NAME} • Albion Guild Manager` })
     .setTimestamp();
 }
+
+export function buildAsciiBar(value: number, max: number, width = 12): string {
+  const filled = max > 0 ? Math.round(Math.min(1, Math.max(0, value / max)) * width) : 0;
+  return `${'█'.repeat(filled)}${'░'.repeat(Math.max(0, width - filled))}`;
+}
+
+export interface ChartItem {
+  label: string;
+  value: number;
+  display?: string;
+}
+
+export function buildAsciiChart(items: ChartItem[], labelWidth = 14, barWidth = 12): string {
+  const max = Math.max(...items.map((i) => i.value), 1);
+  return items
+    .map((item) => {
+      const b = buildAsciiBar(item.value, max, barWidth);
+      const disp = item.display ?? item.value.toLocaleString('en-US');
+      return `${item.label.padEnd(labelWidth)} ${b} ${disp}`;
+    })
+    .join('\n');
+}
+
+export function formatCompactNumber(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+  if (n >= 1_000_000)     return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000)         return `${(n / 1_000).toFixed(1)}K`;
+  return n.toLocaleString('en-US');
+}
+

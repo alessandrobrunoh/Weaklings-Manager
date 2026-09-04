@@ -81,8 +81,8 @@ export function buildApplicationWelcomeComponents(
   const suffix = applicationId ? `:${applicationId}` : '';
   return [
     new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId(`application:manage${suffix}`).setLabel('Manage').setStyle(ButtonStyle.Secondary).setDisabled(disabled),
-      new ButtonBuilder().setCustomId(`application:close${suffix}`).setLabel('Close').setStyle(ButtonStyle.Danger).setDisabled(disabled),
+      new ButtonBuilder().setCustomId(`application:manage${suffix}`).setLabel('Manage').setEmoji('⚙️').setStyle(ButtonStyle.Secondary).setDisabled(disabled),
+      new ButtonBuilder().setCustomId(`application:close${suffix}`).setLabel('Close').setEmoji('🚪').setStyle(ButtonStyle.Danger).setDisabled(disabled),
     ),
   ];
 }
@@ -157,6 +157,7 @@ export function buildApplicationPanelComponents(
       new ButtonBuilder()
         .setCustomId('application:create')
         .setLabel('Create Application')
+        .setEmoji('📝')
         .setStyle(ButtonStyle.Primary)
         .setDisabled(!settings.discord_applications_open),
     ),
@@ -170,8 +171,8 @@ export function buildApplicationResolutionComponents(
 ): ActionRowBuilder<ButtonBuilder>[] {
   if (action === 'close') return buildApplicationWelcomeComponents(applicationId, true);
   return [new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId(`application:accept:${applicationId}`).setLabel('Accept').setStyle(ButtonStyle.Success).setDisabled(true),
-    new ButtonBuilder().setCustomId(`application:decline:${applicationId}`).setLabel('Decline').setStyle(ButtonStyle.Danger).setDisabled(true),
+    new ButtonBuilder().setCustomId(`application:accept:${applicationId}`).setLabel('Accept').setEmoji('✅').setStyle(ButtonStyle.Success).setDisabled(true),
+    new ButtonBuilder().setCustomId(`application:decline:${applicationId}`).setLabel('Decline').setEmoji('❌').setStyle(ButtonStyle.Danger).setDisabled(true),
   )];
 }
 

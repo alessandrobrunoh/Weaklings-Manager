@@ -144,7 +144,9 @@ describe('build version diff', () => {
       names,
     );
 
-    expect(changes[0].after).toBe('Polehammer — 1. Heroic Strike, Passive: Deep Cuts');
+    expect(changes[0].after).toBe(
+      'Polehammer (Excellent) — 1. Heroic Strike, Passive: Deep Cuts',
+    );
   });
 
   it('falls back to the id for a spell the catalog does not know', () => {

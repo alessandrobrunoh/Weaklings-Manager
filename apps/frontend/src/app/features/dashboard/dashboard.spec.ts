@@ -6,17 +6,87 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
-import { NotificationService } from '../../core/services/notification.service';
 import { TranslateService } from '../../core/services/translate.service';
 import { Dashboard, selectNextMass } from './dashboard';
-import type { EventView } from '../../core/models/api.models';
+import type {
+  AlbionLinkStatus,
+  BalanceSummary,
+  EventView,
+  ProgressionMeView,
+  UserMetrics,
+} from '../../core/models/api.models';
 
 describe('Dashboard', () => {
   let fixture: ComponentFixture<Dashboard>;
   let component: Dashboard;
 
+  const mockBalance: BalanceSummary = {
+    user_id: 7,
+    pending_total: 1_700_000,
+    pending_count: 3,
+    requested_total: 400_000,
+    requested_count: 1,
+  };
+
+  const mockMetrics: UserMetrics = {
+    events_total: 20,
+    attendance_rate: 80,
+    attendance_streak: 3,
+    next_event_title: 'Outposts',
+    next_event_at: '2026-09-04T19:30:00Z',
+    battles_fought: 10,
+    kills: 40,
+    deaths: 12,
+    kill_fame: 100_000,
+    regears_claimed: 2,
+    regears_pending: 1,
+    regears_approved: 1,
+    regear_silver: 50_000,
+    splits_joined: 5,
+    split_earnings: 2_500_000,
+    most_played_build: 'Kite',
+    events_attended: 16,
+    total_estimated_loss: 100_000,
+    top_estimated_loss: 20_000,
+  };
+
+  const mockProgression: ProgressionMeView = {
+    season: {
+      id: 1,
+      name: 'Season 8',
+      starts_at: '2026-01-01T00:00:00Z',
+      ends_at: '2026-12-31T00:00:00Z',
+      is_active: true,
+    },
+    level: 12,
+    xp: 840,
+    xp_to_next: 360,
+    next_level_at: 1200,
+    rank: 8,
+    multiplier: 1,
+    lifetime_xp: 9000,
+  };
+
+  const mockAlbion: AlbionLinkStatus = {
+    linked: true,
+    albion_player_name: 'GalvdonAO',
+  };
+
   const mockApiService = {
-    get: vi.fn().mockReturnValue(of({ items: [], total_items: 0, total_pages: 0, current_page: 1, limit: 10 })),
+    get: vi.fn().mockImplementation((path: string) => {
+      switch (path) {
+        case 'api/bank/balance':
+          return of(mockBalance);
+        case 'api/users/me/metrics':
+          return of(mockMetrics);
+        case 'api/progression/me':
+          return of(mockProgression);
+        case 'api/albion/link/me':
+          return of(mockAlbion);
+        default:
+          return of({ items: [], total_items: 0, total_pages: 0, current_page: 1, limit: 10 });
+      }
+    }),
   };
 
   const mockAuthService = {
@@ -24,18 +94,14 @@ describe('Dashboard', () => {
       id: '123456',
       username: 'Galvdon',
       avatar: null,
+      email: null,
+      user_id: 7,
+      roles: ['Guild Master'],
       highest_role: 'Guild Master',
+      is_superadmin: false,
       permissions: ['bank.withdraw.accept'],
     }),
     hasPermission: vi.fn().mockImplementation((perm: string) => perm === 'bank.withdraw.accept'),
-  };
-
-  const mockNotificationService = {
-    unreadCount: vi.fn().mockReturnValue(2),
-    loading: vi.fn().mockReturnValue(false),
-    error: vi.fn().mockReturnValue(null),
-    items: vi.fn().mockReturnValue([]),
-    loadInbox: vi.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(async () => {
@@ -46,13 +112,15 @@ describe('Dashboard', () => {
         provideRouter([]),
         { provide: ApiService, useValue: mockApiService },
         { provide: AuthService, useValue: mockAuthService },
-        { provide: NotificationService, useValue: mockNotificationService },
         TranslateService,
       ],
     }).compileComponents();
 
+    TestBed.inject(TranslateService).use('en');
+
     fixture = TestBed.createComponent(Dashboard);
     component = fixture.componentInstance;
+    await (component as Dashboard & { refreshNow: () => Promise<void> }).refreshNow();
     fixture.detectChanges();
     await fixture.whenStable();
   });
@@ -62,37 +130,53 @@ describe('Dashboard', () => {
   });
 
   it('renders the personalized greeting with the username', () => {
-    const text = fixture.nativeElement.textContent;
+    const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Galvdon');
-    expect(text).toContain("Here's what's happening with Weaklings.");
+    expect(text).toContain('Your balance, season, and next mass.');
   });
 
-  it('renders all four KPI stat cards with correct titles', () => {
-    const text = fixture.nativeElement.textContent;
+  it('renders personal identity, albion character, and season progress', () => {
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Guild Master');
+    expect(text).toContain('GalvdonAO');
+    expect(text).toContain('Season 8');
+    expect(text).toContain('Level 12');
+    expect(text).toContain('Rank #8');
+  });
+
+  it('renders personal KPI cards instead of guild totals', () => {
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Bank pending');
     expect(text).toContain('Bank requested');
-    expect(text).toContain('Splits completed');
-    expect(text).toContain('Splits pending');
-    expect(text).toContain('Season paid out');
+    expect(text).toContain('Split earnings');
+    expect(text).toContain('Attendance');
+    expect(text).toContain('1.70M');
+    expect(text).toContain('2.50M');
+    expect(text).toContain('80%');
+    expect(text).not.toContain('Guild paid out');
+    expect(text).not.toContain('Splits completed');
+    expect(text).not.toContain('Splits pending');
+    expect(text).not.toContain("Here's what's happening with Weaklings.");
   });
 
-  it('renders the "Requires your attention" panel with alerts and caught up banner', () => {
-    const text = fixture.nativeElement.textContent;
+  it('renders personal attention items and hides the caught-up banner', () => {
+    const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Requires your attention');
-    expect(text).toContain('bank request awaiting approval');
-    expect(text).toContain('split still needs to be completed');
-    expect(text).toContain("You're all caught up!");
+    expect(text).toContain('silver available to request');
+    expect(text).toContain('withdrawals awaiting payout');
+    expect(text).toContain('regear requests pending');
+    expect(text).not.toContain("You're all caught up");
+    expect(text).not.toContain('bank request awaiting approval');
   });
 
-  it('renders the "Next mass" section with date, event details, and CTA', () => {
-    const text = fixture.nativeElement.textContent;
+  it('renders an empty next-mass state when nothing is scheduled', () => {
+    const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Next mass');
-    expect(text).toContain('Launch Terry Grove');
-    expect(text).toContain('Brawl 10v10');
-    expect(text).toContain('Composition ready');
-    expect(text).toContain('Build assigned');
-    expect(text).toContain('Open event');
+    expect(text).toContain('No mass scheduled');
+    expect(text).not.toContain('Launch Terry Grove');
+    expect(text).not.toContain('Composition ready');
+    expect(text).not.toContain('Build assigned');
   });
-
 
   it('formats numbers to compact silver notation correctly', () => {
     expect(component.formatCompactSilver(1_700_000)).toBe('1.70M');
@@ -190,6 +274,30 @@ describe('Dashboard', () => {
         hour12: false,
       }),
     );
+  });
+
+  it('shows the caught-up banner when there is nothing personal to do', () => {
+    const dash = component as Dashboard & {
+      bankBalance: { set(value: BalanceSummary): void };
+      metrics: { set(value: UserMetrics): void };
+      albionLink: { set(value: AlbionLinkStatus): void };
+      recentEvents: { set(value: EventView[]): void };
+    };
+    dash.bankBalance.set({
+      user_id: 7,
+      pending_total: 0,
+      pending_count: 0,
+      requested_total: 0,
+      requested_count: 0,
+    });
+    dash.metrics.set({ ...mockMetrics, regears_pending: 0 });
+    dash.albionLink.set({ linked: true, albion_player_name: 'GalvdonAO' });
+    dash.recentEvents.set([]);
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain("You're all caught up");
+    expect(text).not.toContain('silver available to request');
   });
 });
 

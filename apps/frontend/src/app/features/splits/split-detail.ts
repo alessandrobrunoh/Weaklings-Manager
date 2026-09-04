@@ -79,7 +79,10 @@ function parsePercentageInput(raw: string): number | null {
       />
     } @else {
       @if (split(); as detail) {
-        <app-page-header [title]="detail.note || t('splits.untitled', { id: detail.id })">
+        <app-page-header
+          [title]="detail.note || t('splits.untitled', { id: detail.id })"
+          [badge]="detail.archived_at ? t('splits.archived') : undefined"
+        >
           <a routerLink="/splits" class="btn btn--ghost btn--sm">
             <app-icon name="chevron-left" size="0.875rem" />
             {{ t('splits.detail.back') }}
@@ -89,7 +92,7 @@ function parsePercentageInput(raw: string): number | null {
               {{ mode() === 'edit' ? t('common.close') : t('common.edit') }}
             </button>
           }
-          @if (detail.status === 'pending' && canAct()) {
+          @if (detail.status === 'pending' && canAct() && !detail.archived_at) {
             <button
               type="button"
               class="btn btn--primary btn--sm"
@@ -109,9 +112,24 @@ function parsePercentageInput(raw: string): number | null {
             </button>
           }
           @if (canDelete()) {
-            <button type="button" class="btn btn--danger btn--sm" (click)="showDelete.set(true)">
-              {{ t('common.delete') }}
-            </button>
+            @if (detail.archived_at) {
+              <button
+                type="button"
+                class="btn btn--outline btn--sm"
+                [disabled]="saving()"
+                (click)="unarchiveSplit()"
+              >
+                {{ t('splits.unarchive') }}
+              </button>
+            } @else {
+              <button
+                type="button"
+                class="btn btn--outline btn--sm"
+                (click)="showArchive.set(true)"
+              >
+                {{ t('splits.archive') }}
+              </button>
+            }
           }
         </app-page-header>
 
@@ -695,20 +713,20 @@ function parsePercentageInput(raw: string): number | null {
       </app-dialog>
     }
 
-    @if (showDelete()) {
-      <app-dialog [title]="t('common.delete')" size="sm" (closed)="showDelete.set(false)">
+    @if (showArchive()) {
+      <app-dialog [title]="t('splits.archive')" size="sm" (closed)="showArchive.set(false)">
         <p class="text-xs">{{ t('splits.confirm_delete') }}</p>
         <div dialogFooter class="flex justify-end gap-2">
-          <button type="button" class="btn btn--ghost btn--sm" (click)="showDelete.set(false)">
+          <button type="button" class="btn btn--ghost btn--sm" (click)="showArchive.set(false)">
             {{ t('common.cancel') }}
           </button>
           <button
             type="button"
-            class="btn btn--danger btn--sm"
+            class="btn btn--tonal btn--sm"
             [disabled]="saving()"
-            (click)="confirmDelete()"
+            (click)="confirmArchive()"
           >
-            {{ t('common.delete') }}
+            {{ t('splits.archive') }}
           </button>
         </div>
       </app-dialog>
@@ -799,7 +817,7 @@ export class SplitDetailPage {
   protected readonly loadFailed = signal(false);
   protected readonly saving = signal(false);
   protected readonly mode = signal<DetailMode>('view');
-  protected readonly showDelete = signal(false);
+  protected readonly showArchive = signal(false);
   protected readonly showCompleteConfirmDialog = signal(false);
   protected readonly islands = signal<SplitIsland[]>([]);
   protected readonly defaultFee = DEFAULT_SPLIT_FEE;
@@ -883,7 +901,10 @@ export class SplitDetailPage {
   protected readonly canAct = computed(() => this.auth.hasPermission('splits.edit'));
   protected readonly canDelete = computed(() => this.auth.hasPermission('splits.delete'));
   protected readonly canEdit = computed(
-    () => this.canAct() && ['pending', 'awaiting_event'].includes(this.split()?.status ?? ''),
+    () =>
+      this.canAct() &&
+      !this.split()?.archived_at &&
+      ['pending', 'awaiting_event'].includes(this.split()?.status ?? ''),
   );
   protected readonly canViewSplitTransactions = computed(
     () => this.auth.hasPermission('bank.view_others') || this.auth.hasPermission('bank.withdraw.accept'),
@@ -1267,21 +1288,38 @@ export class SplitDetailPage {
     await this.closeSplit('complete');
   }
 
-  protected async confirmDelete(): Promise<void> {
+  protected async confirmArchive(): Promise<void> {
     const current = this.split();
     if (!current) {
       return;
     }
     this.saving.set(true);
     try {
-      await firstValueFrom(this.api.delete(`api/splits/${current.id}`));
-      this.toasts.success(this.t('common.delete'));
+      await firstValueFrom(this.api.post(`api/splits/${current.id}/archive`, {}));
+      this.toasts.success(this.t('splits.archiveSuccess'));
       void this.router.navigate(['/splits']);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.saving.set(false);
-      this.showDelete.set(false);
+      this.showArchive.set(false);
+    }
+  }
+
+  protected async unarchiveSplit(): Promise<void> {
+    const current = this.split();
+    if (!current) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      await firstValueFrom(this.api.post(`api/splits/${current.id}/unarchive`, {}));
+      this.toasts.success(this.t('splits.unarchiveSuccess'));
+      this.reload();
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
     }
   }
 

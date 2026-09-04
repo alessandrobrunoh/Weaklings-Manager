@@ -15,7 +15,12 @@ import type {
   PaginatedData,
   EventView,
   BattleSummary,
+  GiveawayDetailView,
 } from "../api/types.js";
+import {
+  buildGiveawayActionRow,
+  buildGiveawayEmbed,
+} from "../embeds/giveaway.embed.js";
 import {
   buildEventEmbed,
   buildEventReminderMessage,
@@ -63,6 +68,8 @@ export async function handleButton(
   try {
     if (ns === "event") {
       await handleEventButton(interaction, api, action, rest);
+    } else if (ns === "giveaway") {
+      await handleGiveawayButton(interaction, api, action, rest);
     } else if (ns === "events") {
       await handleEventsNav(interaction, api, action, rest);
     } else if (ns === "battles") {
@@ -140,8 +147,8 @@ async function handleApplicationButton(
     await interaction.reply({
       embeds: [buildApplicationManageEmbed(settings)],
       components: [new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder().setCustomId(`application:accept:${applicationId}`).setLabel('Accept').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId(`application:decline:${applicationId}`).setLabel('Decline').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId(`application:accept:${applicationId}`).setLabel('Accept').setEmoji('✅').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`application:decline:${applicationId}`).setLabel('Decline').setEmoji('❌').setStyle(ButtonStyle.Danger),
       )],
       flags: ['Ephemeral'],
     });
@@ -273,6 +280,58 @@ async function finalizeApplicationChannel(
     }).catch(() => undefined);
   }
   await channel.send(buildApplicationFinalMessage(settings, action)).catch(() => undefined);
+}
+
+async function handleGiveawayButton(
+  interaction: ButtonInteraction,
+  api: ApiClient,
+  action: string,
+  rest: string[],
+): Promise<void> {
+  const giveawayId = Number(rest[0]);
+  if (!Number.isSafeInteger(giveawayId) || giveawayId <= 0) {
+    throw new Error("Invalid giveaway ID.");
+  }
+
+  await interaction.deferReply({ flags: ["Ephemeral"] });
+
+  if (action !== "join" && action !== "leave") {
+    throw new Error("Unknown giveaway action.");
+  }
+
+  try {
+    const updated =
+      action === "join"
+        ? await api.post<GiveawayDetailView>(
+            `api/giveaways/${giveawayId}/enter`,
+            {},
+            interaction.user.id,
+          )
+        : await api.delete<GiveawayDetailView>(
+            `api/giveaways/${giveawayId}/enter`,
+            interaction.user.id,
+          );
+    if (!updated) {
+      throw new Error("Giveaway update returned no data.");
+    }
+    await interaction.message.edit({
+      embeds: [buildGiveawayEmbed(updated)],
+      components: [buildGiveawayActionRow(updated)],
+    });
+    const successEmbed = createResponseEmbed(
+      "success",
+      action === "join" ? "Entered Giveaway" : "Left Giveaway",
+      action === "join"
+        ? `You are now in **${updated.title}**. ${updated.entry_count} participant(s).`
+        : `You left **${updated.title}**.`,
+      "GIVEAWAY",
+    );
+    await interaction.editReply({ embeds: [successEmbed] });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Giveaway action failed.";
+    const errEmbed = createResponseEmbed("error", "Giveaway Failed", message, "GIVEAWAY");
+    await interaction.editReply({ embeds: [errEmbed] });
+  }
 }
 
 async function handleEventButton(

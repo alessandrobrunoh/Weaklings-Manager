@@ -2,7 +2,7 @@ import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import { expiryFromDays, resolveInternalUserId } from '../api/resolve-user.js';
 import type { IssueWarnRequest, WarnSeverity, WarnView } from '../api/types.js';
-import { createResponseEmbed } from '../embeds/theme.js';
+import { BOT_COLORS, createBaseEmbed, createResponseEmbed } from '../embeds/theme.js';
 
 export const data = new SlashCommandBuilder()
   .setName('warn')
@@ -82,31 +82,56 @@ export async function execute(
   // The warn is already persisted at this point. A DM failure must not make the
   // moderator think the warn itself failed (the recipient may have DMs disabled).
   try {
-    const notification = createResponseEmbed(
-      'warning',
-      'You have received a warning',
-      [
-        `A moderator has issued you a **${issuedSeverity}** in **Weaklings**.`,
-        '',
-        `**Reason:** ${issuedReason}`,
-        issued.id != null ? `**Warn ID:** \`${issued.id}\`` : '',
-        '',
-        'If you believe this warning was issued in error, contact a guild officer.',
-      ].filter(Boolean).join('\n'),
-      'MODERATION',
+    const notification = createBaseEmbed({
+      category: 'MODERATION NOTICE',
+      title: '⚠️ Disciplinary Warning Received',
+      description: '*You have received a formal disciplinary warning in **Weaklings**.*',
+      color: BOT_COLORS.WARNING,
+      footerText: `Warn #${issued.id ?? '—'} • Weaklings Moderation`,
+    }).addFields(
+      {
+        name: '📋 Warning Details',
+        value: [
+          `• ⚠️ **Severity:** **${issuedSeverity.toUpperCase()}**`,
+          `• 📝 **Reason:** ${issuedReason}`,
+          issued.id != null ? `• 🆔 **Warn ID:** \`#${issued.id}\`` : '',
+        ].filter(Boolean).join('\n'),
+        inline: false,
+      },
+      {
+        name: 'ℹ️ Next Steps',
+        value: 'Repeated warnings escalate automatically to guild penalties or removal. If you believe this was in error, open an Officer ticket.',
+        inline: false,
+      },
     );
     await target.send({ embeds: [notification] });
   } catch (err) {
     console.warn(`[WarnCommand] Could not DM ${target.tag} about warn:`, err);
   }
 
-  const lines = [
-    `• **Member:** <@${target.id}>`,
-    `• **Severity:** **${issuedSeverity}**`,
-    `• **Reason:** ${issuedReason}`,
-  ];
-  if (issued.id != null) lines.push(`• **ID:** \`${issued.id}\``);
+  const embed = createBaseEmbed({
+    category: 'DISCIPLINARY ACTION',
+    title: '⚠️ Warn Issued Successfully',
+    description: `*Disciplinary action recorded against <@${target.id}>*`,
+    color: BOT_COLORS.WARNING,
+    footerText: `Warn #${issued.id ?? '—'} • Weaklings Moderation`,
+  }).addFields(
+    {
+      name: '👤 Target Member',
+      value: `<@${target.id}> (\`${target.username}\`)`,
+      inline: true,
+    },
+    {
+      name: '⚠️ Severity',
+      value: `**${issuedSeverity.toUpperCase()}**`,
+      inline: true,
+    },
+    {
+      name: '📝 Stated Reason',
+      value: issuedReason,
+      inline: false,
+    },
+  );
 
-  const embed = createResponseEmbed('success', 'Warn Issued', lines.join('\n'), 'WARNS');
   await interaction.editReply({ embeds: [embed] });
 }

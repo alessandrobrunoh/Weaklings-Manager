@@ -216,6 +216,18 @@ export const routes: Routes = [
               import('./features/admin/admin-islands').then((m) => m.AdminIslands),
           },
           {
+            path: 'giveaways',
+            canActivate: [permissionGuardTo('/admin', 'giveaways.view')],
+            loadComponent: () =>
+              import('./features/admin/admin-giveaways').then((m) => m.AdminGiveaways),
+          },
+          {
+            path: 'giveaways/:giveawayId',
+            canActivate: [permissionGuardTo('/admin', 'giveaways.view')],
+            loadComponent: () =>
+              import('./features/admin/admin-giveaway-detail').then((m) => m.AdminGiveawayDetail),
+          },
+          {
             path: 'islands/:islandId',
             canActivate: [permissionGuardTo('/admin', 'splits.islands.manage')],
             loadComponent: () =>

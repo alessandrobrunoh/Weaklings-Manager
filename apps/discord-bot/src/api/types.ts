@@ -239,6 +239,7 @@ export interface EventView {
   start_time_utc?: string | null;
   created_at: string;
   updated_at: string;
+  archived_at?: string | null;
   status: EventStatus;
   started_at: string | null;
   stopped_at: string | null;
@@ -450,7 +451,55 @@ export interface GuildSettingsView {
   discord_applications_error_message?: string;
   discord_applications_result_message?: string;
   discord_applications_panel_message_id: string | null;
+  discord_giveaways_channel_id?: string | null;
+  discord_giveaways_role_id?: string | null;
   default_split_fee: number | string;
+}
+
+export type GiveawayStatus = 'open' | 'drawn' | 'cancelled' | 'expired_empty';
+
+export interface GiveawayPrizeView {
+  id: number;
+  openalbion_item_id: number;
+  openalbion_item_name: string;
+  openalbion_item_icon?: string | null;
+  openalbion_item_identifier?: string | null;
+  openalbion_item_tier?: string | null;
+  openalbion_item_quality: number;
+  quantity: number;
+}
+
+export interface GiveawayEntryView {
+  id: number;
+  user_id: number;
+  username: string;
+  discord_id?: string | null;
+  entered_at: string;
+}
+
+export interface GiveawayView {
+  id: number;
+  title: string;
+  description?: string | null;
+  ends_at: string;
+  status: GiveawayStatus;
+  created_by: number;
+  created_by_username: string;
+  created_at: string;
+  silver_amount?: string | number | null;
+  winner_user_id?: number | null;
+  winner_username?: string | null;
+  winner_discord_id?: string | null;
+  drawn_at?: string | null;
+  silver_transaction_id?: number | null;
+  discord_message_id?: string | null;
+  discord_channel_id?: string | null;
+  entry_count: number;
+  prizes: GiveawayPrizeView[];
+}
+
+export interface GiveawayDetailView extends GiveawayView {
+  entries: GiveawayEntryView[];
 }
 
 /* -------------------------- Progression ----------------------------- */

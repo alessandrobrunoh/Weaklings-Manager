@@ -91,6 +91,12 @@ impl AdminService {
         if let Some(value) = &req.discord_event_voice_category_id {
             active.discord_event_voice_category_id = Set(normalize_discord_snowflake(value)?);
         }
+        if let Some(value) = &req.discord_giveaways_channel_id {
+            active.discord_giveaways_channel_id = Set(normalize_discord_snowflake(value)?);
+        }
+        if let Some(value) = &req.discord_giveaways_role_id {
+            active.discord_giveaways_role_id = Set(normalize_discord_snowflake(value)?);
+        }
         if let Some(value) = &req.discord_applications_channel_id {
             active.discord_applications_channel_id = Set(normalize_discord_snowflake(value)?);
         }

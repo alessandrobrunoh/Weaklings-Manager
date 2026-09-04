@@ -183,3 +183,98 @@ impl FromStr for BuildSlot {
         }
     }
 }
+
+/// Albion item quality. `1` Normal through `5` Masterpiece.
+///
+/// Excellent (`4`) is the guild default: existing `build_items` rows and omitted request
+/// fields resolve here so a loadout does not silently drop to Normal.
+pub const DEFAULT_ITEM_QUALITY: i16 = 4;
+
+/// Accepts an optional quality from a request body and rejects anything outside `1..=5`.
+///
+/// Omitted values become [`DEFAULT_ITEM_QUALITY`]. `0` and `6` return an error string.
+///
+/// # Errors
+///
+/// Returns a human-readable message when `value` is present but not in `1..=5`.
+pub fn parse_item_quality(value: Option<i16>) -> Result<i16, String> {
+    let quality = value.unwrap_or(DEFAULT_ITEM_QUALITY);
+    if (1..=5).contains(&quality) {
+        Ok(quality)
+    } else {
+        Err(format!(
+            "item quality must be between 1 and 5, got {quality}"
+        ))
+    }
+}
+
+/// Rewrites an Albion render URL so its `quality` query matches `quality`.
+///
+/// Catalog icons are stored with `quality=1`. Builds persist a separate quality column, so
+/// reads and writes both run through this helper and the image the client sees is the grade
+/// that was actually chosen.
+#[must_use]
+pub fn icon_url_with_quality(icon: Option<&str>, quality: i16) -> Option<String> {
+    let icon = icon?.trim();
+    if icon.is_empty() {
+        return None;
+    }
+    if let Some(idx) = icon.find("quality=") {
+        let after = idx + "quality=".len();
+        let digits = icon[after..].bytes().take_while(u8::is_ascii_digit).count();
+        let mut rewritten = String::with_capacity(icon.len() + 1);
+        rewritten.push_str(&icon[..after]);
+        rewritten.push_str(&quality.to_string());
+        rewritten.push_str(&icon[after + digits..]);
+        Some(rewritten)
+    } else if icon.contains('?') {
+        Some(format!("{icon}&quality={quality}"))
+    } else {
+        Some(format!("{icon}?quality={quality}"))
+    }
+}
+
+#[cfg(test)]
+mod item_quality_tests {
+    use super::{icon_url_with_quality, parse_item_quality};
+
+    #[test]
+    fn omitted_quality_is_excellent() {
+        assert_eq!(parse_item_quality(None).unwrap(), 4);
+    }
+
+    #[test]
+    fn masterpiece_is_accepted() {
+        assert_eq!(parse_item_quality(Some(5)).unwrap(), 5);
+    }
+
+    #[test]
+    fn zero_and_six_are_rejected() {
+        assert!(parse_item_quality(Some(0)).is_err());
+        assert!(parse_item_quality(Some(6)).is_err());
+    }
+
+    #[test]
+    fn rewrites_an_existing_quality_query() {
+        let url = icon_url_with_quality(
+            Some("https://render.albiononline.com/v1/item/T8_MAIN_SWORD.png?quality=1&size=64"),
+            5,
+        );
+        assert_eq!(
+            url.as_deref(),
+            Some("https://render.albiononline.com/v1/item/T8_MAIN_SWORD.png?quality=5&size=64")
+        );
+    }
+
+    #[test]
+    fn appends_quality_when_the_url_has_no_query() {
+        let url = icon_url_with_quality(
+            Some("https://render.albiononline.com/v1/item/T8_MAIN_SWORD.png"),
+            4,
+        );
+        assert_eq!(
+            url.as_deref(),
+            Some("https://render.albiononline.com/v1/item/T8_MAIN_SWORD.png?quality=4")
+        );
+    }
+}

@@ -37,7 +37,9 @@ use super::models::{
     UpdateBuildRequest, UpdateCompBuildQuantityRequest, UpdateCompCategoryRequest,
     UpdateCompRequest, UpsertBuildItemRequest,
 };
-use super::status::{BuildLoadout, BuildRole, BuildSlot};
+use super::status::{
+    BuildLoadout, BuildRole, BuildSlot, icon_url_with_quality, parse_item_quality,
+};
 
 /// The two kinds of ability slot, as stored in `build_item_spells.kind`.
 const ACTIVE_KIND: &str = "active";
@@ -614,8 +616,12 @@ impl CompService {
                 openalbion_item_type: item.openalbion_item_type.clone(),
                 openalbion_item_id: item.openalbion_item_id,
                 openalbion_item_name: item.openalbion_item_name.clone(),
-                openalbion_item_icon: item.openalbion_item_icon.clone(),
+                openalbion_item_icon: icon_url_with_quality(
+                    item.openalbion_item_icon.as_deref(),
+                    item.openalbion_item_quality,
+                ),
                 openalbion_item_tier: item.openalbion_item_tier.clone(),
+                openalbion_item_quality: item.openalbion_item_quality,
             });
         }
 
@@ -624,6 +630,12 @@ impl CompService {
         // a null `openalbion_item_icon`; we fill it in at read time so the
         // frontend always gets a usable render.albiononline.com URL.
         self.resolve_missing_icons(&mut item_views).await?;
+        for view in &mut item_views {
+            view.openalbion_item_icon = icon_url_with_quality(
+                view.openalbion_item_icon.as_deref(),
+                view.openalbion_item_quality,
+            );
+        }
 
         let versions = build_version_group(db, &build.name, build.category_id)
             .await?
@@ -934,6 +946,8 @@ impl CompService {
                 }
 
                 let spells = item.spells;
+                let quality = parse_item_quality(item.openalbion_item_quality)
+                    .map_err(AppError::Validation)?;
                 let active = build_item::ActiveModel {
                     build_id: Set(inserted.id),
                     // Items supplied at creation time are always the main loadout; the swap is
@@ -943,8 +957,12 @@ impl CompService {
                     openalbion_item_type: Set(item.openalbion_item_type),
                     openalbion_item_id: Set(item.openalbion_item_id),
                     openalbion_item_name: Set(item.openalbion_item_name),
-                    openalbion_item_icon: Set(item.openalbion_item_icon),
+                    openalbion_item_icon: Set(icon_url_with_quality(
+                        item.openalbion_item_icon.as_deref(),
+                        quality,
+                    )),
                     openalbion_item_tier: Set(item.openalbion_item_tier),
+                    openalbion_item_quality: Set(quality),
                     ..Default::default()
                 };
                 let inserted_item = active.insert(&txn).await?;
@@ -1145,6 +1163,7 @@ impl CompService {
                 openalbion_item_name: Set(item.openalbion_item_name.clone()),
                 openalbion_item_icon: Set(item.openalbion_item_icon.clone()),
                 openalbion_item_tier: Set(item.openalbion_item_tier.clone()),
+                openalbion_item_quality: Set(item.openalbion_item_quality),
                 ..Default::default()
             }
             .insert(&txn)
@@ -1301,14 +1320,19 @@ impl CompService {
             .one(db)
             .await?;
 
+        let quality =
+            parse_item_quality(req.openalbion_item_quality).map_err(AppError::Validation)?;
+        let icon = icon_url_with_quality(req.openalbion_item_icon.as_deref(), quality);
+
         if let Some(model) = existing {
             let item_id = model.id;
             let mut active: build_item::ActiveModel = model.into();
             active.openalbion_item_type = Set(req.openalbion_item_type);
             active.openalbion_item_id = Set(req.openalbion_item_id);
             active.openalbion_item_name = Set(req.openalbion_item_name);
-            active.openalbion_item_icon = Set(req.openalbion_item_icon);
+            active.openalbion_item_icon = Set(icon);
             active.openalbion_item_tier = Set(req.openalbion_item_tier);
+            active.openalbion_item_quality = Set(quality);
             let updated = active.update(db).await?;
             drop_abilities_the_item_no_longer_offers(db, &updated, item_id).await?;
         } else {
@@ -1319,8 +1343,9 @@ impl CompService {
                 openalbion_item_type: Set(req.openalbion_item_type),
                 openalbion_item_id: Set(req.openalbion_item_id),
                 openalbion_item_name: Set(req.openalbion_item_name),
-                openalbion_item_icon: Set(req.openalbion_item_icon),
+                openalbion_item_icon: Set(icon),
                 openalbion_item_tier: Set(req.openalbion_item_tier),
+                openalbion_item_quality: Set(quality),
                 ..Default::default()
             };
             active.insert(db).await?;
@@ -2304,6 +2329,7 @@ mod tests {
             openalbion_item_name: name.to_string(),
             openalbion_item_icon: None,
             openalbion_item_tier: None,
+            openalbion_item_quality: None,
         }
     }
 
@@ -2334,6 +2360,67 @@ mod tests {
         assert_eq!(
             item_named(&detail, BuildLoadout::Main, BuildSlot::Weapon).as_deref(),
             Some("Polehammer")
+        );
+        assert_eq!(
+            detail.items[0].openalbion_item_quality, 4,
+            "omitted quality must persist as Excellent"
+        );
+    }
+
+    #[tokio::test]
+    async fn upserting_a_build_item_persists_masterpiece_quality() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+        let mut masterpiece = weapon("Polehammer");
+        masterpiece.openalbion_item_quality = Some(5);
+        masterpiece.openalbion_item_icon = Some(
+            "https://render.albiononline.com/v1/item/T8_2H_POLEHAMMER.png?quality=1&size=64"
+                .to_string(),
+        );
+
+        let detail = service
+            .upsert_build_item(
+                &db,
+                build_id,
+                BuildLoadout::Main,
+                BuildSlot::Weapon,
+                masterpiece,
+            )
+            .await
+            .expect("masterpiece weapon should be stored");
+
+        let stored = detail
+            .items
+            .iter()
+            .find(|item| item.slot == BuildSlot::Weapon)
+            .expect("weapon slot");
+        assert_eq!(stored.openalbion_item_quality, 5);
+        assert_eq!(
+            stored.openalbion_item_icon.as_deref(),
+            Some("https://render.albiononline.com/v1/item/T8_2H_POLEHAMMER.png?quality=5&size=64")
+        );
+    }
+
+    #[tokio::test]
+    async fn upserting_a_build_item_rejects_an_invalid_quality() {
+        let db = seed_db().await;
+        let (service, build_id) = seed_build(&db).await;
+        let mut invalid = weapon("Polehammer");
+        invalid.openalbion_item_quality = Some(0);
+
+        let error = service
+            .upsert_build_item(
+                &db,
+                build_id,
+                BuildLoadout::Main,
+                BuildSlot::Weapon,
+                invalid,
+            )
+            .await
+            .expect_err("quality 0 is not an Albion grade");
+        assert!(
+            matches!(error, AppError::Validation(ref message) if message.contains("quality")),
+            "unexpected error: {error:?}"
         );
     }
 
@@ -2477,6 +2564,7 @@ mod tests {
                     .to_string(),
             ),
             openalbion_item_tier: Some("8".to_string()),
+            openalbion_item_quality: None,
         }
     }
 
@@ -2493,6 +2581,7 @@ mod tests {
                     .to_string(),
             ),
             openalbion_item_tier: Some("8".to_string()),
+            openalbion_item_quality: None,
             spells,
         }
     }
@@ -2507,6 +2596,7 @@ mod tests {
                     .to_string(),
             ),
             openalbion_item_tier: Some("8".to_string()),
+            openalbion_item_quality: None,
         }
     }
 
@@ -2885,6 +2975,7 @@ mod tests {
                 openalbion_item_name: copied_name,
                 openalbion_item_icon: copied_icon,
                 openalbion_item_tier: copied_tier,
+                openalbion_item_quality: copied_quality,
             } = copied;
             assert_eq!(copied_loadout, source.loadout);
             assert_eq!(copied_slot, source.slot);
@@ -2893,6 +2984,7 @@ mod tests {
             assert_eq!(copied_name, source.openalbion_item_name);
             assert_eq!(copied_icon, source.openalbion_item_icon);
             assert_eq!(copied_tier, source.openalbion_item_tier);
+            assert_eq!(copied_quality, source.openalbion_item_quality);
         }
     }
 

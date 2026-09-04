@@ -194,17 +194,63 @@ impl AuditService {
             .and_then(|s| s.discord_audit_log_channel_id.as_ref());
         if let Some(channel_id) = audit_channel_id {
             if let Some(token) = &cfg.discord_bot_token {
-                let mut message = format!(
-                    "**Audit Log:** `{}`\n**Entity:** `{}` (ID: {})\n**User:** {}{}\n**Details:**\n```json\n{}\n```",
-                    action,
-                    entity_type_display,
-                    entity_id_display,
-                    user_display,
-                    target_display,
-                    details.as_ref().map(|v| v.to_string()).unwrap_or_default()
-                );
-                Self::truncate_discord_msg(&mut message);
-                let payload = serde_json::json!({ "content": message });
+                let color = if action.contains("REVOKE")
+                    || action.contains("DELETE")
+                    || action.contains("CANCEL")
+                    || action.contains("FAIL")
+                {
+                    15548997 // Crimson Red
+                } else if action.contains("WARN") || action.contains("REJECT") {
+                    16705372 // Amber Yellow
+                } else {
+                    12951641 // Albion Gold / Brand
+                };
+
+                let mut fields = vec![
+                    serde_json::json!({
+                        "name": "👤 Operator",
+                        "value": user_display,
+                        "inline": true
+                    }),
+                    serde_json::json!({
+                        "name": "🎯 Entity",
+                        "value": format!("`{}` (ID: {})", entity_type_display, entity_id_display),
+                        "inline": true
+                    }),
+                ];
+
+                if !target_display.trim().is_empty() {
+                    fields.push(serde_json::json!({
+                        "name": "🎯 Target User",
+                        "value": target_display.replace("\n**Target User:** ", ""),
+                        "inline": true
+                    }));
+                }
+
+                if let Some(det) = &details {
+                    let mut det_str = serde_json::to_string_pretty(det).unwrap_or_default();
+                    if det_str.len() > 1000 {
+                        det_str.truncate(1000);
+                        det_str.push_str("\n... (truncated)");
+                    }
+                    fields.push(serde_json::json!({
+                        "name": "📝 Details",
+                        "value": format!("```json\n{}\n```", det_str),
+                        "inline": false
+                    }));
+                }
+
+                let embed = serde_json::json!({
+                    "author": { "name": "⚔️ WEAKLINGS — AUDIT LOG" },
+                    "title": format!("🛡️ Action: `{}`", action),
+                    "description": format!("*Audit trail entry for `{}` (ID: {})*", entity_type_display, entity_id_display),
+                    "color": color,
+                    "fields": fields,
+                    "footer": { "text": format!("Audit Log #{} • Weaklings Security", inserted.id) },
+                    "timestamp": chrono::Utc::now().to_rfc3339()
+                });
+
+                let payload = serde_json::json!({ "embeds": [embed] });
                 Self::send_discord_payload(channel_id, token, payload).await;
             }
         }
@@ -216,19 +262,75 @@ impl AuditService {
         if let Some(channel_id) = spam_channel_id {
             if let Some(token) = &cfg.discord_bot_token {
                 if entity_type == Some("TRANSACTION") {
-                    let mut message = format!(
-                        "**Transaction Activity:** `{}`\n**Entity ID:** {}\n**User:** {}{}\n**Details:**\n```json\n{}\n```",
-                        action,
-                        entity_id_display,
-                        user_display,
-                        target_display,
-                        serde_json::to_string_pretty(&inserted.details).unwrap_or_default()
-                    );
-                    Self::truncate_discord_msg(&mut message);
+                    let is_withdraw = action == "WITHDRAW_REQUESTED";
+                    let title = if is_withdraw {
+                        format!("💸 Withdrawal Request #{}", entity_id_display)
+                    } else {
+                        format!("💰 Vault Transaction: `{}`", action)
+                    };
 
-                    let mut payload = serde_json::json!({ "content": message });
+                    let color = if is_withdraw {
+                        16705372 // Amber
+                    } else if action.contains("ACCEPT") || action.contains("COMPLETE") {
+                        3066993 // Green
+                    } else if action.contains("REJECT") {
+                        15548997 // Red
+                    } else {
+                        12951641 // Gold
+                    };
 
-                    if action == "WITHDRAW_REQUESTED" {
+                    let mut fields = vec![serde_json::json!({
+                        "name": "👤 Member",
+                        "value": user_display,
+                        "inline": true
+                    })];
+
+                    if let Some(amount_val) = details
+                        .as_ref()
+                        .and_then(|d| d.get("amount"))
+                        .and_then(serde_json::Value::as_i64)
+                    {
+                        fields.push(serde_json::json!({
+                            "name": "💵 Amount",
+                            "value": format!("**{}** Silver", amount_val),
+                            "inline": true
+                        }));
+                    }
+
+                    if !target_display.trim().is_empty() {
+                        fields.push(serde_json::json!({
+                            "name": "🎯 Target",
+                            "value": target_display.replace("\n**Target User:** ", ""),
+                            "inline": true
+                        }));
+                    }
+
+                    if let Some(det) = &inserted.details {
+                        let mut det_str = serde_json::to_string_pretty(det).unwrap_or_default();
+                        if det_str.len() > 1000 {
+                            det_str.truncate(1000);
+                            det_str.push_str("\n... (truncated)");
+                        }
+                        fields.push(serde_json::json!({
+                            "name": "📋 Transaction Details",
+                            "value": format!("```json\n{}\n```", det_str),
+                            "inline": false
+                        }));
+                    }
+
+                    let embed = serde_json::json!({
+                        "author": { "name": "⚔️ WEAKLINGS — GUILD VAULT" },
+                        "title": title,
+                        "description": format!("*Transaction Activity: `{}` · Entity #{}*", action, entity_id_display),
+                        "color": color,
+                        "fields": fields,
+                        "footer": { "text": format!("Transaction #{} • Automated Banking Alert", entity_id_display) },
+                        "timestamp": chrono::Utc::now().to_rfc3339()
+                    });
+
+                    let mut payload = serde_json::json!({ "embeds": [embed] });
+
+                    if is_withdraw {
                         payload["components"] = serde_json::json!([{
                             "type": 1,
                             "components": [
@@ -236,13 +338,15 @@ impl AuditService {
                                     "type": 2,
                                     "style": 3,
                                     "custom_id": format!("bank:accept:{}", entity_id.unwrap_or(0)),
-                                    "label": "Accept"
+                                    "label": "Accept",
+                                    "emoji": { "name": "✅" }
                                 },
                                 {
                                     "type": 2,
                                     "style": 4,
                                     "custom_id": format!("bank:reject:{}", entity_id.unwrap_or(0)),
-                                    "label": "Reject"
+                                    "label": "Reject",
+                                    "emoji": { "name": "❌" }
                                 }
                             ]
                         }]);
@@ -254,16 +358,6 @@ impl AuditService {
         }
 
         Ok(inserted)
-    }
-
-    fn truncate_discord_msg(content: &mut String) {
-        if content.len() > 1900 {
-            content.truncate(1900);
-            content.push_str("\n... (truncated)");
-            if content.contains("```json") {
-                content.push_str("\n```");
-            }
-        }
     }
 
     /// Sends a payload to a Discord channel via the bot REST API, retrying on rate limits.

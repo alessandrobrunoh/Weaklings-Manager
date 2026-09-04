@@ -42,6 +42,9 @@ export async function execute(
   const embed = createBaseEmbed({
     category: 'ALBION ROSTER',
     title: `🛡️ Guild Roster (${result.total_items} Members)`,
+    description: search
+      ? `*Filter: matching "${search}" · Showing ${result.items.length} members*`
+      : '*Albion Online In-Game Guild Member Directory*',
     color: BOT_COLORS.BRAND,
     footerText: `Page ${result.current_page} of ${result.total_pages} • Weaklings Guild Manager`,
   });
@@ -50,13 +53,13 @@ export async function execute(
     embed.setDescription('*No guild members found matching your criteria.*');
   } else {
     const cols = chunkArray(result.items, Math.ceil(result.items.length / 2));
-    for (const col of cols) {
+    cols.forEach((col, idx) => {
       embed.addFields({
-        name: '\u200b',
-        value: col.map((m) => `• **${m.name}**`).join('\n'),
+        name: idx === 0 ? '👥 Members (Part 1)' : '👥 Members (Part 2)',
+        value: col.map((m) => `• ⚔️ **${m.name}**`).join('\n'),
         inline: true,
       });
-    }
+    });
   }
 
   await interaction.editReply({ embeds: [embed] });

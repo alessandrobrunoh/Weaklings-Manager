@@ -148,7 +148,7 @@ describe('Events', () => {
     expect(text).toContain('Stopped');
     expect(text).toContain('Open');
     expect(text).toContain('Join');
-    expect(text).toContain('Delete');
+    expect(text).toContain('Archive');
   });
 
   it('renders the pagination footer with correct item counts and page buttons', () => {

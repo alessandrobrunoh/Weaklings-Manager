@@ -70,6 +70,8 @@ pub fn router() -> Router {
             "/{id}",
             get(get_split).patch(update_split).delete(delete_split),
         )
+        .route("/{id}/archive", post(archive_split))
+        .route("/{id}/unarchive", post(unarchive_split))
         .route("/{id}/participants", post(add_or_update_participant))
         .route(
             "/{id}/participants/{user_id}",
@@ -260,19 +262,19 @@ async fn update_split(
     Ok(Json(ApiResponse::new(split)))
 }
 
-/// Delete a split entirely.
+/// Archives a split. The row, participants, and bank credits stay in the database.
 ///
-/// Requires the Admin or Officer role.
+/// Requires `splits.delete`.
 #[utoipa::path(
     delete,
     path = "/api/splits/{id}",
     tag = "splits",
-    summary = "Delete a split (Officer/Admin only)",
-    description = "Deletes a split and its participants completely. Requires Admin or Officer role.",
+    summary = "Archive a split (Officer/Admin only)",
+    description = "Archives a split so it disappears from default lists. Participants and Guild Bank credits are kept. Requires `splits.delete`.",
     security(("session_cookie" = ["splits.manage"])),
     params(("id" = i64, Path, description = "The split id")),
     responses(
-        (status = 204, description = "Split deleted successfully"),
+        (status = 204, description = "Split archived successfully"),
         (status = 403, description = "Forbidden - lacks administrator/officer role", body = ProblemDetails),
         (status = 404, description = "No split exists with this id", body = ProblemDetails)
     )
@@ -290,6 +292,56 @@ async fn delete_split(
         .status(axum::http::StatusCode::NO_CONTENT)
         .body(axum::body::Body::empty())
         .unwrap())
+}
+
+/// Archives a split, keeping participants and bank credits.
+#[utoipa::path(
+    post,
+    path = "/api/splits/{id}/archive",
+    tag = "splits",
+    summary = "Archive a split",
+    security(("session_cookie" = ["splits.delete"])),
+    params(("id" = i64, Path, description = "The split id")),
+    responses(
+        (status = 200, description = "Split archived", body = ApiResponseSplitDetail),
+        (status = 403, description = "Forbidden", body = ProblemDetails),
+        (status = 404, description = "Not found", body = ProblemDetails)
+    )
+)]
+async fn archive_split(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
+    user.require(&perms, Permission::SplitsDelete).await?;
+    let split = SplitService::new().archive_split(&db, id).await?;
+    Ok(Json(ApiResponse::new(split)))
+}
+
+/// Restores an archived split to the active list.
+#[utoipa::path(
+    post,
+    path = "/api/splits/{id}/unarchive",
+    tag = "splits",
+    summary = "Unarchive a split",
+    security(("session_cookie" = ["splits.delete"])),
+    params(("id" = i64, Path, description = "The split id")),
+    responses(
+        (status = 200, description = "Split restored", body = ApiResponseSplitDetail),
+        (status = 403, description = "Forbidden", body = ProblemDetails),
+        (status = 404, description = "Not found", body = ProblemDetails)
+    )
+)]
+async fn unarchive_split(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
+    user.require(&perms, Permission::SplitsDelete).await?;
+    let split = SplitService::new().unarchive_split(&db, id).await?;
+    Ok(Json(ApiResponse::new(split)))
 }
 
 /// Add a new participant to a pending split, or update their weight if already present.

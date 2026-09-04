@@ -36,6 +36,8 @@ pub mod split {
         pub finalized_at: Option<DateTimeWithTimeZone>,
         /// Last application change, used as the incremental sync watermark.
         pub updated_at: DateTimeWithTimeZone,
+        /// When this split was archived. `None` means it is listed as active.
+        pub archived_at: Option<DateTimeWithTimeZone>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]

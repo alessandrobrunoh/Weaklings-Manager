@@ -14,6 +14,7 @@ pub mod battles;
 pub mod comps;
 pub mod events;
 pub mod fights;
+pub mod giveaways;
 pub mod health;
 pub mod intel;
 pub mod notifications;
@@ -48,6 +49,7 @@ pub fn router() -> Router {
         .nest("/comps", comps::router())
         .nest("/events", events::router())
         .nest("/fights", fights::router())
+        .nest("/giveaways", giveaways::router())
         .nest("/siphoned", siphoned::router())
         .nest("/regear", regear::router())
         .nest("/admin", admin::router())

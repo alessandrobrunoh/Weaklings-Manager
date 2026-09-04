@@ -2,6 +2,12 @@ import { ChangeDetectionStrategy, Component, computed, input, output } from '@an
 
 import type { BuildItemSlot, BuildSlot, OpenAlbionItem } from '../../../core/models/api.models';
 import type { AbilitySlotView } from '../../data/albion-abilities';
+import {
+  ALBION_ITEM_QUALITIES,
+  albionIconUrlWithQuality,
+  albionItemQualityLabel,
+  DEFAULT_ALBION_ITEM_QUALITY,
+} from '../../data/albion-item-quality';
 import { AbilityBar, type AbilityChoiceChange } from '../ability-bar/ability-bar';
 
 /**
@@ -90,7 +96,7 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
           @if (entry?.openalbion_item_icon) {
             <img
               class="equipment-slot__icon"
-              [src]="entry?.openalbion_item_icon"
+              [src]="itemIcon(entry)"
               [alt]="entry?.openalbion_item_name ?? ''"
               loading="lazy"
             />
@@ -109,6 +115,12 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
             @if (entry.openalbion_item_tier) {
               <span class="equipment-slot__tier">{{ entry.openalbion_item_tier }}</span>
             }
+            <span
+              class="equipment-slot__quality equipment-slot__quality--{{ itemQuality(entry) }}"
+              [title]="qualityLabel(entry)"
+            >
+              {{ qualityShort(entry) }}
+            </span>
           }
 
           @if (canManage()) {
@@ -144,6 +156,15 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
                   <select class="select" [value]="draftTier()" (change)="onTierChange($event)">
                     @for (tier of tiers(); track tier) {
                       <option [value]="tier">{{ tier }}</option>
+                    }
+                  </select>
+                </label>
+
+                <label class="text-left">
+                  <span class="label">Quality</span>
+                  <select class="select" [value]="draftQuality()" (change)="onQualityChange($event)">
+                    @for (grade of qualities; track grade.id) {
+                      <option [value]="grade.id">{{ grade.label }}</option>
                     }
                   </select>
                 </label>
@@ -248,6 +269,9 @@ export class EquipmentGrid {
   /** Tier filter bound to the open popover's tier `<select>`. */
   readonly draftTier = input('T8');
 
+  /** Albion quality (1..=5) bound to the open popover's quality `<select>`. */
+  readonly draftQuality = input(DEFAULT_ALBION_ITEM_QUALITY);
+
   /** Search box value of the open popover. */
   readonly draftSearch = input('');
 
@@ -276,6 +300,9 @@ export class EquipmentGrid {
   /** Fired when the user changes the tier dropdown inside the popover. */
   readonly tierChange = output<string>();
 
+  /** Fired when the user changes the quality dropdown inside the popover. */
+  readonly qualityChange = output<number>();
+
   /** Fired on each search input keystroke (parent debounces the API call). */
   readonly searchChange = output<string>();
 
@@ -295,6 +322,7 @@ export class EquipmentGrid {
   readonly abilityChoice = output<AbilityChoiceChange>();
 
   protected readonly slots = SLOT_ORDER;
+  protected readonly qualities = ALBION_ITEM_QUALITIES;
 
   /** Pre-indexed lookup so per-slot rendering stays O(1) at scale. */
   private readonly itemsBySlot = computed(() => {
@@ -345,6 +373,29 @@ export class EquipmentGrid {
 
   protected onTierChange(event: Event): void {
     this.tierChange.emit((event.target as HTMLSelectElement).value);
+  }
+
+  protected onQualityChange(event: Event): void {
+    this.qualityChange.emit(Number((event.target as HTMLSelectElement).value));
+  }
+
+  protected itemQuality(entry: BuildItemSlot | undefined): number {
+    return entry?.openalbion_item_quality && entry.openalbion_item_quality >= 1
+      ? entry.openalbion_item_quality
+      : DEFAULT_ALBION_ITEM_QUALITY;
+  }
+
+  protected qualityLabel(entry: BuildItemSlot | undefined): string {
+    return albionItemQualityLabel(entry?.openalbion_item_quality);
+  }
+
+  protected qualityShort(entry: BuildItemSlot | undefined): string {
+    const quality = this.itemQuality(entry);
+    return ALBION_ITEM_QUALITIES.find((grade) => grade.id === quality)?.short ?? 'E';
+  }
+
+  protected itemIcon(entry: BuildItemSlot | undefined): string {
+    return albionIconUrlWithQuality(entry?.openalbion_item_icon, entry?.openalbion_item_quality);
   }
 
   protected onSearchInput(event: Event): void {

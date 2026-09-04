@@ -92,6 +92,11 @@ mod m20260903_000004_add_discord_application_status_copy;
 mod m20260903_000005_add_discord_application_panel_message;
 mod m20260903_000006_add_discord_application_workflow_copy;
 mod m20260903_000007_seed_applications_manage_permission;
+mod m20260904_000001_add_quality_to_build_items;
+mod m20260904_000002_add_giveaway_discord_settings;
+mod m20260904_000003_create_giveaways;
+mod m20260904_000004_seed_giveaways_permissions;
+mod m20260904_000005_archive_events_and_splits;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -188,6 +193,11 @@ impl MigratorTrait for Migrator {
             Box::new(m20260903_000005_add_discord_application_panel_message::Migration),
             Box::new(m20260903_000006_add_discord_application_workflow_copy::Migration),
             Box::new(m20260903_000007_seed_applications_manage_permission::Migration),
+            Box::new(m20260904_000001_add_quality_to_build_items::Migration),
+            Box::new(m20260904_000002_add_giveaway_discord_settings::Migration),
+            Box::new(m20260904_000003_create_giveaways::Migration),
+            Box::new(m20260904_000004_seed_giveaways_permissions::Migration),
+            Box::new(m20260904_000005_archive_events_and_splits::Migration),
         ]
     }
 }

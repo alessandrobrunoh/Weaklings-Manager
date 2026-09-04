@@ -374,9 +374,10 @@ export class DataTable<T> {
       return;
     }
     this.activeTab.set(tabId);
-    this.tabChange.emit(tabId);
     this.page.set(1);
-    this.emitChange();
+    // Hosts own tab filtering via `tabChange`. Do not emit `pageChange` here:
+    // that payload has empty `columnFilters` and would clobber the tab state.
+    this.tabChange.emit(tabId);
   }
 
   protected columnFilterValue(columnKey: string): string {

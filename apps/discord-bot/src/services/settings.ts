@@ -78,6 +78,14 @@ export class SettingsService {
     return (await this.get()).discord_applications_status_channel_id;
   }
 
+  async giveawaysChannelId(): Promise<string | null> {
+    return (await this.get()).discord_giveaways_channel_id ?? null;
+  }
+
+  async giveawaysRoleId(): Promise<string | null> {
+    return (await this.get()).discord_giveaways_role_id ?? null;
+  }
+
   async splitsForumChannelId(): Promise<string | null> {
     return (await this.get()).discord_splits_forum_channel_id;
   }

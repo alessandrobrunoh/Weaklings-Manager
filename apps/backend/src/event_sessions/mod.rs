@@ -16,6 +16,7 @@ use std::time::Duration;
 use sea_orm::DatabaseConnection;
 use tokio::time::interval;
 
+use crate::modules::giveaways::GiveawayService;
 use auto_stop::auto_stop_expired_sessions;
 use battle_linker::refresh_pending_links;
 
@@ -67,6 +68,9 @@ async fn run_cycle(
     cfg: &Config,
 ) -> Result<(), AppError> {
     auto_stop_expired_sessions(db, &EventService::new()).await?;
+    if let Err(error) = GiveawayService::new().draw_due(db).await {
+        tracing::warn!(error = %error, "giveaway auto-draw cycle failed");
+    }
     let context = BattleLinkingContext::new(
         &cfg.albion_guild_id,
         &cfg.albion_allied_guild_ids(),

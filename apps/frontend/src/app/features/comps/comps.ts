@@ -35,6 +35,10 @@ import {
   filterAlbionEquipmentCatalog,
 } from '../../shared/data/albion-equipment-catalog';
 import {
+  DEFAULT_ALBION_ITEM_QUALITY,
+  normalizeAlbionItemQuality,
+} from '../../shared/data/albion-item-quality';
+import {
   abilityCatalogKey,
   abilitySlotsFor,
   withAbilityChoice,
@@ -796,6 +800,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                 [canManage]="true"
                 [editingSlot]="draftItemSlot()"
                 [draftTier]="draftItemTier()"
+                [draftQuality]="draftItemQuality()"
                 [draftSearch]="draftItemSearch()"
                 [draftItemId]="draftSelectedItemId()"
                 [searchResults]="itemSearchResults()"
@@ -804,6 +809,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                 [draftAbilitySlots]="draftAbilitySlots()"
                 (slotToggle)="onSlotToggle($event)"
                 (tierChange)="onPopoverTierChange($event)"
+                (qualityChange)="onPopoverQualityChange($event)"
                 (searchChange)="onPopoverSearchChange($event)"
                 (itemSelect)="onPopoverItemSelect($event)"
                 (saveSlot)="onPopoverSave()"
@@ -1129,6 +1135,7 @@ export class Comps {
   protected readonly draftItemName = signal('');
   protected readonly draftItemIcon = signal('');
   protected readonly draftItemTier = signal('T8');
+  protected readonly draftItemQuality = signal(DEFAULT_ALBION_ITEM_QUALITY);
   protected readonly draftItemSearch = signal('');
   protected readonly draftSelectedItemId = signal('');
   protected readonly itemSearchResults = signal<OpenAlbionItem[]>([]);
@@ -1564,6 +1571,10 @@ export class Comps {
     void this.searchItems();
   }
 
+  protected onPopoverQualityChange(quality: number): void {
+    this.draftItemQuality.set(normalizeAlbionItemQuality(quality));
+  }
+
   protected onPopoverSearchChange(query: string): void {
     this.draftItemSearch.set(query);
     this.clearSelectedItem();
@@ -1666,6 +1677,7 @@ export class Comps {
     if (tier) {
       item.openalbion_item_tier = tier;
     }
+    item.openalbion_item_quality = this.draftItemQuality();
     // Abilities picked in the same popover, ready to persist alongside the item once the build
     // itself is created — the create request sends them together in one call.
     const spells = this.draftItemSpells();
@@ -2035,6 +2047,7 @@ export class Comps {
   private resetDraftItemFields(): void {
     this.draftItemSearch.set('');
     this.itemSearchResults.set([]);
+    this.draftItemQuality.set(DEFAULT_ALBION_ITEM_QUALITY);
     this.clearSelectedItem();
   }
 

@@ -22,6 +22,8 @@ pub struct EventFilters {
     pub sort: Option<String>,
     /// Sort direction: `asc` or `desc`. Defaults to `asc` for the date column.
     pub order: Option<String>,
+    /// When `true`, only archived events. When omitted or `false`, only active events.
+    pub archived: Option<bool>,
 }
 
 /// Aggregated performance metrics for an event or composition.
@@ -235,6 +237,8 @@ pub struct EventView {
     pub link_last_error: Option<String>,
     /// When battle linking was definitively concluded (RFC3339), if ever.
     pub link_battles_completed_at: Option<String>,
+    /// When this event was archived. `None` means it is listed as active.
+    pub archived_at: Option<String>,
 }
 
 /// Details of a participant in an event.

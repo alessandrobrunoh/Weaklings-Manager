@@ -45,7 +45,7 @@ pub struct SplitKpiSummary {
     /// Sum of estimated market value across every split.
     #[schema(value_type = String, example = "200000")]
     pub total_estimated_volume: Decimal,
-    /// Total participant rows across every split.
+    /// Distinct users who appear on at least one split.
     pub total_participants: u64,
     /// Default fee percentage for newly created splits.
     #[schema(value_type = String, example = "20.00")]
@@ -107,6 +107,8 @@ pub struct SplitSummary {
     pub participant_count: u64,
     /// Monotonic change timestamp used by incremental bot synchronization.
     pub updated_at: String,
+    /// When this split was archived. `None` means it is listed as active.
+    pub archived_at: Option<String>,
 }
 
 /// A split's full detail, including participants.
@@ -255,6 +257,8 @@ pub struct SplitFilters {
     pub date_from: Option<String>,
     /// Filter by created_at date (inclusive).
     pub date_to: Option<String>,
+    /// When `true`, only archived splits. When omitted or `false`, only active splits.
+    pub archived: Option<bool>,
 }
 
 /// Request body to complete several splits in one action.

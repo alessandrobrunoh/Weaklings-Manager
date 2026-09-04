@@ -47,6 +47,8 @@ pub fn router() -> Router {
             "/{id}",
             get(get_event).patch(update_event).delete(delete_event),
         )
+        .route("/{id}/archive", post(archive_event))
+        .route("/{id}/unarchive", post(unarchive_event))
         .route("/discord-roles", get(list_event_discord_roles))
         .route("/{id}/signup-options", get(get_event_signup_options))
         .route("/{id}/roster", get(get_roster))
@@ -106,7 +108,8 @@ pub fn router() -> Router {
         ("sort" = Option<String>, Query, description = "Sort column: event_date_utc/start_time_utc, mass_time_utc, title, created_at, status"),
         ("order" = Option<String>, Query, description = "Sort direction: asc (default) or desc"),
         ("date_from" = Option<String>, Query, description = "Inclusive start of start_time_utc (RFC3339)"),
-        ("date_to" = Option<String>, Query, description = "Inclusive end of start_time_utc (RFC3339)")
+        ("date_to" = Option<String>, Query, description = "Inclusive end of start_time_utc (RFC3339)"),
+        ("archived" = Option<bool>, Query, description = "When true, only archived events. Default: only active events")
     ),
     responses(
         (status = 200, description = "Events list retrieved successfully", body = ApiResponseEventList),
@@ -639,14 +642,14 @@ async fn update_event(
     delete,
     path = "/api/events/{id}",
     tag = "events",
-    summary = "Delete an event",
-    description = "Deletes an event. Requires `events.delete` permission.",
+    summary = "Archive an event",
+    description = "Archives an event and every split linked to it. The rows stay in the database with their ids, titles, and dates. Requires `events.delete` permission.",
     security(("session_cookie" = [])),
     params(
         ("id" = i64, Path, description = "Event ID")
     ),
     responses(
-        (status = 204, description = "Event deleted successfully"),
+        (status = 204, description = "Event archived successfully"),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
         (status = 404, description = "Event not found", body = ProblemDetails)
@@ -662,6 +665,58 @@ async fn delete_event(
     let service = EventService::new();
     service.delete_event(&db, id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Archives an event and its linked splits, keeping every row.
+#[utoipa::path(
+    post,
+    path = "/api/events/{id}/archive",
+    tag = "events",
+    summary = "Archive an event",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    responses(
+        (status = 200, description = "Event archived", body = ApiResponseEventView),
+        (status = 401, description = "Unauthorized", body = ProblemDetails),
+        (status = 403, description = "Forbidden", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails)
+    )
+)]
+async fn archive_event(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<EventView>>, AppError> {
+    user.require(&perms, Permission::EventsDelete).await?;
+    let event = EventService::new().archive_event(&db, id).await?;
+    Ok(Json(ApiResponse::new(event)))
+}
+
+/// Restores an archived event and its linked splits to the active lists.
+#[utoipa::path(
+    post,
+    path = "/api/events/{id}/unarchive",
+    tag = "events",
+    summary = "Unarchive an event",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    responses(
+        (status = 200, description = "Event restored", body = ApiResponseEventView),
+        (status = 401, description = "Unauthorized", body = ProblemDetails),
+        (status = 403, description = "Forbidden", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails)
+    )
+)]
+async fn unarchive_event(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<EventView>>, AppError> {
+    user.require(&perms, Permission::EventsDelete).await?;
+    let event = EventService::new().unarchive_event(&db, id).await?;
+    Ok(Json(ApiResponse::new(event)))
 }
 
 /// Registers or updates participation for the logged-in user.

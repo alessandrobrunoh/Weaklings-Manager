@@ -5,7 +5,7 @@ import {
   ButtonStyle,
 } from "discord.js";
 import type { EventView, EventDetailView } from "../api/types.js";
-import { BOT_COLORS, createBaseEmbed } from "./theme.js";
+import { BOT_COLORS, buildAsciiBar, createBaseEmbed } from "./theme.js";
 
 /**
  * Plain Discord announcement copy for the parent events channel.
@@ -166,6 +166,9 @@ export function buildEventEmbed(
     `⚔️ **Composition** — ${detail.active_comp_name ?? event.comp_name}`,
     `👑 **Organizer** — ${event.created_by_username}`,
     `📋 **Roster** — ${rosterCount}/${detail.active_comp_capacity ?? "?"} filled`,
+    ...(detail.active_comp_capacity && detail.active_comp_capacity > 0
+      ? [`\`\`\`\nFill Rate  ${buildAsciiBar(rosterCount, detail.active_comp_capacity, 14)}  ${rosterCount} / ${detail.active_comp_capacity} (${Math.round((rosterCount / detail.active_comp_capacity) * 100)}%)\n\`\`\``]
+      : []),
     ...(event.player_cap
       ? [`🎯 **Player cap** — ${event.player_cap} (expands automatically)`]
       : []),

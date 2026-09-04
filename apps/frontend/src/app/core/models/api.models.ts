@@ -314,6 +314,7 @@ export interface SplitSummary {
   participant_count: number;
   created_at: string;
   finalized_at: string | null;
+  archived_at?: string | null;
 }
 
 export interface SplitDetail extends SplitSummary {
@@ -327,6 +328,7 @@ export interface SplitFilters {
   search?: string;
   date_from?: string;
   date_to?: string;
+  archived?: boolean;
 }
 
 export interface CreateSplitRequest {
@@ -432,6 +434,7 @@ export interface EventView {
   link_attempts: number;
   link_last_error: string | null;
   link_battles_completed_at: string | null;
+  archived_at?: string | null;
 }
 
 export interface BattlePerformanceStats {
@@ -761,6 +764,7 @@ export interface EventFilters {
   search?: string;
   date_from?: string;
   date_to?: string;
+  archived?: boolean;
 }
 
 export interface EventBattleSummary {
@@ -1086,6 +1090,8 @@ export interface BuildItemSlot {
   openalbion_item_name: string;
   openalbion_item_icon?: string | null;
   openalbion_item_tier?: string | null;
+  /** Albion quality 1..=5. Omitted on older rows; treat as Excellent (4). */
+  openalbion_item_quality?: number | null;
 }
 
 export interface BuildSummary {
@@ -1925,7 +1931,73 @@ export interface GuildSettingsView {
   discord_applications_final_title?: string;
   discord_applications_result_message?: string;
   discord_applications_panel_message_id: string | null;
+  discord_giveaways_channel_id?: string | null;
+  discord_giveaways_role_id?: string | null;
   default_split_fee: number | string;
+}
+
+export type GiveawayStatus = 'open' | 'drawn' | 'cancelled' | 'expired_empty';
+
+export interface GiveawayPrizeView {
+  id: number;
+  openalbion_item_id: number;
+  openalbion_item_name: string;
+  openalbion_item_icon?: string | null;
+  openalbion_item_identifier?: string | null;
+  openalbion_item_tier?: string | null;
+  openalbion_item_quality: number;
+  quantity: number;
+}
+
+export interface GiveawayEntryView {
+  id: number;
+  user_id: number;
+  username: string;
+  discord_id?: string | null;
+  entered_at: string;
+}
+
+export interface GiveawayView {
+  id: number;
+  title: string;
+  description?: string | null;
+  ends_at: string;
+  status: GiveawayStatus;
+  created_by: number;
+  created_by_username: string;
+  created_at: string;
+  silver_amount?: string | number | null;
+  winner_user_id?: number | null;
+  winner_username?: string | null;
+  winner_discord_id?: string | null;
+  drawn_at?: string | null;
+  silver_transaction_id?: number | null;
+  discord_message_id?: string | null;
+  discord_channel_id?: string | null;
+  entry_count: number;
+  prizes: GiveawayPrizeView[];
+}
+
+export interface GiveawayDetailView extends GiveawayView {
+  entries: GiveawayEntryView[];
+}
+
+export interface CreateGiveawayPrizeRequest {
+  openalbion_item_id: number;
+  openalbion_item_name: string;
+  openalbion_item_icon?: string | null;
+  openalbion_item_identifier?: string | null;
+  openalbion_item_tier?: string | null;
+  openalbion_item_quality?: number;
+  quantity?: number;
+}
+
+export interface CreateGiveawayRequest {
+  title: string;
+  description?: string | null;
+  ends_at: string;
+  silver_amount?: string | null;
+  prizes: CreateGiveawayPrizeRequest[];
 }
 
 /**
@@ -2084,7 +2156,8 @@ export type NotificationKind =
   | 'warn_issued'
   | 'split_credited'
   | 'event_created'
-  | 'event_reminder_1h';
+  | 'event_reminder_1h'
+  | 'giveaway_won';
 
 /** One inbox row as seen by the recipient. */
 export interface NotificationView {

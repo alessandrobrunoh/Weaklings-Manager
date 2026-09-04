@@ -39,6 +39,7 @@ export const ADMIN_ACCESS_PERMISSIONS = [
   'splits.islands.manage',
   'bank.view_others',
   'bank.withdraw.accept',
+  'giveaways.view',
 ] as const;
 
 /**
@@ -214,6 +215,13 @@ export const ADMIN_PANELS: readonly AdminPanel[] = [
     labelKey: 'nav.admin.islands',
     hintKey: 'admin.hub.islandsHint',
     permissions: ['splits.islands.manage'],
+  },
+  {
+    path: '/admin/giveaways',
+    icon: 'sparkles',
+    labelKey: 'nav.admin.giveaways',
+    hintKey: 'admin.hub.giveawaysHint',
+    permissions: ['giveaways.view'],
   },
 ];
 

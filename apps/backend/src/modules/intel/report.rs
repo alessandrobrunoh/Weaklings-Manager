@@ -1956,6 +1956,7 @@ mod tests {
             link_attempts: 1,
             link_last_error: None,
             link_battles_completed_at: None,
+            archived_at: None,
         });
         raw.participations.push(event_participation::Model {
             id: 1,
@@ -1999,6 +2000,7 @@ mod tests {
             created_at: ts("2026-08-01T00:00:00Z"),
             updated_at: ts("2026-08-01T00:00:00Z"),
             finalized_at: Some(ts("2026-08-19T00:00:00Z")),
+            archived_at: None,
         });
         // Pending split: ignored regardless of date.
         raw.splits.push(split::Model {
@@ -2016,6 +2018,7 @@ mod tests {
             created_at: ts("2026-08-19T00:00:00Z"),
             updated_at: ts("2026-08-19T00:00:00Z"),
             finalized_at: None,
+            archived_at: None,
         });
         // Withdrawn transaction: counted.
         raw.transactions.push(transaction::Model {

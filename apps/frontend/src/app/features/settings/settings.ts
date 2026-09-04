@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { DatePipe, DecimalPipe } from '@angular/common';
+import { DecimalPipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -17,6 +17,7 @@ import type {
   SiphonedPlayerBalance,
   TransactionView,
   UserMetrics,
+  UserSpecialization,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
@@ -27,8 +28,8 @@ import type { TranslationKey } from '../../i18n/en';
 import { Avatar } from '../../shared/components/avatar/avatar';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { DestinyBoard } from '../../shared/components/destiny-board/destiny-board';
 import { Dialog } from '../../shared/components/dialog/dialog';
-import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
 import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
@@ -38,8 +39,14 @@ import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import {
+  mergeSpecializationNodes,
+  type DestinyItemNode,
+} from '../../shared/data/albion-destiny-board';
+import { normalizeAlbionSpecializationKey } from '../../shared/data/albion-equipment-catalog';
+import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
 
-type ProfileTab = 'overview' | 'ledgers' | 'battles' | 'preferences';
+type ProfileTab = 'overview' | 'destiny' | 'ledgers' | 'battles' | 'preferences';
 
 function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
   return {
@@ -64,12 +71,11 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     Avatar,
-    DatePipe,
     DecimalPipe,
     DataTable,
     DataTableCell,
+    DestinyBoard,
     Dialog,
-    EmptyState,
     ErrorState,
     Icon,
     Loading,
@@ -189,18 +195,28 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
           </div>
         </section>
 
-        <section class="card p-5 flex flex-wrap items-center justify-between gap-4" aria-labelledby="profile-specializations-heading">
-          <div>
-            <h2 id="profile-specializations-heading" class="text-base font-semibold" style="color: var(--color-text)">Specializzazioni Combat</h2>
-            <p class="text-xs mt-1" style="color: var(--color-text-secondary)">Imposta il livello per ogni arma e armatura nella tua Destiny Board.</p>
-          </div>
-          @if (profile()?.user_id; as profileId) {
-            <a class="btn btn--primary btn--sm flex items-center gap-1.5" [routerLink]="['/users', profileId]">
-              <app-icon name="sparkles" size="0.8rem" />
-              Gestisci specializzazioni
-            </a>
-          }
-        </section>
+        <!-- TAB: DESTINY BOARD -->
+        @if (activeTab() === 'destiny') {
+          <article class="card p-6" aria-labelledby="destiny-board-heading">
+            <div class="mb-4">
+              <h2 id="destiny-board-heading" class="text-base font-semibold" style="color: var(--color-text)">
+                {{ t('destiny.title') }}
+              </h2>
+              <p class="text-xs mt-1" style="color: var(--color-text-secondary)">
+                {{ t('destiny.subtitle') }}
+              </p>
+            </div>
+            <app-destiny-board
+              [nodes]="specializationNodes()"
+              [editable]="true"
+              [loading]="specLoading()"
+              [loadFailed]="specLoadFailed()"
+              [saving]="specSaving()"
+              (retry)="loadSpecializations(true)"
+              (save)="saveSpecializations($event)"
+            />
+          </article>
+        }
 
         <!-- TAB 1: OVERVIEW & PROGRESSION -->
         @if (activeTab() === 'overview') {
@@ -643,6 +659,7 @@ export class Settings {
   protected readonly theme = inject(ThemeService);
   protected readonly translate = inject(TranslateService);
   private readonly toasts = inject(ToastService);
+  private readonly albionCatalog = inject(AlbionCatalogService);
 
   protected readonly activeTab = signal<ProfileTab>('overview');
   protected readonly loading = signal(false);
@@ -667,15 +684,79 @@ export class Settings {
   protected readonly playerSearch = signal('');
   protected readonly playerSearchResults = signal<AlbionPlayer[]>([]);
 
+  protected readonly specLoading = signal(false);
+  protected readonly specLoadFailed = signal(false);
+  protected readonly specSaving = signal(false);
+  protected readonly specLoaded = signal(false);
+  protected readonly specializationNodes = signal<DestinyItemNode[]>([]);
+
   protected readonly tabs = computed<readonly ViewToggleOption[]>(() => [
-    { id: 'overview', label: 'Panoramica & XP', icon: 'trophy' },
-    { id: 'ledgers', label: 'Libro Mastro & Banca', icon: 'bank' },
-    { id: 'battles', label: 'Combattimenti', icon: 'shield' },
-    { id: 'preferences', label: 'Preferenze & Tema', icon: 'sparkles' },
+    { id: 'overview', label: this.t('profile.tab.overview'), icon: 'trophy' },
+    { id: 'destiny', label: this.t('destiny.tab'), icon: 'swords' },
+    { id: 'ledgers', label: this.t('profile.tab.ledgers'), icon: 'bank' },
+    { id: 'battles', label: this.t('profile.tab.battles'), icon: 'shield' },
+    { id: 'preferences', label: this.t('profile.tab.preferences'), icon: 'sparkles' },
   ]);
 
   protected onTabChange(id: string): void {
     this.activeTab.set(id as ProfileTab);
+    if (id === 'destiny') void this.loadSpecializations();
+  }
+
+  protected async loadSpecializations(force = false): Promise<void> {
+    if (this.specLoading()) return;
+    if (!force && this.specLoaded() && !this.specLoadFailed()) return;
+    this.specLoading.set(true);
+    this.specLoadFailed.set(false);
+    try {
+      const [saved, catalog] = await Promise.all([
+        firstValueFrom(this.api.get<UserSpecialization[]>('api/users/me/specializations')),
+        this.albionCatalog.load(),
+      ]);
+      this.specializationNodes.set(mergeSpecializationNodes(saved, catalog));
+      this.specLoaded.set(true);
+    } catch (error) {
+      this.specLoadFailed.set(true);
+      this.toasts.error(error instanceof Error ? error.message : this.t('destiny.loadError'));
+    } finally {
+      this.specLoading.set(false);
+    }
+  }
+
+  protected async saveSpecializations(nodes: DestinyItemNode[]): Promise<void> {
+    if (this.specSaving()) return;
+    if (nodes.some((node) => !Number.isInteger(node.level) || node.level < 0 || node.level > 120)) {
+      this.toasts.error(this.t('destiny.invalidLevel'));
+      return;
+    }
+    this.specSaving.set(true);
+    try {
+      const payload = nodes.map(({ icon: _icon, identifier: _identifier, ...node }) => node);
+      const updated: UserSpecialization[] = [];
+      for (let offset = 0; offset < payload.length; offset += 500) {
+        const batch = payload.slice(offset, offset + 500);
+        const result = await firstValueFrom(
+          this.api.put<UserSpecialization[]>('api/users/me/specializations', {
+            specializations: batch,
+          }),
+        );
+        updated.push(...result);
+      }
+      const updatedByKey = new Map(
+        updated.map((row) => [normalizeAlbionSpecializationKey(row.node_key), row.level]),
+      );
+      this.specializationNodes.set(
+        nodes.map((node) => ({
+          ...node,
+          level: updatedByKey.get(node.node_key) ?? node.level,
+        })),
+      );
+      this.toasts.success(this.t('destiny.saved'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.specSaving.set(false);
+    }
   }
 
 

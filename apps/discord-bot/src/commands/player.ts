@@ -1,7 +1,7 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import type { AlbionSearchResult, AlbionPlayer } from '../api/types.js';
-import { BOT_COLORS, createBaseEmbed, createResponseEmbed } from '../embeds/theme.js';
+import { BOT_COLORS, createBaseEmbed, createResponseEmbed, buildAsciiChart, formatCompactNumber } from '../embeds/theme.js';
 
 export const data = new SlashCommandBuilder()
   .setName('player')
@@ -9,12 +9,6 @@ export const data = new SlashCommandBuilder()
   .addStringOption((opt) =>
     opt.setName('name').setDescription('Player name to search').setRequired(true),
   );
-
-function fmt(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(0)}K`;
-  return String(n);
-}
 
 export async function execute(
   interaction: ChatInputCommandInteraction,
@@ -43,7 +37,7 @@ export async function execute(
   }
 
   // Step 2: get first match profile
-  const match  = results.players[0];
+  const match = results.players[0];
   let player: AlbionPlayer | null = null;
 
   try {
@@ -56,8 +50,8 @@ export async function execute(
   }
 
   const playerName = player?.name ?? match.name;
-  const guildName  = player?.guildName ?? '*Guildless*';
-  const allyName   = player?.allianceName ? `[${player.allianceName}]` : '';
+  const guildName = player?.guildName ? player.guildName : 'Guildless';
+  const allyName = player?.allianceName ? `[${player.allianceName}]` : '';
 
   let footer = `ID: ${match.id} • Weaklings Guild Manager`;
   if (results.players.length > 1) {
@@ -67,27 +61,53 @@ export async function execute(
 
   const embed = createBaseEmbed({
     category: 'PLAYER LOOKUP',
-    title: `⚔️ ${playerName}`,
-    description: `*Guild:* **${guildName}** ${allyName}`,
+    title: `⚔️ ${playerName} ${allyName}`.trim(),
+    description: `*Guild: **${guildName}** · ID: \`${match.id}\`*`,
     color: BOT_COLORS.BRAND,
     footerText: footer,
   });
 
   if (player) {
+    const kdRatio = player.deathFame > 0 ? (player.killFame / player.deathFame).toFixed(2) : player.killFame.toFixed(2);
+
     embed.addFields(
       {
-        name: '🗡️ Combat Fame',
-        value: `• **PvP Kill Fame:** **${fmt(player.killFame)}**\n• **Death Fame:** **${fmt(player.deathFame)}**`,
+        name: '🗡️ Combat Stats',
+        value: [
+          `• ⚔️ **PvP Kill Fame:** **${formatCompactNumber(player.killFame)}**`,
+          `• 💀 **Death Fame:** **${formatCompactNumber(player.deathFame)}**`,
+          `• 📊 **K/D Ratio:** **${kdRatio}**`,
+        ].join('\n'),
         inline: true,
       },
       {
-        name: '⛏️ Activity Fame',
-        value: `• **PvE Fame:** **${fmt(player.pveFame)}**\n• **Gathering:** **${fmt(player.gatheringFame)}**\n• **Crafting:** **${fmt(player.craftingFame)}**`,
+        name: '⛏️ Activity Stats',
+        value: [
+          `• 🌾 **PvE Fame:** **${formatCompactNumber(player.pveFame)}**`,
+          `• 🪓 **Gathering:** **${formatCompactNumber(player.gatheringFame)}**`,
+          `• 🔨 **Crafting:** **${formatCompactNumber(player.craftingFame)}**`,
+        ].join('\n'),
         inline: true,
       },
     );
+
+    const chartItems = [
+      { label: 'PvP Kill', value: player.killFame, display: formatCompactNumber(player.killFame) },
+      { label: 'PvE', value: player.pveFame, display: formatCompactNumber(player.pveFame) },
+      { label: 'Death', value: player.deathFame, display: formatCompactNumber(player.deathFame) },
+      { label: 'Gathering', value: player.gatheringFame, display: formatCompactNumber(player.gatheringFame) },
+      { label: 'Crafting', value: player.craftingFame, display: formatCompactNumber(player.craftingFame) },
+    ].filter((item) => item.value > 0);
+
+    if (chartItems.length > 0) {
+      embed.addFields({
+        name: '⭐ FAME DISTRIBUTION',
+        value: `\`\`\`\n${buildAsciiChart(chartItems, 10, 14)}\n\`\`\``,
+        inline: false,
+      });
+    }
   } else {
-    embed.setDescription(`*Guild:* **${guildName}** ${allyName}\n\n*Could not fetch full stats profile — showing basic search match.*`);
+    embed.setDescription(`*Guild: **${guildName}** ${allyName}*\n\n*Could not fetch full stats profile — showing basic search match.*`);
   }
 
   await interaction.editReply({ embeds: [embed] });

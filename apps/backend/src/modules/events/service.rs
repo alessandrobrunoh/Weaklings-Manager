@@ -87,6 +87,16 @@ fn validate_event_times(mass: DateTime<Utc>, start: DateTime<Utc>) -> Result<(),
     Ok(())
 }
 
+fn reject_if_event_archived(model: &event::Model) -> Result<(), AppError> {
+    if model.archived_at.is_some() {
+        return Err(AppError::Conflict(format!(
+            "Event {} is archived",
+            model.id
+        )));
+    }
+    Ok(())
+}
+
 fn normalize_discord_role_ids(role_ids: Vec<String>) -> Result<Vec<String>, AppError> {
     let mut normalized = Vec::with_capacity(role_ids.len());
     let mut seen = HashSet::with_capacity(role_ids.len());
@@ -1775,6 +1785,7 @@ impl EventService {
             link_attempts: model.link_attempts,
             link_last_error: model.link_last_error,
             link_battles_completed_at: model.link_battles_completed_at.map(|t| t.to_rfc3339()),
+            archived_at: model.archived_at.map(|t| t.to_rfc3339()),
         })
     }
 
@@ -1789,6 +1800,11 @@ impl EventService {
         let limit = pagination.limit();
 
         let mut query = event::Entity::find();
+        query = if filters.archived.unwrap_or(false) {
+            query.filter(event::Column::ArchivedAt.is_not_null())
+        } else {
+            query.filter(event::Column::ArchivedAt.is_null())
+        };
 
         if let Some(search) = filters.search {
             if !search.trim().is_empty() {
@@ -2552,6 +2568,7 @@ impl EventService {
             .await
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
+        reject_if_event_archived(&event_model)?;
 
         let mut active: event::ActiveModel = event_model.clone().into();
 
@@ -2621,18 +2638,97 @@ impl EventService {
         self.to_event_view(db, updated).await
     }
 
-    /// Deletes an event.
+    /// Archives an event so it disappears from default lists without deleting the row.
+    ///
+    /// Linked splits are archived in the same pass: previously, deleting an event only
+    /// `SET NULL` on `splits.event_id`, leaving the loot split in the officer queue.
+    ///
+    /// `DELETE /api/events/{id}` calls this so existing clients keep working.
     pub async fn delete_event(&self, db: &DatabaseConnection, id: i64) -> Result<(), AppError> {
-        let deleted = event::Entity::delete_by_id(id)
-            .exec(db)
+        self.archive_event(db, id).await?;
+        Ok(())
+    }
+
+    /// Archives an event and every split still linked to it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::NotFound`] when the event does not exist.
+    pub async fn archive_event(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+    ) -> Result<EventView, AppError> {
+        let model = event::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
+        let now: DateTime<chrono::FixedOffset> = Utc::now().into();
+        let txn = db.begin().await.map_err(AppError::Database)?;
+        let mut active: event::ActiveModel = model.into();
+        active.archived_at = Set(Some(now));
+        active.updated_at = Set(now);
+        let updated = active.update(&txn).await.map_err(AppError::Database)?;
+
+        crate::modules::splits::entities::split::Entity::update_many()
+            .filter(crate::modules::splits::entities::split::Column::EventId.eq(id))
+            .filter(crate::modules::splits::entities::split::Column::ArchivedAt.is_null())
+            .col_expr(
+                crate::modules::splits::entities::split::Column::ArchivedAt,
+                Expr::value(now),
+            )
+            .col_expr(
+                crate::modules::splits::entities::split::Column::UpdatedAt,
+                Expr::value(now),
+            )
+            .exec(&txn)
             .await
             .map_err(AppError::Database)?;
+        txn.commit().await.map_err(AppError::Database)?;
+        self.to_event_view(db, updated).await
+    }
 
-        if deleted.rows_affected == 0 {
-            return Err(AppError::NotFound(format!("Event {id} not found")));
+    /// Restores an archived event and its linked archived splits to the active lists.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::NotFound`] when the event does not exist.
+    pub async fn unarchive_event(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+    ) -> Result<EventView, AppError> {
+        let model = event::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
+        let now = chrono::Utc::now();
+        let txn = db.begin().await.map_err(AppError::Database)?;
+        let mut active: event::ActiveModel = model.into();
+        active.archived_at = Set(None);
+        active.updated_at = Set(now.into());
+        let updated = active.update(&txn).await.map_err(AppError::Database)?;
+
+        let linked = crate::modules::splits::entities::split::Entity::find()
+            .filter(crate::modules::splits::entities::split::Column::EventId.eq(id))
+            .filter(crate::modules::splits::entities::split::Column::ArchivedAt.is_not_null())
+            .all(&txn)
+            .await
+            .map_err(AppError::Database)?;
+        for split in linked {
+            let mut split_active: crate::modules::splits::entities::split::ActiveModel =
+                split.into();
+            split_active.archived_at = Set(None);
+            split_active.updated_at = Set(now.into());
+            split_active
+                .update(&txn)
+                .await
+                .map_err(AppError::Database)?;
         }
-
-        Ok(())
+        txn.commit().await.map_err(AppError::Database)?;
+        self.to_event_view(db, updated).await
     }
 
     // --- Session lifecycle -------------------------------------------------
@@ -2751,6 +2847,7 @@ impl EventService {
             .await
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
+        reject_if_event_archived(&model)?;
 
         if model.status == "cancelled" {
             return self.to_event_view(db, model).await;
@@ -2787,6 +2884,7 @@ impl EventService {
             .await
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
+        reject_if_event_archived(&model)?;
 
         if model.status == "live" {
             return Err(AppError::Conflict(format!("Event {id} is already live")));
@@ -2832,6 +2930,7 @@ impl EventService {
             .await
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
+        reject_if_event_archived(&model)?;
 
         // Idempotent: already stopped.
         if model.status == "stopped" || model.status == "auto_stopped" {
@@ -3256,6 +3355,7 @@ impl EventService {
             .await
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+        reject_if_event_archived(&event_model)?;
 
         if event_model.status == "cancelled" {
             return Err(AppError::Conflict(format!("Event {event_id} is cancelled")));
@@ -3519,6 +3619,12 @@ impl EventService {
         event_id: i64,
         user_id: i64,
     ) -> Result<(EventDetailView, i64, Option<String>), AppError> {
+        let model = event::Entity::find_by_id(event_id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+        reject_if_event_archived(&model)?;
         let txn = db.begin().await.map_err(AppError::Database)?;
         let assignment = event_roster_assignment::Entity::find()
             .filter(event_roster_assignment::Column::EventId.eq(event_id))
@@ -3615,6 +3721,7 @@ mod tests {
         comp::ActiveModel as CompActiveModel, comp_build::ActiveModel as CompBuildActiveModel,
         comp_category::ActiveModel as CompCategoryActiveModel,
     };
+    use crate::modules::events::models::EventFilters;
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
     use sea_orm::{ActiveValue::Set, Database};
 
@@ -3743,6 +3850,109 @@ mod tests {
         .await
         .expect("failed to insert the event")
         .id
+    }
+
+    #[tokio::test]
+    async fn archiving_an_event_hides_it_and_archives_linked_splits() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let event_id = insert_event(&db, "Archive me", author).await;
+        crate::modules::splits::entities::split::ActiveModel {
+            created_by: Set(author),
+            status: Set("pending".to_string()),
+            estimated_market_value: Set("100.00".parse().unwrap()),
+            fee: Set("20.00".parse().unwrap()),
+            repair_value: Set("0.00".parse().unwrap()),
+            bags_value: Set("0.00".parse().unwrap()),
+            event_id: Set(Some(event_id)),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("linked split");
+
+        let service = EventService::new();
+        let archived = service.archive_event(&db, event_id).await.unwrap();
+        assert!(archived.archived_at.is_some());
+        assert_eq!(
+            event::Entity::find_by_id(event_id)
+                .one(&db)
+                .await
+                .unwrap()
+                .expect("event row must remain")
+                .title,
+            "Archive me"
+        );
+
+        let active = service
+            .list_events(
+                &db,
+                PaginationParams {
+                    page: Some(1),
+                    limit: Some(10),
+                },
+                EventFilters::default(),
+            )
+            .await
+            .unwrap();
+        assert!(active.items.iter().all(|item| item.id != event_id));
+
+        let hidden = service
+            .list_events(
+                &db,
+                PaginationParams {
+                    page: Some(1),
+                    limit: Some(10),
+                },
+                EventFilters {
+                    archived: Some(true),
+                    ..EventFilters::default()
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(hidden.items.len(), 1);
+        assert_eq!(hidden.items[0].id, event_id);
+
+        let split = crate::modules::splits::entities::split::Entity::find()
+            .filter(crate::modules::splits::entities::split::Column::EventId.eq(event_id))
+            .one(&db)
+            .await
+            .unwrap()
+            .expect("split row must remain");
+        assert!(split.archived_at.is_some());
+        assert_eq!(split.event_id, Some(event_id));
+    }
+
+    #[tokio::test]
+    async fn unarchiving_an_event_restores_linked_splits() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let event_id = insert_event(&db, "Bring back", author).await;
+        crate::modules::splits::entities::split::ActiveModel {
+            created_by: Set(author),
+            status: Set("pending".to_string()),
+            estimated_market_value: Set("10.00".parse().unwrap()),
+            fee: Set("20.00".parse().unwrap()),
+            repair_value: Set("0.00".parse().unwrap()),
+            bags_value: Set("0.00".parse().unwrap()),
+            event_id: Set(Some(event_id)),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("linked split");
+        let service = EventService::new();
+        service.archive_event(&db, event_id).await.unwrap();
+        let restored = service.unarchive_event(&db, event_id).await.unwrap();
+        assert!(restored.archived_at.is_none());
+        let split = crate::modules::splits::entities::split::Entity::find()
+            .filter(crate::modules::splits::entities::split::Column::EventId.eq(event_id))
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(split.archived_at.is_none());
     }
 
     async fn sign_up(db: &DatabaseConnection, event_id: i64, user_id: i64, build_id: i64) {
@@ -5302,6 +5512,7 @@ mod tests {
                     search: None,
                     date_from: None,
                     date_to: None,
+                    archived: None,
                 },
             )
             .await

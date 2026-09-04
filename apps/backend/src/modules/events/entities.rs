@@ -56,6 +56,8 @@ pub mod event {
         pub discord_voice_channel_id: Option<String>,
         /// Monotonically increasing revision of persisted roster assignments.
         pub roster_version: i64,
+        /// When this event was archived. `None` means it is listed as active.
+        pub archived_at: Option<DateTimeWithTimeZone>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]

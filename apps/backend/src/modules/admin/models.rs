@@ -170,6 +170,10 @@ pub struct GuildSettingsView {
     pub discord_applications_status_closed_message: String,
     /// Message ID of the published application panel, when available.
     pub discord_applications_panel_message_id: Option<String>,
+    /// Channel where the bot announces guild giveaways.
+    pub discord_giveaways_channel_id: Option<String>,
+    /// Optional role pinged on a new giveaway announcement.
+    pub discord_giveaways_role_id: Option<String>,
     /// Default percentage fee applied to new splits.
     #[schema(value_type = String, example = "20.00")]
     pub default_split_fee: rust_decimal::Decimal,
@@ -230,6 +234,8 @@ impl GuildSettingsView {
             discord_applications_status_closed_message: model
                 .discord_applications_status_closed_message,
             discord_applications_panel_message_id: model.discord_applications_panel_message_id,
+            discord_giveaways_channel_id: model.discord_giveaways_channel_id,
+            discord_giveaways_role_id: model.discord_giveaways_role_id,
             default_split_fee: model.default_split_fee,
         }
     }
@@ -329,6 +335,10 @@ pub struct UpdateGuildSettingsRequest {
     pub discord_split_lost_tag_id: Option<String>,
     /// New value. Omit to leave unchanged; send `""` to clear.
     pub discord_event_voice_category_id: Option<String>,
+    /// Giveaway announcement channel. Omit to leave unchanged; send `""` to clear.
+    pub discord_giveaways_channel_id: Option<String>,
+    /// Giveaway ping role. Omit to leave unchanged; send `""` to clear.
+    pub discord_giveaways_role_id: Option<String>,
     /// New application panel channel; empty clears it.
     pub discord_applications_channel_id: Option<String>,
     /// New active application category; empty clears it.

@@ -11,7 +11,7 @@ use std::str::FromStr;
 use sea_orm::prelude::Decimal;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, TransactionTrait,
+    EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 
 use crate::errors::AppError;
@@ -359,6 +359,7 @@ impl SplitService {
             finalized_at: split.finalized_at.map(|dt| dt.to_rfc3339()),
             participant_count,
             updated_at: split.updated_at.to_rfc3339(),
+            archived_at: split.archived_at.map(|dt| dt.to_rfc3339()),
         })
     }
 
@@ -587,6 +588,9 @@ impl SplitService {
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
+        if split.archived_at.is_some() {
+            return Err(AppError::Conflict(format!("split {split_id} is archived")));
+        }
         if parse_status(&split)? != expected {
             return Err(AppError::Validation(format!(
                 "cannot {action} a split that is not in {expected} status"
@@ -679,6 +683,9 @@ impl SplitService {
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
         let status = parse_status(&split)?;
+        if split.archived_at.is_some() {
+            return Err(AppError::Conflict(format!("split {split_id} is archived")));
+        }
         if !matches!(status, SplitStatus::Pending | SplitStatus::AwaitingEvent) {
             return Err(AppError::Validation(format!(
                 "cannot {action} a split that is not editable"
@@ -878,30 +885,64 @@ impl SplitService {
         Ok(())
     }
 
-    /// Deletes a split entirely.
+    /// Archives a split so it disappears from default lists without deleting the row.
+    ///
+    /// `DELETE /api/splits/{id}` calls this so existing clients keep working. Unlike the
+    /// previous hard-delete, this is allowed in any status: completed credits stay in the
+    /// Guild Bank, the split just stops showing up.
     ///
     /// # Errors
     ///
     /// * Returns `AppError::NotFound` if the split does not exist.
-    /// * Returns `AppError::Validation` if the split is not in `"pending"` status.
     pub async fn delete_split(
         &self,
         db: &DatabaseConnection,
         split_id: i64,
     ) -> Result<(), AppError> {
-        let split = self.load_editable(db, split_id, "delete").await?;
-
-        let txn = db.begin().await?;
-        ParticipantEntity::delete_many()
-            .filter(ParticipantColumn::SplitId.eq(split_id))
-            .exec(&txn)
-            .await?;
-
-        let active: SplitActiveModel = split.into();
-        active.delete(&txn).await?;
-
-        txn.commit().await?;
+        self.archive_split(db, split_id).await?;
         Ok(())
+    }
+
+    /// Archives one split. Idempotent if already archived.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::NotFound`] when the split does not exist.
+    pub async fn archive_split(
+        &self,
+        db: &DatabaseConnection,
+        split_id: i64,
+    ) -> Result<SplitDetail, AppError> {
+        let split = SplitEntity::find_by_id(split_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
+        let mut active: SplitActiveModel = split.into();
+        active.archived_at = Set(Some(chrono::Utc::now().into()));
+        active.updated_at = Set(chrono::Utc::now().into());
+        active.update(db).await?;
+        self.get_split(db, split_id).await
+    }
+
+    /// Restores an archived split to the active list.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::NotFound`] when the split does not exist.
+    pub async fn unarchive_split(
+        &self,
+        db: &DatabaseConnection,
+        split_id: i64,
+    ) -> Result<SplitDetail, AppError> {
+        let split = SplitEntity::find_by_id(split_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
+        let mut active: SplitActiveModel = split.into();
+        active.archived_at = Set(None);
+        active.updated_at = Set(chrono::Utc::now().into());
+        active.update(db).await?;
+        self.get_split(db, split_id).await
     }
 
     /// Guild-wide KPI totals for the splits list page.
@@ -913,7 +954,10 @@ impl SplitService {
     ///
     /// Returns `AppError::Database` if a query fails.
     pub async fn kpi_summary(&self, db: &DatabaseConnection) -> Result<SplitKpiSummary, AppError> {
-        let splits = SplitEntity::find().all(db).await?;
+        let splits = SplitEntity::find()
+            .filter(SplitColumn::ArchivedAt.is_null())
+            .all(db)
+            .await?;
         let mut pending_count = 0_u64;
         let mut completed_count = 0_u64;
         let mut total_net_distributed = Decimal::ZERO;
@@ -934,7 +978,14 @@ impl SplitService {
                 SplitStatus::NotCompleted | SplitStatus::Lost => {}
             }
         }
-        let total_participants = ParticipantEntity::find().count(db).await?;
+        let total_participants = ParticipantEntity::find()
+            .select_only()
+            .column(ParticipantColumn::UserId)
+            .distinct()
+            .into_tuple::<i64>()
+            .all(db)
+            .await?
+            .len() as u64;
         let default_split_fee = GuildSettingsEntity::find_by_id(1)
             .one(db)
             .await?
@@ -1004,6 +1055,11 @@ impl SplitService {
     ) -> Result<PaginatedData<SplitSummary>, AppError> {
         let (sort_column, sort_order) = resolve_split_list_sort(sort, order)?;
         let mut query = SplitEntity::find();
+        query = if filters.archived.unwrap_or(false) {
+            query.filter(SplitColumn::ArchivedAt.is_not_null())
+        } else {
+            query.filter(SplitColumn::ArchivedAt.is_null())
+        };
         if let Some(status) = filters.status {
             query = query.filter(SplitColumn::Status.eq(status.to_string()));
         }
@@ -1809,6 +1865,76 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn archiving_a_split_hides_it_without_removing_the_row() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let tab_id = seed_tab(&db).await;
+        let service = SplitService::new();
+        let created = service
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request(
+                        "50.00",
+                        "0.00",
+                        "0.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: Decimal::ONE,
+                        }],
+                    ),
+                    tab_id,
+                ),
+            )
+            .await
+            .unwrap();
+        let id = created.summary.id;
+        service.archive_split(&db, id).await.unwrap();
+        assert!(
+            SplitEntity::find_by_id(id)
+                .one(&db)
+                .await
+                .unwrap()
+                .expect("row remains")
+                .archived_at
+                .is_some()
+        );
+        let active = service
+            .list_splits(
+                &db,
+                &PaginationParams {
+                    page: Some(1),
+                    limit: Some(10),
+                },
+                &SplitFilters::default(),
+            )
+            .await
+            .unwrap();
+        assert!(active.items.iter().all(|item| item.id != id));
+        let archived = service
+            .list_splits(
+                &db,
+                &PaginationParams {
+                    page: Some(1),
+                    limit: Some(10),
+                },
+                &SplitFilters {
+                    archived: Some(true),
+                    ..SplitFilters::default()
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(archived.items.len(), 1);
+        assert_eq!(archived.items[0].id, id);
+        service.unarchive_split(&db, id).await.unwrap();
+        let restored = service.get_split(&db, id).await.unwrap();
+        assert!(restored.summary.archived_at.is_none());
+    }
+
+    #[tokio::test]
     async fn test_create_split_requires_at_least_one_participant() {
         let db = seed_db().await;
         let admin = insert_user(&db, "admin", "admin@example.com").await;
@@ -2462,6 +2588,7 @@ mod tests {
                     search: None,
                     date_from: None,
                     date_to: None,
+                    archived: None,
                 },
             )
             .await
@@ -2475,6 +2602,7 @@ mod tests {
         let db = seed_db().await;
         let admin = insert_user(&db, "admin", "admin@example.com").await;
         let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let bob = insert_user(&db, "bob", "bob@example.com").await;
         let service = SplitService::new();
         let island = service
             .create_island(
@@ -2487,16 +2615,26 @@ mod tests {
             )
             .await
             .unwrap();
-        let participant = vec![UpsertParticipantRequest {
-            user_id: alice,
-            weight: Decimal::ONE,
-        }];
         service
             .create_split(
                 &db,
                 admin,
                 located(
-                    request("10.00", "0.00", "0.00", participant.clone()),
+                    request(
+                        "10.00",
+                        "0.00",
+                        "0.00",
+                        vec![
+                            UpsertParticipantRequest {
+                                user_id: alice,
+                                weight: Decimal::ONE,
+                            },
+                            UpsertParticipantRequest {
+                                user_id: bob,
+                                weight: Decimal::ONE,
+                            },
+                        ],
+                    ),
                     island.tabs[0].id,
                 ),
             )
@@ -2507,7 +2645,15 @@ mod tests {
                 &db,
                 admin,
                 located(
-                    request("20.00", "1.00", "2.00", participant),
+                    request(
+                        "20.00",
+                        "1.00",
+                        "2.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: Decimal::ONE,
+                        }],
+                    ),
                     island.tabs[0].id,
                 ),
             )
@@ -2564,6 +2710,7 @@ mod tests {
                     search: None,
                     date_from: None,
                     date_to: None,
+                    archived: None,
                 },
             )
             .await

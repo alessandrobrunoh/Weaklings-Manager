@@ -9,8 +9,16 @@ import type {
   BattleSummary,
   SplitDiscoveryBatch,
   SplitDiscordSync,
+  GiveawayView,
+  GiveawayDetailView,
 } from "../api/types.js";
 import { buildEventAnnouncementMessage } from "../embeds/event.embed.js";
+import {
+  buildGiveawayAnnouncementMessage,
+  buildGiveawayEmbed,
+  buildGiveawayActionRow,
+  buildGiveawayWinnerMessage,
+} from "../embeds/giveaway.embed.js";
 import { buildBattleEmbed } from "../embeds/battle.embed.js";
 import {
   buildApplicationPanelComponents,
@@ -47,6 +55,9 @@ interface PollerState {
   massedEvents: number[];
   emptyLiveChecks: Record<string, number>;
   applicationsOpen?: boolean;
+  lastGiveawayId: number;
+  postedGiveawayIds: number[];
+  announcedGiveawayDraws: number[];
 }
 
 function createDefaultState(): PollerState {
@@ -60,6 +71,9 @@ function createDefaultState(): PollerState {
     massedEvents: [],
     emptyLiveChecks: {},
     applicationsOpen: undefined,
+    lastGiveawayId: 0,
+    postedGiveawayIds: [],
+    announcedGiveawayDraws: [],
   };
 }
 
@@ -125,6 +139,9 @@ function loadState(stateDirectory: string): PollerState {
       massedEvents: parsedState.massedEvents ?? [],
       emptyLiveChecks: parsedState.emptyLiveChecks ?? {},
       applicationsOpen: parsedState.applicationsOpen,
+      lastGiveawayId: parsedState.lastGiveawayId ?? 0,
+      postedGiveawayIds: parsedState.postedGiveawayIds ?? [],
+      announcedGiveawayDraws: parsedState.announcedGiveawayDraws ?? [],
     };
   } catch (error) {
     console.warn(
@@ -215,6 +232,8 @@ export class Poller {
       // Event announcements must complete before checking reminders so a newly
       // created event already has its discussion thread recorded.
       await this.checkNewEvents();
+      await this.checkNewGiveaways();
+      await this.checkGiveawayResults();
       await this.checkClosedEvents();
       await this.checkEventLifecycle();
       await Promise.allSettled([
@@ -392,7 +411,7 @@ export class Poller {
     for (const [eventId, threadId] of Object.entries(this.state.eventThreadIds)) {
       try {
         const event = await this.api.get<EventView>(`api/events/${eventId}`);
-        if (!terminalStatuses.has(event.status)) continue;
+        if (!terminalStatuses.has(event.status) && !event.archived_at) continue;
 
         if (threadId) await this.closeEventThread(event.id);
       } catch (error) {
@@ -637,6 +656,92 @@ export class Poller {
       }
     } catch (err) {
       console.error("[Poller] Failed to check battles:", err);
+    }
+  }
+
+  /** Announces newly created giveaways into the configured channel. */
+  private async checkNewGiveaways(): Promise<void> {
+    try {
+      const result = await this.api.get<PaginatedData<GiveawayView>>(
+        "api/giveaways",
+        undefined,
+        { page: 1, limit: 50, sort: "created_at", order: "desc" },
+      );
+      const newestId = result.items.reduce((max, item) => Math.max(max, item.id), 0);
+      if (newestId > 0 && newestId < this.state.lastGiveawayId) {
+        console.warn(
+          `[Poller] Giveaway checkpoint ${this.state.lastGiveawayId} is ahead of the newest known giveaway (${newestId}); clamping`,
+        );
+        this.state.lastGiveawayId = newestId;
+        saveState(this.stateDirectory, this.state);
+      }
+      const newGiveaways = result.items
+        .filter((item) => item.id > this.state.lastGiveawayId)
+        .sort((a, b) => a.id - b.id);
+      if (newGiveaways.length === 0) return;
+
+      const channelId = await this.settings.giveawaysChannelId();
+      const roleId = await this.settings.giveawaysRoleId();
+      if (!channelId) {
+        console.warn("[Poller] Cannot announce giveaways: no giveaways channel is configured");
+        return;
+      }
+      const channel = await this.getTextChannel(channelId);
+      if (!channel) return;
+
+      for (const summary of newGiveaways) {
+        const detail = await this.api.get<GiveawayDetailView>(`api/giveaways/${summary.id}`);
+        const message = await channel.send(buildGiveawayAnnouncementMessage(detail, roleId));
+        await this.api.put(
+          `api/giveaways/${detail.id}/discord-message`,
+          { message_id: message.id, channel_id: channel.id },
+        );
+        this.state.lastGiveawayId = detail.id;
+        if (!this.state.postedGiveawayIds.includes(detail.id)) {
+          this.state.postedGiveawayIds.push(detail.id);
+        }
+        saveState(this.stateDirectory, this.state);
+        console.log(`[Poller] Announced giveaway #${detail.id}: ${detail.title}`);
+      }
+    } catch (error) {
+      console.error("[Poller] Failed to check giveaways:", error);
+    }
+  }
+
+  /** Updates announced giveaway messages after a draw, cancel, or empty expiry. */
+  private async checkGiveawayResults(): Promise<void> {
+    const pending = this.state.postedGiveawayIds.filter(
+      (id) => !this.state.announcedGiveawayDraws.includes(id),
+    );
+    for (const giveawayId of pending) {
+      try {
+        const detail = await this.api.get<GiveawayDetailView>(`api/giveaways/${giveawayId}`);
+        if (detail.status === "open") continue;
+        if (detail.discord_channel_id && detail.discord_message_id) {
+          const channel = await this.getTextChannel(detail.discord_channel_id);
+          const message = channel
+            ? await channel.messages.fetch(detail.discord_message_id).catch(() => null)
+            : null;
+          if (message) {
+            await message.edit({
+              embeds: [buildGiveawayEmbed(detail)],
+              components: [buildGiveawayActionRow(detail)],
+            });
+            if (detail.status === "drawn") {
+              await channel?.send(buildGiveawayWinnerMessage(detail)).catch(() => undefined);
+            }
+          }
+        }
+        this.state.announcedGiveawayDraws.push(giveawayId);
+        saveState(this.stateDirectory, this.state);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          this.state.announcedGiveawayDraws.push(giveawayId);
+          saveState(this.stateDirectory, this.state);
+          continue;
+        }
+        console.warn(`[Poller] Could not update giveaway #${giveawayId}:`, error);
+      }
     }
   }
 

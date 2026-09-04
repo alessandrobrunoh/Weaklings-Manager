@@ -169,4 +169,53 @@ describe('Splits Component', () => {
     expect(text).toContain('Select all pending');
     expect(text).toContain('Complete selected');
   });
+
+  it('requests pending splits when the Pending tab is clicked', async () => {
+    mockApiService.get.mockClear();
+    const pendingTab = tabButton(fixture.nativeElement, 'Pending');
+    expect(pendingTab).toBeTruthy();
+    pendingTab!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(mockApiService.get).toHaveBeenCalledWith(
+      'api/splits',
+      expect.objectContaining({ status: 'pending' }),
+    );
+  });
+
+  it('keeps the status tab when the table pages without a status column filter', async () => {
+    const component = fixture.componentInstance as unknown as {
+      setStatusFilter: (status: string) => void;
+      onPageChange: (event: {
+        page: number;
+        pageSize: number;
+        search: string;
+        sort: null;
+        columnFilters: Record<string, string>;
+      }) => void;
+    };
+    component.setStatusFilter('awaiting_event');
+    mockApiService.get.mockClear();
+
+    component.onPageChange({
+      page: 2,
+      pageSize: 10,
+      search: 'castle',
+      sort: null,
+      columnFilters: {},
+    });
+    await fixture.whenStable();
+
+    expect(mockApiService.get).toHaveBeenCalledWith(
+      'api/splits',
+      expect.objectContaining({ status: 'awaiting_event', search: 'castle', page: 2 }),
+    );
+  });
 });
+
+function tabButton(root: HTMLElement, label: string): HTMLButtonElement | undefined {
+  return Array.from(root.querySelectorAll('nav button')).find((button) =>
+    button.textContent?.includes(label),
+  ) as HTMLButtonElement | undefined;
+}

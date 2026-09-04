@@ -57,6 +57,7 @@ import {
   type AbilitySlotView,
 } from '../../shared/data/albion-abilities';
 import {
+  albionEquipmentIconUrl,
   albionSpecializationKey,
   deduplicateAlbionCombatCatalog,
   normalizeAlbionEquipmentName,
@@ -93,7 +94,7 @@ const FILL_BUILD_VALUE = 'fill';
 type EventDetailTab = 'roster' | 'overview' | 'battles' | 'splits';
 
 type PendingConfirm =
-  | { kind: 'delete' }
+  | { kind: 'archive' }
   | { kind: 'stop'; eventId: number }
   | { kind: 'cancel'; eventId: number }
   | { kind: 'unlink-split'; splitId: number }
@@ -176,7 +177,10 @@ interface AddEventMemberRequest {
       <app-loading [label]="t('common.loading')" />
     } @else if (event(); as detail) {
       <!-- ================= PAGE HEADER: title, officer actions, tabs ================= -->
-      <app-page-header [title]="detail.title">
+      <app-page-header
+        [title]="detail.title"
+        [badge]="detail.archived_at ? t('events.archived') : undefined"
+      >
         <button
           type="button"
           class="btn btn--ghost btn--sm"
@@ -187,7 +191,7 @@ interface AddEventMemberRequest {
           <app-icon name="chevron-left" size="0.875rem" />
           {{ t('events.detail.back') }}
         </button>
-        @if (canEdit() && detail.status === 'scheduled') {
+        @if (canEdit() && detail.status === 'scheduled' && !detail.archived_at) {
           <button
             type="button"
             class="btn btn--primary btn--sm"
@@ -199,7 +203,7 @@ interface AddEventMemberRequest {
             {{ t('events.start') }}
           </button>
         }
-        @if (canEdit() && detail.status === 'scheduled') {
+        @if (canEdit() && detail.status === 'scheduled' && !detail.archived_at) {
           <button
             type="button"
             class="btn btn--danger btn--sm"
@@ -211,7 +215,7 @@ interface AddEventMemberRequest {
             {{ t('events.cancel') }}
           </button>
         }
-        @if (canEdit() && detail.status === 'live') {
+        @if (canEdit() && detail.status === 'live' && !detail.archived_at) {
           <button
             type="button"
             class="btn btn--danger btn--sm"
@@ -223,7 +227,7 @@ interface AddEventMemberRequest {
             {{ t('events.stop') }}
           </button>
         }
-        @if (canEdit()) {
+        @if (canEdit() && !detail.archived_at) {
           <button
             type="button"
             class="btn btn--outline btn--sm"
@@ -236,16 +240,25 @@ interface AddEventMemberRequest {
           </button>
         }
         @if (canDelete()) {
-          <button
-            type="button"
-            class="btn btn--ghost btn--sm text-[var(--color-danger)] hover:bg-[var(--color-error-container)]"
-            (click)="requestDelete()"
-            [appTooltip]="'Elimina definitivamente l\\'evento'"
-            tooltipPosition="bottom"
-          >
-            <app-icon name="close" size="0.875rem" />
-            {{ t('common.delete') }}
-          </button>
+          @if (detail.archived_at) {
+            <button
+              type="button"
+              class="btn btn--outline btn--sm"
+              (click)="unarchiveEvent()"
+              [disabled]="saving()"
+            >
+              {{ t('events.unarchive') }}
+            </button>
+          } @else {
+            <button
+              type="button"
+              class="btn btn--outline btn--sm"
+              (click)="requestArchive()"
+              [disabled]="saving()"
+            >
+              {{ t('events.archive') }}
+            </button>
+          }
         }
         <app-view-toggle
           pageTabs
@@ -386,24 +399,26 @@ interface AddEventMemberRequest {
                   </p>
                 </div>
 
-                <div class="flex items-center gap-1 pt-1.5 border-t border-[var(--color-success)]">
-                  <button
-                    type="button"
-                    class="btn btn--outline btn--sm text-[10px] py-0.5 px-2 flex-1"
-                    (click)="toggleJoinForm()"
-                  >
-                    {{ t('events.detail.change_build') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn--ghost btn--sm text-[10px] py-0.5 px-2 text-error hover:bg-[var(--color-error-container)]"
-                    (click)="leave(detail.id)"
-                  >
-                    {{ t('events.leave') }}
-                  </button>
-                </div>
+                @if (!detail.archived_at) {
+                  <div class="flex items-center gap-1 pt-1.5 border-t border-[var(--color-success)]">
+                    <button
+                      type="button"
+                      class="btn btn--outline btn--sm text-[10px] py-0.5 px-2 flex-1"
+                      (click)="toggleJoinForm()"
+                    >
+                      {{ t('events.detail.change_build') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn--ghost btn--sm text-[10px] py-0.5 px-2 text-error hover:bg-[var(--color-error-container)]"
+                      (click)="leave(detail.id)"
+                    >
+                      {{ t('events.leave') }}
+                    </button>
+                  </div>
+                }
               </div>
-            } @else {
+            } @else if (!detail.archived_at) {
               <div
                 class="rounded-xl px-3 py-2 border border-[var(--color-border)] bg-[var(--color-surface-2)] flex items-center gap-3"
               >
@@ -2320,7 +2335,13 @@ interface AddEventMemberRequest {
           <button type="button" class="btn btn--ghost btn--sm" (click)="cancelConfirm()">
             {{ t('common.cancel') }}
           </button>
-          <button type="button" class="btn btn--danger btn--sm" (click)="runConfirm()">
+          <button
+            type="button"
+            class="btn btn--sm"
+            [class.btn--danger]="confirm.kind !== 'archive'"
+            [class.btn--tonal]="confirm.kind === 'archive'"
+            (click)="runConfirm()"
+          >
             {{ confirmActionLabel(confirm) }}
           </button>
         </div>
@@ -4142,7 +4163,7 @@ export class EventDetailPage {
       ?.replace(/\.png$/i, '')
       .trim();
     if (!identifier) return icon;
-    return `https://render.albiononline.com/v1/item/${encodeURIComponent(identifier)}.png?quality=1&size=96`;
+    return albionEquipmentIconUrl(identifier, item.openalbion_item_quality ?? 4);
   }
 
   protected openMemberPicker(): void {
@@ -4396,8 +4417,8 @@ export class EventDetailPage {
     }
   }
 
-  protected requestDelete(): void {
-    this.pendingConfirm.set({ kind: 'delete' });
+  protected requestArchive(): void {
+    this.pendingConfirm.set({ kind: 'archive' });
   }
 
   protected requestCancel(eventId: number): void {
@@ -4410,8 +4431,8 @@ export class EventDetailPage {
 
   protected confirmTitle(confirm: PendingConfirm): string {
     switch (confirm.kind) {
-      case 'delete':
-        return this.t('events.detail.delete');
+      case 'archive':
+        return this.t('events.archive');
       case 'stop':
         return this.t('events.stop');
       case 'cancel':
@@ -4427,7 +4448,7 @@ export class EventDetailPage {
 
   protected confirmMessage(confirm: PendingConfirm): string {
     switch (confirm.kind) {
-      case 'delete':
+      case 'archive':
         return this.t('events.detail.confirm_delete');
       case 'clear-all':
         return this.t('events.detail.clear_all_confirm');
@@ -4439,9 +4460,10 @@ export class EventDetailPage {
   }
 
   protected confirmActionLabel(confirm: PendingConfirm): string {
-    return confirm.kind === 'delete' ||
-      confirm.kind === 'remove-participant' ||
-      confirm.kind === 'clear-all'
+    if (confirm.kind === 'archive') {
+      return this.t('events.archive');
+    }
+    return confirm.kind === 'remove-participant' || confirm.kind === 'clear-all'
       ? this.t('common.delete')
       : this.t('common.confirm');
   }
@@ -4451,8 +4473,8 @@ export class EventDetailPage {
     this.pendingConfirm.set(null);
     if (!confirm) return;
     switch (confirm.kind) {
-      case 'delete':
-        await this.confirmDelete();
+      case 'archive':
+        await this.confirmArchive();
         break;
       case 'stop':
         await this.mutate(`api/events/${confirm.eventId}/stop`, 'POST', {});
@@ -4609,15 +4631,33 @@ export class EventDetailPage {
     }
   }
 
-  protected async confirmDelete(): Promise<void> {
+  protected async confirmArchive(): Promise<void> {
     const detail = this.event();
     if (!detail) return;
+    this.saving.set(true);
     try {
-      await firstValueFrom(this.api.delete(`api/events/${detail.id}`));
-      this.toasts.success(this.t('common.delete'));
+      await firstValueFrom(this.api.post(`api/events/${detail.id}/archive`, {}));
+      this.toasts.success(this.t('events.archiveSuccess'));
       void this.router.navigate(['/events']);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async unarchiveEvent(): Promise<void> {
+    const detail = this.event();
+    if (!detail) return;
+    this.saving.set(true);
+    try {
+      await firstValueFrom(this.api.post(`api/events/${detail.id}/unarchive`, {}));
+      this.toasts.success(this.t('events.unarchiveSuccess'));
+      await this.load();
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.saving.set(false);
     }
   }
 

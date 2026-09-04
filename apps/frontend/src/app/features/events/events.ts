@@ -73,16 +73,29 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
           <p class="text-sm text-[var(--color-text-tertiary)] mt-1 mb-0">Schedule and manage all guild activities.</p>
         </div>
 
-        @if (canCreate()) {
-          <button
-            type="button"
-            class="btn btn--primary btn--sm inline-flex items-center gap-1.5 self-start sm:self-auto"
-            (click)="openCreate()"
-          >
-            <app-icon name="plus" size="0.875rem" />
-            <span>{{ t('events.new') }}</span>
-          </button>
-        }
+        <div class="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          @if (canDelete()) {
+            <button
+              type="button"
+              class="btn btn--sm"
+              [class.btn--tonal]="showArchived()"
+              [class.btn--outline]="!showArchived()"
+              (click)="toggleShowArchived()"
+            >
+              {{ t('events.showArchived') }}
+            </button>
+          }
+          @if (canCreate()) {
+            <button
+              type="button"
+              class="btn btn--primary btn--sm inline-flex items-center gap-1.5"
+              (click)="openCreate()"
+            >
+              <app-icon name="plus" size="0.875rem" />
+              <span>{{ t('events.new') }}</span>
+            </button>
+          }
+        </div>
       </div>
 
       <!-- 4 KPI Cards -->
@@ -342,6 +355,9 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
                       >
                         {{ event.title }}
                       </a>
+                      @if (event.archived_at) {
+                        <span class="chip chip--neutral text-xs">{{ t('events.archived') }}</span>
+                      }
                     </div>
                     <div class="text-xs text-[var(--color-text-tertiary)] mt-0.5">
                       Mass: {{ formatMassTime(event) }}
@@ -406,7 +422,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
                         Open
                       </button>
 
-                      @if (event.status === 'scheduled') {
+                      @if (event.status === 'scheduled' && !event.archived_at) {
                         <button
                           type="button"
                           class="px-3 py-1 text-xs font-semibold text-[var(--color-text)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] rounded-md transition-all cursor-pointer"
@@ -416,14 +432,25 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
                         </button>
                       }
 
-                      @if (canDelete() || event.status === 'stopped' || event.status === 'cancelled') {
-                        <button
-                          type="button"
-                          class="px-3 py-1 text-xs font-medium text-error bg-[var(--color-error-container)] hover:bg-[var(--color-error-container)] border border-[var(--color-error)] rounded-md transition-all cursor-pointer"
-                          (click)="requestDelete(event)"
-                        >
-                          Delete
-                        </button>
+                      @if (canDelete()) {
+                        @if (event.archived_at) {
+                          <button
+                            type="button"
+                            class="px-3 py-1 text-xs font-medium text-[var(--color-text)] bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] border border-[var(--color-border)] rounded-md transition-all cursor-pointer"
+                            [disabled]="archiving()"
+                            (click)="unarchiveEvent(event)"
+                          >
+                            {{ t('events.unarchive') }}
+                          </button>
+                        } @else {
+                          <button
+                            type="button"
+                            class="px-3 py-1 text-xs font-medium text-[var(--color-text-secondary)] bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] border border-[var(--color-border)] rounded-md transition-all cursor-pointer"
+                            (click)="requestArchive(event)"
+                          >
+                            {{ t('events.archive') }}
+                          </button>
+                        }
                       }
 
                       <button
@@ -685,20 +712,20 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
       </app-dialog>
     }
 
-    @if (pendingDelete()) {
-      <app-dialog [title]="t('events.detail.delete')" size="sm" (closed)="cancelDelete()">
+    @if (pendingArchive()) {
+      <app-dialog [title]="t('events.archive')" size="sm" (closed)="cancelArchive()">
         <p>{{ t('events.detail.confirm_delete') }}</p>
         <div dialogFooter>
-          <button type="button" class="btn btn--ghost" (click)="cancelDelete()">
+          <button type="button" class="btn btn--ghost" (click)="cancelArchive()">
             {{ t('common.cancel') }}
           </button>
           <button
             type="button"
-            class="btn btn--danger"
-            [disabled]="deleting()"
-            (click)="confirmDelete()"
+            class="btn btn--tonal"
+            [disabled]="archiving()"
+            (click)="confirmArchive()"
           >
-            {{ t('common.delete') }}
+            {{ t('events.archive') }}
           </button>
         </div>
       </app-dialog>
@@ -781,8 +808,9 @@ export class Events {
   });
   protected readonly compError = signal<string | null>(null);
 
-  protected readonly pendingDelete = signal<EventView | null>(null);
-  protected readonly deleting = signal(false);
+  protected readonly pendingArchive = signal<EventView | null>(null);
+  protected readonly archiving = signal(false);
+  protected readonly showArchived = signal(false);
 
   protected readonly trackById = (event: EventView): number => event.id;
   protected t = (key: TranslationKey) => this.translate.t(key);
@@ -792,9 +820,15 @@ export class Events {
     return this.auth.hasPermission('events.create');
   }
 
-  /** True when the current user can delete an event. */
+  /** True when the current user can archive or restore an event. */
   protected canDelete(): boolean {
     return this.auth.hasPermission('events.delete');
+  }
+
+  protected toggleShowArchived(): void {
+    this.showArchived.update((value) => !value);
+    this.page.set(1);
+    void this.load();
   }
 
   protected cityLabel(city: SplitIslandCity): string {
@@ -826,26 +860,24 @@ export class Events {
     void this.router.navigate(['/events', id]);
   }
 
-  protected requestDelete(event: EventView): void {
-    this.pendingDelete.set(event);
+  protected requestArchive(event: EventView): void {
+    this.pendingArchive.set(event);
   }
 
-  protected cancelDelete(): void {
-    this.pendingDelete.set(null);
+  protected cancelArchive(): void {
+    this.pendingArchive.set(null);
   }
 
-  protected async confirmDelete(): Promise<void> {
-    const doomed = this.pendingDelete();
-    if (!doomed) {
+  protected async confirmArchive(): Promise<void> {
+    const target = this.pendingArchive();
+    if (!target) {
       return;
     }
-    this.deleting.set(true);
+    this.archiving.set(true);
     try {
-      await firstValueFrom(this.api.delete(`api/events/${doomed.id}`));
-      this.pendingDelete.set(null);
-      this.toasts.success(this.t('common.delete'));
-      // If that was the last row on the current page, step back a page instead
-      // of reloading into a now-empty one.
+      await firstValueFrom(this.api.post(`api/events/${target.id}/archive`, {}));
+      this.pendingArchive.set(null);
+      this.toasts.success(this.t('events.archiveSuccess'));
       if (this.events().length === 1 && this.page() > 1) {
         this.page.set(this.page() - 1);
       }
@@ -854,7 +886,24 @@ export class Events {
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
-      this.deleting.set(false);
+      this.archiving.set(false);
+    }
+  }
+
+  protected async unarchiveEvent(event: EventView): Promise<void> {
+    this.archiving.set(true);
+    try {
+      await firstValueFrom(this.api.post(`api/events/${event.id}/unarchive`, {}));
+      this.toasts.success(this.t('events.unarchiveSuccess'));
+      if (this.events().length === 1 && this.page() > 1) {
+        this.page.set(this.page() - 1);
+      }
+      await this.load();
+      void this.loadStats();
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.archiving.set(false);
     }
   }
 
@@ -1087,6 +1136,7 @@ export class Events {
           limit: this.pageSize(),
           search: this.search().trim() || undefined,
           status: this.statusFilter() || undefined,
+          archived: this.showArchived() ? 'true' : undefined,
           sort,
           order: sort ? (this.sortOrder() ?? 'asc') : undefined,
         }),

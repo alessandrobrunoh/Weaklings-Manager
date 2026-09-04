@@ -871,6 +871,24 @@
     color: var(--color-text);
   }
 
+  .equipment-slot__quality {
+    position: absolute;
+    bottom: 0.25rem;
+    right: 0.25rem;
+    font-size: 0.625rem;
+    font-weight: 700;
+    padding: 0.05rem 0.3rem;
+    border-radius: var(--radius-inputs);
+    background-color: var(--color-surface-2);
+    color: var(--color-text-secondary);
+  }
+
+  .equipment-slot__quality--1 { color: #9ca3af; }
+  .equipment-slot__quality--2 { color: #22c55e; }
+  .equipment-slot__quality--3 { color: #3b82f6; }
+  .equipment-slot__quality--4 { color: #a855f7; }
+  .equipment-slot__quality--5 { color: #f59e0b; }
+
   .equipment-slot__trigger {
     position: absolute;
     inset: 0;

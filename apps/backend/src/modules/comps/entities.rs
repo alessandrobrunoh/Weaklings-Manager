@@ -162,6 +162,8 @@ pub mod build_item {
         pub openalbion_item_icon: Option<String>,
         /// The OpenAlbion item tier.
         pub openalbion_item_tier: Option<String>,
+        /// Albion item quality (`1` Normal through `5` Masterpiece). Defaults to Excellent (`4`).
+        pub openalbion_item_quality: i16,
         /// The timestamp when the build item was created.
         pub created_at: DateTimeWithTimeZone,
     }

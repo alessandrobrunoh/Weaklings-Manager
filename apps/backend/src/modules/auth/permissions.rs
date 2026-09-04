@@ -266,6 +266,15 @@ pub enum Permission {
     /// Compose a guild-wide in-app announcement. Officer+ today.
     #[strum(serialize = "notifications.broadcast")]
     NotificationsBroadcast,
+    /// View giveaway logs and detail in the admin console. Officer+.
+    #[strum(serialize = "giveaways.view")]
+    GiveawaysView,
+    /// Create a new Discord giveaway. Officer+.
+    #[strum(serialize = "giveaways.create")]
+    GiveawaysCreate,
+    /// Cancel an open giveaway or draw a winner now. Officer+.
+    #[strum(serialize = "giveaways.manage")]
+    GiveawaysManage,
 }
 
 impl Permission {

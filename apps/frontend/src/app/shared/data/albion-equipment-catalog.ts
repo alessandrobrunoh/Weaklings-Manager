@@ -880,8 +880,9 @@ export function deduplicateAlbionCombatCatalog(catalog: readonly OpenAlbionItem[
  * `T8_MAIN_SWORD`. Consumables use the same convention in the renderer, so
  * keeping one path avoids slot-specific icon branches.
  */
-export function albionEquipmentIconUrl(identifier: string): string {
-  return `https://render.albiononline.com/v1/item/${encodeURIComponent(identifier)}.png?quality=1&size=96`;
+export function albionEquipmentIconUrl(identifier: string, quality = 4): string {
+  const grade = quality >= 1 && quality <= 5 ? quality : 4;
+  return `https://render.albiononline.com/v1/item/${encodeURIComponent(identifier)}.png?quality=${grade}&size=96`;
 }
 
 function toOpenAlbionItem(fileName: string, tier: string): OpenAlbionItem {

@@ -20,20 +20,26 @@ export async function execute(
   const requestedFmt = formatSilver(balance.requested_total);
 
   const embed = createBaseEmbed({
-    category: 'GUILD BANK',
-    title: `💰 Bank Balance — ${interaction.user.displayName}`,
-    description: '*View and manage your pending silver rewards and withdrawal requests.*',
+    category: 'GUILD VAULT',
+    title: `💰 Vault Balance — ${interaction.user.displayName}`,
+    description: '*Track pending loot splits, regear payouts, and withdrawal requests*',
     color: BOT_COLORS.BRAND,
-    footerText: '💡 Tip: Use /balance-request to withdraw all pending silver.',
+    footerText: '💡 Payouts are distributed in-game via Guild Chest or Trade by Officers',
   }).addFields(
     {
-      name: '📥 Pending Balance',
-      value: `• **Amount:** **${pendingFmt}** silver\n• **Transactions:** ${balance.pending_count} pending`,
+      name: '📥 Available to Withdraw',
+      value: [
+        `• 💵 **Amount:** **${pendingFmt}** Silver`,
+        `• 🧾 **Transactions:** **${balance.pending_count}** item(s)`,
+      ].join('\n'),
       inline: true,
     },
     {
-      name: '📤 Requested Balance',
-      value: `• **Amount:** **${requestedFmt}** silver\n• **Transactions:** ${balance.requested_count} requested`,
+      name: '📤 Pending Approval',
+      value: [
+        `• ⏳ **Amount:** **${requestedFmt}** Silver`,
+        `• 📄 **Requests:** **${balance.requested_count}** pending`,
+      ].join('\n'),
       inline: true,
     },
   );
@@ -44,7 +50,7 @@ export async function execute(
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setCustomId('bank:request_all')
-        .setLabel('Request your Balance')
+        .setLabel(`Request Payout (${pendingFmt} Silver)`)
         .setEmoji('💸')
         .setStyle(ButtonStyle.Success),
     );

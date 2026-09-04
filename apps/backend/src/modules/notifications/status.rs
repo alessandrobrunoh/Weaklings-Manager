@@ -28,6 +28,8 @@ pub enum NotificationKind {
     EventCreated,
     /// Event starts within one hour. In-app only for signed-up participants.
     EventReminder1h,
+    /// The recipient won a guild giveaway.
+    GiveawayWon,
 }
 
 impl NotificationKind {
@@ -44,6 +46,7 @@ impl NotificationKind {
             Self::SplitCredited => "split_credited",
             Self::EventCreated => "event_created",
             Self::EventReminder1h => "event_reminder_1h",
+            Self::GiveawayWon => "giveaway_won",
         }
     }
 
@@ -76,6 +79,7 @@ impl FromStr for NotificationKind {
             "split_credited" => Ok(Self::SplitCredited),
             "event_created" => Ok(Self::EventCreated),
             "event_reminder_1h" => Ok(Self::EventReminder1h),
+            "giveaway_won" => Ok(Self::GiveawayWon),
             other => Err(format!("unknown notification kind: {other}")),
         }
     }
@@ -144,6 +148,7 @@ mod tests {
             NotificationKind::SplitCredited,
             NotificationKind::EventCreated,
             NotificationKind::EventReminder1h,
+            NotificationKind::GiveawayWon,
         ] {
             assert_eq!(kind.as_str().parse::<NotificationKind>().unwrap(), kind);
         }

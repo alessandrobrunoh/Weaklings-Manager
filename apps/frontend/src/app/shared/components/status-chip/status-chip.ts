@@ -86,6 +86,10 @@ export class StatusChip {
     // Regear
     available: 'info',
     approved: 'success',
+    open: 'info',
+    drawn: 'success',
+    cancelled: 'error',
+    expired_empty: 'warning',
     // Events
     scheduled: 'info',
     live: 'success',

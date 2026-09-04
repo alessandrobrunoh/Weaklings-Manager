@@ -1,7 +1,7 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
 import type { SubmitVodRequest, VodReviewView } from '../api/types.js';
-import { createResponseEmbed } from '../embeds/theme.js';
+import { BOT_COLORS, createBaseEmbed, createResponseEmbed } from '../embeds/theme.js';
 
 export const data = new SlashCommandBuilder()
   .setName('vod')
@@ -62,11 +62,22 @@ export async function execute(
     return;
   }
 
-  const embed = createResponseEmbed(
-    'success',
-    'VOD Submitted',
-    `Recorded **${url}** for this thread.`,
-    'VOD REVIEW',
+  const embed = createBaseEmbed({
+    category: 'VOD REVIEW',
+    title: '🎥 VOD Submitted for Review',
+    description: `*Submitted by <@${interaction.user.id}> for tactical combat review*`,
+    color: BOT_COLORS.SUCCESS,
+  }).addFields(
+    {
+      name: '🔗 Video Recording',
+      value: `• **Link:** ${url}`,
+      inline: false,
+    },
+    {
+      name: '📋 Review Status',
+      value: '• ⏳ **Status:** Pending Officer Review\n• 💬 Officers can review engage timings, swaps, and positioning directly in this thread.',
+      inline: false,
+    },
   );
   await interaction.editReply({ embeds: [embed] });
 }

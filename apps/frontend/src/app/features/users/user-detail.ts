@@ -14,7 +14,6 @@ import { firstValueFrom } from 'rxjs';
 
 import type {
   AdjustProgressionRequest,
-  AlbionCombatCategory,
   AlbionGuildMember,
   AlbionLinkStatus,
   LeaderboardEntry,
@@ -24,8 +23,6 @@ import type {
   Role,
   UserProfile,
   UserSpecialization,
-  UserSpecializationInput,
-  OpenAlbionItem,
   WarnView,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
@@ -35,12 +32,13 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
 import {
-  deduplicateAlbionCombatCatalog,
-  normalizeAlbionEquipmentName,
-  normalizeAlbionSpecializationKey,
-} from '../../shared/data/albion-equipment-catalog';
+  mergeSpecializationNodes,
+  type DestinyItemNode,
+} from '../../shared/data/albion-destiny-board';
+import { normalizeAlbionSpecializationKey } from '../../shared/data/albion-equipment-catalog';
 import type { TranslationKey } from '../../i18n/en';
 import { Avatar } from '../../shared/components/avatar/avatar';
+import { DestinyBoard } from '../../shared/components/destiny-board/destiny-board';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
@@ -50,16 +48,6 @@ import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
-
-interface SpecializationNode extends UserSpecializationInput {
-  icon: string | null;
-  identifier: string;
-}
-
-interface SpecializationGroup {
-  category: AlbionCombatCategory;
-  items: SpecializationNode[];
-}
 
 interface AdjustDraft {
   addXp: string;
@@ -90,6 +78,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
     Avatar,
     DatePipe,
     DecimalPipe,
+    DestinyBoard,
     Dialog,
     EmptyState,
     ErrorState,
@@ -441,94 +430,23 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
 
         <!-- Albion Combat Specializations -->
         <section class="card p-6" aria-labelledby="specializations-heading">
-          <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
-            <div>
-              <h2 id="specializations-heading" class="text-base font-semibold" style="color: var(--color-text)">
-                Destiny Board · Specializzazioni Combat
-              </h2>
-              <p class="text-xs mt-1" style="color: var(--color-text-secondary)">
-                Livello personale per ogni arma e armatura, da 0 a 120.
-              </p>
-            </div>
-            @if (canManageSpecializations()) {
-              <button type="button" class="btn btn--outline btn--sm" (click)="toggleSpecializationEditing()" [disabled]="specLoading()">
-                <app-icon [name]="specializationEditing() ? 'close' : 'sparkles'" size="0.8rem" />
-                {{ specializationEditing() ? 'Annulla' : 'Modifica spec' }}
-              </button>
-            }
+          <div class="mb-4">
+            <h2 id="specializations-heading" class="text-base font-semibold" style="color: var(--color-text)">
+              {{ t('destiny.title') }}
+            </h2>
+            <p class="text-xs mt-1" style="color: var(--color-text-secondary)">
+              {{ t('destiny.subtitle') }}
+            </p>
           </div>
-
-          @if (specLoading()) {
-            <div class="p-8 flex justify-center"><app-loading label="Caricamento specializzazioni..." /></div>
-          } @else if (specLoadFailed()) {
-            <div class="p-4 rounded-[var(--radius-cards)] border" style="border-color: var(--color-border); background: var(--color-surface-2)">
-              <p class="text-sm" style="color: var(--color-text-secondary)">Catalogo Albion non disponibile.</p>
-              <button type="button" class="btn btn--ghost btn--sm mt-2" (click)="loadSpecializations()">Riprova</button>
-            </div>
-          } @else {
-            <div class="flex flex-wrap gap-2 mb-4">
-              <input class="input flex-1 min-w-[12rem]" type="search" placeholder="Cerca arma o armatura..." aria-label="Cerca specializzazione" [value]="specSearch()" (input)="updateSpecSearch($event)" />
-              <select class="input w-auto" aria-label="Filtra specializzazioni" [value]="specCategory()" (change)="updateSpecCategory($event)">
-                <option value="all">Tutte</option>
-                <option value="weapon">Armi</option>
-                <option value="armor">Armature</option>
-              </select>
-            </div>
-
-            <div class="rounded-[var(--radius-cards)] border p-4 mb-4 text-center" style="border-color: var(--color-border); background: radial-gradient(circle, var(--color-surface-2), transparent 72%)">
-              <span class="inline-flex items-center gap-2 chip chip--info font-mono">
-                <span class="h-2 w-2 rounded-full bg-[var(--color-primary)]"></span>
-                COMBAT BOARD · {{ masteredSpecializations() }}/{{ specializationNodes().length }} nodi allenati
-              </span>
-            </div>
-
-            <div class="grid gap-4 lg:grid-cols-2">
-              @for (group of specializationGroups(); track group.category) {
-                <section class="rounded-[var(--radius-cards)] border p-4" [attr.aria-label]="group.category === 'weapon' ? 'Armi' : 'Armature'" style="border-color: var(--color-border); background: var(--color-surface-2)">
-                  <div class="flex items-center gap-2 mb-3">
-                    <span
-                                          class="h-3 w-3 rounded-full"
-                                          [style.background-color]="group.category === 'weapon' ? 'var(--color-warning)' : 'var(--color-info)'"
-                                        ></span>
-                    <h3 class="font-semibold" style="color: var(--color-text)">{{ group.category === 'weapon' ? 'Armi' : 'Armature' }}</h3>
-                    <span class="text-xs ml-auto" style="color: var(--color-text-secondary)">{{ group.items.length }} nodi</span>
-                  </div>
-                  <div class="grid gap-2 sm:grid-cols-2">
-                    @for (node of group.items; track node.node_key) {
-                      <div class="relative rounded-[var(--radius-cards)] border p-3" style="border-color: var(--color-border); background: var(--color-surface-1)">
-                        <div class="flex items-center gap-2 min-w-0">
-                          @if (node.icon) {
-                            <img class="h-8 w-8 rounded object-contain" [src]="node.icon" [alt]="node.node_name" loading="lazy" />
-                          } @else {
-                            <span class="h-8 w-8 rounded bg-[var(--color-surface-2)] flex items-center justify-center"><app-icon name="shield" size="0.85rem" /></span>
-                          }
-                          <span class="text-sm font-medium truncate" style="color: var(--color-text)">{{ node.node_name }}</span>
-                          <span class="ml-auto text-xs font-mono font-bold" style="color: var(--color-primary)">{{ node.level }}/120</span>
-                        </div>
-                        <div class="h-1.5 rounded-full mt-2 overflow-hidden" style="background: var(--color-surface-3)">
-                          <div class="h-full rounded-full bg-[var(--color-primary)]" [style.width.%]="(node.level / 120) * 100"></div>
-                        </div>
-                        @if (specializationEditing() && canManageSpecializations()) {
-                          <label class="sr-only" [for]="'spec-' + node.node_key">Livello {{ node.node_name }}</label>
-                          <input class="input input--sm w-full mt-2" [id]="'spec-' + node.node_key" type="number" min="0" max="120" step="1" [value]="node.level" (input)="updateSpecializationLevel(node.node_key, $event)" />
-                        }
-                      </div>
-                    } @empty {
-                      <p class="text-sm col-span-full" style="color: var(--color-text-secondary)">Nessun nodo trovato.</p>
-                    }
-                  </div>
-                </section>
-              }
-            </div>
-            @if (specializationEditing() && canManageSpecializations()) {
-              <div class="flex justify-end gap-2 mt-4 pt-4 border-t" style="border-color: var(--color-border)">
-                <button type="button" class="btn btn--ghost btn--sm" (click)="toggleSpecializationEditing()">Annulla</button>
-                <button type="button" class="btn btn--primary btn--sm" (click)="saveSpecializations()" [disabled]="specSaving()">
-                  {{ specSaving() ? 'Salvataggio...' : 'Salva specializzazioni' }}
-                </button>
-              </div>
-            }
-          }
+          <app-destiny-board
+            [nodes]="specializationNodes()"
+            [editable]="canManageSpecializations()"
+            [loading]="specLoading()"
+            [loadFailed]="specLoadFailed()"
+            [saving]="specSaving()"
+            (retry)="loadSpecializations()"
+            (save)="saveSpecializations($event)"
+          />
         </section>
 
         <!-- Warns Section -->
@@ -709,27 +627,7 @@ export class UserDetailPage {
   protected readonly specLoading = signal(false);
   protected readonly specLoadFailed = signal(false);
   protected readonly specSaving = signal(false);
-  protected readonly specializationEditing = signal(false);
-  protected readonly specSearch = signal('');
-  protected readonly specCategory = signal<AlbionCombatCategory | 'all'>('all');
-  protected readonly specializationNodes = signal<SpecializationNode[]>([]);
-
-  protected readonly specializationGroups = computed<SpecializationGroup[]>(() => {
-    const query = this.specSearch().trim().toLowerCase();
-    const category = this.specCategory();
-    return (['weapon', 'armor'] as const)
-      .filter((value) => category === 'all' || category === value)
-      .map((value) => ({
-        category: value,
-        items: this.specializationNodes().filter((node) =>
-          node.category === value && (!query || node.node_name.toLowerCase().includes(query)),
-        ),
-      }));
-  });
-
-  protected readonly masteredSpecializations = computed(
-    () => this.specializationNodes().filter((node) => node.level > 0).length,
-  );
+  protected readonly specializationNodes = signal<DestinyItemNode[]>([]);
 
   // Albion Link Management State
   protected readonly linkDialogOpen = signal(false);
@@ -788,7 +686,6 @@ export class UserDetailPage {
       untracked(() => {
         this.editing.set(false);
         this.closeConfirm();
-        this.specializationEditing.set(false);
         this.linkDialogOpen.set(false);
         this.unlinkConfirmOpen.set(false);
         this.playerIntel.set(null);
@@ -837,34 +734,11 @@ export class UserDetailPage {
     return new Date(value).toLocaleString();
   }
 
-  protected updateSpecSearch(event: Event): void {
-    this.specSearch.set((event.target as HTMLInputElement).value);
-  }
-
-  protected updateSpecCategory(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
-    this.specCategory.set(value === 'weapon' || value === 'armor' ? value : 'all');
-  }
-
-  protected updateSpecializationLevel(nodeKey: string, event: Event): void {
-    const level = Number((event.target as HTMLInputElement).value);
-    this.specializationNodes.update((nodes) =>
-      nodes.map((node) => (node.node_key === nodeKey ? { ...node, level } : node)),
-    );
-  }
-
-  protected toggleSpecializationEditing(): void {
-    if (!this.canManageSpecializations()) return;
-    this.specializationEditing.update((editing) => !editing);
-    if (!this.specializationEditing()) void this.loadSpecializations();
-  }
-
-  protected async saveSpecializations(): Promise<void> {
+  protected async saveSpecializations(nodes: DestinyItemNode[]): Promise<void> {
     const member = this.member();
     if (!member || !this.canManageSpecializations() || this.specSaving()) return;
-    const nodes = this.specializationNodes();
     if (nodes.some((node) => !Number.isInteger(node.level) || node.level < 0 || node.level > 120)) {
-      this.toasts.error('Ogni livello deve essere un numero intero tra 0 e 120');
+      this.toasts.error(this.t('destiny.invalidLevel'));
       return;
     }
     this.specSaving.set(true);
@@ -881,13 +755,15 @@ export class UserDetailPage {
         updated.push(...result);
       }
       const updatedByKey = new Map(
-        updated.map((row) => [normalizeAlbionSpecializationKey(row.node_key), row]),
+        updated.map((row) => [normalizeAlbionSpecializationKey(row.node_key), row.level]),
       );
-      this.specializationNodes.update((current) =>
-        current.map((node) => ({ ...node, level: updatedByKey.get(node.node_key)?.level ?? node.level })),
+      this.specializationNodes.set(
+        nodes.map((node) => ({
+          ...node,
+          level: updatedByKey.get(node.node_key) ?? node.level,
+        })),
       );
-      this.specializationEditing.set(false);
-      this.toasts.success('Specializzazioni salvate');
+      this.toasts.success(this.t('destiny.saved'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
@@ -1049,55 +925,6 @@ export class UserDetailPage {
     }
   }
 
-  private setSpecializationNodes(
-    saved: UserSpecialization[],
-    previous: readonly SpecializationNode[] = [],
-    catalog: readonly OpenAlbionItem[] = [],
-  ): void {
-    const savedByKey = new Map<string, UserSpecialization>();
-    for (const row of saved) {
-      const nodeKey = normalizeAlbionSpecializationKey(row.node_key);
-      if (!nodeKey.includes(':')) continue;
-      const normalizedRow = {
-        ...row,
-        node_key: nodeKey,
-        node_name: normalizeAlbionEquipmentName(nodeKey.split(':').slice(1).join(':')),
-      };
-      const current = savedByKey.get(nodeKey);
-      if (!current || normalizedRow.level > current.level) {
-        savedByKey.set(nodeKey, normalizedRow);
-      }
-    }
-    const previousByKey = new Map(previous.map((row) => [row.node_key, row]));
-    const nodes: SpecializationNode[] = deduplicateAlbionCombatCatalog(catalog).flatMap((item) => {
-      const category = item.type === 'armor' || item.type === 'weapon' ? item.type : null;
-      const identifier = item.identifier?.trim();
-      if (!category || !identifier) return [];
-      const nodeKey = `${category}:${identifier}`;
-      const stored = savedByKey.get(nodeKey);
-      const draft = previousByKey.get(nodeKey);
-      return [{
-        node_key: nodeKey,
-        node_name: normalizeAlbionEquipmentName(identifier, item.name),
-        category,
-        level: draft?.level ?? stored?.level ?? 0,
-        icon: item.icon ?? null,
-        identifier,
-      }];
-    });
-    const known = new Set(nodes.map((node) => node.node_key));
-    for (const row of savedByKey.values()) {
-      if (!known.has(row.node_key) && (row.category === 'weapon' || row.category === 'armor')) {
-        nodes.push({
-          ...row,
-          icon: null,
-          identifier: row.node_key.split(':').slice(1).join(':'),
-        });
-      }
-    }
-    this.specializationNodes.set(nodes);
-  }
-
   protected async loadSpecializations(userId = Number(this.userId())): Promise<void> {
     if (!Number.isFinite(userId) || userId <= 0) return;
     this.specLoading.set(true);
@@ -1107,10 +934,10 @@ export class UserDetailPage {
         firstValueFrom(this.api.get<UserSpecialization[]>(`api/users/${userId}/specializations`)),
         this.albionCatalog.load(),
       ]);
-      this.setSpecializationNodes(saved, [], catalog);
+      this.specializationNodes.set(mergeSpecializationNodes(saved, catalog));
     } catch (error) {
       this.specLoadFailed.set(true);
-      this.toasts.error(error instanceof Error ? error.message : 'Impossibile caricare le specializzazioni');
+      this.toasts.error(error instanceof Error ? error.message : this.t('destiny.loadError'));
     } finally {
       this.specLoading.set(false);
     }
