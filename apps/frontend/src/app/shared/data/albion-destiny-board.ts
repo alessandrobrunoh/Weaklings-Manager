@@ -4,6 +4,7 @@ import type {
   UserSpecialization,
 } from '../../core/models/api.models';
 import {
+  albionCombatIconUrl,
   albionSpecializationIdentifier,
   deduplicateAlbionCombatCatalog,
   normalizeAlbionEquipmentName,
@@ -282,7 +283,7 @@ export function mergeSpecializationNodes(
         node_name: normalizeAlbionEquipmentName(identifier, item.name),
         category,
         level: draft?.level ?? stored?.level ?? 0,
-        icon: item.icon ?? null,
+        icon: albionCombatIconUrl(identifier),
         identifier,
       },
     ];
@@ -296,7 +297,7 @@ export function mergeSpecializationNodes(
         node_name: row.node_name,
         category: row.category,
         level: previousByKey.get(row.node_key)?.level ?? row.level,
-        icon: null,
+        icon: albionCombatIconUrl(row.node_key.split(':').slice(1).join(':')),
         identifier: row.node_key.split(':').slice(1).join(':'),
       });
     }

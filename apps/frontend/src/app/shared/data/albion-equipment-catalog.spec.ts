@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { OpenAlbionItem } from '../../core/models/api.models';
 import {
+  albionCombatIconUrl,
   deduplicateAlbionCombatCatalog,
   filterAlbionEquipmentCatalog,
   normalizeAlbionEquipmentName,
@@ -70,5 +71,12 @@ describe('Albion equipment catalog names', () => {
       { identifier: 'MAIN_CURSEDSTAFF', name: 'Cursed Staff' },
       { identifier: '2H_CURSEDSTAFF', name: 'Great Cursed Staff' },
     ]);
+    expect(nodes[0].icon).toBe(albionCombatIconUrl('MAIN_CURSEDSTAFF'));
+    expect(nodes[0].icon).toContain('T8_MAIN_CURSEDSTAFF');
+  });
+
+  it('asks the render CDN for T8 unique names, not T1', () => {
+    expect(albionCombatIconUrl('T1_2H_BOW')).toContain('T8_2H_BOW');
+    expect(albionCombatIconUrl('2H_BOW_HELL')).toContain('T8_2H_BOW_HELL');
   });
 });

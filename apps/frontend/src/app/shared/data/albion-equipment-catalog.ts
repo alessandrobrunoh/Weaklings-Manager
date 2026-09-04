@@ -866,10 +866,12 @@ export function deduplicateAlbionCombatCatalog(catalog: readonly OpenAlbionItem[
      const key = albionSpecializationKey(item);
      if (seen.has(key)) return [];
      seen.add(key);
-     return [{
+     const baseIdentifier = albionSpecializationIdentifier(identifier);
+    return [{
        ...item,
-       identifier: albionSpecializationIdentifier(identifier),
+       identifier: baseIdentifier,
        name: normalizeAlbionEquipmentName(identifier, item.name),
+       icon: albionCombatIconUrl(baseIdentifier),
      }];
    });
  }
@@ -883,6 +885,18 @@ export function deduplicateAlbionCombatCatalog(catalog: readonly OpenAlbionItem[
 export function albionEquipmentIconUrl(identifier: string, quality = 4): string {
   const grade = quality >= 1 && quality <= 5 ? quality : 4;
   return `https://render.albiononline.com/v1/item/${encodeURIComponent(identifier)}.png?quality=${grade}&size=96`;
+}
+
+/**
+ * Render URL for a combat specialization node.
+ *
+ * Albion's CDN keys items as `T{n}_{BASE}` (e.g. `T8_2H_BOW`). T1 unique names
+ * 404 for most weapons — hunter/mage lines don't exist until T3/T4 — so the
+ * Destiny Board always requests T8, which every combat item has.
+ */
+export function albionCombatIconUrl(identifier: string, quality = 4): string {
+  const base = albionSpecializationIdentifier(identifier);
+  return albionEquipmentIconUrl(`T8_${base}`, quality);
 }
 
 function toOpenAlbionItem(fileName: string, tier: string): OpenAlbionItem {
