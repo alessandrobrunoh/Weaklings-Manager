@@ -826,6 +826,8 @@ export const it: TranslationDict = {
   'tests.importBuild': 'Importa da build',
   'tests.searchBuildPlaceholder': 'Cerca build…',
   'tests.importedFromBuild': 'Aggiunto un gruppo da {name}',
+  'tests.autoFillQwe': 'Auto-compila Q/W/E',
+  'tests.autoFilledCasts': 'Aggiunti {count} cast — scegli i bersagli nella tab Timeline',
   'tests.casts': 'Timeline',
   'tests.addCast': 'Aggiungi cast',
   'tests.noCasts': 'Ancora nessun cast. Aggiungine uno per dichiarare il primo colpo.',

@@ -754,6 +754,8 @@ export const fr: TranslationDict = {
   'tests.importBuild': 'Importer depuis une build',
   'tests.searchBuildPlaceholder': 'Rechercher des builds…',
   'tests.importedFromBuild': 'Groupe ajouté depuis {name}',
+  'tests.autoFillQwe': 'Auto-remplir Q/W/E',
+  'tests.autoFilledCasts': '{count} lancers ajoutés — choisissez leurs cibles dans l\'onglet Chronologie',
   'tests.casts': 'Chronologie',
   'tests.addCast': 'Ajouter un lancer',
   'tests.noCasts': 'Aucun lancer pour l\'instant. Ajoutez-en un pour déclarer le premier coup.',

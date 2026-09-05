@@ -826,6 +826,8 @@ export const es: TranslationDict = {
   'tests.importBuild': 'Importar desde build',
   'tests.searchBuildPlaceholder': 'Buscar builds…',
   'tests.importedFromBuild': 'Grupo añadido desde {name}',
+  'tests.autoFillQwe': 'Autocompletar Q/W/E',
+  'tests.autoFilledCasts': 'Se añadieron {count} lanzamientos — elige sus objetivos en la pestaña Línea de tiempo',
   'tests.casts': 'Línea de tiempo',
   'tests.addCast': 'Añadir lanzamiento',
   'tests.noCasts': 'Todavía no hay lanzamientos. Añade uno para declarar el primer golpe.',

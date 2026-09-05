@@ -238,6 +238,16 @@ interface GroupedSpellOptions {
                               >
                                 {{ group.item_id ? t('tests.changeWeapon') : t('tests.pickWeapon') }}
                               </button>
+                              @if (group.item_id) {
+                                <button
+                                  type="button"
+                                  class="btn btn--tonal btn--sm whitespace-nowrap"
+                                  [disabled]="!canManage()"
+                                  (click)="autoFillQwe(i)"
+                                >
+                                  {{ t('tests.autoFillQwe') }}
+                                </button>
+                              }
                             </div>
                           </td>
                           <td>
@@ -913,6 +923,33 @@ export class TestDetailPage {
         group: slot.label,
         options: slot.choices.map((choice) => ({ value: choice.id, label: choice.name })),
       }));
+  }
+
+  /**
+   * Adds one cast per active ability (Q/W/E) this group's weapon offers, staggered a second apart
+   * so they don't all land at once. Passives are skipped — nothing to "cast". Targets are left
+   * empty on purpose: which units a cast hits is not something this tool can guess.
+   */
+  protected autoFillQwe(groupIndex: number): void {
+    const group = this.draft().groups[groupIndex];
+    if (!group) return;
+    const activeSlots = this.groupedSpellOptionsFor(group.id).filter(
+      (slot) => !slot.group.startsWith('Passive'),
+    );
+    const newCasts: ScenarioDeclaredCast[] = activeSlots
+      .map((slot) => slot.options[0])
+      .filter((option): option is { value: string; label: string } => option !== undefined)
+      .map((option, index) => ({
+        caster_group_id: group.id,
+        spell_id: option.value,
+        cast_at: index,
+        target_ids: [],
+        attacker_style: 'melee',
+      }));
+    if (newCasts.length === 0) return;
+    this.draft.update((def) => ({ ...def, casts: [...def.casts, ...newCasts] }));
+    this.activeTab.set('timeline');
+    this.toasts.success(this.t('tests.autoFilledCasts', { count: newCasts.length }));
   }
 
   // ---- Casts ----

@@ -834,6 +834,8 @@ export const en = {
   'tests.importBuild': 'Import from build',
   'tests.searchBuildPlaceholder': 'Search builds…',
   'tests.importedFromBuild': 'Added a group from {name}',
+  'tests.autoFillQwe': 'Auto-fill Q/W/E',
+  'tests.autoFilledCasts': 'Added {count} casts — pick their targets on the Timeline tab',
   'tests.casts': 'Timeline',
   'tests.addCast': 'Add cast',
   'tests.noCasts': 'No casts yet. Add one to declare the first hit.',
