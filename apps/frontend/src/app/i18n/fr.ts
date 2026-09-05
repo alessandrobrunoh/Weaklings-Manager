@@ -762,6 +762,8 @@ export const fr: TranslationDict = {
   'tests.importedFromScout': '{count} groupes ennemis ajoutés depuis {name}',
   'tests.scoutImportWarning':
     'Import scout : seules les armes sont observées. L\'armure et les compétences sont une hypothèse — vérifiez-les.',
+  'tests.autoFillQwe': 'Auto-remplir Q/W/E',
+  'tests.autoFilledCasts': '{count} lancers ajoutés — choisissez leurs cibles dans l\'onglet Chronologie',
   'tests.casts': 'Chronologie',
   'tests.addCast': 'Ajouter un lancer',
   'tests.noCasts': 'Aucun lancer pour l\'instant. Ajoutez-en un pour déclarer le premier coup.',

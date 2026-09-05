@@ -842,6 +842,8 @@ export const en = {
   'tests.importedFromScout': 'Added {count} enemy groups from {name}',
   'tests.scoutImportWarning':
     'Scout import: only weapons are observed. Armor and abilities are a guess — check them.',
+  'tests.autoFillQwe': 'Auto-fill Q/W/E',
+  'tests.autoFilledCasts': 'Added {count} casts — pick their targets on the Timeline tab',
   'tests.casts': 'Timeline',
   'tests.addCast': 'Add cast',
   'tests.noCasts': 'No casts yet. Add one to declare the first hit.',

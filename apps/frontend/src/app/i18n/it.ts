@@ -834,6 +834,8 @@ export const it: TranslationDict = {
   'tests.importedFromScout': 'Aggiunti {count} gruppi nemici da {name}',
   'tests.scoutImportWarning':
     'Import scout: solo le armi sono osservate. Armatura e abilità sono ipotesi — verificale.',
+  'tests.autoFillQwe': 'Auto-compila Q/W/E',
+  'tests.autoFilledCasts': 'Aggiunti {count} cast — scegli i bersagli nella tab Timeline',
   'tests.casts': 'Timeline',
   'tests.addCast': 'Aggiungi cast',
   'tests.noCasts': 'Ancora nessun cast. Aggiungine uno per dichiarare il primo colpo.',
