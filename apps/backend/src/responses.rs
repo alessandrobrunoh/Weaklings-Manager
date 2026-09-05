@@ -299,6 +299,46 @@ pub struct ApiResponseSimulate {
     pub data: crate::modules::combat::models::SimulateView,
 }
 
+/// `OpenAPI` schema wrapper for a scenario version response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseScenarioDetail {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The scenario version.
+    pub data: crate::modules::combat::models::ScenarioDetail,
+}
+
+/// `OpenAPI` schema wrapper for a scenario list response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseScenarioSummaryList {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The list of scenario versions.
+    pub data: Vec<crate::modules::combat::models::ScenarioSummary>,
+}
+
+/// `OpenAPI` schema wrapper for a run response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseRunDetail {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The pinned run.
+    pub data: crate::modules::combat::models::RunDetail,
+}
+
+/// `OpenAPI` schema wrapper for a run list response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseRunSummaryList {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The list of runs.
+    pub data: Vec<crate::modules::combat::models::RunSummary>,
+}
+
 /// `OpenAPI` schema wrapper for the mastery-groups mapping response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseMasteryGroups {

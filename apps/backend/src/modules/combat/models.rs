@@ -199,3 +199,84 @@ pub struct SimulateView {
     /// modelled at the time this was run.
     pub dataset_version: DatasetVersion,
 }
+
+/// A saved test's unit groups and timeline — the shape stored, verbatim, in `definition_json`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+pub struct ScenarioDefinition {
+    pub groups: Vec<super::scenario::UnitGroup>,
+    pub casts: Vec<super::scenario::DeclaredCast>,
+}
+
+/// Request body to create a combat test scenario.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct CreateScenarioRequest {
+    pub name: String,
+    #[serde(default)]
+    pub definition: ScenarioDefinition,
+}
+
+/// Request body to edit a scenario version in place.
+///
+/// A scenario is a scratch document an officer iterates on constantly — unlike a build or a comp,
+/// every group and timeline tweak does not need its own version. [`Self::name`] renames every
+/// version in the group at once, matching how a build/comp rename already works; use
+/// `POST .../versions` when the point is to keep the current state around for comparison.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct UpdateScenarioRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub definition: Option<ScenarioDefinition>,
+}
+
+/// A scenario version, without its definition — for list views.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct ScenarioSummary {
+    pub id: i64,
+    pub name: String,
+    pub version: i32,
+    pub created_by: i64,
+    pub created_by_username: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub archived_at: Option<String>,
+    /// How many times this version has been run.
+    pub run_count: i64,
+}
+
+/// A single version reference, for [`ScenarioDetail::versions`].
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct ScenarioVersionRef {
+    pub id: i64,
+    pub version: i32,
+}
+
+/// The full scenario version, with its definition.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct ScenarioDetail {
+    #[serde(flatten)]
+    pub summary: ScenarioSummary,
+    pub definition: ScenarioDefinition,
+    /// Every version sharing this scenario's name, oldest first.
+    pub versions: Vec<ScenarioVersionRef>,
+}
+
+/// One pinned run of a scenario version, for list views.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct RunSummary {
+    pub id: i64,
+    pub scenario_id: i64,
+    pub engine_version: i32,
+    pub dataset_commit: String,
+    pub ran_by: i64,
+    pub ran_by_username: String,
+    pub ran_at: String,
+}
+
+/// A pinned run, with its full resolved result.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct RunDetail {
+    #[serde(flatten)]
+    pub summary: RunSummary,
+    pub result: super::scenario::ScenarioResult,
+}
