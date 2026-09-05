@@ -888,6 +888,19 @@ export const es: TranslationDict = {
   'users.detail.back': 'Volver a miembros',
   'users.detail.notFound': 'Este miembro no se encontró.',
   'users.detail.profile': 'Perfil',
+  'users.roles.title': 'Roles',
+  'users.roles.hint':
+    'Los roles del gestional están vinculados a Discord en la página Roles. Añadir o quitar un rol aquí lo actualiza en Discord al instante. El rol de staff genérico se aplica automáticamente a los rangos staff-eligible.',
+  'users.roles.add': 'Añadir rol',
+  'users.roles.added': 'Rol asignado en Discord.',
+  'users.roles.removed': 'Rol eliminado en Discord.',
+  'users.roles.empty': 'Sin roles de Discord vinculados.',
+  'users.roles.staffAuto': 'Ping de staff (automático)',
+  'users.roles.remove': 'Quitar rol',
+  'users.roles.noDiscord':
+    'Este miembro aún no tiene id de Discord. Debe iniciar sesión una vez antes de asignar roles.',
+  'users.roles.unlinked': 'No vinculado a Discord',
+  'users.roles.loadError': 'No se pudieron cargar los roles de Discord de este miembro.',
   'users.specializations': 'Especialización de combate',
   'events.detail.specialization': 'Nivel de especialización',
 
@@ -1116,7 +1129,7 @@ export const es: TranslationDict = {
   'admin.hub.subtitle':
     'Elige un panel para configurar autorización, Discord, XP de temporada, regears e islas.',
   'admin.hub.panels': 'Paneles de administración',
-  'admin.hub.rolesHint': 'Crea roles del gestional y vincúlalos a Discord.',
+  'admin.hub.rolesHint': 'Crea roles del gestional, vincúlalos a Discord y marca el rol de staff genérico.',
   'admin.hub.permissionsHint': 'Concede o quita capacidades por rol.',
   'admin.hub.discordHint': 'Canales, rol de ping y el rol automático de miembros.',
   'admin.hub.applicationsHint':
@@ -1253,12 +1266,18 @@ export const es: TranslationDict = {
   'admin.islands.detail.viewDetails': 'Ver detalles',
   'admin.roles.title': 'Roles del gestional',
   'admin.roles.hint':
-    'Crea un rol y vincúlalo a un rol de Discord de la lista. Quien tenga ese rol en Discord recibe estos permisos al recargar. Marca un rol como Predeterminado para los nuevos miembros.',
+    'Crea un rol y vincúlalo a un rol de Discord de la lista. Quien tenga ese rol en Discord recibe estos permisos al recargar. Marca un rol como Predeterminado para los nuevos miembros, uno como Staff para el ping @staff, y Staff-eligible en Officer/Council/Recruiter para que lo reciban automáticamente.',
   'admin.roles.discordId': 'Rol de Discord',
   'admin.roles.discordIdPlaceholder': 'Buscar roles de Discord',
   'admin.roles.default': 'Por defecto',
   'admin.roles.defaultHint':
     'Los nuevos miembros reciben este rol en la app. Si hay un rol de Discord vinculado, también se asigna al aceptar una solicitud.',
+  'admin.roles.staff': 'Staff',
+  'admin.roles.staffHint':
+    'Rol de staff genérico. El rol de Discord vinculado se asigna automáticamente a los miembros staff-eligible para poder pingar @staff en lugar de cada rango.',
+  'admin.roles.staffEligible': 'Staff-eligible',
+  'admin.roles.staffEligibleHint':
+    'Quien reciba este rol también recibe el rol de Discord de staff genérico.',
   'admin.roles.newName': 'Nombre del nuevo rol',
   'admin.roles.create': 'Crear rol',
   'admin.roles.created': 'Rol creado.',

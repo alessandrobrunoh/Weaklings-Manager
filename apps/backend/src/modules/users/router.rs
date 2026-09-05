@@ -2,8 +2,12 @@
 //!
 //! Exposes HTTP endpoints for interacting with user resources.
 
+use super::member_roles::{
+    AssignUserRoleRequest, UserRolesView, add_user_role, list_user_roles, remove_user_role,
+};
 use super::service::{UserFilters, UserProfile, UserService};
 use super::specializations::{UpdateSpecializationsRequest, UserSpecializationView};
+use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedUserProfile, PaginationParams};
@@ -11,7 +15,7 @@ use crate::responses::{ApiResponse, ApiResponseUserMetrics, ApiResponseUserProfi
 use axum::{
     Extension, Json, Router,
     extract::{Path, Query},
-    routing::get,
+    routing::{delete, get},
 };
 
 /// Router query parameters for listing users, combining pagination and filtering.
@@ -56,6 +60,8 @@ pub fn router() -> Router {
             "/{user_id}/specializations",
             get(get_user_specializations).put(update_user_specializations),
         )
+        .route("/{user_id}/roles", get(get_user_roles).post(post_user_role))
+        .route("/{user_id}/roles/{role_id}", delete(delete_user_role))
 }
 
 /// Retrieve the profile of the currently authenticated user.
@@ -259,6 +265,127 @@ pub async fn get_user(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("user {user_id} not found")))?;
     Ok(Json(ApiResponse::new(profile)))
+}
+
+/// List a member's Discord-linked gestionale roles.
+#[utoipa::path(
+    get,
+    path = "/api/users/{user_id}/roles",
+    tag = "users",
+    summary = "List a member's gestionale roles as held on Discord",
+    description = "Returns every gestionale role with `held` reflecting the member's current \
+        Discord roles, using the links configured on `/roles`. The unique generic staff role is \
+        not assignable: it is applied automatically to staff-eligible roles. Open to any \
+        authenticated user, matching `GET /api/users/{user_id}`.",
+    security(("session_cookie" = [])),
+    params(("user_id" = u64, Path, description = "Internal user id")),
+    responses(
+        (status = 200, description = "Roles retrieved", body = UserRolesView),
+        (status = 401, description = "Unauthorized", body = ProblemDetails),
+        (status = 404, description = "User not found", body = ProblemDetails),
+        (status = 502, description = "Discord API unavailable", body = ProblemDetails)
+    )
+)]
+pub async fn get_user_roles(
+    _user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Path(user_id): Path<u64>,
+) -> Result<Json<ApiResponse<UserRolesView>>, AppError> {
+    let discord = super::member_roles::LiveDiscord::from_config(&cfg)?;
+    Ok(Json(ApiResponse::new(
+        list_user_roles(&db, &discord, user_id).await?,
+    )))
+}
+
+/// Add a linked gestionale role to a member on Discord.
+#[utoipa::path(
+    post,
+    path = "/api/users/{user_id}/roles",
+    tag = "users",
+    summary = "Add a gestionale role to a member and sync it to Discord",
+    description = "Assigns the Discord role linked to the given gestionale role. If that role is \
+        staff-eligible, the unique generic staff Discord role is also assigned so `@staff` \
+        reaches them. Requires `roles.manage`. Cannot assign a role above the caller's own \
+        priority, except for the super-admin.",
+    security(("session_cookie" = ["roles.manage"])),
+    params(("user_id" = u64, Path, description = "Internal user id")),
+    request_body = AssignUserRoleRequest,
+    responses(
+        (status = 200, description = "Role assigned", body = UserRolesView),
+        (status = 400, description = "Role is unlinked, is the generic staff role, or the member has no Discord id", body = ProblemDetails),
+        (status = 403, description = "Forbidden", body = ProblemDetails),
+        (status = 404, description = "User or role not found", body = ProblemDetails),
+        (status = 502, description = "Discord API unavailable", body = ProblemDetails)
+    )
+)]
+pub async fn post_user_role(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Path(user_id): Path<u64>,
+    Json(body): Json<AssignUserRoleRequest>,
+) -> Result<Json<ApiResponse<UserRolesView>>, AppError> {
+    user.require(&perms, Permission::RolesManage).await?;
+    let discord = super::member_roles::LiveDiscord::from_config(&cfg)?;
+    Ok(Json(ApiResponse::new(
+        add_user_role(
+            &db,
+            &discord,
+            user.user_id,
+            user.is_superadmin(),
+            &user.roles,
+            user_id,
+            &body.role_id,
+        )
+        .await?,
+    )))
+}
+
+/// Remove a linked gestionale role from a member on Discord.
+#[utoipa::path(
+    delete,
+    path = "/api/users/{user_id}/roles/{role_id}",
+    tag = "users",
+    summary = "Remove a gestionale role from a member and sync it to Discord",
+    description = "Revokes the Discord role linked to the given gestionale role. If the member \
+        no longer holds any staff-eligible role, the generic staff Discord role is also removed. \
+        Requires `roles.manage`.",
+    security(("session_cookie" = ["roles.manage"])),
+    params(
+        ("user_id" = u64, Path, description = "Internal user id"),
+        ("role_id" = String, Path, description = "Internal role id")
+    ),
+    responses(
+        (status = 200, description = "Role removed", body = UserRolesView),
+        (status = 400, description = "Role is unlinked or is the generic staff role", body = ProblemDetails),
+        (status = 403, description = "Forbidden", body = ProblemDetails),
+        (status = 404, description = "User or role not found", body = ProblemDetails),
+        (status = 502, description = "Discord API unavailable", body = ProblemDetails)
+    )
+)]
+pub async fn delete_user_role(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Path((user_id, role_id)): Path<(u64, String)>,
+) -> Result<Json<ApiResponse<UserRolesView>>, AppError> {
+    user.require(&perms, Permission::RolesManage).await?;
+    let discord = super::member_roles::LiveDiscord::from_config(&cfg)?;
+    Ok(Json(ApiResponse::new(
+        remove_user_role(
+            &db,
+            &discord,
+            user.user_id,
+            user.is_superadmin(),
+            &user.roles,
+            user_id,
+            &role_id,
+        )
+        .await?,
+    )))
 }
 
 /// Create a new user profile.

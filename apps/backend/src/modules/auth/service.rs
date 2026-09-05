@@ -359,6 +359,8 @@ mod tests {
             priority,
             discord_role_id: discord_role_id.map(str::to_string),
             is_default,
+            is_staff: false,
+            grants_staff: false,
         }
     }
 

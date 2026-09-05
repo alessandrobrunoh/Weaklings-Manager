@@ -420,6 +420,8 @@ impl AdminService {
                     priority: r.priority,
                     discord_role_id: r.discord_role_id,
                     is_default: r.is_default,
+                    is_staff: r.is_staff,
+                    grants_staff: r.grants_staff,
                     permissions,
                 }
             })
@@ -460,6 +462,12 @@ impl AdminService {
     ) -> Result<PermissionMatrix, AppError> {
         let name = normalize_role_name(&req.name)?;
         let discord_role_id = parse_discord_role_id(req.discord_role_id.as_deref())?;
+        let (is_staff, grants_staff) = normalize_staff_flags(
+            &discord_role_id,
+            req.is_default,
+            req.is_staff,
+            req.grants_staff,
+        )?;
 
         ensure_name_available(db, &name, None).await?;
         if let Some(snowflake) = &discord_role_id {
@@ -472,14 +480,21 @@ impl AdminService {
             priority: Set(req.priority),
             discord_role_id: Set(discord_role_id.clone()),
             is_default: Set(false),
+            is_staff: Set(false),
+            grants_staff: Set(false),
         };
 
         let txn = db.begin().await?;
         if req.is_default {
             unset_defaults(&txn).await?;
         }
+        if is_staff {
+            unset_staff(&txn).await?;
+        }
         let mut model = model;
         model.is_default = Set(req.is_default);
+        model.is_staff = Set(is_staff);
+        model.grants_staff = Set(grants_staff);
         let inserted = model.insert(&txn).await.map_err(map_role_write_err)?;
         txn.commit().await?;
 
@@ -495,6 +510,8 @@ impl AdminService {
                 "priority": inserted.priority,
                 "discord_role_id": inserted.discord_role_id,
                 "is_default": inserted.is_default,
+                "is_staff": inserted.is_staff,
+                "grants_staff": inserted.grants_staff,
             })),
         )
         .await;
@@ -534,10 +551,31 @@ impl AdminService {
 
         let next_priority = req.priority.unwrap_or(existing.priority);
         let next_default = req.is_default.unwrap_or(existing.is_default);
+        // Unlinking clears staff flags unless the request explicitly sets them true
+        // (which `normalize_staff_flags` then rejects).
+        let requested_staff = if next_discord.is_none() {
+            req.is_staff.unwrap_or(false)
+        } else {
+            req.is_staff.unwrap_or(existing.is_staff)
+        };
+        let requested_grants = if next_discord.is_none() {
+            req.grants_staff.unwrap_or(false)
+        } else {
+            req.grants_staff.unwrap_or(existing.grants_staff)
+        };
+        let (next_staff, next_grants) = normalize_staff_flags(
+            &next_discord,
+            next_default,
+            requested_staff,
+            requested_grants,
+        )?;
 
         let txn = db.begin().await?;
         if next_default && !existing.is_default {
             unset_defaults(&txn).await?;
+        }
+        if next_staff && !existing.is_staff {
+            unset_staff(&txn).await?;
         }
 
         let mut active: role::ActiveModel = existing.clone().into();
@@ -545,6 +583,8 @@ impl AdminService {
         active.priority = Set(next_priority);
         active.discord_role_id = Set(next_discord.clone());
         active.is_default = Set(next_default);
+        active.is_staff = Set(next_staff);
+        active.grants_staff = Set(next_grants);
         active.update(&txn).await.map_err(map_role_write_err)?;
         txn.commit().await?;
 
@@ -560,6 +600,8 @@ impl AdminService {
                 "priority": next_priority,
                 "discord_role_id": next_discord,
                 "is_default": next_default,
+                "is_staff": next_staff,
+                "grants_staff": next_grants,
             })),
         )
         .await;
@@ -893,6 +935,46 @@ async fn unset_defaults<C: ConnectionTrait>(db: &C) -> Result<(), AppError> {
     Ok(())
 }
 
+async fn unset_staff<C: ConnectionTrait>(db: &C) -> Result<(), AppError> {
+    let current = role::Entity::find()
+        .filter(role::Column::IsStaff.eq(true))
+        .all(db)
+        .await?;
+    for row in current {
+        let mut active: role::ActiveModel = row.into();
+        active.is_staff = Set(false);
+        active.update(db).await?;
+    }
+    Ok(())
+}
+
+fn normalize_staff_flags(
+    discord_role_id: &Option<String>,
+    is_default: bool,
+    is_staff: bool,
+    grants_staff: bool,
+) -> Result<(bool, bool), AppError> {
+    if discord_role_id.is_none() {
+        if is_staff {
+            return Err(AppError::Validation(
+                "the generic staff role must be linked to a Discord role".to_string(),
+            ));
+        }
+        if grants_staff {
+            return Err(AppError::Validation(
+                "a staff-eligible role must be linked to a Discord role".to_string(),
+            ));
+        }
+        return Ok((false, false));
+    }
+    if is_staff && is_default {
+        return Err(AppError::Validation(
+            "the generic staff role cannot also be the default fallback".to_string(),
+        ));
+    }
+    Ok((is_staff, grants_staff))
+}
+
 fn map_role_write_err(err: sea_orm::DbErr) -> AppError {
     let text = err.to_string();
     if text.to_ascii_lowercase().contains("unique") {
@@ -1093,6 +1175,8 @@ mod tests {
                 priority: None,
                 discord_role_id: Some("123456789012345679".into()),
                 is_default: None,
+                is_staff: None,
+                grants_staff: None,
             },
         )
         .await
@@ -1220,6 +1304,8 @@ mod tests {
                 priority: 70,
                 discord_role_id: Some("123456789012345678".into()),
                 is_default: false,
+                is_staff: false,
+                grants_staff: false,
             },
         )
         .await
@@ -1251,6 +1337,8 @@ mod tests {
                 priority: 1,
                 discord_role_id: Some(snowflake.into()),
                 is_default: false,
+                is_staff: false,
+                grants_staff: false,
             },
         )
         .await
@@ -1263,6 +1351,8 @@ mod tests {
                 priority: 2,
                 discord_role_id: Some(snowflake.into()),
                 is_default: false,
+                is_staff: false,
+                grants_staff: false,
             },
         )
         .await
@@ -1296,6 +1386,8 @@ mod tests {
                 priority: 5,
                 discord_role_id: Some("123456789012345678".into()),
                 is_default: false,
+                is_staff: false,
+                grants_staff: false,
             },
         )
         .await
@@ -1316,11 +1408,125 @@ mod tests {
                 priority: None,
                 discord_role_id: Some(String::new()),
                 is_default: None,
+                is_staff: None,
+                grants_staff: None,
             },
         )
         .await
         .expect("unlink");
         let temp = updated.roles.iter().find(|r| r.role_id == id).unwrap();
         assert_eq!(temp.discord_role_id, None);
+        assert!(!temp.is_staff);
+        assert!(!temp.grants_staff);
+    }
+
+    #[tokio::test]
+    async fn create_role_marks_unique_staff_and_grants_staff() {
+        let db = seed_db().await;
+        let first = AdminService::create_role(
+            &db,
+            1,
+            &CreateRoleRequest {
+                name: "Staff".into(),
+                priority: 40,
+                discord_role_id: Some("123456789012345678".into()),
+                is_default: false,
+                is_staff: true,
+                grants_staff: false,
+            },
+        )
+        .await
+        .expect("create staff");
+        let staff = first
+            .roles
+            .iter()
+            .find(|role| role.role_name == "Staff")
+            .expect("staff role");
+        assert!(staff.is_staff);
+        assert!(!staff.grants_staff);
+
+        let second = AdminService::create_role(
+            &db,
+            1,
+            &CreateRoleRequest {
+                name: "Officer".into(),
+                priority: 50,
+                discord_role_id: Some("123456789012345679".into()),
+                is_default: false,
+                is_staff: true,
+                grants_staff: true,
+            },
+        )
+        .await
+        .expect("move staff flag");
+        let staff = second
+            .roles
+            .iter()
+            .find(|role| role.role_name == "Staff")
+            .expect("previous staff");
+        let officer = second
+            .roles
+            .iter()
+            .find(|role| role.role_name == "Officer")
+            .expect("officer");
+        assert!(!staff.is_staff);
+        assert!(officer.is_staff);
+        assert!(officer.grants_staff);
+    }
+
+    #[tokio::test]
+    async fn staff_flags_require_a_discord_link() {
+        let db = seed_db().await;
+        let err = AdminService::create_role(
+            &db,
+            1,
+            &CreateRoleRequest {
+                name: "Staff".into(),
+                priority: 40,
+                discord_role_id: None,
+                is_default: false,
+                is_staff: true,
+                grants_staff: false,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, AppError::Validation(msg) if msg.contains("staff")));
+
+        let err = AdminService::create_role(
+            &db,
+            1,
+            &CreateRoleRequest {
+                name: "Officer".into(),
+                priority: 50,
+                discord_role_id: None,
+                is_default: false,
+                is_staff: false,
+                grants_staff: true,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, AppError::Validation(msg) if msg.contains("staff-eligible")));
+    }
+
+    #[tokio::test]
+    async fn staff_role_cannot_also_be_default() {
+        let db = seed_db().await;
+        let err = AdminService::create_role(
+            &db,
+            1,
+            &CreateRoleRequest {
+                name: "Staff".into(),
+                priority: 40,
+                discord_role_id: Some("123456789012345678".into()),
+                is_default: true,
+                is_staff: true,
+                grants_staff: false,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, AppError::Validation(msg) if msg.contains("default")));
     }
 }

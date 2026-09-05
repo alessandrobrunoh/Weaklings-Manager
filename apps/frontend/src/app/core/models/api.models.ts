@@ -1994,6 +1994,8 @@ export interface RolePermissionsView {
   priority: number;
   discord_role_id: string | null;
   is_default: boolean;
+  is_staff: boolean;
+  grants_staff: boolean;
   permissions: string[];
 }
 
@@ -2002,6 +2004,8 @@ export interface CreateRoleRequest {
   priority?: number;
   discord_role_id?: string | null;
   is_default?: boolean;
+  is_staff?: boolean;
+  grants_staff?: boolean;
 }
 
 export interface UpdateRoleRequest {
@@ -2009,6 +2013,30 @@ export interface UpdateRoleRequest {
   priority?: number;
   discord_role_id?: string | null;
   is_default?: boolean;
+  is_staff?: boolean;
+  grants_staff?: boolean;
+}
+
+export interface UserRoleAssignmentView {
+  role_id: string;
+  role_name: string;
+  priority: number;
+  discord_role_id: string | null;
+  is_default: boolean;
+  is_staff: boolean;
+  grants_staff: boolean;
+  held: boolean;
+  assignable: boolean;
+}
+
+export interface UserRolesView {
+  discord_id: string | null;
+  highest_role: string;
+  roles: UserRoleAssignmentView[];
+}
+
+export interface AssignUserRoleRequest {
+  role_id: string;
 }
 
 /** The authorization matrix, plus every key that could be granted. */

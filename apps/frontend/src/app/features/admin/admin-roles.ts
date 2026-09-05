@@ -25,6 +25,8 @@ interface RoleDraft {
   priority: number;
   discord_role_id: string;
   is_default: boolean;
+  is_staff: boolean;
+  grants_staff: boolean;
 }
 
 interface NewRoleDraft {
@@ -100,20 +102,52 @@ interface NewRoleDraft {
                       (valueChange)="setRoleDiscordId(role, $event)"
                     />
                   </label>
-                  <label class="flex items-start gap-2 pb-2">
-                    <input
-                      class="checkbox mt-0.5"
-                      type="checkbox"
-                      [checked]="roleDrafts()[role.role_id]?.is_default ?? role.is_default"
-                      (change)="updateRoleDraftDefault(role, $event)"
-                    />
-                    <span>
-                      <span class="text-xs">{{ t('admin.roles.default') }}</span>
-                      <span class="mt-0.5 block text-[11px]" style="color: var(--color-text-secondary)">
-                        {{ t('admin.roles.defaultHint') }}
+                  <div class="flex flex-col gap-2 pb-1 sm:min-w-48">
+                    <label class="flex items-start gap-2">
+                      <input
+                        class="checkbox mt-0.5"
+                        type="checkbox"
+                        [checked]="roleDrafts()[role.role_id]?.is_default ?? role.is_default"
+                        (change)="updateRoleDraftFlag(role, 'is_default', $event)"
+                      />
+                      <span>
+                        <span class="text-xs">{{ t('admin.roles.default') }}</span>
+                        <span class="mt-0.5 block text-[11px]" style="color: var(--color-text-secondary)">
+                          {{ t('admin.roles.defaultHint') }}
+                        </span>
                       </span>
-                    </span>
-                  </label>
+                    </label>
+                    <label class="flex items-start gap-2">
+                      <input
+                        class="checkbox mt-0.5"
+                        type="checkbox"
+                        [checked]="roleDrafts()[role.role_id]?.is_staff ?? role.is_staff"
+                        [disabled]="!roleDiscordRoleId(role)"
+                        (change)="updateRoleDraftFlag(role, 'is_staff', $event)"
+                      />
+                      <span>
+                        <span class="text-xs">{{ t('admin.roles.staff') }}</span>
+                        <span class="mt-0.5 block text-[11px]" style="color: var(--color-text-secondary)">
+                          {{ t('admin.roles.staffHint') }}
+                        </span>
+                      </span>
+                    </label>
+                    <label class="flex items-start gap-2">
+                      <input
+                        class="checkbox mt-0.5"
+                        type="checkbox"
+                        [checked]="roleDrafts()[role.role_id]?.grants_staff ?? role.grants_staff"
+                        [disabled]="!roleDiscordRoleId(role)"
+                        (change)="updateRoleDraftFlag(role, 'grants_staff', $event)"
+                      />
+                      <span>
+                        <span class="text-xs">{{ t('admin.roles.staffEligible') }}</span>
+                        <span class="mt-0.5 block text-[11px]" style="color: var(--color-text-secondary)">
+                          {{ t('admin.roles.staffEligibleHint') }}
+                        </span>
+                      </span>
+                    </label>
+                  </div>
                   <div class="flex gap-2 pb-1">
                     <button
                       type="button"
@@ -236,6 +270,24 @@ export class AdminRoles {
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
+  private draftFromRole(role: RolePermissionsView): RoleDraft {
+    return {
+      name: role.role_name,
+      priority: role.priority,
+      discord_role_id: role.discord_role_id ?? '',
+      is_default: role.is_default,
+      is_staff: role.is_staff,
+      grants_staff: role.grants_staff,
+    };
+  }
+
+  private draftFor(
+    role: RolePermissionsView,
+    drafts: Record<string, RoleDraft> = this.roleDrafts(),
+  ): RoleDraft {
+    return drafts[role.role_id] ?? this.draftFromRole(role);
+  }
+
   constructor() {
     void this.load();
     void this.loadDiscordRoles();
@@ -252,13 +304,17 @@ export class AdminRoles {
 
   protected setRoleDiscordId(role: RolePermissionsView, discordRoleId: string): void {
     this.roleDrafts.update((drafts) => {
-      const current = drafts[role.role_id] ?? {
-        name: role.role_name,
-        priority: role.priority,
-        discord_role_id: role.discord_role_id ?? '',
-        is_default: role.is_default,
+      const current = this.draftFor(role, drafts);
+      const linked = Boolean(discordRoleId);
+      return {
+        ...drafts,
+        [role.role_id]: {
+          ...current,
+          discord_role_id: discordRoleId,
+          is_staff: linked ? current.is_staff : false,
+          grants_staff: linked ? current.grants_staff : false,
+        },
       };
-      return { ...drafts, [role.role_id]: { ...current, discord_role_id: discordRoleId } };
     });
   }
 
@@ -328,12 +384,7 @@ export class AdminRoles {
   private syncRoleDrafts(matrix: PermissionMatrix): void {
     const drafts: Record<string, RoleDraft> = {};
     for (const role of matrix.roles) {
-      drafts[role.role_id] = {
-        name: role.role_name,
-        priority: role.priority,
-        discord_role_id: role.discord_role_id ?? '',
-        is_default: role.is_default,
-      };
+      drafts[role.role_id] = this.draftFromRole(role);
     }
     this.roleDrafts.set(drafts);
   }
@@ -345,12 +396,7 @@ export class AdminRoles {
   ): void {
     const raw = (event.target as HTMLInputElement).value;
     this.roleDrafts.update((drafts) => {
-      const current = drafts[role.role_id] ?? {
-        name: role.role_name,
-        priority: role.priority,
-        discord_role_id: role.discord_role_id ?? '',
-        is_default: role.is_default,
-      };
+      const current = this.draftFor(role, drafts);
       return {
         ...drafts,
         [role.role_id]: {
@@ -361,16 +407,15 @@ export class AdminRoles {
     });
   }
 
-  protected updateRoleDraftDefault(role: RolePermissionsView, event: Event): void {
+  protected updateRoleDraftFlag(
+    role: RolePermissionsView,
+    field: 'is_default' | 'is_staff' | 'grants_staff',
+    event: Event,
+  ): void {
     const checked = (event.target as HTMLInputElement).checked;
     this.roleDrafts.update((drafts) => {
-      const current = drafts[role.role_id] ?? {
-        name: role.role_name,
-        priority: role.priority,
-        discord_role_id: role.discord_role_id ?? '',
-        is_default: role.is_default,
-      };
-      return { ...drafts, [role.role_id]: { ...current, is_default: checked } };
+      const current = this.draftFor(role, drafts);
+      return { ...drafts, [role.role_id]: { ...current, [field]: checked } };
     });
   }
 
@@ -404,6 +449,8 @@ export class AdminRoles {
           priority: draft.priority,
           discord_role_id: draft.discord_role_id,
           is_default: draft.is_default,
+          is_staff: draft.is_staff,
+          grants_staff: draft.grants_staff,
         }),
       );
       this.matrix.set(updated);
