@@ -219,7 +219,13 @@ fn resolve_timing<'a>(
 /// Counts prior landed casts that overlap `target_ids` within `window` seconds before `land_at`,
 /// optionally restricted to a crowd-control `kind`. The shared core of both
 /// [`concurrent_attackers`] and [`prior_cc_stacks`].
-fn overlapping_within(landed: &[Landed], land_at: f64, window: f64, target_ids: &[String], kind: Option<&str>) -> u32 {
+fn overlapping_within(
+    landed: &[Landed],
+    land_at: f64,
+    window: f64,
+    target_ids: &[String],
+    kind: Option<&str>,
+) -> u32 {
     u32::try_from(
         landed
             .iter()
@@ -237,13 +243,24 @@ fn overlapping_within(landed: &[Landed], land_at: f64, window: f64, target_ids: 
 /// Total attackers on this cast's targets within the focus-fire lookback window, including this
 /// cast itself — the exact contract `sim::DeclaredCast::concurrent_attackers` documents.
 fn concurrent_attackers(landed: &[Landed], land_at: f64, target_ids: &[String]) -> u32 {
-    1 + overlapping_within(landed, land_at, combat_rules().focus_fire.lookback_seconds, target_ids, None)
+    1 + overlapping_within(
+        landed,
+        land_at,
+        combat_rules().focus_fire.lookback_seconds,
+        target_ids,
+        None,
+    )
 }
 
 /// Prior same-kind crowd-control applications on this cast's targets within that kind's
 /// diminishing-returns decay window. `None` when the resolved spell applies no crowd control at
 /// all — see the module docs on the single-kind simplification this inherits from `sim`.
-fn prior_cc_stacks(landed: &[Landed], land_at: f64, target_ids: &[String], kind: Option<&str>) -> u32 {
+fn prior_cc_stacks(
+    landed: &[Landed],
+    land_at: f64,
+    target_ids: &[String],
+    kind: Option<&str>,
+) -> u32 {
     let Some(kind) = kind else { return 0 };
     let decay = combat_rules()
         .cc_diminishing_returns
@@ -256,9 +273,16 @@ fn prior_cc_stacks(landed: &[Landed], land_at: f64, target_ids: &[String], kind:
 
 /// Applies one resolved cast's health change to every unit it named, updating `damage_taken` /
 /// `healing_received` / `remaining_hp` and recording the moment a unit first reaches `0`.
-fn apply_health_change(units: &mut HashMap<String, UnitOutcome>, target_ids: &[String], change: f64, land_at: f64) {
+fn apply_health_change(
+    units: &mut HashMap<String, UnitOutcome>,
+    target_ids: &[String],
+    change: f64,
+    land_at: f64,
+) {
     for target_id in target_ids {
-        let Some(unit) = units.get_mut(target_id) else { continue };
+        let Some(unit) = units.get_mut(target_id) else {
+            continue;
+        };
         if change < 0.0 {
             unit.damage_taken += -change;
         } else {
@@ -282,9 +306,22 @@ fn summarize(units: &[UnitOutcome]) -> (f64, f64, u32, Option<f64>, f64) {
     let deaths = u32::try_from(dead.len()).unwrap_or(u32::MAX);
     let average_time_to_kill = (!dead.is_empty())
         .then(|| dead.iter().filter_map(|u| u.died_at).sum::<f64>() / dead.len() as f64);
-    let overkill: f64 = dead.iter().map(|u| (u.damage_taken - u.starting_hp).max(0.0)).sum();
-    let overkill_ratio = if total_damage_dealt > 0.0 { overkill / total_damage_dealt } else { 0.0 };
-    (total_damage_dealt, total_healing_done, deaths, average_time_to_kill, overkill_ratio)
+    let overkill: f64 = dead
+        .iter()
+        .map(|u| (u.damage_taken - u.starting_hp).max(0.0))
+        .sum();
+    let overkill_ratio = if total_damage_dealt > 0.0 {
+        overkill / total_damage_dealt
+    } else {
+        0.0
+    };
+    (
+        total_damage_dealt,
+        total_healing_done,
+        deaths,
+        average_time_to_kill,
+        overkill_ratio,
+    )
 }
 
 /// Runs the declared groups and timeline, returning the full per-unit and per-cast breakdown.
@@ -292,8 +329,16 @@ fn summarize(units: &[UnitOutcome]) -> (f64, f64, u32, Option<f64>, f64) {
 pub fn run(groups: &[UnitGroup], casts: &[DeclaredCast]) -> ScenarioResult {
     let (unit_order, mut units) = expand_units(groups);
     let sides = SideCounts {
-        ally_count: groups.iter().filter(|g| g.side == Side::Ally).map(|g| g.count).sum(),
-        enemy_count: groups.iter().filter(|g| g.side == Side::Enemy).map(|g| g.count).sum(),
+        ally_count: groups
+            .iter()
+            .filter(|g| g.side == Side::Ally)
+            .map(|g| g.count)
+            .sum(),
+        enemy_count: groups
+            .iter()
+            .filter(|g| g.side == Side::Enemy)
+            .map(|g| g.count)
+            .sum(),
     };
 
     let mut unknown_spells = Vec::new();
@@ -305,7 +350,10 @@ pub fn run(groups: &[UnitGroup], casts: &[DeclaredCast]) -> ScenarioResult {
 
     for (land_at, cast, resolved_spell) in timed {
         let attackers = concurrent_attackers(&landed, land_at, &cast.target_ids);
-        let first_kind = resolved_spell.crowd_control.first().map(|cc| cc.kind.as_str());
+        let first_kind = resolved_spell
+            .crowd_control
+            .first()
+            .map(|cc| cc.kind.as_str());
         let cc_stacks = prior_cc_stacks(&landed, land_at, &cast.target_ids, first_kind);
 
         let sim_cast = sim::DeclaredCast {
@@ -332,7 +380,11 @@ pub fn run(groups: &[UnitGroup], casts: &[DeclaredCast]) -> ScenarioResult {
         landed.push(Landed {
             land_at,
             target_ids: cast.target_ids.clone(),
-            cc_kinds: outcome.crowd_control.iter().map(|cc| cc.kind.clone()).collect(),
+            cc_kinds: outcome
+                .crowd_control
+                .iter()
+                .map(|cc| cc.kind.clone())
+                .collect(),
         });
 
         log.push(ResolvedCastLog {
@@ -350,8 +402,10 @@ pub fn run(groups: &[UnitGroup], casts: &[DeclaredCast]) -> ScenarioResult {
         });
     }
 
-    let ordered_units: Vec<UnitOutcome> =
-        unit_order.iter().filter_map(|id| units.remove(id)).collect();
+    let ordered_units: Vec<UnitOutcome> = unit_order
+        .iter()
+        .filter_map(|id| units.remove(id))
+        .collect();
     let (total_damage_dealt, total_healing_done, deaths, average_time_to_kill, overkill_ratio) =
         summarize(&ordered_units);
 

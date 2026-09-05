@@ -23,6 +23,10 @@ pub struct EventFilters {
     /// Sort direction: `asc` or `desc`. Defaults to `asc` for the date column.
     pub order: Option<String>,
     /// When `true`, only archived events. When omitted or `false`, only active events.
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_helpers::optional_bool_from_string_or_bool"
+    )]
     pub archived: Option<bool>,
 }
 
@@ -219,6 +223,8 @@ pub struct EventView {
     pub created_at: String,
     /// The timestamp when the event was last updated.
     pub updated_at: String,
+    /// Monotonic roster revision. Discord uses it to refresh the announcement card.
+    pub roster_version: i64,
     /// Session status: `scheduled` | `live` | `stopped` | `auto_stopped` | `cancelled`.
     pub status: String,
     /// When the session went live (RFC3339), if ever.
@@ -263,6 +269,10 @@ pub struct EventParticipantView {
     pub secondary_build_id: Option<i64>,
     /// The name of the secondary build (if any).
     pub secondary_build_name: Option<String>,
+    /// Seat assignment build, when an officer has placed this member on the roster.
+    pub assigned_build_id: Option<i64>,
+    /// Display name of [`Self::assigned_build_id`].
+    pub assigned_build_name: Option<String>,
     /// Combat specialization levels keyed by `weapon:<id>` or `armor:<id>`.
     pub specializations: std::collections::HashMap<String, i32>,
 }

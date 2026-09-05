@@ -32,6 +32,18 @@ export class SplitForumAdapter {
   async sync(item: SplitDiscordSync): Promise<boolean> {
     let thread = item.thread_id ? await this.fetchThread(item.thread_id) : null;
     let summaryMessageId = item.summary_message_id;
+    const archived = Boolean(item.detail.archived_at);
+    const terminal = ["completed", "not_completed", "lost"].includes(item.detail.status);
+
+    // Archiving hides a still-pending split. Delete the Forum post so it does not stay in the
+    // active list as an open loot thread. Completed/lost history is closed below, not deleted.
+    if (archived && !terminal) {
+      if (thread && !await this.deleteForumPost(thread, item.split_id)) return false;
+      return this.saveState(item.split_id, {
+        last_audit_id: item.next_audit_cursor,
+        last_transaction_id: item.next_transaction_cursor,
+      });
+    }
 
     if (!thread) {
       thread = await this.createForumPost(item);
@@ -53,8 +65,7 @@ export class SplitForumAdapter {
 
     // A finalized split remains available as history, but its Forum post must no longer accept
     // replies. Locking prevents writes while archiving removes it from the active post list.
-    if (["completed", "not_completed", "lost"].includes(item.detail.status)
-      && !await this.closeForumPost(thread, item.split_id)) {
+    if (terminal && !await this.closeForumPost(thread, item.split_id)) {
       return false;
     }
 
@@ -202,6 +213,21 @@ export class SplitForumAdapter {
       if (isUnknownDiscordChannel(error)) return true;
       console.warn(`[SplitForum] Could not close Forum post for split #${splitId}:`, error);
       return false;
+    }
+  }
+
+  /** Removes an archived pending split from the Forum. Falls back to lock+archive if delete fails. */
+  private async deleteForumPost(thread: ThreadChannel, splitId: number): Promise<boolean> {
+    try {
+      await thread.delete(`Split #${splitId} archived`);
+      return true;
+    } catch (error) {
+      if (isUnknownDiscordChannel(error)) return true;
+      console.warn(
+        `[SplitForum] Could not delete Forum post for split #${splitId}; closing instead:`,
+        error,
+      );
+      return this.closeForumPost(thread, splitId);
     }
   }
 

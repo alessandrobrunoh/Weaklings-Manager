@@ -144,6 +144,10 @@ pub struct ScoutFilters {
     /// Restrict to one opponent guild id.
     pub guild_id: Option<String>,
     /// Include archived scouts. Defaults to false.
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_helpers::optional_bool_from_string_or_bool"
+    )]
     pub include_archived: Option<bool>,
     /// Sort key: `saved_at` (default), `threat`, or `battles`.
     pub sort: Option<String>,

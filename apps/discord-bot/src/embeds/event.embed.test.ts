@@ -35,6 +35,45 @@ function event(overrides: Partial<EventView> = {}): EventView {
   };
 }
 
+test("event embed places an assigned member on the officer seat, not the signup build", () => {
+  const embed = buildEventEmbed({
+    ...event(),
+    active_comp_id: 7,
+    active_comp_name: "Main ZvZ",
+    active_comp_capacity: 2,
+    comp_builds: [
+      { build_id: 10, name: "Main Tank", quantity: 1 },
+      { build_id: 11, name: "Holy Healer", quantity: 1 },
+    ],
+    participants: [
+      {
+        user_id: 1,
+        username: "Moved player",
+        discord_id: "333333333333333333",
+        primary_build_id: 10,
+        primary_build_name: "Main Tank",
+        secondary_build_id: null,
+        secondary_build_name: null,
+        assigned_build_id: 11,
+        assigned_build_name: "Holy Healer",
+      },
+    ],
+  } as EventDetailView).toJSON();
+
+  assert.deepEqual(embed.fields, [
+    {
+      name: "Main Tank (0/1)",
+      value: "• *?*",
+      inline: true,
+    },
+    {
+      name: "Holy Healer (1/1)",
+      value: "• <@333333333333333333>",
+      inline: true,
+    },
+  ]);
+});
+
 test("event embed renders every active comp build and marks empty seats", () => {
   const embed = buildEventEmbed({
     ...event(),

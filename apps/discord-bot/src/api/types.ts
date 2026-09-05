@@ -176,6 +176,8 @@ export interface SplitDetail {
   finalized_at: string | null;
   /** Monotonic backend version or updated timestamp; required for incremental polling. */
   updated_at?: string | null;
+  /** When the split was archived. Archived pending splits should not keep a live Forum post. */
+  archived_at?: string | null;
   participants: SplitParticipant[];
 }
 
@@ -239,6 +241,7 @@ export interface EventView {
   start_time_utc?: string | null;
   created_at: string;
   updated_at: string;
+  roster_version?: number;
   archived_at?: string | null;
   status: EventStatus;
   started_at: string | null;
@@ -256,6 +259,8 @@ export interface EventParticipant {
   primary_build_name: string;
   secondary_build_id: number | null;
   secondary_build_name: string | null;
+  assigned_build_id?: number | null;
+  assigned_build_name?: string | null;
 }
 
 export interface EventCompBuild {
@@ -271,6 +276,8 @@ export interface EventDetailView extends EventView {
   /** Full active comp snapshot so the Discord message can render empty slots. */
   comp_builds?: EventCompBuild[];
   participants: EventParticipant[];
+  /** Linked loot splits; used to refresh correlated Forum posts after roster changes. */
+  splits?: Array<{ id: number }>;
 }
 
 export interface EventSignupBuildOption {

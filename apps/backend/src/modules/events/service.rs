@@ -65,6 +65,48 @@ fn expansion_threshold(capacity: i64) -> i64 {
     (capacity.max(1).saturating_mul(3) / 4).max(1)
 }
 
+/// Parses `build:{id}:{slot}` into the assigned build identifier.
+fn assigned_build_id_from_seat_key(seat_key: &str) -> Option<i64> {
+    let mut parts = seat_key.split(':');
+    (parts.next() == Some("build"))
+        .then(|| parts.next()?.parse::<i64>().ok())
+        .flatten()
+}
+
+/// Maps each assigned member to the build of the seat they occupy.
+fn assigned_builds_by_user(
+    assignments: impl IntoIterator<Item = event_roster_assignment::Model>,
+) -> HashMap<i64, i64> {
+    assignments
+        .into_iter()
+        .filter_map(|assignment| {
+            assigned_build_id_from_seat_key(&assignment.seat_key)
+                .map(|build_id| (assignment.user_id, build_id))
+        })
+        .collect()
+}
+
+async fn resolve_assigned_build_name<C: ConnectionTrait>(
+    db: &C,
+    assigned_build_id: Option<i64>,
+    primary_build_id: Option<i64>,
+    primary_build_name: &str,
+) -> Result<Option<String>, AppError> {
+    let Some(assigned_build_id) = assigned_build_id else {
+        return Ok(None);
+    };
+    if Some(assigned_build_id) == primary_build_id {
+        return Ok(Some(primary_build_name.to_string()));
+    }
+    let name = build::Entity::find_by_id(assigned_build_id)
+        .one(db)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound(format!("Build {assigned_build_id} not found")))?
+        .name;
+    Ok(Some(name))
+}
+
 /// The pre-existing `auto_fill_roster` behaviour: first matching seat in signup order.
 ///
 /// A participant takes the first available seat for their primary build, or their secondary if no
@@ -1060,6 +1102,7 @@ impl EventService {
             .all(db)
             .await
             .map_err(AppError::Database)?;
+        let assigned_build_by_user = assigned_builds_by_user(assignments.iter().cloned());
         // The roster's specialization badge reads these; leaving them empty made every bench
         // member render as level 0 no matter what they had trained.
         let participant_user_ids: Vec<i64> =
@@ -1102,6 +1145,14 @@ impl EventService {
                 ),
                 None => None,
             };
+            let assigned_build_id = assigned_build_by_user.get(&participation.user_id).copied();
+            let assigned_build_name = resolve_assigned_build_name(
+                db,
+                assigned_build_id,
+                participation.primary_build_id,
+                &primary_build_name,
+            )
+            .await?;
             participants.insert(
                 participation.user_id,
                 EventParticipantView {
@@ -1112,6 +1163,8 @@ impl EventService {
                     primary_build_name,
                     secondary_build_id: participation.secondary_build_id,
                     secondary_build_name,
+                    assigned_build_id,
+                    assigned_build_name,
                     specializations: specializations_by_user
                         .remove(&participation.user_id)
                         .unwrap_or_default(),
@@ -1962,6 +2015,7 @@ impl EventService {
             start_time_utc: start_time_utc.to_rfc3339(),
             created_at: model.created_at.to_rfc3339(),
             updated_at: model.updated_at.to_rfc3339(),
+            roster_version: model.roster_version,
             status: model.status,
             started_at: model.started_at.map(|t| t.to_rfc3339()),
             stopped_at: model.stopped_at.map(|t| t.to_rfc3339()),
@@ -2162,6 +2216,13 @@ impl EventService {
             )
             .await?;
 
+        let assignments = event_roster_assignment::Entity::find()
+            .filter(event_roster_assignment::Column::EventId.eq(id))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let assigned_build_by_user = assigned_builds_by_user(assignments);
+
         let mut participant_views = Vec::new();
         for p in participations {
             let user = crate::modules::users::entities::Entity::find_by_id(p.user_id)
@@ -2194,6 +2255,14 @@ impl EventService {
             } else {
                 None
             };
+            let assigned_build_id = assigned_build_by_user.get(&p.user_id).copied();
+            let assigned_build_name = resolve_assigned_build_name(
+                db,
+                assigned_build_id,
+                p.primary_build_id,
+                &primary_build_name,
+            )
+            .await?;
 
             participant_views.push(EventParticipantView {
                 user_id: p.user_id,
@@ -2203,6 +2272,8 @@ impl EventService {
                 primary_build_name,
                 secondary_build_id: p.secondary_build_id,
                 secondary_build_name,
+                assigned_build_id,
+                assigned_build_name,
                 specializations: specializations_by_user
                     .remove(&p.user_id)
                     .unwrap_or_default(),
@@ -3698,16 +3769,7 @@ impl EventService {
                 .all(&txn)
                 .await
                 .map_err(AppError::Database)?;
-            let fresh_assigned_build_by_user: HashMap<i64, i64> = fresh_assignments
-                .into_iter()
-                .filter_map(|assignment| {
-                    let mut parts = assignment.seat_key.split(':');
-                    (parts.next() == Some("build"))
-                        .then(|| parts.next()?.parse::<i64>().ok())
-                        .flatten()
-                        .map(|build_id| (assignment.user_id, build_id))
-                })
-                .collect();
+            let fresh_assigned_build_by_user = assigned_builds_by_user(fresh_assignments);
             let taken_count = fresh_participations
                 .iter()
                 .filter(|p| p.user_id != user_id)
@@ -5453,6 +5515,21 @@ mod tests {
             )
             .await
             .expect("assignment should succeed");
+        let assigned_detail = service
+            .get_event_detail(&db, event_id)
+            .await
+            .expect("event detail should load after assignment");
+        assert_eq!(assigned_detail.event.roster_version, 2);
+        assert_eq!(
+            assigned_detail.participants[0].assigned_build_id,
+            Some(build_id)
+        );
+        assert_eq!(
+            assigned_detail.participants[0]
+                .assigned_build_name
+                .as_deref(),
+            Some("roster-build")
+        );
         let (_, roster_version, seat_key) = service
             .cancel_participation(&db, event_id, user_id)
             .await

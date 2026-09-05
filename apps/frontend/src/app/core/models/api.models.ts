@@ -429,6 +429,7 @@ export interface EventView {
   start_time_utc?: string | null;
   created_at: string;
   updated_at: string;
+  roster_version?: number;
   status: EventStatus;
   started_at: string | null;
   stopped_at: string | null;
@@ -677,6 +678,8 @@ export interface EventParticipant {
   primary_build_name: string;
   secondary_build_id: number | null;
   secondary_build_name: string | null;
+  assigned_build_id?: number | null;
+  assigned_build_name?: string | null;
   specializations?: Record<string, number>;
 }
 
@@ -689,6 +692,8 @@ export interface EventRosterParticipant {
   primary_build_name: string;
   secondary_build_id: number | null;
   secondary_build_name: string | null;
+  assigned_build_id?: number | null;
+  assigned_build_name?: string | null;
   specializations: Record<string, number>;
 }
 

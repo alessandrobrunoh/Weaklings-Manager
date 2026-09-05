@@ -843,3 +843,16 @@ async fn delete_island_tab(
         .await?;
     Ok(Json(ApiResponse::new(island)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ListSplitsQuery;
+
+    #[test]
+    fn list_splits_query_accepts_archived_true_from_query_string() {
+        let query: ListSplitsQuery =
+            serde_urlencoded::from_str("page=1&limit=10&archived=true").unwrap();
+        assert_eq!(query.page, Some(1));
+        assert_eq!(query.filters.archived, Some(true));
+    }
+}

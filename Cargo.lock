@@ -284,6 +284,7 @@ dependencies = [
  "sea-orm-migration",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "strum 0.27.2",
  "subtle",
  "thiserror 1.0.69",

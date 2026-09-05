@@ -274,6 +274,10 @@ pub struct SplitFilters {
     /// Filter by created_at date (inclusive).
     pub date_to: Option<String>,
     /// When `true`, only archived splits. When omitted or `false`, only active splits.
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_helpers::optional_bool_from_string_or_bool"
+    )]
     pub archived: Option<bool>,
 }
 

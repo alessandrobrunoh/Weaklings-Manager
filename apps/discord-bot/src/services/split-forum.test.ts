@@ -28,6 +28,7 @@ const detail = {
   participant_count: 0,
   created_at: "2026-01-01T00:00:00Z",
   finalized_at: null,
+  archived_at: null,
   participants: [],
 };
 
@@ -159,4 +160,114 @@ test("split sync unarchives an auto-archived Forum post before updating and clos
   assert.equal(thread.locked, true);
   assert.equal(thread.archived, true);
   assert.equal(states.length, 1);
+});
+
+test("split sync deletes a pending Forum post when the split is archived", async () => {
+  const deletes: string[] = [];
+  const edits: unknown[] = [];
+  const thread = {
+    id: "123456789012345678",
+    parentId: "forum-channel",
+    name: "Split #42 — No event",
+    archived: false,
+    isThread: () => true,
+    messages: {
+      fetch: async () => ({
+        edit: async (payload: unknown) => edits.push(payload),
+      }),
+    },
+    delete: async (reason?: string) => {
+      deletes.push(reason ?? "");
+    },
+  };
+  const client = {
+    channels: { fetch: async () => thread },
+  } as unknown as Client;
+  const states: UpdateSplitDiscordSyncState[] = [];
+  const api = {
+    put: async (_path: string, state: UpdateSplitDiscordSyncState) => {
+      states.push(state);
+      return undefined;
+    },
+  } as unknown as ApiClient;
+
+  const result = await new SplitForumAdapter(client, api, "forum-channel").sync({
+    ...syncItem(),
+    detail: { ...detail, archived_at: "2026-09-05T12:00:00Z" },
+  });
+
+  assert.equal(result, true);
+  assert.deepEqual(deletes, ["Split #42 archived"]);
+  assert.deepEqual(edits, []);
+  assert.equal(states.length, 1);
+});
+
+test("split sync does not create a Forum post for an archived pending split", async () => {
+  const creates: unknown[] = [];
+  const client = {
+    channels: {
+      fetch: async () => {
+        creates.push("fetch");
+        return { type: 15, threads: { create: async (payload: unknown) => creates.push(payload) } };
+      },
+    },
+  } as unknown as Client;
+  const states: UpdateSplitDiscordSyncState[] = [];
+  const api = {
+    put: async (_path: string, state: UpdateSplitDiscordSyncState) => {
+      states.push(state);
+      return undefined;
+    },
+  } as unknown as ApiClient;
+
+  const result = await new SplitForumAdapter(client, api, "forum-channel").sync({
+    ...syncItem(),
+    thread_id: null,
+    summary_message_id: null,
+    detail: { ...detail, archived_at: "2026-09-05T12:00:00Z" },
+  });
+
+  assert.equal(result, true);
+  assert.deepEqual(creates, []);
+  assert.equal(states.length, 1);
+});
+
+test("split sync closes an archived Forum post when Discord rejects the delete", async () => {
+  const archiveCalls: boolean[] = [];
+  const thread = {
+    id: "123456789012345678",
+    parentId: "forum-channel",
+    name: "Split #42 — No event",
+    archived: false,
+    locked: false,
+    isThread: () => true,
+    delete: async () => {
+      throw new Error("Missing Permissions");
+    },
+    setArchived: async (value: boolean) => {
+      archiveCalls.push(value);
+      thread.archived = value;
+      return thread;
+    },
+    setLocked: async (value: boolean) => {
+      thread.locked = value;
+      return thread;
+    },
+  };
+  const client = {
+    channels: { fetch: async () => thread },
+  } as unknown as Client;
+  const api = {
+    put: async () => undefined,
+  } as unknown as ApiClient;
+
+  const result = await new SplitForumAdapter(client, api, "forum-channel").sync({
+    ...syncItem(),
+    detail: { ...detail, archived_at: "2026-09-05T12:00:00Z" },
+  });
+
+  assert.equal(result, true);
+  assert.equal(thread.locked, true);
+  assert.equal(thread.archived, true);
+  assert.deepEqual(archiveCalls, [true]);
 });
