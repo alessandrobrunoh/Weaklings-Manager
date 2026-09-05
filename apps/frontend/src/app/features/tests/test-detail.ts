@@ -9,6 +9,8 @@ import type {
   BuildItemSlot,
   BuildSlot,
   BuildSummary,
+  CompDetail,
+  CompSummary,
   OpenAlbionItem,
   OpenAlbionItemAbilities,
   PaginatedData,
@@ -23,6 +25,7 @@ import type {
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
+import { IntelService } from '../../core/services/intel.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
@@ -194,6 +197,14 @@ interface GroupedSpellOptions {
                     <button type="button" class="btn btn--outline btn--sm" (click)="openBuildImport()">
                       <app-icon name="search" size="0.75rem" />
                       {{ t('tests.importBuild') }}
+                    </button>
+                    <button type="button" class="btn btn--outline btn--sm" (click)="openCompImport()">
+                      <app-icon name="search" size="0.75rem" />
+                      {{ t('tests.importComp') }}
+                    </button>
+                    <button type="button" class="btn btn--outline btn--sm" (click)="openScoutImport()">
+                      <app-icon name="search" size="0.75rem" />
+                      {{ t('tests.importScout') }}
                     </button>
                     <button type="button" class="btn btn--tonal btn--sm" (click)="addGroup()">
                       <app-icon name="plus" size="0.75rem" />
@@ -643,6 +654,30 @@ interface GroupedSpellOptions {
       />
     }
 
+    @if (compSearchOpen()) {
+      <app-search-dialog
+        [title]="t('tests.importComp')"
+        [placeholder]="t('tests.searchCompPlaceholder')"
+        [options]="compSearchOptions()"
+        [loading]="compSearchLoading()"
+        (filterChange)="onCompSearchFilter($event)"
+        (select)="onCompSelected($event)"
+        (close)="closeCompImport()"
+      />
+    }
+
+    @if (scoutSearchOpen()) {
+      <app-search-dialog
+        [title]="t('tests.importScout')"
+        [placeholder]="t('tests.searchScoutPlaceholder')"
+        [options]="scoutSearchOptions()"
+        [loading]="scoutSearchLoading()"
+        (filterChange)="onScoutSearchFilter($event)"
+        (select)="onScoutSelected($event)"
+        (close)="closeScoutImport()"
+      />
+    }
+
     @if (renameOpen()) {
       <app-dialog [title]="t('tests.renameTitle')" size="sm" (closed)="closeRename()">
         <form id="test-rename-form" class="grid gap-4" (submit)="onRenameSubmit($event)">
@@ -679,6 +714,7 @@ export class TestDetailPage {
   private readonly albionCatalog = inject(AlbionCatalogService);
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly intel = inject(IntelService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
@@ -723,6 +759,14 @@ export class TestDetailPage {
   protected readonly buildSearchOpen = signal(false);
   protected readonly buildSearchOptions = signal<SearchDialogOption[]>([]);
   protected readonly buildSearchLoading = signal(false);
+
+  protected readonly compSearchOpen = signal(false);
+  protected readonly compSearchOptions = signal<SearchDialogOption[]>([]);
+  protected readonly compSearchLoading = signal(false);
+
+  protected readonly scoutSearchOpen = signal(false);
+  protected readonly scoutSearchOptions = signal<SearchDialogOption[]>([]);
+  protected readonly scoutSearchLoading = signal(false);
 
   protected readonly canManage = computed(() => this.auth.hasPermission('combat.tests.manage'));
 
@@ -894,6 +938,117 @@ export class TestDetailPage {
       };
       this.draft.update((def) => ({ ...def, groups: [...def.groups, group] }));
       this.toasts.success(this.t('tests.importedFromBuild', { name: build.name }));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    }
+  }
+
+  /** Imports one ally group per build in an existing comp, quantity and weapon prefilled. */
+  protected openCompImport(): void {
+    this.compSearchOpen.set(true);
+    this.compSearchOptions.set([]);
+  }
+
+  protected closeCompImport(): void {
+    this.compSearchOpen.set(false);
+  }
+
+  protected async onCompSearchFilter(filter: { search: string }): Promise<void> {
+    this.compSearchLoading.set(true);
+    try {
+      const params: Record<string, string | number> = { limit: 20 };
+      if (filter.search) params['search'] = filter.search;
+      const data = await firstValueFrom(this.api.get<PaginatedData<CompSummary>>('api/comps', params));
+      this.compSearchOptions.set(
+        data.items.map((comp) => ({
+          id: comp.id,
+          title: comp.name,
+          subtitle: comp.category_name ?? undefined,
+        })),
+      );
+    } finally {
+      this.compSearchLoading.set(false);
+    }
+  }
+
+  protected async onCompSelected(option: SearchDialogOption): Promise<void> {
+    this.compSearchOpen.set(false);
+    try {
+      const comp = await firstValueFrom(this.api.get<CompDetail>(`api/comps/${option.id}`));
+      const builds = await Promise.all(
+        comp.builds.map((entry) =>
+          firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${entry.build_id}`)),
+        ),
+      );
+      const groups: ScenarioUnitGroup[] = builds.map((build, index) => {
+        const weapon = build.items.find((item): item is BuildItemSlot => item.slot === 'weapon');
+        groupSeq += 1;
+        return {
+          id: `group-${groupSeq}`,
+          side: 'ally',
+          label: weapon?.openalbion_item_name ?? build.name,
+          item_id: weapon ? abilityKeyForItem(weapon) : null,
+          count: comp.builds[index].quantity,
+          hit_points: 1200,
+        };
+      });
+      this.draft.update((def) => ({ ...def, groups: [...def.groups, ...groups] }));
+      this.toasts.success(this.t('tests.importedFromComp', { count: groups.length, name: comp.name }));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    }
+  }
+
+  /**
+   * Imports one enemy group per weapon observed in a scout — a hypothesis, not observed fact:
+   * scout data has no armor or ability information, only a weapon histogram and an aggregate IP.
+   */
+  protected openScoutImport(): void {
+    this.scoutSearchOpen.set(true);
+    this.scoutSearchOptions.set([]);
+  }
+
+  protected closeScoutImport(): void {
+    this.scoutSearchOpen.set(false);
+  }
+
+  protected async onScoutSearchFilter(filter: { search: string }): Promise<void> {
+    this.scoutSearchLoading.set(true);
+    try {
+      const data = await firstValueFrom(this.intel.listScouts({ q: filter.search || undefined, limit: 20 }));
+      this.scoutSearchOptions.set(
+        data.items.map((scout) => ({
+          id: scout.id,
+          title: scout.name,
+          subtitle: scout.opponent_guild_name,
+        })),
+      );
+    } finally {
+      this.scoutSearchLoading.set(false);
+    }
+  }
+
+  protected async onScoutSelected(option: SearchDialogOption): Promise<void> {
+    this.scoutSearchOpen.set(false);
+    try {
+      const scout = await firstValueFrom(this.intel.getScout(Number(option.id)));
+      const catalog = this.combatCatalog();
+      const groups: ScenarioUnitGroup[] = Object.entries(scout.weapons).map(([rawIdentifier, count]) => {
+        const baseIdentifier = abilityCatalogKey(rawIdentifier);
+        const known = catalog.find((item) => item.identifier === baseIdentifier);
+        groupSeq += 1;
+        return {
+          id: `group-${groupSeq}`,
+          side: 'enemy',
+          label: known?.name ?? baseIdentifier,
+          item_id: baseIdentifier,
+          count: Math.max(1, count),
+          hit_points: 1200,
+        };
+      });
+      this.draft.update((def) => ({ ...def, groups: [...def.groups, ...groups] }));
+      this.toasts.success(this.t('tests.importedFromScout', { count: groups.length, name: scout.name }));
+      this.toasts.info(this.t('tests.scoutImportWarning'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     }
