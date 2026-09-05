@@ -435,7 +435,7 @@ impl CombatService {
         .insert(db)
         .await
         .map_err(AppError::Database)?;
-        self.to_scenario_detail(db, inserted).await
+        self.scenario_detail(db, inserted).await
     }
 
     /// Edits a scenario version's name and/or definition in place.
@@ -491,7 +491,7 @@ impl CombatService {
             .await
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Scenario {id} not found")))?;
-        self.to_scenario_detail(db, updated).await
+        self.scenario_detail(db, updated).await
     }
 
     /// Creates a new version by cloning the given one's current definition — for keeping a state
@@ -531,7 +531,7 @@ impl CombatService {
         // the read above and this insert — rare enough for a single-officer editing tool that a
         // surfaced database error is an acceptable "try again", without a retry loop's complexity.
         .map_err(AppError::Database)?;
-        self.to_scenario_detail(db, inserted).await
+        self.scenario_detail(db, inserted).await
     }
 
     /// Lists scenario versions, newest-updated first.
@@ -551,7 +551,7 @@ impl CombatService {
             .map_err(AppError::Database)?;
         let mut summaries = Vec::with_capacity(models.len());
         for model in models {
-            summaries.push(self.to_scenario_summary(db, model).await?);
+            summaries.push(self.scenario_summary(db, model).await?);
         }
         Ok(summaries)
     }
@@ -567,7 +567,7 @@ impl CombatService {
             .await
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Scenario {id} not found")))?;
-        self.to_scenario_detail(db, model).await
+        self.scenario_detail(db, model).await
     }
 
     /// Archives (or unarchives) a scenario version. Never deletes: a past run stays reachable.
@@ -590,7 +590,7 @@ impl CombatService {
         active.archived_at = Set(archived.then(|| chrono::Utc::now().into()));
         active.updated_at = Set(chrono::Utc::now().into());
         let updated = active.update(db).await.map_err(AppError::Database)?;
-        self.to_scenario_detail(db, updated).await
+        self.scenario_detail(db, updated).await
     }
 
     /// Runs a scenario version now, pins the result, and returns it.
@@ -632,7 +632,7 @@ impl CombatService {
         .await
         .map_err(AppError::Database)?;
 
-        Ok(RunDetail { summary: self.to_run_summary(db, inserted).await?, result })
+        Ok(RunDetail { summary: self.run_summary(db, inserted).await?, result })
     }
 
     /// Lists a scenario's past runs, most recent first.
@@ -649,7 +649,7 @@ impl CombatService {
             .map_err(AppError::Database)?;
         let mut summaries = Vec::with_capacity(models.len());
         for model in models {
-            summaries.push(self.to_run_summary(db, model).await?);
+            summaries.push(self.run_summary(db, model).await?);
         }
         Ok(summaries)
     }
@@ -668,10 +668,10 @@ impl CombatService {
             .ok_or_else(|| AppError::NotFound(format!("Run {run_id} not found")))?;
         let result: super::scenario::ScenarioResult = serde_json::from_str(&model.result_json)
             .map_err(|error| AppError::Validation(format!("stored run is unreadable: {error}")))?;
-        Ok(RunDetail { summary: self.to_run_summary(db, model).await?, result })
+        Ok(RunDetail { summary: self.run_summary(db, model).await?, result })
     }
 
-    async fn to_scenario_summary(
+    async fn scenario_summary(
         &self,
         db: &DatabaseConnection,
         model: combat_scenario::Model,
@@ -696,7 +696,7 @@ impl CombatService {
         })
     }
 
-    async fn to_scenario_detail(
+    async fn scenario_detail(
         &self,
         db: &DatabaseConnection,
         model: combat_scenario::Model,
@@ -709,11 +709,11 @@ impl CombatService {
             .into_iter()
             .map(|sibling| ScenarioVersionRef { id: sibling.id, version: sibling.version })
             .collect();
-        let summary = self.to_scenario_summary(db, model).await?;
+        let summary = self.scenario_summary(db, model).await?;
         Ok(ScenarioDetail { summary, definition, versions })
     }
 
-    async fn to_run_summary(
+    async fn run_summary(
         &self,
         db: &DatabaseConnection,
         model: combat_run::Model,
@@ -1241,6 +1241,315 @@ mod comp_readiness_tests {
             .comp_readiness(&db, 999_999, None)
             .await
             .expect_err("a nonexistent comp should not compute readiness");
+        assert!(matches!(error, crate::errors::AppError::NotFound(_)));
+    }
+}
+
+#[cfg(test)]
+mod scenario_tests {
+    use sea_orm::{ActiveModelTrait, Database, DatabaseConnection, Set};
+    use sea_orm_migration::MigratorTrait;
+
+    use super::CombatService;
+    use crate::modules::combat::models::{CreateScenarioRequest, ScenarioDefinition, UpdateScenarioRequest};
+    use crate::modules::combat::scenario::{DeclaredCast, Side, UnitGroup};
+    use crate::modules::combat::sim::AttackerStyle;
+    use crate::modules::users::entities::ActiveModel as UserActiveModel;
+
+    async fn seed_db() -> DatabaseConnection {
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("failed to connect to test database");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("failed to run migrations");
+        db
+    }
+
+    async fn seed_user(db: &DatabaseConnection, username: &str) -> i64 {
+        UserActiveModel {
+            username: Set(username.to_string()),
+            email: Set(format!("{username}@example.com")),
+            role: Set("Officer".to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert user")
+        .id
+    }
+
+    fn lethal_definition() -> ScenarioDefinition {
+        ScenarioDefinition {
+            groups: vec![
+                UnitGroup {
+                    id: "ally-hammer".to_string(),
+                    side: Side::Ally,
+                    label: "Polehammer".to_string(),
+                    count: 1,
+                    hit_points: 1200.0,
+                },
+                UnitGroup {
+                    id: "enemy-plate".to_string(),
+                    side: Side::Enemy,
+                    label: "Plate".to_string(),
+                    count: 1,
+                    hit_points: 50.0,
+                },
+            ],
+            casts: vec![DeclaredCast {
+                caster_group_id: "ally-hammer".to_string(),
+                spell_id: "HAMMERWHIRLWIND2".to_string(),
+                cast_at: 0.0,
+                target_ids: vec!["enemy-plate#0".to_string()],
+                attacker_style: AttackerStyle::Melee,
+            }],
+        }
+    }
+
+    #[tokio::test]
+    async fn creating_a_scenario_starts_at_version_one() {
+        let db = seed_db().await;
+        let creator = seed_user(&db, "officer").await;
+
+        let created = CombatService::new()
+            .create_scenario(
+                &db,
+                creator,
+                &CreateScenarioRequest {
+                    name: "Opening burst".to_string(),
+                    definition: ScenarioDefinition::default(),
+                },
+            )
+            .await
+            .expect("scenario should be created");
+
+        assert_eq!(created.summary.version, 1);
+        assert_eq!(created.summary.name, "Opening burst");
+        assert_eq!(created.summary.created_by, creator);
+        assert_eq!(created.summary.created_by_username, "officer");
+        assert_eq!(created.summary.run_count, 0);
+        assert!(created.summary.archived_at.is_none());
+        assert_eq!(created.versions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn an_empty_name_is_refused() {
+        let db = seed_db().await;
+        let creator = seed_user(&db, "officer").await;
+
+        let error = CombatService::new()
+            .create_scenario(
+                &db,
+                creator,
+                &CreateScenarioRequest { name: "   ".to_string(), definition: ScenarioDefinition::default() },
+            )
+            .await
+            .expect_err("a blank name should be refused");
+        assert!(matches!(error, crate::errors::AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn a_taken_name_is_a_conflict() {
+        let db = seed_db().await;
+        let creator = seed_user(&db, "officer").await;
+        let request = CreateScenarioRequest {
+            name: "Opening burst".to_string(),
+            definition: ScenarioDefinition::default(),
+        };
+        CombatService::new()
+            .create_scenario(&db, creator, &request)
+            .await
+            .expect("first scenario should be created");
+
+        let error = CombatService::new()
+            .create_scenario(&db, creator, &request)
+            .await
+            .expect_err("a duplicate name should conflict");
+        assert!(matches!(error, crate::errors::AppError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn renaming_moves_every_sibling_version() {
+        let db = seed_db().await;
+        let creator = seed_user(&db, "officer").await;
+        let created = CombatService::new()
+            .create_scenario(
+                &db,
+                creator,
+                &CreateScenarioRequest { name: "Draft".to_string(), definition: ScenarioDefinition::default() },
+            )
+            .await
+            .expect("scenario should be created");
+        let v2 = CombatService::new()
+            .create_scenario_version(&db, created.summary.id, creator)
+            .await
+            .expect("version 2 should be created");
+
+        let renamed = CombatService::new()
+            .update_scenario(
+                &db,
+                v2.summary.id,
+                &UpdateScenarioRequest { name: Some("Renamed".to_string()), definition: None },
+            )
+            .await
+            .expect("rename should succeed");
+        assert_eq!(renamed.summary.name, "Renamed");
+        assert_eq!(renamed.versions.len(), 2);
+
+        let original = CombatService::new()
+            .get_scenario(&db, created.summary.id)
+            .await
+            .expect("original version should still exist");
+        assert_eq!(original.summary.name, "Renamed");
+    }
+
+    #[tokio::test]
+    async fn editing_the_definition_leaves_the_name_and_version_alone() {
+        let db = seed_db().await;
+        let creator = seed_user(&db, "officer").await;
+        let created = CombatService::new()
+            .create_scenario(
+                &db,
+                creator,
+                &CreateScenarioRequest { name: "Draft".to_string(), definition: ScenarioDefinition::default() },
+            )
+            .await
+            .expect("scenario should be created");
+
+        let updated = CombatService::new()
+            .update_scenario(
+                &db,
+                created.summary.id,
+                &UpdateScenarioRequest { name: None, definition: Some(lethal_definition()) },
+            )
+            .await
+            .expect("definition update should succeed");
+        assert_eq!(updated.summary.name, "Draft");
+        assert_eq!(updated.summary.version, 1);
+        assert_eq!(updated.definition.groups.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn creating_a_version_clones_the_current_definition() {
+        let db = seed_db().await;
+        let creator = seed_user(&db, "officer").await;
+        let created = CombatService::new()
+            .create_scenario(
+                &db,
+                creator,
+                &CreateScenarioRequest { name: "Draft".to_string(), definition: lethal_definition() },
+            )
+            .await
+            .expect("scenario should be created");
+
+        let v2 = CombatService::new()
+            .create_scenario_version(&db, created.summary.id, creator)
+            .await
+            .expect("version 2 should be created");
+        assert_eq!(v2.summary.version, 2);
+        assert_eq!(v2.summary.name, "Draft");
+        assert_eq!(v2.definition.groups.len(), 2);
+        assert_eq!(v2.versions.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn archiving_hides_a_scenario_from_the_default_list() {
+        let db = seed_db().await;
+        let creator = seed_user(&db, "officer").await;
+        let created = CombatService::new()
+            .create_scenario(
+                &db,
+                creator,
+                &CreateScenarioRequest { name: "Draft".to_string(), definition: ScenarioDefinition::default() },
+            )
+            .await
+            .expect("scenario should be created");
+
+        let archived = CombatService::new()
+            .set_scenario_archived(&db, created.summary.id, true)
+            .await
+            .expect("archiving should succeed");
+        assert!(archived.summary.archived_at.is_some());
+
+        let visible = CombatService::new()
+            .list_scenarios(&db, false)
+            .await
+            .expect("listing should succeed");
+        assert!(visible.is_empty());
+
+        let all = CombatService::new()
+            .list_scenarios(&db, true)
+            .await
+            .expect("listing with archived should succeed");
+        assert_eq!(all.len(), 1);
+
+        let unarchived = CombatService::new()
+            .set_scenario_archived(&db, created.summary.id, false)
+            .await
+            .expect("unarchiving should succeed");
+        assert!(unarchived.summary.archived_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn running_a_scenario_pins_a_result_and_is_listed() {
+        let db = seed_db().await;
+        let creator = seed_user(&db, "officer").await;
+        let created = CombatService::new()
+            .create_scenario(
+                &db,
+                creator,
+                &CreateScenarioRequest { name: "Lethal".to_string(), definition: lethal_definition() },
+            )
+            .await
+            .expect("scenario should be created");
+
+        let run = CombatService::new()
+            .run_scenario(&db, created.summary.id, creator)
+            .await
+            .expect("run should succeed");
+        assert_eq!(run.result.deaths, 1);
+        assert_eq!(run.summary.scenario_id, created.summary.id);
+        assert_eq!(run.summary.ran_by, creator);
+        assert_eq!(run.summary.ran_by_username, "officer");
+
+        let runs = CombatService::new()
+            .list_runs(&db, created.summary.id)
+            .await
+            .expect("listing runs should succeed");
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].id, run.summary.id);
+
+        let refetched = CombatService::new()
+            .get_run(&db, run.summary.id)
+            .await
+            .expect("run should be re-readable");
+        assert_eq!(refetched.result.deaths, 1);
+
+        let with_run_count = CombatService::new()
+            .get_scenario(&db, created.summary.id)
+            .await
+            .expect("scenario should still exist");
+        assert_eq!(with_run_count.summary.run_count, 1);
+    }
+
+    #[tokio::test]
+    async fn a_scenario_with_no_such_id_is_not_found() {
+        let db = seed_db().await;
+        let error = CombatService::new()
+            .get_scenario(&db, 999_999)
+            .await
+            .expect_err("a nonexistent scenario should not resolve");
+        assert!(matches!(error, crate::errors::AppError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn a_run_with_no_such_id_is_not_found() {
+        let db = seed_db().await;
+        let error = CombatService::new()
+            .get_run(&db, 999_999)
+            .await
+            .expect_err("a nonexistent run should not resolve");
         assert!(matches!(error, crate::errors::AppError::NotFound(_)));
     }
 }
