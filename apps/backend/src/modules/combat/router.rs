@@ -16,8 +16,12 @@ use crate::responses::{
 };
 
 use super::dataset::dataset_version;
-use super::models::{CombatDatasetView, ItemPowerRequest, ItemPowerView, MasteryGroupsView};
+use super::models::{
+    CombatDatasetView, ItemPowerRequest, ItemPowerView, MasteryGroupsView, SimulateRequest,
+    SimulateView,
+};
 use super::service::CombatService;
+use super::sim;
 
 /// Builds the combat router.
 pub fn router() -> Router {
@@ -26,6 +30,7 @@ pub fn router() -> Router {
         .route("/mastery-groups", get(get_mastery_groups))
         .route("/item-power", post(post_item_power))
         .route("/members/{user_id}/item-power", get(get_member_item_power))
+        .route("/simulate", post(post_simulate))
 }
 
 /// Reports which ao-bin-dumps commit the bundled combat data came from.
@@ -178,4 +183,39 @@ pub struct MemberItemPowerParams {
     /// The flat level for `spec=fixed`.
     #[serde(default)]
     pub level: Option<i32>,
+}
+
+/// Resolves a declared burst window: every cast's damage, healing and crowd control, after area
+/// escalation, focus fire, the zerg debuff and crowd-control diminishing returns.
+#[utoipa::path(
+    post,
+    path = "/api/combat/simulate",
+    tag = "combat",
+    summary = "Resolve a declared burst window",
+    description = "No geometry: the caller declares, per cast, how many targets it hits and the \\
+                   cross-cutting context (concurrent attackers on the implied target, prior crowd \\
+                   control on it) rather than the engine tracking positions. Every damage and \\
+                   healing figure is the spell's baseline value — the caster's own Item Power does \\
+                   not yet scale it, since that scaling has not been calibrated against the live \\
+                   game (see `combat.ip`'s docs). `unknown_spells` lists spell ids not in the \\
+                   bundled dataset at all; each cast's own `unsupported` list names effects on a \\
+                   *known* spell this resolver could not turn into numbers — a conditional branch, \\
+                   or an effect type (`channelingspell`, `damageshield`, `buffovertime`, …) not yet \\
+                   modelled. Both are reported, never silently dropped from a total.",
+    security(("session_cookie" = [])),
+    request_body = SimulateRequest,
+    responses(
+        (status = 200, description = "The resolved burst", body = crate::responses::ApiResponseSimulate),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
+    )
+)]
+async fn post_simulate(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Json(request): Json<SimulateRequest>,
+) -> Result<Json<ApiResponse<SimulateView>>, AppError> {
+    user.require(&perms, Permission::CombatCalculatorUse)
+        .await?;
+    let result = sim::simulate(&request.casts, request.sides);
+    Ok(Json(ApiResponse::new(SimulateView { result, dataset_version: dataset_version().clone() })))
 }
