@@ -331,7 +331,8 @@ export const es: TranslationDict = {
   'splits.net_formula': '(Estimado − Reparaciones + Bolsas) − Comisión',
   'splits.roster_hint': 'Ajusta las cuotas en porcentaje',
   'splits.fee_invalid': 'La comisión debe estar entre 0 y 100%.',
-  'splits.weight_sum_invalid': 'Los pesos de los participantes deben sumar 100%.',
+  'splits.weight_sum_invalid':
+    'Pon el mismo peso a todos, o haz que los pesos personalizados sumen 100%.',
   'splits.roster_empty': 'Aún no hay participantes',
   'splits.remove_participant': 'Quitar participante',
   'splits.pending_payout': 'Pago pendiente',

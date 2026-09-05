@@ -764,10 +764,11 @@ impl SplitService {
 
     /// Updates mutable split values while the split is still editable.
     ///
-    /// Linking an event (`event_id` set to `Some(Some(id))`) has a side effect: the split's
-    /// roster is synchronized with the event's participants. Participants already in the
-    /// split keep their weights; participants absent from the event are dropped; event
-    /// sign-ups not yet in the split are added with [`IMPORTED_EVENT_PARTICIPANT_WEIGHT`].
+    /// Linking a **new** event (`event_id` set to a different id than the split already has)
+    /// synchronizes the roster with that event's sign-ups. Saving the same event again does
+    /// not restore people an officer already removed. Participants already in the split keep
+    /// their weights; sign-ups not yet in the split are added with
+    /// [`IMPORTED_EVENT_PARTICIPANT_WEIGHT`].
     ///
     /// # Errors
     ///
@@ -780,6 +781,7 @@ impl SplitService {
         req: UpdateSplitRequest,
     ) -> Result<SplitDetail, AppError> {
         let split = self.load_editable(db, split_id, "update").await?;
+        let previous_event_id = split.event_id;
         let mut active: SplitActiveModel = split.into();
 
         active.updated_at = Set(chrono::Utc::now().into());
@@ -820,7 +822,10 @@ impl SplitService {
         }
 
         let linked_event_id = req.event_id;
-        let is_linking_event = matches!(linked_event_id, Some(Some(_)));
+        let newly_linked_event_id = match linked_event_id {
+            Some(Some(event_id)) if previous_event_id != Some(event_id) => Some(event_id),
+            _ => None,
+        };
 
         if let Some(Some(event_id)) = linked_event_id {
             validate_event_link(db, Some(event_id)).await?;
@@ -843,7 +848,7 @@ impl SplitService {
 
         let mut updated = active.update(&txn).await?;
 
-        if let Some(Some(event_id)) = linked_event_id {
+        if let Some(event_id) = newly_linked_event_id {
             self.sync_participants_from_event(&txn, updated.id, event_id)
                 .await?;
             let event_status = EventEntity::find_by_id(event_id)
@@ -859,7 +864,7 @@ impl SplitService {
 
         txn.commit().await?;
 
-        if is_linking_event {
+        if newly_linked_event_id.is_some() {
             // Re-read after the participant sync so the returned detail reflects the new roster.
             return self.get_split(db, updated.id).await;
         }
@@ -3104,6 +3109,101 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn updating_a_linked_split_does_not_restore_removed_participants() {
+        let db = seed_db().await;
+        let creator = insert_user(&db, "creator", "creator@example.com").await;
+        let first = insert_user(&db, "first", "first@example.com").await;
+        let extra = insert_user(&db, "extra", "extra@example.com").await;
+        let category = crate::modules::comps::entities::comp_category::ActiveModel {
+            name: Set("test".to_string()),
+            slug: Set("test".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let comp = crate::modules::comps::entities::comp::ActiveModel {
+            name: Set("test comp".to_string()),
+            category_id: Set(category.id),
+            created_by: Set(creator),
+            version: Set(1),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let event = crate::modules::events::entities::event::ActiveModel {
+            title: Set("loot event".to_string()),
+            comp_id: Set(comp.id),
+            created_by: Set(creator),
+            event_date_utc: Set(chrono::Utc::now().into()),
+            status: Set("stopped".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        for user_id in [first, extra] {
+            crate::modules::events::entities::event_participation::ActiveModel {
+                event_id: Set(event.id),
+                user_id: Set(user_id),
+                ..Default::default()
+            }
+            .insert(&db)
+            .await
+            .unwrap();
+        }
+        let tab_id = seed_tab(&db).await;
+        let service = SplitService::new();
+        let split = service
+            .create_split(
+                &db,
+                creator,
+                located(
+                    CreateSplitRequest {
+                        estimated_market_value: "100".parse().unwrap(),
+                        fee: Some(Decimal::ZERO),
+                        repair_value: Decimal::ZERO,
+                        bags_value: Decimal::ZERO,
+                        bags: Vec::new(),
+                        note: None,
+                        event_id: Some(event.id),
+                        island_tab_id: tab_id,
+                        participants: vec![],
+                    },
+                    tab_id,
+                ),
+            )
+            .await
+            .unwrap();
+        assert_eq!(split.participants.len(), 2);
+        service
+            .remove_participant(&db, split.summary.id, extra)
+            .await
+            .unwrap();
+
+        let updated = service
+            .update_split(
+                &db,
+                split.summary.id,
+                UpdateSplitRequest {
+                    estimated_market_value: Some("120".parse().unwrap()),
+                    fee: None,
+                    repair_value: None,
+                    bags_value: None,
+                    bags: None,
+                    note: None,
+                    event_id: Some(Some(event.id)),
+                    island_tab_id: None,
+                },
+            )
+            .await
+            .unwrap();
+        let remaining: Vec<i64> = updated.participants.iter().map(|p| p.user_id).collect();
+        assert_eq!(remaining, vec![first]);
     }
 
     #[tokio::test]

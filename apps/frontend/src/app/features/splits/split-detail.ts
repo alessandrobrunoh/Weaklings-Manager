@@ -34,6 +34,11 @@ import {
   type SearchDialogOption,
 } from '../../shared/components/search-dialog/search-dialog';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
+import {
+  participantWeightChip,
+  participantWeightsAreValid,
+  redistributeWeights,
+} from './splits';
 
 type DetailMode = 'view' | 'edit';
 
@@ -373,10 +378,10 @@ function parsePercentageInput(raw: string): number | null {
                         </h3>
                         <span
                           class="chip font-mono text-xs font-medium"
-                          [class.chip--success]="editTotalWeight() === 100"
-                          [class.chip--warning]="editTotalWeight() !== 100"
+                          [class.chip--success]="editWeightsAreValid()"
+                          [class.chip--warning]="!editWeightsAreValid()"
                         >
-                          {{ editTotalWeight() }}%
+                          {{ editWeightChip() }}%
                         </span>
                       </div>
 
@@ -1039,6 +1044,18 @@ export class SplitDetailPage {
     );
   }
 
+  protected editWeightsAreValid(): boolean {
+    return participantWeightsAreValid(
+      this.editParticipants().map((participant) => Number(participant.weight)),
+    );
+  }
+
+  protected editWeightChip(): number {
+    return participantWeightChip(
+      this.editParticipants().map((participant) => Number(participant.weight)),
+    );
+  }
+
   /** Real sum of participant weights, used instead of assuming they already total 100. */
   protected participantsTotalWeight(participants: readonly SplitParticipant[]): number {
     return participants.reduce((sum, participant) => sum + this.toNumber(participant.weight), 0);
@@ -1126,13 +1143,12 @@ export class SplitDetailPage {
     if (list.length === 0) {
       return;
     }
-    const totalCents = 10_000;
-    const baseCents = Math.floor(totalCents / list.length);
-    const remainderCents = totalCents - baseCents * list.length;
-    const redistributed = list.map((participant, index) => ({
-      ...participant,
-      weight: (baseCents + (index < remainderCents ? 1 : 0)) / 100,
-    }));
+    const redistributed = redistributeWeights(
+      list.map((participant) => ({
+        ...participant,
+        weight: Number(participant.weight),
+      })),
+    );
     this.editParticipants.set(redistributed);
     this.editWeightInputs.set(this.weightInputsFor(redistributed));
   }
@@ -1293,7 +1309,7 @@ export class SplitDetailPage {
       }
       weights.push({ participant, weight });
     }
-    if (Math.abs(this.editTotalWeight() - 100) > 0.01) {
+    if (!participantWeightsAreValid(weights.map(({ weight }) => weight))) {
       this.toasts.error(this.t('splits.weight_sum_invalid'));
       return;
     }
@@ -1309,9 +1325,11 @@ export class SplitDetailPage {
         bags: this.editBagRows()
           .map((bag) => bag.amount)
           .filter((amount) => amount > 0),
-        event_id: this.editEventId(),
         island_tab_id: this.editTabId() ? Number(this.editTabId()) : undefined,
       };
+      if (this.editEventId() !== (current.event_id ?? null)) {
+        request.event_id = this.editEventId();
+      }
       let detail = await firstValueFrom(
         this.api.patch<SplitDetail>(`api/splits/${current.id}`, request),
       );
