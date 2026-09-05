@@ -280,3 +280,50 @@ pub struct RunDetail {
     pub summary: RunSummary,
     pub result: super::scenario::ScenarioResult,
 }
+
+/// One observation where a calculated Item Power could be checked against a real one.
+///
+/// Every field here is a best-effort match, not a certainty: the player may have swapped gear,
+/// died and re-geared, or fought with their secondary loadout rather than the primary build their
+/// sign-up recorded. A single row proves nothing; the point of [`CalibrationView`] is the
+/// distribution across many of them.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct CalibrationOutlier {
+    /// The member this observation is about.
+    pub user_id: i64,
+    pub username: String,
+    /// The build whose `primary_build_id` sign-up supplied the expected figure.
+    pub build_id: i64,
+    pub build_name: String,
+    /// What `combat::ip` calculates for this member on that build, at their current spec.
+    pub expected_ip: f64,
+    /// What `AlbionBB` reported for this player in the matched battle.
+    pub observed_ip: f64,
+    /// `expected_ip - observed_ip`. Positive means the calculator overestimates for this member.
+    pub error: f64,
+    /// When the matched battle snapshot was fetched.
+    pub observed_at: String,
+}
+
+/// Level-2 calibration: how well `combat::ip`'s predictions track Item Power actually observed in
+/// battle, across every match the app could make between a signed-up build and a fetched battle.
+///
+/// This is a **distribution check, not an oracle** — see [`CalibrationOutlier`]'s docs on why any
+/// one row can be wrong for reasons that have nothing to do with the IP model. What it is good at:
+/// a systematic bias (every prediction low by roughly the same amount) is the signature of a
+/// missing or mis-modelled rule, e.g. an un-collected mastery level — see `combat::ip`'s docs on
+/// that gap.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct CalibrationView {
+    pub dataset_version: DatasetVersion,
+    /// How many (member, matched battle) observations went into the figures below.
+    pub sample_size: usize,
+    /// Mean of `|expected_ip - observed_ip|` across every observation. `0.0` when `sample_size` is
+    /// `0` — read alongside `sample_size` before treating a small figure as good news.
+    pub mean_absolute_error: f64,
+    /// Median of the same. Less sensitive than the mean to a handful of bad matches.
+    pub median_absolute_error: f64,
+    /// The worst 20 observations by `|error|`, descending — where to look first for a modelling
+    /// gap or a bad match.
+    pub outliers: Vec<CalibrationOutlier>,
+}

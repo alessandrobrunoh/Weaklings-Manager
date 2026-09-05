@@ -339,6 +339,16 @@ pub struct ApiResponseRunSummaryList {
     pub data: Vec<crate::modules::combat::models::RunSummary>,
 }
 
+/// `OpenAPI` schema wrapper for the Item Power calibration report response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseCalibration {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The calibration report.
+    pub data: crate::modules::combat::models::CalibrationView,
+}
+
 /// `OpenAPI` schema wrapper for the mastery-groups mapping response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseMasteryGroups {
