@@ -43,6 +43,7 @@ pub mod split {
     #[derive(Copy, Clone, Debug, EnumIter)]
     pub enum Relation {
         Participants,
+        Bags,
         Creator,
         Event,
         IslandTab,
@@ -52,6 +53,7 @@ pub mod split {
         fn def(&self) -> RelationDef {
             match self {
                 Self::Participants => Entity::has_many(super::split_participant::Entity).into(),
+                Self::Bags => Entity::has_many(super::split_bag::Entity).into(),
                 Self::Creator => Entity::belongs_to(crate::modules::users::entities::Entity)
                     .from(Column::CreatedBy)
                     .to(crate::modules::users::entities::Column::Id)
@@ -71,6 +73,12 @@ pub mod split {
     impl Related<super::split_participant::Entity> for Entity {
         fn to() -> RelationDef {
             Relation::Participants.def()
+        }
+    }
+
+    impl Related<super::split_bag::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Bags.def()
         }
     }
 
@@ -125,6 +133,50 @@ pub mod split_participant {
                 Self::User => Entity::belongs_to(crate::modules::users::entities::Entity)
                     .from(Column::UserId)
                     .to(crate::modules::users::entities::Column::Id)
+                    .into(),
+            }
+        }
+    }
+
+    impl Related<super::split::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::Split.def()
+        }
+    }
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+pub mod split_bag {
+    use sea_orm::entity::prelude::*;
+    use serde::{Deserialize, Serialize};
+
+    /// One bag/consumable amount entered on a split.
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
+    #[sea_orm(table_name = "split_bags")]
+    pub struct Model {
+        /// Primary key.
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        /// Split this bag belongs to.
+        pub split_id: i64,
+        /// Silver amount of this bag.
+        pub amount: Decimal,
+        /// When the bag was added.
+        pub created_at: DateTimeWithTimeZone,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter)]
+    pub enum Relation {
+        Split,
+    }
+
+    impl RelationTrait for Relation {
+        fn def(&self) -> RelationDef {
+            match self {
+                Self::Split => Entity::belongs_to(super::split::Entity)
+                    .from(Column::SplitId)
+                    .to(super::split::Column::Id)
                     .into(),
             }
         }

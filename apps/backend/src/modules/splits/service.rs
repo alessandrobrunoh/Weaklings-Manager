@@ -32,6 +32,9 @@ use super::entities::split::{
     ActiveModel as SplitActiveModel, Column as SplitColumn, Entity as SplitEntity,
     Model as SplitModel,
 };
+use super::entities::split_bag::{
+    ActiveModel as SplitBagActiveModel, Column as SplitBagColumn, Entity as SplitBagEntity,
+};
 use super::entities::split_island::{
     ActiveModel as IslandActiveModel, Column as IslandColumn, Entity as IslandEntity,
     Model as IslandModel,
@@ -57,6 +60,72 @@ use super::status::SplitStatus;
 fn parse_status(split: &SplitModel) -> Result<SplitStatus, AppError> {
     SplitStatus::from_str(&split.status)
         .map_err(|_| AppError::Internal(format!("Unknown split status: {}", split.status)))
+}
+
+fn sum_bags(amounts: &[Decimal]) -> Decimal {
+    amounts.iter().copied().sum()
+}
+
+/// Resolves the bag list to persist.
+///
+/// A non-empty `bags` slice wins and `bags_value` is ignored. Otherwise a positive
+/// `bags_value` becomes a single bag (legacy clients). Zero amounts are dropped.
+fn resolve_bag_amounts(bags: &[Decimal], bags_value: Decimal) -> Result<Vec<Decimal>, AppError> {
+    if bags.iter().any(|amount| *amount < Decimal::ZERO) {
+        return Err(AppError::Validation(
+            "bags value must not be negative".to_string(),
+        ));
+    }
+    if !bags.is_empty() {
+        return Ok(bags
+            .iter()
+            .copied()
+            .filter(|amount| *amount > Decimal::ZERO)
+            .collect());
+    }
+    if bags_value < Decimal::ZERO {
+        return Err(AppError::Validation(
+            "bags value must not be negative".to_string(),
+        ));
+    }
+    if bags_value > Decimal::ZERO {
+        Ok(vec![bags_value])
+    } else {
+        Ok(vec![])
+    }
+}
+
+async fn load_bag_amounts(
+    db: &DatabaseConnection,
+    split_id: i64,
+) -> Result<Vec<Decimal>, AppError> {
+    let rows = SplitBagEntity::find()
+        .filter(SplitBagColumn::SplitId.eq(split_id))
+        .order_by_asc(SplitBagColumn::Id)
+        .all(db)
+        .await?;
+    Ok(rows.into_iter().map(|row| row.amount).collect())
+}
+
+async fn replace_bags<C: ConnectionTrait>(
+    db: &C,
+    split_id: i64,
+    amounts: &[Decimal],
+) -> Result<(), AppError> {
+    SplitBagEntity::delete_many()
+        .filter(SplitBagColumn::SplitId.eq(split_id))
+        .exec(db)
+        .await?;
+    for amount in amounts {
+        SplitBagActiveModel {
+            split_id: Set(split_id),
+            amount: Set(*amount),
+            ..Default::default()
+        }
+        .insert(db)
+        .await?;
+    }
+    Ok(())
 }
 
 /// Resolves list-splits `sort`/`order` against the whitelist.
@@ -442,11 +511,13 @@ impl SplitService {
             });
         }
 
+        let bags = load_bag_amounts(db, split.id).await?;
         let summary = self.to_summary(db, split).await?;
 
         Ok(SplitDetail {
             summary,
             participants: views,
+            bags,
         })
     }
 
@@ -508,11 +579,7 @@ impl SplitService {
                 "repair value must not be negative".to_string(),
             ));
         }
-        if req.bags_value < Decimal::ZERO {
-            return Err(AppError::Validation(
-                "bags value must not be negative".to_string(),
-            ));
-        }
+        let bags = resolve_bag_amounts(&req.bags, req.bags_value)?;
         if participants.iter().any(|p| p.weight <= Decimal::ZERO) {
             return Err(AppError::Validation("weight must be positive".to_string()));
         }
@@ -548,7 +615,7 @@ impl SplitService {
             estimated_market_value: Set(req.estimated_market_value),
             fee: Set(fee),
             repair_value: Set(req.repair_value),
-            bags_value: Set(req.bags_value),
+            bags_value: Set(sum_bags(&bags)),
             net_value: Set(None),
             note: Set(req.note),
             event_id: Set(req.event_id),
@@ -556,6 +623,7 @@ impl SplitService {
             ..Default::default()
         };
         let inserted = active.insert(&txn).await?;
+        replace_bags(&txn, inserted.id, &bags).await?;
 
         for participant in &participants {
             let active = ParticipantActiveModel {
@@ -732,13 +800,15 @@ impl SplitService {
             }
             active.repair_value = Set(value);
         }
-        if let Some(value) = req.bags_value {
-            if value < Decimal::ZERO {
-                return Err(AppError::Validation(
-                    "bags value must not be negative".to_string(),
-                ));
-            }
-            active.bags_value = Set(value);
+        let next_bags = if let Some(bags) = req.bags {
+            Some(resolve_bag_amounts(&bags, Decimal::ZERO)?)
+        } else if let Some(value) = req.bags_value {
+            Some(resolve_bag_amounts(&[], value)?)
+        } else {
+            None
+        };
+        if let Some(amounts) = &next_bags {
+            active.bags_value = Set(sum_bags(amounts));
         }
         if let Some(fee) = req.fee {
             validate_fee(fee)?;
@@ -762,6 +832,10 @@ impl SplitService {
         }
 
         let txn = db.begin().await?;
+
+        if let Some(amounts) = &next_bags {
+            replace_bags(&txn, split_id, amounts).await?;
+        }
 
         if let Some(event_id_opt) = linked_event_id {
             active.event_id = Set(event_id_opt);
@@ -1837,6 +1911,7 @@ mod tests {
             fee: Some(Decimal::ZERO),
             repair_value: repair.parse().unwrap(),
             bags_value: bags.parse().unwrap(),
+            bags: Vec::new(),
             note: None,
             event_id: None,
             island_tab_id: 0,
@@ -1944,6 +2019,74 @@ mod tests {
             .create_split(&db, admin, request("50.00", "0.00", "0.00", vec![]))
             .await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn create_and_update_split_persists_individual_bags() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let tab_id = seed_tab(&db).await;
+        let service = SplitService::new();
+        let mut req = located(
+            request(
+                "100.00",
+                "0.00",
+                "0.00",
+                vec![UpsertParticipantRequest {
+                    user_id: alice,
+                    weight: Decimal::ONE,
+                }],
+            ),
+            tab_id,
+        );
+        req.bags = vec!["150000".parse().unwrap(), "80000".parse().unwrap()];
+        let created = service.create_split(&db, admin, req).await.unwrap();
+        assert_eq!(
+            created.bags,
+            vec!["150000".parse().unwrap(), "80000".parse().unwrap()]
+        );
+        assert_eq!(created.summary.bags_value, "230000".parse().unwrap());
+
+        let updated = service
+            .update_split(
+                &db,
+                created.summary.id,
+                UpdateSplitRequest {
+                    estimated_market_value: None,
+                    fee: None,
+                    repair_value: None,
+                    bags_value: None,
+                    bags: Some(vec!["50000".parse().unwrap()]),
+                    note: None,
+                    event_id: None,
+                    island_tab_id: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(updated.bags, vec!["50000".parse().unwrap()]);
+        assert_eq!(updated.summary.bags_value, "50000".parse().unwrap());
+
+        let cleared = service
+            .update_split(
+                &db,
+                created.summary.id,
+                UpdateSplitRequest {
+                    estimated_market_value: None,
+                    fee: None,
+                    repair_value: None,
+                    bags_value: None,
+                    bags: Some(vec![]),
+                    note: None,
+                    event_id: None,
+                    island_tab_id: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(cleared.bags.is_empty());
+        assert_eq!(cleared.summary.bags_value, Decimal::ZERO);
     }
 
     #[tokio::test]
@@ -2107,6 +2250,7 @@ mod tests {
                     fee: Some("12.50".parse().unwrap()),
                     repair_value: None,
                     bags_value: None,
+                    bags: None,
                     note: None,
                     event_id: None,
                     island_tab_id: None,
@@ -2847,6 +2991,7 @@ mod tests {
                     fee: None,
                     repair_value: None,
                     bags_value: None,
+                    bags: None,
                     note: None,
                     event_id: None,
                     island_tab_id: Some(island.tabs[1].id),
@@ -2907,6 +3052,7 @@ mod tests {
                     fee: None,
                     repair_value: None,
                     bags_value: None,
+                    bags: None,
                     note: None,
                     event_id: None,
                     island_tab_id: Some(island.tabs[1].id),

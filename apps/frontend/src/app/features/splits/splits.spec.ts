@@ -212,6 +212,25 @@ describe('Splits Component', () => {
       expect.objectContaining({ status: 'awaiting_event', search: 'castle', page: 2 }),
     );
   });
+
+  it('adds, edits, and removes individual bags on the create form', () => {
+    const page = fixture.componentInstance as Splits & {
+      addBag: () => void;
+      removeBag: (key: number) => void;
+      onBagAmountChange: (key: number, event: Event) => void;
+      draftBagRows: () => Array<{ key: number; amount: number }>;
+      draftBags: () => number;
+    };
+    page.addBag();
+    page.addBag();
+    const [first, second] = page.draftBagRows();
+    page.onBagAmountChange(first.key, { target: { value: '150000' } } as unknown as Event);
+    page.onBagAmountChange(second.key, { target: { value: '80000' } } as unknown as Event);
+    expect(page.draftBags()).toBe(230000);
+    page.removeBag(first.key);
+    expect(page.draftBagRows()).toHaveLength(1);
+    expect(page.draftBags()).toBe(80000);
+  });
 });
 
 function tabButton(root: HTMLElement, label: string): HTMLButtonElement | undefined {
