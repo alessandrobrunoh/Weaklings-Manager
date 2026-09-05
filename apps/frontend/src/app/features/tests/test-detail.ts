@@ -27,6 +27,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
 import {
+  type AbilitySlotView,
   abilityCatalogKey,
   abilityKeyForItem,
   abilitySlotsFor,
@@ -51,20 +52,29 @@ import {
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { VersionSwitcher } from '../../shared/components/version-switcher/version-switcher';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { CastTable } from './timeline/cast-table';
+import {
+  type GroupedSpellOptions,
+  groupedSpellOptions,
+  matchLandTimes,
+  normalizeCast,
+  normalizeDefinition,
+  snapSeconds,
+  spellIdsOf,
+  unitIdsOf,
+} from './timeline/scenario-timeline';
+import { TimelineEditor } from './timeline/timeline-editor';
+import { TimelineInspector } from './timeline/timeline-inspector';
+import { TimelineSpellLibrary } from './timeline/timeline-spell-library';
 
 type EditorTab = 'setup' | 'timeline' | 'results';
+/** Which face of the Timeline tab is showing: the visual editor, or the same casts as a table. */
+type TimelineView = 'timeline' | 'table';
 
 let groupSeq = 0;
 
 function emptyDefinition(): ScenarioDefinition {
   return { groups: [], casts: [] };
-}
-
-/** All unit instance ids a definition's groups expand to — `"{id}#0"`..`"{id}#{count-1}"`. */
-function unitIdsOf(definition: ScenarioDefinition): string[] {
-  return definition.groups.flatMap((group) =>
-    Array.from({ length: Math.max(1, group.count ?? 1) }, (_, n) => `${group.id}#${n}`),
-  );
 }
 
 /**
@@ -84,11 +94,6 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
     default:
       return 'weapon';
   }
-}
-
-interface GroupedSpellOptions {
-  readonly group: string;
-  readonly options: readonly { readonly value: string; readonly label: string }[];
 }
 
 /**
@@ -115,6 +120,10 @@ interface GroupedSpellOptions {
     StatCard,
     VersionSwitcher,
     ViewToggle,
+    CastTable,
+    TimelineEditor,
+    TimelineInspector,
+    TimelineSpellLibrary,
   ],
   template: `
     @if (loading()) {
@@ -311,143 +320,89 @@ interface GroupedSpellOptions {
 
           @case ('timeline') {
             <section class="card p-5">
-              <div class="flex items-center justify-between mb-4">
+              <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
                 <h2 class="text-base font-bold text-[var(--color-text)]">{{ t('tests.casts') }}</h2>
-                @if (canManage()) {
-                  <button
-                    type="button"
-                    class="btn btn--tonal btn--sm"
-                    [disabled]="draft().groups.length === 0"
-                    (click)="addCast()"
-                  >
-                    <app-icon name="plus" size="0.75rem" />
-                    {{ t('tests.addCast') }}
-                  </button>
-                }
-              </div>
-              @if (draft().casts.length === 0) {
-                <app-empty-state [message]="t('tests.noCasts')" icon="activity" />
-              } @else {
-                <p class="text-xs text-[var(--color-text-secondary)] mb-3">
-                  {{ t('tests.targetsHint') }}
-                </p>
-                <div class="overflow-x-auto">
-                  <table class="table">
-                    <thead>
-                      <tr>
-                        <th class="text-left">{{ t('tests.caster') }}</th>
-                        <th class="text-left">{{ t('tests.spellId') }}</th>
-                        <th class="text-right">{{ t('tests.castAt') }}</th>
-                        <th class="text-left">{{ t('tests.targets') }}</th>
-                        <th class="text-left">{{ t('tests.attackerStyle') }}</th>
-                        <th class="text-center">{{ t('common.actions') }}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      @for (cast of draft().casts; track $index; let i = $index) {
-                        <tr>
-                          <td>
-                            <select
-                              class="select select--sm"
-                              [value]="cast.caster_group_id"
-                              [disabled]="!canManage()"
-                              (change)="onCastCasterChange(i, $event)"
-                            >
-                              @for (group of draft().groups; track group.id) {
-                                <option [value]="group.id">{{ group.label }} ({{ group.id }})</option>
-                              }
-                            </select>
-                          </td>
-                          <td>
-                            @if (groupedSpellOptionsFor(cast.caster_group_id).length > 0) {
-                              <select
-                                class="select select--sm"
-                                [value]="cast.spell_id"
-                                [disabled]="!canManage()"
-                                (change)="onCastSpellIdChange(i, $event)"
-                              >
-                                <option value="">{{ t('tests.pickSpell') }}</option>
-                                @for (grp of groupedSpellOptionsFor(cast.caster_group_id); track grp.group) {
-                                  <optgroup [label]="grp.group">
-                                    @for (opt of grp.options; track opt.value) {
-                                      <option [value]="opt.value">{{ opt.label }}</option>
-                                    }
-                                  </optgroup>
-                                }
-                              </select>
-                            } @else {
-                              <input
-                                class="input input--sm font-mono"
-                                type="text"
-                                placeholder="SPELL_ID"
-                                [value]="cast.spell_id"
-                                [disabled]="!canManage()"
-                                (change)="onCastSpellIdChange(i, $event)"
-                              />
-                            }
-                          </td>
-                          <td class="text-right">
-                            <input
-                              class="input input--sm text-right"
-                              type="number"
-                              step="0.1"
-                              min="0"
-                              [value]="cast.cast_at"
-                              [disabled]="!canManage()"
-                              (change)="onCastAtChange(i, $event)"
-                            />
-                          </td>
-                          <td>
-                            <select
-                              multiple
-                              class="select select--sm"
-                              style="min-height: 4.5rem"
-                              [disabled]="!canManage()"
-                              (change)="onCastTargetsChange(i, $event)"
-                            >
-                              @for (grp of unitOptionsGrouped(); track grp.groupLabel) {
-                                <optgroup [label]="grp.groupLabel">
-                                  @for (id of grp.ids; track id) {
-                                    <option [value]="id" [selected]="cast.target_ids.includes(id)">
-                                      {{ id }}
-                                    </option>
-                                  }
-                                </optgroup>
-                              }
-                            </select>
-                          </td>
-                          <td>
-                            <select
-                              class="select select--sm"
-                              [value]="cast.attacker_style ?? 'melee'"
-                              [disabled]="!canManage()"
-                              (change)="onCastAttackerStyleChange(i, $event)"
-                            >
-                              <option value="melee">{{ t('tests.melee') }}</option>
-                              <option value="ranged">{{ t('tests.ranged') }}</option>
-                              <option value="mounted">{{ t('tests.mounted') }}</option>
-                            </select>
-                          </td>
-                          <td class="text-center">
-                            @if (canManage()) {
-                              <button
-                                type="button"
-                                class="btn btn--ghost btn--sm"
-                                (click)="removeCast(i)"
-                              >
-                                <app-icon name="close" size="0.75rem" />
-                              </button>
-                            }
-                          </td>
-                        </tr>
-                      }
-                    </tbody>
-                  </table>
+                <div class="flex flex-wrap items-center gap-2">
+                  <app-view-toggle
+                    [options]="timelineViewOptions()"
+                    [active]="timelineView()"
+                    (activeChange)="switchTimelineView($event)"
+                  />
+                  @if (canManage()) {
+                    <button
+                      type="button"
+                      class="btn btn--tonal btn--sm"
+                      [disabled]="draft().groups.length === 0"
+                      (click)="addCast()"
+                    >
+                      <app-icon name="plus" size="0.75rem" />
+                      {{ t('tests.addCast') }}
+                    </button>
+                  }
                 </div>
-                <p class="text-xs text-[var(--color-text-tertiary)] mt-3">
-                  {{ t('tests.noGeometryWarning') }}
-                </p>
+              </div>
+
+              @if (timelineView() === 'table') {
+                @if (draft().casts.length === 0) {
+                  <app-empty-state [message]="t('tests.noCasts')" icon="activity" />
+                } @else {
+                  <p class="text-xs text-[var(--color-text-secondary)] mb-3">
+                    {{ t('tests.targetsHint') }}
+                  </p>
+                  <app-cast-table
+                    [definition]="draft()"
+                    [spellOptionsByGroup]="spellOptionsByGroup()"
+                    [unitOptions]="unitOptionsGrouped()"
+                    [canManage]="canManage()"
+                    [selectedIndex]="selectedCastIndex()"
+                    (patched)="onCastPatched($event)"
+                    (removed)="removeCast($event)"
+                    (selected)="selectedCastIndex.set($event)"
+                  />
+                }
+              } @else {
+                <div class="timeline-layout">
+                  <app-timeline-spell-library
+                    [groups]="draft().groups"
+                    [slotsByGroup]="abilitySlotsByGroup()"
+                    [canManage]="canManage()"
+                    (addRequested)="onLibraryAdd($event)"
+                    (dragStarted)="timelineEditor.onLibraryDragStart($event)"
+                    (dragEnded)="timelineEditor.onLibraryDragEnd()"
+                  />
+                  <app-timeline-editor
+                    #timelineEditor
+                    [definition]="draft()"
+                    [knownSpellIdsByGroup]="knownSpellIdsByGroup()"
+                    [cooldownsBySpell]="cooldownsBySpell()"
+                    [result]="latestRun()?.result ?? null"
+                    [staleResult]="resultStale()"
+                    [selectedCastIndex]="selectedCastIndex()"
+                    [canManage]="canManage()"
+                    (castCreated)="onTimelineCastCreated($event)"
+                    (castMoved)="onTimelineCastMoved($event)"
+                    (castRemoved)="removeCast($event)"
+                    (castSelected)="selectedCastIndex.set($event)"
+                    (runRequested)="runNow()"
+                  />
+                  <app-timeline-inspector
+                    [cast]="selectedCast()"
+                    [castIndex]="selectedCastIndex() ?? 0"
+                    [groups]="draft().groups"
+                    [spellOptions]="selectedSpellOptions()"
+                    [knownSpellIds]="selectedKnownSpellIds()"
+                    [landAt]="selectedLandAt()"
+                    [canManage]="canManage()"
+                    (patched)="onCastPatched($event)"
+                    (removed)="removeCast($event)"
+                    (closed)="selectedCastIndex.set(null)"
+                  />
+                </div>
               }
+
+              <p class="text-xs text-[var(--color-text-tertiary)] mt-3">
+                {{ t('tests.noGeometryWarning') }}
+              </p>
             </section>
           }
 
@@ -673,6 +628,21 @@ interface GroupedSpellOptions {
       </app-dialog>
     }
   `,
+  styles: `
+    .timeline-layout {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: minmax(0, 1fr);
+    }
+    @media (min-width: 1024px) {
+      /* Library and inspector flank the track; only the track scrolls sideways, so the page never
+         picks up a horizontal scrollbar of its own. */
+      .timeline-layout {
+        grid-template-columns: 14rem minmax(0, 1fr) 17rem;
+        align-items: start;
+      }
+    }
+  `,
 })
 export class TestDetailPage {
   private readonly albionAbilities = inject(AlbionAbilitiesService);
@@ -720,6 +690,11 @@ export class TestDetailPage {
       }));
   });
 
+  /** Which of the two Timeline views is showing. The visual editor is the default. */
+  protected readonly timelineView = signal<TimelineView>('timeline');
+  /** Position of the cast the inspector is editing. Positional, so removals must re-clamp it. */
+  protected readonly selectedCastIndex = signal<number | null>(null);
+
   protected readonly buildSearchOpen = signal(false);
   protected readonly buildSearchOptions = signal<SearchDialogOption[]>([]);
   protected readonly buildSearchLoading = signal(false);
@@ -737,6 +712,99 @@ export class TestDetailPage {
       ids: unitIdsOf({ groups: [group], casts: [] }),
     })),
   );
+
+  protected readonly timelineViewOptions = computed<ViewToggleOption[]>(() => [
+    { id: 'timeline', label: this.t('tests.timeline.viewTimeline') },
+    { id: 'table', label: this.t('tests.timeline.viewTable') },
+  ]);
+
+  /**
+   * Each group's weapon abilities, once per change rather than once per rendered row.
+   *
+   * The timeline, the table and the inspector all ask for these; deriving them per call meant
+   * walking the ability catalog for every cast row on every change detection pass.
+   */
+  protected readonly abilitySlotsByGroup = computed(() => {
+    const catalog = this.abilitiesCatalog();
+    const out: Record<string, AbilitySlotView[]> = {};
+    for (const group of this.draft().groups) {
+      if (!group.item_id) continue;
+      const abilities = catalog[abilityCatalogKey(group.item_id)];
+      if (!abilities) continue;
+      out[group.id] = abilitySlotsFor(buildSlotForAbilities(abilities), abilities, undefined);
+    }
+    return out;
+  });
+
+  protected readonly spellOptionsByGroup = computed(() => {
+    const out: Record<string, GroupedSpellOptions[]> = {};
+    for (const [groupId, slots] of Object.entries(this.abilitySlotsByGroup())) {
+      out[groupId] = groupedSpellOptions(slots);
+    }
+    return out;
+  });
+
+  /** Every spell id each group's weapon can cast, for flagging a cast that names something else. */
+  protected readonly knownSpellIdsByGroup = computed(() => {
+    const catalog = this.abilitiesCatalog();
+    const out: Record<string, ReadonlySet<string>> = {};
+    for (const group of this.draft().groups) {
+      if (!group.item_id) continue;
+      out[group.id] = spellIdsOf(catalog[abilityCatalogKey(group.item_id)]);
+    }
+    return out;
+  });
+
+  /** `spell id -> cooldown`, the only per-spell timing the frontend has, for the recharge shadow. */
+  protected readonly cooldownsBySpell = computed(() => {
+    const out: Record<string, string | null | undefined> = {};
+    for (const slots of Object.values(this.abilitySlotsByGroup())) {
+      for (const slot of slots) {
+        for (const choice of slot.choices) out[choice.id] = choice.cooldown;
+      }
+    }
+    return out;
+  });
+
+  protected readonly selectedCast = computed(() => {
+    const index = this.selectedCastIndex();
+    return index === null ? null : (this.draft().casts[index] ?? null);
+  });
+
+  protected readonly selectedSpellOptions = computed(() => {
+    const cast = this.selectedCast();
+    return cast ? (this.spellOptionsByGroup()[cast.caster_group_id] ?? []) : [];
+  });
+
+  protected readonly selectedKnownSpellIds = computed<ReadonlySet<string>>(() => {
+    const cast = this.selectedCast();
+    return cast ? (this.knownSpellIdsByGroup()[cast.caster_group_id] ?? new Set()) : new Set();
+  });
+
+  /** When the selected cast landed in the latest run, if that run could be matched to it. */
+  protected readonly selectedLandAt = computed(() => {
+    const index = this.selectedCastIndex();
+    const run = this.latestRun();
+    if (index === null || !run) return null;
+    return matchLandTimes(this.draft(), run.result)[index] ?? null;
+  });
+
+  /**
+   * Whether the shown run predates the definition it is drawn over.
+   *
+   * `RunDetail` does not carry the definition it ran against, so an unsaved edit or a save newer
+   * than the run is the only evidence available — enough to mark the overlay as history rather
+   * than let stale numbers read as an answer.
+   */
+  protected readonly resultStale = computed(() => {
+    const run = this.latestRun();
+    if (!run) return false;
+    const scenario = this.scenario();
+    return (
+      this.dirty() ||
+      (!!scenario && Date.parse(run.ran_at) < Date.parse(scenario.updated_at))
+    );
+  });
 
   protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
     { id: 'setup', label: this.t('tests.setup') },
@@ -771,6 +839,12 @@ export class TestDetailPage {
   protected switchTab(tab: string): void {
     if (tab === 'setup' || tab === 'timeline' || tab === 'results') {
       this.activeTab.set(tab);
+    }
+  }
+
+  protected switchTimelineView(view: string): void {
+    if (view === 'timeline' || view === 'table') {
+      this.timelineView.set(view);
     }
   }
 
@@ -899,69 +973,86 @@ export class TestDetailPage {
     }
   }
 
-  /** This group's weapon's abilities, grouped by slot (Q/W/E/Passive) — empty until one is picked. */
-  protected groupedSpellOptionsFor(casterGroupId: string): GroupedSpellOptions[] {
-    const group = this.draft().groups.find((candidate) => candidate.id === casterGroupId);
-    const itemId = group?.item_id;
-    if (!itemId) return [];
-    const abilities = this.abilitiesCatalog()[abilityCatalogKey(itemId)];
-    if (!abilities) return [];
-    const slots = abilitySlotsFor(buildSlotForAbilities(abilities), abilities, undefined);
-    return slots
-      .filter((slot) => slot.choices.length > 0)
-      .map((slot) => ({
-        group: slot.label,
-        options: slot.choices.map((choice) => ({ value: choice.id, label: choice.name })),
-      }));
-  }
-
   // ---- Casts ----
 
   protected addCast(): void {
     const firstGroup = this.draft().groups[0];
     if (!firstGroup) return;
-    const cast: ScenarioDeclaredCast = {
-      caster_group_id: firstGroup.id,
-      spell_id: '',
-      cast_at: 0,
+    this.appendCast(firstGroup.id, '', 0);
+  }
+
+  /**
+   * Adds a cast and selects it.
+   *
+   * Every cast the page creates goes through `normalizeCast`, so a freshly built one serialises
+   * identically to one that came back from the server — which is what keeps `dirty()`, a
+   * `JSON.stringify` comparison, honest.
+   */
+  private appendCast(casterGroupId: string, spellId: string, castAt: number): void {
+    const cast = normalizeCast({
+      caster_group_id: casterGroupId,
+      spell_id: spellId,
+      cast_at: castAt,
       target_ids: [],
       attacker_style: 'melee',
-    };
+    });
     this.draft.update((def) => ({ ...def, casts: [...def.casts, cast] }));
+    this.selectedCastIndex.set(this.draft().casts.length - 1);
   }
 
   protected removeCast(index: number): void {
     this.draft.update((def) => ({ ...def, casts: def.casts.filter((_, i) => i !== index) }));
+    // The selection is a position, so everything after the removed cast shifted under it.
+    this.selectedCastIndex.update((selected) => {
+      if (selected === null) return null;
+      if (selected === index) return null;
+      return selected > index ? selected - 1 : selected;
+    });
   }
 
   protected updateCast(index: number, patch: Partial<ScenarioDeclaredCast>): void {
     this.draft.update((def) => ({
       ...def,
-      casts: def.casts.map((cast, i) => (i === index ? { ...cast, ...patch } : cast)),
+      casts: def.casts.map((cast, i) => (i === index ? normalizeCast({ ...cast, ...patch }) : cast)),
     }));
   }
 
-  protected onCastCasterChange(index: number, event: Event): void {
-    this.updateCast(index, { caster_group_id: (event.target as HTMLSelectElement).value });
+  protected onCastPatched(event: { index: number; patch: Partial<ScenarioDeclaredCast> }): void {
+    this.updateCast(event.index, event.patch);
   }
 
-  protected onCastSpellIdChange(index: number, event: Event): void {
-    const target = event.target as HTMLInputElement | HTMLSelectElement;
-    this.updateCast(index, { spell_id: target.value.trim() });
+  protected onTimelineCastCreated(event: {
+    casterGroupId: string;
+    spellId: string;
+    castAt: number;
+  }): void {
+    this.appendCast(event.casterGroupId, event.spellId, snapSeconds(event.castAt));
   }
 
-  protected onCastAtChange(index: number, event: Event): void {
-    this.updateCast(index, { cast_at: Math.max(0, Number((event.target as HTMLInputElement).value) || 0) });
+  /**
+   * Moves a cast in time, and possibly onto another group.
+   *
+   * A spell the destination's weapon does not list is kept as-is rather than cleared: `item_id` is
+   * a UI hint the engine never reads, so the id may well still resolve — and silently emptying a
+   * mis-dropped cast would destroy the only thing the user typed. The editor draws it as foreign.
+   */
+  protected onTimelineCastMoved(event: {
+    index: number;
+    castAt: number;
+    casterGroupId: string;
+  }): void {
+    this.updateCast(event.index, {
+      cast_at: snapSeconds(event.castAt),
+      caster_group_id: event.casterGroupId,
+    });
   }
 
-  protected onCastTargetsChange(index: number, event: Event): void {
-    const select = event.target as HTMLSelectElement;
-    const target_ids = Array.from(select.selectedOptions).map((option) => option.value);
-    this.updateCast(index, { target_ids });
-  }
-
-  protected onCastAttackerStyleChange(index: number, event: Event): void {
-    this.updateCast(index, { attacker_style: (event.target as HTMLSelectElement).value as AttackerStyle });
+  /** The keyboard equivalent of dragging a spell out of the library: land it after the last cast. */
+  protected onLibraryAdd(event: { casterGroupId: string; spellId: string }): void {
+    const latest = this.draft()
+      .casts.filter((cast) => cast.caster_group_id === event.casterGroupId)
+      .reduce((max, cast) => Math.max(max, cast.cast_at), -0.5);
+    this.appendCast(event.casterGroupId, event.spellId, snapSeconds(latest + 0.5));
   }
 
   // ---- Persistence ----
@@ -1107,9 +1198,13 @@ export class TestDetailPage {
   }
 
   private applyScenario(scenario: ScenarioDetail): void {
+    // Both sides go through the same normalisation so `dirty()` — a `JSON.stringify` comparison —
+    // compares meaning rather than the key order the server happened to serialise with.
+    const definition = normalizeDefinition(scenario.definition);
     this.scenario.set(scenario);
-    this.savedDefinition.set(scenario.definition);
-    this.draft.set(scenario.definition);
+    this.savedDefinition.set(definition);
+    this.draft.set(definition);
+    this.selectedCastIndex.set(null);
   }
 
   // ---- Formatting ----
