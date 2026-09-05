@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 use utoipa::ToSchema;
 
 use crate::modules::albion::service::AlbionLinkService;
+use crate::modules::combat::dataset::spec_node;
 use crate::modules::battles::entities::Entity as GuildBattleSnapshotEntity;
 use crate::modules::battles::models::BattleLossEstimate;
 use crate::modules::comps::entities::build::Entity as BuildEntity;
@@ -204,21 +205,37 @@ impl UserService {
                             .to_string(),
                     ));
                 }
-                let valid_catalog_key = key
-                    .strip_prefix(&format!("{category}:"))
-                    .is_some_and(|identifier| !identifier.is_empty() && !identifier.contains(':'));
-                if !matches!(category.as_str(), "weapon" | "armor")
-                    || !valid_catalog_key
-                    || !keys.insert(key.clone())
-                {
+                // `weapon`/`armor` rows name a catalog item (`weapon:2H_POLEHAMMER`), capped at
+                // Albion's 120-level specialization scale. `mastery` rows name a Destiny Board
+                // family node directly (`mastery:COMBAT_HAMMERS`) — verified against the bundled
+                // combat dataset rather than trusted from the client, since an invalid id here
+                // would silently vanish from every Item Power figure that reads it — and capped at
+                // the dataset's own 100-level mastery scale rather than the weapon/armor one.
+                let max_level = match category.as_str() {
+                    "weapon" | "armor" => 120,
+                    "mastery" => 100,
+                    _ => {
+                        return Err(AppError::Validation(
+                            "Invalid or duplicated combat specialization".to_string(),
+                        ));
+                    }
+                };
+                let valid_key = key.strip_prefix(&format!("{category}:")).is_some_and(|id| {
+                    if category == "mastery" {
+                        spec_node(id).is_some_and(|node| node.kind == "mastery")
+                    } else {
+                        !id.is_empty() && !id.contains(':')
+                    }
+                });
+                if !valid_key || !keys.insert(key.clone()) {
                     return Err(AppError::Validation(
                         "Invalid or duplicated combat specialization".to_string(),
                     ));
                 }
-                if !(0..=120).contains(&item.level) {
-                    return Err(AppError::Validation(
-                        "Specialization level must be between 0 and 120".to_string(),
-                    ));
+                if !(0..=max_level).contains(&item.level) {
+                    return Err(AppError::Validation(format!(
+                        "Specialization level must be between 0 and {max_level}"
+                    )));
                 }
                 Ok(super::specializations::ActiveModel {
                     user_id: Set(target_user_id as i64),
@@ -735,5 +752,150 @@ mod tests {
             AppError::Validation(message) => assert!(message.contains("email")),
             other => panic!("expected validation, got {other:?}"),
         }
+    }
+
+    async fn seed_specializations_user() -> (DatabaseConnection, i64) {
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("Failed to connect to test database");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("Failed to run database migrations");
+
+        use super::super::entities::ActiveModel;
+        let user = ActiveModel {
+            username: Set("specializer".to_string()),
+            email: Set("specializer@example.com".to_string()),
+            role: Set("User".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("Failed to insert user");
+        (db, user.id)
+    }
+
+    fn specialization_input(
+        node_key: &str,
+        category: &str,
+        level: i32,
+    ) -> super::super::specializations::UserSpecializationInput {
+        super::super::specializations::UserSpecializationInput {
+            node_key: node_key.to_string(),
+            node_name: node_key.to_string(),
+            category: category.to_string(),
+            level,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_mastery_row_names_a_destiny_board_family_node_directly() {
+        let (db, user_id) = seed_specializations_user().await;
+        let service = UserService::new();
+
+        let request = super::super::specializations::UpdateSpecializationsRequest {
+            specializations: vec![specialization_input("mastery:COMBAT_HAMMERS", "mastery", 87)],
+        };
+
+        let saved = service
+            .update_specializations(&db, user_id as u64, user_id, &request)
+            .await
+            .expect("a real mastery node should be accepted");
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].node_key, "mastery:COMBAT_HAMMERS");
+        assert_eq!(saved[0].level, 87);
+    }
+
+    #[tokio::test]
+    async fn a_mastery_row_naming_an_unknown_node_is_rejected() {
+        let (db, user_id) = seed_specializations_user().await;
+        let service = UserService::new();
+
+        let request = super::super::specializations::UpdateSpecializationsRequest {
+            specializations: vec![specialization_input("mastery:NOT_A_REAL_NODE", "mastery", 50)],
+        };
+
+        let error = service
+            .update_specializations(&db, user_id as u64, user_id, &request)
+            .await
+            .expect_err("an unknown mastery node should be rejected");
+        assert!(matches!(error, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn a_mastery_row_naming_a_leaf_specialization_is_rejected() {
+        // `COMBAT_HAMMERS_POLE` is a real node, but it is a leaf spec, not the family mastery
+        // node above it — a client sending it under `category: "mastery"` almost certainly meant
+        // the weapon category instead, and should be told so rather than silently accepted.
+        let (db, user_id) = seed_specializations_user().await;
+        let service = UserService::new();
+
+        let request = super::super::specializations::UpdateSpecializationsRequest {
+            specializations: vec![specialization_input(
+                "mastery:COMBAT_HAMMERS_POLE",
+                "mastery",
+                50,
+            )],
+        };
+
+        let error = service
+            .update_specializations(&db, user_id as u64, user_id, &request)
+            .await
+            .expect_err("a leaf spec node under category mastery should be rejected");
+        assert!(matches!(error, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn a_mastery_level_above_a_hundred_is_rejected_even_though_weapon_allows_more() {
+        let (db, user_id) = seed_specializations_user().await;
+        let service = UserService::new();
+
+        let request = super::super::specializations::UpdateSpecializationsRequest {
+            specializations: vec![specialization_input("mastery:COMBAT_HAMMERS", "mastery", 110)],
+        };
+
+        let error = service
+            .update_specializations(&db, user_id as u64, user_id, &request)
+            .await
+            .expect_err("mastery caps at 100, unlike the 120 weapon/armor scale");
+        match error {
+            AppError::Validation(message) => assert!(message.contains('0')),
+            other => panic!("expected validation, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn weapon_and_armor_rows_are_unaffected_by_the_mastery_addition() {
+        let (db, user_id) = seed_specializations_user().await;
+        let service = UserService::new();
+
+        let request = super::super::specializations::UpdateSpecializationsRequest {
+            specializations: vec![
+                specialization_input("weapon:2H_POLEHAMMER", "weapon", 120),
+                specialization_input("armor:ARMOR_PLATE_SET1", "armor", 100),
+            ],
+        };
+
+        let saved = service
+            .update_specializations(&db, user_id as u64, user_id, &request)
+            .await
+            .expect("existing weapon/armor rows should still validate");
+        assert_eq!(saved.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn an_unknown_category_is_still_rejected() {
+        let (db, user_id) = seed_specializations_user().await;
+        let service = UserService::new();
+
+        let request = super::super::specializations::UpdateSpecializationsRequest {
+            specializations: vec![specialization_input("potion:HEAL", "potion", 1)],
+        };
+
+        let error = service
+            .update_specializations(&db, user_id as u64, user_id, &request)
+            .await
+            .expect_err("an unrecognised category should be rejected");
+        assert!(matches!(error, AppError::Validation(_)));
     }
 }

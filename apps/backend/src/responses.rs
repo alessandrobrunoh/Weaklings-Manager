@@ -289,6 +289,16 @@ pub struct ApiResponseCombatDataset {
     pub data: crate::modules::combat::models::CombatDatasetView,
 }
 
+/// `OpenAPI` schema wrapper for the mastery-groups mapping response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseMasteryGroups {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The item-to-mastery-node payload.
+    pub data: crate::modules::combat::models::MasteryGroupsView,
+}
+
 /// `OpenAPI` schema wrapper for an Item Power response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseItemPower {
