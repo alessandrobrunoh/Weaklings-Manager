@@ -17,8 +17,8 @@ use crate::responses::{
 
 use super::dataset::dataset_version;
 use super::models::{
-    CombatDatasetView, CreateScenarioRequest, ItemPowerRequest, ItemPowerView, MasteryGroupsView,
-    RunDetail, ScenarioDetail, ScenarioSummary, SimulateRequest, SimulateView,
+    CalibrationView, CombatDatasetView, CreateScenarioRequest, ItemPowerRequest, ItemPowerView,
+    MasteryGroupsView, RunDetail, ScenarioDetail, ScenarioSummary, SimulateRequest, SimulateView,
     UpdateScenarioRequest,
 };
 use super::service::CombatService;
@@ -43,6 +43,7 @@ pub fn router() -> Router {
         .route("/item-power", post(post_item_power))
         .route("/members/{user_id}/item-power", get(get_member_item_power))
         .route("/simulate", post(post_simulate))
+        .route("/calibration", get(get_calibration))
 }
 
 /// Reports which ao-bin-dumps commit the bundled combat data came from.
@@ -523,4 +524,34 @@ async fn get_run(
     user.require(&perms, Permission::CombatTestsView).await?;
     let run = CombatService::new().get_run(&db, run_id).await?;
     Ok(Json(ApiResponse::new(run)))
+}
+
+/// Checks the Item Power calculator's predictions against Item Power actually observed in battle.
+#[utoipa::path(
+    get,
+    path = "/api/combat/calibration",
+    tag = "combat",
+    summary = "Get the Item Power calculator's calibration against observed battle data",
+    description = "Compares what `combat::ip` calculates for a member's signed-up build against \
+                   the Item Power AlbionBB reported for that player in a battle fetched around the \
+                   same time, and reports the mean/median absolute error plus the worst 20 \
+                   mismatches. Every match is best-effort — see the response schema's docs on what \
+                   this figure does and does not prove. Requires `combat.calibration.view`, an \
+                   officer-tier permission distinct from the member-facing calculator: this reports \
+                   accuracy across the whole guild, not a member's own Item Power.",
+    security(("session_cookie" = [])),
+    responses(
+        (status = 200, description = "The calibration report", body = crate::responses::ApiResponseCalibration),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Missing combat.calibration.view", body = ProblemDetails)
+    )
+)]
+async fn get_calibration(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<CalibrationView>>, AppError> {
+    user.require(&perms, Permission::CombatCalibrationView).await?;
+    let calibration = CombatService::new().calibration(&db).await?;
+    Ok(Json(ApiResponse::new(calibration)))
 }

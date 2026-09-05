@@ -19,10 +19,10 @@ use super::entities::combat_scenario::Column as CombatScenarioColumn;
 use super::fit;
 use super::ip::{self, EquippedItem, SpecLevels};
 use super::models::{
-    BlockingNode, BuildRosterFitView, CombatDatasetView, CreateScenarioRequest, ItemPowerRequest,
-    ItemPowerView, LoadoutItemRequest, MemberItemPowerView, RunDetail, RunSummary,
-    ScenarioDefinition, ScenarioDetail, ScenarioSummary, ScenarioVersionRef, SpecSource,
-    UpdateScenarioRequest,
+    BlockingNode, BuildRosterFitView, CalibrationOutlier, CalibrationView, CombatDatasetView,
+    CreateScenarioRequest, ItemPowerRequest, ItemPowerView, LoadoutItemRequest,
+    MemberItemPowerView, RunDetail, RunSummary, ScenarioDefinition, ScenarioDetail,
+    ScenarioSummary, ScenarioVersionRef, SpecSource, UpdateScenarioRequest,
 };
 use crate::errors::AppError;
 use crate::modules::comps::entities::build_item::{
@@ -671,6 +671,172 @@ impl CombatService {
         Ok(RunDetail { summary: self.run_summary(db, model).await?, result })
     }
 
+    /// Level-2 calibration: checks `combat::ip`'s predictions against Item Power actually observed
+    /// in fetched battles.
+    ///
+    /// The match, for every guild battle snapshot: a player row in `players_json` whose id is
+    /// claimed by an `albion_links` row, whose linked user has an `event_participations` row for
+    /// an event within a day of the battle, with a `primary_build_id` set. That build's items,
+    /// scored with the member's current spec levels, is the "expected" figure; the snapshot's own
+    /// `item_power` is the "observed" one. See [`CalibrationView`]'s docs on how much weight one
+    /// observation can bear.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::Database`] on a query failure. Never fails for lack of data — an empty
+    /// guild history returns `sample_size: 0`, not an error.
+    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::cast_precision_loss)] // A guild's battle count would still be exact at f64.
+    pub async fn calibration(&self, db: &DatabaseConnection) -> Result<CalibrationView, AppError> {
+        use crate::modules::albion::entities::albion_link;
+        use crate::modules::battles::entities::{
+            Column as SnapshotColumn, Entity as SnapshotEntity,
+        };
+        use crate::modules::battles::models::BattlePlayer;
+        use crate::modules::events::entities::{event, event_participation};
+
+        const MATCH_WINDOW_HOURS: i64 = 24;
+
+        let links: HashMap<String, albion_link::Model> = albion_link::Entity::find()
+            .all(db)
+            .await
+            .map_err(AppError::Database)?
+            .into_iter()
+            .map(|link| (link.albion_player_id.clone(), link))
+            .collect();
+        if links.is_empty() {
+            return Ok(Self::empty_calibration());
+        }
+
+        let discord_id_to_user: HashMap<String, crate::modules::users::entities::Model> =
+            crate::modules::users::entities::Entity::find()
+                .all(db)
+                .await
+                .map_err(AppError::Database)?
+                .into_iter()
+                .filter_map(|user| user.discord_id.clone().map(|discord_id| (discord_id, user)))
+                .collect();
+
+        // (user_id, event_date_utc, primary_build_id) for every sign-up that named a build.
+        let participations: Vec<(i64, sea_orm::prelude::DateTimeWithTimeZone, i64)> =
+            event_participation::Entity::find()
+                .find_also_related(event::Entity)
+                .all(db)
+                .await
+                .map_err(AppError::Database)?
+                .into_iter()
+                .filter_map(|(participation, event)| {
+                    let build_id = participation.primary_build_id?;
+                    let event = event?;
+                    Some((participation.user_id, event.event_date_utc, build_id))
+                })
+                .collect();
+
+        let snapshots = SnapshotEntity::find()
+            .order_by_asc(SnapshotColumn::StartTime)
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+
+        let mut errors: Vec<f64> = Vec::new();
+        let mut outliers: Vec<CalibrationOutlier> = Vec::new();
+
+        for snapshot in &snapshots {
+            let Ok(players) = serde_json::from_str::<Vec<BattlePlayer>>(&snapshot.players_json)
+            else {
+                continue; // A malformed row should not fail every other observation.
+            };
+            for player in players {
+                let Some(link) = links.get(&player.id) else { continue };
+                let Some(user) = discord_id_to_user.get(&link.discord_id) else { continue };
+
+                let nearest = participations
+                    .iter()
+                    .filter(|(user_id, _, _)| *user_id == user.id)
+                    .filter(|(_, event_date, _)| {
+                        (event_date.timestamp() - snapshot.start_time.timestamp()).abs()
+                            <= MATCH_WINDOW_HOURS * 3600
+                    })
+                    .min_by_key(|(_, event_date, _)| {
+                        (event_date.timestamp() - snapshot.start_time.timestamp()).abs()
+                    });
+                let Some((_, _, build_id)) = nearest else { continue };
+
+                let Ok(view) = self
+                    .build_item_power(
+                        db,
+                        *build_id,
+                        BuildLoadout::Main,
+                        SpecSource::Current,
+                        Some(user.id),
+                        None,
+                    )
+                    .await
+                else {
+                    continue; // The build may since have been deleted; skip rather than fail the whole report.
+                };
+                let Some(build) = build::Entity::find_by_id(*build_id)
+                    .one(db)
+                    .await
+                    .map_err(AppError::Database)?
+                else {
+                    continue;
+                };
+
+                let expected_ip = view.breakdown.average;
+                let observed_ip = player.item_power;
+                let error = expected_ip - observed_ip;
+                errors.push(error);
+                outliers.push(CalibrationOutlier {
+                    user_id: user.id,
+                    username: crate::modules::users::display_name::resolve(db, user).await?,
+                    build_id: *build_id,
+                    build_name: build.name,
+                    expected_ip,
+                    observed_ip,
+                    error,
+                    observed_at: snapshot.fetched_at.to_rfc3339(),
+                });
+            }
+        }
+
+        let sample_size = errors.len();
+        if sample_size == 0 {
+            return Ok(Self::empty_calibration());
+        }
+
+        let mean_absolute_error =
+            errors.iter().map(|error| error.abs()).sum::<f64>() / sample_size as f64;
+        let mut absolute_errors: Vec<f64> = errors.iter().map(|error| error.abs()).collect();
+        let median_absolute_error = median(&mut absolute_errors);
+
+        outliers.sort_by(|a, b| {
+            b.error
+                .abs()
+                .partial_cmp(&a.error.abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        outliers.truncate(20);
+
+        Ok(CalibrationView {
+            dataset_version: dataset_version().clone(),
+            sample_size,
+            mean_absolute_error,
+            median_absolute_error,
+            outliers,
+        })
+    }
+
+    fn empty_calibration() -> CalibrationView {
+        CalibrationView {
+            dataset_version: dataset_version().clone(),
+            sample_size: 0,
+            mean_absolute_error: 0.0,
+            median_absolute_error: 0.0,
+            outliers: Vec::new(),
+        }
+    }
+
     async fn scenario_summary(
         &self,
         db: &DatabaseConnection,
@@ -782,6 +948,23 @@ async fn ensure_scenario_name_free<C: ConnectionTrait>(
         )));
     }
     Ok(())
+}
+
+/// The middle value of a sorted copy of `values`; `0.0` for an empty slice.
+///
+/// Even-length slices average the two central values, the conventional definition.
+#[allow(clippy::cast_precision_loss)] // A sample size in the thousands would still be exact at f64.
+fn median(values: &mut [f64]) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mid = values.len() / 2;
+    if values.len().is_multiple_of(2) {
+        f64::midpoint(values[mid - 1], values[mid])
+    } else {
+        values[mid]
+    }
 }
 
 /// Reads the `loadout` query parameter, defaulting to the main set.
@@ -1553,5 +1736,255 @@ mod scenario_tests {
             .await
             .expect_err("a nonexistent run should not resolve");
         assert!(matches!(error, crate::errors::AppError::NotFound(_)));
+    }
+}
+
+#[cfg(test)]
+mod calibration_tests {
+    use sea_orm::{ActiveModelTrait, Database, DatabaseConnection, Set};
+    use sea_orm_migration::MigratorTrait;
+
+    use super::{BuildLoadout, CombatService, SpecSource};
+    use crate::modules::albion::entities::albion_link;
+    use crate::modules::battles::entities::ActiveModel as SnapshotActiveModel;
+    use crate::modules::battles::models::BattlePlayer;
+    use crate::modules::comps::entities::{build, build_category, build_item};
+    use crate::modules::events::entities::{event, event_participation};
+    use crate::modules::users::entities::ActiveModel as UserActiveModel;
+    use crate::modules::users::specializations;
+
+    async fn seed_db() -> DatabaseConnection {
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("failed to connect to test database");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("failed to run migrations");
+        db
+    }
+
+    /// One member, fully trained, with a Polehammer build and an event sign-up naming it.
+    /// Returns `(user_id, build_id, expected_ip)`, the last computed by the same calculator the
+    /// service method under test calls — so assertions never need to hand-derive a dataset value.
+    async fn seed_trained_member(db: &DatabaseConnection, discord_id: &str) -> (i64, i64, f64) {
+        let owner = UserActiveModel {
+            username: Set("member".to_string()),
+            email: Set("member@example.com".to_string()),
+            role: Set("User".to_string()),
+            discord_id: Set(Some(discord_id.to_string())),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert member");
+
+        specializations::ActiveModel {
+            user_id: Set(owner.id),
+            node_key: Set("weapon:2H_POLEHAMMER".to_string()),
+            node_name: Set("Great Polehammer".to_string()),
+            category: Set("weapon".to_string()),
+            level: Set(100),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert specialization");
+
+        let category = build_category::ActiveModel {
+            name: Set("calibration-builds".to_string()),
+            slug: Set("calibration-builds".to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert build category");
+        let built = build::ActiveModel {
+            name: Set("calibration-build".to_string()),
+            role: Set("dps".to_string()),
+            category_id: Set(category.id),
+            created_by: Set(owner.id),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert build");
+        build_item::ActiveModel {
+            build_id: Set(built.id),
+            loadout: Set("main".to_string()),
+            slot: Set("weapon".to_string()),
+            openalbion_item_type: Set("weapon".to_string()),
+            openalbion_item_id: Set(0),
+            openalbion_item_name: Set("T8_2H_POLEHAMMER".to_string()),
+            openalbion_item_tier: Set(Some("8".to_string())),
+            openalbion_item_quality: Set(4),
+            openalbion_item_enchantment: Set(0),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert build item");
+
+        let expected_ip = CombatService::new()
+            .build_item_power(db, built.id, BuildLoadout::Main, SpecSource::Current, Some(owner.id), None)
+            .await
+            .expect("build item power should compute")
+            .breakdown
+            .average;
+
+        (owner.id, built.id, expected_ip)
+    }
+
+    async fn seed_event_signup(
+        db: &DatabaseConnection,
+        user_id: i64,
+        build_id: i64,
+        when: sea_orm::prelude::DateTimeWithTimeZone,
+    ) {
+        let comp_cat = crate::modules::comps::entities::comp_category::ActiveModel {
+            name: Set("calibration-comps".to_string()),
+            slug: Set("calibration-comps".to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert comp category");
+        let comp = crate::modules::comps::entities::comp::ActiveModel {
+            name: Set("calibration-comp".to_string()),
+            category_id: Set(comp_cat.id),
+            created_by: Set(user_id),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert comp");
+        let created_event = event::ActiveModel {
+            title: Set("Calibration mass".to_string()),
+            comp_id: Set(comp.id),
+            created_by: Set(user_id),
+            event_date_utc: Set(when),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert event");
+        event_participation::ActiveModel {
+            event_id: Set(created_event.id),
+            user_id: Set(user_id),
+            primary_build_id: Set(Some(build_id)),
+            secondary_build_id: Set(None),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert participation");
+    }
+
+    async fn seed_battle_snapshot(
+        db: &DatabaseConnection,
+        albion_player_id: &str,
+        item_power: f64,
+        start_time: sea_orm::prelude::DateTimeWithTimeZone,
+    ) {
+        let player = BattlePlayer {
+            id: albion_player_id.to_string(),
+            name: "Weaklings Player".to_string(),
+            guild_id: "guild".to_string(),
+            guild_name: "Weaklings".to_string(),
+            alliance_name: None,
+            alliance_id: None,
+            kills: 1,
+            deaths: 0,
+            kill_fame: 1000,
+            death_fame: 0,
+            item_power,
+        };
+        SnapshotActiveModel {
+            battle_id: Set(1),
+            start_time: Set(start_time),
+            end_time: Set(None),
+            total_players: Set(1),
+            total_kills: Set(1),
+            total_fame: Set(1000),
+            guilds_json: Set("[]".to_string()),
+            players_json: Set(serde_json::to_string(&[player]).unwrap()),
+            kills_json: Set("[]".to_string()),
+            losses_json: Set("[]".to_string()),
+            fetched_at: Set(chrono::Utc::now().into()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert battle snapshot");
+    }
+
+    #[tokio::test]
+    async fn no_battle_data_means_an_empty_report() {
+        let db = seed_db().await;
+        let report = CombatService::new()
+            .calibration(&db)
+            .await
+            .expect("calibration should compute with no data");
+        assert_eq!(report.sample_size, 0);
+        assert!((report.mean_absolute_error - 0.0).abs() < f64::EPSILON);
+        assert!((report.median_absolute_error - 0.0).abs() < f64::EPSILON);
+        assert!(report.outliers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_well_matched_member_shows_near_zero_error() {
+        let db = seed_db().await;
+        let (user_id, build_id, expected_ip) = seed_trained_member(&db, "discord-1").await;
+        let now = chrono::Utc::now().into();
+        seed_event_signup(&db, user_id, build_id, now).await;
+        albion_link::ActiveModel {
+            discord_id: Set("discord-1".to_string()),
+            albion_player_id: Set("albion-1".to_string()),
+            albion_player_name: Set("Weaklings Player".to_string()),
+            linked_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert albion link");
+        seed_battle_snapshot(&db, "albion-1", expected_ip, now).await;
+
+        let report = CombatService::new()
+            .calibration(&db)
+            .await
+            .expect("calibration should compute");
+        assert_eq!(report.sample_size, 1);
+        assert!(report.mean_absolute_error < 1e-6);
+        assert_eq!(report.outliers[0].user_id, user_id);
+        assert_eq!(report.outliers[0].build_id, build_id);
+    }
+
+    #[tokio::test]
+    async fn a_genuine_mismatch_surfaces_as_an_outlier() {
+        let db = seed_db().await;
+        let (user_id, build_id, expected_ip) = seed_trained_member(&db, "discord-2").await;
+        let now = chrono::Utc::now().into();
+        seed_event_signup(&db, user_id, build_id, now).await;
+        albion_link::ActiveModel {
+            discord_id: Set("discord-2".to_string()),
+            albion_player_id: Set("albion-2".to_string()),
+            albion_player_name: Set("Mismatched Player".to_string()),
+            linked_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert albion link");
+        // 500 below the calculator's own figure — a clear, deliberate mismatch rather than a
+        // hand-derived dataset constant.
+        seed_battle_snapshot(&db, "albion-2", expected_ip - 500.0, now).await;
+
+        let report = CombatService::new()
+            .calibration(&db)
+            .await
+            .expect("calibration should compute");
+        assert_eq!(report.sample_size, 1);
+        assert!(report.mean_absolute_error > 100.0);
+        assert_eq!(report.outliers.len(), 1);
+        assert!((report.outliers[0].error - 500.0).abs() < 1e-6);
     }
 }
