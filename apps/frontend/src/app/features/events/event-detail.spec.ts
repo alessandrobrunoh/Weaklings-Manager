@@ -9,6 +9,7 @@ import type {
   EventRosterParticipant,
   EventRosterSeat,
   EventRosterView,
+  RosterSuggestions,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
@@ -445,5 +446,155 @@ describe('EventDetailPage page spinner', () => {
     await initial;
 
     expect(page.loading()).toBe(false);
+  });
+});
+
+interface EventDetailRosterSuggestionsAccess {
+  readonly rosterSnapshot: WritableSignal<EventRosterView | null>;
+  readonly rosterSuggestions: WritableSignal<RosterSuggestions | null>;
+  readonly rosterSuggestionRows: Signal<
+    ReadonlyArray<{
+      seatKey: string;
+      buildName: string;
+      username: string;
+      itemPower: number;
+      readiness: number;
+      preferenceLabel: string;
+    }>
+  >;
+}
+
+describe('EventDetailPage roster suggestions', () => {
+  function createPage(): EventDetailRosterSuggestionsAccess {
+    TestBed.configureTestingModule({
+      imports: [EventDetailPage],
+      providers: [
+        { provide: ApiService, useValue: { get: () => of({ items: [] }) } },
+        {
+          provide: AuthService,
+          useValue: { hasPermission: () => true, profile: () => ({ user_id: 1 }) },
+        },
+        { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ id: '1' })) } },
+        { provide: Router, useValue: { navigate: () => Promise.resolve(true) } },
+        { provide: ToastService, useValue: { error: () => undefined, success: () => undefined } },
+        { provide: TranslateService, useValue: { t: (key: string) => key } },
+        { provide: AlbionCatalogService, useValue: { load: () => Promise.resolve([]) } },
+        {
+          provide: RealtimeRosterService,
+          useValue: {
+            close: () => undefined,
+            connect: () => undefined,
+            messages: NEVER,
+            connectionState: signal('disconnected'),
+          },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(EventDetailPage);
+    return fixture.componentInstance as unknown as EventDetailRosterSuggestionsAccess;
+  }
+
+  it('enriches a placement with the seat, build and member names the raw response omits', () => {
+    const page = createPage();
+    page.rosterSnapshot.set({
+      event_id: 1,
+      roster_version: 1,
+      active_comp_id: 9,
+      seats: [seat(1, 3, null, 'healer')],
+      bench: [
+        {
+          user_id: 7,
+          username: 'Tacos',
+          discord_id: null,
+          specializations: {},
+          primary_build_id: 3,
+          primary_build_name: 'Build 3',
+          secondary_build_id: null,
+          secondary_build_name: null,
+        },
+      ],
+    });
+    page.rosterSuggestions.set({
+      placements: [
+        {
+          seat_key: 'build:1:3',
+          user_id: 7,
+          score: { item_power: 1536, max_item_power: 1600, readiness: 0.96, preference: 'primary', blocking: [] },
+        },
+      ],
+      unplaced_members: [],
+      unfilled_seats: [],
+    });
+
+    const rows = page.rosterSuggestionRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      seatKey: 'build:1:3',
+      buildName: 'Build 3',
+      username: 'Tacos',
+      itemPower: 1536,
+      preferenceLabel: 'Primaria',
+    });
+    expect(rows[0].readiness).toBeCloseTo(0.96);
+  });
+
+  it('falls back to a bare id when the member is not found on the roster snapshot', () => {
+    const page = createPage();
+    page.rosterSnapshot.set({
+      event_id: 1,
+      roster_version: 1,
+      active_comp_id: 9,
+      seats: [seat(1, 1, null)],
+      bench: [],
+    });
+    page.rosterSuggestions.set({
+      placements: [
+        {
+          seat_key: 'build:1:1',
+          user_id: 99,
+          score: { item_power: 0, max_item_power: 0, readiness: 0, preference: 'none', blocking: [] },
+        },
+      ],
+      unplaced_members: [],
+      unfilled_seats: [],
+    });
+
+    expect(page.rosterSuggestionRows()[0].username).toBe('#99');
+  });
+
+  it('drops a placement whose seat no longer exists rather than throwing', () => {
+    const page = createPage();
+    page.rosterSnapshot.set({
+      event_id: 1,
+      roster_version: 1,
+      active_comp_id: 9,
+      seats: [],
+      bench: [],
+    });
+    page.rosterSuggestions.set({
+      placements: [
+        {
+          seat_key: 'build:1:1',
+          user_id: 1,
+          score: { item_power: 0, max_item_power: 0, readiness: 0, preference: 'none', blocking: [] },
+        },
+      ],
+      unplaced_members: [],
+      unfilled_seats: [],
+    });
+
+    expect(page.rosterSuggestionRows()).toHaveLength(0);
+  });
+
+  it('is empty before any suggestions have been fetched', () => {
+    const page = createPage();
+    page.rosterSnapshot.set({
+      event_id: 1,
+      roster_version: 1,
+      active_comp_id: 9,
+      seats: [seat(1, 1, null)],
+      bench: [],
+    });
+    expect(page.rosterSuggestionRows()).toHaveLength(0);
   });
 });

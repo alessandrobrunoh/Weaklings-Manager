@@ -734,6 +734,45 @@ export interface SwapRosterSeatsRequest {
 /** Fill currently empty concrete roster seats from registered participants. */
 export interface AutoFillRosterRequest {
   expected_roster_version: number;
+  /**
+   * `'greedy'` (the default when omitted) keeps today's first-fit-in-signup-order behaviour.
+   * `'spec_optimal'` solves the whole unassigned roster at once against Destiny Board readiness.
+   */
+  strategy?: 'greedy' | 'spec_optimal';
+}
+
+/** Whether a member asked for this seat's build, or the pairing is unrelated to their signup. */
+export type RosterFitPreference = 'none' | 'secondary' | 'primary';
+
+/** How well one member fits one seat, from the Item Power calculator. */
+export interface RosterFitScore {
+  item_power: number;
+  max_item_power: number;
+  /** `0..1`. Comparable across different builds, unlike raw Item Power. */
+  readiness: number;
+  preference: RosterFitPreference;
+  /** Reasons this pairing cannot be made; empty when it can. */
+  blocking: string[];
+}
+
+/** One seat the optimiser proposes filling. */
+export interface RosterPlacement {
+  seat_key: string;
+  user_id: number;
+  score: RosterFitScore;
+}
+
+/**
+ * A preview of `POST .../roster/auto-fill` with `strategy: 'spec_optimal'` — every placement here
+ * targets a currently-empty seat, so applying it never displaces someone already assigned.
+ */
+export interface RosterSuggestions {
+  placements: RosterPlacement[];
+  /** Bench members the solver could not seat — more members than open seats, or every remaining
+   * pairing was blocked. */
+  unplaced_members: number[];
+  /** Seats nothing could be placed into. */
+  unfilled_seats: string[];
 }
 
 export interface RosterRealtimeReadyMessage {
