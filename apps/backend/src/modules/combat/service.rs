@@ -260,8 +260,27 @@ impl CombatService {
             .collect();
 
         let mut readiness = super::readiness::evaluate(&seats, &members);
+
+        // Only the handful of seats actually shown need a resolved name, not every candidate in
+        // the pool — `readiness::evaluate` already capped `weakest_seats` for this reason.
+        let mut usernames: HashMap<i64, String> = HashMap::new();
+        for user_id in readiness.weakest_seats.iter().filter_map(|seat| seat.best_candidate_user_id)
+        {
+            if let std::collections::hash_map::Entry::Vacant(entry) = usernames.entry(user_id)
+                && let Some(user) = crate::modules::users::entities::Entity::find_by_id(user_id)
+                    .one(db)
+                    .await
+                    .map_err(AppError::Database)?
+            {
+                entry.insert(crate::modules::users::display_name::resolve(db, &user).await?);
+            }
+        }
+
         for seat in &mut readiness.weakest_seats {
             seat.build_name = build_names.get(&seat.build_id).cloned().unwrap_or_default();
+            if let Some(user_id) = seat.best_candidate_user_id {
+                seat.best_candidate_username = usernames.get(&user_id).cloned().unwrap_or_default();
+            }
         }
         for build in &mut readiness.bench_coverage {
             build.build_name = build_names.get(&build.build_id).cloned().unwrap_or_default();
@@ -727,6 +746,7 @@ mod comp_readiness_tests {
 
         assert!(readiness.uncovered_seats.is_empty());
         assert_eq!(readiness.weakest_seats[0].best_candidate_user_id, Some(trained.id));
+        assert_eq!(readiness.weakest_seats[0].best_candidate_username, "trained");
         assert_eq!(readiness.bench_coverage[0].build_name, "readiness-build");
         assert_eq!(readiness.bench_coverage[0].qualified_members, 1);
     }

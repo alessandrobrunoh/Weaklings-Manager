@@ -1246,6 +1246,42 @@ export interface BuildRosterFitView {
   dataset_version: DatasetVersion;
 }
 
+/** One seat's best available candidate against a comp's readiness ceiling, or the absence of one. */
+export interface SeatReadiness {
+  seat_key: string;
+  build_id: number;
+  build_name: string;
+  best_candidate_user_id: number | null;
+  best_candidate_username: string;
+  best_candidate_item_power: number;
+  max_item_power: number;
+  readiness: number;
+  item_power_gap: number;
+  qualified_members: number;
+}
+
+/** How deep the bench is for one build across every seat it fills. */
+export interface BuildCoverage {
+  build_id: number;
+  build_name: string;
+  seat_count: number;
+  qualified_members: number;
+}
+
+/** Whether a composition can actually be fielded tonight, and where it is weakest. */
+export interface CompReadiness {
+  seat_count: number;
+  avg_item_power_now: number;
+  avg_item_power_at_max: number;
+  /** `0..1`. */
+  readiness_pct: number;
+  /** The seats furthest from their ceiling, worst first. */
+  weakest_seats: SeatReadiness[];
+  bench_coverage: BuildCoverage[];
+  uncovered_seats: string[];
+  mastery_levels_known: boolean;
+}
+
 export interface CompBuildEntry {
   build_id: number;
   build: BuildSummary;

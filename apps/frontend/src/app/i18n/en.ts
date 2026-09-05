@@ -764,6 +764,22 @@ export const en = {
   'comps.viewParties': 'Parties ({count})',
   'comps.viewRoles': 'Roles ({count} builds)',
   'comps.viewAnalytics': 'Analysis & tactics',
+  'comps.viewReadiness': 'Readiness',
+  'comps.avgItemPowerNow': 'Avg Item Power (now)',
+  'comps.avgItemPowerAtMax': 'Avg Item Power (spec 100)',
+  'comps.readinessCoverage': 'Coverage',
+  'comps.uncoveredSeatsCount': 'Uncovered seats',
+  'comps.weakestSeats': 'Weakest seats',
+  'comps.benchCoverage': 'Bench coverage',
+  'comps.seat': 'Seat',
+  'comps.bestCandidate': 'Best candidate',
+  'comps.qualifiedAtFloor': 'Qualified (≥80%)',
+  'comps.itemPowerGap': 'Gap',
+  'comps.noCandidate': 'No candidate yet',
+  'comps.readinessMasteryUnknown':
+    'Lower bound — family mastery levels are not recorded yet, so real Item Power is higher.',
+  'comps.readinessFullyCovered': 'Every seat has at least one qualified candidate.',
+  'comps.readinessEmptyPool': 'No member in the pool has any recorded specialization yet.',
 
   // Albion
   'albion.title': 'Albion Link',

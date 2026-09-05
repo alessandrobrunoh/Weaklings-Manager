@@ -34,6 +34,9 @@ pub struct SeatReadiness {
     /// The best-scoring member for this seat, or `None` when nobody in the pool has any relevant
     /// specialization at all.
     pub best_candidate_user_id: Option<i64>,
+    /// That member's display name. Filled in by the caller, which resolves it the same way the
+    /// rest of the app does; empty when there is no candidate.
+    pub best_candidate_username: String,
     /// That member's Item Power on this seat.
     pub best_candidate_item_power: f64,
     /// This seat's Item Power ceiling — every relevant node at 100.
@@ -163,6 +166,7 @@ fn evaluate_seat(seat: &Seat, members: &[Member]) -> SeatReadiness {
         build_id: seat.build_id,
         build_name: String::new(), // filled in by the caller, which knows build names
         best_candidate_user_id,
+        best_candidate_username: String::new(), // filled in by the caller, which resolves names
         best_candidate_item_power,
         max_item_power,
         readiness,
