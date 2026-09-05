@@ -122,6 +122,16 @@ export const routes: Routes = [
         loadComponent: () => import('./features/comps/comp-detail').then((m) => m.CompDetailPage),
       },
       {
+        path: 'tests',
+        canActivate: [permissionGuard('combat.tests.view')],
+        loadComponent: () => import('./features/tests/tests').then((m) => m.Tests),
+      },
+      {
+        path: 'tests/:testId',
+        canActivate: [permissionGuard('combat.tests.view')],
+        loadComponent: () => import('./features/tests/test-detail').then((m) => m.TestDetailPage),
+      },
+      {
         path: 'siphoned',
         canActivate: [permissionGuard('siphoned.view')],
         loadComponent: () => import('./features/siphoned/siphoned').then((m) => m.Siphoned),

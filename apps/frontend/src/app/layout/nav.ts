@@ -89,6 +89,12 @@ export const APP_NAV_SECTIONS: NavSection[] = [
     items: [
       { path: '/events', icon: 'calendar', labelKey: 'nav.events' },
       { path: '/comps', icon: 'package', labelKey: 'nav.comps' },
+      {
+        path: '/tests',
+        icon: 'activity',
+        labelKey: 'nav.tests',
+        permissions: ['combat.tests.view'],
+      },
       { path: '/battles', icon: 'swords', labelKey: 'nav.battles' },
       { path: '/intel', icon: 'scan', labelKey: 'nav.intel' },
     ],

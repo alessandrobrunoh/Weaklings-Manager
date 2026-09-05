@@ -1324,6 +1324,226 @@ export interface CompReadiness {
   mastery_levels_known: boolean;
 }
 
+/** `base_identifier -> mastery_node_id`, for every equippable that has a family mastery node. */
+export interface MasteryGroupsView {
+  dataset_version: DatasetVersion;
+  groups: Record<string, string>;
+}
+
+/** Which auto-attack category a target's incoming damage is measured against for focus fire. */
+export type AttackerStyle = 'melee' | 'ranged' | 'mounted';
+
+/** The two sides a resolved effect can land on — the engine has no geometry, so nothing finer. */
+export type EffectSide = 'ally' | 'enemy' | 'other';
+
+/** One cast to resolve in isolation, with the context the engine cannot infer on its own. */
+export interface DeclaredCast {
+  /** A label for the caster, echoed back on the outcome. Not interpreted. */
+  caster_label: string;
+  spell_id: string;
+  cast_at: number;
+  /** How many targets this cast hits. Clamped to the dataset's escalation ceiling. Defaults to 1. */
+  target_count?: number;
+  /** Attackers, including this one, already hitting the implied target. Defaults to 0. */
+  concurrent_attackers?: number;
+  attacker_style?: AttackerStyle;
+  /** Same-kind crowd-control applications already landed on the implied target. Defaults to 0. */
+  prior_cc_stacks?: number;
+}
+
+/** Force sizes a burst is evaluated against, for the zerg debuff. `>= 21` starts applying it. */
+export interface SideCounts {
+  ally_count?: number;
+  enemy_count?: number;
+}
+
+/** One resolved damage or healing line, after every multiplier. */
+export interface ResolvedAttributeChange {
+  side: EffectSide;
+  attribute: string;
+  base_change: number;
+  resolved_change: number;
+}
+
+/** One resolved crowd-control application, after diminishing returns and the zerg debuff. */
+export interface ResolvedCrowdControl {
+  kind: string;
+  side: EffectSide;
+  base_time: number;
+  resolved_time: number;
+}
+
+/** One cast, fully resolved. */
+export interface CastOutcome {
+  caster_label: string;
+  spell_id: string;
+  /** `cast_at + hit_delay` — when the effect actually lands. */
+  land_at: number;
+  attribute_changes: ResolvedAttributeChange[];
+  crowd_control: ResolvedCrowdControl[];
+  escalation_multiplier: number;
+  focus_fire_reduction: number;
+  /** Effect keys the engine could not turn into numbers for this spell. */
+  unsupported: string[];
+}
+
+/** A burst window to resolve: the casts, and the side counts the zerg debuff needs. */
+export interface SimulateRequest {
+  casts: DeclaredCast[];
+  sides?: SideCounts;
+}
+
+/** The whole burst, resolved and summed. */
+export interface BurstResult {
+  casts: CastOutcome[];
+  total_damage_to_enemies: number;
+  total_healing_to_allies: number;
+  /** Spell ids the engine does not know at all. */
+  unknown_spells: string[];
+}
+
+/** A resolved burst, with the dataset it was computed against. */
+export interface SimulateView extends BurstResult {
+  dataset_version: DatasetVersion;
+}
+
+/** Which side of the fight a unit group belongs to. */
+export type ScenarioSide = 'ally' | 'enemy';
+
+/** One group of identical units in a saved test — e.g. "5 Polehammers". */
+export interface ScenarioUnitGroup {
+  /** Stable id this group's units and casts are addressed by: `"{id}#0"`..`"{id}#{count-1}"`. */
+  id: string;
+  side: ScenarioSide;
+  /** Display label, e.g. `"Polehammer"`. Not interpreted. */
+  label: string;
+  count?: number;
+  /** Hit points per unit, declared by the caller — the engine does not derive this from Item Power. */
+  hit_points?: number;
+}
+
+/** One cast in a saved test's timeline, naming its own targets explicitly. */
+export interface ScenarioDeclaredCast {
+  /** The [[ScenarioUnitGroup.id]] doing the casting. */
+  caster_group_id: string;
+  spell_id: string;
+  /** Seconds into the burst window the cast starts. */
+  cast_at: number;
+  /** The exact unit instance ids this cast hits, e.g. `"enemy-plate#0"`. */
+  target_ids: string[];
+  attacker_style?: AttackerStyle;
+}
+
+/** A saved test's unit groups and timeline. */
+export interface ScenarioDefinition {
+  groups: ScenarioUnitGroup[];
+  casts: ScenarioDeclaredCast[];
+}
+
+/** One unit instance's fate over the whole burst. */
+export interface ScenarioUnitOutcome {
+  /** `"{group_id}#{n}"`. */
+  id: string;
+  group_id: string;
+  group_label: string;
+  side: ScenarioSide;
+  starting_hp: number;
+  /** Total damage received, uncapped — can exceed `starting_hp`; see [[ScenarioResult.overkill_ratio]]. */
+  damage_taken: number;
+  healing_received: number;
+  /** `(starting_hp - damage_taken + healing_received)`, clamped at `0`. */
+  remaining_hp: number;
+  /** When this unit's `remaining_hp` first reached `0`, if it did. */
+  died_at: number | null;
+}
+
+/** One cast, resolved in context, with the automatically-derived numbers that made it so. */
+export interface ScenarioResolvedCastLog {
+  caster_group_id: string;
+  spell_id: string;
+  /** `cast_at + hit_delay` — when the effect actually lands, and the order casts are processed in. */
+  land_at: number;
+  target_ids: string[];
+  /** Attackers found hitting one of this cast's targets, including this cast itself. */
+  concurrent_attackers: number;
+  /** Earlier same-kind crowd-control applications found on this cast's targets. */
+  prior_cc_stacks: number;
+  escalation_multiplier: number;
+  focus_fire_reduction: number;
+  /** The resolved change applied to *each* named target — not a pooled total. */
+  per_target_health_change: number;
+  crowd_control: ResolvedCrowdControl[];
+  unsupported: string[];
+}
+
+/** The whole burst, resolved — the shape stored verbatim in a pinned run. */
+export interface ScenarioResult {
+  /** One entry per unit instance, in group declaration order. */
+  units: ScenarioUnitOutcome[];
+  /** One entry per cast that resolved, ordered by `land_at`. */
+  casts: ScenarioResolvedCastLog[];
+  total_damage_dealt: number;
+  total_healing_done: number;
+  deaths: number;
+  /** Mean `died_at` across units that died, `null` when nobody did. */
+  average_time_to_kill: number | null;
+  /** Fraction of `total_damage_dealt` that landed on an already-dead target. */
+  overkill_ratio: number;
+  /** Casts whose `spell_id` is not in the bundled dataset at all. */
+  unknown_spells: string[];
+  /** Casts dropped for naming no targets at all. */
+  casts_with_no_targets: string[];
+}
+
+/** Request body to create a combat test scenario. */
+export interface CreateScenarioRequest {
+  name: string;
+  definition?: ScenarioDefinition;
+}
+
+/** Request body to edit a scenario version in place. */
+export interface UpdateScenarioRequest {
+  name?: string;
+  definition?: ScenarioDefinition;
+}
+
+/** A scenario version, without its definition — for list views. */
+export interface ScenarioSummary {
+  id: number;
+  name: string;
+  version: number;
+  created_by: number;
+  created_by_username: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+  /** How many times this version has been run. */
+  run_count: number;
+}
+
+/** The full scenario version, with its definition. */
+export interface ScenarioDetail extends ScenarioSummary {
+  definition: ScenarioDefinition;
+  /** Every version sharing this scenario's name, oldest first. Shares [[VersionRef]] with builds/comps. */
+  versions: VersionRef[];
+}
+
+/** One pinned run of a scenario version, for list views. */
+export interface RunSummary {
+  id: number;
+  scenario_id: number;
+  engine_version: number;
+  dataset_commit: string;
+  ran_by: number;
+  ran_by_username: string;
+  ran_at: string;
+}
+
+/** A pinned run, with its full resolved result. */
+export interface RunDetail extends RunSummary {
+  result: ScenarioResult;
+}
+
 export interface CompBuildEntry {
   build_id: number;
   build: BuildSummary;
