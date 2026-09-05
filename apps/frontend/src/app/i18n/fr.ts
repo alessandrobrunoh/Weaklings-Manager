@@ -776,6 +776,7 @@ export const fr: TranslationDict = {
   'tests.avgTimeToKill': 'TTK moyen',
   'tests.overkillRatio': 'Overkill',
   'tests.noRunsYet': 'Exécutez ce test pour voir les résultats ici.',
+  'tests.hpOverTime': 'PV dans le temps',
   'tests.unitOutcomes': 'Unités',
   'tests.castLog': 'Journal des lancers',
   'tests.pastRuns': 'Exécutions passées',

@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
+import type { EChartsOption } from 'echarts';
 
 import type {
   AttackerStyle,
@@ -37,6 +38,7 @@ import {
 } from '../../shared/data/albion-equipment-catalog';
 import { AlbionAbilitiesService } from '../../shared/services/albion-abilities.service';
 import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
+import { Chart, type ChartTableRow } from '../../shared/components/chart/chart';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
@@ -51,8 +53,13 @@ import {
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { VersionSwitcher } from '../../shared/components/version-switcher/version-switcher';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { hpOverTimeSeries } from './hp-timeline';
 
 type EditorTab = 'setup' | 'timeline' | 'results';
+
+/** Line colours shared with the Units table's ally/enemy chips (`chip--info` / `chip--error`). */
+const ALLY_LINE_COLOR = '#38bdf8';
+const ENEMY_LINE_COLOR = '#f87171';
 
 let groupSeq = 0;
 
@@ -104,6 +111,7 @@ interface GroupedSpellOptions {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     RouterLink,
+    Chart,
     Dialog,
     EmptyState,
     ErrorState,
@@ -506,6 +514,17 @@ interface GroupedSpellOptions {
               }
 
               <section class="card p-5">
+                <h2 class="mb-4 text-base font-bold text-[var(--color-text)]">{{ t('tests.hpOverTime') }}</h2>
+                <app-chart
+                  [option]="hpOverTimeOption()"
+                  height="16rem"
+                  [label]="t('tests.hpOverTime')"
+                  [tableHead]="hpOverTimeTableHead()"
+                  [tableRows]="hpOverTimeTableRows()"
+                />
+              </section>
+
+              <section class="card p-5">
                 <h2 class="mb-4 text-base font-bold text-[var(--color-text)]">{{ t('tests.unitOutcomes') }}</h2>
                 <div class="overflow-x-auto">
                   <table class="table">
@@ -743,6 +762,63 @@ export class TestDetailPage {
     { id: 'timeline', label: this.t('tests.timeline') },
     { id: 'results', label: this.t('tests.results') },
   ]);
+
+  /** Total HP remaining per side over the burst window, reconstructed from the latest run. */
+  private readonly hpOverTimePoints = computed(() => {
+    const run = this.latestRun();
+    return run ? hpOverTimeSeries(run.result) : [];
+  });
+
+  protected readonly hpOverTimeOption = computed<EChartsOption>(() => {
+    const points = this.hpOverTimePoints();
+    return {
+      aria: { enabled: true },
+      grid: { left: 56, right: 16, top: 24, bottom: 40 },
+      tooltip: { trigger: 'axis' },
+      xAxis: {
+        type: 'value',
+        name: this.t('tests.landAt'),
+        nameLocation: 'middle',
+        nameGap: 28,
+        axisLabel: { formatter: (value: number) => `${value}s` },
+      },
+      yAxis: { type: 'value', name: this.t('tests.hpOverTime') },
+      series: [
+        {
+          name: this.t('tests.ally'),
+          type: 'line',
+          data: points.map((point) => [point.time, point.allyHp]),
+          symbol: 'none',
+          step: 'end',
+          lineStyle: { width: 2, color: ALLY_LINE_COLOR },
+          itemStyle: { color: ALLY_LINE_COLOR },
+        },
+        {
+          name: this.t('tests.enemy'),
+          type: 'line',
+          data: points.map((point) => [point.time, point.enemyHp]),
+          symbol: 'none',
+          step: 'end',
+          lineStyle: { width: 2, color: ENEMY_LINE_COLOR },
+          itemStyle: { color: ENEMY_LINE_COLOR },
+        },
+      ],
+    };
+  });
+
+  protected readonly hpOverTimeTableHead = computed(() => [
+    this.t('tests.landAt'),
+    this.t('tests.ally'),
+    this.t('tests.enemy'),
+  ]);
+
+  protected readonly hpOverTimeTableRows = computed<ChartTableRow[]>(() =>
+    this.hpOverTimePoints().map((point) => [
+      this.formatSeconds(point.time),
+      this.formatAmount(point.allyHp),
+      this.formatAmount(point.enemyHp),
+    ]),
+  );
 
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);

@@ -856,6 +856,7 @@ export const en = {
   'tests.avgTimeToKill': 'Avg. time to kill',
   'tests.overkillRatio': 'Overkill',
   'tests.noRunsYet': 'Run this test to see results here.',
+  'tests.hpOverTime': 'HP over time',
   'tests.unitOutcomes': 'Units',
   'tests.castLog': 'Cast log',
   'tests.pastRuns': 'Past runs',
