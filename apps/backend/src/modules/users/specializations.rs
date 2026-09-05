@@ -125,13 +125,14 @@ impl From<Model> for UserSpecializationView {
 /// One specialization to create or update.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct UserSpecializationInput {
-    /// Stable item key, such as `weapon:T8_2H_BOW` or `armor:T8_ARMOR_PLATE_SET1`.
+    /// Stable node key. `weapon:T8_2H_BOW` / `armor:T8_ARMOR_PLATE_SET1` name a catalog item;
+    /// `mastery:COMBAT_HAMMERS` names a Destiny Board family node directly.
     pub node_key: String,
     /// Current catalog display name.
     pub node_name: String,
-    /// Must be `weapon` or `armor`.
+    /// `weapon`, `armor`, or `mastery` for a family-level node.
     pub category: String,
-    /// Inclusive level range 0..=120.
+    /// Inclusive level range: 0..=120 for `weapon`/`armor`, 0..=100 for `mastery`.
     pub level: i32,
 }
 

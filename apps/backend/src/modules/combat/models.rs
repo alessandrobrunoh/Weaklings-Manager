@@ -26,6 +26,16 @@ pub struct CombatDatasetView {
     pub destiny_nodes: usize,
 }
 
+/// Every equippable base identifier that has a family mastery node, and which node it is.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[schema(example = json!({ "dataset_version": {}, "groups": { "2H_POLEHAMMER": "COMBAT_HAMMERS" } }))]
+pub struct MasteryGroupsView {
+    /// Provenance stamp, so a client can tell when the mapping last changed.
+    pub dataset_version: DatasetVersion,
+    /// `base_identifier -> mastery_node_id`.
+    pub groups: std::collections::BTreeMap<String, String>,
+}
+
 /// One item in an ad-hoc loadout, as a caller describes it.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[schema(example = json!({

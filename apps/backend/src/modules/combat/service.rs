@@ -61,6 +61,24 @@ impl CombatService {
         }
     }
 
+    /// Every equippable base identifier that has a Destiny Board specialization, mapped to the
+    /// family mastery node above it — `"2H_POLEHAMMER" -> "COMBAT_HAMMERS"`.
+    ///
+    /// An associated function: the mapping is derived entirely from the compiled-in dataset. It
+    /// exists so a client can attach a family-mastery level control to *one specific item's* entry
+    /// rather than needing to reconcile its own weapon/armor grouping against the game's — capes,
+    /// bags and gathering gear are simply absent, matching [`super::ip::EquippedItem::spec_node_id`].
+    #[must_use]
+    pub fn mastery_groups() -> std::collections::BTreeMap<String, String> {
+        combat_items()
+            .iter()
+            .filter_map(|(base, item)| {
+                let parent = spec_node(item.spec_node.as_deref()?)?.parent.as_deref()?;
+                Some((base.clone(), parent.to_string()))
+            })
+            .collect()
+    }
+
     /// Item Power for a loadout the caller describes inline.
     ///
     /// # Errors
@@ -516,10 +534,48 @@ fn tier_from_stored(tier: Option<&str>) -> u8 {
 #[cfg(test)]
 mod service_tests {
     use super::{
-        enchantment_suffix_of, parse_loadout_item, readiness_of, tier_from_stored, tier_prefix_of,
+        CombatService, enchantment_suffix_of, parse_loadout_item, readiness_of, tier_from_stored,
+        tier_prefix_of,
     };
+    use crate::modules::combat::dataset::{combat_items, spec_node};
     use crate::modules::combat::models::LoadoutItemRequest;
     use crate::modules::comps::status::BuildSlot;
+
+    #[test]
+    fn mastery_groups_maps_a_known_weapon_to_its_family() {
+        let groups = CombatService::mastery_groups();
+        assert_eq!(groups.get("2H_POLEHAMMER").map(String::as_str), Some("COMBAT_HAMMERS"));
+    }
+
+    #[test]
+    fn mastery_groups_covers_every_item_that_has_a_specialization() {
+        let groups = CombatService::mastery_groups();
+        for (base, item) in combat_items() {
+            let Some(node) = item.spec_node.as_deref() else { continue };
+            let Some(node) = spec_node(node) else { continue };
+            let Some(parent) = node.parent.as_deref() else { continue };
+            assert_eq!(
+                groups.get(base).map(String::as_str),
+                Some(parent),
+                "{base}: mastery_groups disagrees with the dataset's own parent link"
+            );
+        }
+    }
+
+    #[test]
+    fn every_mapped_mastery_id_is_actually_a_mastery_node() {
+        for node_id in CombatService::mastery_groups().values() {
+            let node = spec_node(node_id).unwrap_or_else(|| panic!("{node_id} does not exist"));
+            assert_eq!(node.kind, "mastery", "{node_id} is not a mastery node");
+        }
+    }
+
+    #[test]
+    fn capes_and_bags_have_no_mastery_group() {
+        let groups = CombatService::mastery_groups();
+        assert!(!groups.contains_key("CAPE"));
+        assert!(!groups.contains_key("BAG"));
+    }
 
     fn request(identifier: &str) -> LoadoutItemRequest {
         LoadoutItemRequest {

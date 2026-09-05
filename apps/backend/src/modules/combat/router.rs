@@ -11,15 +11,19 @@ use axum::{
 
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
-use crate::responses::{ApiResponse, ApiResponseCombatDataset, ApiResponseItemPower};
+use crate::responses::{
+    ApiResponse, ApiResponseCombatDataset, ApiResponseItemPower, ApiResponseMasteryGroups,
+};
 
-use super::models::{CombatDatasetView, ItemPowerRequest, ItemPowerView};
+use super::dataset::dataset_version;
+use super::models::{CombatDatasetView, ItemPowerRequest, ItemPowerView, MasteryGroupsView};
 use super::service::CombatService;
 
 /// Builds the combat router.
 pub fn router() -> Router {
     Router::new()
         .route("/dataset", get(get_dataset))
+        .route("/mastery-groups", get(get_mastery_groups))
         .route("/item-power", post(post_item_power))
         .route("/members/{user_id}/item-power", get(get_member_item_power))
 }
@@ -50,6 +54,37 @@ async fn get_dataset(
     user.require(&perms, Permission::CombatCalculatorUse)
         .await?;
     Ok(Json(ApiResponse::new(CombatService::dataset())))
+}
+
+/// Reports which equippable base identifiers have a family mastery node, and which one.
+///
+/// A client uses this to attach a "family mastery" level control to one specific weapon or armor
+/// entry — the exact identifier it is already rendering — without having to reconcile its own
+/// weapon/armor grouping against the game's Destiny Board.
+#[utoipa::path(
+    get,
+    path = "/api/combat/mastery-groups",
+    tag = "combat",
+    summary = "Get the item-to-family-mastery mapping",
+    description = "Maps every equippable base identifier that has a Destiny Board specialization \
+                   to the family mastery node above it, e.g. `2H_POLEHAMMER -> COMBAT_HAMMERS`. \
+                   Capes, bags and gathering gear are absent: they have no combat specialization.",
+    security(("session_cookie" = [])),
+    responses(
+        (status = 200, description = "Item to mastery-node mapping", body = ApiResponseMasteryGroups),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails)
+    )
+)]
+async fn get_mastery_groups(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+) -> Result<Json<ApiResponse<MasteryGroupsView>>, AppError> {
+    user.require(&perms, Permission::CombatCalculatorUse)
+        .await?;
+    Ok(Json(ApiResponse::new(MasteryGroupsView {
+        dataset_version: dataset_version().clone(),
+        groups: CombatService::mastery_groups(),
+    })))
 }
 
 /// Computes Item Power for a loadout described inline.
