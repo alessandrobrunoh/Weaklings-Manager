@@ -900,6 +900,19 @@ export const en = {
   'users.detail.back': 'Back to members',
   'users.detail.notFound': 'This member was not found.',
   'users.detail.profile': 'Profile',
+  'users.roles.title': 'Roles',
+  'users.roles.hint':
+    'Gestionale roles are linked to Discord on the Roles page. Adding or removing a role here updates Discord immediately. The generic staff role is applied automatically to staff-eligible ranks.',
+  'users.roles.add': 'Add role',
+  'users.roles.added': 'Role assigned on Discord.',
+  'users.roles.removed': 'Role removed on Discord.',
+  'users.roles.empty': 'No linked Discord roles held.',
+  'users.roles.staffAuto': 'Staff ping (automatic)',
+  'users.roles.remove': 'Remove role',
+  'users.roles.noDiscord':
+    'This member has no Discord id yet. They need to log in once before roles can be assigned.',
+  'users.roles.unlinked': 'Not linked to Discord',
+  'users.roles.loadError': 'Could not load this member’s Discord roles.',
   'users.specializations': 'Combat specialization',
   'events.detail.specialization': 'Spec level',
 
@@ -910,7 +923,7 @@ export const en = {
   'admin.hub.subtitle':
     'Pick a panel to configure authorization, Discord, season XP, regears, and islands.',
   'admin.hub.panels': 'Admin panels',
-  'admin.hub.rolesHint': 'Create gestionale roles and link them to Discord.',
+  'admin.hub.rolesHint': 'Create gestionale roles, link them to Discord, and mark the generic staff ping role.',
   'admin.hub.permissionsHint': 'Grant or revoke capabilities per role.',
   'admin.hub.discordHint': 'Channels, ping role, and the automatic member role.',
   'admin.hub.applicationsHint': 'Open or close Discord applications, channels, and bot copy.',
@@ -1431,12 +1444,18 @@ export const en = {
   // Administration
   'admin.roles.title': 'Gestionale roles',
   'admin.roles.hint':
-    'Create a role and link it to a Discord role from the list. Members who hold that Discord role receive these permissions on the next page load. Mark one role as Default for new members.',
+    'Create a role and link it to a Discord role from the list. Members who hold that Discord role receive these permissions on the next page load. Mark one role as Default for new members, one as Staff for the @staff ping, and Staff-eligible on Officer/Council/Recruiter so they receive it automatically.',
   'admin.roles.discordId': 'Discord role',
   'admin.roles.discordIdPlaceholder': 'Search Discord roles',
   'admin.roles.default': 'Default',
   'admin.roles.defaultHint':
     'New members get this role in the app. If a Discord role is linked, it is also assigned when an application is accepted.',
+  'admin.roles.staff': 'Staff',
+  'admin.roles.staffHint':
+    'Generic staff ping role. Linked Discord role is assigned automatically to staff-eligible members so you can ping @staff instead of every rank.',
+  'admin.roles.staffEligible': 'Staff-eligible',
+  'admin.roles.staffEligibleHint':
+    'Members given this role also receive the generic staff Discord role.',
   'admin.roles.newName': 'New role name',
   'admin.roles.create': 'Create role',
   'admin.roles.created': 'Role created.',

@@ -4,6 +4,7 @@
 
 pub mod display_name;
 pub mod entities;
+pub mod member_roles;
 pub mod router;
 pub mod service;
 pub mod specializations;

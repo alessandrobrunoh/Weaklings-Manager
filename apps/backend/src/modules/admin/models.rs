@@ -16,6 +16,10 @@ pub struct RolePermissionsView {
     pub discord_role_id: Option<String>,
     /// When true, unmatched Discord members fall through to this role.
     pub is_default: bool,
+    /// Unique generic staff ping role linked to the Discord role used for `@staff`.
+    pub is_staff: bool,
+    /// Holders also receive the generic staff Discord role.
+    pub grants_staff: bool,
     /// Permission keys granted to this role.
     pub permissions: Vec<String>,
 }
@@ -33,6 +37,12 @@ pub struct CreateRoleRequest {
     /// When true, this becomes the unmatched-member fallback (unsets the previous default).
     #[serde(default)]
     pub is_default: bool,
+    /// When true, this becomes the unique generic staff ping role (unsets the previous staff role).
+    #[serde(default)]
+    pub is_staff: bool,
+    /// When true, assigning this role also assigns the generic staff Discord role.
+    #[serde(default)]
+    pub grants_staff: bool,
 }
 
 /// Partial update for a gestionale role. Absent fields stay unchanged; empty `discord_role_id` unlinks.
@@ -46,6 +56,10 @@ pub struct UpdateRoleRequest {
     pub discord_role_id: Option<String>,
     /// Set or clear default fallback status.
     pub is_default: Option<bool>,
+    /// Set or clear generic staff ping status.
+    pub is_staff: Option<bool>,
+    /// Set or clear whether holders also receive the generic staff Discord role.
+    pub grants_staff: Option<bool>,
 }
 
 /// Grouping metadata for one assignable permission key.

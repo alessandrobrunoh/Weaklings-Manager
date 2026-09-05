@@ -366,6 +366,12 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
                       @if (role.is_default) {
                         <span class="text-[var(--color-primary)] font-bold">· Default</span>
                       }
+                      @if (role.is_staff) {
+                        <span class="text-[var(--color-primary)] font-bold">· Staff</span>
+                      }
+                      @if (role.grants_staff && !role.is_staff) {
+                        <span class="text-[var(--color-text-secondary)]">· staff</span>
+                      }
                     </div>
                     @if (role.discord_role_id) {
                       <div class="mono text-[9px] text-[var(--color-text-disabled)] mt-0.5 truncate max-w-[120px] mx-auto">

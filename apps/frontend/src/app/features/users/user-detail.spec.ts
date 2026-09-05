@@ -14,6 +14,9 @@ import { UserDetailPage } from './user-detail';
 describe('UserDetail Destiny Board', () => {
   let fixture: ComponentFixture<UserDetailPage>;
   let apiGet: ReturnType<typeof vi.fn>;
+  let apiPost: ReturnType<typeof vi.fn>;
+  let apiDelete: ReturnType<typeof vi.fn>;
+  let hasPermission: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     apiGet = vi.fn().mockImplementation((path: string) => {
@@ -23,6 +26,36 @@ describe('UserDetail Destiny Board', () => {
       if (path === 'api/users/42/specializations') {
         return of([]);
       }
+      if (path === 'api/users/42/roles') {
+        return of({
+          discord_id: '9',
+          highest_role: 'Officer',
+          roles: [
+            {
+              role_id: 'officer',
+              role_name: 'Officer',
+              priority: 50,
+              discord_role_id: '222',
+              is_default: false,
+              is_staff: false,
+              grants_staff: true,
+              held: true,
+              assignable: true,
+            },
+            {
+              role_id: 'staff',
+              role_name: 'Staff',
+              priority: 30,
+              discord_role_id: '111',
+              is_default: false,
+              is_staff: true,
+              grants_staff: false,
+              held: true,
+              assignable: false,
+            },
+          ],
+        });
+      }
       if (path.startsWith('api/progression/users/')) {
         return of(null);
       }
@@ -31,6 +64,13 @@ describe('UserDetail Destiny Board', () => {
       }
       return of({ items: [], total_items: 0, total_pages: 0, current_page: 1, limit: 10 });
     });
+    apiPost = vi.fn().mockReturnValue(of({ discord_id: '9', highest_role: 'Officer', roles: [] }));
+    apiDelete = vi.fn().mockReturnValue(of({ discord_id: '9', highest_role: 'User', roles: [] }));
+    hasPermission = vi
+      .fn()
+      .mockImplementation(
+        (perm: string) => perm === 'users.specializations.manage' || perm === 'roles.manage',
+      );
 
     await TestBed.configureTestingModule({
       imports: [UserDetailPage],
@@ -38,7 +78,7 @@ describe('UserDetail Destiny Board', () => {
         provideZonelessChangeDetection(),
         provideRouter([]),
         TranslateService,
-        { provide: ApiService, useValue: { get: apiGet, put: vi.fn(), post: vi.fn(), delete: vi.fn() } },
+        { provide: ApiService, useValue: { get: apiGet, put: vi.fn(), post: apiPost, delete: apiDelete } },
         {
           provide: AuthService,
           useValue: {
@@ -53,7 +93,7 @@ describe('UserDetail Destiny Board', () => {
               is_superadmin: false,
               permissions: ['users.specializations.manage'],
             }),
-            hasPermission: vi.fn().mockImplementation((perm: string) => perm === 'users.specializations.manage'),
+            hasPermission,
           },
         },
         { provide: IntelService, useValue: { playerReport: vi.fn(), leaderboards: vi.fn() } },
@@ -99,5 +139,26 @@ describe('UserDetail Destiny Board', () => {
     expect(apiGet.mock.calls.some((call) => call[0] === 'api/users/me/specializations')).toBe(false);
     expect(fixture.nativeElement.textContent).toContain('Destiny Board');
     expect(fixture.nativeElement.textContent).toContain('Weapons');
+  });
+
+  it('shows held Discord-linked roles and lets officers remove an assignable one', async () => {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      await Promise.resolve();
+      if ((fixture.nativeElement.textContent as string).includes('Staff ping (automatic)')) break;
+    }
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Officer');
+    expect(text).toContain('Staff');
+    expect(text).toContain('Staff ping (automatic)');
+    const remove = (fixture.nativeElement as HTMLElement).querySelector(
+      'button[aria-label="Remove role Officer"]',
+    ) as HTMLButtonElement | null;
+    expect(remove).not.toBeNull();
+    remove?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(apiDelete).toHaveBeenCalledWith('api/users/42/roles/officer');
   });
 });

@@ -17,6 +17,8 @@ const mockMatrix: PermissionMatrix = {
       priority: 10,
       discord_role_id: '123456',
       is_default: false,
+      is_staff: false,
+      grants_staff: true,
       permissions: ['splits.create', 'splits.delete', 'events.create'],
     },
     {
@@ -25,6 +27,8 @@ const mockMatrix: PermissionMatrix = {
       priority: 1,
       discord_role_id: null,
       is_default: true,
+      is_staff: false,
+      grants_staff: false,
       permissions: ['splits.create'],
     },
   ],

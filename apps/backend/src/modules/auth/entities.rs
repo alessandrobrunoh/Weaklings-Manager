@@ -19,6 +19,11 @@ pub mod role {
         /// When true, members who hold no linked Discord role receive this role.
         /// At most one row may be default (enforced by a partial unique index).
         pub is_default: bool,
+        /// Unique generic staff ping role. Its Discord link is assigned automatically to
+        /// members who hold any `grants_staff` role, so `@staff` reaches the whole staff.
+        pub is_staff: bool,
+        /// Holders of this linked Discord role also receive the generic staff ping role.
+        pub grants_staff: bool,
     }
 
     #[derive(Copy, Clone, Debug, DeriveRelation, EnumIter)]

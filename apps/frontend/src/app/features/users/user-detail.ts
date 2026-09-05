@@ -22,6 +22,7 @@ import type {
   ProgressionMeView,
   Role,
   UserProfile,
+  UserRolesView,
   UserSpecialization,
   WarnView,
 } from '../../core/models/api.models';
@@ -46,6 +47,7 @@ import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import { SearchableSelect } from '../../shared/components/searchable-select/searchable-select';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
@@ -87,6 +89,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
     PageHeader,
     PageStack,
     RouterLink,
+    SearchableSelect,
     StatCard,
     TooltipDirective,
   ],
@@ -196,6 +199,81 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
               }
             </div>
           </div>
+        </section>
+
+        <section class="card p-6" aria-labelledby="member-roles-heading">
+          <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 id="member-roles-heading" class="text-base font-semibold" style="color: var(--color-text)">
+                {{ t('users.roles.title') }}
+              </h2>
+              <p class="text-xs mt-1" style="color: var(--color-text-secondary)">
+                {{ t('users.roles.hint') }}
+              </p>
+            </div>
+            @if (canManageRoles() && memberRoles()?.discord_id && addableRoleOptions().length > 0) {
+              <div class="min-w-56 flex-1 sm:max-w-xs">
+                <app-searchable-select
+                  [options]="addableRoleOptions()"
+                  [value]="pendingAddRoleId()"
+                  [emptyLabel]="t('users.roles.add')"
+                  [searchPlaceholder]="t('common.search')"
+                  [noMatchesLabel]="t('picker.noMatches')"
+                  [emptyOptionsLabel]="t('picker.empty')"
+                  [ariaLabel]="t('users.roles.add')"
+                  [disabled]="roleSaving()"
+                  (valueChange)="addRole($event)"
+                />
+              </div>
+            }
+          </div>
+
+          @if (rolesLoading()) {
+            <div class="p-4 flex justify-center">
+              <app-loading [label]="t('common.loading')" />
+            </div>
+          } @else if (rolesLoadFailed()) {
+            <app-error-state
+              [message]="t('users.roles.loadError')"
+              [retryLabel]="t('common.retry')"
+              (retry)="loadRoles()"
+            />
+          } @else if (!memberRoles()?.discord_id) {
+            <p class="text-sm" style="color: var(--color-text-secondary)">
+              {{ t('users.roles.noDiscord') }}
+            </p>
+          } @else if (heldRoles().length === 0) {
+            <p class="text-sm" style="color: var(--color-text-secondary)">
+              {{ t('users.roles.empty') }}
+            </p>
+          } @else {
+            <ul class="flex flex-wrap gap-2" role="list">
+              @for (role of heldRoles(); track role.role_id) {
+                <li
+                  class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs"
+                  style="background: var(--color-surface-2); border: 1px solid var(--color-border); color: var(--color-text)"
+                >
+                  <span>{{ role.role_name }}</span>
+                  @if (role.is_staff) {
+                    <span style="color: var(--color-text-secondary)">{{ t('users.roles.staffAuto') }}</span>
+                  }
+                  @if (canManageRoles() && role.assignable) {
+                    <button
+                      type="button"
+                      class="inline-flex cursor-pointer"
+                      [disabled]="roleSaving()"
+                      [attr.aria-label]="t('users.roles.remove') + ' ' + role.role_name"
+                      [appTooltip]="t('users.roles.remove')"
+                      tooltipPosition="top"
+                      (click)="removeRole(role.role_id)"
+                    >
+                      <app-icon name="close" size="0.75rem" />
+                    </button>
+                  }
+                </li>
+              }
+            </ul>
+          }
         </section>
 
         <!-- KPI Strip for Member -->
@@ -661,6 +739,22 @@ export class UserDetailPage {
       this.auth.hasPermission('roles.manage') ||
       this.auth.hasPermission('admin.settings.manage'),
   );
+  protected readonly canManageRoles = computed(() => this.auth.hasPermission('roles.manage'));
+
+  protected readonly memberRoles = signal<UserRolesView | null>(null);
+  protected readonly rolesLoading = signal(false);
+  protected readonly rolesLoadFailed = signal(false);
+  protected readonly roleSaving = signal(false);
+  protected readonly pendingAddRoleId = signal('');
+
+  protected readonly heldRoles = computed(
+    () => this.memberRoles()?.roles.filter((role) => role.held) ?? [],
+  );
+  protected readonly addableRoleOptions = computed(() =>
+    (this.memberRoles()?.roles ?? [])
+      .filter((role) => role.assignable && !role.held)
+      .map((role) => ({ id: role.role_id, label: role.role_name })),
+  );
 
   protected readonly filteredRoster = computed(() => {
     const q = this.rosterSearch().toLowerCase().trim();
@@ -690,6 +784,8 @@ export class UserDetailPage {
         this.unlinkConfirmOpen.set(false);
         this.playerIntel.set(null);
         this.ownStanding.set(null);
+        this.memberRoles.set(null);
+        this.pendingAddRoleId.set('');
         void this.load();
       });
     });
@@ -925,6 +1021,72 @@ export class UserDetailPage {
     }
   }
 
+  protected async loadRoles(userId = Number(this.userId())): Promise<void> {
+    if (!Number.isFinite(userId) || userId <= 0) return;
+    this.rolesLoading.set(true);
+    this.rolesLoadFailed.set(false);
+    try {
+      const roles = await firstValueFrom(this.api.get<UserRolesView>(`api/users/${userId}/roles`));
+      this.memberRoles.set(roles);
+      if (roles.highest_role) {
+        this.member.update((current) =>
+          current ? { ...current, role: roles.highest_role } : current,
+        );
+      }
+    } catch {
+      this.memberRoles.set(null);
+      this.rolesLoadFailed.set(true);
+    } finally {
+      this.rolesLoading.set(false);
+    }
+  }
+
+  protected async addRole(roleId: string): Promise<void> {
+    const member = this.member();
+    if (!member || !roleId || !this.canManageRoles() || this.roleSaving()) {
+      this.pendingAddRoleId.set('');
+      return;
+    }
+    this.roleSaving.set(true);
+    this.pendingAddRoleId.set('');
+    try {
+      const updated = await firstValueFrom(
+        this.api.post<UserRolesView>(`api/users/${member.id}/roles`, { role_id: roleId }),
+      );
+      this.memberRoles.set(updated);
+      this.member.update((current) =>
+        current ? { ...current, role: updated.highest_role } : current,
+      );
+      this.toasts.success(this.t('users.roles.added'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.roleSaving.set(false);
+    }
+  }
+
+  protected async removeRole(roleId: string): Promise<void> {
+    const member = this.member();
+    if (!member || !this.canManageRoles() || this.roleSaving()) return;
+    this.roleSaving.set(true);
+    try {
+      const updated = await firstValueFrom(
+        this.api.delete<UserRolesView>(`api/users/${member.id}/roles/${encodeURIComponent(roleId)}`),
+      );
+      if (updated) {
+        this.memberRoles.set(updated);
+        this.member.update((current) =>
+          current ? { ...current, role: updated.highest_role } : current,
+        );
+      }
+      this.toasts.success(this.t('users.roles.removed'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.roleSaving.set(false);
+    }
+  }
+
   protected async loadSpecializations(userId = Number(this.userId())): Promise<void> {
     if (!Number.isFinite(userId) || userId <= 0) return;
     this.specLoading.set(true);
@@ -1001,6 +1163,7 @@ export class UserDetailPage {
       this.member.set(member);
 
       void this.loadSpecializations(userId);
+      void this.loadRoles(userId);
 
       const [xp, link] = await Promise.all([
         firstValueFrom(this.api.get<ProgressionMeView>(`api/progression/users/${userId}`)).catch(
