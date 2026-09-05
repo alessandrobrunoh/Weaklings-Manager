@@ -218,6 +218,12 @@ pub enum Permission {
     /// different thing from a member working out their own Item Power.
     #[strum(serialize = "combat.readiness.view")]
     CombatReadinessView,
+    /// Read and run a saved combat test scenario. Member+.
+    #[strum(serialize = "combat.tests.view")]
+    CombatTestsView,
+    /// Create, edit and archive combat test scenarios. Officer+.
+    #[strum(serialize = "combat.tests.manage")]
+    CombatTestsManage,
     /// View scouted enemy comps, similarity scores and matchup tallies. Member+.
     #[strum(serialize = "intel.view")]
     IntelView,

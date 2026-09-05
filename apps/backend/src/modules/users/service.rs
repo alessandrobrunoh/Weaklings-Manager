@@ -13,9 +13,9 @@ use std::collections::{HashMap, HashSet};
 use utoipa::ToSchema;
 
 use crate::modules::albion::service::AlbionLinkService;
-use crate::modules::combat::dataset::spec_node;
 use crate::modules::battles::entities::Entity as GuildBattleSnapshotEntity;
 use crate::modules::battles::models::BattleLossEstimate;
+use crate::modules::combat::dataset::spec_node;
 use crate::modules::comps::entities::build::Entity as BuildEntity;
 use crate::modules::events::entities::event_participation::{
     Column as EventParticipationColumn, Entity as EventParticipationEntity,
@@ -794,7 +794,11 @@ mod tests {
         let service = UserService::new();
 
         let request = super::super::specializations::UpdateSpecializationsRequest {
-            specializations: vec![specialization_input("mastery:COMBAT_HAMMERS", "mastery", 87)],
+            specializations: vec![specialization_input(
+                "mastery:COMBAT_HAMMERS",
+                "mastery",
+                87,
+            )],
         };
 
         let saved = service
@@ -812,7 +816,11 @@ mod tests {
         let service = UserService::new();
 
         let request = super::super::specializations::UpdateSpecializationsRequest {
-            specializations: vec![specialization_input("mastery:NOT_A_REAL_NODE", "mastery", 50)],
+            specializations: vec![specialization_input(
+                "mastery:NOT_A_REAL_NODE",
+                "mastery",
+                50,
+            )],
         };
 
         let error = service
@@ -851,7 +859,11 @@ mod tests {
         let service = UserService::new();
 
         let request = super::super::specializations::UpdateSpecializationsRequest {
-            specializations: vec![specialization_input("mastery:COMBAT_HAMMERS", "mastery", 110)],
+            specializations: vec![specialization_input(
+                "mastery:COMBAT_HAMMERS",
+                "mastery",
+                110,
+            )],
         };
 
         let error = service

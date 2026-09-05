@@ -67,7 +67,7 @@ const fn one() -> u32 {
 }
 
 impl AttackerStyle {
-    const fn default_melee() -> Self {
+    pub const fn default_melee() -> Self {
         Self::Melee
     }
 }
@@ -97,7 +97,7 @@ pub struct ResolvedAttributeChange {
 }
 
 /// One resolved crowd-control application, after diminishing returns and the zerg debuff.
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ResolvedCrowdControl {
     pub kind: String,
     pub side: EffectSide,
@@ -151,7 +151,9 @@ pub fn resolve_cast(cast: &DeclaredCast, sides: SideCounts) -> Option<CastOutcom
     let spell = spell::resolve(&cast.spell_id)?;
     let rules = combat_rules();
 
-    let capped_targets = cast.target_count.clamp(1, u32_from(rules.aoe_escalation.threshold_max));
+    let capped_targets = cast
+        .target_count
+        .clamp(1, u32_from(rules.aoe_escalation.threshold_max));
     let extra_targets = f64::from(capped_targets - 1);
 
     let focus_fire_reduction = focus_fire_reduction(cast.concurrent_attackers, cast.attacker_style);
@@ -240,7 +242,12 @@ pub fn simulate(casts: &[DeclaredCast], sides: SideCounts) -> BurstResult {
         .map(|change| change.resolved_change.max(0.0))
         .sum();
 
-    BurstResult { casts: resolved, total_damage_to_enemies, total_healing_to_allies, unknown_spells }
+    BurstResult {
+        casts: resolved,
+        total_damage_to_enemies,
+        total_healing_to_allies,
+        unknown_spells,
+    }
 }
 
 /// Fraction of damage focus fire removes at the given attacker count, for the given style.
@@ -348,7 +355,9 @@ mod sim_tests {
         seven.target_count = 7;
         let outcome_ten = resolve_cast(&ten, SideCounts::default()).unwrap();
         let outcome_seven = resolve_cast(&seven, SideCounts::default()).unwrap();
-        assert!((outcome_ten.escalation_multiplier - outcome_seven.escalation_multiplier).abs() < 1e-9);
+        assert!(
+            (outcome_ten.escalation_multiplier - outcome_seven.escalation_multiplier).abs() < 1e-9
+        );
     }
 
     #[test]
@@ -389,17 +398,30 @@ mod sim_tests {
     fn twenty_one_allies_triggers_the_zerg_debuff() {
         let below = resolve_cast(
             &cast("HAMMERWHIRLWIND2"),
-            SideCounts { ally_count: 20, enemy_count: 0 },
+            SideCounts {
+                ally_count: 20,
+                enemy_count: 0,
+            },
         )
         .unwrap();
         let at_threshold = resolve_cast(
             &cast("HAMMERWHIRLWIND2"),
-            SideCounts { ally_count: 21, enemy_count: 0 },
+            SideCounts {
+                ally_count: 21,
+                enemy_count: 0,
+            },
         )
         .unwrap();
-        let below_hit = below.attribute_changes.iter().find(|c| c.attribute == "health").unwrap();
-        let at_hit =
-            at_threshold.attribute_changes.iter().find(|c| c.attribute == "health").unwrap();
+        let below_hit = below
+            .attribute_changes
+            .iter()
+            .find(|c| c.attribute == "health")
+            .unwrap();
+        let at_hit = at_threshold
+            .attribute_changes
+            .iter()
+            .find(|c| c.attribute == "health")
+            .unwrap();
         assert!((below_hit.resolved_change - below_hit.base_change).abs() < 1e-9);
         assert!(
             (at_hit.resolved_change / at_hit.base_change - 0.99).abs() < 1e-9,
@@ -415,8 +437,16 @@ mod sim_tests {
         stacked.prior_cc_stacks = 3;
         let after_three = resolve_cast(&stacked, SideCounts::default()).unwrap();
 
-        let fresh_stun = fresh.crowd_control.iter().find(|cc| cc.kind == "stun").unwrap();
-        let stacked_stun = after_three.crowd_control.iter().find(|cc| cc.kind == "stun").unwrap();
+        let fresh_stun = fresh
+            .crowd_control
+            .iter()
+            .find(|cc| cc.kind == "stun")
+            .unwrap();
+        let stacked_stun = after_three
+            .crowd_control
+            .iter()
+            .find(|cc| cc.kind == "stun")
+            .unwrap();
         assert!(stacked_stun.resolved_time < fresh_stun.resolved_time);
 
         // typefactorstun is 0.3 and diminishingreturnmax is 0.8, so at some stack count the
@@ -424,7 +454,11 @@ mod sim_tests {
         let mut heavily_stacked = cast("HAMMERWHIRLWIND2");
         heavily_stacked.prior_cc_stacks = 20;
         let saturated = resolve_cast(&heavily_stacked, SideCounts::default()).unwrap();
-        let saturated_stun = saturated.crowd_control.iter().find(|cc| cc.kind == "stun").unwrap();
+        let saturated_stun = saturated
+            .crowd_control
+            .iter()
+            .find(|cc| cc.kind == "stun")
+            .unwrap();
         assert!(
             (saturated_stun.resolved_time - fresh_stun.resolved_time * 0.2).abs() < 1e-9,
             "expected the 0.8 cap (20% of base remaining): got {} vs base {}",

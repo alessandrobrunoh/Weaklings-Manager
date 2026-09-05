@@ -192,7 +192,13 @@ fn as_list(value: &Value) -> Vec<&Value> {
 
 /// True when an effect object carries a key this module cannot evaluate — a conditional branch on
 /// who is casting, what charges are up, or what else is currently active.
-const CONDITIONAL_KEYS: &[&str] = &["valueoverride", "IfCharge", "IfConsumeCharges", "IfSpellActive", "not"];
+const CONDITIONAL_KEYS: &[&str] = &[
+    "valueoverride",
+    "IfCharge",
+    "IfConsumeCharges",
+    "IfSpellActive",
+    "not",
+];
 
 fn has_conditional(effect: &Value) -> bool {
     effect
@@ -209,7 +215,8 @@ fn walk(
 ) {
     if depth > MAX_APPLY_DEPTH || !visited.insert(spell_id.to_string()) {
         if depth > MAX_APPLY_DEPTH {
-            out.unsupported.push(format!("{spell_id}:apply-chain-too-deep"));
+            out.unsupported
+                .push(format!("{spell_id}:apply-chain-too-deep"));
         }
         return;
     }
@@ -221,9 +228,14 @@ fn walk(
         }
     }
 
-    for effect in spell.get("directattributechange").map(as_list).unwrap_or_default() {
+    for effect in spell
+        .get("directattributechange")
+        .map(as_list)
+        .unwrap_or_default()
+    {
         if has_conditional(effect) {
-            out.unsupported.push(format!("{spell_id}:directattributechange (conditional)"));
+            out.unsupported
+                .push(format!("{spell_id}:directattributechange (conditional)"));
             continue;
         }
         let (Some(target), Some(attribute), Some(change)) = (
@@ -231,7 +243,8 @@ fn walk(
             effect.get("attribute").and_then(Value::as_str),
             effect.get("change").and_then(Value::as_f64),
         ) else {
-            out.unsupported.push(format!("{spell_id}:directattributechange (unreadable)"));
+            out.unsupported
+                .push(format!("{spell_id}:directattributechange (unreadable)"));
             continue;
         };
         out.damage_and_healing.push(AttributeChange {
@@ -252,14 +265,16 @@ fn walk(
     for kind in ["stun", "root", "knockback", "silence", "forcedmovement"] {
         for effect in spell.get(kind).map(as_list).unwrap_or_default() {
             if has_conditional(effect) {
-                out.unsupported.push(format!("{spell_id}:{kind} (conditional)"));
+                out.unsupported
+                    .push(format!("{spell_id}:{kind} (conditional)"));
                 continue;
             }
             let (Some(target), Some(time)) = (
                 effect.get("target").and_then(Value::as_str),
                 effect.get("time").and_then(Value::as_f64),
             ) else {
-                out.unsupported.push(format!("{spell_id}:{kind} (unreadable)"));
+                out.unsupported
+                    .push(format!("{spell_id}:{kind} (unreadable)"));
                 continue;
             };
             out.crowd_control.push(CrowdControlEffect {
@@ -280,23 +295,28 @@ fn walk(
     // rather than silently skipped, so a caller building a timeline knows one is there to place.
     for key in ["buffovertime", "attributechangeovertime"] {
         if spell.get(key).is_some() {
-            out.unsupported.push(format!("{spell_id}:{key} (over-time, not yet resolved)"));
+            out.unsupported
+                .push(format!("{spell_id}:{key} (over-time, not yet resolved)"));
         }
     }
 
     for reference in spell.get("applyspell").map(as_list).unwrap_or_default() {
         if has_conditional(reference) {
-            out.unsupported.push(format!("{spell_id}:applyspell (conditional)"));
+            out.unsupported
+                .push(format!("{spell_id}:applyspell (conditional)"));
             continue;
         }
         let Some(child_id) = reference.get("spell").and_then(Value::as_str) else {
-            out.unsupported.push(format!("{spell_id}:applyspell (unreadable)"));
+            out.unsupported
+                .push(format!("{spell_id}:applyspell (unreadable)"));
             continue;
         };
         if let Some(child) = combat_spells().get(child_id) {
             walk(child_id, child, depth + 1, visited, out);
         } else {
-            out.unsupported.push(format!("{spell_id}:applyspell -> {child_id} (unknown spell)"));
+            out.unsupported.push(format!(
+                "{spell_id}:applyspell -> {child_id} (unknown spell)"
+            ));
         }
     }
 }
@@ -344,22 +364,32 @@ mod spell_tests {
     fn a_conditional_effect_is_named_rather_than_guessed() {
         // AXETHROW_SECOND_EFFECT's second directattributechange carries `valueoverride` /
         // `IfConsumeCharges` — a real conditional this resolver does not evaluate.
-        let spell =
-            resolve("AXETHROW_SECOND_EFFECT").expect("spell exists in the bundled dataset");
+        let spell = resolve("AXETHROW_SECOND_EFFECT").expect("spell exists in the bundled dataset");
         assert!(
-            spell.unsupported.iter().any(|entry| entry.contains("directattributechange")),
+            spell
+                .unsupported
+                .iter()
+                .any(|entry| entry.contains("directattributechange")),
             "the conditional heal-on-charge-consume entry should be flagged, not silently dropped: {:?}",
             spell.unsupported
         );
         // The unconditional damage line should still resolve normally alongside it.
-        assert!(spell.damage_and_healing.iter().any(|change| change.change < 0.0));
+        assert!(
+            spell
+                .damage_and_healing
+                .iter()
+                .any(|change| change.change < 0.0)
+        );
     }
 
     #[test]
     fn a_buff_over_time_is_named_rather_than_silently_dropped() {
         let spell = resolve("ACID_BOMB_EFFECT").expect("spell exists in the bundled dataset");
         assert!(
-            spell.unsupported.iter().any(|entry| entry.contains("buffovertime")),
+            spell
+                .unsupported
+                .iter()
+                .any(|entry| entry.contains("buffovertime")),
             "got {:?}",
             spell.unsupported
         );
@@ -371,6 +401,9 @@ mod spell_tests {
         // resolving the same spell id twice must not double-count its effects.
         let first = resolve("HAMMERWHIRLWIND2").unwrap();
         let second = resolve("HAMMERWHIRLWIND2").unwrap();
-        assert_eq!(first.damage_and_healing.len(), second.damage_and_healing.len());
+        assert_eq!(
+            first.damage_and_healing.len(),
+            second.damage_and_healing.len()
+        );
     }
 }

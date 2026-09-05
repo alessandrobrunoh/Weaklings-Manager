@@ -11,12 +11,14 @@
 
 pub mod data_types;
 pub mod dataset;
+pub mod entities;
 pub mod fit;
 pub mod ip;
 pub mod models;
 pub mod pattern;
 pub mod readiness;
 pub mod router;
+pub mod scenario;
 pub mod service;
 pub mod sim;
 pub mod spell;

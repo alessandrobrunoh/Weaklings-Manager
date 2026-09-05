@@ -6,14 +6,23 @@
 
 use std::collections::HashMap;
 
-use sea_orm::{ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, Set, TransactionTrait,
+};
 
 use super::dataset::{combat_items, combat_rules, combat_spells, dataset_version, spec_node};
+use super::entities::combat_run;
+use super::entities::combat_run::Column as CombatRunColumn;
+use super::entities::combat_scenario;
+use super::entities::combat_scenario::Column as CombatScenarioColumn;
 use super::fit;
 use super::ip::{self, EquippedItem, SpecLevels};
 use super::models::{
-    BlockingNode, BuildRosterFitView, CombatDatasetView, ItemPowerRequest, ItemPowerView,
-    LoadoutItemRequest, MemberItemPowerView, SpecSource,
+    BlockingNode, BuildRosterFitView, CombatDatasetView, CreateScenarioRequest, ItemPowerRequest,
+    ItemPowerView, LoadoutItemRequest, MemberItemPowerView, RunDetail, RunSummary,
+    ScenarioDefinition, ScenarioDetail, ScenarioSummary, ScenarioVersionRef, SpecSource,
+    UpdateScenarioRequest,
 };
 use crate::errors::AppError;
 use crate::modules::comps::entities::build_item::{
@@ -393,6 +402,386 @@ impl CombatService {
             }
         }
     }
+
+    /// Creates a new combat test scenario at version 1.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::Validation`] for an empty name, or [`AppError::Conflict`] when the name
+    /// is already taken.
+    pub async fn create_scenario(
+        &self,
+        db: &DatabaseConnection,
+        creator_id: i64,
+        request: &CreateScenarioRequest,
+    ) -> Result<ScenarioDetail, AppError> {
+        let name = request.name.trim();
+        if name.is_empty() {
+            return Err(AppError::Validation("scenario name is required".to_string()));
+        }
+        ensure_scenario_name_free(db, name, None).await?;
+        let now: sea_orm::prelude::DateTimeWithTimeZone = chrono::Utc::now().into();
+        let definition_json = serde_json::to_string(&request.definition)
+            .map_err(|error| AppError::Validation(error.to_string()))?;
+        let inserted = combat_scenario::ActiveModel {
+            name: Set(name.to_string()),
+            version: Set(1),
+            definition_json: Set(definition_json),
+            created_by: Set(creator_id),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .map_err(AppError::Database)?;
+        self.to_scenario_detail(db, inserted).await
+    }
+
+    /// Edits a scenario version's name and/or definition in place.
+    ///
+    /// Unlike a build or a comp, a test scenario is a scratch document an officer iterates on
+    /// constantly — every tweak to a group or the timeline does not need its own version. Renaming
+    /// moves every version sharing the old name, matching how build/comp renames already work.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::NotFound`] when the scenario does not exist.
+    pub async fn update_scenario(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+        request: &UpdateScenarioRequest,
+    ) -> Result<ScenarioDetail, AppError> {
+        let model = combat_scenario::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Scenario {id} not found")))?;
+
+        let txn = db.begin().await.map_err(AppError::Database)?;
+        if let Some(name) = request.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+            ensure_scenario_name_free(&txn, name, Some(&model.name)).await?;
+            let siblings = scenario_version_group(&txn, &model.name).await?;
+            for sibling in siblings {
+                let mut active: combat_scenario::ActiveModel = sibling.into();
+                active.name = Set(name.to_string());
+                active.updated_at = Set(chrono::Utc::now().into());
+                active.update(&txn).await.map_err(AppError::Database)?;
+            }
+        }
+        if let Some(definition) = &request.definition {
+            let definition_json = serde_json::to_string(definition)
+                .map_err(|error| AppError::Validation(error.to_string()))?;
+            let mut active: combat_scenario::ActiveModel =
+                combat_scenario::Entity::find_by_id(id)
+                    .one(&txn)
+                    .await
+                    .map_err(AppError::Database)?
+                    .ok_or_else(|| AppError::NotFound(format!("Scenario {id} not found")))?
+                    .into();
+            active.definition_json = Set(definition_json);
+            active.updated_at = Set(chrono::Utc::now().into());
+            active.update(&txn).await.map_err(AppError::Database)?;
+        }
+        txn.commit().await.map_err(AppError::Database)?;
+
+        let updated = combat_scenario::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Scenario {id} not found")))?;
+        self.to_scenario_detail(db, updated).await
+    }
+
+    /// Creates a new version by cloning the given one's current definition — for keeping a state
+    /// around to compare against, deliberately separate from [`Self::update_scenario`]'s in-place
+    /// editing.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::NotFound`] when the source scenario does not exist.
+    pub async fn create_scenario_version(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+        creator_id: i64,
+    ) -> Result<ScenarioDetail, AppError> {
+        let source = combat_scenario::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Scenario {id} not found")))?;
+
+        let siblings = scenario_version_group(db, &source.name).await?;
+        let next_version = siblings.iter().map(|sibling| sibling.version).max().unwrap_or(0) + 1;
+        let now: sea_orm::prelude::DateTimeWithTimeZone = chrono::Utc::now().into();
+        let inserted = combat_scenario::ActiveModel {
+            name: Set(source.name),
+            version: Set(next_version),
+            definition_json: Set(source.definition_json),
+            created_by: Set(creator_id),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        // Another request could only collide here by creating this exact version number between
+        // the read above and this insert — rare enough for a single-officer editing tool that a
+        // surfaced database error is an acceptable "try again", without a retry loop's complexity.
+        .map_err(AppError::Database)?;
+        self.to_scenario_detail(db, inserted).await
+    }
+
+    /// Lists scenario versions, newest-updated first.
+    pub async fn list_scenarios(
+        &self,
+        db: &DatabaseConnection,
+        include_archived: bool,
+    ) -> Result<Vec<ScenarioSummary>, AppError> {
+        let mut query = combat_scenario::Entity::find();
+        if !include_archived {
+            query = query.filter(CombatScenarioColumn::ArchivedAt.is_null());
+        }
+        let models = query
+            .order_by_desc(CombatScenarioColumn::UpdatedAt)
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let mut summaries = Vec::with_capacity(models.len());
+        for model in models {
+            summaries.push(self.to_scenario_summary(db, model).await?);
+        }
+        Ok(summaries)
+    }
+
+    /// Reads one scenario version, with its definition and its version siblings.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::NotFound`] when the scenario does not exist.
+    pub async fn get_scenario(&self, db: &DatabaseConnection, id: i64) -> Result<ScenarioDetail, AppError> {
+        let model = combat_scenario::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Scenario {id} not found")))?;
+        self.to_scenario_detail(db, model).await
+    }
+
+    /// Archives (or unarchives) a scenario version. Never deletes: a past run stays reachable.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::NotFound`] when the scenario does not exist.
+    pub async fn set_scenario_archived(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+        archived: bool,
+    ) -> Result<ScenarioDetail, AppError> {
+        let model = combat_scenario::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Scenario {id} not found")))?;
+        let mut active: combat_scenario::ActiveModel = model.into();
+        active.archived_at = Set(archived.then(|| chrono::Utc::now().into()));
+        active.updated_at = Set(chrono::Utc::now().into());
+        let updated = active.update(db).await.map_err(AppError::Database)?;
+        self.to_scenario_detail(db, updated).await
+    }
+
+    /// Runs a scenario version now, pins the result, and returns it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::NotFound`] when the scenario does not exist, or
+    /// [`AppError::Validation`] when its stored definition cannot be parsed (should not happen for
+    /// a definition this same service wrote, but the column has no schema of its own to enforce
+    /// it).
+    pub async fn run_scenario(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+        actor_id: i64,
+    ) -> Result<RunDetail, AppError> {
+        let model = combat_scenario::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Scenario {id} not found")))?;
+        let definition: ScenarioDefinition = serde_json::from_str(&model.definition_json)
+            .map_err(|error| AppError::Validation(format!("stored scenario is unreadable: {error}")))?;
+
+        let result = super::scenario::run(&definition.groups, &definition.casts);
+        let result_json =
+            serde_json::to_string(&result).map_err(|error| AppError::Validation(error.to_string()))?;
+
+        let inserted = combat_run::ActiveModel {
+            scenario_id: Set(id),
+            engine_version: Set(SCENARIO_ENGINE_VERSION),
+            dataset_commit: Set(dataset_version().dumps_commit.clone()),
+            result_json: Set(result_json),
+            ran_by: Set(actor_id),
+            ran_at: Set(chrono::Utc::now().into()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .map_err(AppError::Database)?;
+
+        Ok(RunDetail { summary: self.to_run_summary(db, inserted).await?, result })
+    }
+
+    /// Lists a scenario's past runs, most recent first.
+    pub async fn list_runs(
+        &self,
+        db: &DatabaseConnection,
+        scenario_id: i64,
+    ) -> Result<Vec<RunSummary>, AppError> {
+        let models = combat_run::Entity::find()
+            .filter(CombatRunColumn::ScenarioId.eq(scenario_id))
+            .order_by_desc(CombatRunColumn::RanAt)
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let mut summaries = Vec::with_capacity(models.len());
+        for model in models {
+            summaries.push(self.to_run_summary(db, model).await?);
+        }
+        Ok(summaries)
+    }
+
+    /// Reads one pinned run, with its full resolved result.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::NotFound`] when the run does not exist, or [`AppError::Validation`]
+    /// when its stored result cannot be parsed.
+    pub async fn get_run(&self, db: &DatabaseConnection, run_id: i64) -> Result<RunDetail, AppError> {
+        let model = combat_run::Entity::find_by_id(run_id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Run {run_id} not found")))?;
+        let result: super::scenario::ScenarioResult = serde_json::from_str(&model.result_json)
+            .map_err(|error| AppError::Validation(format!("stored run is unreadable: {error}")))?;
+        Ok(RunDetail { summary: self.to_run_summary(db, model).await?, result })
+    }
+
+    async fn to_scenario_summary(
+        &self,
+        db: &DatabaseConnection,
+        model: combat_scenario::Model,
+    ) -> Result<ScenarioSummary, AppError> {
+        let created_by_username = self.resolve_username(db, model.created_by).await?;
+        let run_count = combat_run::Entity::find()
+            .filter(CombatRunColumn::ScenarioId.eq(model.id))
+            .count(db)
+            .await
+            .map_err(AppError::Database)?;
+        let run_count = i64::try_from(run_count).unwrap_or(i64::MAX);
+        Ok(ScenarioSummary {
+            id: model.id,
+            name: model.name,
+            version: model.version,
+            created_by: model.created_by,
+            created_by_username,
+            created_at: model.created_at.to_rfc3339(),
+            updated_at: model.updated_at.to_rfc3339(),
+            archived_at: model.archived_at.map(|value| value.to_rfc3339()),
+            run_count,
+        })
+    }
+
+    async fn to_scenario_detail(
+        &self,
+        db: &DatabaseConnection,
+        model: combat_scenario::Model,
+    ) -> Result<ScenarioDetail, AppError> {
+        let definition: ScenarioDefinition = serde_json::from_str(&model.definition_json)
+            .map_err(|error| AppError::Validation(format!("stored scenario is unreadable: {error}")))?;
+        let mut versions = scenario_version_group(db, &model.name).await?;
+        versions.sort_by_key(|sibling| sibling.version);
+        let versions = versions
+            .into_iter()
+            .map(|sibling| ScenarioVersionRef { id: sibling.id, version: sibling.version })
+            .collect();
+        let summary = self.to_scenario_summary(db, model).await?;
+        Ok(ScenarioDetail { summary, definition, versions })
+    }
+
+    async fn to_run_summary(
+        &self,
+        db: &DatabaseConnection,
+        model: combat_run::Model,
+    ) -> Result<RunSummary, AppError> {
+        let ran_by_username = self.resolve_username(db, model.ran_by).await?;
+        Ok(RunSummary {
+            id: model.id,
+            scenario_id: model.scenario_id,
+            engine_version: model.engine_version,
+            dataset_commit: model.dataset_commit,
+            ran_by: model.ran_by,
+            ran_by_username,
+            ran_at: model.ran_at.to_rfc3339(),
+        })
+    }
+
+    async fn resolve_username(&self, db: &DatabaseConnection, user_id: i64) -> Result<String, AppError> {
+        let Some(user) = crate::modules::users::entities::Entity::find_by_id(user_id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+        else {
+            return Ok(format!("#{user_id}"));
+        };
+        crate::modules::users::display_name::resolve(db, &user).await
+    }
+}
+
+/// Bumped whenever [`super::scenario::ScenarioResult`]'s shape changes, so a pinned run stays
+/// legible even after the engine itself changes.
+const SCENARIO_ENGINE_VERSION: i32 = 1;
+
+/// Every version sharing `name` (case/whitespace-insensitive), unsorted.
+async fn scenario_version_group<C: ConnectionTrait>(
+    db: &C,
+    name: &str,
+) -> Result<Vec<combat_scenario::Model>, AppError> {
+    let key = name.trim().to_lowercase();
+    Ok(combat_scenario::Entity::find()
+        .all(db)
+        .await
+        .map_err(AppError::Database)?
+        .into_iter()
+        .filter(|candidate| candidate.name.trim().to_lowercase() == key)
+        .collect())
+}
+
+/// Refuses a scenario name already held by another scenario group.
+///
+/// `exclude_name` is the group's own current name, when renaming it in place — every version in a
+/// group shares one name, so a rename onto its own unchanged name must not be treated as taken.
+async fn ensure_scenario_name_free<C: ConnectionTrait>(
+    db: &C,
+    name: &str,
+    exclude_name: Option<&str>,
+) -> Result<(), AppError> {
+    let key = name.trim().to_lowercase();
+    if exclude_name.is_some_and(|existing| existing.trim().to_lowercase() == key) {
+        return Ok(());
+    }
+    let taken = !scenario_version_group(db, name).await?.is_empty();
+    if taken {
+        return Err(AppError::Conflict(format!(
+            "A test named {:?} already exists",
+            name.trim()
+        )));
+    }
+    Ok(())
 }
 
 /// Reads the `loadout` query parameter, defaulting to the main set.
@@ -544,16 +933,25 @@ mod service_tests {
     #[test]
     fn mastery_groups_maps_a_known_weapon_to_its_family() {
         let groups = CombatService::mastery_groups();
-        assert_eq!(groups.get("2H_POLEHAMMER").map(String::as_str), Some("COMBAT_HAMMERS"));
+        assert_eq!(
+            groups.get("2H_POLEHAMMER").map(String::as_str),
+            Some("COMBAT_HAMMERS")
+        );
     }
 
     #[test]
     fn mastery_groups_covers_every_item_that_has_a_specialization() {
         let groups = CombatService::mastery_groups();
         for (base, item) in combat_items() {
-            let Some(node) = item.spec_node.as_deref() else { continue };
-            let Some(node) = spec_node(node) else { continue };
-            let Some(parent) = node.parent.as_deref() else { continue };
+            let Some(node) = item.spec_node.as_deref() else {
+                continue;
+            };
+            let Some(node) = spec_node(node) else {
+                continue;
+            };
+            let Some(parent) = node.parent.as_deref() else {
+                continue;
+            };
             assert_eq!(
                 groups.get(base).map(String::as_str),
                 Some(parent),
