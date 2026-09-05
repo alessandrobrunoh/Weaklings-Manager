@@ -38,7 +38,6 @@ const HUE_COLOR: Record<DestinyHue, string> = {
   warrior: '#eb5757',
   hunter: '#27a644',
   mage: '#02b8cc',
-  gathering: '#8a8f98',
   neutral: '#d0d6e0',
 };
 
@@ -276,6 +275,7 @@ const HUE_COLOR: Record<DestinyHue, string> = {
                   [attr.stroke-opacity]="edgeOpacity(edge.fill, edge.id)"
                   stroke-width="2.4"
                   stroke-linecap="round"
+                  pointer-events="none"
                 />
               }
               @for (node of layout().nodes; track node.id) {
@@ -283,9 +283,10 @@ const HUE_COLOR: Record<DestinyHue, string> = {
                   class="destiny-dot"
                   role="button"
                   tabindex="0"
+                  [attr.data-node-id]="node.id"
                   [attr.aria-label]="nodeAria(node)"
                   [attr.aria-pressed]="selectedId() === node.id"
-                  (click)="selectNode(node.id)"
+                  (click)="onNodeClick($event, node.id)"
                   (keydown)="onNodeKey($event, node.id)"
                 >
                   <circle
@@ -479,7 +480,13 @@ export class DestinyBoard {
   private readonly draft = signal<DestinyItemNode[]>([]);
   private readonly mapEl = viewChild<ElementRef<HTMLElement>>('destinyMap');
   private readonly svgEl = viewChild<ElementRef<SVGSVGElement>>('destinySvg');
-  private drag: { id: number; x: number; y: number; moved: boolean } | null = null;
+  private drag: {
+    id: number;
+    x: number;
+    y: number;
+    moved: boolean;
+    nodeId: string | null;
+  } | null = null;
   private skipClick = false;
 
   constructor() {
@@ -603,6 +610,11 @@ export class DestinyBoard {
     this.selectedId.set(id);
   }
 
+  protected onNodeClick(event: Event, id: string): void {
+    event.stopPropagation();
+    this.selectNode(id);
+  }
+
   protected nudgeZoom(factor: number): void {
     const size = this.layout().width;
     const width = size / this.zoom();
@@ -628,10 +640,13 @@ export class DestinyBoard {
 
   protected onMapPointerDown(event: PointerEvent): void {
     if (event.button !== 0) return;
-    const map = this.mapEl()?.nativeElement;
-    if (!map) return;
-    this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
-    map.setPointerCapture(event.pointerId);
+    this.drag = {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      moved: false,
+      nodeId: this.nodeIdFromEvent(event),
+    };
   }
 
   protected onMapPointerMove(event: PointerEvent): void {
@@ -639,8 +654,11 @@ export class DestinyBoard {
     const dx = event.clientX - this.drag.x;
     const dy = event.clientY - this.drag.y;
     if (!this.drag.moved && dx * dx + dy * dy < 16) return;
-    this.drag.moved = true;
-    this.panning.set(true);
+    if (!this.drag.moved) {
+      this.drag.moved = true;
+      this.panning.set(true);
+      this.mapEl()?.nativeElement.setPointerCapture(event.pointerId);
+    }
     this.drag.x = event.clientX;
     this.drag.y = event.clientY;
     const svg = this.svgEl()?.nativeElement;
@@ -652,9 +670,14 @@ export class DestinyBoard {
 
   protected onMapPointerUp(event: PointerEvent): void {
     if (!this.drag || event.pointerId !== this.drag.id) return;
-    if (this.drag.moved) this.skipClick = true;
+    const { moved, nodeId } = this.drag;
     this.drag = null;
     this.panning.set(false);
+    if (moved) {
+      this.skipClick = true;
+      return;
+    }
+    if (nodeId) this.selectedId.set(nodeId);
   }
 
   private onMapWheel(event: WheelEvent): void {
@@ -765,6 +788,23 @@ export class DestinyBoard {
   private inspectorLevelFor(node: DestinyRadialNode): number {
     if (node.leafCount <= 0) return 0;
     return clampMasteryLevel(node.sum / node.leafCount);
+  }
+
+  private nodeIdFromEvent(event: Event): string | null {
+    const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+    for (const entry of path) {
+      if (entry instanceof Element) {
+        const id = entry.getAttribute('data-node-id');
+        if (id) return id;
+      }
+    }
+    let element = event.target instanceof Element ? event.target : null;
+    while (element) {
+      const id = element.getAttribute('data-node-id');
+      if (id) return id;
+      element = element.parentElement;
+    }
+    return null;
   }
 
   private nodeMatchesQuery(node: DestinyRadialNode, query: string): boolean {

@@ -4,14 +4,21 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
+  AttackerStyle,
+  BuildDetail,
+  BuildItemSlot,
+  BuildSlot,
+  BuildSummary,
+  OpenAlbionItem,
+  OpenAlbionItemAbilities,
+  PaginatedData,
   RunDetail,
   RunSummary,
   ScenarioDeclaredCast,
   ScenarioDefinition,
   ScenarioDetail,
-  ScenarioUnitGroup,
-  AttackerStyle,
   ScenarioSide,
+  ScenarioUnitGroup,
   UpdateScenarioRequest,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
@@ -19,6 +26,17 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
+import {
+  abilityCatalogKey,
+  abilityKeyForItem,
+  abilitySlotsFor,
+} from '../../shared/data/albion-abilities';
+import {
+  albionCombatIconUrl,
+  deduplicateAlbionCombatCatalog,
+} from '../../shared/data/albion-equipment-catalog';
+import { AlbionAbilitiesService } from '../../shared/services/albion-abilities.service';
+import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
@@ -26,6 +44,10 @@ import { Icon } from '../../shared/components/icon/icon';
 import { Loading } from '../../shared/components/loading/loading';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
+import {
+  SearchDialog,
+  type SearchDialogOption,
+} from '../../shared/components/search-dialog/search-dialog';
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { VersionSwitcher } from '../../shared/components/version-switcher/version-switcher';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
@@ -43,6 +65,30 @@ function unitIdsOf(definition: ScenarioDefinition): string[] {
   return definition.groups.flatMap((group) =>
     Array.from({ length: Math.max(1, group.count ?? 1) }, (_, n) => `${group.id}#${n}`),
   );
+}
+
+/**
+ * Maps an ability catalog entry's `slot_type` back to the `BuildSlot` `abilitySlotsFor` needs to
+ * pick the right Q/W/E/D/R/F labels. Off-hands, capes and the rest carry no abilities at all
+ * (`slot_type` is absent from the catalog for them), so `weapon` is a harmless default there —
+ * `abilitySlotsFor` returns nothing for a slot with zero configured active/passive counts anyway.
+ */
+function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
+  switch (abilities.slot_type) {
+    case 'head':
+      return 'head';
+    case 'armor':
+      return 'armor';
+    case 'shoes':
+      return 'shoes';
+    default:
+      return 'weapon';
+  }
+}
+
+interface GroupedSpellOptions {
+  readonly group: string;
+  readonly options: readonly { readonly value: string; readonly label: string }[];
 }
 
 /**
@@ -65,6 +111,7 @@ function unitIdsOf(definition: ScenarioDefinition): string[] {
     Loading,
     PageHeader,
     PageStack,
+    SearchDialog,
     StatCard,
     VersionSwitcher,
     ViewToggle,
@@ -143,10 +190,16 @@ function unitIdsOf(definition: ScenarioDefinition): string[] {
               <div class="flex items-center justify-between mb-4">
                 <h2 class="text-base font-bold text-[var(--color-text)]">{{ t('tests.groups') }}</h2>
                 @if (canManage()) {
-                  <button type="button" class="btn btn--tonal btn--sm" (click)="addGroup()">
-                    <app-icon name="plus" size="0.75rem" />
-                    {{ t('tests.addGroup') }}
-                  </button>
+                  <div class="flex items-center gap-2">
+                    <button type="button" class="btn btn--outline btn--sm" (click)="openBuildImport()">
+                      <app-icon name="search" size="0.75rem" />
+                      {{ t('tests.importBuild') }}
+                    </button>
+                    <button type="button" class="btn btn--tonal btn--sm" (click)="addGroup()">
+                      <app-icon name="plus" size="0.75rem" />
+                      {{ t('tests.addGroup') }}
+                    </button>
+                  </div>
                 }
               </div>
               @if (draft().groups.length === 0) {
@@ -156,6 +209,7 @@ function unitIdsOf(definition: ScenarioDefinition): string[] {
                   <table class="table">
                     <thead>
                       <tr>
+                        <th class="text-left">{{ t('tests.weapon') }}</th>
                         <th class="text-left">{{ t('tests.groupId') }}</th>
                         <th class="text-left">{{ t('tests.side') }}</th>
                         <th class="text-left">{{ t('tests.label') }}</th>
@@ -167,6 +221,25 @@ function unitIdsOf(definition: ScenarioDefinition): string[] {
                     <tbody>
                       @for (group of draft().groups; track group.id + '#' + $index; let i = $index) {
                         <tr>
+                          <td>
+                            <div class="flex items-center gap-2">
+                              @if (group.item_id) {
+                                <img
+                                  [src]="combatIconFor(group.item_id)"
+                                  alt=""
+                                  class="h-6 w-6 rounded shrink-0"
+                                />
+                              }
+                              <button
+                                type="button"
+                                class="btn btn--outline btn--sm whitespace-nowrap"
+                                [disabled]="!canManage()"
+                                (click)="openWeaponPicker(i)"
+                              >
+                                {{ group.item_id ? t('tests.changeWeapon') : t('tests.pickWeapon') }}
+                              </button>
+                            </div>
+                          </td>
                           <td>
                             <input
                               class="input input--sm font-mono"
@@ -257,9 +330,6 @@ function unitIdsOf(definition: ScenarioDefinition): string[] {
               } @else {
                 <p class="text-xs text-[var(--color-text-secondary)] mb-3">
                   {{ t('tests.targetsHint') }}
-                  @if (availableUnitIds().length > 0) {
-                    <span class="font-mono"> — {{ availableUnitIds().join(', ') }}</span>
-                  }
                 </p>
                 <div class="overflow-x-auto">
                   <table class="table">
@@ -289,13 +359,32 @@ function unitIdsOf(definition: ScenarioDefinition): string[] {
                             </select>
                           </td>
                           <td>
-                            <input
-                              class="input input--sm font-mono"
-                              type="text"
-                              [value]="cast.spell_id"
-                              [disabled]="!canManage()"
-                              (change)="onCastSpellIdChange(i, $event)"
-                            />
+                            @if (groupedSpellOptionsFor(cast.caster_group_id).length > 0) {
+                              <select
+                                class="select select--sm"
+                                [value]="cast.spell_id"
+                                [disabled]="!canManage()"
+                                (change)="onCastSpellIdChange(i, $event)"
+                              >
+                                <option value="">{{ t('tests.pickSpell') }}</option>
+                                @for (grp of groupedSpellOptionsFor(cast.caster_group_id); track grp.group) {
+                                  <optgroup [label]="grp.group">
+                                    @for (opt of grp.options; track opt.value) {
+                                      <option [value]="opt.value">{{ opt.label }}</option>
+                                    }
+                                  </optgroup>
+                                }
+                              </select>
+                            } @else {
+                              <input
+                                class="input input--sm font-mono"
+                                type="text"
+                                placeholder="SPELL_ID"
+                                [value]="cast.spell_id"
+                                [disabled]="!canManage()"
+                                (change)="onCastSpellIdChange(i, $event)"
+                              />
+                            }
                           </td>
                           <td class="text-right">
                             <input
@@ -309,13 +398,23 @@ function unitIdsOf(definition: ScenarioDefinition): string[] {
                             />
                           </td>
                           <td>
-                            <input
-                              class="input input--sm font-mono"
-                              type="text"
-                              [value]="cast.target_ids.join(', ')"
+                            <select
+                              multiple
+                              class="select select--sm"
+                              style="min-height: 4.5rem"
                               [disabled]="!canManage()"
                               (change)="onCastTargetsChange(i, $event)"
-                            />
+                            >
+                              @for (grp of unitOptionsGrouped(); track grp.groupLabel) {
+                                <optgroup [label]="grp.groupLabel">
+                                  @for (id of grp.ids; track id) {
+                                    <option [value]="id" [selected]="cast.target_ids.includes(id)">
+                                      {{ id }}
+                                    </option>
+                                  }
+                                </optgroup>
+                              }
+                            </select>
                           </td>
                           <td>
                             <select
@@ -521,6 +620,29 @@ function unitIdsOf(definition: ScenarioDefinition): string[] {
       </app-page-stack>
     }
 
+    @if (weaponPickerGroupIndex() !== null) {
+      <app-search-dialog
+        [title]="t('tests.pickWeapon')"
+        [placeholder]="t('tests.searchWeaponPlaceholder')"
+        [options]="weaponPickerOptions()"
+        (filterChange)="onWeaponPickerFilter($event)"
+        (select)="onWeaponSelected($event)"
+        (close)="closeWeaponPicker()"
+      />
+    }
+
+    @if (buildSearchOpen()) {
+      <app-search-dialog
+        [title]="t('tests.importBuild')"
+        [placeholder]="t('tests.searchBuildPlaceholder')"
+        [options]="buildSearchOptions()"
+        [loading]="buildSearchLoading()"
+        (filterChange)="onBuildSearchFilter($event)"
+        (select)="onBuildSelected($event)"
+        (close)="closeBuildImport()"
+      />
+    }
+
     @if (renameOpen()) {
       <app-dialog [title]="t('tests.renameTitle')" size="sm" (closed)="closeRename()">
         <form id="test-rename-form" class="grid gap-4" (submit)="onRenameSubmit($event)">
@@ -553,6 +675,8 @@ function unitIdsOf(definition: ScenarioDefinition): string[] {
   `,
 })
 export class TestDetailPage {
+  private readonly albionAbilities = inject(AlbionAbilitiesService);
+  private readonly albionCatalog = inject(AlbionCatalogService);
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
@@ -576,13 +700,43 @@ export class TestDetailPage {
   protected readonly renameOpen = signal(false);
   protected readonly renameDraft = signal('');
 
+  /** Every weapon/armor identifier the Setup tab can offer, one entry per base identifier. */
+  protected readonly combatCatalog = signal<OpenAlbionItem[]>([]);
+  /** `base_identifier -> abilities`, for scoping the Timeline tab's spell picker per group. */
+  protected readonly abilitiesCatalog = signal<Record<string, OpenAlbionItemAbilities>>({});
+
+  protected readonly weaponPickerGroupIndex = signal<number | null>(null);
+  protected readonly weaponSearchText = signal('');
+  protected readonly weaponPickerOptions = computed<SearchDialogOption[]>(() => {
+    const query = this.weaponSearchText().trim().toLowerCase();
+    return this.combatCatalog()
+      .filter((item) => !query || item.name.toLowerCase().includes(query))
+      .slice(0, 100)
+      .map((item) => ({
+        id: item.identifier ?? String(item.id),
+        title: item.name,
+        subtitle: item.identifier ?? undefined,
+        chip: item.type ?? undefined,
+      }));
+  });
+
+  protected readonly buildSearchOpen = signal(false);
+  protected readonly buildSearchOptions = signal<SearchDialogOption[]>([]);
+  protected readonly buildSearchLoading = signal(false);
+
   protected readonly canManage = computed(() => this.auth.hasPermission('combat.tests.manage'));
 
   protected readonly dirty = computed(
     () => JSON.stringify(this.draft()) !== JSON.stringify(this.savedDefinition()),
   );
 
-  protected readonly availableUnitIds = computed(() => unitIdsOf(this.draft()));
+  /** Every unit instance a cast can target, grouped by the group it belongs to. */
+  protected readonly unitOptionsGrouped = computed(() =>
+    this.draft().groups.map((group) => ({
+      groupLabel: `${group.label} (${group.side === 'ally' ? this.t('tests.ally') : this.t('tests.enemy')})`,
+      ids: unitIdsOf({ groups: [group], casts: [] }),
+    })),
+  );
 
   protected readonly tabOptions = computed<ViewToggleOption[]>(() => [
     { id: 'setup', label: this.t('tests.setup') },
@@ -602,6 +756,16 @@ export class TestDetailPage {
       this.activeTab.set('setup');
       void this.load(id);
     });
+
+    // Static application data shared with the comp/build editor; one fetch serves every test page.
+    void this.albionCatalog
+      .load()
+      .then((items) => this.combatCatalog.set(deduplicateAlbionCombatCatalog(items)))
+      .catch(() => this.combatCatalog.set([]));
+    void this.albionAbilities
+      .load()
+      .then((abilities) => this.abilitiesCatalog.set(abilities))
+      .catch(() => this.abilitiesCatalog.set({}));
   }
 
   protected switchTab(tab: string): void {
@@ -617,7 +781,8 @@ export class TestDetailPage {
     const group: ScenarioUnitGroup = {
       id: `group-${groupSeq}`,
       side: 'ally',
-      label: this.t('tests.label'),
+      label: this.t('tests.newGroupLabel'),
+      item_id: null,
       count: 1,
       hit_points: 1200,
     };
@@ -659,6 +824,97 @@ export class TestDetailPage {
     });
   }
 
+  protected combatIconFor(itemId: string): string {
+    return albionCombatIconUrl(itemId);
+  }
+
+  protected openWeaponPicker(index: number): void {
+    this.weaponPickerGroupIndex.set(index);
+    this.weaponSearchText.set('');
+  }
+
+  protected closeWeaponPicker(): void {
+    this.weaponPickerGroupIndex.set(null);
+  }
+
+  protected onWeaponPickerFilter(filter: { search: string }): void {
+    this.weaponSearchText.set(filter.search);
+  }
+
+  protected onWeaponSelected(option: SearchDialogOption): void {
+    const index = this.weaponPickerGroupIndex();
+    if (index === null) return;
+    this.updateGroup(index, { item_id: String(option.id), label: option.title });
+    this.weaponPickerGroupIndex.set(null);
+  }
+
+  /** Imports a unit group from an existing build: weapon and label prefilled, ready to run. */
+  protected openBuildImport(): void {
+    this.buildSearchOpen.set(true);
+    this.buildSearchOptions.set([]);
+  }
+
+  protected closeBuildImport(): void {
+    this.buildSearchOpen.set(false);
+  }
+
+  protected async onBuildSearchFilter(filter: { search: string }): Promise<void> {
+    this.buildSearchLoading.set(true);
+    try {
+      const params: Record<string, string | number> = { limit: 20 };
+      if (filter.search) params['search'] = filter.search;
+      const data = await firstValueFrom(
+        this.api.get<PaginatedData<BuildSummary>>('api/comps/builds', params),
+      );
+      this.buildSearchOptions.set(
+        data.items.map((build) => ({
+          id: build.id,
+          title: build.name,
+          subtitle: build.category_name ?? undefined,
+        })),
+      );
+    } finally {
+      this.buildSearchLoading.set(false);
+    }
+  }
+
+  protected async onBuildSelected(option: SearchDialogOption): Promise<void> {
+    this.buildSearchOpen.set(false);
+    try {
+      const build = await firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${option.id}`));
+      const weapon = build.items.find((item): item is BuildItemSlot => item.slot === 'weapon');
+      groupSeq += 1;
+      const group: ScenarioUnitGroup = {
+        id: `group-${groupSeq}`,
+        side: 'ally',
+        label: weapon?.openalbion_item_name ?? build.name,
+        item_id: weapon ? abilityKeyForItem(weapon) : null,
+        count: 1,
+        hit_points: 1200,
+      };
+      this.draft.update((def) => ({ ...def, groups: [...def.groups, group] }));
+      this.toasts.success(this.t('tests.importedFromBuild', { name: build.name }));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    }
+  }
+
+  /** This group's weapon's abilities, grouped by slot (Q/W/E/Passive) — empty until one is picked. */
+  protected groupedSpellOptionsFor(casterGroupId: string): GroupedSpellOptions[] {
+    const group = this.draft().groups.find((candidate) => candidate.id === casterGroupId);
+    const itemId = group?.item_id;
+    if (!itemId) return [];
+    const abilities = this.abilitiesCatalog()[abilityCatalogKey(itemId)];
+    if (!abilities) return [];
+    const slots = abilitySlotsFor(buildSlotForAbilities(abilities), abilities, undefined);
+    return slots
+      .filter((slot) => slot.choices.length > 0)
+      .map((slot) => ({
+        group: slot.label,
+        options: slot.choices.map((choice) => ({ value: choice.id, label: choice.name })),
+      }));
+  }
+
   // ---- Casts ----
 
   protected addCast(): void {
@@ -690,7 +946,8 @@ export class TestDetailPage {
   }
 
   protected onCastSpellIdChange(index: number, event: Event): void {
-    this.updateCast(index, { spell_id: (event.target as HTMLInputElement).value.trim() });
+    const target = event.target as HTMLInputElement | HTMLSelectElement;
+    this.updateCast(index, { spell_id: target.value.trim() });
   }
 
   protected onCastAtChange(index: number, event: Event): void {
@@ -698,11 +955,8 @@ export class TestDetailPage {
   }
 
   protected onCastTargetsChange(index: number, event: Event): void {
-    const raw = (event.target as HTMLInputElement).value;
-    const target_ids = raw
-      .split(',')
-      .map((id) => id.trim())
-      .filter((id) => id.length > 0);
+    const select = event.target as HTMLSelectElement;
+    const target_ids = Array.from(select.selectedOptions).map((option) => option.value);
     this.updateCast(index, { target_ids });
   }
 

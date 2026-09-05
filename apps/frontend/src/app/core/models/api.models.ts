@@ -1417,6 +1417,12 @@ export interface ScenarioUnitGroup {
   side: ScenarioSide;
   /** Display label, e.g. `"Polehammer"`. Not interpreted. */
   label: string;
+  /**
+   * The Albion catalog base identifier this group's label/spells were picked from (e.g.
+   * `"2H_POLEHAMMER"`). A UI hint only — the engine never reads it — so the Timeline tab can offer
+   * that item's actual abilities instead of a free-text spell id.
+   */
+  item_id?: string | null;
   count?: number;
   /** Hit points per unit, declared by the caller — the engine does not derive this from Item Power. */
   hit_points?: number;

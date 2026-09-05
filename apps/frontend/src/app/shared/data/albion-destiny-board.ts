@@ -7,6 +7,7 @@ import {
   albionCombatIconUrl,
   albionSpecializationIdentifier,
   deduplicateAlbionCombatCatalog,
+  isAlbionGatheringGear,
   normalizeAlbionEquipmentName,
   normalizeAlbionSpecializationKey,
 } from './albion-equipment-catalog';
@@ -42,8 +43,8 @@ export type DestinyWeaponFamilyId =
   | 'cursed_staffs'
   | 'other';
 
-/** Armor material branch. Gathering gear is kept so catalog items are not dropped. */
-export type DestinyArmorMaterialId = 'plate' | 'leather' | 'cloth' | 'gathering' | 'other';
+/** Combat armor material branch. Gathering gear is excluded from this tree. */
+export type DestinyArmorMaterialId = 'plate' | 'leather' | 'cloth' | 'other';
 
 /** Armor slot under a material. */
 export type DestinyArmorSlotId = 'head' | 'chest' | 'boots';
@@ -95,7 +96,6 @@ const ARMOR_MATERIAL_ORDER: readonly DestinyArmorMaterialId[] = [
   'plate',
   'leather',
   'cloth',
-  'gathering',
   'other',
 ];
 
@@ -126,7 +126,6 @@ const ARMOR_MATERIAL_LABEL: Record<DestinyArmorMaterialId, DestinyLabelKey> = {
   plate: 'destiny.material.plate',
   leather: 'destiny.material.leather',
   cloth: 'destiny.material.cloth',
-  gathering: 'destiny.material.gathering',
   other: 'destiny.material.other',
 };
 
@@ -236,7 +235,6 @@ export function classifyArmor(identifier: string): {
   if (id.includes('_PLATE')) material = 'plate';
   else if (id.includes('_LEATHER')) material = 'leather';
   else if (id.includes('_CLOTH')) material = 'cloth';
-  else if (id.includes('_GATHERER')) material = 'gathering';
 
   return { material, slot };
 }
@@ -258,6 +256,7 @@ export function mergeSpecializationNodes(
     const nodeKey = normalizeAlbionSpecializationKey(row.node_key);
     if (!nodeKey.includes(':')) continue;
     const identifier = nodeKey.split(':').slice(1).join(':');
+    if (isAlbionGatheringGear(identifier)) continue;
     const normalizedRow: UserSpecialization = {
       ...row,
       node_key: nodeKey,
@@ -291,7 +290,11 @@ export function mergeSpecializationNodes(
 
   const known = new Set(nodes.map((node) => node.node_key));
   for (const row of savedByKey.values()) {
-    if (!known.has(row.node_key) && (row.category === 'weapon' || row.category === 'armor')) {
+    if (
+      !known.has(row.node_key) &&
+      (row.category === 'weapon' || row.category === 'armor') &&
+      !isAlbionGatheringGear(row.node_key)
+    ) {
       nodes.push({
         node_key: row.node_key,
         node_name: row.node_name,
@@ -313,8 +316,12 @@ export function mergeSpecializationNodes(
  * Armor: branch → material → slot → items.
  */
 export function buildDestinyBoardTree(items: readonly DestinyItemNode[]): DestinyGroupNode[] {
-  const weapons = items.filter((item) => item.category === 'weapon');
-  const armor = items.filter((item) => item.category === 'armor');
+  const weapons = items.filter(
+    (item) => item.category === 'weapon' && !isAlbionGatheringGear(item.identifier),
+  );
+  const armor = items.filter(
+    (item) => item.category === 'armor' && !isAlbionGatheringGear(item.identifier),
+  );
   const tree: DestinyGroupNode[] = [];
 
   const weaponFamilies = groupBy(weapons, (item) => classifyWeaponFamily(item.identifier));
@@ -441,7 +448,7 @@ export function masteryFillPercent(summary: DestinyMasterySummary): number {
 }
 
 /** Combat-tree colour used by the radial Destiny Board. */
-export type DestinyHue = 'warrior' | 'hunter' | 'mage' | 'gathering' | 'neutral';
+export type DestinyHue = 'warrior' | 'hunter' | 'mage' | 'neutral';
 
 const WARRIOR_FAMILIES: ReadonlySet<DestinyWeaponFamilyId> = new Set([
   'swords',
@@ -535,13 +542,11 @@ export function destinyHueForId(id: string, identifier = ''): DestinyHue {
   if (id === 'armor' || id.startsWith('armor:')) {
     if (id.includes('leather')) return 'hunter';
     if (id.includes('cloth')) return 'mage';
-    if (id.includes('gathering')) return 'gathering';
     if (id.includes('plate')) return 'warrior';
     if (identifier) {
       const { material } = classifyArmor(identifier);
       if (material === 'leather') return 'hunter';
       if (material === 'cloth') return 'mage';
-      if (material === 'gathering') return 'gathering';
       if (material === 'plate') return 'warrior';
     }
     return 'warrior';
