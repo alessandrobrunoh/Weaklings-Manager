@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
+import type { EChartsOption } from 'echarts';
 
 import type {
   AttackerStyle,
@@ -9,6 +10,8 @@ import type {
   BuildItemSlot,
   BuildSlot,
   BuildSummary,
+  CompDetail,
+  CompSummary,
   OpenAlbionItem,
   OpenAlbionItemAbilities,
   PaginatedData,
@@ -23,6 +26,7 @@ import type {
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
+import { IntelService } from '../../core/services/intel.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
@@ -37,6 +41,7 @@ import {
 } from '../../shared/data/albion-equipment-catalog';
 import { AlbionAbilitiesService } from '../../shared/services/albion-abilities.service';
 import { AlbionCatalogService } from '../../shared/services/albion-catalog.service';
+import { Chart, type ChartTableRow } from '../../shared/components/chart/chart';
 import { Dialog } from '../../shared/components/dialog/dialog';
 import { EmptyState } from '../../shared/components/empty-state/empty-state';
 import { ErrorState } from '../../shared/components/error-state/error-state';
@@ -51,8 +56,13 @@ import {
 import { StatCard } from '../../shared/components/stat-card/stat-card';
 import { VersionSwitcher } from '../../shared/components/version-switcher/version-switcher';
 import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-toggle/view-toggle';
+import { hpOverTimeSeries } from './hp-timeline';
 
 type EditorTab = 'setup' | 'timeline' | 'results';
+
+/** Line colours shared with the Units table's ally/enemy chips (`chip--info` / `chip--error`). */
+const ALLY_LINE_COLOR = '#38bdf8';
+const ENEMY_LINE_COLOR = '#f87171';
 
 let groupSeq = 0;
 
@@ -104,6 +114,7 @@ interface GroupedSpellOptions {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     RouterLink,
+    Chart,
     Dialog,
     EmptyState,
     ErrorState,
@@ -195,6 +206,14 @@ interface GroupedSpellOptions {
                       <app-icon name="search" size="0.75rem" />
                       {{ t('tests.importBuild') }}
                     </button>
+                    <button type="button" class="btn btn--outline btn--sm" (click)="openCompImport()">
+                      <app-icon name="search" size="0.75rem" />
+                      {{ t('tests.importComp') }}
+                    </button>
+                    <button type="button" class="btn btn--outline btn--sm" (click)="openScoutImport()">
+                      <app-icon name="search" size="0.75rem" />
+                      {{ t('tests.importScout') }}
+                    </button>
                     <button type="button" class="btn btn--tonal btn--sm" (click)="addGroup()">
                       <app-icon name="plus" size="0.75rem" />
                       {{ t('tests.addGroup') }}
@@ -238,6 +257,16 @@ interface GroupedSpellOptions {
                               >
                                 {{ group.item_id ? t('tests.changeWeapon') : t('tests.pickWeapon') }}
                               </button>
+                              @if (group.item_id) {
+                                <button
+                                  type="button"
+                                  class="btn btn--tonal btn--sm whitespace-nowrap"
+                                  [disabled]="!canManage()"
+                                  (click)="autoFillQwe(i)"
+                                >
+                                  {{ t('tests.autoFillQwe') }}
+                                </button>
+                              }
                             </div>
                           </td>
                           <td>
@@ -506,6 +535,17 @@ interface GroupedSpellOptions {
               }
 
               <section class="card p-5">
+                <h2 class="mb-4 text-base font-bold text-[var(--color-text)]">{{ t('tests.hpOverTime') }}</h2>
+                <app-chart
+                  [option]="hpOverTimeOption()"
+                  height="16rem"
+                  [label]="t('tests.hpOverTime')"
+                  [tableHead]="hpOverTimeTableHead()"
+                  [tableRows]="hpOverTimeTableRows()"
+                />
+              </section>
+
+              <section class="card p-5">
                 <h2 class="mb-4 text-base font-bold text-[var(--color-text)]">{{ t('tests.unitOutcomes') }}</h2>
                 <div class="overflow-x-auto">
                   <table class="table">
@@ -643,6 +683,30 @@ interface GroupedSpellOptions {
       />
     }
 
+    @if (compSearchOpen()) {
+      <app-search-dialog
+        [title]="t('tests.importComp')"
+        [placeholder]="t('tests.searchCompPlaceholder')"
+        [options]="compSearchOptions()"
+        [loading]="compSearchLoading()"
+        (filterChange)="onCompSearchFilter($event)"
+        (select)="onCompSelected($event)"
+        (close)="closeCompImport()"
+      />
+    }
+
+    @if (scoutSearchOpen()) {
+      <app-search-dialog
+        [title]="t('tests.importScout')"
+        [placeholder]="t('tests.searchScoutPlaceholder')"
+        [options]="scoutSearchOptions()"
+        [loading]="scoutSearchLoading()"
+        (filterChange)="onScoutSearchFilter($event)"
+        (select)="onScoutSelected($event)"
+        (close)="closeScoutImport()"
+      />
+    }
+
     @if (renameOpen()) {
       <app-dialog [title]="t('tests.renameTitle')" size="sm" (closed)="closeRename()">
         <form id="test-rename-form" class="grid gap-4" (submit)="onRenameSubmit($event)">
@@ -679,6 +743,7 @@ export class TestDetailPage {
   private readonly albionCatalog = inject(AlbionCatalogService);
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly intel = inject(IntelService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
@@ -724,6 +789,14 @@ export class TestDetailPage {
   protected readonly buildSearchOptions = signal<SearchDialogOption[]>([]);
   protected readonly buildSearchLoading = signal(false);
 
+  protected readonly compSearchOpen = signal(false);
+  protected readonly compSearchOptions = signal<SearchDialogOption[]>([]);
+  protected readonly compSearchLoading = signal(false);
+
+  protected readonly scoutSearchOpen = signal(false);
+  protected readonly scoutSearchOptions = signal<SearchDialogOption[]>([]);
+  protected readonly scoutSearchLoading = signal(false);
+
   protected readonly canManage = computed(() => this.auth.hasPermission('combat.tests.manage'));
 
   protected readonly dirty = computed(
@@ -743,6 +816,63 @@ export class TestDetailPage {
     { id: 'timeline', label: this.t('tests.timeline') },
     { id: 'results', label: this.t('tests.results') },
   ]);
+
+  /** Total HP remaining per side over the burst window, reconstructed from the latest run. */
+  private readonly hpOverTimePoints = computed(() => {
+    const run = this.latestRun();
+    return run ? hpOverTimeSeries(run.result) : [];
+  });
+
+  protected readonly hpOverTimeOption = computed<EChartsOption>(() => {
+    const points = this.hpOverTimePoints();
+    return {
+      aria: { enabled: true },
+      grid: { left: 56, right: 16, top: 24, bottom: 40 },
+      tooltip: { trigger: 'axis' },
+      xAxis: {
+        type: 'value',
+        name: this.t('tests.landAt'),
+        nameLocation: 'middle',
+        nameGap: 28,
+        axisLabel: { formatter: (value: number) => `${value}s` },
+      },
+      yAxis: { type: 'value', name: this.t('tests.hpOverTime') },
+      series: [
+        {
+          name: this.t('tests.ally'),
+          type: 'line',
+          data: points.map((point) => [point.time, point.allyHp]),
+          symbol: 'none',
+          step: 'end',
+          lineStyle: { width: 2, color: ALLY_LINE_COLOR },
+          itemStyle: { color: ALLY_LINE_COLOR },
+        },
+        {
+          name: this.t('tests.enemy'),
+          type: 'line',
+          data: points.map((point) => [point.time, point.enemyHp]),
+          symbol: 'none',
+          step: 'end',
+          lineStyle: { width: 2, color: ENEMY_LINE_COLOR },
+          itemStyle: { color: ENEMY_LINE_COLOR },
+        },
+      ],
+    };
+  });
+
+  protected readonly hpOverTimeTableHead = computed(() => [
+    this.t('tests.landAt'),
+    this.t('tests.ally'),
+    this.t('tests.enemy'),
+  ]);
+
+  protected readonly hpOverTimeTableRows = computed<ChartTableRow[]>(() =>
+    this.hpOverTimePoints().map((point) => [
+      this.formatSeconds(point.time),
+      this.formatAmount(point.allyHp),
+      this.formatAmount(point.enemyHp),
+    ]),
+  );
 
   protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
     this.translate.t(key, params);
@@ -899,6 +1029,117 @@ export class TestDetailPage {
     }
   }
 
+  /** Imports one ally group per build in an existing comp, quantity and weapon prefilled. */
+  protected openCompImport(): void {
+    this.compSearchOpen.set(true);
+    this.compSearchOptions.set([]);
+  }
+
+  protected closeCompImport(): void {
+    this.compSearchOpen.set(false);
+  }
+
+  protected async onCompSearchFilter(filter: { search: string }): Promise<void> {
+    this.compSearchLoading.set(true);
+    try {
+      const params: Record<string, string | number> = { limit: 20 };
+      if (filter.search) params['search'] = filter.search;
+      const data = await firstValueFrom(this.api.get<PaginatedData<CompSummary>>('api/comps', params));
+      this.compSearchOptions.set(
+        data.items.map((comp) => ({
+          id: comp.id,
+          title: comp.name,
+          subtitle: comp.category_name ?? undefined,
+        })),
+      );
+    } finally {
+      this.compSearchLoading.set(false);
+    }
+  }
+
+  protected async onCompSelected(option: SearchDialogOption): Promise<void> {
+    this.compSearchOpen.set(false);
+    try {
+      const comp = await firstValueFrom(this.api.get<CompDetail>(`api/comps/${option.id}`));
+      const builds = await Promise.all(
+        comp.builds.map((entry) =>
+          firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${entry.build_id}`)),
+        ),
+      );
+      const groups: ScenarioUnitGroup[] = builds.map((build, index) => {
+        const weapon = build.items.find((item): item is BuildItemSlot => item.slot === 'weapon');
+        groupSeq += 1;
+        return {
+          id: `group-${groupSeq}`,
+          side: 'ally',
+          label: weapon?.openalbion_item_name ?? build.name,
+          item_id: weapon ? abilityKeyForItem(weapon) : null,
+          count: comp.builds[index].quantity,
+          hit_points: 1200,
+        };
+      });
+      this.draft.update((def) => ({ ...def, groups: [...def.groups, ...groups] }));
+      this.toasts.success(this.t('tests.importedFromComp', { count: groups.length, name: comp.name }));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    }
+  }
+
+  /**
+   * Imports one enemy group per weapon observed in a scout — a hypothesis, not observed fact:
+   * scout data has no armor or ability information, only a weapon histogram and an aggregate IP.
+   */
+  protected openScoutImport(): void {
+    this.scoutSearchOpen.set(true);
+    this.scoutSearchOptions.set([]);
+  }
+
+  protected closeScoutImport(): void {
+    this.scoutSearchOpen.set(false);
+  }
+
+  protected async onScoutSearchFilter(filter: { search: string }): Promise<void> {
+    this.scoutSearchLoading.set(true);
+    try {
+      const data = await firstValueFrom(this.intel.listScouts({ q: filter.search || undefined, limit: 20 }));
+      this.scoutSearchOptions.set(
+        data.items.map((scout) => ({
+          id: scout.id,
+          title: scout.name,
+          subtitle: scout.opponent_guild_name,
+        })),
+      );
+    } finally {
+      this.scoutSearchLoading.set(false);
+    }
+  }
+
+  protected async onScoutSelected(option: SearchDialogOption): Promise<void> {
+    this.scoutSearchOpen.set(false);
+    try {
+      const scout = await firstValueFrom(this.intel.getScout(Number(option.id)));
+      const catalog = this.combatCatalog();
+      const groups: ScenarioUnitGroup[] = Object.entries(scout.weapons).map(([rawIdentifier, count]) => {
+        const baseIdentifier = abilityCatalogKey(rawIdentifier);
+        const known = catalog.find((item) => item.identifier === baseIdentifier);
+        groupSeq += 1;
+        return {
+          id: `group-${groupSeq}`,
+          side: 'enemy',
+          label: known?.name ?? baseIdentifier,
+          item_id: baseIdentifier,
+          count: Math.max(1, count),
+          hit_points: 1200,
+        };
+      });
+      this.draft.update((def) => ({ ...def, groups: [...def.groups, ...groups] }));
+      this.toasts.success(this.t('tests.importedFromScout', { count: groups.length, name: scout.name }));
+      this.toasts.info(this.t('tests.scoutImportWarning'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    }
+  }
+
   /** This group's weapon's abilities, grouped by slot (Q/W/E/Passive) — empty until one is picked. */
   protected groupedSpellOptionsFor(casterGroupId: string): GroupedSpellOptions[] {
     const group = this.draft().groups.find((candidate) => candidate.id === casterGroupId);
@@ -913,6 +1154,33 @@ export class TestDetailPage {
         group: slot.label,
         options: slot.choices.map((choice) => ({ value: choice.id, label: choice.name })),
       }));
+  }
+
+  /**
+   * Adds one cast per active ability (Q/W/E) this group's weapon offers, staggered a second apart
+   * so they don't all land at once. Passives are skipped — nothing to "cast". Targets are left
+   * empty on purpose: which units a cast hits is not something this tool can guess.
+   */
+  protected autoFillQwe(groupIndex: number): void {
+    const group = this.draft().groups[groupIndex];
+    if (!group) return;
+    const activeSlots = this.groupedSpellOptionsFor(group.id).filter(
+      (slot) => !slot.group.startsWith('Passive'),
+    );
+    const newCasts: ScenarioDeclaredCast[] = activeSlots
+      .map((slot) => slot.options[0])
+      .filter((option): option is { value: string; label: string } => option !== undefined)
+      .map((option, index) => ({
+        caster_group_id: group.id,
+        spell_id: option.value,
+        cast_at: index,
+        target_ids: [],
+        attacker_style: 'melee',
+      }));
+    if (newCasts.length === 0) return;
+    this.draft.update((def) => ({ ...def, casts: [...def.casts, ...newCasts] }));
+    this.activeTab.set('timeline');
+    this.toasts.success(this.t('tests.autoFilledCasts', { count: newCasts.length }));
   }
 
   // ---- Casts ----
