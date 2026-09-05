@@ -49,6 +49,12 @@ pub struct UnitGroup {
     pub side: Side,
     /// Display label, e.g. `"Polehammer"`. Not interpreted.
     pub label: String,
+    /// The Albion catalog base identifier the caller resolved this group's label and spell choices
+    /// from (e.g. `"2H_POLEHAMMER"`), if any. Purely a UI hint for reconstructing which weapon and
+    /// ability picker to show on reload — the engine never reads it, so an absent, unknown, or
+    /// stale value never affects a run.
+    #[serde(default)]
+    pub item_id: Option<String>,
     /// How many identical units this group has.
     #[serde(default = "one_u32")]
     pub count: u32,
@@ -372,6 +378,7 @@ mod scenario_tests {
             id: "ally-hammer".to_string(),
             side: Side::Ally,
             label: "Polehammer".to_string(),
+            item_id: None,
             count,
             hit_points: 1200.0,
         }
@@ -382,6 +389,7 @@ mod scenario_tests {
             id: "enemy-plate".to_string(),
             side: Side::Enemy,
             label: "Plate".to_string(),
+            item_id: None,
             count,
             hit_points,
         }
