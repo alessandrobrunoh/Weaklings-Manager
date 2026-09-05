@@ -824,10 +824,10 @@ function newSplitBag(amount = 0): SplitBagDraft {
                     </h3>
                     <span
                       class="chip font-mono text-xs font-medium"
-                      [class.chip--success]="totalWeight() === 100"
-                      [class.chip--warning]="totalWeight() !== 100"
+                      [class.chip--success]="draftWeightsAreValid()"
+                      [class.chip--warning]="!draftWeightsAreValid()"
                     >
-                      {{ totalWeight() }}%
+                      {{ draftWeightChip() }}%
                     </span>
                   </div>
 
@@ -1362,6 +1362,14 @@ export class Splits {
     return this.participants().reduce((sum, participant) => sum + participant.weight, 0);
   }
 
+  protected draftWeightsAreValid(): boolean {
+    return participantWeightsAreValid(this.participants().map((participant) => participant.weight));
+  }
+
+  protected draftWeightChip(): number {
+    return participantWeightChip(this.participants().map((participant) => participant.weight));
+  }
+
   protected estimatedShare(netValue: number, weight: number, totalWeight: number): number {
     if (totalWeight <= 0 || netValue <= 0) {
       return 0;
@@ -1818,7 +1826,7 @@ export class Splits {
       this.toasts.error(this.t('splits.fee_invalid'));
       return;
     }
-    if (Math.abs(this.totalWeight() - 100) > 0.01) {
+    if (!this.draftWeightsAreValid()) {
       this.toasts.error(this.t('splits.weight_sum_invalid'));
       return;
     }
@@ -1925,15 +1933,40 @@ function toDraftParticipants(matched: MatchedParticipant[]): SplitParticipantDra
   }));
 }
 
-function redistributeWeights(participants: SplitParticipantDraft[]): SplitParticipantDraft[] {
+export function evenParticipantWeight(count: number): number {
+  if (count <= 0) {
+    return 0;
+  }
+  return Math.round((100 / count) * 100) / 100;
+}
+
+export function participantWeightsAreValid(weights: readonly number[]): boolean {
+  if (weights.length === 0 || weights.some((weight) => weight <= 0)) {
+    return false;
+  }
+  const first = weights[0];
+  if (weights.every((weight) => weight === first)) {
+    return true;
+  }
+  const sum = weights.reduce((total, weight) => total + weight, 0);
+  return Math.abs(sum - 100) <= 0.01;
+}
+
+export function participantWeightChip(weights: readonly number[]): number {
+  if (weights.length === 0) {
+    return 0;
+  }
+  const first = weights[0];
+  if (first > 0 && weights.every((weight) => weight === first)) {
+    return 100;
+  }
+  return Math.round(weights.reduce((total, weight) => total + weight, 0) * 100) / 100;
+}
+
+export function redistributeWeights<T extends { weight: number }>(participants: T[]): T[] {
   if (participants.length === 0) {
     return [];
   }
-  const totalCents = 10_000;
-  const baseCents = Math.floor(totalCents / participants.length);
-  const remainderCents = totalCents - baseCents * participants.length;
-  return participants.map((participant, index) => ({
-    ...participant,
-    weight: (baseCents + (index < remainderCents ? 1 : 0)) / 100,
-  }));
+  const weight = evenParticipantWeight(participants.length);
+  return participants.map((participant) => ({ ...participant, weight }));
 }

@@ -313,7 +313,8 @@ export const fr: TranslationDict = {
   'splits.net_formula': 'Estimated − Fee − Repairs + Bags',
   'splits.roster_hint': 'Adjust percentage shares',
   'splits.fee_invalid': 'Fee must be between 0 and 100%.',
-  'splits.weight_sum_invalid': 'Participant weights must sum to 100%.',
+  'splits.weight_sum_invalid':
+    'Give everyone the same weight, or make custom weights add up to 100%.',
   'splits.roster_empty': 'No participants in the roster yet',
   'splits.remove_participant': 'Remove participant',
   'splits.pending_payout': 'Pending payout',

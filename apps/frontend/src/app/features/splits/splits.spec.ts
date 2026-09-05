@@ -11,8 +11,11 @@ import { TranslateService } from '../../core/services/translate.service';
 import {
   Splits,
   addCurrentUserToParticipants,
+  evenParticipantWeight,
   isSplitAwaitingEvent,
   isSplitBatchSelectable,
+  participantWeightsAreValid,
+  redistributeWeights,
 } from './splits';
 
 describe('split creation participants', () => {
@@ -26,11 +29,26 @@ describe('split creation participants', () => {
     );
 
     expect(participants).toEqual([
-      { raw_name: 'Alice', user_id: 10, username: 'Alice', weight: 33.34 },
+      { raw_name: 'Alice', user_id: 10, username: 'Alice', weight: 33.33 },
       { raw_name: 'Bob', user_id: 11, username: 'Bob', weight: 33.33 },
       { raw_name: 'CurrentUser', user_id: 12, username: 'CurrentUser', weight: 33.33 },
     ]);
-    expect(participants.reduce((sum, participant) => sum + participant.weight, 0)).toBe(100);
+  });
+
+  it('gives every participant the same even weight instead of 16.67 vs 16.66', () => {
+    const participants = redistributeWeights(
+      Array.from({ length: 6 }, (_, index) => ({
+        raw_name: `P${index}`,
+        user_id: index + 1,
+        username: `P${index}`,
+        weight: 1,
+      })),
+    );
+    expect(participants.every((participant) => participant.weight === 16.67)).toBe(true);
+    expect(evenParticipantWeight(6)).toBe(16.67);
+    expect(participantWeightsAreValid(participants.map((participant) => participant.weight))).toBe(
+      true,
+    );
   });
 
   it('does not duplicate the authenticated user when reopening the dialog', () => {

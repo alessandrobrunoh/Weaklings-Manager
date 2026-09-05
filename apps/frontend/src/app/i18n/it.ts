@@ -330,7 +330,8 @@ export const it: TranslationDict = {
   'splits.net_formula': '(Stimato − Riparazioni + Borse) − Fee',
   'splits.roster_hint': 'Regola le quote in percentuale',
   'splits.fee_invalid': 'La fee deve essere tra 0 e 100%.',
-  'splits.weight_sum_invalid': 'La somma dei pesi dei partecipanti deve essere 100%.',
+  'splits.weight_sum_invalid':
+    'Metti lo stesso peso a tutti, oppure fai arrivare i pesi personalizzati a 100%.',
   'splits.roster_empty': 'Nessun partecipante nel roster',
   'splits.remove_participant': 'Rimuovi partecipante',
   'splits.pending_payout': 'Pagamento in attesa',
