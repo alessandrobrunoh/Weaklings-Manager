@@ -100,6 +100,7 @@ mod m20260904_000005_archive_events_and_splits;
 mod m20260905_000001_add_enchantment_to_build_items;
 mod m20260905_000002_seed_combat_permissions;
 mod m20260906_000001_roles_staff_flags;
+mod m20260906_000002_create_split_bags;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -204,6 +205,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260905_000001_add_enchantment_to_build_items::Migration),
             Box::new(m20260905_000002_seed_combat_permissions::Migration),
             Box::new(m20260906_000001_roles_staff_flags::Migration),
+            Box::new(m20260906_000002_create_split_bags::Migration),
         ]
     }
 }

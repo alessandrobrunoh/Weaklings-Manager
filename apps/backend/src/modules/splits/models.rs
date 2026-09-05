@@ -119,6 +119,9 @@ pub struct SplitDetail {
     pub summary: SplitSummary,
     /// The list of participants and their computed shares.
     pub participants: Vec<SplitParticipantView>,
+    /// Individual bag amounts. `bags_value` is their sum.
+    #[schema(value_type = Vec<String>, example = json!(["150000.00", "80000.00"]))]
+    pub bags: Vec<Decimal>,
 }
 
 /// Request body to request a new split.
@@ -131,6 +134,7 @@ pub struct SplitDetail {
     "fee": "20.00",
     "repair_value": "10.00",
     "bags_value": "5.00",
+    "bags": ["5.00"],
     "note": "Ancient Avalon boss drop",
     "participants": [
         { "user_id": 7, "weight": "12.33" },
@@ -148,8 +152,14 @@ pub struct CreateSplitRequest {
     #[schema(value_type = String, example = "10.00")]
     pub repair_value: Decimal,
     /// The bags/consumables value added to the market value.
+    ///
+    /// Ignored when `bags` is non-empty; then this is set to the sum of those amounts.
     #[schema(value_type = String, example = "5.00")]
     pub bags_value: Decimal,
+    /// Individual bag amounts. When present, their sum replaces `bags_value`.
+    #[serde(default)]
+    #[schema(value_type = Vec<String>, example = json!(["150000.00", "80000.00"]))]
+    pub bags: Vec<Decimal>,
     /// An optional free-text note (e.g. boss/item name).
     #[schema(example = "Ancient Avalon boss drop")]
     pub note: Option<String>,
@@ -175,6 +185,7 @@ pub struct CreateSplitRequest {
     "fee": "20.00",
     "repair_value": "12.00",
     "bags_value": "5.00",
+    "bags": ["150000.00", "80000.00"],
     "note": "Updated Avalon boss drop"
 }))]
 pub struct UpdateSplitRequest {
@@ -188,8 +199,13 @@ pub struct UpdateSplitRequest {
     #[schema(value_type = Option<String>, example = "12.00")]
     pub repair_value: Option<Decimal>,
     /// New bags/consumables value. Omit to keep the current value.
+    ///
+    /// Ignored when `bags` is present.
     #[schema(value_type = Option<String>, example = "5.00")]
     pub bags_value: Option<Decimal>,
+    /// Replacement list of individual bag amounts. Empty clears all bags.
+    #[schema(value_type = Option<Vec<String>>, example = json!(["150000.00", "80000.00"]))]
+    pub bags: Option<Vec<Decimal>>,
     /// New free-text note. Send an empty string to clear it.
     pub note: Option<String>,
     /// New event link. `null` clears the association.

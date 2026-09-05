@@ -39,6 +39,26 @@ type DetailMode = 'view' | 'edit';
 
 const DEFAULT_SPLIT_FEE = 20;
 
+interface SplitBagDraft {
+  readonly key: number;
+  amount: number;
+}
+
+let nextSplitBagKey = 1;
+
+function newSplitBag(amount = 0): SplitBagDraft {
+  return { key: nextSplitBagKey++, amount };
+}
+
+function bagsFromDetail(detail: SplitDetail): SplitBagDraft[] {
+  const listed = (detail.bags ?? []).map((amount) => Number(amount) || 0).filter((amount) => amount > 0);
+  if (listed.length > 0) {
+    return listed.map((amount) => newSplitBag(amount));
+  }
+  const total = Number(detail.bags_value) || 0;
+  return total > 0 ? [newSplitBag(total)] : [];
+}
+
 function parsePercentageInput(raw: string): number | null {
   const normalized = raw.trim().replace(/%\s*$/, '').replace(',', '.');
   if (!normalized || !/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) {
@@ -251,7 +271,7 @@ function parsePercentageInput(raw: string): number | null {
                       {{ t('splits.net_value') }}
                     </h3>
 
-                    <div class="grid gap-2 sm:grid-cols-4">
+                    <div class="grid gap-2 sm:grid-cols-3">
                       <label class="block">
                         <span class="label font-medium text-[0.6875rem]">{{ t('splits.estimated') }}</span>
                         <input
@@ -285,16 +305,41 @@ function parsePercentageInput(raw: string): number | null {
                           (input)="onEditRepairChange($event)"
                         />
                       </label>
-                      <label class="block">
+                    </div>
+                    <div class="space-y-2">
+                      <div class="flex items-center justify-between gap-2">
                         <span class="label font-medium text-[0.6875rem]">{{ t('splits.bags_value') }} (+)</span>
-                        <input
-                          class="input font-mono text-xs"
-                          type="number"
-                          min="0"
-                          [value]="editBags()"
-                          (input)="onEditBagsChange($event)"
-                        />
-                      </label>
+                        <button type="button" class="btn btn--outline btn--sm" (click)="addEditBag()">
+                          {{ t('splits.add_bag') }}
+                        </button>
+                      </div>
+                      @for (bag of editBagRows(); track bag.key) {
+                        <div class="flex items-center gap-2">
+                          <input
+                            class="input font-mono text-xs"
+                            type="number"
+                            min="0"
+                            [value]="bag.amount"
+                            [attr.aria-label]="t('splits.bags_value')"
+                            (input)="onEditBagAmountChange(bag.key, $event)"
+                          />
+                          <button
+                            type="button"
+                            class="btn btn--ghost btn--sm inline-flex cursor-pointer"
+                            [attr.aria-label]="t('splits.remove_bag')"
+                            (click)="removeEditBag(bag.key)"
+                          >
+                            <app-icon name="close" size="0.875rem" />
+                          </button>
+                        </div>
+                      } @empty {
+                        <p class="text-xs text-[var(--color-text-secondary)]">{{ t('splits.bags_empty') }}</p>
+                      }
+                      @if (editBags() > 0) {
+                        <p class="text-xs font-mono text-[var(--color-text-secondary)]">
+                          {{ t('splits.bags_total') }} +{{ formatAmount(editBags()) }}
+                        </p>
+                      }
                     </div>
 
                     <div class="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] flex items-center justify-between">
@@ -492,6 +537,17 @@ function parsePercentageInput(raw: string): number | null {
                   <span class="font-mono text-lg font-bold text-[var(--color-primary)]">
                     +{{ formatAmount(detail.bags_value) }}
                   </span>
+                  @if (detail.bags; as bags) {
+                    @if (bags.length > 1) {
+                      <p class="mt-1 text-[0.6875rem] font-mono text-[var(--color-text-secondary)]">
+                        @for (amount of bags; track $index) {
+                          {{ formatAmount(amount) }}@if ($index < bags.length - 1) {
+                            ·
+                          }
+                        }
+                      </p>
+                    }
+                  }
                 </div>
               </article>
 
@@ -826,7 +882,10 @@ export class SplitDetailPage {
   protected readonly editEstimated = signal(0);
   protected readonly editFeeInput = signal(String(DEFAULT_SPLIT_FEE));
   protected readonly editRepair = signal(0);
-  protected readonly editBags = signal(0);
+  protected readonly editBagRows = signal<SplitBagDraft[]>([]);
+  protected readonly editBags = computed(() =>
+    this.editBagRows().reduce((sum, bag) => sum + (Number(bag.amount) || 0), 0),
+  );
   protected readonly editEventId = signal<number | null>(null);
   protected readonly editEventTitle = signal('');
   protected readonly editIslandId = signal('');
@@ -1027,8 +1086,19 @@ export class SplitDetailPage {
   protected onEditRepairChange(event: Event): void {
     this.editRepair.set(Number((event.target as HTMLInputElement).value) || 0);
   }
-  protected onEditBagsChange(event: Event): void {
-    this.editBags.set(Number((event.target as HTMLInputElement).value) || 0);
+  protected addEditBag(): void {
+    this.editBagRows.update((rows) => [...rows, newSplitBag()]);
+  }
+
+  protected removeEditBag(key: number): void {
+    this.editBagRows.update((rows) => rows.filter((bag) => bag.key !== key));
+  }
+
+  protected onEditBagAmountChange(key: number, event: Event): void {
+    const amount = Math.max(0, Number((event.target as HTMLInputElement).value) || 0);
+    this.editBagRows.update((rows) =>
+      rows.map((bag) => (bag.key === key ? { ...bag, amount } : bag)),
+    );
   }
   protected onEditIslandChange(event: Event): void {
     this.editIslandId.set((event.target as HTMLSelectElement).value);
@@ -1236,6 +1306,9 @@ export class SplitDetailPage {
         fee,
         repair_value: this.editRepair(),
         bags_value: this.editBags(),
+        bags: this.editBagRows()
+          .map((bag) => bag.amount)
+          .filter((amount) => amount > 0),
         event_id: this.editEventId(),
         island_tab_id: this.editTabId() ? Number(this.editTabId()) : undefined,
       };
@@ -1343,7 +1416,7 @@ export class SplitDetailPage {
     this.editEstimated.set(Number(detail.estimated_market_value) || 0);
     this.editFeeInput.set(String(detail.fee ?? DEFAULT_SPLIT_FEE));
     this.editRepair.set(Number(detail.repair_value) || 0);
-    this.editBags.set(Number(detail.bags_value) || 0);
+    this.editBagRows.set(bagsFromDetail(detail));
     this.editEventId.set(detail.event_id ?? null);
     this.editEventTitle.set(detail.event_title || '');
     this.editIslandId.set(detail.island_id ? String(detail.island_id) : '');

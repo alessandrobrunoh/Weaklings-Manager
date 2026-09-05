@@ -63,6 +63,17 @@ interface SplitParticipantDraft {
   weight: number;
 }
 
+interface SplitBagDraft {
+  readonly key: number;
+  amount: number;
+}
+
+let nextSplitBagKey = 1;
+
+function newSplitBag(amount = 0): SplitBagDraft {
+  return { key: nextSplitBagKey++, amount };
+}
+
 /**
  * Loot-split index: KPI strip plus a server-driven table.
  *
@@ -645,7 +656,7 @@ interface SplitParticipantDraft {
                   {{ t('splits.net_value') }}
                 </h3>
 
-                <div class="grid gap-2 sm:grid-cols-4">
+                <div class="grid gap-2 sm:grid-cols-3">
                   <label class="block">
                     <span class="label font-medium text-[0.6875rem]">{{ t('splits.estimated') }}</span>
                     <input
@@ -679,16 +690,45 @@ interface SplitParticipantDraft {
                       (input)="onRepairChange($event)"
                     />
                   </label>
-                  <label class="block">
+                </div>
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between gap-2">
                     <span class="label font-medium text-[0.6875rem]">{{ t('splits.bags_value') }} (+)</span>
-                    <input
-                      class="input font-mono text-xs"
-                      type="number"
-                      min="0"
-                      [value]="draftBags()"
-                      (input)="onBagsChange($event)"
-                    />
-                  </label>
+                    <button
+                      type="button"
+                      class="btn btn--outline btn--sm"
+                      (click)="addBag()"
+                    >
+                      {{ t('splits.add_bag') }}
+                    </button>
+                  </div>
+                  @for (bag of draftBagRows(); track bag.key) {
+                    <div class="flex items-center gap-2">
+                      <input
+                        class="input font-mono text-xs"
+                        type="number"
+                        min="0"
+                        [value]="bag.amount"
+                        [attr.aria-label]="t('splits.bags_value')"
+                        (input)="onBagAmountChange(bag.key, $event)"
+                      />
+                      <button
+                        type="button"
+                        class="btn btn--ghost btn--sm inline-flex cursor-pointer"
+                        [attr.aria-label]="t('splits.remove_bag')"
+                        (click)="removeBag(bag.key)"
+                      >
+                        <app-icon name="close" size="0.875rem" />
+                      </button>
+                    </div>
+                  } @empty {
+                    <p class="text-xs text-[var(--color-text-secondary)]">{{ t('splits.bags_empty') }}</p>
+                  }
+                  @if (draftBags() > 0) {
+                    <p class="text-xs font-mono text-[var(--color-text-secondary)]">
+                      {{ t('splits.bags_total') }} +{{ formatAmount(draftBags()) }}
+                    </p>
+                  }
                 </div>
 
                 <!-- Live Net Silver Banner -->
@@ -1113,7 +1153,10 @@ export class Splits {
   protected readonly draftEstimated = signal(0);
   protected readonly draftFeeInput = signal(String(DEFAULT_SPLIT_FEE));
   protected readonly draftRepair = signal(0);
-  protected readonly draftBags = signal(0);
+  protected readonly draftBagRows = signal<SplitBagDraft[]>([]);
+  protected readonly draftBags = computed(() =>
+    this.draftBagRows().reduce((sum, bag) => sum + (Number(bag.amount) || 0), 0),
+  );
   protected readonly draftIslandId = signal('');
   protected readonly draftTabId = signal('');
   protected readonly rawNames = signal('');
@@ -1424,8 +1467,19 @@ export class Splits {
   protected onRepairChange(event: Event): void {
     this.draftRepair.set(Number((event.target as HTMLInputElement).value) || 0);
   }
-  protected onBagsChange(event: Event): void {
-    this.draftBags.set(Number((event.target as HTMLInputElement).value) || 0);
+  protected addBag(): void {
+    this.draftBagRows.update((rows) => [...rows, newSplitBag()]);
+  }
+
+  protected removeBag(key: number): void {
+    this.draftBagRows.update((rows) => rows.filter((bag) => bag.key !== key));
+  }
+
+  protected onBagAmountChange(key: number, event: Event): void {
+    const amount = Math.max(0, Number((event.target as HTMLInputElement).value) || 0);
+    this.draftBagRows.update((rows) =>
+      rows.map((bag) => (bag.key === key ? { ...bag, amount } : bag)),
+    );
   }
   protected onRawNamesChange(event: Event): void {
     this.rawNames.set((event.target as HTMLTextAreaElement).value);
@@ -1776,6 +1830,9 @@ export class Splits {
         fee,
         repair_value: this.draftRepair(),
         bags_value: this.draftBags(),
+        bags: this.draftBagRows()
+          .map((bag) => bag.amount)
+          .filter((amount) => amount > 0),
         event_id: this.draftEventId() ? Number(this.draftEventId()) : undefined,
         island_tab_id: Number(this.draftTabId()),
         participants: finalParticipants.map((participant) => ({
@@ -1801,7 +1858,7 @@ export class Splits {
     this.draftEstimated.set(0);
     this.draftFeeInput.set(String(this.kpi()?.default_split_fee ?? DEFAULT_SPLIT_FEE));
     this.draftRepair.set(0);
-    this.draftBags.set(0);
+    this.draftBagRows.set([]);
     this.draftIslandId.set('');
     this.draftTabId.set('');
     this.rawNames.set('');

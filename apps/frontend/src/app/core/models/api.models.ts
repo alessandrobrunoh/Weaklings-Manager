@@ -319,6 +319,7 @@ export interface SplitSummary {
 
 export interface SplitDetail extends SplitSummary {
   participants: SplitParticipant[];
+  bags?: Array<number | string>;
 }
 
 export interface SplitFilters {
@@ -337,6 +338,7 @@ export interface CreateSplitRequest {
   fee: number;
   repair_value: number;
   bags_value: number;
+  bags?: number[];
   event_id?: number;
   island_tab_id: number;
   participants: Array<{ user_id: number; weight: number }>;
@@ -348,6 +350,7 @@ export interface UpdateSplitRequest {
   fee?: number;
   repair_value?: number;
   bags_value?: number;
+  bags?: number[];
   event_id?: number | null;
   island_tab_id?: number;
 }
