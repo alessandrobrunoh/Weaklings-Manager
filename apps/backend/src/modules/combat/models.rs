@@ -173,3 +173,29 @@ pub struct BuildRosterFitView {
     /// Provenance of the numbers.
     pub dataset_version: DatasetVersion,
 }
+
+/// A burst window to resolve: the casts, and the side counts the zerg debuff needs.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[schema(example = json!({
+    "casts": [{ "caster_label": "Polehammer #1", "spell_id": "HAMMERWHIRLWIND2", "cast_at": 0.0,
+                "target_count": 5, "concurrent_attackers": 0, "attacker_style": "melee",
+                "prior_cc_stacks": 0 }],
+    "sides": { "ally_count": 20, "enemy_count": 20 }
+}))]
+pub struct SimulateRequest {
+    /// Every cast in the burst, in the order the caller wants them reported back.
+    pub casts: Vec<super::sim::DeclaredCast>,
+    /// Force sizes for the zerg debuff. Omitted counts default to `0`, i.e. no debuff.
+    #[serde(default)]
+    pub sides: super::sim::SideCounts,
+}
+
+/// A resolved burst, with the dataset it was computed against.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct SimulateView {
+    #[serde(flatten)]
+    pub result: super::sim::BurstResult,
+    /// Provenance of the numbers — and of the honesty ledger: which effects were and were not
+    /// modelled at the time this was run.
+    pub dataset_version: DatasetVersion,
+}

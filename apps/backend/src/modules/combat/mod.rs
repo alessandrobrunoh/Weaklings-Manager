@@ -18,5 +18,7 @@ pub mod pattern;
 pub mod readiness;
 pub mod router;
 pub mod service;
+pub mod sim;
+pub mod spell;
 
 pub use router::router;
