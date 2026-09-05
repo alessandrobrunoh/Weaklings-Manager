@@ -239,7 +239,8 @@ async fn get_roster_suggestions(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<crate::modules::combat::fit::Assignment>>, AppError> {
-    user.require(&perms, Permission::CombatReadinessView).await?;
+    user.require(&perms, Permission::CombatReadinessView)
+        .await?;
     let suggestions = EventService::new().get_roster_suggestions(&db, id).await?;
     Ok(Json(ApiResponse::new(suggestions)))
 }

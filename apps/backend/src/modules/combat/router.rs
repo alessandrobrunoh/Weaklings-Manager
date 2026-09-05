@@ -47,7 +47,8 @@ async fn get_dataset(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
 ) -> Result<Json<ApiResponse<CombatDatasetView>>, AppError> {
-    user.require(&perms, Permission::CombatCalculatorUse).await?;
+    user.require(&perms, Permission::CombatCalculatorUse)
+        .await?;
     Ok(Json(ApiResponse::new(CombatService::dataset())))
 }
 
@@ -77,7 +78,8 @@ async fn post_item_power(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Json(request): Json<ItemPowerRequest>,
 ) -> Result<Json<ApiResponse<ItemPowerView>>, AppError> {
-    user.require(&perms, Permission::CombatCalculatorUse).await?;
+    user.require(&perms, Permission::CombatCalculatorUse)
+        .await?;
     let view = CombatService::new().item_power(&db, &request).await?;
     Ok(Json(ApiResponse::new(view)))
 }
@@ -111,7 +113,8 @@ async fn get_member_item_power(
     Query(params): Query<MemberItemPowerParams>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<ItemPowerView>>, AppError> {
-    user.require(&perms, Permission::CombatCalculatorUse).await?;
+    user.require(&perms, Permission::CombatCalculatorUse)
+        .await?;
     let loadout = super::service::parse_loadout(params.loadout.as_deref())?;
     let view = CombatService::new()
         .build_item_power(

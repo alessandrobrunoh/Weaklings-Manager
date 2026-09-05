@@ -444,7 +444,10 @@ mod ip_tests {
     fn a_mastery_level_grants_the_family_rule_on_top() {
         let breakdown = item_ip(
             &polehammer(0, 1),
-            &levels(&[("weapon:2H_POLEHAMMER", 100), ("mastery:COMBAT_HAMMERS", 100)]),
+            &levels(&[
+                ("weapon:2H_POLEHAMMER", 100),
+                ("mastery:COMBAT_HAMMERS", 100),
+            ]),
         );
         assert!(
             (breakdown.spec_bonus - 240.0).abs() < 1e-9,
@@ -529,7 +532,10 @@ mod ip_tests {
             item(BuildSlot::Cape, "CAPE", 8, 0, 1),
         ];
         let breakdown = character_ip(&loadout, &specs);
-        assert!(breakdown.empty_slots.is_empty(), "the two-hander fills the off-hand");
+        assert!(
+            breakdown.empty_slots.is_empty(),
+            "the two-hander fills the off-hand"
+        );
         assert_eq!(breakdown.items.len(), 5);
         assert!((breakdown.average - breakdown.total / 6.0).abs() < 1e-9);
     }
@@ -545,11 +551,19 @@ mod ip_tests {
 
     #[test]
     fn mastery_levels_are_reported_as_unknown_until_a_mastery_row_exists() {
-        assert!(!character_ip(&[polehammer(0, 1)], &levels(&[("weapon:2H_POLEHAMMER", 100)]))
-            .mastery_levels_known);
         assert!(
-            character_ip(&[polehammer(0, 1)], &levels(&[("mastery:COMBAT_HAMMERS", 100)]))
-                .mastery_levels_known
+            !character_ip(
+                &[polehammer(0, 1)],
+                &levels(&[("weapon:2H_POLEHAMMER", 100)])
+            )
+            .mastery_levels_known
+        );
+        assert!(
+            character_ip(
+                &[polehammer(0, 1)],
+                &levels(&[("mastery:COMBAT_HAMMERS", 100)])
+            )
+            .mastery_levels_known
         );
     }
 
@@ -563,7 +577,10 @@ mod ip_tests {
 
     #[test]
     fn a_row_naming_an_unknown_item_is_dropped_rather_than_failing() {
-        let specs = levels(&[("weapon:NOT_A_REAL_ITEM", 100), ("weapon:2H_POLEHAMMER", 50)]);
+        let specs = levels(&[
+            ("weapon:NOT_A_REAL_ITEM", 100),
+            ("weapon:2H_POLEHAMMER", 50),
+        ]);
         assert_eq!(specs.level("COMBAT_HAMMERS_POLE"), 50);
     }
 

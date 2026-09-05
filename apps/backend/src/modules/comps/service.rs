@@ -2420,7 +2420,13 @@ mod tests {
         enchanted.openalbion_item_enchantment = Some(2);
 
         let detail = service
-            .upsert_build_item(&db, build_id, BuildLoadout::Main, BuildSlot::Weapon, enchanted)
+            .upsert_build_item(
+                &db,
+                build_id,
+                BuildLoadout::Main,
+                BuildSlot::Weapon,
+                enchanted,
+            )
             .await
             .expect("an enchanted weapon should be stored");
 
@@ -2431,7 +2437,10 @@ mod tests {
             .expect("weapon slot");
         assert_eq!(stored.openalbion_item_enchantment, 2);
         // Enchantment and quality are independent axes: setting one must not disturb the other.
-        assert_eq!(stored.openalbion_item_quality, super::super::status::DEFAULT_ITEM_QUALITY);
+        assert_eq!(
+            stored.openalbion_item_quality,
+            super::super::status::DEFAULT_ITEM_QUALITY
+        );
     }
 
     #[tokio::test]
@@ -2466,7 +2475,13 @@ mod tests {
         invalid.openalbion_item_enchantment = Some(5);
 
         let error = service
-            .upsert_build_item(&db, build_id, BuildLoadout::Main, BuildSlot::Weapon, invalid)
+            .upsert_build_item(
+                &db,
+                build_id,
+                BuildLoadout::Main,
+                BuildSlot::Weapon,
+                invalid,
+            )
             .await
             .expect_err("enchantment 5 does not exist");
         assert!(matches!(error, AppError::Validation(_)), "got {error:?}");

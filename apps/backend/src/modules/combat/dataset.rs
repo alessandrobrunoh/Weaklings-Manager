@@ -74,9 +74,18 @@ mod dataset_invariant_tests {
 
     #[test]
     fn the_dataset_parses_and_is_not_empty() {
-        assert!(combat_items().len() > 200, "expected the full equippable catalog");
-        assert!(combat_spells().len() > 1000, "expected the reachable spell closure");
-        assert!(combat_rules().spec_nodes.len() > 200, "expected the combat Destiny Board");
+        assert!(
+            combat_items().len() > 200,
+            "expected the full equippable catalog"
+        );
+        assert!(
+            combat_spells().len() > 1000,
+            "expected the reachable spell closure"
+        );
+        assert!(
+            combat_rules().spec_nodes.len() > 200,
+            "expected the combat Destiny Board"
+        );
     }
 
     #[test]
@@ -150,7 +159,10 @@ mod dataset_invariant_tests {
         let rules = combat_rules();
         for (base, item) in combat_items() {
             if let Some(node) = item.spec_node.as_deref() {
-                assert!(rules.spec_nodes.contains_key(node), "{base}: unknown node {node}");
+                assert!(
+                    rules.spec_nodes.contains_key(node),
+                    "{base}: unknown node {node}"
+                );
             }
         }
     }
@@ -160,8 +172,14 @@ mod dataset_invariant_tests {
         let rules = combat_rules();
         for (id, node) in &rules.spec_nodes {
             if node.kind == "spec" {
-                let parent = node.parent.as_deref().unwrap_or_else(|| panic!("{id} has no parent"));
-                assert!(rules.spec_nodes.contains_key(parent), "{id}: unknown parent {parent}");
+                let parent = node
+                    .parent
+                    .as_deref()
+                    .unwrap_or_else(|| panic!("{id} has no parent"));
+                assert!(
+                    rules.spec_nodes.contains_key(parent),
+                    "{id}: unknown parent {parent}"
+                );
             }
         }
     }
@@ -173,10 +191,16 @@ mod dataset_invariant_tests {
             .flat_map(|base| TIERS.map(move |tier| pattern::unique_name(tier, base)))
             .collect();
         for (id, node) in &combat_rules().spec_nodes {
-            let patterns: Vec<&str> =
-                node.bonuses.iter().flat_map(|rule| &rule.patterns).map(String::as_str).collect();
+            let patterns: Vec<&str> = node
+                .bonuses
+                .iter()
+                .flat_map(|rule| &rule.patterns)
+                .map(String::as_str)
+                .collect();
             assert!(
-                patterns.iter().any(|glob| names.iter().any(|name| pattern::matches(glob, name))),
+                patterns
+                    .iter()
+                    .any(|glob| names.iter().any(|name| pattern::matches(glob, name))),
                 "{id}: none of {patterns:?} matches any catalog item"
             );
         }
@@ -184,13 +208,19 @@ mod dataset_invariant_tests {
 
     #[test]
     fn the_destiny_bonuses_are_the_ones_the_game_grants() {
-        let node = combat_rules().spec_nodes.get("COMBAT_HAMMERS_POLE").expect("node exists");
+        let node = combat_rules()
+            .spec_nodes
+            .get("COMBAT_HAMMERS_POLE")
+            .expect("node exists");
         let own = node
             .bonuses
             .iter()
             .find(|rule| rule.patterns.iter().any(|p| p == "T?_2H_POLEHAMMER"))
             .expect("the node grants its own weapon");
-        assert!((own.bonus - 2.0).abs() < f64::EPSILON, "own-item bonus is +2.0 per level");
+        assert!(
+            (own.bonus - 2.0).abs() < f64::EPSILON,
+            "own-item bonus is +2.0 per level"
+        );
         assert_eq!((own.min_tier, own.max_tier), (4, 8));
 
         let family = node
@@ -198,7 +228,10 @@ mod dataset_invariant_tests {
             .iter()
             .find(|rule| rule.patterns.iter().any(|p| p.ends_with('*')))
             .expect("the node also grants its family");
-        assert!((family.bonus - 0.2).abs() < f64::EPSILON, "family bonus is +0.2 per level");
+        assert!(
+            (family.bonus - 0.2).abs() < f64::EPSILON,
+            "family bonus is +0.2 per level"
+        );
     }
 
     #[test]
@@ -208,7 +241,10 @@ mod dataset_invariant_tests {
             .iter()
             .filter_map(|slot| shares.hitpoints.get(*slot))
             .sum();
-        assert!((armour - 1.0).abs() < 1e-9, "head+armor+shoes should pool one character's hit points");
+        assert!(
+            (armour - 1.0).abs() < 1e-9,
+            "head+armor+shoes should pool one character's hit points"
+        );
         assert!((shares.armor.get("armor").copied().unwrap_or_default() - 1.0).abs() < 1e-9);
         assert_eq!(shares.hitpoints.get("mainhand").copied(), Some(0.0));
     }
@@ -224,10 +260,16 @@ mod dataset_invariant_tests {
     #[test]
     fn the_combat_modifier_tables_are_loaded() {
         let rules = combat_rules();
-        assert_eq!(rules.aoe_escalation.threshold_max, 7, "area escalation caps at 7 targets");
+        assert_eq!(
+            rules.aoe_escalation.threshold_max, 7,
+            "area escalation caps at 7 targets"
+        );
         assert!((rules.focus_fire.lookback_seconds - 10.0).abs() < f64::EPSILON);
         assert!(rules.focus_fire.attackers.len() > 20);
-        assert_eq!(rules.zerg_debuff.allies.first().map(|row| row.at_least), Some(21));
+        assert_eq!(
+            rules.zerg_debuff.allies.first().map(|row| row.at_least),
+            Some(21)
+        );
         assert!((rules.cc_diminishing_returns.max - 0.8).abs() < f64::EPSILON);
     }
 }

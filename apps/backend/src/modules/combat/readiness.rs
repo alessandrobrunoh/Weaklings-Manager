@@ -137,7 +137,9 @@ pub fn evaluate(seats: &[Seat], members: &[Member]) -> CompReadiness {
         weakest_seats: seat_readiness,
         bench_coverage: build_coverage(seats, members),
         uncovered_seats,
-        mastery_levels_known: members.iter().any(|member| member.specs.mastery_levels_known()),
+        mastery_levels_known: members
+            .iter()
+            .any(|member| member.specs.mastery_levels_known()),
     }
 }
 
@@ -153,7 +155,9 @@ fn evaluate_seat(seat: &Seat, members: &[Member]) -> SeatReadiness {
         .iter()
         .map(|member| (member.user_id, fit::score(member, seat)))
         .max_by(|(_, a), (_, b)| {
-            a.item_power.partial_cmp(&b.item_power).unwrap_or(std::cmp::Ordering::Equal)
+            a.item_power
+                .partial_cmp(&b.item_power)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
     let (best_candidate_user_id, best_candidate_item_power, readiness) = match best {
@@ -182,7 +186,10 @@ fn evaluate_seat(seat: &Seat, members: &[Member]) -> SeatReadiness {
 fn build_coverage(seats: &[Seat], members: &[Member]) -> Vec<BuildCoverage> {
     let mut coverage: Vec<BuildCoverage> = Vec::new();
     for seat in seats {
-        if let Some(existing) = coverage.iter_mut().find(|entry| entry.build_id == seat.build_id) {
+        if let Some(existing) = coverage
+            .iter_mut()
+            .find(|entry| entry.build_id == seat.build_id)
+        {
             existing.seat_count += 1;
             continue;
         }
@@ -243,7 +250,13 @@ mod readiness_tests {
     #[test]
     fn a_well_trained_member_covers_their_seat() {
         let seats = [seat("build:1:1", 1, "2H_POLEHAMMER")];
-        let members = [member(1, &[("weapon:2H_POLEHAMMER", 100), ("mastery:COMBAT_HAMMERS", 100)])];
+        let members = [member(
+            1,
+            &[
+                ("weapon:2H_POLEHAMMER", 100),
+                ("mastery:COMBAT_HAMMERS", 100),
+            ],
+        )];
         let readiness = evaluate(&seats, &members);
         assert!(readiness.uncovered_seats.is_empty());
         assert_eq!(readiness.weakest_seats[0].best_candidate_user_id, Some(1));
@@ -256,7 +269,13 @@ mod readiness_tests {
         let seats = [seat("build:1:1", 1, "2H_POLEHAMMER")];
         let members = [
             member(1, &[("weapon:2H_POLEHAMMER", 20)]),
-            member(2, &[("weapon:2H_POLEHAMMER", 100), ("mastery:COMBAT_HAMMERS", 100)]),
+            member(
+                2,
+                &[
+                    ("weapon:2H_POLEHAMMER", 100),
+                    ("mastery:COMBAT_HAMMERS", 100),
+                ],
+            ),
         ];
         let readiness = evaluate(&seats, &members);
         assert_eq!(readiness.weakest_seats[0].best_candidate_user_id, Some(2));
@@ -268,7 +287,13 @@ mod readiness_tests {
             seat("build:1:1", 1, "2H_POLEHAMMER"),
             seat("build:2:1", 2, "MAIN_ARCANESTAFF"),
         ];
-        let members = [member(1, &[("weapon:2H_POLEHAMMER", 100), ("mastery:COMBAT_HAMMERS", 100)])];
+        let members = [member(
+            1,
+            &[
+                ("weapon:2H_POLEHAMMER", 100),
+                ("mastery:COMBAT_HAMMERS", 100),
+            ],
+        )];
         let readiness = evaluate(&seats, &members);
         // The astral seat has no candidate at all, so it is strictly worse than the hammer seat.
         assert_eq!(readiness.weakest_seats[0].seat_key, "build:2:1");
@@ -277,11 +302,23 @@ mod readiness_tests {
 
     #[test]
     fn bench_coverage_groups_seats_of_the_same_build_and_counts_each_member_once() {
-        let seats =
-            [seat("build:1:1", 1, "2H_POLEHAMMER"), seat("build:1:2", 1, "2H_POLEHAMMER")];
-        let members = [member(1, &[("weapon:2H_POLEHAMMER", 100), ("mastery:COMBAT_HAMMERS", 100)])];
+        let seats = [
+            seat("build:1:1", 1, "2H_POLEHAMMER"),
+            seat("build:1:2", 1, "2H_POLEHAMMER"),
+        ];
+        let members = [member(
+            1,
+            &[
+                ("weapon:2H_POLEHAMMER", 100),
+                ("mastery:COMBAT_HAMMERS", 100),
+            ],
+        )];
         let readiness = evaluate(&seats, &members);
-        assert_eq!(readiness.bench_coverage.len(), 1, "one build, not one row per seat");
+        assert_eq!(
+            readiness.bench_coverage.len(),
+            1,
+            "one build, not one row per seat"
+        );
         assert_eq!(readiness.bench_coverage[0].seat_count, 2);
         assert_eq!(readiness.bench_coverage[0].qualified_members, 1);
     }

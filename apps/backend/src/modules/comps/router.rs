@@ -1235,7 +1235,8 @@ async fn get_comp_readiness(
     Query(params): Query<CompReadinessParams>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<crate::modules::combat::readiness::CompReadiness>>, AppError> {
-    user.require(&perms, Permission::CombatReadinessView).await?;
+    user.require(&perms, Permission::CombatReadinessView)
+        .await?;
     let readiness = crate::modules::combat::service::CombatService::new()
         .comp_readiness(&db, id, params.event_id)
         .await?;
@@ -1316,7 +1317,8 @@ async fn get_build_roster_fit(
     Query(params): Query<BuildItemPowerParams>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<crate::modules::combat::models::BuildRosterFitView>>, AppError> {
-    user.require(&perms, Permission::CombatReadinessView).await?;
+    user.require(&perms, Permission::CombatReadinessView)
+        .await?;
     let loadout = crate::modules::combat::service::parse_loadout(params.loadout.as_deref())?;
     let view = crate::modules::combat::service::CombatService::new()
         .build_roster_fit(&db, id, loadout)

@@ -139,7 +139,11 @@ async fn fit_inputs<C: sea_orm::ConnectionTrait>(
             items_by_build.insert(seat.build_id, items.clone());
             items
         };
-        seats.push(fit::Seat { seat_key: seat.key.clone(), build_id: seat.build_id, items });
+        seats.push(fit::Seat {
+            seat_key: seat.key.clone(),
+            build_id: seat.build_id,
+            items,
+        });
     }
 
     Ok((members, seats))
@@ -1061,8 +1065,11 @@ impl EventService {
         let participant_user_ids: Vec<i64> =
             participations.iter().map(|entry| entry.user_id).collect();
         let mut specializations_by_user =
-            crate::modules::users::specializations::load_levels_for_users(db, &participant_user_ids)
-                .await?;
+            crate::modules::users::specializations::load_levels_for_users(
+                db,
+                &participant_user_ids,
+            )
+            .await?;
 
         let mut participants = HashMap::new();
         for participation in participations {
@@ -1508,7 +1515,8 @@ impl EventService {
         let placements = match request.strategy.unwrap_or_default() {
             FitStrategy::Greedy => greedy_placements(&unassigned, &mut available),
             FitStrategy::SpecOptimal => {
-                self.spec_optimal_placements(&txn, &unassigned, &available).await?
+                self.spec_optimal_placements(&txn, &unassigned, &available)
+                    .await?
             }
         };
 
@@ -1557,8 +1565,10 @@ impl EventService {
             .count(db)
             .await
             .map_err(AppError::Database)? as usize;
-        let concrete =
-            participations.iter().filter(|entry| entry.primary_build_id.is_some()).count();
+        let concrete = participations
+            .iter()
+            .filter(|entry| entry.primary_build_id.is_some())
+            .count();
         let (active_comp, _) = self
             .resolve_active_comp_with_extra_slots(
                 db,
@@ -1573,10 +1583,14 @@ impl EventService {
             .all(db)
             .await
             .map_err(AppError::Database)?;
-        let assigned_users: HashSet<_> =
-            assignments.iter().map(|assignment| assignment.user_id).collect();
-        let assigned_seats: HashSet<_> =
-            assignments.iter().map(|assignment| assignment.seat_key.as_str()).collect();
+        let assigned_users: HashSet<_> = assignments
+            .iter()
+            .map(|assignment| assignment.user_id)
+            .collect();
+        let assigned_seats: HashSet<_> = assignments
+            .iter()
+            .map(|assignment| assignment.seat_key.as_str())
+            .collect();
         let available: Vec<_> = self
             .canonical_roster_seats(db, active_comp.id)
             .await?
@@ -2142,8 +2156,11 @@ impl EventService {
 
         let participant_user_ids: Vec<i64> = participations.iter().map(|p| p.user_id).collect();
         let mut specializations_by_user =
-            crate::modules::users::specializations::load_levels_for_users(db, &participant_user_ids)
-                .await?;
+            crate::modules::users::specializations::load_levels_for_users(
+                db,
+                &participant_user_ids,
+            )
+            .await?;
 
         let mut participant_views = Vec::new();
         for p in participations {
@@ -5187,7 +5204,10 @@ mod tests {
             .await
             .expect("participation should succeed");
 
-        let roster = service.get_roster(&db, event_id).await.expect("roster should load");
+        let roster = service
+            .get_roster(&db, event_id)
+            .await
+            .expect("roster should load");
         let participant = roster
             .seats
             .iter()
@@ -5235,8 +5255,14 @@ mod tests {
         let build_id = create_build(&db, "auto-fill-build", category).await;
         insert_weapon_item(&db, build_id, "T8_2H_POLEHAMMER").await;
         let comp_category = create_comp_category(&db, "auto-fill-comps").await;
-        let comp_id =
-            create_comp(&db, "auto-fill-comp", comp_category, None, vec![(build_id, 1)]).await;
+        let comp_id = create_comp(
+            &db,
+            "auto-fill-comp",
+            comp_category,
+            None,
+            vec![(build_id, 1)],
+        )
+        .await;
         let event_id = event::ActiveModel {
             title: Set("Auto-fill event".to_string()),
             comp_id: Set(comp_id),
@@ -5264,14 +5290,29 @@ mod tests {
             .expect("participation should succeed");
 
         let (_, changed) = service
-            .auto_fill_roster(&db, event_id, RosterVersionRequest { expected_roster_version: 1, strategy: None }, officer)
+            .auto_fill_roster(
+                &db,
+                event_id,
+                RosterVersionRequest {
+                    expected_roster_version: 1,
+                    strategy: None,
+                },
+                officer,
+            )
             .await
             .expect("greedy auto-fill should succeed");
 
         assert_eq!(changed, vec![format!("build:{build_id}:1")]);
-        let roster = service.get_roster(&db, event_id).await.expect("roster should load");
+        let roster = service
+            .get_roster(&db, event_id)
+            .await
+            .expect("roster should load");
         assert_eq!(
-            roster.seats.iter().find_map(|seat| seat.participant.as_ref()).map(|p| p.user_id),
+            roster
+                .seats
+                .iter()
+                .find_map(|seat| seat.participant.as_ref())
+                .map(|p| p.user_id),
             Some(member)
         );
     }
@@ -5286,8 +5327,14 @@ mod tests {
         let build_id = create_build(&db, "spec-optimal-build", category).await;
         insert_weapon_item(&db, build_id, "T8_2H_POLEHAMMER").await;
         let comp_category = create_comp_category(&db, "spec-optimal-comps").await;
-        let comp_id =
-            create_comp(&db, "spec-optimal-comp", comp_category, None, vec![(build_id, 1)]).await;
+        let comp_id = create_comp(
+            &db,
+            "spec-optimal-comp",
+            comp_category,
+            None,
+            vec![(build_id, 1)],
+        )
+        .await;
         let event_id = event::ActiveModel {
             title: Set("Spec-optimal event".to_string()),
             comp_id: Set(comp_id),
@@ -5321,7 +5368,10 @@ mod tests {
                     &db,
                     event_id,
                     user_id,
-                    ParticipateEventRequest { primary_build_id: None, secondary_build_id: None },
+                    ParticipateEventRequest {
+                        primary_build_id: None,
+                        secondary_build_id: None,
+                    },
                 )
                 .await
                 .expect("participation should succeed");
@@ -5341,9 +5391,16 @@ mod tests {
             .expect("spec-optimal auto-fill should succeed");
 
         assert_eq!(changed, vec![format!("build:{build_id}:1")]);
-        let roster = service.get_roster(&db, event_id).await.expect("roster should load");
+        let roster = service
+            .get_roster(&db, event_id)
+            .await
+            .expect("roster should load");
         assert_eq!(
-            roster.seats.iter().find_map(|seat| seat.participant.as_ref()).map(|p| p.user_id),
+            roster
+                .seats
+                .iter()
+                .find_map(|seat| seat.participant.as_ref())
+                .map(|p| p.user_id),
             Some(expert),
             "the trained member should take the seat, not whoever signed up first"
         );

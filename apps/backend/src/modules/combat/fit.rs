@@ -138,7 +138,11 @@ pub fn score(member: &Member, seat: &Seat) -> FitScore {
     FitScore {
         item_power: breakdown.average,
         max_item_power: ceiling,
-        readiness: if ceiling > 0.0 { (breakdown.average / ceiling).clamp(0.0, 1.0) } else { 0.0 },
+        readiness: if ceiling > 0.0 {
+            (breakdown.average / ceiling).clamp(0.0, 1.0)
+        } else {
+            0.0
+        },
         preference,
         blocking,
     }
@@ -194,17 +198,26 @@ pub fn assign(members: &[Member], seats: &[Seat]) -> Assignment {
         };
     }
 
-    let scores: Vec<Vec<FitScore>> =
-        members.iter().map(|member| seats.iter().map(|seat| score(member, seat)).collect()).collect();
+    let scores: Vec<Vec<FitScore>> = members
+        .iter()
+        .map(|member| seats.iter().map(|seat| score(member, seat)).collect())
+        .collect();
 
-    let assignment = hungarian::solve(&scores.iter().map(|row| row.iter().map(FitScore::combined).collect()).collect::<Vec<Vec<f64>>>());
+    let assignment = hungarian::solve(
+        &scores
+            .iter()
+            .map(|row| row.iter().map(FitScore::combined).collect())
+            .collect::<Vec<Vec<f64>>>(),
+    );
 
     let mut placements = Vec::new();
     let mut placed_members = vec![false; members.len()];
     let mut filled_seats = vec![false; seats.len()];
 
     for (member_index, seat_index) in assignment.into_iter().enumerate() {
-        let Some(seat_index) = seat_index else { continue };
+        let Some(seat_index) = seat_index else {
+            continue;
+        };
         let fit = &scores[member_index][seat_index];
         if !fit.blocking.is_empty() {
             continue; // The solver may still pair a blocked cell when nothing better is left.
@@ -234,7 +247,11 @@ pub fn assign(members: &[Member], seats: &[Seat]) -> Assignment {
         .collect();
     unfilled_seats.sort();
 
-    Assignment { placements, unplaced_members, unfilled_seats }
+    Assignment {
+        placements,
+        unplaced_members,
+        unfilled_seats,
+    }
 }
 
 /// The Hungarian algorithm (Kuhn–Munkres), maximising total weight on a rectangular matrix.
@@ -256,11 +273,7 @@ mod hungarian {
         }
 
         let n = rows.max(cols);
-        let max_weight = weights
-            .iter()
-            .flatten()
-            .copied()
-            .fold(0.0_f64, f64::max);
+        let max_weight = weights.iter().flatten().copied().fold(0.0_f64, f64::max);
         // Costs must be non-negative for the algorithm below; padding cells cost nothing, so an
         // unmatched real cell is always preferred over a dummy one when anything positive is on
         // offer, and equally preferred over a dummy when everything real is zero.
@@ -440,10 +453,17 @@ mod fit_tests {
         // against a Polehammer — see `SpecLevels::all_at`'s docs. So maxing only the Polehammer's
         // own spec and mastery gets close to the ceiling but cannot equal it.
         let seat = polehammer_seat("build:1:1", 1);
-        let specs = &[("weapon:2H_POLEHAMMER", 100), ("mastery:COMBAT_HAMMERS", 100)];
+        let specs = &[
+            ("weapon:2H_POLEHAMMER", 100),
+            ("mastery:COMBAT_HAMMERS", 100),
+        ];
         let fit = score(&member(1, specs, None), &seat);
         assert!(fit.readiness < 1.0, "got {}", fit.readiness);
-        assert!(fit.readiness > 0.9, "should still be close to the ceiling: got {}", fit.readiness);
+        assert!(
+            fit.readiness > 0.9,
+            "should still be close to the ceiling: got {}",
+            fit.readiness
+        );
         assert!(fit.blocking.is_empty());
     }
 
@@ -452,7 +472,14 @@ mod fit_tests {
         let seat = polehammer_seat("build:1:1", 1);
         let spec_only = score(&member(1, &[("weapon:2H_POLEHAMMER", 100)], None), &seat);
         let with_mastery = score(
-            &member(1, &[("weapon:2H_POLEHAMMER", 100), ("mastery:COMBAT_HAMMERS", 100)], None),
+            &member(
+                1,
+                &[
+                    ("weapon:2H_POLEHAMMER", 100),
+                    ("mastery:COMBAT_HAMMERS", 100),
+                ],
+                None,
+            ),
             &seat,
         );
         assert!(spec_only.readiness < with_mastery.readiness);
@@ -463,12 +490,19 @@ mod fit_tests {
         let seat = polehammer_seat("build:1:1", 1);
         let fit = score(&member(1, &[], None), &seat);
         assert!(fit.readiness < 1.0);
-        assert!(fit.blocking.is_empty(), "no specialization is a low score, not an impossibility");
+        assert!(
+            fit.blocking.is_empty(),
+            "no specialization is a low score, not an impossibility"
+        );
     }
 
     #[test]
     fn a_seat_with_no_items_is_reported_as_blocked() {
-        let empty_seat = Seat { seat_key: "build:2:1".to_string(), build_id: 2, items: Vec::new() };
+        let empty_seat = Seat {
+            seat_key: "build:2:1".to_string(),
+            build_id: 2,
+            items: Vec::new(),
+        };
         let fit = score(&member(1, &[], None), &empty_seat);
         assert!(!fit.blocking.is_empty());
         assert!((fit.combined() - 0.0).abs() < f64::EPSILON);
@@ -502,7 +536,14 @@ mod fit_tests {
         let hammer_seat = polehammer_seat("build:1:1", 1);
 
         let specialist = member(1, &[("weapon:MAIN_ARCANESTAFF", 100)], None);
-        let generalist = member(2, &[("weapon:2H_POLEHAMMER", 40), ("weapon:MAIN_ARCANESTAFF", 40)], None);
+        let generalist = member(
+            2,
+            &[
+                ("weapon:2H_POLEHAMMER", 40),
+                ("weapon:MAIN_ARCANESTAFF", 40),
+            ],
+            None,
+        );
 
         let result = assign(&[specialist, generalist], &[hammer_seat, astral_seat]);
         let seat_of = |user_id: i64| {
@@ -512,7 +553,11 @@ mod fit_tests {
                 .find(|p| p.user_id == user_id)
                 .map(|p| p.seat_key.clone())
         };
-        assert_eq!(seat_of(1).as_deref(), Some("build:2:1"), "the specialist keeps their one fit");
+        assert_eq!(
+            seat_of(1).as_deref(),
+            Some("build:2:1"),
+            "the specialist keeps their one fit"
+        );
         assert_eq!(seat_of(2).as_deref(), Some("build:1:1"));
         assert!(result.unplaced_members.is_empty());
         assert!(result.unfilled_seats.is_empty());
@@ -527,14 +572,20 @@ mod fit_tests {
         ];
         let result = assign(&members, &[seat]);
         assert_eq!(result.placements.len(), 1);
-        assert_eq!(result.placements[0].user_id, 1, "the better-trained member gets the seat");
+        assert_eq!(
+            result.placements[0].user_id, 1,
+            "the better-trained member gets the seat"
+        );
         assert_eq!(result.unplaced_members, vec![2]);
     }
 
     #[test]
     fn more_seats_than_members_leaves_the_rest_unfilled() {
         let member = member(1, &[("weapon:2H_POLEHAMMER", 100)], None);
-        let seats = vec![polehammer_seat("build:1:1", 1), polehammer_seat("build:1:2", 1)];
+        let seats = vec![
+            polehammer_seat("build:1:1", 1),
+            polehammer_seat("build:1:2", 1),
+        ];
         let result = assign(std::slice::from_ref(&member), &seats);
         assert_eq!(result.placements.len(), 1);
         assert_eq!(result.unfilled_seats.len(), 1);
@@ -568,10 +619,16 @@ mod fit_tests {
         let forward = assign(&[a.clone(), b.clone()], &[hammer.clone(), astral.clone()]);
         let reversed = assign(&[b, a], &[astral, hammer]);
 
-        let mut forward_pairs: Vec<_> =
-            forward.placements.iter().map(|p| (p.user_id, p.seat_key.clone())).collect();
-        let mut reversed_pairs: Vec<_> =
-            reversed.placements.iter().map(|p| (p.user_id, p.seat_key.clone())).collect();
+        let mut forward_pairs: Vec<_> = forward
+            .placements
+            .iter()
+            .map(|p| (p.user_id, p.seat_key.clone()))
+            .collect();
+        let mut reversed_pairs: Vec<_> = reversed
+            .placements
+            .iter()
+            .map(|p| (p.user_id, p.seat_key.clone()))
+            .collect();
         forward_pairs.sort();
         reversed_pairs.sort();
         assert_eq!(forward_pairs, reversed_pairs);

@@ -67,7 +67,10 @@ mod glob_tests {
     #[test]
     fn tier_wildcard_matches_every_tier() {
         for tier in 4..=8 {
-            assert!(matches("T?_2H_POLEHAMMER", &unique_name(tier, "2H_POLEHAMMER")));
+            assert!(matches(
+                "T?_2H_POLEHAMMER",
+                &unique_name(tier, "2H_POLEHAMMER")
+            ));
         }
     }
 

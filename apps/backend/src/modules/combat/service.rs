@@ -197,7 +197,9 @@ impl CombatService {
         use crate::modules::events::entities::event_participation;
         use crate::modules::events::service::EventService;
 
-        let seat_views = EventService::new().canonical_roster_seats(db, comp_id).await?;
+        let seat_views = EventService::new()
+            .canonical_roster_seats(db, comp_id)
+            .await?;
         if seat_views.is_empty() {
             comp::Entity::find_by_id(comp_id)
                 .one(db)
@@ -220,7 +222,11 @@ impl CombatService {
                 items_by_build.insert(seat.build_id, items.clone());
                 items
             };
-            seats.push(fit::Seat { seat_key: seat.key.clone(), build_id: seat.build_id, items });
+            seats.push(fit::Seat {
+                seat_key: seat.key.clone(),
+                build_id: seat.build_id,
+                items,
+            });
         }
 
         let candidate_ids: Vec<i64> = match event_id {
@@ -264,7 +270,10 @@ impl CombatService {
         // Only the handful of seats actually shown need a resolved name, not every candidate in
         // the pool — `readiness::evaluate` already capped `weakest_seats` for this reason.
         let mut usernames: HashMap<i64, String> = HashMap::new();
-        for user_id in readiness.weakest_seats.iter().filter_map(|seat| seat.best_candidate_user_id)
+        for user_id in readiness
+            .weakest_seats
+            .iter()
+            .filter_map(|seat| seat.best_candidate_user_id)
         {
             if let std::collections::hash_map::Entry::Vacant(entry) = usernames.entry(user_id)
                 && let Some(user) = crate::modules::users::entities::Entity::find_by_id(user_id)
@@ -283,7 +292,10 @@ impl CombatService {
             }
         }
         for build in &mut readiness.bench_coverage {
-            build.build_name = build_names.get(&build.build_id).cloned().unwrap_or_default();
+            build.build_name = build_names
+                .get(&build.build_id)
+                .cloned()
+                .unwrap_or_default();
         }
         Ok(readiness)
     }
@@ -355,8 +367,7 @@ impl CombatService {
                 let user_id = user_id.ok_or_else(|| {
                     AppError::Validation("spec=current requires a user_id".to_string())
                 })?;
-                let mut by_user =
-                    specializations::load_levels_for_users(db, &[user_id]).await?;
+                let mut by_user = specializations::load_levels_for_users(db, &[user_id]).await?;
                 let rows = by_user.remove(&user_id).unwrap_or_default();
                 Ok(SpecLevels::from_rows(
                     rows.iter().map(|(key, level)| (key.as_str(), *level)),
@@ -439,7 +450,9 @@ fn blocking_nodes(items: &[EquippedItem], specs: &SpecLevels) -> Vec<BlockingNod
 fn parse_loadout_item(request: &LoadoutItemRequest) -> Result<EquippedItem, AppError> {
     let identifier = request.identifier.trim();
     if identifier.is_empty() {
-        return Err(AppError::Validation("item identifier is required".to_string()));
+        return Err(AppError::Validation(
+            "item identifier is required".to_string(),
+        ));
     }
 
     let tier = request
@@ -502,7 +515,9 @@ fn tier_from_stored(tier: Option<&str>) -> u8 {
 
 #[cfg(test)]
 mod service_tests {
-    use super::{enchantment_suffix_of, parse_loadout_item, readiness_of, tier_from_stored, tier_prefix_of};
+    use super::{
+        enchantment_suffix_of, parse_loadout_item, readiness_of, tier_from_stored, tier_prefix_of,
+    };
     use crate::modules::combat::models::LoadoutItemRequest;
     use crate::modules::comps::status::BuildSlot;
 
@@ -548,7 +563,12 @@ mod service_tests {
 
     #[test]
     fn quality_defaults_to_excellent() {
-        assert_eq!(parse_loadout_item(&request("T8_2H_POLEHAMMER")).unwrap().quality, 4);
+        assert_eq!(
+            parse_loadout_item(&request("T8_2H_POLEHAMMER"))
+                .unwrap()
+                .quality,
+            4
+        );
     }
 
     #[test]
@@ -708,7 +728,10 @@ mod comp_readiness_tests {
             .expect("readiness should compute with no candidates");
 
         assert_eq!(readiness.seat_count, 1);
-        assert_eq!(readiness.uncovered_seats, vec![format!("build:{build_id}:1")]);
+        assert_eq!(
+            readiness.uncovered_seats,
+            vec![format!("build:{build_id}:1")]
+        );
         assert_eq!(readiness.weakest_seats[0].build_name, "readiness-build");
         assert!((readiness.avg_item_power_now - 0.0).abs() < f64::EPSILON);
         assert!(readiness.avg_item_power_at_max > 0.0);
@@ -745,8 +768,14 @@ mod comp_readiness_tests {
             .expect("readiness should compute");
 
         assert!(readiness.uncovered_seats.is_empty());
-        assert_eq!(readiness.weakest_seats[0].best_candidate_user_id, Some(trained.id));
-        assert_eq!(readiness.weakest_seats[0].best_candidate_username, "trained");
+        assert_eq!(
+            readiness.weakest_seats[0].best_candidate_user_id,
+            Some(trained.id)
+        );
+        assert_eq!(
+            readiness.weakest_seats[0].best_candidate_username,
+            "trained"
+        );
         assert_eq!(readiness.bench_coverage[0].build_name, "readiness-build");
         assert_eq!(readiness.bench_coverage[0].qualified_members, 1);
     }
