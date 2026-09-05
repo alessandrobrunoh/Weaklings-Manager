@@ -67,8 +67,8 @@ describe('classifyArmor', () => {
     expect(classifyArmor('ARMOR_CLOTH_SET1')).toEqual({ material: 'cloth', slot: 'chest' });
   });
 
-  it('keeps gathering armor on its own material branch', () => {
-    expect(classifyArmor('HEAD_GATHERER_ORE')).toEqual({ material: 'gathering', slot: 'head' });
+  it('does not classify gathering gear as a combat material', () => {
+    expect(classifyArmor('HEAD_GATHERER_ORE')).toEqual({ material: 'other', slot: 'head' });
   });
 });
 
@@ -115,6 +115,19 @@ describe('buildDestinyBoardTree', () => {
       'Judicator Boots',
       'Soldier Boots',
     ]);
+  });
+
+  it('drops gathering gear instead of opening a Gathering branch', () => {
+    const tree = buildDestinyBoardTree([
+      item('HEAD_GATHERER_ORE', 'Miner Cap', 'armor', 10),
+      item('ARMOR_GATHERER_ORE', 'Miner Garb', 'armor', 5),
+      item('HEAD_PLATE_SET1', 'Soldier Helmet', 'armor', 0),
+    ]);
+
+    expect(tree.map((branch) => branch.id)).toEqual(['armor']);
+    const materials = tree[0].children.map((child) => (isDestinyGroup(child) ? child.id : ''));
+    expect(materials).toEqual(['armor:plate']);
+    expect(materials).not.toContain('armor:gathering');
   });
 });
 
@@ -265,5 +278,42 @@ describe('mergeSpecializationNodes', () => {
       level: 0,
       node_name: 'Wailing Bow',
     });
+  });
+
+  it('drops gathering gear from saved rows and the catalog', () => {
+    const catalog: OpenAlbionItem[] = [
+      {
+        id: 1,
+        name: 'Bow',
+        tier: 'T8',
+        type: 'weapon',
+        category_id: null,
+        subcategory_id: null,
+        identifier: 'T8_2H_BOW',
+        icon: 'bow.png',
+      },
+      {
+        id: 3,
+        name: 'Miner Cap',
+        tier: 'T8',
+        type: 'armor',
+        category_id: null,
+        subcategory_id: null,
+        identifier: 'T8_HEAD_GATHERER_ORE',
+        icon: null,
+      },
+    ];
+    const saved: UserSpecialization[] = [
+      {
+        node_key: 'armor:HEAD_GATHERER_ORE',
+        node_name: 'Miner Cap',
+        category: 'armor',
+        level: 80,
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ];
+
+    const nodes = mergeSpecializationNodes(saved, catalog);
+    expect(nodes.map((node) => node.identifier)).toEqual(['2H_BOW']);
   });
 });

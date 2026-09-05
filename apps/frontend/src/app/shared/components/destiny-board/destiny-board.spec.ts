@@ -86,6 +86,17 @@ describe('DestinyBoard', () => {
     expect(icon).toBeTruthy();
   });
 
+  it('does not render a Gathering branch', async () => {
+    fixture.componentRef.setInput('nodes', [
+      ...SAMPLE,
+      item('HEAD_GATHERER_ORE', 'Miner Cap', 'armor', 10),
+    ]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.nativeElement.textContent).not.toContain('Gathering');
+    expect(nodeButton('Miner Cap')).toBeUndefined();
+  });
+
   it('opens the inspector with a slider when a weapon is clicked', async () => {
     nodeButton('Wailing Bow')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     fixture.detectChanges();
@@ -95,6 +106,62 @@ describe('DestinyBoard', () => {
     expect(slider.value).toBe('45');
     expect(fixture.nativeElement.textContent).toContain('Wailing Bow');
     expect(fixture.nativeElement.textContent).toContain('Reset item');
+  });
+
+  it('selects Weapons on press without keeping Combat pressed', async () => {
+    const weapons = nodeButton('Weapons');
+    const combat = nodeButton('Combat');
+    expect(weapons).toBeTruthy();
+    expect(combat?.getAttribute('aria-pressed')).toBe('true');
+
+    weapons!.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 1, clientX: 20, clientY: 20 }),
+    );
+    const map = fixture.nativeElement.querySelector('.destiny-map') as HTMLElement;
+    map.dispatchEvent(
+      new PointerEvent('pointerup', { bubbles: true, button: 0, pointerId: 1, clientX: 20, clientY: 20 }),
+    );
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(weapons!.getAttribute('aria-pressed')).toBe('true');
+    expect(combat?.getAttribute('aria-pressed')).toBe('false');
+    expect(fixture.nativeElement.textContent).toContain('Weapons');
+    expect(fixture.nativeElement.textContent).toContain('Reset branch');
+  });
+
+  it('selects a leaf on press so the slider edits only that item', async () => {
+    const bow = nodeButton('Wailing Bow');
+    bow!.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 2, clientX: 40, clientY: 40 }),
+    );
+    const map = fixture.nativeElement.querySelector('.destiny-map') as HTMLElement;
+    map.dispatchEvent(
+      new PointerEvent('pointerup', { bubbles: true, button: 0, pointerId: 2, clientX: 40, clientY: 40 }),
+    );
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(bow!.getAttribute('aria-pressed')).toBe('true');
+    expect(nodeButton('Combat')?.getAttribute('aria-pressed')).toBe('false');
+
+    const slider = fixture.nativeElement.querySelector('#destiny-slider') as HTMLInputElement;
+    slider.value = '90';
+    slider.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const emitted: DestinyItemNode[][] = [];
+    fixture.componentInstance.save.subscribe((nodes) => emitted.push(nodes));
+    const save = [...fixture.nativeElement.querySelectorAll('button')].find((button) =>
+      (button as HTMLButtonElement).textContent?.includes('Save specializations'),
+    ) as HTMLButtonElement;
+    save.click();
+
+    const byId = new Map(emitted[0].map((node) => [node.node_key, node.level]));
+    expect(byId.get('weapon:2H_BOW_HELL')).toBe(90);
+    expect(byId.get('weapon:2H_BOW')).toBe(120);
+    expect(byId.get('weapon:MAIN_SWORD')).toBe(0);
   });
 
   it('search for wailing keeps the bow path and drops swords', async () => {

@@ -815,6 +815,11 @@ export function albionSpecializationIdentifier(identifier: string): string {
    return identifier.trim().toUpperCase().replace(/^T\d+_/, '');
  }
 
+/** True for gathering tools and gatherer armour. They have no combat Destiny Board node. */
+export function isAlbionGatheringGear(identifier: string): boolean {
+  return albionSpecializationIdentifier(identifier).includes('_GATHERER');
+}
+
 /** Returns the stable key shared by profile and event specialization views. */
 export function albionSpecializationKey(item: Pick<OpenAlbionItem, 'type' | 'identifier' | 'id'>): string {
    const category = item.type === 'armor' ? 'armor' : 'weapon';
@@ -862,7 +867,7 @@ export function deduplicateAlbionCombatCatalog(catalog: readonly OpenAlbionItem[
    return catalog.flatMap((item) => {
      if (item.type !== 'weapon' && item.type !== 'armor') return [];
      const identifier = item.identifier?.trim();
-     if (!identifier) return [];
+     if (!identifier || isAlbionGatheringGear(identifier)) return [];
      const key = albionSpecializationKey(item);
      if (seen.has(key)) return [];
      seen.add(key);

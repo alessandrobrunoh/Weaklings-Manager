@@ -5,6 +5,7 @@ import {
   albionCombatIconUrl,
   deduplicateAlbionCombatCatalog,
   filterAlbionEquipmentCatalog,
+  isAlbionGatheringGear,
   normalizeAlbionEquipmentName,
 } from './albion-equipment-catalog';
 
@@ -79,5 +80,27 @@ describe('Albion equipment catalog names', () => {
     expect(albionCombatIconUrl('T1_2H_BOW')).toContain('T8_2H_BOW');
     expect(albionCombatIconUrl('2H_BOW_HELL')).toContain('T8_2H_BOW_HELL');
     expect(albionCombatIconUrl('2H_BOW')).toContain('size=256');
+  });
+
+  it('keeps gathering gear out of the combat catalog', () => {
+    expect(isAlbionGatheringGear('HEAD_GATHERER_ORE')).toBe(true);
+    expect(isAlbionGatheringGear('T8_SHOES_GATHERER_WOOD')).toBe(true);
+    expect(isAlbionGatheringGear('HEAD_PLATE_SET1')).toBe(false);
+
+    const catalog: OpenAlbionItem[] = [
+      { ...item('2H_BOW', 'T8'), type: 'weapon' },
+      {
+        id: 99,
+        name: 'Miner Cap',
+        tier: 'T8',
+        type: 'armor',
+        category_id: null,
+        subcategory_id: null,
+        identifier: 'T8_HEAD_GATHERER_ORE',
+        icon: null,
+      },
+    ];
+
+    expect(deduplicateAlbionCombatCatalog(catalog).map((row) => row.identifier)).toEqual(['2H_BOW']);
   });
 });
