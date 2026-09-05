@@ -734,6 +734,45 @@ export interface SwapRosterSeatsRequest {
 /** Fill currently empty concrete roster seats from registered participants. */
 export interface AutoFillRosterRequest {
   expected_roster_version: number;
+  /**
+   * `'greedy'` (the default when omitted) keeps today's first-fit-in-signup-order behaviour.
+   * `'spec_optimal'` solves the whole unassigned roster at once against Destiny Board readiness.
+   */
+  strategy?: 'greedy' | 'spec_optimal';
+}
+
+/** Whether a member asked for this seat's build, or the pairing is unrelated to their signup. */
+export type RosterFitPreference = 'none' | 'secondary' | 'primary';
+
+/** How well one member fits one seat, from the Item Power calculator. */
+export interface RosterFitScore {
+  item_power: number;
+  max_item_power: number;
+  /** `0..1`. Comparable across different builds, unlike raw Item Power. */
+  readiness: number;
+  preference: RosterFitPreference;
+  /** Reasons this pairing cannot be made; empty when it can. */
+  blocking: string[];
+}
+
+/** One seat the optimiser proposes filling. */
+export interface RosterPlacement {
+  seat_key: string;
+  user_id: number;
+  score: RosterFitScore;
+}
+
+/**
+ * A preview of `POST .../roster/auto-fill` with `strategy: 'spec_optimal'` — every placement here
+ * targets a currently-empty seat, so applying it never displaces someone already assigned.
+ */
+export interface RosterSuggestions {
+  placements: RosterPlacement[];
+  /** Bench members the solver could not seat — more members than open seats, or every remaining
+   * pairing was blocked. */
+  unplaced_members: number[];
+  /** Seats nothing could be placed into. */
+  unfilled_seats: string[];
 }
 
 export interface RosterRealtimeReadyMessage {
@@ -1092,6 +1131,11 @@ export interface BuildItemSlot {
   openalbion_item_tier?: string | null;
   /** Albion quality 1..=5. Omitted on older rows; treat as Excellent (4). */
   openalbion_item_quality?: number | null;
+  /**
+   * Albion enchantment 0..=4. Omitted on rows saved before enchantment was recorded; treat as
+   * plain (0). With the tier, this is what fixes the item's Item Power.
+   */
+  openalbion_item_enchantment?: number | null;
 }
 
 export interface BuildSummary {
@@ -1151,6 +1195,130 @@ export interface BuildPerformanceView {
   /** Signed-up members with no linked Albion account; excluded from `stats`. */
   players_without_an_albion_link: number;
   stats: BuildBattleStats | null;
+}
+
+/** Provenance of the bundled Albion combat dataset — echoed on every combat response. */
+export interface DatasetVersion {
+  source: string;
+  dumps_commit: string;
+  dumps_committed_at: string;
+  generated_at: string;
+  generator_version: number;
+}
+
+/** One Destiny Board node's contribution to a single item's Item Power. */
+export interface SpecContribution {
+  node: string;
+  /** `'spec'` for a leaf specialization, `'mastery'` for the family node. */
+  kind: string;
+  level: number;
+  item_power: number;
+}
+
+/** Item Power for one equipped item, itemised so every point traces to its source. */
+export interface ItemIpBreakdown {
+  slot: BuildSlot;
+  base: string;
+  tier: number;
+  enchantment: number;
+  quality: number;
+  base_item_power: number;
+  quality_bonus: number;
+  spec_bonus: number;
+  total: number;
+  /** `null` for capes and bags, which have no combat specialization at all. */
+  spec_node: string | null;
+  contributions: SpecContribution[];
+  /** True when the item's base identifier is unknown to the dataset — a data gap, not a zero. */
+  unknown_item: boolean;
+}
+
+/** Item Power across a whole loadout, as the character sheet reports it. */
+export interface CharacterIpBreakdown {
+  /** One entry per equipped item, in character-sheet slot order. */
+  items: ItemIpBreakdown[];
+  /** The mean over the six counted slots — the figure the character sheet shows. */
+  average: number;
+  /** The sum the mean is taken from, with a two-handed weapon counted twice. */
+  total: number;
+  empty_slots: BuildSlot[];
+  two_handed: boolean;
+  /** False until a family mastery level is recorded, which makes every figure a lower bound. */
+  mastery_levels_known: boolean;
+}
+
+/** An Item Power figure, with the ceiling it is measured against. */
+export interface ItemPowerView {
+  breakdown: CharacterIpBreakdown;
+  /** The same loadout with every Destiny Board node at 100. */
+  at_max_spec: number;
+  /** `breakdown.average / at_max_spec`, `0..1`. Comparable across builds unlike raw Item Power. */
+  readiness: number;
+  dataset_version: DatasetVersion;
+}
+
+/** A Destiny Board node holding a member back on a build. */
+export interface BlockingNode {
+  node: string;
+  level: number;
+  max_level: number;
+  item_power_gap: number;
+}
+
+/** One member's Item Power on a given build. */
+export interface MemberItemPowerView {
+  user_id: number;
+  username: string;
+  item_power: number;
+  at_max_spec: number;
+  readiness: number;
+  blocking_nodes: BlockingNode[];
+  mastery_levels_known: boolean;
+}
+
+/** Every member with a recorded specialization, scored against one build, best first. */
+export interface BuildRosterFitView {
+  build_id: number;
+  build_name: string;
+  at_max_spec: number;
+  members: MemberItemPowerView[];
+  dataset_version: DatasetVersion;
+}
+
+/** One seat's best available candidate against a comp's readiness ceiling, or the absence of one. */
+export interface SeatReadiness {
+  seat_key: string;
+  build_id: number;
+  build_name: string;
+  best_candidate_user_id: number | null;
+  best_candidate_username: string;
+  best_candidate_item_power: number;
+  max_item_power: number;
+  readiness: number;
+  item_power_gap: number;
+  qualified_members: number;
+}
+
+/** How deep the bench is for one build across every seat it fills. */
+export interface BuildCoverage {
+  build_id: number;
+  build_name: string;
+  seat_count: number;
+  qualified_members: number;
+}
+
+/** Whether a composition can actually be fielded tonight, and where it is weakest. */
+export interface CompReadiness {
+  seat_count: number;
+  avg_item_power_now: number;
+  avg_item_power_at_max: number;
+  /** `0..1`. */
+  readiness_pct: number;
+  /** The seats furthest from their ceiling, worst first. */
+  weakest_seats: SeatReadiness[];
+  bench_coverage: BuildCoverage[];
+  uncovered_seats: string[];
+  mastery_levels_known: boolean;
 }
 
 export interface CompBuildEntry {

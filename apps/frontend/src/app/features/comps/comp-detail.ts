@@ -14,6 +14,7 @@ import type {
   CompCategoryView,
   CompDetail,
   CompPerformanceView,
+  CompReadiness,
   CompSummary,
   CreateCompRequest,
   OpponentPerformanceView,
@@ -672,6 +673,118 @@ const ROLE_GLYPH: Readonly<Record<BuildRole, string>> = {
             </div>
           </div>
         }
+
+        @if (viewMode() === 'readiness') {
+          @if (readiness(); as report) {
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <app-stat-card
+                [label]="t('comps.avgItemPowerNow')"
+                [value]="Math.round(report.avg_item_power_now)"
+                icon="zap"
+              />
+              <app-stat-card
+                [label]="t('comps.avgItemPowerAtMax')"
+                [value]="Math.round(report.avg_item_power_at_max)"
+                icon="zap"
+              />
+              <app-stat-card
+                [label]="t('comps.readinessCoverage')"
+                [value]="readinessPercentFormatted()"
+                [tone]="report.readiness_pct >= 0.8 ? 'success' : report.readiness_pct >= 0.5 ? 'default' : 'warning'"
+                icon="shield"
+              />
+              <app-stat-card
+                [label]="t('comps.uncoveredSeatsCount')"
+                [value]="report.uncovered_seats.length"
+                [tone]="report.uncovered_seats.length > 0 ? 'warning' : 'success'"
+                icon="alert"
+              />
+            </div>
+
+            @if (report.mastery_levels_known === false) {
+              <p class="text-xs text-warning">⚠ {{ t('comps.readinessMasteryUnknown') }}</p>
+            }
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              <div class="lg:col-span-7 space-y-6">
+                <section class="card p-5 border border-[var(--color-border)] space-y-4">
+                  <h3 class="text-xs font-bold uppercase tracking-wider text-secondary">
+                    {{ t('comps.weakestSeats') }}
+                  </h3>
+                  @if (report.weakest_seats.length > 0) {
+                    <div class="overflow-x-auto">
+                      <table class="table text-xs">
+                        <thead>
+                          <tr>
+                            <th class="text-left">{{ t('comps.seat') }}</th>
+                            <th class="text-left">{{ t('comps.bestCandidate') }}</th>
+                            <th class="text-right">IP</th>
+                            <th class="text-right">{{ t('comps.itemPowerGap') }}</th>
+                            <th class="text-right">{{ t('comps.qualifiedAtFloor') }}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (seat of report.weakest_seats; track seat.seat_key) {
+                            <tr>
+                              <td class="font-medium text-[var(--color-text)]">{{ seat.build_name }}</td>
+                              <td>
+                                @if (seat.best_candidate_user_id) {
+                                  {{ seat.best_candidate_username }}
+                                } @else {
+                                  <span class="text-disabled italic">{{ t('comps.noCandidate') }}</span>
+                                }
+                              </td>
+                              <td class="text-right font-mono">{{ Math.round(seat.best_candidate_item_power) }}</td>
+                              <td class="text-right font-mono" [class.text-warning]="seat.item_power_gap > 0">
+                                {{ seat.item_power_gap > 0 ? '−' + Math.round(seat.item_power_gap) : '—' }}
+                              </td>
+                              <td class="text-right font-mono">{{ seat.qualified_members }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  } @else {
+                    <p class="text-xs text-disabled italic">{{ t('comps.readinessEmptyPool') }}</p>
+                  }
+                  @if (report.uncovered_seats.length === 0 && report.weakest_seats.length > 0) {
+                    <p class="text-[10px] text-success pt-1">✓ {{ t('comps.readinessFullyCovered') }}</p>
+                  }
+                </section>
+              </div>
+
+              <div class="lg:col-span-5 space-y-6">
+                <section class="card p-5 border border-[var(--color-border)] space-y-4">
+                  <h3 class="text-xs font-bold uppercase tracking-wider text-secondary">
+                    {{ t('comps.benchCoverage') }}
+                  </h3>
+                  @if (report.bench_coverage.length > 0) {
+                    <div class="space-y-2">
+                      @for (build of report.bench_coverage; track build.build_id) {
+                        <div class="flex items-center justify-between p-2.5 rounded-[var(--radius-md)] bg-[var(--color-surface-2)] border border-[var(--color-border)] text-xs">
+                          <div class="min-w-0">
+                            <span class="font-medium text-[var(--color-text)] block truncate">{{ build.build_name }}</span>
+                            <span class="text-[10px] text-secondary">{{ build.seat_count }} {{ t('comps.slotsShort') }}</span>
+                          </div>
+                          <strong
+                            class="font-mono shrink-0"
+                            [class.text-warning]="build.qualified_members === 0"
+                          >
+                            {{ build.qualified_members }} {{ t('comps.qualifiedAtFloor') }}
+                          </strong>
+                        </div>
+                      }
+                    </div>
+                  } @else {
+                    <p class="text-xs text-disabled italic">{{ t('comps.readinessEmptyPool') }}</p>
+                  }
+                </section>
+              </div>
+            </div>
+          } @else {
+            <app-loading [label]="t('common.loading')" />
+          }
+        }
       </app-page-stack>
 
       <!-- Quick Build Inspect Modal -->
@@ -1078,9 +1191,15 @@ export class CompDetailPage {
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
   protected readonly saving = signal(false);
+  /** Exposed for the readiness tab, which rounds figures inline. */
+  protected readonly Math = Math;
+
   protected readonly comp = signal<CompDetail | null>(null);
   protected readonly parentComp = signal<CompSummary | null>(null);
   protected readonly performance = signal<CompPerformanceView | null>(null);
+  /** `null` while loading, on failure, or when the viewer lacks `combat.readiness.view`. */
+  protected readonly readiness = signal<CompReadiness | null>(null);
+  protected readonly canViewReadiness = computed(() => this.auth.hasPermission('combat.readiness.view'));
   protected readonly compCategories = signal<CompCategoryView[]>([]);
   protected readonly buildOptions = signal<BuildSummary[]>([]);
   protected readonly compSummaries = signal<CompSummary[]>([]);
@@ -1098,14 +1217,20 @@ export class CompDetailPage {
   protected readonly buildDetailsLoading = signal(false);
 
   protected readonly mode = signal<'view' | 'edit'>('view');
-  protected readonly viewMode = signal<'parties' | 'roles' | 'analytics'>('parties');
+  protected readonly viewMode = signal<'parties' | 'roles' | 'analytics' | 'readiness'>('parties');
   protected readonly partySize = COMP_PARTY_SIZE;
   protected readonly selectedRosterPartyNumber = signal(1);
-  protected readonly viewModeOptions = computed<readonly ViewToggleOption[]>(() => [
-    { id: 'parties', label: this.t('comps.viewParties', { count: this.totalPartyCount() }) },
-    { id: 'roles', label: this.t('comps.viewRoles', { count: this.comp()?.builds.length ?? 0 }) },
-    { id: 'analytics', label: this.t('comps.viewAnalytics') },
-  ]);
+  protected readonly viewModeOptions = computed<readonly ViewToggleOption[]>(() => {
+    const options: ViewToggleOption[] = [
+      { id: 'parties', label: this.t('comps.viewParties', { count: this.totalPartyCount() }) },
+      { id: 'roles', label: this.t('comps.viewRoles', { count: this.comp()?.builds.length ?? 0 }) },
+      { id: 'analytics', label: this.t('comps.viewAnalytics') },
+    ];
+    if (this.canViewReadiness()) {
+      options.push({ id: 'readiness', label: this.t('comps.viewReadiness') });
+    }
+    return options;
+  });
 
   protected readonly editMetaOpen = signal(false);
   protected readonly addBuildModalOpen = signal(false);
@@ -1301,7 +1426,7 @@ export class CompDetailPage {
   });
 
   protected onViewModeChange(id: string): void {
-    this.viewMode.set(id as 'parties' | 'roles' | 'analytics');
+    this.viewMode.set(id as 'parties' | 'roles' | 'analytics' | 'readiness');
   }
 
   protected toggleEditMode(): void {
@@ -1988,6 +2113,25 @@ export class CompDetailPage {
   }
 
   /** Loads the equipment required to calculate weapon and readiness statistics. */
+  private async loadReadiness(compId: number): Promise<void> {
+    try {
+      const readiness = await firstValueFrom(
+        this.api.get<CompReadiness>(`api/comps/${compId}/readiness`),
+      );
+      if (compId !== this.compId()) return;
+      this.readiness.set(readiness);
+    } catch {
+      if (compId !== this.compId()) return;
+      this.readiness.set(null);
+    }
+  }
+
+  /** `'N/A'` before the request resolves, matching the KPI cards' own placeholder convention. */
+  protected readinessPercentFormatted(): string {
+    const readiness = this.readiness();
+    return readiness ? this.formatPercent(readiness.readiness_pct * 100) : '—';
+  }
+
   private async loadBuildDetails(comp: CompDetail): Promise<void> {
     this.buildDetailsLoading.set(true);
     try {
@@ -2033,6 +2177,9 @@ export class CompDetailPage {
       this.comp.set(comp);
       this.performance.set(performance);
       void this.loadBuildDetails(comp);
+      if (this.canViewReadiness()) {
+        void this.loadReadiness(compId);
+      }
       if (comp.parent_id) {
         const parent = await firstValueFrom(
           this.api.get<CompSummary>(`api/comps/${comp.parent_id}`),

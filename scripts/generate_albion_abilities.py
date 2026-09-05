@@ -22,107 +22,37 @@ Three source files, three separate reasons:
 
 Slot counts come from `@activespellslots` / `@passivespellslots` on the item and are never assumed,
 so a patch that changes a count needs only a regeneration.
+
+Downloading, caching, the localization scan and the `craftingspelllist` resolver are shared with
+`generate_albion_combat_data.py` and live in `albion_dumps.py`.
 """
 
 from __future__ import annotations
 
 import collections
-import html
 import json
-import re
 import sys
-import urllib.request
-from pathlib import Path
 
-DUMPS = "https://raw.githubusercontent.com/ao-data/ao-bin-dumps/master"
-REPO_ROOT = Path(__file__).resolve().parent.parent
+from albion_dumps import (
+    ACTIVE_KINDS,
+    REPO_ROOT,
+    base_identifier,
+    index_items,
+    index_spells,
+    load_json,
+    load_localization,
+    resolve_spell_list,
+)
+
 CATALOG = REPO_ROOT / "apps/backend/src/modules/openalbion/catalog.json"
 OUTPUT = REPO_ROOT / "apps/backend/src/modules/openalbion/abilities.json"
-CACHE = Path(".albion-dumps-cache")
-
-# Item kinds that can carry a spell list. Shapeshifter staves live under `transformationweapon`.
-ITEM_KINDS = ("weapon", "equipmentitem", "transformationweapon", "mount")
-SPELL_KINDS = ("activespell", "passivespell", "togglespell")
-ACTIVE_KINDS = {"activespell", "togglespell"}
-
-
-def fetch(name: str) -> Path:
-    """Downloads one dump file, caching it so a re-run does not re-fetch ~100 MB."""
-    CACHE.mkdir(exist_ok=True)
-    target = CACHE / name
-    if not target.exists():
-        print(f"  downloading {name} …", file=sys.stderr)
-        urllib.request.urlretrieve(f"{DUMPS}/{name}", target)
-    return target
-
-
-def load_spell_names() -> dict[str, str]:
-    """Extracts the English `@SPELLS_*` strings from the TMX localization dump."""
-    path = fetch("localization.xml")
-    names: dict[str, str] = {}
-    tuid = re.compile(r'<tu tuid="([^"]+)"')
-    lang = re.compile(r'<tuv xml:lang="([^"]+)"')
-    seg = re.compile(r"<seg>(.*?)</seg>")
-    current_key: str | None = None
-    current_lang: str | None = None
-    with path.open(encoding="utf-8") as handle:
-        for line in handle:
-            if match := tuid.search(line):
-                current_key, current_lang = match.group(1), None
-            elif match := lang.search(line):
-                current_lang = match.group(1)
-            elif match := seg.search(line):
-                if current_key and current_lang == "EN-US" and current_key.startswith("@SPELLS_"):
-                    names[current_key] = html.unescape(match.group(1))
-    return names
 
 
 def main() -> int:
     print("Loading dumps…", file=sys.stderr)
-    items_root = json.loads(fetch("items.json").read_text(encoding="utf-8"))["items"]
-    spells_root = json.loads(fetch("spells.json").read_text(encoding="utf-8"))["spells"]
-    localized = load_spell_names()
-
-    spells: dict[str, tuple[str, dict]] = {}
-    for kind in SPELL_KINDS:
-        for spell in spells_root.get(kind, []):
-            if "@uniquename" in spell:
-                spells[spell["@uniquename"]] = (kind, spell)
-
-    items: dict[str, dict] = {}
-    for kind in ITEM_KINDS:
-        for item in items_root.get(kind, []):
-            if isinstance(item, dict) and "@uniquename" in item:
-                items[item["@uniquename"]] = item
-
-    def spell_list(unique_name: str, depth: int = 0) -> list[dict]:
-        """Resolves an item's spell list, following `@reference` down to the tier or family that
-        owns it. A `@reference` entry can carry its own `removespell`/`craftspell` diff alongside
-        it — e.g. a shapeshifter staff's other elemental variants all reference the Panther
-        staff's base list, then swap `SHAPESHIFT_PANTHER` for their own transformation. Skipping
-        that diff (as a plain recurse would) silently gives every variant the referenced item's
-        unmodified spells."""
-        if depth > 10 or unique_name not in items:
-            return []
-        listing = items[unique_name].get("craftingspelllist")
-        if not listing:
-            return []
-        if "@reference" in listing:
-            entries = spell_list(listing["@reference"], depth + 1)
-            removed = listing.get("removespell")
-            if removed:
-                removed_names = {
-                    r["@uniquename"] for r in (removed if isinstance(removed, list) else [removed])
-                }
-                entries = [e for e in entries if e["@uniquename"] not in removed_names]
-            added = listing.get("craftspell")
-            if added:
-                entries = entries + (added if isinstance(added, list) else [added])
-            return entries
-        entries = listing.get("craftspell")
-        if entries is None:
-            return []
-        return entries if isinstance(entries, list) else [entries]
+    items = index_items(load_json("items.json")["items"])
+    spells = index_spells(load_json("spells.json")["spells"])
+    localized = load_localization("@SPELLS_")
 
     def display_name(unique_name: str) -> str | None:
         _, spell = spells[unique_name]
@@ -138,8 +68,7 @@ def main() -> int:
     for entry in catalog:
         if entry["type"] not in ("weapon", "armor"):
             continue
-        base = re.sub(r"@\d+$", "", re.sub(r"^T\d+_", "", entry["identifier"]))
-        bases.setdefault(base, entry["name"])
+        bases.setdefault(base_identifier(entry["identifier"]), entry["name"])
 
     output: dict[str, dict] = {}
     problems: list[str] = []
@@ -158,7 +87,7 @@ def main() -> int:
         active: dict[int, list] = collections.defaultdict(list)
         passive: dict[int, list] = collections.defaultdict(list)
 
-        for entry in spell_list(source):
+        for entry in resolve_spell_list(items, source):
             unique_name = entry["@uniquename"]
             if unique_name not in spells:
                 problems.append(f"{base}: spell {unique_name} is absent from spells.json")

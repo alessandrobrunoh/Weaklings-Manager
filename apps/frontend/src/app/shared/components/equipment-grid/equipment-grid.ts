@@ -3,6 +3,11 @@ import { ChangeDetectionStrategy, Component, computed, input, output } from '@an
 import type { BuildItemSlot, BuildSlot, OpenAlbionItem } from '../../../core/models/api.models';
 import type { AbilitySlotView } from '../../data/albion-abilities';
 import {
+  ALBION_ITEM_ENCHANTMENTS,
+  albionTierLabel,
+  DEFAULT_ALBION_ITEM_ENCHANTMENT,
+} from '../../data/albion-item-enchantment';
+import {
   ALBION_ITEM_QUALITIES,
   albionIconUrlWithQuality,
   albionItemQualityLabel,
@@ -112,8 +117,8 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
             <span class="equipment-slot__name" [title]="entry.openalbion_item_name">
               {{ entry.openalbion_item_name }}
             </span>
-            @if (entry.openalbion_item_tier) {
-              <span class="equipment-slot__tier">{{ entry.openalbion_item_tier }}</span>
+            @if (tierLabel(entry)) {
+              <span class="equipment-slot__tier">{{ tierLabel(entry) }}</span>
             }
             <span
               class="equipment-slot__quality equipment-slot__quality--{{ itemQuality(entry) }}"
@@ -156,6 +161,19 @@ const SLOT_LABELS: Readonly<Record<BuildSlot, string>> = {
                   <select class="select" [value]="draftTier()" (change)="onTierChange($event)">
                     @for (tier of tiers(); track tier) {
                       <option [value]="tier">{{ tier }}</option>
+                    }
+                  </select>
+                </label>
+
+                <label class="text-left">
+                  <span class="label">Enchantment</span>
+                  <select
+                    class="select"
+                    [value]="draftEnchantment()"
+                    (change)="onEnchantmentChange($event)"
+                  >
+                    @for (level of enchantments; track level) {
+                      <option [value]="level">{{ level === 0 ? 'Plain' : '.' + level }}</option>
                     }
                   </select>
                 </label>
@@ -272,6 +290,9 @@ export class EquipmentGrid {
   /** Albion quality (1..=5) bound to the open popover's quality `<select>`. */
   readonly draftQuality = input(DEFAULT_ALBION_ITEM_QUALITY);
 
+  /** Albion enchantment (0..=4) bound to the open popover's enchantment `<select>`. */
+  readonly draftEnchantment = input<number>(DEFAULT_ALBION_ITEM_ENCHANTMENT);
+
   /** Search box value of the open popover. */
   readonly draftSearch = input('');
 
@@ -303,6 +324,9 @@ export class EquipmentGrid {
   /** Fired when the user changes the quality dropdown inside the popover. */
   readonly qualityChange = output<number>();
 
+  /** Fired when the user changes the enchantment dropdown inside the popover. */
+  readonly enchantmentChange = output<number>();
+
   /** Fired on each search input keystroke (parent debounces the API call). */
   readonly searchChange = output<string>();
 
@@ -323,6 +347,8 @@ export class EquipmentGrid {
 
   protected readonly slots = SLOT_ORDER;
   protected readonly qualities = ALBION_ITEM_QUALITIES;
+
+  protected readonly enchantments = ALBION_ITEM_ENCHANTMENTS;
 
   /** Pre-indexed lookup so per-slot rendering stays O(1) at scale. */
   private readonly itemsBySlot = computed(() => {
@@ -377,6 +403,15 @@ export class EquipmentGrid {
 
   protected onQualityChange(event: Event): void {
     this.qualityChange.emit(Number((event.target as HTMLSelectElement).value));
+  }
+
+  protected onEnchantmentChange(event: Event): void {
+    this.enchantmentChange.emit(Number((event.target as HTMLSelectElement).value));
+  }
+
+  /** The slot chip's tier, written the way the game does it: `T8.2`, or `T8` when plain. */
+  protected tierLabel(entry: BuildItemSlot | undefined): string {
+    return albionTierLabel(entry?.openalbion_item_tier, entry?.openalbion_item_enchantment);
   }
 
   protected itemQuality(entry: BuildItemSlot | undefined): number {

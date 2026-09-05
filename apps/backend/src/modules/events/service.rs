@@ -40,8 +40,9 @@ use crate::modules::battles::entities::{
 use crate::modules::battles::models::{
     BattleGuildSummary, BattleLossEstimate, BattlePlayer, GuildLossEstimate, PlayerLossEstimate,
 };
+use crate::modules::combat::fit::{self, FitStrategy};
 use crate::modules::comps::entities::{build, comp, comp_build};
-use crate::modules::comps::status::BuildRole;
+use crate::modules::comps::status::{BuildLoadout, BuildRole};
 use crate::modules::splits::entities::{split, split_participant};
 use crate::modules::splits::service::SplitService;
 use crate::modules::splits::status::SplitStatus;
@@ -62,6 +63,90 @@ const LINK_GRACE_PERIOD: ChronoDuration = ChronoDuration::minutes(45);
 /// product rule and avoiding a surprising extra signup at `8/10`.
 fn expansion_threshold(capacity: i64) -> i64 {
     (capacity.max(1).saturating_mul(3) / 4).max(1)
+}
+
+/// The pre-existing `auto_fill_roster` behaviour: first matching seat in signup order.
+///
+/// A participant takes the first available seat for their primary build, or their secondary if no
+/// primary seat is free; a participant matching neither is left for the officer to place by hand.
+/// `available` is mutated in place so a later participant cannot double-book a seat this pass just
+/// gave away.
+fn greedy_placements(
+    unassigned: &[event_participation::Model],
+    available: &mut Vec<EventRosterSeatView>,
+) -> Vec<(i64, String)> {
+    let mut placements = Vec::new();
+    for participant in unassigned {
+        let index = available
+            .iter()
+            .position(|seat| Some(seat.build_id) == participant.primary_build_id)
+            .or_else(|| {
+                available
+                    .iter()
+                    .position(|seat| Some(seat.build_id) == participant.secondary_build_id)
+            });
+        if let Some(index) = index {
+            let seat = available.remove(index);
+            placements.push((participant.user_id, seat.key));
+        }
+    }
+    placements
+}
+
+/// Turns unassigned participants and open seats into the plain shapes [`fit::assign`] takes.
+///
+/// Generic over [`ConnectionTrait`] so it serves both the read-only preview (a plain connection)
+/// and the write path (already inside a transaction) with one implementation.
+async fn fit_inputs<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    unassigned: &[event_participation::Model],
+    available: &[EventRosterSeatView],
+) -> Result<(Vec<fit::Member>, Vec<fit::Seat>), AppError> {
+    let user_ids: Vec<i64> = unassigned.iter().map(|entry| entry.user_id).collect();
+    let levels_by_user =
+        crate::modules::users::specializations::load_levels_for_users(db, &user_ids).await?;
+    let members: Vec<fit::Member> = unassigned
+        .iter()
+        .map(|entry| fit::Member {
+            user_id: entry.user_id,
+            specs: crate::modules::combat::ip::SpecLevels::from_rows(
+                levels_by_user
+                    .get(&entry.user_id)
+                    .into_iter()
+                    .flatten()
+                    .map(|(key, level)| (key.as_str(), *level)),
+            ),
+            primary_build_id: entry.primary_build_id,
+            secondary_build_id: entry.secondary_build_id,
+        })
+        .collect();
+
+    // Every seat of the same build shares one loadout; a comp with, say, twenty Polehammer seats
+    // should not cost twenty queries for the identical answer.
+    let mut items_by_build: HashMap<i64, Vec<crate::modules::combat::ip::EquippedItem>> =
+        HashMap::new();
+    let mut seats = Vec::with_capacity(available.len());
+    for seat in available {
+        let items = if let Some(items) = items_by_build.get(&seat.build_id) {
+            items.clone()
+        } else {
+            let items = crate::modules::combat::service::CombatService::build_loadout(
+                db,
+                seat.build_id,
+                BuildLoadout::Main,
+            )
+            .await?;
+            items_by_build.insert(seat.build_id, items.clone());
+            items
+        };
+        seats.push(fit::Seat {
+            seat_key: seat.key.clone(),
+            build_id: seat.build_id,
+            items,
+        });
+    }
+
+    Ok((members, seats))
 }
 
 /// Returns the comp resolution target while retaining the event's explicit planning override.
@@ -975,6 +1060,17 @@ impl EventService {
             .all(db)
             .await
             .map_err(AppError::Database)?;
+        // The roster's specialization badge reads these; leaving them empty made every bench
+        // member render as level 0 no matter what they had trained.
+        let participant_user_ids: Vec<i64> =
+            participations.iter().map(|entry| entry.user_id).collect();
+        let mut specializations_by_user =
+            crate::modules::users::specializations::load_levels_for_users(
+                db,
+                &participant_user_ids,
+            )
+            .await?;
+
         let mut participants = HashMap::new();
         for participation in participations {
             let user = crate::modules::users::entities::Entity::find_by_id(participation.user_id)
@@ -1016,7 +1112,9 @@ impl EventService {
                     primary_build_name,
                     secondary_build_id: participation.secondary_build_id,
                     secondary_build_name,
-                    specializations: HashMap::new(),
+                    specializations: specializations_by_user
+                        .remove(&participation.user_id)
+                        .unwrap_or_default(),
                 },
             );
         }
@@ -1046,7 +1144,13 @@ impl EventService {
         })
     }
 
-    async fn canonical_roster_seats<C: ConnectionTrait>(
+    /// Expands a comp's `comp_builds` rows into the flat, ordered seat list every roster view
+    /// is built from.
+    ///
+    /// Public so [`crate::modules::combat::readiness`] can read the same seats for a comp with
+    /// no event context at all — readiness is a property of the composition, not of any one
+    /// night's roster.
+    pub async fn canonical_roster_seats<C: ConnectionTrait>(
         &self,
         db: &C,
         comp_id: i64,
@@ -1403,37 +1507,118 @@ impl EventService {
         let version = self
             .advance_roster_version(&txn, event_id, request.expected_roster_version)
             .await?;
-        let mut changed = Vec::new();
-        for participant in participations
+        let unassigned: Vec<_> = participations
             .into_iter()
             .filter(|participant| !assigned_users.contains(&participant.user_id))
-        {
-            let index = available
-                .iter()
-                .position(|seat| Some(seat.build_id) == participant.primary_build_id)
-                .or_else(|| {
-                    available
-                        .iter()
-                        .position(|seat| Some(seat.build_id) == participant.secondary_build_id)
-                });
-            if let Some(index) = index {
-                let seat = available.remove(index);
-                event_roster_assignment::ActiveModel {
-                    event_id: Set(event_id),
-                    user_id: Set(participant.user_id),
-                    seat_key: Set(seat.key.clone()),
-                    assigned_by: Set(actor_id),
-                    assigned_at: Set(Utc::now().into()),
-                    updated_at: Set(Utc::now().into()),
-                }
-                .insert(&txn)
-                .await
-                .map_err(AppError::Database)?;
-                changed.push(seat.key);
+            .collect();
+
+        let placements = match request.strategy.unwrap_or_default() {
+            FitStrategy::Greedy => greedy_placements(&unassigned, &mut available),
+            FitStrategy::SpecOptimal => {
+                self.spec_optimal_placements(&txn, &unassigned, &available)
+                    .await?
             }
+        };
+
+        let mut changed = Vec::with_capacity(placements.len());
+        for (user_id, seat_key) in placements {
+            event_roster_assignment::ActiveModel {
+                event_id: Set(event_id),
+                user_id: Set(user_id),
+                seat_key: Set(seat_key.clone()),
+                assigned_by: Set(actor_id),
+                assigned_at: Set(Utc::now().into()),
+                updated_at: Set(Utc::now().into()),
+            }
+            .insert(&txn)
+            .await
+            .map_err(AppError::Database)?;
+            changed.push(seat_key);
         }
         txn.commit().await.map_err(AppError::Database)?;
         Ok((version, changed))
+    }
+
+    /// Previews what `auto_fill_roster(strategy: spec_optimal)` would do, without writing
+    /// anything or advancing the roster version.
+    ///
+    /// Read-only by design: an officer should be able to see the proposed assignment, compare it
+    /// against the current roster, and only then decide to apply it.
+    pub async fn get_roster_suggestions(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+    ) -> Result<fit::Assignment, AppError> {
+        let event_model = event::Entity::find_by_id(event_id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {event_id} not found")))?;
+        let participations = event_participation::Entity::find()
+            .filter(event_participation::Column::EventId.eq(event_id))
+            .order_by_asc(event_participation::Column::CreatedAt)
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let extra_slots = event_roster_role::Entity::find()
+            .filter(event_roster_role::Column::EventId.eq(event_id))
+            .count(db)
+            .await
+            .map_err(AppError::Database)? as usize;
+        let concrete = participations
+            .iter()
+            .filter(|entry| entry.primary_build_id.is_some())
+            .count();
+        let (active_comp, _) = self
+            .resolve_active_comp_with_extra_slots(
+                db,
+                event_model.comp_id,
+                concrete,
+                extra_slots,
+                event_model.player_cap,
+            )
+            .await?;
+        let assignments = event_roster_assignment::Entity::find()
+            .filter(event_roster_assignment::Column::EventId.eq(event_id))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        let assigned_users: HashSet<_> = assignments
+            .iter()
+            .map(|assignment| assignment.user_id)
+            .collect();
+        let assigned_seats: HashSet<_> = assignments
+            .iter()
+            .map(|assignment| assignment.seat_key.as_str())
+            .collect();
+        let available: Vec<_> = self
+            .canonical_roster_seats(db, active_comp.id)
+            .await?
+            .into_iter()
+            .filter(|seat| !assigned_seats.contains(seat.key.as_str()))
+            .collect();
+        let unassigned: Vec<_> = participations
+            .into_iter()
+            .filter(|participant| !assigned_users.contains(&participant.user_id))
+            .collect();
+        let (members, seats) = fit_inputs(db, &unassigned, &available).await?;
+        Ok(fit::assign(&members, &seats))
+    }
+
+    /// Builds the [`fit::Member`]/[`fit::Seat`] shapes and solves the whole unassigned roster at
+    /// once, favouring readiness and signup preference over first-come-first-served order.
+    async fn spec_optimal_placements(
+        &self,
+        txn: &sea_orm::DatabaseTransaction,
+        unassigned: &[event_participation::Model],
+        available: &[EventRosterSeatView],
+    ) -> Result<Vec<(i64, String)>, AppError> {
+        let (members, seats) = fit_inputs(txn, unassigned, available).await?;
+        Ok(fit::assign(&members, &seats)
+            .placements
+            .into_iter()
+            .map(|placement| (placement.user_id, placement.seat_key))
+            .collect())
     }
 
     /// Lists an event's roster roles, with the virtual unlimited-capacity `Fill` role first.
@@ -1970,29 +2155,12 @@ impl EventService {
         }
 
         let participant_user_ids: Vec<i64> = participations.iter().map(|p| p.user_id).collect();
-        let specialization_rows = if participant_user_ids.is_empty() {
-            Vec::new()
-        } else {
-            crate::modules::users::specializations::Entity::find()
-                .filter(
-                    crate::modules::users::specializations::Column::UserId
-                        .is_in(participant_user_ids),
-                )
-                .all(db)
-                .await
-                .map_err(AppError::Database)?
-        };
-        let mut specializations_by_user: HashMap<i64, HashMap<String, i32>> = HashMap::new();
-        for row in specialization_rows {
-            let node_key =
-                crate::modules::users::specializations::canonical_node_key(&row.node_key);
-            specializations_by_user
-                .entry(row.user_id)
-                .or_default()
-                .entry(node_key)
-                .and_modify(|level| *level = (*level).max(row.level))
-                .or_insert(row.level);
-        }
+        let mut specializations_by_user =
+            crate::modules::users::specializations::load_levels_for_users(
+                db,
+                &participant_user_ids,
+            )
+            .await?;
 
         let mut participant_views = Vec::new();
         for p in participations {
@@ -4984,6 +5152,258 @@ mod tests {
 
         assert_eq!(performance.signups_as_secondary, 1);
         assert_eq!(performance.signups_as_primary, 0);
+    }
+
+    #[tokio::test]
+    async fn the_roster_carries_each_participant_s_specialization_levels() {
+        // Regression: `get_roster` used to build participants with an empty specialization map,
+        // so the level badge beside every bench member rendered zero however much they had
+        // trained. `get_event_detail` populated it; the two now share one loader.
+        let db = seed_db().await;
+        let user_id = insert_user(&db, "spec-user", "spec-user@example.com").await;
+        let build_category = create_build_category(&db, "spec-builds").await;
+        let build_id = create_build(&db, "spec-build", build_category).await;
+        let comp_category = create_comp_category(&db, "spec-comps").await;
+        let comp_id = create_comp(&db, "spec-comp", comp_category, None, vec![(build_id, 1)]).await;
+        let event_id = event::ActiveModel {
+            title: Set("Spec event".to_string()),
+            comp_id: Set(comp_id),
+            created_by: Set(user_id),
+            event_date_utc: Set(ts()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert event")
+        .id;
+
+        // Stored with the legacy tier-specific key, so the canonicalization is exercised too.
+        crate::modules::users::specializations::ActiveModel {
+            user_id: Set(user_id),
+            node_key: Set("weapon:T8_2H_POLEHAMMER".to_string()),
+            node_name: Set("Great Polehammer".to_string()),
+            category: Set("weapon".to_string()),
+            level: Set(87),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert specialization");
+
+        let service = EventService::new();
+        service
+            .participate_with_roster_version(
+                &db,
+                event_id,
+                user_id,
+                ParticipateEventRequest {
+                    primary_build_id: Some(build_id),
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .expect("participation should succeed");
+
+        let roster = service
+            .get_roster(&db, event_id)
+            .await
+            .expect("roster should load");
+        let participant = roster
+            .seats
+            .iter()
+            .find_map(|seat| seat.participant.as_ref())
+            .or_else(|| roster.bench.first())
+            .expect("the participant should be on a seat or the bench");
+        assert_eq!(
+            participant.specializations.get("weapon:2H_POLEHAMMER"),
+            Some(&87),
+            "roster specializations were {:?}",
+            participant.specializations
+        );
+    }
+
+    /// Gives a build a weapon whose base identifier `combat::ip` can resolve, via the icon URL —
+    /// the same fallback `openalbion::service::base_identifier_for_stored_item` uses for rows
+    /// written before the catalog id was stable, which is the shape a hand-built test row has.
+    async fn insert_weapon_item(db: &DatabaseConnection, build_id: i64, identifier: &str) {
+        crate::modules::comps::entities::build_item::ActiveModel {
+            build_id: Set(build_id),
+            loadout: Set("main".to_string()),
+            slot: Set("weapon".to_string()),
+            openalbion_item_type: Set("weapon".to_string()),
+            openalbion_item_id: Set(0),
+            openalbion_item_name: Set(identifier.to_string()),
+            openalbion_item_icon: Set(Some(format!(
+                "https://render.albiononline.com/v1/item/{identifier}.png?quality=1&size=64"
+            ))),
+            openalbion_item_tier: Set(Some("8".to_string())),
+            openalbion_item_quality: Set(4),
+            openalbion_item_enchantment: Set(0),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert weapon item");
+    }
+
+    #[tokio::test]
+    async fn auto_fill_roster_defaults_to_greedy_signup_order() {
+        let db = seed_db().await;
+        let officer = insert_user(&db, "officer", "officer@example.com").await;
+        let member = insert_user(&db, "member", "member@example.com").await;
+        let category = create_build_category(&db, "auto-fill-builds").await;
+        let build_id = create_build(&db, "auto-fill-build", category).await;
+        insert_weapon_item(&db, build_id, "T8_2H_POLEHAMMER").await;
+        let comp_category = create_comp_category(&db, "auto-fill-comps").await;
+        let comp_id = create_comp(
+            &db,
+            "auto-fill-comp",
+            comp_category,
+            None,
+            vec![(build_id, 1)],
+        )
+        .await;
+        let event_id = event::ActiveModel {
+            title: Set("Auto-fill event".to_string()),
+            comp_id: Set(comp_id),
+            created_by: Set(officer),
+            event_date_utc: Set(ts()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert event")
+        .id;
+
+        let service = EventService::new();
+        service
+            .participate_with_roster_version(
+                &db,
+                event_id,
+                member,
+                ParticipateEventRequest {
+                    primary_build_id: Some(build_id),
+                    secondary_build_id: None,
+                },
+            )
+            .await
+            .expect("participation should succeed");
+
+        let (_, changed) = service
+            .auto_fill_roster(
+                &db,
+                event_id,
+                RosterVersionRequest {
+                    expected_roster_version: 1,
+                    strategy: None,
+                },
+                officer,
+            )
+            .await
+            .expect("greedy auto-fill should succeed");
+
+        assert_eq!(changed, vec![format!("build:{build_id}:1")]);
+        let roster = service
+            .get_roster(&db, event_id)
+            .await
+            .expect("roster should load");
+        assert_eq!(
+            roster
+                .seats
+                .iter()
+                .find_map(|seat| seat.participant.as_ref())
+                .map(|p| p.user_id),
+            Some(member)
+        );
+    }
+
+    #[tokio::test]
+    async fn auto_fill_roster_with_spec_optimal_seats_the_better_trained_member() {
+        let db = seed_db().await;
+        let officer = insert_user(&db, "spec-officer", "spec-officer@example.com").await;
+        let novice = insert_user(&db, "novice", "novice@example.com").await;
+        let expert = insert_user(&db, "expert", "expert@example.com").await;
+        let category = create_build_category(&db, "spec-optimal-builds").await;
+        let build_id = create_build(&db, "spec-optimal-build", category).await;
+        insert_weapon_item(&db, build_id, "T8_2H_POLEHAMMER").await;
+        let comp_category = create_comp_category(&db, "spec-optimal-comps").await;
+        let comp_id = create_comp(
+            &db,
+            "spec-optimal-comp",
+            comp_category,
+            None,
+            vec![(build_id, 1)],
+        )
+        .await;
+        let event_id = event::ActiveModel {
+            title: Set("Spec-optimal event".to_string()),
+            comp_id: Set(comp_id),
+            created_by: Set(officer),
+            event_date_utc: Set(ts()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert event")
+        .id;
+
+        crate::modules::users::specializations::ActiveModel {
+            user_id: Set(expert),
+            node_key: Set("weapon:2H_POLEHAMMER".to_string()),
+            node_name: Set("Great Polehammer".to_string()),
+            category: Set("weapon".to_string()),
+            level: Set(100),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert specialization");
+
+        let service = EventService::new();
+        // The novice signs up first and would win the seat under greedy first-fit; neither has a
+        // build preference recorded, so only trained specialization tells them apart.
+        for user_id in [novice, expert] {
+            service
+                .participate_with_roster_version(
+                    &db,
+                    event_id,
+                    user_id,
+                    ParticipateEventRequest {
+                        primary_build_id: None,
+                        secondary_build_id: None,
+                    },
+                )
+                .await
+                .expect("participation should succeed");
+        }
+
+        let (_, changed) = service
+            .auto_fill_roster(
+                &db,
+                event_id,
+                RosterVersionRequest {
+                    expected_roster_version: 2,
+                    strategy: Some(crate::modules::combat::fit::FitStrategy::SpecOptimal),
+                },
+                officer,
+            )
+            .await
+            .expect("spec-optimal auto-fill should succeed");
+
+        assert_eq!(changed, vec![format!("build:{build_id}:1")]);
+        let roster = service
+            .get_roster(&db, event_id)
+            .await
+            .expect("roster should load");
+        assert_eq!(
+            roster
+                .seats
+                .iter()
+                .find_map(|seat| seat.participant.as_ref())
+                .map(|p| p.user_id),
+            Some(expert),
+            "the trained member should take the seat, not whoever signed up first"
+        );
     }
 
     #[tokio::test]

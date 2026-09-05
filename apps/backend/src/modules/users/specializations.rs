@@ -1,8 +1,12 @@
 //! Persistence and DTOs for Albion Online combat specializations.
 
+use std::collections::HashMap;
+
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+use crate::errors::AppError;
 
 /// A persisted combat specialization level for one Albion item node.
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
@@ -51,6 +55,44 @@ pub fn canonical_node_key(node_key: &str) -> String {
         .or_else(|| identifier.strip_prefix("T8_"))
         .unwrap_or(&identifier);
     format!("{}:{}", category.trim().to_ascii_lowercase(), identifier)
+}
+
+/// Loads the canonical specialization levels of several users at once.
+///
+/// Returns `user_id -> node_key -> level`, with keys already run through [`canonical_node_key`]
+/// and the highest level kept when two legacy tier-specific rows collapse onto the same key.
+///
+/// Extracted because three callers need exactly this and one of them used to skip it: the roster
+/// endpoint built its participants with an empty map, so the specialization badge next to every
+/// bench member rendered zero regardless of what the player had trained.
+///
+/// # Errors
+///
+/// Returns [`AppError::Database`] when the query fails.
+pub async fn load_levels_for_users<C: ConnectionTrait>(
+    db: &C,
+    user_ids: &[i64],
+) -> Result<HashMap<i64, HashMap<String, i32>>, AppError> {
+    if user_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = Entity::find()
+        .filter(Column::UserId.is_in(user_ids.to_vec()))
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+
+    let mut by_user: HashMap<i64, HashMap<String, i32>> = HashMap::new();
+    for row in rows {
+        by_user
+            .entry(row.user_id)
+            .or_default()
+            .entry(canonical_node_key(&row.node_key))
+            .and_modify(|level| *level = (*level).max(row.level))
+            .or_insert(row.level);
+    }
+    Ok(by_user)
 }
 
 /// Public specialization row returned to the frontend.

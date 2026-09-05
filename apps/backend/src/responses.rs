@@ -259,6 +259,56 @@ pub struct ApiResponseBuildDetail {
     pub data: crate::modules::comps::models::BuildDetail,
 }
 
+/// `OpenAPI` schema wrapper for a roster-suggestions response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseRosterSuggestions {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The proposed assignment.
+    pub data: crate::modules::combat::fit::Assignment,
+}
+
+/// `OpenAPI` schema wrapper for a comp readiness response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseCompReadiness {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The readiness roll-up.
+    pub data: crate::modules::combat::readiness::CompReadiness,
+}
+
+/// `OpenAPI` schema wrapper for the combat dataset response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseCombatDataset {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The dataset provenance payload.
+    pub data: crate::modules::combat::models::CombatDatasetView,
+}
+
+/// `OpenAPI` schema wrapper for an Item Power response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseItemPower {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The itemised Item Power payload.
+    pub data: crate::modules::combat::models::ItemPowerView,
+}
+
+/// `OpenAPI` schema wrapper for a build's roster-fit response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseBuildRosterFit {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Every member scored against the build.
+    pub data: crate::modules::combat::models::BuildRosterFitView,
+}
+
 /// `OpenAPI` schema wrapper for `CompDetail` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseCompDetail {

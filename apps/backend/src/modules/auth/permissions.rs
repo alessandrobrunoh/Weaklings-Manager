@@ -209,6 +209,15 @@ pub enum Permission {
     /// Update guild-wide regear settings (caps, slot mask, pricing). Admin+.
     #[strum(serialize = "regear.settings.manage")]
     RegearSettingsManage,
+    /// Use the Item Power calculator and read the bundled combat dataset. Member+.
+    #[strum(serialize = "combat.calculator.use")]
+    CombatCalculatorUse,
+    /// Read comp readiness roll-ups and per-build roster fit across the whole guild. Officer+.
+    ///
+    /// Separate from the calculator because it reports on every member at once, which is a
+    /// different thing from a member working out their own Item Power.
+    #[strum(serialize = "combat.readiness.view")]
+    CombatReadinessView,
     /// View scouted enemy comps, similarity scores and matchup tallies. Member+.
     #[strum(serialize = "intel.view")]
     IntelView,

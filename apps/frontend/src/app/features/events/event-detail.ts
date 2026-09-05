@@ -37,6 +37,7 @@ import type {
   OpponentPerformanceView,
   PaginatedData,
   ParticipateEventRequest,
+  RosterSuggestions,
   SplitSummary,
   UpdateEventBattlesRequest,
   UpdateEventRequest,
@@ -658,6 +659,18 @@ interface AddEventMemberRequest {
                             <app-icon name="sparkles" size="0.75rem" />
                             Auto-fill
                           </button>
+                          @if (canViewRosterSuggestions()) {
+                            <button
+                              type="button"
+                              class="btn btn--outline btn--sm text-xs w-full justify-center"
+                              [disabled]="rosterCommandSaving() || rosterSuggestionsLoading() || roster.bench.length === 0"
+                              (click)="openRosterSuggestions()"
+                              [appTooltip]="'Calcola la migliore assegnazione per Item Power, senza applicarla'"
+                            >
+                              <app-icon name="zap" size="0.75rem" />
+                              {{ rosterSuggestionsLoading() ? 'Calcolo…' : 'Suggerisci assegnazione' }}
+                            </button>
+                          }
                         }
 
                         <button
@@ -2204,6 +2217,84 @@ interface AddEventMemberRequest {
       </app-dialog>
     }
 
+    <!-- 4b. ROSTER SUGGESTIONS PREVIEW -->
+    @if (rosterSuggestionsOpen()) {
+      <app-dialog
+        title="Suggerimento assegnazione"
+        size="lg"
+        (closed)="closeRosterSuggestions()"
+      >
+        <div class="grid gap-4">
+          <p class="text-xs text-[var(--color-text-secondary)]">
+            Assegnazione ottimale per Item Power e prontezza. Riguarda solo le sedie oggi
+            vuote — nessuno già assegnato viene spostato.
+          </p>
+
+          @if (rosterSuggestionRows().length > 0) {
+            <div class="overflow-x-auto">
+              <table class="table text-xs">
+                <thead>
+                  <tr>
+                    <th class="text-left">Sedia</th>
+                    <th class="text-left">Membro</th>
+                    <th class="text-right">IP</th>
+                    <th class="text-right">Prontezza</th>
+                    <th class="text-left">Preferenza</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of rosterSuggestionRows(); track row.seatKey) {
+                    <tr>
+                      <td class="font-medium text-[var(--color-text)]">
+                        {{ row.buildName }} · {{ row.position }}
+                      </td>
+                      <td>{{ row.username }}</td>
+                      <td class="text-right font-mono">{{ Math.round(row.itemPower) }}</td>
+                      <td class="text-right font-mono" [style.color]="row.readinessColor">
+                        {{ Math.round(row.readiness * 100) }}%
+                      </td>
+                      <td class="text-secondary">{{ row.preferenceLabel }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          } @else {
+            <p class="text-xs text-disabled italic">
+              Nessuna sedia libera da assegnare, oppure nessun membro in panchina ha una
+              specializzazione utilizzabile.
+            </p>
+          }
+
+          @if ((rosterSuggestions()?.unplaced_members?.length ?? 0) > 0) {
+            <p class="text-[10px] text-warning">
+              ⚠ {{ rosterSuggestions()?.unplaced_members?.length }} membri in panchina non hanno
+              trovato posto.
+            </p>
+          }
+          @if ((rosterSuggestions()?.unfilled_seats?.length ?? 0) > 0) {
+            <p class="text-[10px] text-warning">
+              ⚠ {{ rosterSuggestions()?.unfilled_seats?.length }} sedie restano scoperte.
+            </p>
+          }
+        </div>
+
+        <div dialogFooter class="flex items-center justify-end gap-2 w-full">
+          <button type="button" class="btn btn--outline btn--sm" (click)="closeRosterSuggestions()">
+            Ignora
+          </button>
+          <button
+            type="button"
+            class="btn btn--primary btn--sm"
+            [disabled]="rosterCommandSaving() || rosterSuggestionRows().length === 0"
+            (click)="applyRosterSuggestions()"
+          >
+            Applica
+          </button>
+        </div>
+      </app-dialog>
+    }
+
     <!-- 5. ADD MEMBER DIALOGS -->
     @if (draftMember(); as member) {
       <app-dialog title="Add a Member" size="md" (closed)="closeMemberForm()">
@@ -2863,6 +2954,61 @@ export class EventDetailPage {
   protected readonly rosterCommandSaving = signal(false);
   protected readonly rosterSwapSource = signal<EventRosterSeat | null>(null);
   protected readonly rosterAssignTarget = signal<EventRosterSeat | null>(null);
+
+  /** Whether the viewer can preview an Item-Power-optimal assignment; officer-only, like the
+   *  comp readiness roll-up it is built on. */
+  protected readonly canViewRosterSuggestions = computed(() =>
+    this.auth.hasPermission('combat.readiness.view'),
+  );
+  protected readonly rosterSuggestions = signal<RosterSuggestions | null>(null);
+  protected readonly rosterSuggestionsOpen = signal(false);
+  protected readonly rosterSuggestionsLoading = signal(false);
+  /** Exposed for the suggestions dialog, which rounds figures inline. */
+  protected readonly Math = Math;
+
+  /** The suggested placements, enriched with the seat/build/member names the raw
+   *  `RosterPlacement[]` doesn't carry, sorted by party then position. */
+  protected readonly rosterSuggestionRows = computed(() => {
+    const suggestions = this.rosterSuggestions();
+    const roster = this.rosterSnapshot();
+    if (!suggestions || !roster) return [];
+
+    const seatsByKey = new Map(roster.seats.map((seat) => [seat.key, seat]));
+    const namesByUserId = new Map<number, string>();
+    for (const member of roster.bench) namesByUserId.set(member.user_id, member.username);
+    for (const seat of roster.seats) {
+      if (seat.participant) namesByUserId.set(seat.participant.user_id, seat.participant.username);
+    }
+
+    return suggestions.placements
+      .map((placement) => {
+        const seat = seatsByKey.get(placement.seat_key);
+        if (!seat) return null;
+        return {
+          seatKey: placement.seat_key,
+          buildName: seat.build_name,
+          position: seat.position,
+          partyNumber: seat.party_number,
+          username: namesByUserId.get(placement.user_id) ?? `#${placement.user_id}`,
+          itemPower: placement.score.item_power,
+          readiness: placement.score.readiness,
+          readinessColor:
+            placement.score.readiness >= 0.8
+              ? 'var(--color-success)'
+              : placement.score.readiness >= 0.5
+                ? 'var(--color-text)'
+                : 'var(--color-warning)',
+          preferenceLabel:
+            placement.score.preference === 'primary'
+              ? 'Primaria'
+              : placement.score.preference === 'secondary'
+                ? 'Secondaria'
+                : '—',
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null)
+      .sort((a, b) => a.partyNumber - b.partyNumber || a.position - b.position);
+  });
   /** Total paper-doll slots, for the "n/10 slot" counter on the own-seat equipment card. */
   protected readonly SLOT_COUNT = SLOT_ORDER.length;
   protected readonly activeLegacyQuickAssignSlot = computed(() =>
@@ -3861,6 +4007,43 @@ export class EventDetailPage {
         }),
       ),
     );
+  }
+
+  /** Fetches an Item-Power-optimal preview without writing anything, and opens it for review. */
+  protected async openRosterSuggestions(): Promise<void> {
+    this.rosterSuggestionsLoading.set(true);
+    try {
+      const suggestions = await firstValueFrom(
+        this.api.get<RosterSuggestions>(`api/events/${this.eventId}/roster/suggestions`),
+      );
+      this.rosterSuggestions.set(suggestions);
+      this.rosterSuggestionsOpen.set(true);
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.rosterSuggestionsLoading.set(false);
+    }
+  }
+
+  protected closeRosterSuggestions(): void {
+    this.rosterSuggestionsOpen.set(false);
+    this.rosterSuggestions.set(null);
+  }
+
+  /** Applies the same solve the preview showed, for real: only currently-empty seats change. */
+  protected async applyRosterSuggestions(): Promise<void> {
+    const roster = this.rosterSnapshot();
+    if (!roster) return;
+
+    await this.runServerRosterCommand('Assegnazione ottimale applicata.', () =>
+      firstValueFrom(
+        this.api.post<EventRosterView>(`api/events/${this.eventId}/roster/auto-fill`, {
+          expected_roster_version: roster.roster_version,
+          strategy: 'spec_optimal',
+        }),
+      ),
+    );
+    this.closeRosterSuggestions();
   }
 
   /**
