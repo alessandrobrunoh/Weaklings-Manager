@@ -100,6 +100,51 @@ describe('TimelineInspector', () => {
     expect(patched).toHaveBeenCalledWith({ index: 0, patch: { cast_at: 1.2 } });
   });
 
+  describe('the caster weapon', () => {
+    it('offers the build and weapon pickers instead of leaving only a text field', () => {
+      expect(fixture.nativeElement.textContent).toContain('No weapon picked');
+      expect(fixture.nativeElement.textContent).toContain(
+        'Pick a build or weapon above to choose from its abilities.',
+      );
+      expect(() => button('From build')).not.toThrow();
+      expect(() => button('Pick weapon')).not.toThrow();
+    });
+
+    it('asks the page to open its build search', () => {
+      const requested = vi.fn();
+      fixture.componentInstance.buildRequested.subscribe(requested);
+      button('From build').click();
+      expect(requested).toHaveBeenCalled();
+    });
+
+    it('asks the page to open its weapon picker', () => {
+      const requested = vi.fn();
+      fixture.componentInstance.weaponRequested.subscribe(requested);
+      button('Pick weapon').click();
+      expect(requested).toHaveBeenCalled();
+    });
+
+    it('shows the weapon the caster already has, and offers to change it', async () => {
+      fixture.componentRef.setInput('casterGroup', {
+        ...GROUPS[0],
+        item_id: '2H_POLEHAMMER',
+        label: 'Polehammer',
+      });
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(fixture.nativeElement.textContent).not.toContain('No weapon picked');
+      expect(fixture.nativeElement.querySelector('img')).not.toBeNull();
+      expect(() => button('Change')).not.toThrow();
+    });
+
+    it('drops the pickers for a reader who cannot manage the test', async () => {
+      fixture.componentRef.setInput('canManage', false);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(() => button('From build')).toThrow();
+    });
+  });
+
   it('flags a spell the caster group cannot actually cast', async () => {
     fixture.componentRef.setInput('knownSpellIds', new Set(['SOMETHING_ELSE']));
     fixture.detectChanges();

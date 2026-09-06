@@ -1428,6 +1428,12 @@ export interface ScenarioUnitGroup {
    * that item's actual abilities instead of a free-text spell id.
    */
   item_id?: string | null;
+  /**
+   * The build this group's weapon was taken from, if any. A UI hint like [[ScenarioUnitGroup.item_id]] —
+   * the engine never reads it — so the editor can say a group is "Polehammer ZvZ" rather than only
+   * that it holds a polehammer.
+   */
+  build_id?: number | null;
   count?: number;
   /** Hit points per unit, declared by the caller — the engine does not derive this from Item Power. */
   hit_points?: number;

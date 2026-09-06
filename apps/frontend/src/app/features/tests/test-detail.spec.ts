@@ -2,7 +2,7 @@ import { provideZonelessChangeDetection } from '@angular/core';
 import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ScenarioDeclaredCast, ScenarioDetail } from '../../core/models/api.models';
@@ -38,11 +38,28 @@ const SCENARIO = {
   },
 } as unknown as ScenarioDetail;
 
+/** A build whose main weapon is what the cast inspector should adopt. */
+const BUILD = {
+  id: 7,
+  name: 'Polehammer ZvZ',
+  items: [
+    {
+      slot: 'weapon',
+      openalbion_item_name: 'Polehammer',
+      openalbion_item_icon: 'https://render.albiononline.com/v1/item/T8_2H_POLEHAMMER.png?quality=1',
+    },
+  ],
+};
+
 interface Page {
   scenario: () => ScenarioDetail | null;
-  draft: () => { casts: ScenarioDeclaredCast[] };
+  draft: () => {
+    casts: ScenarioDeclaredCast[];
+    groups: { id: string; label: string; item_id?: string | null; build_id?: number | null }[];
+  };
+  selectedCasterBuildName: () => string | null;
   dirty: () => boolean;
-  selectedCastIndex: () => number | null;
+  selectedCastIndex: { (): number | null; set(value: number | null): void };
   activeTab: { set(tab: 'setup' | 'timeline' | 'results'): void };
   timelineView: { set(view: 'timeline' | 'table'): void };
   onTimelineCastCreated(event: {
@@ -53,6 +70,12 @@ interface Page {
   onTimelineCastMoved(event: { index: number; castAt: number; casterGroupId: string }): void;
   onCastPatched(event: { index: number; patch: Partial<ScenarioDeclaredCast> }): void;
   removeCast(index: number): void;
+  openBuildPickerForCaster(): void;
+  openBuildImport(): void;
+  onBuildSelected(option: { id: number; title: string }): Promise<void>;
+  openWeaponPickerForCaster(): void;
+  onWeaponSelected(option: { id: string; title: string }): void;
+  selectedCasterGroup: () => { id: string; item_id?: string | null } | null;
 }
 
 async function settle(fixture: ComponentFixture<TestDetailPage>): Promise<Page> {
@@ -79,6 +102,7 @@ describe('TestDetailPage timeline tab', () => {
     apiGet.mockImplementation((path: string) => {
       if (path === 'api/combat/tests/1') return of(SCENARIO);
       if (path === 'api/combat/tests/1/runs') return of([]);
+      if (path === 'api/comps/builds/7') return of(BUILD);
       return of([]);
     });
     apiPatch.mockImplementation(() => of(SCENARIO));
@@ -198,5 +222,129 @@ describe('TestDetailPage timeline tab', () => {
     page.onTimelineCastCreated({ casterGroupId: 'ally-hammer', spellId: 'SMASH', castAt: 3 });
     page.removeCast(1);
     expect(page.selectedCastIndex()).toBeNull();
+  });
+
+  describe('picking the caster weapon from the cast inspector', () => {
+    it('assigns the build weapon to the caster instead of adding a group', async () => {
+      const { page } = await openTimeline();
+      const groupsBefore = page.draft().casts.length;
+      page.onTimelineCastCreated({ casterGroupId: 'ally-hammer', spellId: '', castAt: 0 });
+      expect(page.selectedCasterGroup()?.item_id).toBeFalsy();
+
+      page.openBuildPickerForCaster();
+      await page.onBuildSelected({ id: 7, title: 'Polehammer ZvZ' });
+
+      expect(page.selectedCasterGroup()?.item_id).toBe('2H_POLEHAMMER');
+      // Two groups before, two groups after: this path assigns, it does not import.
+      expect(page.draft().groups).toHaveLength(2);
+      expect(page.draft().casts.length).toBe(groupsBefore + 1);
+    });
+
+    it('still imports a new group when the same dialog is opened from Setup', async () => {
+      const { page } = await openTimeline();
+      page.openBuildImport();
+      await page.onBuildSelected({ id: 7, title: 'Polehammer ZvZ' });
+      expect(page.draft().groups).toHaveLength(3);
+    });
+
+    it('keeps a label the user chose when the weapon changes', async () => {
+      const { page } = await openTimeline();
+      page.onTimelineCastCreated({ casterGroupId: 'ally-hammer', spellId: '', castAt: 0 });
+      page.openWeaponPickerForCaster();
+      page.onWeaponSelected({ id: 'MAIN_SWORD', title: 'Broadsword' });
+      const caster = page.draft().groups.find((group) => group.id === 'ally-hammer');
+      expect(caster?.item_id).toBe('MAIN_SWORD');
+      expect(caster?.label).toBe('Polehammer');
+    });
+
+    it('remembers which build the weapon came from', async () => {
+      const { page } = await openTimeline();
+      page.onTimelineCastCreated({ casterGroupId: 'ally-hammer', spellId: '', castAt: 0 });
+      page.openBuildPickerForCaster();
+      await page.onBuildSelected({ id: 7, title: 'Polehammer ZvZ' });
+
+      const caster = page.draft().groups.find((group) => group.id === 'ally-hammer');
+      expect(caster?.build_id).toBe(7);
+      expect(page.selectedCasterBuildName()).toBe('Polehammer ZvZ');
+    });
+
+    it('forgets the build when a bare weapon replaces it', async () => {
+      const { page } = await openTimeline();
+      page.onTimelineCastCreated({ casterGroupId: 'ally-hammer', spellId: '', castAt: 0 });
+      page.openBuildPickerForCaster();
+      await page.onBuildSelected({ id: 7, title: 'Polehammer ZvZ' });
+
+      page.openWeaponPickerForCaster();
+      page.onWeaponSelected({ id: 'MAIN_SWORD', title: 'Broadsword' });
+
+      const caster = page.draft().groups.find((group) => group.id === 'ally-hammer');
+      expect(caster?.item_id).toBe('MAIN_SWORD');
+      // The group is no longer that build; a stale link would keep claiming it was.
+      expect(caster?.build_id).toBeNull();
+      expect(page.selectedCasterBuildName()).toBeNull();
+    });
+
+    it('leaves a spell the new weapon does not have rather than clearing it', async () => {
+      const { page } = await openTimeline();
+      page.onCastPatched({ index: 0, patch: {} });
+      expect(page.draft().casts[0].spell_id).toBe('WHIRL');
+
+      page.selectedCastIndex();
+      page.onTimelineCastMoved({ index: 0, castAt: 1, casterGroupId: 'ally-hammer' });
+      page.openWeaponPickerForCaster();
+      page.onWeaponSelected({ id: 'MAIN_SWORD', title: 'Broadsword' });
+
+      // The engine resolves a spell id on its own; item_id is only a UI hint, so a mis-pick must
+      // not silently destroy the id the user chose.
+      expect(page.draft().casts[0].spell_id).toBe('WHIRL');
+    });
+  });
+
+  describe('reopening a test whose group came from a build', () => {
+    /** The same scenario, already saved with the build link the inspector writes. */
+    const SAVED_WITH_BUILD = {
+      ...SCENARIO,
+      definition: {
+        ...SCENARIO.definition,
+        groups: [
+          { ...SCENARIO.definition.groups[0], item_id: '2H_POLEHAMMER', build_id: 7 },
+          SCENARIO.definition.groups[1],
+        ],
+      },
+    } as unknown as ScenarioDetail;
+
+    it('resolves the build name from the id alone', async () => {
+      apiGet.mockImplementation((path: string) => {
+        if (path === 'api/combat/tests/1') return of(SAVED_WITH_BUILD);
+        if (path === 'api/combat/tests/1/runs') return of([]);
+        if (path === 'api/comps/builds/7') return of(BUILD);
+        return of([]);
+      });
+
+      const { fixture, page } = await openTimeline();
+      expect(page.draft().groups[0].build_id).toBe(7);
+      expect(apiGet).toHaveBeenCalledWith('api/comps/builds/7');
+
+      page.selectedCastIndex.set(0);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(page.selectedCasterBuildName()).toBe('Polehammer ZvZ');
+    });
+
+    it('loads fine when that build has since been deleted', async () => {
+      apiGet.mockImplementation((path: string) => {
+        if (path === 'api/combat/tests/1') return of(SAVED_WITH_BUILD);
+        if (path === 'api/combat/tests/1/runs') return of([]);
+        if (path === 'api/comps/builds/7') return throwError(() => new Error('gone'));
+        return of([]);
+      });
+
+      const { page } = await openTimeline();
+      page.selectedCastIndex.set(0);
+      // The link is kept and the page is intact; only the label is missing.
+      expect(page.draft().groups[0].build_id).toBe(7);
+      expect(page.selectedCasterBuildName()).toBeNull();
+      expect(page.dirty()).toBe(false);
+    });
   });
 });

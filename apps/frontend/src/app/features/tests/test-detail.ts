@@ -418,12 +418,16 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
                     [cast]="selectedCast()"
                     [castIndex]="selectedCastIndex() ?? 0"
                     [groups]="draft().groups"
+                    [casterGroup]="selectedCasterGroup()"
+                    [casterBuildName]="selectedCasterBuildName()"
                     [spellOptions]="selectedSpellOptions()"
                     [knownSpellIds]="selectedKnownSpellIds()"
                     [landAt]="selectedLandAt()"
                     [canManage]="canManage()"
                     (patched)="onCastPatched($event)"
                     (removed)="removeCast($event)"
+                    (buildRequested)="openBuildPickerForCaster()"
+                    (weaponRequested)="openWeaponPickerForCaster()"
                     (closed)="selectedCastIndex.set(null)"
                   />
                 </div>
@@ -760,7 +764,24 @@ export class TestDetailPage {
   /** Position of the cast the inspector is editing. Positional, so removals must re-clamp it. */
   protected readonly selectedCastIndex = signal<number | null>(null);
 
+  /**
+   * `build id -> name`, for the groups whose weapon came from a build.
+   *
+   * A group persists only the build's id, so the name has to be looked up to be shown at all. Only
+   * the ids actually present are fetched, once per load, and a build that has since been deleted
+   * simply stays nameless rather than failing the page.
+   */
+  protected readonly buildNames = signal<Record<number, string>>({});
+
   protected readonly buildSearchOpen = signal(false);
+  /**
+   * When set, the build search assigns that group's weapon instead of importing a new group.
+   *
+   * Same dialog, two jobs: Setup imports a build as a new unit group, while the Timeline's cast
+   * inspector uses it to give the caster it already has a weapon — without that, a spell could only
+   * be typed by hand until someone went back to the Setup tab.
+   */
+  protected readonly buildAssignGroupIndex = signal<number | null>(null);
   protected readonly buildSearchOptions = signal<SearchDialogOption[]>([]);
   protected readonly buildSearchLoading = signal(false);
 
@@ -842,6 +863,19 @@ export class TestDetailPage {
   protected readonly selectedCast = computed(() => {
     const index = this.selectedCastIndex();
     return index === null ? null : (this.draft().casts[index] ?? null);
+  });
+
+  /** The group the selected cast belongs to, so the inspector can show and change its weapon. */
+  protected readonly selectedCasterGroup = computed(() => {
+    const cast = this.selectedCast();
+    if (!cast) return null;
+    return this.draft().groups.find((group) => group.id === cast.caster_group_id) ?? null;
+  });
+
+  /** The name of the build the selected cast's caster came from, once it has been resolved. */
+  protected readonly selectedCasterBuildName = computed(() => {
+    const buildId = this.selectedCasterGroup()?.build_id;
+    return buildId ? (this.buildNames()[buildId] ?? null) : null;
   });
 
   protected readonly selectedSpellOptions = computed(() => {
@@ -1048,18 +1082,104 @@ export class TestDetailPage {
   protected onWeaponSelected(option: SearchDialogOption): void {
     const index = this.weaponPickerGroupIndex();
     if (index === null) return;
-    this.updateGroup(index, { item_id: String(option.id), label: option.title });
+    this.assignWeaponToGroup(index, String(option.id), option.title, null);
     this.weaponPickerGroupIndex.set(null);
+  }
+
+  /**
+   * Points a group at a weapon, which is what unlocks its ability pickers everywhere.
+   *
+   * The label follows the weapon only while the group is still carrying the name it was born with:
+   * a group someone deliberately called "Frontline" keeps that name when its weapon changes, which
+   * matters now that the weapon can be changed from the cast inspector rather than only from the
+   * Setup table where the label is visible.
+   *
+   * A `spell_id` the new weapon does not offer is left alone; the timeline already draws it as
+   * foreign, and clearing it would throw away a deliberate choice on a mis-pick.
+   */
+  private assignWeaponToGroup(
+    index: number,
+    itemId: string | null,
+    name: string,
+    buildId: number | null,
+  ): void {
+    const group = this.draft().groups[index];
+    if (!group) return;
+    const keepsDefaultLabel = !group.label.trim() || group.label === this.t('tests.newGroupLabel');
+    // `build_id` is cleared, not left behind, when a bare weapon is picked: the group is no longer
+    // "that build", and a stale link would keep claiming it was.
+    this.updateGroup(index, {
+      item_id: itemId,
+      build_id: buildId,
+      ...(keepsDefaultLabel ? { label: name } : {}),
+    });
+  }
+
+  private rememberBuildName(buildId: number, name: string): void {
+    this.buildNames.update((names) => ({ ...names, [buildId]: name }));
+  }
+
+  /**
+   * Fetches the names of the builds this definition's groups point at.
+   *
+   * Deliberately best-effort and per distinct id: a scenario names a handful of builds at most, and
+   * one that has been deleted since must cost a missing label, not a failed load.
+   */
+  private async loadBuildNames(definition: ScenarioDefinition): Promise<void> {
+    const known = this.buildNames();
+    const missing = [
+      ...new Set(
+        definition.groups
+          .map((group) => group.build_id)
+          .filter((id): id is number => typeof id === 'number' && !(id in known)),
+      ),
+    ];
+    if (missing.length === 0) return;
+    await Promise.all(
+      missing.map(async (buildId) => {
+        try {
+          const build = await firstValueFrom(
+            this.api.get<BuildDetail>(`api/comps/builds/${buildId}`),
+          );
+          this.rememberBuildName(buildId, build.name);
+        } catch {
+          // A renamed or deleted build costs the label and nothing else.
+        }
+      }),
+    );
+  }
+
+  /** Index of the group the selected cast is cast by, or `null` when nothing is selected. */
+  private selectedCasterIndex(): number | null {
+    const cast = this.selectedCast();
+    if (!cast) return null;
+    const index = this.draft().groups.findIndex((group) => group.id === cast.caster_group_id);
+    return index === -1 ? null : index;
+  }
+
+  protected openWeaponPickerForCaster(): void {
+    const index = this.selectedCasterIndex();
+    if (index !== null) this.openWeaponPicker(index);
+  }
+
+  protected openBuildPickerForCaster(): void {
+    const index = this.selectedCasterIndex();
+    if (index === null) return;
+    this.buildAssignGroupIndex.set(index);
+    this.buildSearchOpen.set(true);
+    this.buildSearchOptions.set([]);
   }
 
   /** Imports a unit group from an existing build: weapon and label prefilled, ready to run. */
   protected openBuildImport(): void {
+    this.buildAssignGroupIndex.set(null);
     this.buildSearchOpen.set(true);
     this.buildSearchOptions.set([]);
   }
 
   protected closeBuildImport(): void {
     this.buildSearchOpen.set(false);
+    this.buildAssignGroupIndex.set(null);
   }
 
   protected async onBuildSearchFilter(filter: { search: string }): Promise<void> {
@@ -1084,15 +1204,29 @@ export class TestDetailPage {
 
   protected async onBuildSelected(option: SearchDialogOption): Promise<void> {
     this.buildSearchOpen.set(false);
+    const assignTo = this.buildAssignGroupIndex();
+    this.buildAssignGroupIndex.set(null);
     try {
       const build = await firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${option.id}`));
       const weapon = build.items.find((item): item is BuildItemSlot => item.slot === 'weapon');
+      if (assignTo !== null) {
+        this.rememberBuildName(build.id, build.name);
+        this.assignWeaponToGroup(
+          assignTo,
+          weapon ? abilityKeyForItem(weapon) : null,
+          weapon?.openalbion_item_name ?? build.name,
+          build.id,
+        );
+        return;
+      }
       groupSeq += 1;
+      this.rememberBuildName(build.id, build.name);
       const group: ScenarioUnitGroup = {
         id: `group-${groupSeq}`,
         side: 'ally',
         label: weapon?.openalbion_item_name ?? build.name,
         item_id: weapon ? abilityKeyForItem(weapon) : null,
+        build_id: build.id,
         count: 1,
         hit_points: 1200,
       };
@@ -1489,6 +1623,7 @@ export class TestDetailPage {
     this.savedDefinition.set(definition);
     this.draft.set(definition);
     this.selectedCastIndex.set(null);
+    void this.loadBuildNames(definition);
   }
 
   // ---- Formatting ----

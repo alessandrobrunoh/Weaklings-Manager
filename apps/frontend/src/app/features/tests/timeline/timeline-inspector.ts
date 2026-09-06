@@ -8,6 +8,7 @@ import type {
 import { TranslateService } from '../../../core/services/translate.service';
 import type { TranslationKey } from '../../../i18n/en';
 import { Icon } from '../../../shared/components/icon/icon';
+import { albionCombatIconUrl } from '../../../shared/data/albion-equipment-catalog';
 import { type GroupedSpellOptions, snapSeconds, unitIdsOfGroup } from './scenario-timeline';
 
 /** One group's units, with how many of them the selected cast currently names. */
@@ -49,6 +50,38 @@ interface TargetSection {
 
       @if (cast(); as current) {
         <div class="grid gap-3">
+          <div class="grid gap-1">
+            <span class="label">{{ t('tests.timeline.casterWeapon') }}</span>
+            <div class="flex items-center gap-2">
+              @if (casterGroup()?.item_id; as itemId) {
+                <img class="h-6 w-6 shrink-0 rounded" alt="" [src]="weaponIcon(itemId)" />
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-xs">{{ casterGroup()?.label }}</span>
+                  @if (casterBuildName(); as buildName) {
+                    <span class="block truncate text-[10px] text-[var(--color-text-tertiary)]">
+                      {{ t('tests.timeline.fromBuild', { name: buildName }) }}
+                    </span>
+                  }
+                </span>
+              } @else {
+                <span class="min-w-0 flex-1 truncate text-xs text-[var(--color-text-tertiary)]">
+                  {{ t('tests.timeline.noWeapon') }}
+                </span>
+              }
+            </div>
+            @if (canManage()) {
+              <div class="flex flex-wrap gap-1.5">
+                <button type="button" class="btn btn--outline btn--sm" (click)="buildRequested.emit()">
+                  <app-icon name="search" size="0.75rem" />
+                  {{ t('tests.timeline.pickBuild') }}
+                </button>
+                <button type="button" class="btn btn--outline btn--sm" (click)="weaponRequested.emit()">
+                  {{ casterGroup()?.item_id ? t('tests.changeWeapon') : t('tests.pickWeapon') }}
+                </button>
+              </div>
+            }
+          </div>
+
           <label class="grid gap-1">
             <span class="label">{{ t('tests.spellId') }}</span>
             @if (spellOptions().length > 0) {
@@ -68,6 +101,9 @@ interface TargetSection {
                 }
               </select>
             } @else {
+              <p class="text-[11px] text-[var(--color-text-tertiary)]">
+                {{ t('tests.timeline.pickWeaponForSpells') }}
+              </p>
               <input
                 class="input input--sm font-mono"
                 type="text"
@@ -274,6 +310,10 @@ export class TimelineInspector {
   readonly cast = input<ScenarioDeclaredCast | null>(null);
   readonly castIndex = input.required<number>();
   readonly groups = input.required<readonly ScenarioUnitGroup[]>();
+  /** The group doing the casting, so its weapon can be picked without leaving the Timeline. */
+  readonly casterGroup = input<ScenarioUnitGroup | null>(null);
+  /** The name behind that group's `build_id`, resolved by the page; absent until it arrives. */
+  readonly casterBuildName = input<string | null>(null);
   readonly spellOptions = input<readonly GroupedSpellOptions[]>([]);
   /** Every spell id the caster's weapon offers — empty when it has no weapon. */
   readonly knownSpellIds = input<ReadonlySet<string>>(new Set<string>());
@@ -284,6 +324,10 @@ export class TimelineInspector {
   readonly patched = output<{ index: number; patch: Partial<ScenarioDeclaredCast> }>();
   readonly removed = output<number>();
   readonly closed = output<void>();
+  /** Asks the page to open its build search against the caster group. */
+  readonly buildRequested = output<void>();
+  /** Asks the page to open its weapon picker against the caster group. */
+  readonly weaponRequested = output<void>();
 
   protected readonly styles: readonly AttackerStyle[] = ['melee', 'ranged', 'mounted'];
 
@@ -316,6 +360,10 @@ export class TimelineInspector {
       };
     });
   });
+
+  protected weaponIcon(itemId: string): string {
+    return albionCombatIconUrl(itemId);
+  }
 
   protected styleKey(style: AttackerStyle): TranslationKey {
     return `tests.${style}` as TranslationKey;

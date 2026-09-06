@@ -158,6 +158,7 @@ export function normalizeDefinition(definition: ScenarioDefinition): ScenarioDef
       side: group.side,
       label: group.label,
       item_id: group.item_id ?? null,
+      build_id: group.build_id ?? null,
       count: Math.max(1, group.count ?? 1),
       hit_points: group.hit_points ?? 1200,
     })),
