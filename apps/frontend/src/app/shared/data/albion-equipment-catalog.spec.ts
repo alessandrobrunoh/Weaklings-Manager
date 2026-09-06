@@ -79,7 +79,7 @@ describe('Albion equipment catalog names', () => {
   it('asks the render CDN for T8 unique names, not T1', () => {
     expect(albionCombatIconUrl('T1_2H_BOW')).toContain('T8_2H_BOW');
     expect(albionCombatIconUrl('2H_BOW_HELL')).toContain('T8_2H_BOW_HELL');
-    expect(albionCombatIconUrl('2H_BOW')).toContain('size=256');
+    expect(albionCombatIconUrl('2H_BOW')).toContain('size=96');
   });
 
   it('keeps gathering gear out of the combat catalog', () => {
