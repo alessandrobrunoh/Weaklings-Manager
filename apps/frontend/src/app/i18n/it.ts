@@ -924,6 +924,7 @@ export const it: TranslationDict = {
   'tests.timeline.noWeapon': 'Nessun’arma scelta',
   'tests.timeline.casterWeapon': 'Arma del lanciatore',
   'tests.timeline.pickBuild': 'Da una build…',
+  'tests.timeline.fromBuild': 'da {name}',
   'tests.timeline.pickWeaponForSpells': 'Scegli una build o un’arma qui sopra per selezionare fra le sue abilità.',
   'tests.timeline.unknownSpellHere': 'Il motore non conosce questo id spell.',
   'tests.timeline.duplicateGroupId': 'Un altro gruppo ha lo stesso id.',

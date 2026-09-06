@@ -55,6 +55,15 @@ pub struct UnitGroup {
     /// stale value never affects a run.
     #[serde(default)]
     pub item_id: Option<String>,
+    /// The build this group's weapon was taken from, if it was taken from one at all.
+    ///
+    /// A UI hint like [`UnitGroup::item_id`], and for the same reason: `item_id` records *what* the
+    /// group fights with, which is all the ability pickers need, but not *where that came from* —
+    /// so reopening a test could say only that the group holds a polehammer, never that it came
+    /// from `Polehammer ZvZ`. The engine never reads it, and a build that has since been renamed,
+    /// re-geared or deleted only costs the label, never a run.
+    #[serde(default)]
+    pub build_id: Option<i64>,
     /// How many identical units this group has.
     #[serde(default = "one_u32")]
     pub count: u32,
@@ -433,6 +442,7 @@ mod scenario_tests {
             side: Side::Ally,
             label: "Polehammer".to_string(),
             item_id: None,
+            build_id: None,
             count,
             hit_points: 1200.0,
         }
@@ -444,6 +454,7 @@ mod scenario_tests {
             side: Side::Enemy,
             label: "Plate".to_string(),
             item_id: None,
+            build_id: None,
             count,
             hit_points,
         }

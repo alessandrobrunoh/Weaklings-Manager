@@ -55,7 +55,14 @@ interface TargetSection {
             <div class="flex items-center gap-2">
               @if (casterGroup()?.item_id; as itemId) {
                 <img class="h-6 w-6 shrink-0 rounded" alt="" [src]="weaponIcon(itemId)" />
-                <span class="min-w-0 flex-1 truncate text-xs">{{ casterGroup()?.label }}</span>
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-xs">{{ casterGroup()?.label }}</span>
+                  @if (casterBuildName(); as buildName) {
+                    <span class="block truncate text-[10px] text-[var(--color-text-tertiary)]">
+                      {{ t('tests.timeline.fromBuild', { name: buildName }) }}
+                    </span>
+                  }
+                </span>
               } @else {
                 <span class="min-w-0 flex-1 truncate text-xs text-[var(--color-text-tertiary)]">
                   {{ t('tests.timeline.noWeapon') }}
@@ -305,6 +312,8 @@ export class TimelineInspector {
   readonly groups = input.required<readonly ScenarioUnitGroup[]>();
   /** The group doing the casting, so its weapon can be picked without leaving the Timeline. */
   readonly casterGroup = input<ScenarioUnitGroup | null>(null);
+  /** The name behind that group's `build_id`, resolved by the page; absent until it arrives. */
+  readonly casterBuildName = input<string | null>(null);
   readonly spellOptions = input<readonly GroupedSpellOptions[]>([]);
   /** Every spell id the caster's weapon offers — empty when it has no weapon. */
   readonly knownSpellIds = input<ReadonlySet<string>>(new Set<string>());

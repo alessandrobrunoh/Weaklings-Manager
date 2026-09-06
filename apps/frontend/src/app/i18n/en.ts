@@ -930,6 +930,7 @@ export const en = {
   'tests.timeline.noWeapon': 'No weapon picked',
   'tests.timeline.casterWeapon': 'Caster weapon',
   'tests.timeline.pickBuild': 'From build…',
+  'tests.timeline.fromBuild': 'from {name}',
   'tests.timeline.pickWeaponForSpells': 'Pick a build or weapon above to choose from its abilities.',
   'tests.timeline.unknownSpellHere': 'The engine does not know this spell id.',
   'tests.timeline.duplicateGroupId': 'Another group shares this id.',

@@ -419,6 +419,7 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
                     [castIndex]="selectedCastIndex() ?? 0"
                     [groups]="draft().groups"
                     [casterGroup]="selectedCasterGroup()"
+                    [casterBuildName]="selectedCasterBuildName()"
                     [spellOptions]="selectedSpellOptions()"
                     [knownSpellIds]="selectedKnownSpellIds()"
                     [landAt]="selectedLandAt()"
@@ -763,6 +764,15 @@ export class TestDetailPage {
   /** Position of the cast the inspector is editing. Positional, so removals must re-clamp it. */
   protected readonly selectedCastIndex = signal<number | null>(null);
 
+  /**
+   * `build id -> name`, for the groups whose weapon came from a build.
+   *
+   * A group persists only the build's id, so the name has to be looked up to be shown at all. Only
+   * the ids actually present are fetched, once per load, and a build that has since been deleted
+   * simply stays nameless rather than failing the page.
+   */
+  protected readonly buildNames = signal<Record<number, string>>({});
+
   protected readonly buildSearchOpen = signal(false);
   /**
    * When set, the build search assigns that group's weapon instead of importing a new group.
@@ -860,6 +870,12 @@ export class TestDetailPage {
     const cast = this.selectedCast();
     if (!cast) return null;
     return this.draft().groups.find((group) => group.id === cast.caster_group_id) ?? null;
+  });
+
+  /** The name of the build the selected cast's caster came from, once it has been resolved. */
+  protected readonly selectedCasterBuildName = computed(() => {
+    const buildId = this.selectedCasterGroup()?.build_id;
+    return buildId ? (this.buildNames()[buildId] ?? null) : null;
   });
 
   protected readonly selectedSpellOptions = computed(() => {
@@ -1066,7 +1082,7 @@ export class TestDetailPage {
   protected onWeaponSelected(option: SearchDialogOption): void {
     const index = this.weaponPickerGroupIndex();
     if (index === null) return;
-    this.assignWeaponToGroup(index, String(option.id), option.title);
+    this.assignWeaponToGroup(index, String(option.id), option.title, null);
     this.weaponPickerGroupIndex.set(null);
   }
 
@@ -1081,14 +1097,56 @@ export class TestDetailPage {
    * A `spell_id` the new weapon does not offer is left alone; the timeline already draws it as
    * foreign, and clearing it would throw away a deliberate choice on a mis-pick.
    */
-  private assignWeaponToGroup(index: number, itemId: string | null, name: string): void {
+  private assignWeaponToGroup(
+    index: number,
+    itemId: string | null,
+    name: string,
+    buildId: number | null,
+  ): void {
     const group = this.draft().groups[index];
     if (!group) return;
     const keepsDefaultLabel = !group.label.trim() || group.label === this.t('tests.newGroupLabel');
+    // `build_id` is cleared, not left behind, when a bare weapon is picked: the group is no longer
+    // "that build", and a stale link would keep claiming it was.
     this.updateGroup(index, {
       item_id: itemId,
+      build_id: buildId,
       ...(keepsDefaultLabel ? { label: name } : {}),
     });
+  }
+
+  private rememberBuildName(buildId: number, name: string): void {
+    this.buildNames.update((names) => ({ ...names, [buildId]: name }));
+  }
+
+  /**
+   * Fetches the names of the builds this definition's groups point at.
+   *
+   * Deliberately best-effort and per distinct id: a scenario names a handful of builds at most, and
+   * one that has been deleted since must cost a missing label, not a failed load.
+   */
+  private async loadBuildNames(definition: ScenarioDefinition): Promise<void> {
+    const known = this.buildNames();
+    const missing = [
+      ...new Set(
+        definition.groups
+          .map((group) => group.build_id)
+          .filter((id): id is number => typeof id === 'number' && !(id in known)),
+      ),
+    ];
+    if (missing.length === 0) return;
+    await Promise.all(
+      missing.map(async (buildId) => {
+        try {
+          const build = await firstValueFrom(
+            this.api.get<BuildDetail>(`api/comps/builds/${buildId}`),
+          );
+          this.rememberBuildName(buildId, build.name);
+        } catch {
+          // A renamed or deleted build costs the label and nothing else.
+        }
+      }),
+    );
   }
 
   /** Index of the group the selected cast is cast by, or `null` when nothing is selected. */
@@ -1152,19 +1210,23 @@ export class TestDetailPage {
       const build = await firstValueFrom(this.api.get<BuildDetail>(`api/comps/builds/${option.id}`));
       const weapon = build.items.find((item): item is BuildItemSlot => item.slot === 'weapon');
       if (assignTo !== null) {
+        this.rememberBuildName(build.id, build.name);
         this.assignWeaponToGroup(
           assignTo,
           weapon ? abilityKeyForItem(weapon) : null,
           weapon?.openalbion_item_name ?? build.name,
+          build.id,
         );
         return;
       }
       groupSeq += 1;
+      this.rememberBuildName(build.id, build.name);
       const group: ScenarioUnitGroup = {
         id: `group-${groupSeq}`,
         side: 'ally',
         label: weapon?.openalbion_item_name ?? build.name,
         item_id: weapon ? abilityKeyForItem(weapon) : null,
+        build_id: build.id,
         count: 1,
         hit_points: 1200,
       };
@@ -1561,6 +1623,7 @@ export class TestDetailPage {
     this.savedDefinition.set(definition);
     this.draft.set(definition);
     this.selectedCastIndex.set(null);
+    void this.loadBuildNames(definition);
   }
 
   // ---- Formatting ----
