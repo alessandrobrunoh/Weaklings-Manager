@@ -1865,6 +1865,13 @@ impl EventService {
 
         // Expand one link at a time. This makes a chain deterministic and means that an event
         // configured on Comp2 can expose Comp3 without requiring the event to use Comp1.
+        //
+        // The walk keeps its own `seen` set rather than relying on the traversal above: that one
+        // guards *reachability*, which stops before a comp is collected twice, while this one walks
+        // `parent_id` links between comps that are already collected. A legacy cycle (A's parent is
+        // B and B's parent is A) leaves both reachable, and without this guard `active` ping-pongs
+        // between them forever — spinning a request thread at 100% CPU, not just a test.
+        let mut seen = HashSet::from([active.0.id]);
         loop {
             let threshold = expansion_threshold(active.1 + extra_roster_slots);
             let should_expand = forced || target_size >= threshold;
@@ -1874,6 +1881,15 @@ impl EventService {
                 .min_by_key(|(candidate, capacity)| (*capacity, candidate.id));
             let Some(next) = next else { break };
             if !should_expand {
+                break;
+            }
+            if !seen.insert(next.0.id) {
+                tracing::warn!(
+                    base_comp_id,
+                    from_comp_id = active.0.id,
+                    to_comp_id = next.0.id,
+                    "stopping a cyclic comp expansion chain"
+                );
                 break;
             }
             active = next.clone();
