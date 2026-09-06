@@ -941,6 +941,8 @@ export const es: TranslationDict = {
   'tests.timeline.staleRun': 'Estos resultados son anteriores a tu última edición.',
   'tests.timeline.landAt': 'Impacta en {at}',
   'tests.timeline.landAtUnavailable': 'No se pudieron emparejar los tiempos de impacto con estos lanzamientos.',
+  'tests.timeline.lastRun': 'Última ejecución',
+  'tests.timeline.notModelled': 'Impactó pero no cambió nada: el motor aún no modela {keys}, que es donde este hechizo produce su efecto.',
   'tests.timeline.hpBarLabel': '{unit}: {remaining} de {starting} HP',
   'tests.timeline.hpReplayMismatch': 'Los HP reconstruidos no coinciden con el total informado.',
   'tests.timeline.diedAt': 'Murió en {at}',

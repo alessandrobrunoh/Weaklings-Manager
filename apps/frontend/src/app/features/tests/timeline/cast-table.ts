@@ -48,28 +48,31 @@ export interface UnitOptionGroup {
               <td>
                 <select
                   class="select select--sm"
-                  [value]="cast.caster_group_id"
                   [disabled]="!canManage()"
                   (change)="onCaster(i, $event)"
                 >
                   @for (group of definition().groups; track $index) {
-                    <option [value]="group.id">{{ group.label }} ({{ group.id }})</option>
+                    <option [value]="group.id" [selected]="group.id === cast.caster_group_id">
+                      {{ group.label }} ({{ group.id }})
+                    </option>
                   }
                 </select>
               </td>
               <td>
                 @if (spellOptionsFor(cast.caster_group_id).length > 0) {
+                  <!-- Per-option selection: see the note in timeline-inspector.ts. -->
                   <select
                     class="select select--sm"
-                    [value]="cast.spell_id"
                     [disabled]="!canManage()"
                     (change)="onSpell(i, $event)"
                   >
-                    <option value="">{{ t('tests.pickSpell') }}</option>
+                    <option value="" [selected]="!cast.spell_id">{{ t('tests.pickSpell') }}</option>
                     @for (slot of spellOptionsFor(cast.caster_group_id); track slot.group) {
                       <optgroup [label]="slot.group">
                         @for (option of slot.options; track option.value) {
-                          <option [value]="option.value">{{ option.label }}</option>
+                          <option [value]="option.value" [selected]="option.value === cast.spell_id">
+                            {{ option.label }}
+                          </option>
                         }
                       </optgroup>
                     }
@@ -118,13 +121,18 @@ export interface UnitOptionGroup {
               <td>
                 <select
                   class="select select--sm"
-                  [value]="cast.attacker_style ?? 'melee'"
                   [disabled]="!canManage()"
                   (change)="onAttackerStyle(i, $event)"
                 >
-                  <option value="melee">{{ t('tests.melee') }}</option>
-                  <option value="ranged">{{ t('tests.ranged') }}</option>
-                  <option value="mounted">{{ t('tests.mounted') }}</option>
+                  <option value="melee" [selected]="(cast.attacker_style ?? 'melee') === 'melee'">
+                    {{ t('tests.melee') }}
+                  </option>
+                  <option value="ranged" [selected]="cast.attacker_style === 'ranged'">
+                    {{ t('tests.ranged') }}
+                  </option>
+                  <option value="mounted" [selected]="cast.attacker_style === 'mounted'">
+                    {{ t('tests.mounted') }}
+                  </option>
                 </select>
               </td>
               <td class="text-center">

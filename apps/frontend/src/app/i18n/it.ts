@@ -941,6 +941,8 @@ export const it: TranslationDict = {
   'tests.timeline.staleRun': 'Questi risultati sono precedenti alle tue ultime modifiche.',
   'tests.timeline.landAt': 'Colpisce a {at}',
   'tests.timeline.landAtUnavailable': 'Non è stato possibile abbinare i tempi di impatto a questi cast.',
+  'tests.timeline.lastRun': 'Ultimo run',
+  'tests.timeline.notModelled': 'È arrivata ma non ha cambiato nulla: il motore non modella ancora {keys}, ed è lì che questa spell produce il suo effetto.',
   'tests.timeline.hpBarLabel': '{unit}: {remaining} di {starting} HP',
   'tests.timeline.hpReplayMismatch': 'Gli HP ricostruiti non coincidono con il totale riportato.',
   'tests.timeline.diedAt': 'Morto a {at}',

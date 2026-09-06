@@ -869,6 +869,8 @@ export const fr: TranslationDict = {
   'tests.timeline.staleRun': 'Ces résultats datent d’avant votre dernière modification.',
   'tests.timeline.landAt': 'Touche à {at}',
   'tests.timeline.landAtUnavailable': 'Les temps d’impact n’ont pas pu être associés à ces lancers.',
+  'tests.timeline.lastRun': 'Dernier run',
+  'tests.timeline.notModelled': 'Le sort a touché sans rien changer : le moteur ne modélise pas encore {keys}, or c’est là qu’il produit son effet.',
   'tests.timeline.hpBarLabel': '{unit} : {remaining} sur {starting} PV',
   'tests.timeline.hpReplayMismatch': 'Les PV reconstitués ne correspondent pas au total rapporté.',
   'tests.timeline.diedAt': 'Mort à {at}',
