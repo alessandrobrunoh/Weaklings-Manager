@@ -965,7 +965,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
         (closed)="showBatchConfirmDialog.set(false)"
       >
         <div class="space-y-4">
-          <div class="grid grid-cols-3 gap-3">
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div
               class="rounded-xl p-3 border"
               style="background: var(--color-surface-2); border-color: var(--color-border)"

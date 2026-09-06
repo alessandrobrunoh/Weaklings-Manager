@@ -902,7 +902,7 @@ export function albionEquipmentIconUrl(identifier: string, quality = 4): string 
 export function albionCombatIconUrl(identifier: string, quality = 1): string {
   const base = albionSpecializationIdentifier(identifier).replace(/^T\d+_/, '');
   const grade = quality >= 1 && quality <= 5 ? quality : 1;
-  return `https://render.albiononline.com/v1/item/${encodeURIComponent(`T8_${base}`)}.png?quality=${grade}&size=256`;
+  return `https://render.albiononline.com/v1/item/${encodeURIComponent(`T8_${base}`)}.png?quality=${grade}&size=96`;
 }
 
 function toOpenAlbionItem(fileName: string, tier: string): OpenAlbionItem {

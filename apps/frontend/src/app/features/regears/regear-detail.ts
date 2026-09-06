@@ -185,7 +185,7 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
         <p class="mb-3 text-sm text-[var(--color-text-secondary)]">
           {{ t('regears.acceptHint') }}
         </p>
-        <div class="mb-3 max-h-80 overflow-y-auto">
+        <div class="mb-3 max-h-80 overflow-auto">
           <table class="table">
             <thead>
               <tr>

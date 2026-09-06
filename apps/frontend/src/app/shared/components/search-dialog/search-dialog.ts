@@ -54,7 +54,7 @@ export interface SearchDialogOption {
         </div>
 
         @if (showDateFilters()) {
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label>
               <span class="label">{{ t('common.date') }} From</span>
               <input

@@ -668,6 +668,7 @@ export const it: TranslationDict = {
   'comps.abilitiesHint': 'Quali spell mettere su ogni pezzo.',
   'comps.noAbility': 'Nessuna',
   'comps.version': 'Versione',
+  'comps.latestVersion': 'Ultima',
   'comps.newVersion': 'Nuova versione',
   'comps.compare': 'Confronta',
   'comps.compareWith': 'Confronta con',

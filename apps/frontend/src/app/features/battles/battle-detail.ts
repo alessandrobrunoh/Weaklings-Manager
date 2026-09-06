@@ -295,7 +295,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
                 </span>
                 <span class="text-xs text-secondary mono">{{ ourAlliance()?.players ?? ourGuild()?.players ?? 0 }} fighters</span>
               </div>
-              <div class="grid grid-cols-3 gap-2 mt-3 text-center">
+              <div class="grid grid-cols-2 gap-2 mt-3 text-center sm:grid-cols-3">
                 <div class="surface p-2 rounded">
                   <p class="text-xs text-disabled">Kills / Deaths</p>
                   <p class="font-bold text-base mono">
@@ -330,7 +330,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
                 </span>
                 <span class="text-xs text-secondary mono">{{ enemyForcesPlayers() }} fighters</span>
               </div>
-              <div class="grid grid-cols-3 gap-2 mt-3 text-center">
+              <div class="grid grid-cols-2 gap-2 mt-3 text-center sm:grid-cols-3">
                 <div class="surface p-2 rounded">
                   <p class="text-xs text-disabled">Kills / Deaths</p>
                   <p class="font-bold text-base mono">
@@ -695,7 +695,7 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
                 }
               </div>
 
-              <dl class="grid grid-cols-3 gap-2 text-center my-3">
+              <dl class="grid grid-cols-2 gap-2 text-center my-3 sm:grid-cols-3">
                 <div class="surface p-2 rounded">
                   <dt class="text-xs text-disabled">K / D</dt>
                   <dd class="font-bold mono text-sm">{{ ally.kills }} / {{ ally.deaths }}</dd>

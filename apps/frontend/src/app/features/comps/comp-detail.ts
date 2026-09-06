@@ -78,6 +78,15 @@ const ROLE_GLYPH: Readonly<Record<BuildRole, string>> = {
   brawler: 'BR',
 };
 
+/** One `(category, name)` group of build versions in the "Add Build" picker, newest version first. */
+interface BuildOptionGroup {
+  key: string;
+  name: string;
+  categoryName: string | null;
+  role: BuildRole;
+  versions: BuildSummary[];
+}
+
 /**
  * Composition detail page.
  *
@@ -910,38 +919,72 @@ const ROLE_GLYPH: Readonly<Record<BuildRole, string>> = {
                   <app-loading [label]="t('common.loading')" />
                 </div>
               } @else {
-                @for (build of filteredAvailableBuilds(); track build.id) {
-                  <button
-                    type="button"
-                    class="w-full text-left p-2.5 rounded-[var(--radius-md)] border flex items-center justify-between gap-2.5 transition-all"
-                    [class.border-[var(--color-primary)]]="isSelectedBuild(build.id)"
-                    [class.bg-[var(--color-primary)]/10]="isSelectedBuild(build.id)"
-                    [class.border-[var(--color-border)]]="!isSelectedBuild(build.id)"
-                    [class.bg-[var(--color-surface-2)]]="!isSelectedBuild(build.id)"
-                    (click)="selectAddBuild(build)"
+                @for (group of availableBuildGroups(); track group.key) {
+                  <div
+                    class="rounded-[var(--radius-md)] border overflow-hidden"
+                    [class.border-[var(--color-primary)]]="expandedBuildGroupKey() === group.key"
+                    [class.border-[var(--color-border)]]="expandedBuildGroupKey() !== group.key"
                   >
-                    <div class="flex items-center gap-2.5 min-w-0">
-                      <div class="shrink-0 w-8 h-8 rounded bg-[var(--color-surface-1)] border border-[var(--color-border)] grid place-items-center overflow-hidden">
-                        @if (weaponIconFor(build.id); as weaponIcon) {
-                          <img [src]="weaponIcon" [alt]="" class="w-full h-full object-contain p-0.5" />
-                        } @else {
-                          <span class="text-[10px] font-mono font-bold text-[var(--color-text-secondary)]">
-                            {{ roleGlyph(build.role) }}
-                          </span>
+                    <button
+                      type="button"
+                      class="w-full text-left p-2.5 flex items-center justify-between gap-2.5 transition-all"
+                      [class.bg-[var(--color-primary)]/10]="expandedBuildGroupKey() === group.key"
+                      [class.bg-[var(--color-surface-2)]]="expandedBuildGroupKey() !== group.key"
+                      [attr.aria-expanded]="expandedBuildGroupKey() === group.key"
+                      (click)="toggleBuildGroup(group)"
+                    >
+                      <div class="flex items-center gap-2.5 min-w-0">
+                        <div class="shrink-0 w-8 h-8 rounded bg-[var(--color-surface-1)] border border-[var(--color-border)] grid place-items-center overflow-hidden">
+                          @if (weaponIconFor(group.versions[0].id); as weaponIcon) {
+                            <img [src]="weaponIcon" [alt]="" class="w-full h-full object-contain p-0.5" />
+                          } @else {
+                            <span class="text-[10px] font-mono font-bold text-[var(--color-text-secondary)]">
+                              {{ roleGlyph(group.role) }}
+                            </span>
+                          }
+                        </div>
+                        <div class="min-w-0">
+                          <span class="text-xs font-bold text-[var(--color-text)] block truncate">{{ group.name }}</span>
+                          <span class="text-[10px] text-secondary">{{ group.categoryName || t('comps.noCategory') }}</span>
+                        </div>
+                      </div>
+                      <div class="flex items-center gap-1.5 shrink-0">
+                        @if (group.versions.length > 1) {
+                          <span class="text-[9px] font-mono text-secondary">{{ group.versions.length }}&times;</span>
+                        }
+                        <span
+                          class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
+                          [class]="roleChip(group.role)"
+                        >
+                          {{ roleLabel(group.role) }}
+                        </span>
+                        <app-icon
+                          [name]="expandedBuildGroupKey() === group.key ? 'chevron-up' : 'chevron-down'"
+                          size="0.7rem"
+                        />
+                      </div>
+                    </button>
+
+                    @if (expandedBuildGroupKey() === group.key) {
+                      <div class="border-t border-[var(--color-border)] p-1.5 space-y-1 bg-[var(--color-surface-1)]">
+                        @for (version of group.versions; track version.id) {
+                          <button
+                            type="button"
+                            class="w-full text-left px-2.5 py-1.5 rounded-[var(--radius-sm)] text-xs flex items-center justify-between gap-2 transition-all"
+                            [class.bg-[var(--color-primary)]/15]="isSelectedBuild(version.id)"
+                            [class.text-[var(--color-primary)]]="isSelectedBuild(version.id)"
+                            [class.font-bold]="isSelectedBuild(version.id)"
+                            (click)="selectAddBuild(version)"
+                          >
+                            <span>{{ t('comps.version') }} {{ version.version }}</span>
+                            @if (version.id === group.versions[0].id) {
+                              <span class="text-[9px] uppercase text-secondary">{{ t('comps.latestVersion') }}</span>
+                            }
+                          </button>
                         }
                       </div>
-                      <div class="min-w-0">
-                        <span class="text-xs font-bold text-[var(--color-text)] block truncate">{{ build.name }}</span>
-                        <span class="text-[10px] text-secondary">{{ build.category_name || t('comps.noCategory') }}</span>
-                      </div>
-                    </div>
-                    <span
-                      class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0"
-                      [class]="roleChip(build.role)"
-                    >
-                      {{ roleLabel(build.role) }}
-                    </span>
-                  </button>
+                    }
+                  </div>
                 } @empty {
                   <p class="text-xs text-secondary text-center py-6">{{ t('comps.noBuildsAvailable') }}</p>
                 }
@@ -1236,6 +1279,8 @@ export class CompDetailPage {
   protected readonly addBuildModalOpen = signal(false);
   protected readonly addBuildRoleFilter = signal<BuildRole | 'all'>('all');
   protected readonly buildOptionsLoading = signal(false);
+  /** Key (`categoryId::name`) of the build group currently expanded to show its version list, if any. */
+  protected readonly expandedBuildGroupKey = signal<string | null>(null);
   private buildSearchTimer: ReturnType<typeof setTimeout> | null = null;
   private buildSearchSeq = 0;
 
@@ -1410,6 +1455,34 @@ export class CompDetailPage {
     return list;
   });
 
+  /**
+   * The "Add Build" picker collapses every version of a build into a single row, keyed by
+   * `(category_id, name)` — matching how the backend groups a build's version history. Expanding
+   * a row (see {@link expandedBuildGroupKey}) reveals its versions, newest first, for selection.
+   */
+  protected readonly availableBuildGroups = computed(() => {
+    const groups = new Map<string, BuildOptionGroup>();
+    for (const build of this.filteredAvailableBuilds()) {
+      const key = `${build.category_id}::${build.name}`;
+      const group = groups.get(key);
+      if (group) {
+        group.versions.push(build);
+      } else {
+        groups.set(key, {
+          key,
+          name: build.name,
+          categoryName: build.category_name,
+          role: build.role,
+          versions: [build],
+        });
+      }
+    }
+    for (const group of groups.values()) {
+      group.versions.sort((a, b) => b.version - a.version);
+    }
+    return [...groups.values()];
+  });
+
   protected readonly partySimulation = computed(() =>
     simulateCompParties(this.comp()?.builds ?? []),
   );
@@ -1514,6 +1587,7 @@ export class CompDetailPage {
     this.newBuildSearch.set('');
     this.newBuildQuantity.set(1);
     this.addBuildRoleFilter.set('all');
+    this.expandedBuildGroupKey.set(null);
     this.addBuildModalOpen.set(true);
     void this.searchAvailableBuilds();
   }
@@ -1529,11 +1603,31 @@ export class CompDetailPage {
 
   protected setAddBuildRoleFilter(role: BuildRole | 'all'): void {
     this.addBuildRoleFilter.set(role);
+    this.expandedBuildGroupKey.set(null);
+    this.newBuildId.set('');
     void this.searchAvailableBuilds();
   }
 
   protected selectAddBuild(build: BuildSummary): void {
     this.newBuildId.set(String(build.id));
+  }
+
+  /**
+   * Toggles a build group open/closed in the "Add Build" picker. Opening a group auto-selects its
+   * newest version (per the picker's recommended default); the user can still pick an older one
+   * from the revealed version list. Opening a different group collapses whichever was open.
+   */
+  protected toggleBuildGroup(group: BuildOptionGroup): void {
+    if (this.expandedBuildGroupKey() === group.key) {
+      this.expandedBuildGroupKey.set(null);
+      this.newBuildId.set('');
+      return;
+    }
+    this.expandedBuildGroupKey.set(group.key);
+    const latest = group.versions[0];
+    if (latest) {
+      this.selectAddBuild(latest);
+    }
   }
 
   protected async submitAddBuildModal(): Promise<void> {
@@ -1815,6 +1909,8 @@ export class CompDetailPage {
 
   protected onNewBuildSearchChange(event: Event): void {
     this.newBuildSearch.set((event.target as HTMLInputElement).value);
+    this.expandedBuildGroupKey.set(null);
+    this.newBuildId.set('');
     this.scheduleBuildSearch();
   }
 

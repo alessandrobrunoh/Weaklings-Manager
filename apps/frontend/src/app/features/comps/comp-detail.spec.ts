@@ -32,6 +32,8 @@ function build(id: number, name: string, role: BuildSummary['role'] = 'dps'): Bu
 const tank = build(1, 'Great Hammer', 'tank');
 const healer = build(2, 'Hallowfall', 'healer');
 const extra = build(3, 'Permafrost Prism', 'dps');
+/** A second, newer version of `extra` — same `(name, category_id)` group, higher `version`. */
+const extraV2: BuildSummary = { ...extra, id: 4, version: 2 };
 
 const comp: CompDetail = {
   id: 1,
@@ -150,6 +152,43 @@ describe('CompDetailPage roster', () => {
       expect.objectContaining({ sort: 'name', order: 'asc' }),
     );
     expect(page.filteredAvailableBuilds().map((item) => item.name)).toEqual(['Permafrost Prism']);
+  });
+
+  it('groups build versions in the add-build picker and preselects the latest on expand', async () => {
+    apiGet.mockImplementation((path: string) => {
+      if (path === `api/comps/${comp.id}`) return of(comp);
+      if (path === `api/comps/${comp.id}/performance`) return of(null);
+      if (path === 'api/comps/builds') {
+        return of({
+          items: [tank, healer, extra, extraV2],
+          total_items: 4,
+          total_pages: 1,
+          current_page: 1,
+          limit: 200,
+        });
+      }
+      if (path.startsWith('api/comps/builds/')) return of({ ...tank, items: [] });
+      return of({ items: [] });
+    });
+
+    const fixture = TestBed.createComponent(CompDetailPage);
+    await settleComp(fixture);
+
+    const page = fixture.componentInstance as unknown as {
+      openAddBuildModal: () => Promise<void>;
+      availableBuildGroups: () => { key: string; versions: { id: number; version: number }[] }[];
+      toggleBuildGroup: (group: { key: string; versions: { id: number }[] }) => void;
+      newBuildId: () => string;
+    };
+    await page.openAddBuildModal();
+
+    const groups = page.availableBuildGroups();
+    expect(groups).toHaveLength(1);
+    expect(groups[0].versions.map((v) => v.version)).toEqual([2, 1]);
+    expect(page.newBuildId()).toBe('');
+
+    page.toggleBuildGroup(groups[0]);
+    expect(page.newBuildId()).toBe(String(extraV2.id));
   });
 });
 
