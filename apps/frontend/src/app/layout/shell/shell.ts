@@ -114,7 +114,7 @@ import { Topbar } from '../topbar/topbar';
 })
 export class Shell {
   private readonly router = inject(Router);
-  private readonly auth = inject(AuthService);
+  protected readonly auth = inject(AuthService);
   private readonly main = viewChild<ElementRef<HTMLElement>>('main');
 
   protected readonly isDrawerOpen = signal(false);
