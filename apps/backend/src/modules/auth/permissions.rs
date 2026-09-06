@@ -224,6 +224,11 @@ pub enum Permission {
     /// Create, edit and archive combat test scenarios. Officer+.
     #[strum(serialize = "combat.tests.manage")]
     CombatTestsManage,
+    /// Read how well the Item Power calculator's predictions track battle data actually observed
+    /// for members. Officer+: unlike the calculator itself, this reports per-member accuracy
+    /// across the whole guild, which is a diagnostic for tuning the model, not self-service.
+    #[strum(serialize = "combat.calibration.view")]
+    CombatCalibrationView,
     /// View scouted enemy comps, similarity scores and matchup tallies. Member+.
     #[strum(serialize = "intel.view")]
     IntelView,
