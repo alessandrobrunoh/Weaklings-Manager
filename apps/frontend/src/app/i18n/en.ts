@@ -947,6 +947,8 @@ export const en = {
   'tests.timeline.staleRun': 'These results are from before your last edit.',
   'tests.timeline.landAt': 'Lands at {at}',
   'tests.timeline.landAtUnavailable': 'Landing times could not be matched to these casts.',
+  'tests.timeline.lastRun': 'Last run',
+  'tests.timeline.notModelled': 'It landed but changed nothing: the engine does not model {keys} yet, which is where this spell delivers its effect.',
   'tests.timeline.hpBarLabel': '{unit}: {remaining} of {starting} HP',
   'tests.timeline.hpReplayMismatch': 'Replayed HP does not match the reported total.',
   'tests.timeline.diedAt': 'Died at {at}',

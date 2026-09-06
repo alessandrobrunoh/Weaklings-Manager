@@ -70,6 +70,8 @@ interface Page {
   onTimelineCastMoved(event: { index: number; castAt: number; casterGroupId: string }): void;
   onCastPatched(event: { index: number; patch: Partial<ScenarioDeclaredCast> }): void;
   removeCast(index: number): void;
+  runNow(): Promise<void>;
+  saveDefinition(): Promise<void>;
   openBuildPickerForCaster(): void;
   openBuildImport(): void;
   onBuildSelected(option: { id: number; title: string }): Promise<void>;
@@ -95,10 +97,13 @@ async function settle(fixture: ComponentFixture<TestDetailPage>): Promise<Page> 
 describe('TestDetailPage timeline tab', () => {
   const apiGet = vi.fn();
   const apiPatch = vi.fn();
+  const apiPost = vi.fn();
 
   beforeEach(async () => {
     apiGet.mockReset();
     apiPatch.mockReset();
+    apiPost.mockReset();
+    apiPost.mockImplementation(() => of({ id: 1, result: null }));
     apiGet.mockImplementation((path: string) => {
       if (path === 'api/combat/tests/1') return of(SCENARIO);
       if (path === 'api/combat/tests/1/runs') return of([]);
@@ -113,7 +118,7 @@ describe('TestDetailPage timeline tab', () => {
         provideZonelessChangeDetection(),
         {
           provide: ApiService,
-          useValue: { get: apiGet, post: vi.fn(), patch: apiPatch, delete: vi.fn() },
+          useValue: { get: apiGet, post: apiPost, patch: apiPatch, delete: vi.fn() },
         },
         { provide: AuthService, useValue: { hasPermission: () => true, profile: () => ({ user_id: 1 }) } },
         {
@@ -345,6 +350,47 @@ describe('TestDetailPage timeline tab', () => {
       expect(page.draft().groups[0].build_id).toBe(7);
       expect(page.selectedCasterBuildName()).toBeNull();
       expect(page.dirty()).toBe(false);
+    });
+  });
+
+  describe('running the test', () => {
+    it('saves the pending edits first, because the engine runs the stored definition', async () => {
+      const { page } = await openTimeline();
+      page.onTimelineCastCreated({ casterGroupId: 'ally-hammer', spellId: 'SMASH', castAt: 2 });
+      expect(page.dirty()).toBe(true);
+
+      await page.runNow();
+
+      // The PATCH must land before the run, or the run resolves a definition without that cast.
+      expect(apiPatch).toHaveBeenCalledWith('api/combat/tests/1', {
+        definition: expect.objectContaining({
+          casts: expect.arrayContaining([expect.objectContaining({ spell_id: 'SMASH' })]),
+        }),
+      });
+      expect(apiPost).toHaveBeenCalledWith('api/combat/tests/1/run');
+    });
+
+    it('does not run at all when that save fails', async () => {
+      const { page } = await openTimeline();
+      page.onTimelineCastCreated({ casterGroupId: 'ally-hammer', spellId: 'SMASH', castAt: 2 });
+      apiPatch.mockReturnValueOnce(throwError(() => new Error('nope')));
+
+      await page.runNow();
+
+      // Reporting numbers for a definition the user can see is not on screen would be worse than
+      // reporting nothing at all.
+      expect(apiPost).not.toHaveBeenCalled();
+      expect(page.dirty()).toBe(true);
+    });
+
+    it('runs straight away when there is nothing to save', async () => {
+      const { page } = await openTimeline();
+      expect(page.dirty()).toBe(false);
+
+      await page.runNow();
+
+      expect(apiPatch).not.toHaveBeenCalled();
+      expect(apiPost).toHaveBeenCalledWith('api/combat/tests/1/run');
     });
   });
 });

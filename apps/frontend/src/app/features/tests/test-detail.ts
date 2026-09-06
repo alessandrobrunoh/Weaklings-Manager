@@ -62,7 +62,7 @@ import { CastTable } from './timeline/cast-table';
 import {
   type GroupedSpellOptions,
   groupedSpellOptions,
-  matchLandTimes,
+  matchResolvedCasts,
   normalizeCast,
   normalizeDefinition,
   snapSeconds,
@@ -423,6 +423,7 @@ function buildSlotForAbilities(abilities: OpenAlbionItemAbilities): BuildSlot {
                     [spellOptions]="selectedSpellOptions()"
                     [knownSpellIds]="selectedKnownSpellIds()"
                     [landAt]="selectedLandAt()"
+                    [resolved]="selectedResolvedCast()"
                     [canManage]="canManage()"
                     (patched)="onCastPatched($event)"
                     (removed)="removeCast($event)"
@@ -888,13 +889,18 @@ export class TestDetailPage {
     return cast ? (this.knownSpellIdsByGroup()[cast.caster_group_id] ?? new Set()) : new Set();
   });
 
-  /** When the selected cast landed in the latest run, if that run could be matched to it. */
-  protected readonly selectedLandAt = computed(() => {
+  /** How the latest run resolved the selected cast, if that run could be matched to it. */
+  protected readonly selectedResolvedCast = computed(() => {
     const index = this.selectedCastIndex();
     const run = this.latestRun();
     if (index === null || !run) return null;
-    return matchLandTimes(this.draft(), run.result)[index] ?? null;
+    return matchResolvedCasts(this.draft(), run.result)[index] ?? null;
   });
+
+  /** When the selected cast landed in the latest run. */
+  protected readonly selectedLandAt = computed(
+    () => this.selectedResolvedCast()?.land_at ?? null,
+  );
 
   /**
    * Whether the shown run predates the definition it is drawn over.
@@ -1560,8 +1566,21 @@ export class TestDetailPage {
 
   // ---- Runs ----
 
+  /**
+   * Saves any pending edit, then runs.
+   *
+   * The engine runs the *stored* scenario: `POST /tests/{id}/run` reads `definition_json` straight
+   * back out of the row and never sees the draft. Running without saving first therefore reported
+   * results for the definition as it was before the edits — casts that had just been dragged in
+   * simply were not there, which reads as "it did no damage" rather than as "you have not saved".
+   */
   protected async runNow(): Promise<void> {
     const id = this.testId();
+    if (this.dirty()) {
+      await this.saveDefinition();
+      // A failed save leaves the draft dirty; running anyway would report the stale definition.
+      if (this.dirty()) return;
+    }
     this.running.set(true);
     try {
       const run = await firstValueFrom(this.api.post<RunDetail>(`api/combat/tests/${id}/run`));

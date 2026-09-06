@@ -166,3 +166,114 @@ describe('TimelineInspector', () => {
     expect(fixture.nativeElement.textContent).toContain('Select a cast to edit it.');
   });
 });
+
+describe('TimelineInspector spell select', () => {
+  let fixture: ComponentFixture<TimelineInspector>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [TimelineInspector],
+      providers: [provideZonelessChangeDetection(), TranslateService],
+    }).compileComponents();
+    TestBed.inject(TranslateService).use('en');
+    fixture = TestBed.createComponent(TimelineInspector);
+    fixture.componentRef.setInput('cast', CAST);
+    fixture.componentRef.setInput('castIndex', 0);
+    fixture.componentRef.setInput('groups', GROUPS);
+    fixture.componentRef.setInput('canManage', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  /**
+   * The ability catalog is fetched, so the options always arrive after the cast they describe.
+   * A `[value]` binding on the select is applied while the option does not exist yet and is never
+   * re-applied, which showed the card as if no spell had been chosen.
+   */
+  it('shows the chosen spell once its options arrive', async () => {
+    fixture.componentRef.setInput('spellOptions', [
+      { group: 'Q', options: [{ value: 'WHIRL', label: 'Earth Shatter' }] },
+      { group: 'W', options: [{ value: 'SMASH', label: 'Shocking Smash' }] },
+    ]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const select = fixture.nativeElement.querySelector('select') as HTMLSelectElement;
+    expect(select.value).toBe('WHIRL');
+  });
+
+  it('shows the caster group the cast already names', () => {
+    const casterSelect = [...fixture.nativeElement.querySelectorAll('select')].find((el) =>
+      [...(el as HTMLSelectElement).options].some((option) => option.value === 'ally'),
+    ) as HTMLSelectElement;
+    expect(casterSelect.value).toBe('ally');
+  });
+});
+
+describe('TimelineInspector run outcome', () => {
+  let fixture: ComponentFixture<TimelineInspector>;
+
+  function log(change: number, unsupported: string[]) {
+    return {
+      caster_group_id: 'ally',
+      spell_id: 'WHIRL',
+      land_at: 1.4,
+      target_ids: ['enemy#0'],
+      concurrent_attackers: 1,
+      prior_cc_stacks: 0,
+      escalation_multiplier: 1,
+      focus_fire_reduction: 0,
+      per_target_health_change: change,
+      crowd_control: [],
+      unsupported,
+    };
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [TimelineInspector],
+      providers: [provideZonelessChangeDetection(), TranslateService],
+    }).compileComponents();
+    TestBed.inject(TranslateService).use('en');
+    fixture = TestBed.createComponent(TimelineInspector);
+    fixture.componentRef.setInput('cast', CAST);
+    fixture.componentRef.setInput('castIndex', 0);
+    fixture.componentRef.setInput('groups', GROUPS);
+    fixture.componentRef.setInput('canManage', true);
+  });
+
+  async function withResolved(change: number, unsupported: string[]): Promise<void> {
+    fixture.componentRef.setInput('resolved', log(change, unsupported));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  it('reports what the cast actually did to each target', async () => {
+    await withResolved(-412.5, []);
+    expect(fixture.nativeElement.textContent).toContain('-412.5');
+  });
+
+  /**
+   * The complaint this answers: a cast lands, the numbers stay at zero, and nothing on screen says
+   * why. The engine already names the effect keys it does not model — this just shows them.
+   */
+  it('explains a cast that landed and changed nothing', async () => {
+    await withResolved(0, ['HAMMER_SHOVE:dash', 'HAMMER_SHOVE:aura', 'HAMMER_SHOVE:dash']);
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('does not model');
+    // Keys only, de-duplicated: the spell id is already on screen and each link repeats its key.
+    expect(text).toContain('dash, aura');
+    expect(text).not.toContain('HAMMER_SHOVE:dash');
+  });
+
+  it('stays quiet when a zero is not the engine giving up', async () => {
+    await withResolved(0, []);
+    expect(fixture.nativeElement.textContent).not.toContain('does not model');
+  });
+
+  it('says nothing at all before the test has been run', async () => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.nativeElement.textContent).not.toContain('Last run');
+  });
+});

@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, output } f
 import type {
   AttackerStyle,
   ScenarioDeclaredCast,
+  ScenarioResolvedCastLog,
   ScenarioUnitGroup,
 } from '../../../core/models/api.models';
 import { TranslateService } from '../../../core/services/translate.service';
@@ -85,17 +86,20 @@ interface TargetSection {
           <label class="grid gap-1">
             <span class="label">{{ t('tests.spellId') }}</span>
             @if (spellOptions().length > 0) {
-              <select
-                class="select select--sm"
-                [value]="current.spell_id"
-                [disabled]="!canManage()"
-                (change)="onSpell($event)"
-              >
-                <option value="">{{ t('tests.pickSpell') }}</option>
+              <!--
+                Selection is declared per option rather than by binding value on the select: the
+                ability options are fetched, so that binding runs while the matching option does
+                not exist yet, silently resolves to nothing, and is never re-applied because the
+                bound id itself never changed.
+              -->
+              <select class="select select--sm" [disabled]="!canManage()" (change)="onSpell($event)">
+                <option value="" [selected]="!current.spell_id">{{ t('tests.pickSpell') }}</option>
                 @for (slot of spellOptions(); track slot.group) {
                   <optgroup [label]="slot.group">
                     @for (option of slot.options; track option.value) {
-                      <option [value]="option.value">{{ option.label }}</option>
+                      <option [value]="option.value" [selected]="option.value === current.spell_id">
+                        {{ option.label }}
+                      </option>
                     }
                   </optgroup>
                 }
@@ -122,14 +126,11 @@ interface TargetSection {
 
           <label class="grid gap-1">
             <span class="label">{{ t('tests.caster') }}</span>
-            <select
-              class="select select--sm"
-              [value]="current.caster_group_id"
-              [disabled]="!canManage()"
-              (change)="onCaster($event)"
-            >
+            <select class="select select--sm" [disabled]="!canManage()" (change)="onCaster($event)">
               @for (group of groups(); track $index) {
-                <option [value]="group.id">{{ group.label }} ({{ group.id }})</option>
+                <option [value]="group.id" [selected]="group.id === current.caster_group_id">
+                  {{ group.label }} ({{ group.id }})
+                </option>
               }
             </select>
           </label>
@@ -151,6 +152,25 @@ interface TargetSection {
               </span>
             }
           </label>
+
+          @if (resolved(); as log) {
+            <div class="grid gap-1">
+              <span class="label">{{ t('tests.timeline.lastRun') }}</span>
+              <span
+                class="text-xs font-semibold"
+                [class.text-[var(--color-error)]]="log.per_target_health_change < 0"
+                [class.text-[var(--color-success)]]="log.per_target_health_change > 0"
+              >
+                {{ t('tests.perTargetChange') }}:
+                {{ log.per_target_health_change.toFixed(1) }}
+              </span>
+              @if (log.per_target_health_change === 0 && log.unsupported.length > 0) {
+                <p class="text-[11px] text-[var(--color-warning)]">
+                  {{ t('tests.timeline.notModelled', { keys: unsupportedKeys(log.unsupported) }) }}
+                </p>
+              }
+            </div>
+          }
 
           <fieldset class="grid gap-1">
             <legend class="label">{{ t('tests.attackerStyle') }}</legend>
@@ -319,6 +339,8 @@ export class TimelineInspector {
   readonly knownSpellIds = input<ReadonlySet<string>>(new Set<string>());
   /** When this cast landed in the last run, if the run could be matched to it. */
   readonly landAt = input<number | null>(null);
+  /** How the last run resolved this cast, when it could be matched to one. */
+  readonly resolved = input<ScenarioResolvedCastLog | null>(null);
   readonly canManage = input(false);
 
   readonly patched = output<{ index: number; patch: Partial<ScenarioDeclaredCast> }>();
@@ -360,6 +382,20 @@ export class TimelineInspector {
       };
     });
   });
+
+  /**
+   * The distinct effect keys the engine reported it does not model, as a plain list.
+   *
+   * `unsupported` entries read `SPELL_ID:key`; the spell is already on screen, and the same key can
+   * appear once per link in the chain, so only the keys are shown and only once each. This is the
+   * whole answer to "it landed and did nothing": the damage of many abilities is delivered through
+   * a `dash` end-effect, a `pulsingspell` or an `aura`, none of which the resolver follows.
+   */
+  protected unsupportedKeys(unsupported: readonly string[]): string {
+    return [
+      ...new Set(unsupported.map((entry) => entry.split(':')[1]?.split(' ')[0]).filter(Boolean)),
+    ].join(', ');
+  }
 
   protected weaponIcon(itemId: string): string {
     return albionCombatIconUrl(itemId);

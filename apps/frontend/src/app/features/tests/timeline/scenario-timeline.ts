@@ -418,6 +418,21 @@ export function matchLandTimes(
   definition: ScenarioDefinition,
   result: ScenarioResult,
 ): (number | null)[] {
+  return matchResolvedCasts(definition, result).map((log) => log?.land_at ?? null);
+}
+
+/**
+ * The resolved log for each declared cast, or `null` where it could not be matched.
+ *
+ * Carries the whole log rather than just its timing because the log is also the only place that
+ * explains a cast which landed and changed nothing: `unsupported` names the effect keys the engine
+ * does not model, which is the difference between "it did no damage" and "its damage is delivered
+ * through a dash end-effect the engine does not read".
+ */
+export function matchResolvedCasts(
+  definition: ScenarioDefinition,
+  result: ScenarioResult,
+): (ScenarioResolvedCastLog | null)[] {
   const keyOf = (casterGroupId: string, spellId: string) => `${casterGroupId} ${spellId}`;
   const declared = new Map<string, number[]>();
   definition.casts.forEach((cast, index) => {
@@ -426,24 +441,24 @@ export function matchLandTimes(
     if (bucket) bucket.push(index);
     else declared.set(key, [index]);
   });
-  const resolved = new Map<string, number[]>();
+  const resolved = new Map<string, ScenarioResolvedCastLog[]>();
   for (const log of result.casts) {
     const key = keyOf(log.caster_group_id, log.spell_id);
     const bucket = resolved.get(key);
-    if (bucket) bucket.push(log.land_at);
-    else resolved.set(key, [log.land_at]);
+    if (bucket) bucket.push(log);
+    else resolved.set(key, [log]);
   }
 
-  const out = new Array<number | null>(definition.casts.length).fill(null);
+  const out = new Array<ScenarioResolvedCastLog | null>(definition.casts.length).fill(null);
   for (const [key, indices] of declared) {
-    const times = resolved.get(key);
-    if (!times || times.length !== indices.length) continue;
+    const logs = resolved.get(key);
+    if (!logs || logs.length !== indices.length) continue;
     const byTime = [...indices].sort(
       (a, b) => definition.casts[a].cast_at - definition.casts[b].cast_at || a - b,
     );
-    const sortedTimes = [...times].sort((a, b) => a - b);
+    const sortedLogs = [...logs].sort((a, b) => a.land_at - b.land_at);
     byTime.forEach((castIndex, n) => {
-      out[castIndex] = sortedTimes[n];
+      out[castIndex] = sortedLogs[n];
     });
   }
   return out;
