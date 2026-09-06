@@ -53,7 +53,8 @@ interface PlannedSelection {
     .fight-trends__chart-title { margin: 0; color: var(--color-text); font-size: 0.875rem; font-weight: 600; }
     .fight-trends__chart-note { margin: 0.2rem 0 0; color: var(--color-text-tertiary); font-size: 0.6875rem; }
     .fight-trends__scale { color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.6875rem; }
-    .fight-trends__bars { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); align-items: end; gap: 0.2rem; block-size: 9rem; padding-block: 0.5rem; border-block-end: 1px solid var(--color-border-strong); }
+    .fight-trends__bars-scroll { overflow-x: auto; }
+    .fight-trends__bars { display: grid; grid-template-columns: repeat(30, minmax(0.4rem, 1fr)); align-items: end; gap: 0.2rem; block-size: 9rem; padding-block: 0.5rem; border-block-end: 1px solid var(--color-border-strong); }
     .fight-trends__bar { display: block; min-block-size: 2px; border-radius: 2px 2px 0 0; background: var(--color-primary); opacity: 0.78; }
     .fight-trends__axis { display: flex; justify-content: space-between; margin-block-start: 0.45rem; color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 0.625rem; }
     .fight-trends__data { margin-block-start: 0.875rem; color: var(--color-text-secondary); font-size: 0.75rem; }
@@ -94,20 +95,22 @@ interface PlannedSelection {
               <h2 class="fight-trends__panel-title" id="fight-performance-heading">Performance comparison</h2>
               <p class="fight-trends__panel-note">Combat totals use persisted snapshots. Win rate uses fights with a friendly winner record.</p>
             </header>
-            <table class="table fight-trends__metrics">
-              <caption>Current 30 days compared with the previous 30 days</caption>
-              <thead><tr><th scope="col">Metric</th><th scope="col">Current</th><th scope="col">Previous</th><th scope="col">Change</th></tr></thead>
-              <tbody>
-                @for (metric of metrics(); track metric.label) {
-                  <tr>
-                    <th scope="row">{{ metric.label }}<span class="fight-trends__sample">{{ metric.sample }}</span></th>
-                    <td class="fight-trends__value">{{ formatMetric(metric.current, metric.format) }}</td>
-                    <td class="fight-trends__value">{{ formatMetric(metric.previous, metric.format) }}</td>
-                    <td class="fight-trends__delta">{{ formatDelta(metric.current, metric.previous, metric.format) }}</td>
-                  </tr>
-                }
-              </tbody>
-            </table>
+            <div class="overflow-x-auto">
+              <table class="table fight-trends__metrics">
+                <caption>Current 30 days compared with the previous 30 days</caption>
+                <thead><tr><th scope="col">Metric</th><th scope="col">Current</th><th scope="col">Previous</th><th scope="col">Change</th></tr></thead>
+                <tbody>
+                  @for (metric of metrics(); track metric.label) {
+                    <tr>
+                      <th scope="row">{{ metric.label }}<span class="fight-trends__sample">{{ metric.sample }}</span></th>
+                      <td class="fight-trends__value">{{ formatMetric(metric.current, metric.format) }}</td>
+                      <td class="fight-trends__value">{{ formatMetric(metric.previous, metric.format) }}</td>
+                      <td class="fight-trends__delta">{{ formatDelta(metric.current, metric.previous, metric.format) }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
           </section>
 
           <section class="fight-trends__panel" aria-labelledby="fight-volume-heading">
@@ -116,11 +119,13 @@ interface PlannedSelection {
                 <div><h2 class="fight-trends__chart-title" id="fight-volume-heading">Daily fight volume</h2><p class="fight-trends__chart-note">Canonical fights beginning each UTC day, including quiet days.</p></div>
                 <span class="fight-trends__scale">Peak: {{ maxDailyFights() }} fights/day</span>
               </div>
-              <div class="fight-trends__bars" aria-hidden="true">
-                @for (day of data.rolling_daily_fight_counts; track day.date) { <span class="fight-trends__bar" [style.height.%]="barHeight(day.fights)"></span> }
+              <div class="fight-trends__bars-scroll">
+                <div class="fight-trends__bars" aria-hidden="true">
+                  @for (day of data.rolling_daily_fight_counts; track day.date) { <span class="fight-trends__bar" [style.height.%]="barHeight(day.fights)"></span> }
+                </div>
               </div>
               <div class="fight-trends__axis" aria-hidden="true"><span>{{ data.rolling_daily_fight_counts[0]?.date | date: 'MMM d' }}</span><span>{{ data.rolling_daily_fight_counts[data.rolling_daily_fight_counts.length - 1]?.date | date: 'MMM d' }}</span></div>
-              <details class="fight-trends__data"><summary class="fight-trends__data-summary">View daily fight counts as a table</summary><table class="table fight-trends__daily-table"><thead><tr><th scope="col">UTC date</th><th scope="col">Fights</th></tr></thead><tbody>@for (day of data.rolling_daily_fight_counts; track day.date) { <tr><td>{{ day.date | date: 'MMM d, y' }}</td><td>{{ day.fights }}</td></tr> }</tbody></table></details>
+              <details class="fight-trends__data"><summary class="fight-trends__data-summary">View daily fight counts as a table</summary><div class="overflow-x-auto"><table class="table fight-trends__daily-table"><thead><tr><th scope="col">UTC date</th><th scope="col">Fights</th></tr></thead><tbody>@for (day of data.rolling_daily_fight_counts; track day.date) { <tr><td>{{ day.date | date: 'MMM d, y' }}</td><td>{{ day.fights }}</td></tr> }</tbody></table></div></details>
             </div>
           </section>
 

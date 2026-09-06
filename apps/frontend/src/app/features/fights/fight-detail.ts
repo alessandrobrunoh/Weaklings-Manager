@@ -288,7 +288,7 @@ type PendingFightMutation =
                   </span>
                   <span class="text-xs text-secondary mono">{{ ourForcesPlayers() }} fighters</span>
                 </div>
-                <div class="grid grid-cols-3 gap-2 mt-3 text-center">
+                <div class="grid grid-cols-2 gap-2 mt-3 text-center sm:grid-cols-3">
                   <div class="surface p-2 rounded-lg">
                     <p class="text-[10px] uppercase font-bold text-disabled">Kills / Deaths</p>
                     <p class="font-bold text-sm mono text-white">
@@ -325,7 +325,7 @@ type PendingFightMutation =
                   </span>
                   <span class="text-xs text-secondary mono">{{ enemyForcesPlayers() }} fighters</span>
                 </div>
-                <div class="grid grid-cols-3 gap-2 mt-3 text-center">
+                <div class="grid grid-cols-2 gap-2 mt-3 text-center sm:grid-cols-3">
                   <div class="surface p-2 rounded-lg">
                     <p class="text-[10px] uppercase font-bold text-disabled">Kills / Deaths</p>
                     <p class="font-bold text-sm mono text-white">

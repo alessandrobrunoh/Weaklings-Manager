@@ -627,6 +627,7 @@ export const fr: TranslationDict = {
   'comps.abilitiesHint': 'Which spells to slot on each piece.',
   'comps.noAbility': 'None',
   'comps.version': 'Version',
+  'comps.latestVersion': 'Latest',
   'comps.newVersion': 'New version',
   'comps.compare': 'Compare',
   'comps.compareWith': 'Compare with',

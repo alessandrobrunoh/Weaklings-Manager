@@ -668,6 +668,7 @@ export const es: TranslationDict = {
   'comps.abilitiesHint': 'Qué hechizos poner en cada pieza.',
   'comps.noAbility': 'Ninguna',
   'comps.version': 'Versión',
+  'comps.latestVersion': 'Última',
   'comps.newVersion': 'Nueva versión',
   'comps.compare': 'Comparar',
   'comps.compareWith': 'Comparar con',
