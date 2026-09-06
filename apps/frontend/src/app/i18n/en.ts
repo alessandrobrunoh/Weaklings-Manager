@@ -1,6 +1,7 @@
 /**
  * English (default source) translation dictionary.
  * Keep keys flat and dotted for easy scanning; nested objects make merges harder.
+ * Platform control-plane keys live at the end of this file.
  */
 export const en = {
   // App
@@ -106,6 +107,15 @@ export const en = {
   'nav.expand': 'Expand',
   'nav.aria.primary': 'Primary',
   'nav.aria.admin': 'Administration',
+  'nav.aria.platform': 'Platform',
+  'nav.aria.tenants': 'Servers',
+  'nav.platform': 'Platform',
+  'nav.platform.back': 'Back to app',
+  'nav.platform.overview': 'Overview',
+  'nav.platform.tenants': 'Tenants',
+  'nav.platform.admins': 'Platform admins',
+  'nav.platform.features': 'Feature flags',
+  'nav.section.platform': 'Platform',
 
   // Table
   'table.itemsPerPage': 'Items per page',
@@ -127,6 +137,16 @@ export const en = {
   'auth.logout_confirm': 'Sign out of your account?',
   'auth.unauthorized': 'You need to sign in to view this page.',
   'auth.session_expired': 'Your session has expired. Please sign in again.',
+  'auth.no_tenant': 'Your Discord server is not set up on this platform yet.',
+  'auth.needs_tenant_title': 'This server is not registered',
+  'auth.needs_tenant_body':
+    'This Discord server is not registered yet. Pick a server below to complete setup. The first person to finish becomes Super Admin.',
+  'auth.needs_tenant_empty':
+    'No Discord servers available to register. Invite the bot, then run any command to get a setup link — or sign in again.',
+  'auth.choose_server_title': 'Choose your server',
+  'auth.choose_server_subtitle': 'You belong to more than one server on this platform.',
+  'auth.choose_server_empty': 'No servers are available. Sign in again.',
+  'auth.choose_server_error': 'Could not finish sign-in for that server.',
 
   // Dashboard
   'dashboard.welcome': 'Welcome back, {name}',
@@ -261,8 +281,12 @@ export const en = {
   'bank.finance.ledgerVolume': 'Ledger volume',
   'bank.finance.weeklyFlow': 'Weekly silver flow',
   'bank.finance.weeklyFlowDescription': 'Loot created against member outflow.',
+  'bank.finance.dailyFlow': 'Daily silver flow',
+  'bank.finance.dailyFlowDescription': 'Loot created against member outflow.',
   'bank.finance.weeklyActivity': 'Weekly operations',
   'bank.finance.weeklyActivityDescription': 'Fights and guild events in the reporting window.',
+  'bank.finance.dailyActivity': 'Daily operations',
+  'bank.finance.dailyActivityDescription': 'Fights and guild events in the reporting window.',
   'bank.finance.fights': 'Fights',
   'bank.finance.events': 'Events',
   'bank.finance.splitOutflow': 'Split payouts',
@@ -1766,6 +1790,9 @@ export const en = {
   'admin.applications.manageRole': 'Manager role',
   'admin.applications.manageRoleHint':
     'Discord role allowed to accept, decline, or close applications.',
+  'admin.applications.acceptedRole': 'Role on acceptance',
+  'admin.applications.acceptedRoleHint':
+    'Discord role assigned to the member when their application is accepted.',
   'admin.applications.statusChannel': 'Status announcement channel',
   'admin.applications.statusChannelHint': 'Text channel for open/closed announcements.',
   'admin.applications.panelCardTitle': 'Discord panel',
@@ -1815,15 +1842,15 @@ export const en = {
   'admin.applications.placeholder': 'Not set',
   'admin.split.defaultFee': 'Default split fee',
   'admin.split.defaultFeeHint': 'Applied to new splits when no fee is entered. Allowed range: 0–100%.',
-  'admin.autorole.title': 'Base guild role',
+  'admin.autorole.title': 'Default join role',
   'admin.autorole.hint':
-    'Assigned when someone joins the Discord server, and again when they link an Albion character that belongs to the guild.',
-  'admin.autorole.role': 'Base guild role',
+    'Assigned automatically when a new member joins the Discord server.',
+  'admin.autorole.role': 'Default join role',
   'admin.autorole.roleHint':
     'Managed roles and @everyone are not available. The bot also needs Manage Roles and a higher role in Discord.',
   'admin.autorole.disabled': 'Disabled',
-  'admin.autorole.save': 'Save base guild role',
-  'admin.autorole.saved': 'Base guild role settings saved.',
+  'admin.autorole.save': 'Save default join role',
+  'admin.autorole.saved': 'Default join role settings saved.',
   'admin.progression.title': 'Season XP',
   'admin.progression.hint':
     'Levels reset each season. You can lengthen or shorten the dates at any time. Changing the curve recalculates levels; XP stays.',
@@ -2002,7 +2029,9 @@ export const en = {
   'bank.finance.topSourcesTitle': 'Top funding sources',
   'bank.finance.topDestinationsTitle': 'Top recipients',
   'bank.finance.avgWeeklyLoot': 'Avg. weekly loot',
+  'bank.finance.avgDailyLoot': 'Avg. daily loot',
   'bank.finance.avgWeeklyOutflow': 'Avg. weekly outflow',
+  'bank.finance.avgDailyOutflow': 'Avg. daily outflow',
   'bank.finance.netMargin': 'Net margin',
   'bank.finance.fameEfficiency': 'Fame per silver lost',
 
@@ -2019,6 +2048,11 @@ export const en = {
   'bank.finance.to': 'To',
   'bank.finance.reloading': 'Updating figures…',
   'bank.finance.weeksTracked': '{count} weeks tracked',
+  'bank.finance.daysTracked': '{count} days tracked',
+  'bank.finance.granularityLabel': 'Granularity',
+  'bank.finance.granularityDay': 'Daily',
+  'bank.finance.granularityWeek': 'Weekly',
+  'bank.finance.day': 'Day',
   'bank.finance.invalidRange': 'Pick a start date that comes before the end date.',
   'bank.finance.scopeAllTime': 'All time',
   'bank.finance.scopeWindow': 'Selected period',
@@ -2040,6 +2074,8 @@ export const en = {
   'bank.finance.membersShown': 'Top {count} by payout',
   'bank.finance.netWeekly': 'Weekly net result',
   'bank.finance.netWeeklyDescription': 'Loot created minus everything paid out, week by week.',
+  'bank.finance.netDaily': 'Daily net result',
+  'bank.finance.netDailyDescription': 'Loot created minus everything paid out, day by day.',
   'bank.finance.netResult': 'Net',
   'bank.finance.netDetail': 'Loot created minus total outflow',
   'bank.finance.outflowAllocationDescription':
@@ -2058,6 +2094,7 @@ export const en = {
   'bank.finance.bankPendingDetail': 'Credited but not yet withdrawn',
   'bank.finance.siphoned': 'Siphoned',
   'bank.finance.perWeek': '{value} per week on average',
+  'bank.finance.perDay': '{value} per day on average',
   'bank.finance.outflowSplit': 'Splits {splits} · regear {regear}',
   'bank.finance.acrossFights': 'Across {count} fights',
   'bank.finance.regearOpenDetail': '{value} still open',
@@ -2065,6 +2102,7 @@ export const en = {
   'bank.finance.ledgerEntriesShort': 'Entries',
   'bank.finance.destination': 'Destination',
   'bank.finance.avgWeeklyNet': 'Avg. weekly net',
+  'bank.finance.avgDailyNet': 'Avg. daily net',
   'bank.finance.coverageDetail': 'Regear paid as a share of silver lost',
 
   // Guild overview
@@ -2106,6 +2144,63 @@ export const en = {
   'guild.economy.splitPending': 'Pending:',
   'guild.leaderboard.regearSilver': 'Top Regear Silver',
   'guild.leaderboard.fullStandings': 'Full standings on Season',
+
+  'platform.title': 'Platform',
+  'platform.hub.subtitle': 'Register tenants, toggle features, and assign control-plane operators.',
+  'platform.hub.panels': 'Workspaces',
+  'platform.hub.tenantsHint': 'Register, suspend, and resume Discord servers.',
+  'platform.hub.adminsHint': 'Grant or revoke SuperAdmin on the control plane.',
+  'platform.tenants.title': 'Tenants',
+  'platform.tenants.subtitle': 'Every registered Discord guild.',
+  'platform.tenants.create': 'New tenant',
+  'platform.tenants.empty': 'No tenants yet.',
+  'platform.tenants.id': 'Guild ID',
+  'platform.tenants.name': 'Name',
+  'platform.tenants.slug': 'Slug',
+  'platform.tenants.schema': 'Schema',
+  'platform.tenants.status': 'Status',
+  'platform.tenants.suspend': 'Suspend',
+  'platform.tenants.resume': 'Resume',
+  'platform.tenants.created': 'Created',
+  'platform.tenants.createTitle': 'Register a tenant',
+  'platform.tenants.createHint': 'Creates a Postgres schema and runs tenant migrations.',
+  'platform.tenants.createdToast': 'Tenant created.',
+  'platform.tenants.updatedToast': 'Tenant updated.',
+  'platform.tenants.status.active': 'Active',
+  'platform.tenants.status.suspended': 'Suspended',
+  'platform.tenants.status.provisioning': 'Provisioning',
+  'platform.tenant.subtitle': 'Control-plane record for this Discord guild.',
+  'platform.tenant.features': 'Feature flags',
+  'platform.tenant.rename': 'Display name',
+  'platform.features.title': 'Feature flags',
+  'platform.features.subtitle': 'Enable or disable catalog features for this tenant.',
+  'platform.features.saved': 'Flags saved.',
+  'platform.features.empty': 'No features in the catalog.',
+  'platform.admins.title': 'Platform admins',
+  'platform.admins.subtitle': 'Discord users with control-plane SuperAdmin.',
+  'platform.admins.assign': 'Grant SuperAdmin',
+  'platform.admins.revoke': 'Revoke',
+  'platform.admins.discordId': 'Discord ID',
+  'platform.admins.role': 'Role',
+  'platform.admins.empty': 'No platform admins yet.',
+  'platform.admins.assigned': 'Role granted.',
+  'platform.admins.revoked': 'Role revoked.',
+  'platform.admins.self': 'You cannot revoke your own role.',
+
+  'register.title': 'Register this server',
+  'register.subtitle': 'Set up Weaklings Manager for your Discord guild. The first person to finish becomes Super Admin.',
+  'register.welcome': 'This Discord server is not registered yet. Confirm the display name, then pick your Albion region and in-game guild.',
+  'register.displayName': 'Server name',
+  'register.region': 'Albion region',
+  'register.region.europe': 'Europe',
+  'register.region.americas': 'Americas',
+  'register.region.asia': 'Asia',
+  'register.albionGuild': 'In-game guild',
+  'register.albionGuildHint': 'Search by guild name',
+  'register.superadminHint': 'You will be the Super Admin for this tenant.',
+  'register.submit': 'Create tenant',
+  'register.already': 'This server is already registered.',
+  'register.missingGuild': 'Missing Discord guild id. Open this page from the bot link.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

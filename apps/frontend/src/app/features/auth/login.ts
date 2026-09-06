@@ -1,5 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
-import { Router } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
+import { map } from 'rxjs/operators';
 
 import { AuthService } from '../../core/services/auth.service';
 import { ThemeService } from '../../core/services/theme.service';
@@ -63,6 +65,12 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
           </p>
         </div>
 
+        @if (noTenant()) {
+          <p class="mb-4 text-center text-sm" style="color: var(--color-danger)" role="alert">
+            {{ t('auth.no_tenant') }}
+          </p>
+        }
+
         <button type="button" class="btn btn--primary w-full" (click)="login()">
           <app-icon name="discord" />
           {{ t('auth.login_discord') }}
@@ -81,17 +89,26 @@ export class Login {
   protected readonly translate = inject(TranslateService);
   private readonly toasts = inject(ToastService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  protected readonly noTenant = toSignal(
+    this.route.queryParamMap.pipe(map((params) => params.get('error') === 'no_tenant')),
+    { initialValue: false },
+  );
 
   constructor() {
+    const next = this.route.snapshot.queryParamMap.get('next');
     if (this.auth.isAuthenticated()) {
-      void this.router.navigateByUrl('/dashboard');
+      const profile = this.auth.profile();
+      const fallback = profile?.tenant_id ? '/dashboard' : '/needs-tenant';
+      void this.router.navigateByUrl(next && next.startsWith('/') ? next : fallback);
     }
   }
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   protected login(): void {
-    this.auth.login();
+    const next = this.route.snapshot.queryParamMap.get('next');
+    this.auth.login(next && next.startsWith('/') ? next : undefined);
   }
 
   protected onLanguageChange(event: Event): void {

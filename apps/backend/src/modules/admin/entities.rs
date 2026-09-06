@@ -48,6 +48,8 @@ pub struct Model {
     pub discord_applications_archive_category_id: Option<String>,
     /// Role allowed to manage applications.
     pub discord_applications_manage_role_id: Option<String>,
+    /// Optional role assigned when an application is accepted.
+    pub discord_applications_accepted_role_id: Option<String>,
     /// Channel where application open/closed announcements are published.
     pub discord_applications_status_channel_id: Option<String>,
     /// Whether new applications are currently accepted.

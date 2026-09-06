@@ -9,6 +9,7 @@ import { Poller, registerPoller } from "./services/poller.js";
 import { assignJoinRole } from "./services/join-role.js";
 import { initSettingsService, getSettingsService } from "./services/settings.js";
 import { registerCommands } from "./services/registry.js";
+import { requireRegisteredTenant } from "./services/tenant-gate.js";
 import { createResponseEmbed } from "./embeds/theme.js";
 
 const THREAD_AUTOCREATE_BUILD_MARKER = "event-thread-signup-message-2026-08-16";
@@ -29,8 +30,7 @@ async function main(): Promise<void> {
   // process's own env vars — see services/settings.ts.
   const settings = initSettingsService(api);
 
-  // Register slash commands with Discord (guild-scoped = instant refresh)
-  await registerCommands();
+  // Slash commands are registered per guild on ready / GuildCreate.
 
   // Message Content is a privileged intent that must be enabled in the Discord Developer Portal.
   const client = new Client({
@@ -60,7 +60,11 @@ async function main(): Promise<void> {
       }
 
       try {
-        await command.execute(interaction, api);
+        const guildApi = await requireRegisteredTenant(interaction, api);
+        if (!guildApi) {
+          return;
+        }
+        await command.execute(interaction, guildApi);
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "An unexpected error occurred.";
@@ -93,6 +97,12 @@ async function main(): Promise<void> {
       await handleSelectMenu(interaction, api);
       return;
     }
+  });
+
+  client.on(Events.GuildCreate, (guild) => {
+    void registerCommands(guild.id).catch((err: unknown) => {
+      console.error(`[Bot] Failed to register commands for ${guild.id}:`, err);
+    });
   });
 
   client.on(Events.GuildMemberAdd, (member) => {
@@ -132,6 +142,16 @@ async function main(): Promise<void> {
   // ── Ready handler ────────────────────────────────────────────────────────
   client.once(Events.ClientReady, (readyClient) => {
     console.log(`✅ Logged in as ${readyClient.user.tag}`);
+
+    const guildIds = new Set(readyClient.guilds.cache.map((guild) => guild.id));
+    if (config.DISCORD_GUILD_ID) {
+      guildIds.add(config.DISCORD_GUILD_ID);
+    }
+    for (const guildId of guildIds) {
+      void registerCommands(guildId).catch((err: unknown) => {
+        console.error(`[Bot] Failed to register commands for ${guildId}:`, err);
+      });
+    }
 
     // Start the polling service after the client is ready
     const poller = new Poller(readyClient, api, settings, config.POLL_INTERVAL_MS);

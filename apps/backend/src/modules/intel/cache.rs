@@ -19,12 +19,12 @@ use crate::modules::intel::report::{DateRange, GuildReport};
 /// How long a computed report stays fresh.
 const TTL: Duration = Duration::from_secs(300);
 
-/// Cache key: the window, truncated to the hour.
+/// Cache key: the window, truncated to the hour, plus granularity flag (0 = week, 1 = day).
 ///
 /// Truncation is what makes the cache actually hit. The default window is
 /// "the last 30 days ending now", so without it every request would carry a
 /// slightly different `to` and miss.
-type Key = (i64, i64);
+type Key = (i64, i64, u8);
 
 /// Thread-safe report cache. Cloning shares the same storage.
 #[derive(Debug, Clone, Default)]
@@ -38,9 +38,18 @@ impl ReportCache {
         Self::default()
     }
 
-    fn key(range: DateRange) -> Key {
+    fn key(range: DateRange, granularity: &str) -> Key {
         const HOUR: i64 = 3600;
-        (range.from.timestamp() / HOUR, range.to.timestamp() / HOUR)
+        let g = if granularity.eq_ignore_ascii_case("day") {
+            1
+        } else {
+            0
+        };
+        (
+            range.from.timestamp() / HOUR,
+            range.to.timestamp() / HOUR,
+            g,
+        )
     }
 
     /// Returns a cached report when one is still fresh.
@@ -48,21 +57,24 @@ impl ReportCache {
     /// A poisoned lock is treated as a miss rather than a panic: a failed
     /// cache should degrade to recomputation, never take the endpoint down.
     #[must_use]
-    pub fn get(&self, range: DateRange) -> Option<GuildReport> {
+    pub fn get(&self, range: DateRange, granularity: &str) -> Option<GuildReport> {
         let guard = self.entries.read().ok()?;
-        let (stored_at, report) = guard.get(&Self::key(range))?;
+        let (stored_at, report) = guard.get(&Self::key(range, granularity))?;
         (stored_at.elapsed() < TTL).then(|| report.clone())
     }
 
     /// Stores a freshly computed report.
-    pub fn put(&self, range: DateRange, report: &GuildReport) {
+    pub fn put(&self, range: DateRange, granularity: &str, report: &GuildReport) {
         let Ok(mut guard) = self.entries.write() else {
             return;
         };
         // Drop anything already stale so the map cannot grow without bound
         // across many distinct windows.
         guard.retain(|_, (stored_at, _)| stored_at.elapsed() < TTL);
-        guard.insert(Self::key(range), (Instant::now(), report.clone()));
+        guard.insert(
+            Self::key(range, granularity),
+            (Instant::now(), report.clone()),
+        );
     }
 
     /// Drops every cached report, forcing the next read to recompute.
@@ -85,31 +97,38 @@ mod tests {
     fn windows_within_the_same_hour_share_a_key() {
         let a = range("2026-08-01T00:10:00Z", "2026-08-30T12:05:00Z");
         let b = range("2026-08-01T00:50:00Z", "2026-08-30T12:55:00Z");
-        assert_eq!(ReportCache::key(a), ReportCache::key(b));
+        assert_eq!(ReportCache::key(a, "week"), ReportCache::key(b, "week"));
     }
 
     #[test]
     fn different_hours_do_not_collide() {
         let a = range("2026-08-01T00:00:00Z", "2026-08-30T12:00:00Z");
         let b = range("2026-08-01T00:00:00Z", "2026-08-30T13:00:00Z");
-        assert_ne!(ReportCache::key(a), ReportCache::key(b));
+        assert_ne!(ReportCache::key(a, "week"), ReportCache::key(b, "week"));
+    }
+
+    #[test]
+    fn different_granularities_do_not_collide() {
+        let a = range("2026-08-01T00:00:00Z", "2026-08-30T12:00:00Z");
+        assert_ne!(ReportCache::key(a, "day"), ReportCache::key(a, "week"));
     }
 
     #[test]
     fn stores_and_returns_a_report() {
         let cache = ReportCache::new();
         let r = range("2026-08-01T00:00:00Z", "2026-08-30T00:00:00Z");
-        assert!(cache.get(r).is_none());
-        cache.put(r, &GuildReport::default());
-        assert!(cache.get(r).is_some());
+        assert!(cache.get(r, "week").is_none());
+        cache.put(r, "week", &GuildReport::default());
+        assert!(cache.get(r, "week").is_some());
+        assert!(cache.get(r, "day").is_none());
     }
 
     #[test]
     fn invalidate_clears_everything() {
         let cache = ReportCache::new();
         let r = range("2026-08-01T00:00:00Z", "2026-08-30T00:00:00Z");
-        cache.put(r, &GuildReport::default());
+        cache.put(r, "week", &GuildReport::default());
         cache.invalidate();
-        assert!(cache.get(r).is_none());
+        assert!(cache.get(r, "week").is_none());
     }
 }

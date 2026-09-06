@@ -497,12 +497,20 @@ function toDateInput(date: Date): string {
             />
           }
         </div>
+        <div class="fin-filters__group">
+          <span class="eyebrow">{{ t('bank.finance.granularityLabel') }}</span>
+          <app-view-toggle
+            [options]="granularityOptions()"
+            [active]="granularity()"
+            (activeChange)="onGranularityChange($event)"
+          />
+        </div>
         <p class="fin-filters__window" aria-live="polite">
           @if (busy()) {
             {{ t('bank.finance.reloading') }}
           } @else if (report(); as r) {
             <strong>{{ formatDate(r.from) }} → {{ formatDate(r.to) }}</strong>
-            · {{ t('bank.finance.weeksTracked', { count: r.trends.length }) }}
+            · {{ trackedWindowLabel() }}
           }
         </p>
       </div>
@@ -581,11 +589,11 @@ function toDateInput(date: Date): string {
               <article class="fin-card fin-card--full">
                 <header class="fin-card__head">
                   <div>
-                    <h3 class="fin-card__title">{{ t('bank.finance.weeklyFlow') }}</h3>
-                    <p class="fin-card__sub">{{ t('bank.finance.weeklyFlowDescription') }}</p>
+                    <h3 class="fin-card__title">{{ flowCardTitle() }}</h3>
+                    <p class="fin-card__sub">{{ flowCardDescription() }}</p>
                   </div>
                   <span class="fin-card__badge">
-                    {{ t('bank.finance.avgWeeklyLoot') }} {{ formatCompact(avgWeeklyLoot()) }}
+                    {{ avgLootBadgeLabel() }} {{ formatCompact(avgLoot()) }}
                   </span>
                 </header>
                 @if (hasTrends()) {
@@ -593,7 +601,7 @@ function toDateInput(date: Date): string {
                     [option]="flowOption()"
                     height="19rem"
                     [stale]="busy()"
-                    [label]="t('bank.finance.weeklyFlow')"
+                    [label]="flowCardTitle()"
                     [tableHead]="flowTableHead()"
                     [tableRows]="flowTableRows()"
                   />
@@ -605,11 +613,11 @@ function toDateInput(date: Date): string {
               <article class="fin-card">
                 <header class="fin-card__head">
                   <div>
-                    <h3 class="fin-card__title">{{ t('bank.finance.netWeekly') }}</h3>
-                    <p class="fin-card__sub">{{ t('bank.finance.netWeeklyDescription') }}</p>
+                    <h3 class="fin-card__title">{{ netCardTitle() }}</h3>
+                    <p class="fin-card__sub">{{ netCardDescription() }}</p>
                   </div>
                   <span class="fin-card__badge">
-                    {{ t('bank.finance.avgWeeklyNet') }} {{ formatSigned(avgWeeklyNet()) }}
+                    {{ avgNetBadgeLabel() }} {{ formatSigned(avgNet()) }}
                   </span>
                 </header>
                 @if (hasTrends()) {
@@ -617,7 +625,7 @@ function toDateInput(date: Date): string {
                     [option]="netOption()"
                     height="16rem"
                     [stale]="busy()"
-                    [label]="t('bank.finance.netWeekly')"
+                    [label]="netCardTitle()"
                     [tableHead]="netTableHead()"
                     [tableRows]="netTableRows()"
                   />
@@ -703,8 +711,8 @@ function toDateInput(date: Date): string {
               <article class="fin-card">
                 <header class="fin-card__head">
                   <div>
-                    <h3 class="fin-card__title">{{ t('bank.finance.weeklyActivity') }}</h3>
-                    <p class="fin-card__sub">{{ t('bank.finance.weeklyActivityDescription') }}</p>
+                    <h3 class="fin-card__title">{{ activityCardTitle() }}</h3>
+                    <p class="fin-card__sub">{{ activityCardDescription() }}</p>
                   </div>
                 </header>
                 @if (hasTrends()) {
@@ -712,7 +720,7 @@ function toDateInput(date: Date): string {
                     [option]="activityOption()"
                     height="17rem"
                     [stale]="busy()"
-                    [label]="t('bank.finance.weeklyActivity')"
+                    [label]="activityCardTitle()"
                     [tableHead]="activityTableHead()"
                     [tableRows]="activityTableRows()"
                   />
@@ -920,6 +928,7 @@ export class AdminFinance {
   protected readonly refreshing = signal(false);
 
   protected readonly period = signal<PeriodId>('30');
+  protected readonly granularity = signal<'day' | 'week'>('day');
   protected readonly customFrom = signal(toDateInput(new Date(Date.now() - 30 * MS_PER_DAY)));
   protected readonly customTo = signal(toDateInput(new Date()));
 
@@ -935,10 +944,22 @@ export class AdminFinance {
     { id: 'custom', label: this.t('bank.finance.periodCustom'), icon: 'calendar' },
   ]);
 
+  protected readonly granularityOptions = computed<ViewToggleOption[]>(() => [
+    { id: 'day', label: this.t('bank.finance.granularityDay') },
+    { id: 'week', label: this.t('bank.finance.granularityWeek') },
+  ]);
+
   protected readonly rangeDays = computed(() => this.resolveRange()?.days ?? 30);
 
   protected readonly trends = computed<readonly TrendBucket[]>(() => this.report()?.trends ?? []);
   protected readonly hasTrends = computed(() => this.trends().length > 0);
+
+  protected readonly trackedWindowLabel = computed(() => {
+    const count = this.trends().length;
+    return this.granularity() === 'day'
+      ? this.t('bank.finance.daysTracked', { count })
+      : this.t('bank.finance.weeksTracked', { count });
+  });
 
   private readonly palette = computed(() => chartPalette(this.theme.isDark()));
   private readonly chrome = computed(() => chartChrome(this.theme.isDark()));
@@ -954,6 +975,11 @@ export class AdminFinance {
 
   protected onPeriodChange(id: string): void {
     this.period.set(id as PeriodId);
+    void this.loadFinance();
+  }
+
+  protected onGranularityChange(id: string): void {
+    this.granularity.set(id as 'day' | 'week');
     void this.loadFinance();
   }
 
@@ -1014,18 +1040,21 @@ export class AdminFinance {
     this.loading.set(firstLoad);
     this.refreshing.set(!firstLoad);
 
+    const granularity = this.granularity();
     const [bankResult, reportResult, previousResult] = await Promise.allSettled([
       firstValueFrom(this.api.get<BankAnalyticsSummary>('api/bank/admin/summary')),
       firstValueFrom(
         this.api.get<GuildReport>('api/intel/report', {
           from: range.from.toISOString(),
           to: range.to.toISOString(),
+          granularity,
         }),
       ),
       firstValueFrom(
         this.api.get<GuildReport>('api/intel/report', {
           from: range.previousFrom.toISOString(),
           to: range.previousTo.toISOString(),
+          granularity,
         }),
       ),
     ]);
@@ -1101,7 +1130,9 @@ export class AdminFinance {
         key: 'loot',
         label: this.t('bank.finance.lootCreated'),
         value: this.formatAmount(economy.loot_in),
-        detail: this.t('bank.finance.perWeek', { value: this.formatCompact(this.avgWeeklyLoot()) }),
+        detail: this.granularity() === 'day'
+          ? this.t('bank.finance.perDay', { value: this.formatCompact(this.avgLoot()) })
+          : this.t('bank.finance.perWeek', { value: this.formatCompact(this.avgLoot()) }),
         tone: 'success',
         delta: this.buildDelta(economy.loot_in, previous?.loot_in, true),
       },
@@ -1213,7 +1244,7 @@ export class AdminFinance {
     };
   }
 
-  protected readonly avgWeeklyLoot = computed(() => {
+  protected readonly avgLoot = computed(() => {
     const trends = this.trends();
     if (trends.length === 0) {
       return 0;
@@ -1221,7 +1252,7 @@ export class AdminFinance {
     return Math.round(trends.reduce((acc, bucket) => acc + bucket.loot_in, 0) / trends.length);
   });
 
-  protected readonly avgWeeklyNet = computed(() => {
+  protected readonly avgNet = computed(() => {
     const trends = this.trends();
     if (trends.length === 0) {
       return 0;
@@ -1229,6 +1260,63 @@ export class AdminFinance {
     const total = trends.reduce((acc, bucket) => acc + (bucket.loot_in - bucket.outflow), 0);
     return Math.round(total / trends.length);
   });
+
+  protected readonly avgWeeklyLoot = this.avgLoot;
+  protected readonly avgWeeklyNet = this.avgNet;
+
+  protected readonly flowCardTitle = computed(() =>
+    this.granularity() === 'day'
+      ? this.t('bank.finance.dailyFlow')
+      : this.t('bank.finance.weeklyFlow'),
+  );
+
+  protected readonly flowCardDescription = computed(() =>
+    this.granularity() === 'day'
+      ? this.t('bank.finance.dailyFlowDescription')
+      : this.t('bank.finance.weeklyFlowDescription'),
+  );
+
+  protected readonly avgLootBadgeLabel = computed(() =>
+    this.granularity() === 'day'
+      ? this.t('bank.finance.avgDailyLoot')
+      : this.t('bank.finance.avgWeeklyLoot'),
+  );
+
+  protected readonly netCardTitle = computed(() =>
+    this.granularity() === 'day'
+      ? this.t('bank.finance.netDaily')
+      : this.t('bank.finance.netWeekly'),
+  );
+
+  protected readonly netCardDescription = computed(() =>
+    this.granularity() === 'day'
+      ? this.t('bank.finance.netDailyDescription')
+      : this.t('bank.finance.netWeeklyDescription'),
+  );
+
+  protected readonly avgNetBadgeLabel = computed(() =>
+    this.granularity() === 'day'
+      ? this.t('bank.finance.avgDailyNet')
+      : this.t('bank.finance.avgWeeklyNet'),
+  );
+
+  protected readonly activityCardTitle = computed(() =>
+    this.granularity() === 'day'
+      ? this.t('bank.finance.dailyActivity')
+      : this.t('bank.finance.weeklyActivity'),
+  );
+
+  protected readonly activityCardDescription = computed(() =>
+    this.granularity() === 'day'
+      ? this.t('bank.finance.dailyActivityDescription')
+      : this.t('bank.finance.weeklyActivityDescription'),
+  );
+
+  protected readonly timeColumnLabel = computed(() =>
+    this.granularity() === 'day'
+      ? this.t('bank.finance.day')
+      : this.t('bank.finance.week'),
+  );
 
   protected readonly regearCoverageRatio = computed(() => {
     const trends = this.trends();
@@ -1567,7 +1655,7 @@ export class AdminFinance {
   /* ---------------------------- Table twins ---------------------------- */
 
   protected readonly flowTableHead = computed(() => [
-    this.t('bank.finance.week'),
+    this.timeColumnLabel(),
     this.t('bank.finance.lootCreated'),
     this.t('bank.finance.memberOutflow'),
     this.t('bank.finance.netResult'),
@@ -1583,7 +1671,7 @@ export class AdminFinance {
   );
 
   protected readonly netTableHead = computed(() => [
-    this.t('bank.finance.week'),
+    this.timeColumnLabel(),
     this.t('bank.finance.netResult'),
   ]);
 
@@ -1595,7 +1683,7 @@ export class AdminFinance {
   );
 
   protected readonly lossTableHead = computed(() => [
-    this.t('bank.finance.week'),
+    this.timeColumnLabel(),
     this.t('bank.finance.silverLost'),
     this.t('bank.finance.regearPaid'),
   ]);
@@ -1609,7 +1697,7 @@ export class AdminFinance {
   );
 
   protected readonly activityTableHead = computed(() => [
-    this.t('bank.finance.week'),
+    this.timeColumnLabel(),
     this.t('bank.finance.fights'),
     this.t('bank.finance.events'),
   ]);

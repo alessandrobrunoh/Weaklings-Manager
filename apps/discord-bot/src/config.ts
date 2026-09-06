@@ -5,8 +5,10 @@ const Env = z.object({
   DISCORD_BOT_TOKEN: z.string().min(1),
   /** Discord Application Client ID. */
   DISCORD_CLIENT_ID: z.string().min(1),
-  /** The Discord Guild (server) ID to register slash commands in. */
+  /** Discord Guild (server) ID used as a fallback when the cache is empty. */
   DISCORD_GUILD_ID: z.string().min(1),
+  /** Public frontend origin, used in unregistered-guild replies. */
+  FRONTEND_URL: z.string().url().default("http://localhost:5173"),
   /** Base URL of the Albion Guild Manager backend. */
   BACKEND_URL: z.string().url().default("http://localhost:3000"),
   /**

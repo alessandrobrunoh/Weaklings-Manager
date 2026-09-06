@@ -774,8 +774,12 @@ impl CombatService {
                 continue; // A malformed row should not fail every other observation.
             };
             for player in players {
-                let Some(link) = links.get(&player.id) else { continue };
-                let Some(user) = discord_id_to_user.get(&link.discord_id) else { continue };
+                let Some(link) = links.get(&player.id) else {
+                    continue;
+                };
+                let Some(user) = discord_id_to_user.get(&link.discord_id) else {
+                    continue;
+                };
 
                 let nearest = participations
                     .iter()
@@ -787,7 +791,9 @@ impl CombatService {
                     .min_by_key(|(_, event_date, _)| {
                         (event_date.timestamp() - snapshot.start_time.timestamp()).abs()
                     });
-                let Some((_, _, build_id)) = nearest else { continue };
+                let Some((_, _, build_id)) = nearest else {
+                    continue;
+                };
 
                 let Ok(view) = self
                     .build_item_power(
@@ -1893,7 +1899,14 @@ mod calibration_tests {
         .expect("failed to insert build item");
 
         let expected_ip = CombatService::new()
-            .build_item_power(db, built.id, BuildLoadout::Main, SpecSource::Current, Some(owner.id), None)
+            .build_item_power(
+                db,
+                built.id,
+                BuildLoadout::Main,
+                SpecSource::Current,
+                Some(owner.id),
+                None,
+            )
             .await
             .expect("build item power should compute")
             .breakdown

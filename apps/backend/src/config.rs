@@ -1,7 +1,7 @@
-/// Application configuration loaded from environment variables.
-///
-/// Uses `dotenvy` to load a `.env` file at startup and `serde` to
-/// deserialize typed config from environment variables.
+//! Application configuration loaded from environment variables.
+//!
+//! Uses `dotenvy` to load a `.env` file at startup and `serde` to
+//! deserialize typed config from environment variables.
 use axum_extra::extract::cookie::Key as CookieKey;
 use serde::Deserialize;
 
@@ -18,8 +18,15 @@ pub struct Config {
     /// Port the HTTP server binds to (default: 3000).
     #[serde(default = "default_backend_port")]
     pub backend_port: u16,
-    /// Connection string for Postgres.
+    /// Connection string for the tenant database (today: schema `public`).
     pub database_url: String,
+    /// Optional dedicated DSN for the control-plane schema.
+    ///
+    /// When unset or empty, [`Config::control_plane_url`] falls back to
+    /// [`Self::database_url`]. Same cluster is the expected MVP layout; a
+    /// separate URL is only useful if the control-plane is hosted elsewhere.
+    #[serde(default)]
+    pub control_database_url: Option<String>,
     /// Discord `OAuth2` Client ID.
     pub discord_client_id: String,
     /// Discord `OAuth2` Client Secret.
@@ -115,6 +122,20 @@ impl Config {
         envy::from_env()
     }
 
+    /// DSN used to open the control-plane pool.
+    ///
+    /// Falls back to [`Self::database_url`] so existing deployments keep a
+    /// single `DATABASE_URL`. The connection still pins `search_path` to
+    /// [`crate::postgres::CONTROL_SCHEMA`].
+    #[must_use]
+    pub fn control_plane_url(&self) -> &str {
+        self.control_database_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+            .unwrap_or(self.database_url.as_str())
+    }
+
     /// Derives the [`cookie::Key`](CookieKey) used to encrypt and authenticate the
     /// `session_user` cookie from `session_secret`.
     ///
@@ -187,4 +208,54 @@ fn split_csv(value: &str) -> Vec<String> {
         .filter(|item| !item.is_empty())
         .map(ToOwned::to_owned)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stub() -> Config {
+        Config {
+            backend_port: 3000,
+            database_url: "postgres://localhost/weaklings".to_string(),
+            control_database_url: None,
+            discord_client_id: "id".to_string(),
+            discord_client_secret: "secret".to_string(),
+            discord_redirect_uri: "http://localhost/callback".to_string(),
+            discord_guild_id: "guild".to_string(),
+            bot_api_secret: None,
+            discord_bot_token: None,
+            super_admin_discord_id: "admin".to_string(),
+            session_secret: "x".repeat(64),
+            frontend_url: "http://localhost".to_string(),
+            albion_api_region: "europe".to_string(),
+            albion_guild_id: "albion".to_string(),
+            albion_allied_guild_ids: String::new(),
+            albion_allied_guild_names: String::new(),
+            mistral_api_key: String::new(),
+            albionbb_base_url: "http://localhost".to_string(),
+            albionbb_request_timeout_secs: 60,
+            albiondata_request_timeout_secs: 30,
+        }
+    }
+
+    #[test]
+    fn control_plane_url_falls_back_to_database_url() {
+        let cfg = stub();
+        assert_eq!(cfg.control_plane_url(), "postgres://localhost/weaklings");
+    }
+
+    #[test]
+    fn control_plane_url_uses_dedicated_dsn_when_set() {
+        let mut cfg = stub();
+        cfg.control_database_url = Some("postgres://localhost/control".to_string());
+        assert_eq!(cfg.control_plane_url(), "postgres://localhost/control");
+    }
+
+    #[test]
+    fn control_plane_url_treats_blank_as_unset() {
+        let mut cfg = stub();
+        cfg.control_database_url = Some("   ".to_string());
+        assert_eq!(cfg.control_plane_url(), "postgres://localhost/weaklings");
+    }
 }

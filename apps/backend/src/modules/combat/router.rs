@@ -563,7 +563,8 @@ async fn get_calibration(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<CalibrationView>>, AppError> {
-    user.require(&perms, Permission::CombatCalibrationView).await?;
+    user.require(&perms, Permission::CombatCalibrationView)
+        .await?;
     let calibration = CombatService::new().calibration(&db).await?;
     Ok(Json(ApiResponse::new(calibration)))
 }

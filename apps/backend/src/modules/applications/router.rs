@@ -116,17 +116,18 @@ async fn accept_application(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<ApplicationView>>, AppError> {
     user.require(&perms, Permission::ApplicationsManage).await?;
+    let settings = crate::modules::admin::service::AdminService::get_guild_settings(&db)
+        .await
+        .ok();
+    let accepted_application_role = settings
+        .as_ref()
+        .and_then(|s| s.discord_applications_accepted_role_id.clone());
     let default_role_discord_id = role::Entity::find()
         .filter(role::Column::IsDefault.eq(true))
         .one(&db)
         .await?
         .and_then(|item| item.discord_role_id);
-    let fallback_auto_role =
-        crate::modules::admin::service::AdminService::get_autorole_settings(&db)
-            .await
-            .ok()
-            .and_then(|settings| settings.discord_auto_role_id);
-    let assigned_role = default_role_discord_id.or(fallback_auto_role);
+    let assigned_role = accepted_application_role.or(default_role_discord_id);
     let application = ApplicationService::resolve(&db, id, &user.id, "accepted").await?;
     let mut view: ApplicationView = application.into();
     view.default_role_discord_id = assigned_role;

@@ -25,6 +25,7 @@ interface ApplicationsDraft {
   discord_applications_category_id: string;
   discord_applications_archive_category_id: string;
   discord_applications_manage_role_id: string;
+  discord_applications_accepted_role_id: string;
   discord_applications_status_channel_id: string;
   discord_applications_open: string;
   discord_applications_panel_title: string;
@@ -69,6 +70,7 @@ const EMPTY_DRAFT: ApplicationsDraft = {
   discord_applications_category_id: '',
   discord_applications_archive_category_id: '',
   discord_applications_manage_role_id: '',
+  discord_applications_accepted_role_id: '',
   discord_applications_status_channel_id: '',
   discord_applications_open: 'false',
   discord_applications_panel_title: 'Applications',
@@ -460,6 +462,24 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
                 </span>
               </label>
               <label>
+                <span class="label">{{ t('admin.applications.acceptedRole') }}</span>
+                <app-searchable-select
+                  class="mt-1 block"
+                  [options]="roleOptions(draft().discord_applications_accepted_role_id)"
+                  [value]="draft().discord_applications_accepted_role_id"
+                  [emptyLabel]="t('admin.applications.placeholder')"
+                  [searchPlaceholder]="t('common.search')"
+                  [noMatchesLabel]="t('picker.noMatches')"
+                  [emptyOptionsLabel]="t('picker.empty')"
+                  [loading]="catalogLoading()"
+                  [ariaLabel]="t('admin.applications.acceptedRole')"
+                  (valueChange)="setDraft('discord_applications_accepted_role_id', $event)"
+                />
+                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                  {{ t('admin.applications.acceptedRoleHint') }}
+                </span>
+              </label>
+              <label>
                 <span class="label">{{ t('admin.applications.statusChannel') }}</span>
                 <app-searchable-select
                   class="mt-1 block"
@@ -643,6 +663,7 @@ export class AdminApplications {
         discord_applications_category_id: draft.discord_applications_category_id.trim(),
         discord_applications_archive_category_id: draft.discord_applications_archive_category_id.trim(),
         discord_applications_manage_role_id: draft.discord_applications_manage_role_id.trim(),
+        discord_applications_accepted_role_id: draft.discord_applications_accepted_role_id.trim(),
         discord_applications_status_channel_id: draft.discord_applications_status_channel_id.trim(),
         discord_applications_open: draft.discord_applications_open === 'true',
         discord_applications_panel_title: draft.discord_applications_panel_title.trim(),
@@ -722,6 +743,7 @@ function toDraft(settings: GuildSettingsView): ApplicationsDraft {
     discord_applications_category_id: settings.discord_applications_category_id ?? '',
     discord_applications_archive_category_id: settings.discord_applications_archive_category_id ?? '',
     discord_applications_manage_role_id: settings.discord_applications_manage_role_id ?? '',
+    discord_applications_accepted_role_id: settings.discord_applications_accepted_role_id ?? '',
     discord_applications_status_channel_id: settings.discord_applications_status_channel_id ?? '',
     discord_applications_open: String(settings.discord_applications_open),
     discord_applications_panel_title: settings.discord_applications_panel_title ?? 'Applications',

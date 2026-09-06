@@ -13,8 +13,16 @@ import { filter } from 'rxjs';
 
 import { AlbionLinkGate } from '../../shared/components/albion-link-gate/albion-link-gate';
 import { AuthService } from '../../core/services/auth.service';
-import { ADMIN_NAV_SECTIONS, APP_NAV_SECTIONS, ADMIN_ACCESS_PERMISSIONS, isAdminUrl } from '../nav';
+import {
+  ADMIN_NAV_SECTIONS,
+  APP_NAV_SECTIONS,
+  ADMIN_ACCESS_PERMISSIONS,
+  PLATFORM_NAV_SECTIONS,
+  isAdminUrl,
+  isPlatformUrl,
+} from '../nav';
 import { Sidebar } from '../sidebar/sidebar';
+import { TenantRail } from '../tenant-rail/tenant-rail';
 import { Topbar } from '../topbar/topbar';
 
 /**
@@ -24,13 +32,14 @@ import { Topbar } from '../topbar/topbar';
  * feature route inside `<router-outlet>`. The sidebar collapses into a
  * drawer on narrow screens; on wide screens it is always visible.
  *
- * Navigation lives in `layout/nav.ts`. Under `/admin/*` the sidebar swaps to
- * the admin console; everywhere else it shows the guild app.
+ * Navigation lives in `layout/nav.ts`. Under `/platform/*` the sidebar swaps to
+ * the control-plane console; under `/admin/*` it swaps to the tenant admin
+ * console; everywhere else it shows the guild app.
  */
 @Component({
   selector: 'app-shell',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AlbionLinkGate, RouterOutlet, Sidebar, Topbar],
+  imports: [AlbionLinkGate, RouterOutlet, Sidebar, TenantRail, Topbar],
   host: {
     '(document:keydown.escape)': 'closeDrawer()',
   },
@@ -41,6 +50,11 @@ import { Topbar } from '../topbar/topbar';
   `,
   template: `
     <div class="flex h-dvh overflow-hidden bg-[var(--color-bg)]">
+      @if (!inPlatform()) {
+        <aside class="hidden md:flex shrink-0" aria-hidden="false">
+          <app-tenant-rail />
+        </aside>
+      }
       <!-- Desktop sidebar -->
       <aside
         class="hidden md:flex flex-col shrink-0 transition-all duration-200 ease-in-out"
@@ -67,8 +81,11 @@ import { Topbar } from '../topbar/topbar';
             aria-label="Close menu"
           ></button>
           <div
-            class="relative w-72 max-w-[80%] flex flex-col h-full bg-[var(--color-surface)] border-r border-[var(--color-border)]"
+            class="relative max-w-[90%] flex h-full bg-[var(--color-surface)] border-r border-[var(--color-border)]"
           >
+            @if (!inPlatform()) {
+              <app-tenant-rail />
+            }
             <app-sidebar
               [sections]="navSections()"
               [ariaLabelKey]="navAriaLabelKey()"
@@ -89,7 +106,9 @@ import { Topbar } from '../topbar/topbar';
         </main>
       </div>
 
-      <app-albion-link-gate />
+      @if (auth.profile()?.tenant_id) {
+        <app-albion-link-gate />
+      }
     </div>
   `,
 })
@@ -101,12 +120,19 @@ export class Shell {
   protected readonly isDrawerOpen = signal(false);
   protected readonly isSidebarCollapsed = signal(false);
   protected readonly inAdmin = signal(this.shouldUseAdminNavigation(this.router.url));
-  protected readonly navSections = computed(() =>
-    this.inAdmin() ? ADMIN_NAV_SECTIONS : APP_NAV_SECTIONS,
-  );
-  protected readonly navAriaLabelKey = computed(() =>
-    this.inAdmin() ? 'nav.aria.admin' : 'nav.aria.primary',
-  );
+  protected readonly inPlatform = signal(isPlatformUrl(this.router.url));
+  protected readonly navSections = computed(() => {
+    if (this.inPlatform()) {
+      return PLATFORM_NAV_SECTIONS;
+    }
+    return this.inAdmin() ? ADMIN_NAV_SECTIONS : APP_NAV_SECTIONS;
+  });
+  protected readonly navAriaLabelKey = computed(() => {
+    if (this.inPlatform()) {
+      return 'nav.aria.platform';
+    }
+    return this.inAdmin() ? 'nav.aria.admin' : 'nav.aria.primary';
+  });
 
   private shouldUseAdminNavigation(url: string): boolean {
     const path = url.split('?')[0].split('#')[0];
@@ -137,6 +163,7 @@ export class Shell {
         takeUntilDestroyed(),
       )
       .subscribe((event) => {
+        this.inPlatform.set(isPlatformUrl(event.urlAfterRedirects));
         this.inAdmin.set(this.shouldUseAdminNavigation(event.urlAfterRedirects));
         const element = this.main()?.nativeElement;
         if (element) {

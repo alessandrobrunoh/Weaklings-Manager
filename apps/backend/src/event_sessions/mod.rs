@@ -43,15 +43,14 @@ pub fn spawn(
     albionbb: AlbionBbService,
     albiondata: AlbionDataService,
     cfg: Config,
+    tenant_id: String,
 ) {
     tokio::spawn(async move {
         let mut ticker = interval(TICK_INTERVAL);
-        // Don't pile up ticks if a cycle takes longer than TICK_INTERVAL.
-        // (default `MissedTickBehavior::Burst` is fine here.)
         loop {
             ticker.tick().await;
             if let Err(e) = run_cycle(&db, &albionbb, &albiondata, &cfg).await {
-                tracing::error!(error = %e, "event-sessions worker cycle failed");
+                tracing::error!(tenant_id, error = %e, "event-sessions worker cycle failed");
             }
         }
     });

@@ -1,6 +1,13 @@
 import { Routes } from '@angular/router';
 
-import { authGuard, permissionGuard, permissionGuardTo, redirectIfAuthenticatedGuard } from './core/guards/auth.guard';
+import {
+  authGuard,
+  permissionGuard,
+  permissionGuardTo,
+  platformGuard,
+  redirectIfAuthenticatedGuard,
+  tenantGuard,
+} from './core/guards/auth.guard';
 import { ADMIN_ACCESS_PERMISSIONS } from './layout/nav';
 
 /**
@@ -14,7 +21,7 @@ export const routes: Routes = [
   {
     path: '',
     loadComponent: () => import('./layout/shell/shell').then((m) => m.Shell),
-    canActivate: [authGuard],
+    canActivate: [authGuard, tenantGuard],
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
       {
@@ -250,6 +257,42 @@ export const routes: Routes = [
         ],
       },
       {
+        path: 'platform',
+        canActivate: [platformGuard],
+        children: [
+          {
+            path: '',
+            pathMatch: 'full',
+            loadComponent: () =>
+              import('./features/platform/platform-hub').then((m) => m.PlatformHub),
+          },
+          {
+            path: 'tenants',
+            loadComponent: () =>
+              import('./features/platform/platform-tenants').then((m) => m.PlatformTenants),
+          },
+          {
+            path: 'tenants/:tenantId',
+            loadComponent: () =>
+              import('./features/platform/platform-tenant-detail').then(
+                (m) => m.PlatformTenantDetail,
+              ),
+          },
+          {
+            path: 'tenants/:tenantId/features',
+            loadComponent: () =>
+              import('./features/platform/platform-feature-flags').then(
+                (m) => m.PlatformFeatureFlags,
+              ),
+          },
+          {
+            path: 'admins',
+            loadComponent: () =>
+              import('./features/platform/platform-admins').then((m) => m.PlatformAdmins),
+          },
+        ],
+      },
+      {
         path: 'audit',
         canActivate: [permissionGuard('audit.view')],
         loadComponent: () => import('./features/audit/audit').then((m) => m.Audit),
@@ -268,6 +311,21 @@ export const routes: Routes = [
     path: 'login',
     canActivate: [redirectIfAuthenticatedGuard],
     loadComponent: () => import('./features/auth/login').then((m) => m.Login),
+  },
+  {
+    path: 'choose-server',
+    loadComponent: () =>
+      import('./features/auth/choose-server').then((m) => m.ChooseServer),
+  },
+  {
+    path: 'needs-tenant',
+    loadComponent: () =>
+      import('./features/auth/needs-tenant').then((m) => m.NeedsTenant),
+  },
+  {
+    path: 'register-tenant',
+    loadComponent: () =>
+      import('./features/auth/register-tenant').then((m) => m.RegisterTenant),
   },
   { path: '**', redirectTo: '' },
 ];

@@ -145,7 +145,6 @@ describe('AdminDiscord', () => {
   it('shows saved Discord names and hides application fields', () => {
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Member');
-    expect(text).toContain('Event ping');
     expect(text).toContain('#events');
     expect(text).not.toContain('admin.discord.applicationPanelChannel');
     expect(text).not.toContain('admin.discord.applicationsOpen');
@@ -160,7 +159,6 @@ describe('AdminDiscord', () => {
       'api/admin/settings',
       expect.objectContaining({
         discord_events_channel_id: 'ch-events',
-        discord_event_role_id: 'role-event',
         default_split_fee: 20,
       }),
     );

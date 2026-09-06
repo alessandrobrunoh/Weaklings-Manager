@@ -85,6 +85,7 @@ describe('Profile Destiny Board tab', () => {
               roles: ['Member'],
               highest_role: 'Member',
               is_superadmin: false,
+              is_platform_admin: false,
               permissions: [],
             }),
             hasPermission: vi.fn().mockReturnValue(false),

@@ -260,7 +260,14 @@ npm run dev   # watch mode, loads ../../.env
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `BACKEND_PORT` | no | `3000` | HTTP listen port |
-| `DATABASE_URL` | yes | — | PostgreSQL connection string |
+| `DATABASE_URL` | yes | — | PostgreSQL connection string (tenant data; still schema `public` until the multi-tenant backfill) |
+| `CONTROL_DATABASE_URL` | no | `DATABASE_URL` | Optional dedicated DSN for the control-plane schema `control`. Same cluster is the default. |
+
+After deploying the control-plane migrator, promote the current single-guild database to tenant #1 (destructive against schema `public` — snapshot first):
+
+```sh
+cargo run -p backend --bin backfill_tenant_one
+```
 | `DISCORD_CLIENT_ID` | yes | — | Discord OAuth2 client ID |
 | `DISCORD_CLIENT_SECRET` | yes | — | Discord OAuth2 client secret |
 | `DISCORD_REDIRECT_URI` | yes | — | OAuth2 redirect URI (`.../api/auth/discord/callback`) |

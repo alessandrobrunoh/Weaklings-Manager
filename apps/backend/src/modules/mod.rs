@@ -20,6 +20,7 @@ pub mod health;
 pub mod intel;
 pub mod notifications;
 pub mod openalbion;
+pub mod platform;
 pub mod progression;
 pub mod regear;
 pub mod siphoned;

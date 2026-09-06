@@ -132,6 +132,10 @@ export class Sidebar {
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   protected readonly visibleSections = computed<NavSection[]>(() =>
-    filterNavSections(this.sections(), (permission) => this.auth.hasPermission(permission)),
+    filterNavSections(
+      this.sections(),
+      (permission) => this.auth.hasPermission(permission),
+      this.auth.profile()?.is_platform_admin === true,
+    ),
   );
 }
