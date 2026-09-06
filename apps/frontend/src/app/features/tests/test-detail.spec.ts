@@ -38,9 +38,25 @@ const SCENARIO = {
   },
 } as unknown as ScenarioDetail;
 
+/** A build whose main weapon is what the cast inspector should adopt. */
+const BUILD = {
+  id: 7,
+  name: 'Polehammer ZvZ',
+  items: [
+    {
+      slot: 'weapon',
+      openalbion_item_name: 'Polehammer',
+      openalbion_item_icon: 'https://render.albiononline.com/v1/item/T8_2H_POLEHAMMER.png?quality=1',
+    },
+  ],
+};
+
 interface Page {
   scenario: () => ScenarioDetail | null;
-  draft: () => { casts: ScenarioDeclaredCast[] };
+  draft: () => {
+    casts: ScenarioDeclaredCast[];
+    groups: { id: string; label: string; item_id?: string | null }[];
+  };
   dirty: () => boolean;
   selectedCastIndex: () => number | null;
   activeTab: { set(tab: 'setup' | 'timeline' | 'results'): void };
@@ -53,6 +69,12 @@ interface Page {
   onTimelineCastMoved(event: { index: number; castAt: number; casterGroupId: string }): void;
   onCastPatched(event: { index: number; patch: Partial<ScenarioDeclaredCast> }): void;
   removeCast(index: number): void;
+  openBuildPickerForCaster(): void;
+  openBuildImport(): void;
+  onBuildSelected(option: { id: number; title: string }): Promise<void>;
+  openWeaponPickerForCaster(): void;
+  onWeaponSelected(option: { id: string; title: string }): void;
+  selectedCasterGroup: () => { id: string; item_id?: string | null } | null;
 }
 
 async function settle(fixture: ComponentFixture<TestDetailPage>): Promise<Page> {
@@ -79,6 +101,7 @@ describe('TestDetailPage timeline tab', () => {
     apiGet.mockImplementation((path: string) => {
       if (path === 'api/combat/tests/1') return of(SCENARIO);
       if (path === 'api/combat/tests/1/runs') return of([]);
+      if (path === 'api/comps/builds/7') return of(BUILD);
       return of([]);
     });
     apiPatch.mockImplementation(() => of(SCENARIO));
@@ -198,5 +221,54 @@ describe('TestDetailPage timeline tab', () => {
     page.onTimelineCastCreated({ casterGroupId: 'ally-hammer', spellId: 'SMASH', castAt: 3 });
     page.removeCast(1);
     expect(page.selectedCastIndex()).toBeNull();
+  });
+
+  describe('picking the caster weapon from the cast inspector', () => {
+    it('assigns the build weapon to the caster instead of adding a group', async () => {
+      const { page } = await openTimeline();
+      const groupsBefore = page.draft().casts.length;
+      page.onTimelineCastCreated({ casterGroupId: 'ally-hammer', spellId: '', castAt: 0 });
+      expect(page.selectedCasterGroup()?.item_id).toBeFalsy();
+
+      page.openBuildPickerForCaster();
+      await page.onBuildSelected({ id: 7, title: 'Polehammer ZvZ' });
+
+      expect(page.selectedCasterGroup()?.item_id).toBe('2H_POLEHAMMER');
+      // Two groups before, two groups after: this path assigns, it does not import.
+      expect(page.draft().groups).toHaveLength(2);
+      expect(page.draft().casts.length).toBe(groupsBefore + 1);
+    });
+
+    it('still imports a new group when the same dialog is opened from Setup', async () => {
+      const { page } = await openTimeline();
+      page.openBuildImport();
+      await page.onBuildSelected({ id: 7, title: 'Polehammer ZvZ' });
+      expect(page.draft().groups).toHaveLength(3);
+    });
+
+    it('keeps a label the user chose when the weapon changes', async () => {
+      const { page } = await openTimeline();
+      page.onTimelineCastCreated({ casterGroupId: 'ally-hammer', spellId: '', castAt: 0 });
+      page.openWeaponPickerForCaster();
+      page.onWeaponSelected({ id: 'MAIN_SWORD', title: 'Broadsword' });
+      const caster = page.draft().groups.find((group) => group.id === 'ally-hammer');
+      expect(caster?.item_id).toBe('MAIN_SWORD');
+      expect(caster?.label).toBe('Polehammer');
+    });
+
+    it('leaves a spell the new weapon does not have rather than clearing it', async () => {
+      const { page } = await openTimeline();
+      page.onCastPatched({ index: 0, patch: {} });
+      expect(page.draft().casts[0].spell_id).toBe('WHIRL');
+
+      page.selectedCastIndex();
+      page.onTimelineCastMoved({ index: 0, castAt: 1, casterGroupId: 'ally-hammer' });
+      page.openWeaponPickerForCaster();
+      page.onWeaponSelected({ id: 'MAIN_SWORD', title: 'Broadsword' });
+
+      // The engine resolves a spell id on its own; item_id is only a UI hint, so a mis-pick must
+      // not silently destroy the id the user chose.
+      expect(page.draft().casts[0].spell_id).toBe('WHIRL');
+    });
   });
 });
