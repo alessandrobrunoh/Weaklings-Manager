@@ -4,72 +4,13 @@
 //! API and their `OpenAPI` schemas.
 
 use sea_orm::prelude::Decimal;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::modules::comps::status::BuildSlot;
 
 use super::entities::RegearDeathModel;
 use super::status::RegearStatus;
-
-/// Accepts boolean query params from both JSON booleans and URL strings.
-///
-/// Angular's `HttpParams` serializes booleans as `"true"`/`"false"`, while serde's default bool
-/// deserializer expects a native boolean token. Keeping the coercion local to this field prevents
-/// router-level query parsing from rejecting valid browser requests.
-fn deserialize_optional_bool<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    struct OptionalBoolVisitor;
-
-    impl<'de> serde::de::Visitor<'de> for OptionalBoolVisitor {
-        type Value = Option<bool>;
-
-        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            formatter.write_str("a boolean or a string boolean")
-        }
-
-        fn visit_none<E>(self) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(None)
-        }
-
-        fn visit_unit<E>(self) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(None)
-        }
-
-        fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E> {
-            Ok(Some(value))
-        }
-
-        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            match value.trim().to_ascii_lowercase().as_str() {
-                "" => Ok(None),
-                "true" | "1" | "yes" => Ok(Some(true)),
-                "false" | "0" | "no" => Ok(Some(false)),
-                other => Err(E::custom(format!("invalid boolean value: {other}"))),
-            }
-        }
-
-        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            deserializer.deserialize_any(self)
-        }
-    }
-
-    deserializer.deserialize_option(OptionalBoolVisitor)
-}
 
 /// One slot's pricing inside a regear breakdown. Stored as JSON in
 /// `regear_deaths.auto_estimate_breakdown_json` and `final_breakdown_json`.
@@ -284,7 +225,10 @@ pub struct DeathFilters {
     /// Filter by user id (officers only for ids other than the caller's).
     pub user_id: Option<i64>,
     /// If `true`, return all deaths guild-wide (requires `regear.adjudicate`).
-    #[serde(default, deserialize_with = "deserialize_optional_bool")]
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_helpers::optional_bool_from_string_or_bool"
+    )]
     pub global: Option<bool>,
     /// Filter by bank transaction id (used by the bank UI to render regear credits).
     pub bank_transaction_id: Option<i64>,
@@ -295,7 +239,10 @@ pub struct DeathFilters {
     /// Sort direction: `asc` or `desc`. Defaults to `desc`.
     pub order: Option<String>,
     /// If `true` and `status` is omitted, only terminal (`approved` / `rejected`) deaths.
-    #[serde(default, deserialize_with = "deserialize_optional_bool")]
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_helpers::optional_bool_from_string_or_bool"
+    )]
     pub history: Option<bool>,
 }
 

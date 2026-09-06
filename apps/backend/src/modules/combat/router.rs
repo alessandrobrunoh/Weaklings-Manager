@@ -30,10 +30,7 @@ pub fn router() -> Router {
         .route("/dataset", get(get_dataset))
         .route("/mastery-groups", get(get_mastery_groups))
         .route("/tests", get(list_scenarios).post(create_scenario))
-        .route(
-            "/tests/{id}",
-            get(get_scenario).patch(update_scenario),
-        )
+        .route("/tests/{id}", get(get_scenario).patch(update_scenario))
         .route("/tests/{id}/versions", post(create_scenario_version))
         .route("/tests/{id}/archive", post(archive_scenario))
         .route("/tests/{id}/unarchive", post(unarchive_scenario))
@@ -239,7 +236,10 @@ async fn post_simulate(
 #[derive(Debug, Clone, Default, serde::Deserialize, utoipa::IntoParams)]
 pub struct ListScenariosParams {
     /// When `true`, include archived versions. Defaults to `false`.
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_helpers::optional_bool_from_string_or_bool"
+    )]
     pub include_archived: Option<bool>,
 }
 
@@ -295,7 +295,9 @@ async fn create_scenario(
     Json(request): Json<CreateScenarioRequest>,
 ) -> Result<Json<ApiResponse<ScenarioDetail>>, AppError> {
     user.require(&perms, Permission::CombatTestsManage).await?;
-    let scenario = CombatService::new().create_scenario(&db, user.user_id, &request).await?;
+    let scenario = CombatService::new()
+        .create_scenario(&db, user.user_id, &request)
+        .await?;
     Ok(Json(ApiResponse::new(scenario)))
 }
 
@@ -354,7 +356,9 @@ async fn update_scenario(
     Json(request): Json<UpdateScenarioRequest>,
 ) -> Result<Json<ApiResponse<ScenarioDetail>>, AppError> {
     user.require(&perms, Permission::CombatTestsManage).await?;
-    let scenario = CombatService::new().update_scenario(&db, id, &request).await?;
+    let scenario = CombatService::new()
+        .update_scenario(&db, id, &request)
+        .await?;
     Ok(Json(ApiResponse::new(scenario)))
 }
 
@@ -383,7 +387,9 @@ async fn create_scenario_version(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<ScenarioDetail>>, AppError> {
     user.require(&perms, Permission::CombatTestsManage).await?;
-    let scenario = CombatService::new().create_scenario_version(&db, id, user.user_id).await?;
+    let scenario = CombatService::new()
+        .create_scenario_version(&db, id, user.user_id)
+        .await?;
     Ok(Json(ApiResponse::new(scenario)))
 }
 
@@ -410,7 +416,9 @@ async fn archive_scenario(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<ScenarioDetail>>, AppError> {
     user.require(&perms, Permission::CombatTestsManage).await?;
-    let scenario = CombatService::new().set_scenario_archived(&db, id, true).await?;
+    let scenario = CombatService::new()
+        .set_scenario_archived(&db, id, true)
+        .await?;
     Ok(Json(ApiResponse::new(scenario)))
 }
 
@@ -437,7 +445,9 @@ async fn unarchive_scenario(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<ScenarioDetail>>, AppError> {
     user.require(&perms, Permission::CombatTestsManage).await?;
-    let scenario = CombatService::new().set_scenario_archived(&db, id, false).await?;
+    let scenario = CombatService::new()
+        .set_scenario_archived(&db, id, false)
+        .await?;
     Ok(Json(ApiResponse::new(scenario)))
 }
 
@@ -469,7 +479,9 @@ async fn run_scenario(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
 ) -> Result<Json<ApiResponse<RunDetail>>, AppError> {
     user.require(&perms, Permission::CombatTestsView).await?;
-    let run = CombatService::new().run_scenario(&db, id, user.user_id).await?;
+    let run = CombatService::new()
+        .run_scenario(&db, id, user.user_id)
+        .await?;
     Ok(Json(ApiResponse::new(run)))
 }
 

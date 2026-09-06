@@ -32,6 +32,8 @@ import {
   buildEventThreadName,
   closeEventAnnouncementThread,
   createEventAnnouncementThread,
+  deleteEventAnnouncement,
+  refreshEventSignupCard,
   sendEventSignupMessage,
 } from "./event-announcement-thread.js";
 import { massDiscordEvent, startDiscordEvent, stopDiscordEvent } from "./event-lifecycle.js";
@@ -49,6 +51,10 @@ interface PollerState {
   pinged1hEvents: number[];
   /** Discord discussion thread keyed by event ID, used for event follow-ups. */
   eventThreadIds: Record<string, string>;
+  /** Signup card message id inside each event thread. */
+  eventSignupMessageIds: Record<string, string>;
+  /** Last Discord-synced `${roster_version}:${status}` per event. */
+  eventSignupRevisions: Record<string, string>;
   /** Stable cursor over split (updated_at, id), persisted only after successful Forum sync. */
   splitUpdatedAt: string | null;
   splitAfterId: number | null;
@@ -66,6 +72,8 @@ function createDefaultState(): PollerState {
     lastBattleId: 0,
     pinged1hEvents: [],
     eventThreadIds: {},
+    eventSignupMessageIds: {},
+    eventSignupRevisions: {},
     splitUpdatedAt: null,
     splitAfterId: null,
     massedEvents: [],
@@ -134,6 +142,8 @@ function loadState(stateDirectory: string): PollerState {
       lastBattleId: parsedState.lastBattleId ?? 0,
       pinged1hEvents: parsedState.pinged1hEvents ?? [],
       eventThreadIds: parsedState.eventThreadIds ?? {},
+      eventSignupMessageIds: parsedState.eventSignupMessageIds ?? {},
+      eventSignupRevisions: parsedState.eventSignupRevisions ?? {},
       splitUpdatedAt: parsedState.splitUpdatedAt ?? null,
       splitAfterId: parsedState.splitAfterId ?? null,
       massedEvents: parsedState.massedEvents ?? [],
@@ -232,6 +242,7 @@ export class Poller {
       // Event announcements must complete before checking reminders so a newly
       // created event already has its discussion thread recorded.
       await this.checkNewEvents();
+      await this.checkEventRosterSync();
       await this.checkNewGiveaways();
       await this.checkGiveawayResults();
       await this.checkClosedEvents();
@@ -364,7 +375,12 @@ export class Poller {
         );
         if (thread) {
           this.state.eventThreadIds[String(event.id)] = thread.id;
-          await sendEventSignupMessage(thread, eventDetail, "Poller");
+          const signupMessageId = await sendEventSignupMessage(thread, eventDetail, "Poller");
+          if (signupMessageId) {
+            this.state.eventSignupMessageIds[String(event.id)] = signupMessageId;
+          }
+          this.state.eventSignupRevisions[String(event.id)] =
+            `${eventDetail.roster_version ?? 0}:${eventDetail.status}`;
         }
 
         this.state.lastEventId = event.id;
@@ -380,6 +396,19 @@ export class Poller {
 
   /** Closes a known event discussion thread immediately after a Discord stop command. */
   async closeEventThread(eventId: number): Promise<boolean> {
+    return this.finishEventThread(eventId, closeEventAnnouncementThread, "close");
+  }
+
+  /** Deletes the parent announcement when an event is archived from the website. */
+  async deleteEventThread(eventId: number): Promise<boolean> {
+    return this.finishEventThread(eventId, deleteEventAnnouncement, "delete");
+  }
+
+  private async finishEventThread(
+    eventId: number,
+    finish: typeof closeEventAnnouncementThread,
+    action: "close" | "delete",
+  ): Promise<boolean> {
     const threadId = this.state.eventThreadIds[String(eventId)];
     if (!threadId) return false;
 
@@ -389,9 +418,9 @@ export class Poller {
         this.forgetEventThread(eventId);
         return true;
       }
-      const closed = await closeEventAnnouncementThread(channel, eventId, "Poller");
-      if (closed) this.forgetEventThread(eventId);
-      return closed;
+      const done = await finish(channel, eventId, "Poller");
+      if (done) this.forgetEventThread(eventId);
+      return done;
     } catch (error) {
       if (isUnknownDiscordChannel(error)) {
         console.warn(
@@ -400,7 +429,7 @@ export class Poller {
         this.forgetEventThread(eventId);
         return true;
       }
-      console.warn(`[Poller] Could not close event thread for #${eventId}:`, error);
+      console.warn(`[Poller] Could not ${action} event thread for #${eventId}:`, error);
       return false;
     }
   }
@@ -411,7 +440,11 @@ export class Poller {
     for (const [eventId, threadId] of Object.entries(this.state.eventThreadIds)) {
       try {
         const event = await this.api.get<EventView>(`api/events/${eventId}`);
-        if (!terminalStatuses.has(event.status) && !event.archived_at) continue;
+        if (event.archived_at) {
+          if (threadId) await this.deleteEventThread(event.id);
+          continue;
+        }
+        if (!terminalStatuses.has(event.status)) continue;
 
         if (threadId) await this.closeEventThread(event.id);
       } catch (error) {
@@ -433,9 +466,73 @@ export class Poller {
 
   private forgetEventThread(eventId: number | string): void {
     const key = String(eventId);
-    if (!(key in this.state.eventThreadIds)) return;
+    if (!(key in this.state.eventThreadIds) && !(key in this.state.eventSignupMessageIds)) return;
     delete this.state.eventThreadIds[key];
+    delete this.state.eventSignupMessageIds[key];
+    delete this.state.eventSignupRevisions[key];
     saveState(this.stateDirectory, this.state);
+  }
+
+  /**
+   * Rewrites each known event signup card when the website roster or status changes,
+   * and refreshes any loot-split Forum post linked to that event.
+   */
+  private async checkEventRosterSync(): Promise<void> {
+    const eventIds = Object.keys(this.state.eventThreadIds);
+    if (eventIds.length === 0) return;
+
+    let adapter: SplitForumAdapter | null = null;
+    try {
+      const forumChannelId = await this.settings.splitsForumChannelId();
+      if (forumChannelId) {
+        adapter = new SplitForumAdapter(this.client, this.api, forumChannelId);
+      }
+    } catch (error) {
+      console.warn("[Poller] Could not resolve splits Forum channel for roster sync:", error);
+    }
+
+    for (const eventId of eventIds) {
+      try {
+        const detail = await this.api.get<EventDetailView>(`api/events/${eventId}`);
+        const revision = `${detail.roster_version ?? 0}:${detail.status}`;
+        if (this.state.eventSignupRevisions[eventId] === revision) continue;
+
+        const thread = await this.getEventThread(Number(eventId));
+        if (!thread) continue;
+
+        const messageId = await refreshEventSignupCard(
+          thread,
+          detail,
+          "Poller",
+          this.state.eventSignupMessageIds[eventId],
+        );
+        if (!messageId) continue;
+        this.state.eventSignupMessageIds[eventId] = messageId;
+        this.state.eventSignupRevisions[eventId] = revision;
+        saveState(this.stateDirectory, this.state);
+
+        if (!adapter || !detail.splits?.length) continue;
+        for (const split of detail.splits) {
+          try {
+            const item = await this.api.get<SplitDiscordSync>(
+              `api/splits/${split.id}/discord-sync`,
+            );
+            await adapter.sync(item);
+          } catch (error) {
+            console.warn(
+              `[Poller] Could not refresh linked split #${split.id} for event #${eventId}:`,
+              error,
+            );
+          }
+        }
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          await this.closeEventThread(Number(eventId));
+          continue;
+        }
+        console.warn(`[Poller] Could not sync Discord roster for event #${eventId}:`, error);
+      }
+    }
   }
 
   /** Executes Mass and Start automatically, then auto-stops only live empty events. */

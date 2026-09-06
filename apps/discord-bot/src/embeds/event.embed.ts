@@ -198,17 +198,20 @@ export function buildEventEmbed(
       const name = participant.discord_id
         ? `<@${participant.discord_id}>`
         : participant.username;
-      if (participant.primary_build_id === null) {
+      const buildId = displayBuildId(participant);
+      if (buildId === null) {
         fillNames.push(name);
       } else {
-        const names = namesByBuildId.get(participant.primary_build_id) ?? [];
+        const names = namesByBuildId.get(buildId) ?? [];
         names.push(name);
-        namesByBuildId.set(participant.primary_build_id, names);
+        namesByBuildId.set(buildId, names);
       }
     }
 
+    const renderedBuildIds = new Set<number>();
     for (const compBuild of compBuilds) {
       const assigned = namesByBuildId.get(compBuild.build_id) ?? [];
+      renderedBuildIds.add(compBuild.build_id);
       const playerSlots = assigned.slice(0, compBuild.quantity);
       const emptySlots = Array.from(
         { length: Math.max(compBuild.quantity - playerSlots.length, 0) },
@@ -217,6 +220,20 @@ export function buildEventEmbed(
       embed.addFields({
         name: `${compBuild.name} (${playerSlots.length}/${compBuild.quantity})`,
         value: formatNameList([...playerSlots, ...emptySlots]),
+        inline: true,
+      });
+    }
+
+    for (const [buildId, assigned] of namesByBuildId) {
+      if (renderedBuildIds.has(buildId) || assigned.length === 0) continue;
+      const owner = detail.participants.find(
+        (participant) => displayBuildId(participant) === buildId,
+      );
+      const label =
+        owner?.assigned_build_name ?? owner?.primary_build_name ?? `Build ${buildId}`;
+      embed.addFields({
+        name: `${label} (${assigned.length})`,
+        value: formatNameList(assigned),
         inline: true,
       });
     }
@@ -231,9 +248,10 @@ export function buildEventEmbed(
   } else if (rosterCount > 0) {
     const byBuild = new Map<string, string[]>();
     for (const participant of detail.participants) {
-      const names = byBuild.get(participant.primary_build_name) ?? [];
+      const buildName = displayBuildName(participant);
+      const names = byBuild.get(buildName) ?? [];
       names.push(participant.discord_id ? `<@${participant.discord_id}>` : participant.username);
-      byBuild.set(participant.primary_build_name, names);
+      byBuild.set(buildName, names);
     }
     for (const [buildName, names] of byBuild) {
       embed.addFields({ name: `${buildName} (${names.length})`, value: formatNameList(names), inline: true });
@@ -256,6 +274,15 @@ export function buildEventEmbed(
  * past that limit and get the field silently rejected by Discord instead of
  * gracefully cut off.
  */
+/** Officer seat assignment wins over the member's signup preference. */
+function displayBuildId(participant: EventDetailView["participants"][number]): number | null {
+  return participant.assigned_build_id ?? participant.primary_build_id;
+}
+
+function displayBuildName(participant: EventDetailView["participants"][number]): string {
+  return participant.assigned_build_name ?? participant.primary_build_name;
+}
+
 function formatNameList(names: string[]): string {
   const FIELD_VALUE_LIMIT = 1024;
   const SAFETY_MARGIN = 40; // room for the "+N more" line appended below
