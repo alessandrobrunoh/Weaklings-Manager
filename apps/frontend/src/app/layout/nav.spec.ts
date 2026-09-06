@@ -4,8 +4,10 @@ import {
   ADMIN_ACCESS_PERMISSIONS,
   ADMIN_NAV_SECTIONS,
   APP_NAV_SECTIONS,
+  PLATFORM_NAV_SECTIONS,
   filterNavSections,
   isAdminUrl,
+  isPlatformUrl,
 } from './nav';
 
 describe('isAdminUrl', () => {
@@ -59,5 +61,41 @@ describe('filterNavSections', () => {
     const paths = visible.flatMap((section) => section.items.map((item) => item.path));
     expect(paths).toContain('/admin');
     expect(ADMIN_ACCESS_PERMISSIONS).toContain('autorole.manage');
+  });
+
+  it('hides Platform without a platform role and shows it with one', () => {
+    const hidden = filterNavSections(APP_NAV_SECTIONS, () => false, false);
+    expect(hidden.flatMap((section) => section.items.map((item) => item.path))).not.toContain(
+      '/platform',
+    );
+    const shown = filterNavSections(APP_NAV_SECTIONS, () => false, true);
+    expect(shown.flatMap((section) => section.items.map((item) => item.path))).toContain(
+      '/platform',
+    );
+  });
+});
+
+describe('isPlatformUrl', () => {
+  it('matches the console root and its child panels', () => {
+    expect(isPlatformUrl('/platform')).toBe(true);
+    expect(isPlatformUrl('/platform/')).toBe(true);
+    expect(isPlatformUrl('/platform/tenants')).toBe(true);
+    expect(isPlatformUrl('/platform/tenants/1/features?x=1')).toBe(true);
+    expect(isPlatformUrl('/platform/admins#top')).toBe(true);
+  });
+
+  it('does not treat similarly prefixed app routes as the console', () => {
+    expect(isPlatformUrl('/dashboard')).toBe(false);
+    expect(isPlatformUrl('/platforms')).toBe(false);
+    expect(isPlatformUrl('/profile')).toBe(false);
+    expect(isPlatformUrl('/admin')).toBe(false);
+  });
+
+  it('keeps the platform nav sections self-contained', () => {
+    const paths = PLATFORM_NAV_SECTIONS.flatMap((section) => section.items.map((item) => item.path));
+    expect(paths).toContain('/platform');
+    expect(paths).toContain('/platform/tenants');
+    expect(paths).toContain('/platform/admins');
+    expect(paths).toContain('/dashboard');
   });
 });

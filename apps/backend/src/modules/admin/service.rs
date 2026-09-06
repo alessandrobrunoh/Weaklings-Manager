@@ -110,6 +110,9 @@ impl AdminService {
         if let Some(value) = &req.discord_applications_manage_role_id {
             active.discord_applications_manage_role_id = Set(normalize_discord_snowflake(value)?);
         }
+        if let Some(value) = &req.discord_applications_accepted_role_id {
+            active.discord_applications_accepted_role_id = Set(normalize_discord_snowflake(value)?);
+        }
         if let Some(value) = &req.discord_applications_status_channel_id {
             active.discord_applications_status_channel_id =
                 Set(normalize_discord_snowflake(value)?);
@@ -265,6 +268,7 @@ impl AdminService {
                 "discord_applications_category_id": req.discord_applications_category_id,
                 "discord_applications_archive_category_id": req.discord_applications_archive_category_id,
                 "discord_applications_manage_role_id": req.discord_applications_manage_role_id,
+                "discord_applications_accepted_role_id": req.discord_applications_accepted_role_id,
                 "discord_applications_status_channel_id": req.discord_applications_status_channel_id,
                 "discord_applications_open": req.discord_applications_open,
                 "discord_applications_panel_title": req.discord_applications_panel_title,

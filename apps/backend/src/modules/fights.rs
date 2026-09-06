@@ -2185,6 +2185,7 @@ mod tests {
         Config {
             backend_port: 3000,
             database_url: "sqlite::memory:".to_string(),
+            control_database_url: None,
             discord_client_id: "test".to_string(),
             discord_client_secret: "test".to_string(),
             discord_redirect_uri: "http://localhost/callback".to_string(),

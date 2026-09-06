@@ -99,6 +99,7 @@ describe('Dashboard', () => {
       roles: ['Guild Master'],
       highest_role: 'Guild Master',
       is_superadmin: false,
+      is_platform_admin: false,
       permissions: ['bank.withdraw.accept'],
     }),
     hasPermission: vi.fn().mockImplementation((perm: string) => perm === 'bank.withdraw.accept'),

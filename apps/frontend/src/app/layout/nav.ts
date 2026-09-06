@@ -8,6 +8,8 @@ export interface NavItem {
   readonly labelKey: TranslationKey;
   /** Restrict visibility by permission keys (OR); undefined = everyone authenticated. */
   readonly permissions?: readonly string[];
+  /** When true, only control-plane platform admins see the item. */
+  readonly platformAdmin?: boolean;
   /** When true, the item is active only on that exact URL (not its children). */
   readonly exact?: boolean;
 }
@@ -58,15 +60,29 @@ export function isAdminUrl(url: string): boolean {
   );
 }
 
+/**
+ * True for the platform console and its child panels.
+ *
+ * `/platforms` must not match: the prefix is `/platform/` (or exact `/platform`).
+ */
+export function isPlatformUrl(url: string): boolean {
+  const path = url.split('?')[0].split('#')[0];
+  return path === '/platform' || path === '/platform/' || path.startsWith('/platform/');
+}
+
 /** Hide items the session cannot reach; drop sections that become empty. */
 export function filterNavSections(
   sections: readonly NavSection[],
   hasPermission: (permission: string) => boolean,
+  isPlatformAdmin = false,
 ): NavSection[] {
   return sections
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => {
+        if (item.platformAdmin && !isPlatformAdmin) {
+          return false;
+        }
         if (!item.permissions?.length) {
           return true;
         }
@@ -133,6 +149,12 @@ export const APP_NAV_SECTIONS: NavSection[] = [
         icon: 'settings',
         labelKey: 'nav.admin',
         permissions: [...ADMIN_ACCESS_PERMISSIONS],
+      },
+      {
+        path: '/platform',
+        icon: 'hammer',
+        labelKey: 'nav.platform',
+        platformAdmin: true,
       },
       {
         path: '/audit',
@@ -238,6 +260,38 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
       { path: '/dashboard', icon: 'chevron-left', labelKey: 'nav.admin.back' },
       { path: '/admin', icon: 'hammer', labelKey: 'nav.admin.overview', exact: true },
       ...ADMIN_PANELS.map((panel) => ({
+        path: panel.path,
+        icon: panel.icon,
+        labelKey: panel.labelKey,
+        permissions: panel.permissions,
+        exact: panel.exact,
+      })),
+    ],
+  },
+];
+
+export const PLATFORM_PANELS: readonly AdminPanel[] = [
+  {
+    path: '/platform/tenants',
+    icon: 'users',
+    labelKey: 'nav.platform.tenants',
+    hintKey: 'platform.hub.tenantsHint',
+  },
+  {
+    path: '/platform/admins',
+    icon: 'shield',
+    labelKey: 'nav.platform.admins',
+    hintKey: 'platform.hub.adminsHint',
+  },
+];
+
+export const PLATFORM_NAV_SECTIONS: NavSection[] = [
+  {
+    headingKey: 'nav.section.platform',
+    items: [
+      { path: '/dashboard', icon: 'chevron-left', labelKey: 'nav.platform.back' },
+      { path: '/platform', icon: 'hammer', labelKey: 'nav.platform.overview', exact: true },
+      ...PLATFORM_PANELS.map((panel) => ({
         path: panel.path,
         icon: panel.icon,
         labelKey: panel.labelKey,

@@ -31,7 +31,6 @@ interface DiscordSettingsDraft {
   discord_battles_cta_channel_id: string;
   discord_audit_log_channel_id: string;
   discord_transaction_spam_channel_id: string;
-  discord_event_role_id: string;
   discord_splits_forum_channel_id: string;
   discord_split_pending_tag_id: string;
   discord_split_completed_tag_id: string;
@@ -47,7 +46,6 @@ const EMPTY_GUILD_SETTINGS_DRAFT: DiscordSettingsDraft = {
   discord_battles_cta_channel_id: '',
   discord_audit_log_channel_id: '',
   discord_transaction_spam_channel_id: '',
-  discord_event_role_id: '',
   discord_splits_forum_channel_id: '',
   discord_split_pending_tag_id: '',
   discord_split_completed_tag_id: '',
@@ -251,30 +249,6 @@ const SPLIT_TAG_FIELDS = [
                 />
                 <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
                   {{ t('admin.discord.eventVoiceCategoryHint') }}
-                </span>
-              </label>
-            </fieldset>
-          </section>
-
-          <section class="card p-5">
-            <fieldset>
-              <legend class="eyebrow mb-1">{{ t('admin.discord.groupPings') }}</legend>
-              <label>
-                <span class="label">{{ t('admin.discord.eventRole') }}</span>
-                <app-searchable-select
-                  class="mt-1 block"
-                  [options]="roleOptions(guildSettingsDraft().discord_event_role_id)"
-                  [value]="guildSettingsDraft().discord_event_role_id"
-                  [emptyLabel]="t('admin.discord.placeholder')"
-                  [searchPlaceholder]="t('common.search')"
-                  [noMatchesLabel]="t('picker.noMatches')"
-                  [emptyOptionsLabel]="t('picker.empty')"
-                  [loading]="catalogLoading()"
-                  [ariaLabel]="t('admin.discord.eventRole')"
-                  (valueChange)="setDraftValue('discord_event_role_id', $event)"
-                />
-                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
-                  {{ t('admin.discord.eventRoleHint') }}
                 </span>
               </label>
             </fieldset>
@@ -547,7 +521,6 @@ export class AdminDiscord {
       discord_battles_cta_channel_id: draft.discord_battles_cta_channel_id.trim(),
       discord_audit_log_channel_id: draft.discord_audit_log_channel_id.trim(),
       discord_transaction_spam_channel_id: draft.discord_transaction_spam_channel_id.trim(),
-      discord_event_role_id: draft.discord_event_role_id.trim(),
       discord_splits_forum_channel_id: draft.discord_splits_forum_channel_id.trim(),
       discord_split_pending_tag_id: draft.discord_split_pending_tag_id.trim(),
       discord_split_completed_tag_id: draft.discord_split_completed_tag_id.trim(),
@@ -607,7 +580,6 @@ function toDraft(settings: GuildSettingsView): DiscordSettingsDraft {
     discord_battles_cta_channel_id: settings.discord_battles_cta_channel_id ?? '',
     discord_audit_log_channel_id: settings.discord_audit_log_channel_id ?? '',
     discord_transaction_spam_channel_id: settings.discord_transaction_spam_channel_id ?? '',
-    discord_event_role_id: settings.discord_event_role_id ?? '',
     discord_splits_forum_channel_id: settings.discord_splits_forum_channel_id ?? '',
     discord_split_pending_tag_id: settings.discord_split_pending_tag_id ?? '',
     discord_split_completed_tag_id: settings.discord_split_completed_tag_id ?? '',

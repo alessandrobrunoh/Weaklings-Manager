@@ -140,6 +140,8 @@ pub struct GuildSettingsView {
     pub discord_applications_archive_category_id: Option<String>,
     /// Role allowed to manage applications.
     pub discord_applications_manage_role_id: Option<String>,
+    /// Optional role assigned when an application is accepted.
+    pub discord_applications_accepted_role_id: Option<String>,
     /// Channel for application open/closed announcements.
     pub discord_applications_status_channel_id: Option<String>,
     /// Whether new applications are accepted.
@@ -217,6 +219,7 @@ impl GuildSettingsView {
             discord_applications_archive_category_id: model
                 .discord_applications_archive_category_id,
             discord_applications_manage_role_id: model.discord_applications_manage_role_id,
+            discord_applications_accepted_role_id: model.discord_applications_accepted_role_id,
             discord_applications_status_channel_id: model.discord_applications_status_channel_id,
             discord_applications_open: model.discord_applications_open,
             discord_applications_panel_title: model.discord_applications_panel_title,
@@ -361,6 +364,8 @@ pub struct UpdateGuildSettingsRequest {
     pub discord_applications_archive_category_id: Option<String>,
     /// New application manager role; empty clears it.
     pub discord_applications_manage_role_id: Option<String>,
+    /// Role assigned when an application is accepted; empty clears it.
+    pub discord_applications_accepted_role_id: Option<String>,
     /// New application status channel; empty clears it.
     pub discord_applications_status_channel_id: Option<String>,
     /// New application open state.

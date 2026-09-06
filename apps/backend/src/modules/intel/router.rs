@@ -471,11 +471,12 @@ pub async fn guild_report(
 ) -> Result<Json<ApiResponse<GuildReport>>, AppError> {
     user.require(&perms, Permission::IntelReportView).await?;
     let range = DateRange::resolve(params.from.as_deref(), params.to.as_deref())?;
-    if let Some(cached) = cache.get(range) {
+    let granularity = params.granularity.as_deref().unwrap_or("week");
+    if let Some(cached) = cache.get(range, granularity) {
         return Ok(Json(ApiResponse::new(cached)));
     }
-    let report = build_guild_report(&db, &guild_context(&cfg), range).await?;
-    cache.put(range, &report);
+    let report = build_guild_report(&db, &guild_context(&cfg), range, granularity).await?;
+    cache.put(range, granularity, &report);
     Ok(Json(ApiResponse::new(report)))
 }
 
@@ -509,9 +510,10 @@ pub async fn refresh_guild_report(
 ) -> Result<Json<ApiResponse<GuildReport>>, AppError> {
     user.require(&perms, Permission::IntelEdit).await?;
     let range = DateRange::resolve(params.from.as_deref(), params.to.as_deref())?;
+    let granularity = params.granularity.as_deref().unwrap_or("week");
     cache.invalidate();
-    let report = build_guild_report(&db, &guild_context(&cfg), range).await?;
-    cache.put(range, &report);
+    let report = build_guild_report(&db, &guild_context(&cfg), range, granularity).await?;
+    cache.put(range, granularity, &report);
     Ok(Json(ApiResponse::new(report)))
 }
 
@@ -565,13 +567,14 @@ pub async fn leaderboards(
         .has_permission(&perms, Permission::IntelReportView)
         .await;
     let range = DateRange::resolve(params.from.as_deref(), params.to.as_deref())?;
+    let granularity = params.granularity.as_deref().unwrap_or("week");
     // Shares the report's cache: an officer who already opened the dashboard
     // has paid for this computation, and vice versa.
-    let mut leaderboards = if let Some(cached) = cache.get(range) {
+    let mut leaderboards = if let Some(cached) = cache.get(range, granularity) {
         cached.leaderboards
     } else {
-        let report = build_guild_report(&db, &guild_context(&cfg), range).await?;
-        cache.put(range, &report);
+        let report = build_guild_report(&db, &guild_context(&cfg), range, granularity).await?;
+        cache.put(range, granularity, &report);
         report.leaderboards
     };
     if !can_see_financials {

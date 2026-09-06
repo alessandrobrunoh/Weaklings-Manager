@@ -93,6 +93,7 @@ export interface DiscordUserProfile {
   roles: Role[];
   highest_role: Role;
   is_superadmin: boolean;
+  is_platform_admin?: boolean;
   permissions: PermissionKey[];
 }
 
@@ -417,7 +418,7 @@ export interface GuildSettingsView {
   discord_battles_cta_channel_id: string | null;
   discord_audit_log_channel_id: string | null;
   discord_transaction_spam_channel_id: string | null;
-  discord_event_role_id: string | null;
+  discord_event_role_id?: string | null;
   discord_auto_role_id: string | null;
   /** Discord snowflake linked to the unique gestionale `is_default` role, if any. */
   default_role_discord_id?: string | null;
@@ -431,6 +432,7 @@ export interface GuildSettingsView {
   discord_applications_category_id: string | null;
   discord_applications_archive_category_id: string | null;
   discord_applications_manage_role_id: string | null;
+  discord_applications_accepted_role_id?: string | null;
   discord_applications_status_channel_id: string | null;
   discord_applications_open: boolean;
   discord_applications_panel_title: string;

@@ -123,7 +123,84 @@ export interface DiscordUserProfile {
   roles: Role[];
   highest_role: Role;
   is_superadmin: boolean;
+  is_platform_admin: boolean;
   permissions: string[];
+  tenant_id?: string | null;
+  tenant_name?: string | null;
+}
+
+export interface PlatformTenant {
+  id: string;
+  name: string;
+  slug: string;
+  schema_name: string;
+  status: string;
+  owner_discord_id: string | null;
+  created_at: string | null;
+  suspended_at: string | null;
+}
+
+export interface FeatureCatalogItem {
+  key: string;
+  display_name: string;
+  description: string | null;
+}
+
+export interface TenantFeatureFlag {
+  key: string;
+  enabled: boolean;
+}
+
+export interface TenantFeaturesView {
+  catalog: FeatureCatalogItem[];
+  flags: TenantFeatureFlag[];
+}
+
+export interface PlatformAdminView {
+  discord_id: string;
+  role_id: string;
+  role_name: string;
+}
+
+export interface TenantChoice {
+  id: string;
+  name: string;
+  slug: string;
+  icon_hash?: string | null;
+}
+
+export interface RegisterableGuild {
+  id: string;
+  name: string;
+  icon_hash?: string | null;
+}
+
+export interface TenantStatus {
+  id: string;
+  registered: boolean;
+  status?: string | null;
+  name?: string | null;
+  register_url?: string | null;
+}
+
+export interface RegisterTenantRequest {
+  id: string;
+  name: string;
+  albion_guild_id: string;
+  albion_api_region: string;
+  albion_allied_guild_ids?: string;
+  albion_allied_guild_names?: string;
+}
+
+export function discordGuildIconUrl(
+  guildId: string,
+  iconHash?: string | null,
+): string | null {
+  if (!iconHash) {
+    return null;
+  }
+  const ext = iconHash.startsWith('a_') ? 'gif' : 'png';
+  return `https://cdn.discordapp.com/icons/${guildId}/${iconHash}.${ext}`;
 }
 
 /* ----------------------------- Users -------------------------------- */
@@ -2327,7 +2404,7 @@ export interface GuildSettingsView {
   discord_battles_cta_channel_id: string | null;
   discord_audit_log_channel_id: string | null;
   discord_transaction_spam_channel_id: string | null;
-  discord_event_role_id: string | null;
+  discord_event_role_id?: string | null;
   discord_auto_role_id: string | null;
   default_role_discord_id?: string | null;
   discord_splits_forum_channel_id: string | null;
@@ -2340,6 +2417,7 @@ export interface GuildSettingsView {
   discord_applications_category_id: string | null;
   discord_applications_archive_category_id: string | null;
   discord_applications_manage_role_id: string | null;
+  discord_applications_accepted_role_id?: string | null;
   discord_applications_status_channel_id: string | null;
   discord_applications_open: boolean;
   discord_applications_panel_title: string;

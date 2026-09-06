@@ -11,6 +11,7 @@ use super::permissions::Permission;
 use super::service::DiscordUserProfile;
 use crate::config::Config;
 use crate::errors::AppError;
+use crate::platform_admins::PlatformAdmins;
 use axum::{extract::FromRequestParts, http::request::Parts};
 use axum_extra::extract::cookie::{Key, PrivateCookieJar};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
@@ -35,16 +36,16 @@ pub struct UserContext {
     pub highest_role: String,
     /// The internal database primary key of the user (see `users` table).
     pub user_id: i64,
-    /// The configured SuperAdmin Discord id (from env), used to bypass every
-    /// permission check. Populated from the `Config` extension at extraction
+    /// Discord id of this user when they hold a platform role, used to bypass
+    /// every permission check. Populated from [`PlatformAdmins`] at extraction
     /// time; never serialized into the session cookie.
     #[serde(skip)]
     pub super_admin_id: Option<String>,
 }
 
 impl UserContext {
-    /// `true` when this user is the configured super-admin (matched by Discord id,
-    /// not by role name — so renaming the role on Discord can't revoke the override).
+    /// `true` when this user holds a platform-level role (matched by Discord id,
+    /// not by a tenant role name).
     #[must_use]
     pub fn is_superadmin(&self) -> bool {
         self.super_admin_id
@@ -105,8 +106,8 @@ fn try_from_session_cookie(parts: &mut Parts) -> Option<UserContext> {
 
     let super_admin_id = parts
         .extensions
-        .get::<Config>()
-        .map(|c| c.super_admin_discord_id.clone());
+        .get::<PlatformAdmins>()
+        .and_then(|admins| admins.contains(&profile.id).then(|| profile.id.clone()));
 
     Some(UserContext {
         id: profile.id,
@@ -165,8 +166,6 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
         ));
     }
 
-    let super_admin_id = Some(cfg.super_admin_discord_id.clone());
-
     // If X-Discord-Id is absent, this is a background / system call (e.g. the poller).
     // Return a trusted "bot system" context so background endpoints can run without a user.
     let discord_id = parts
@@ -211,7 +210,11 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
             ))
         })?;
 
-    let is_superadmin = super_admin_id.as_deref() == Some(&discord_id);
+    let super_admin_id = parts
+        .extensions
+        .get::<PlatformAdmins>()
+        .and_then(|admins| admins.contains(&discord_id).then(|| discord_id.clone()));
+    let is_superadmin = super_admin_id.as_deref() == Some(discord_id.as_str());
 
     // Resolve permissions from the role cache
     let perms = parts
@@ -335,11 +338,10 @@ where
             .ok_or_else(|| AppError::Unauthorized("Missing X-Discord-Id".to_string()))?
             .to_string();
 
-        let cfg = parts
+        let is_superadmin = parts
             .extensions
-            .get::<Config>()
-            .ok_or_else(|| AppError::Internal("Config extension missing".to_string()))?;
-        let is_superadmin = cfg.super_admin_discord_id == discord_id;
+            .get::<PlatformAdmins>()
+            .is_some_and(|admins| admins.contains(&discord_id));
 
         let db = parts
             .extensions
@@ -417,8 +419,30 @@ mod tests {
 
         assert_eq!(context.id, "386488773351047168");
         assert_eq!(context.highest_role, "Admin");
-        // No Config extension in this test → super_admin_id is None → not superadmin.
+        // No PlatformAdmins extension → not superadmin.
         assert!(!context.is_superadmin());
+    }
+
+    #[tokio::test]
+    async fn session_cookie_is_superadmin_when_listed_in_platform_admins() {
+        let profile_json = r#"{"id":"386488773351047168","username":"admin_user","email":"admin@example.com","avatar":null,"roles":["Admin"],"highest_role":"Admin","user_id":0}"#;
+        let key = Key::generate();
+        let cookie_str = encrypt_session_cookie(&key, profile_json.to_string());
+        let admins = crate::platform_admins::PlatformAdmins::new_empty();
+        admins.insert_for_test("386488773351047168");
+
+        let req = Request::builder()
+            .header("Cookie", cookie_str)
+            .body(())
+            .unwrap();
+        let (mut parts, _) = req.into_parts();
+        parts.extensions.insert(key);
+        parts.extensions.insert(admins);
+
+        let context = UserContext::from_request_parts(&mut parts, &())
+            .await
+            .expect("extract");
+        assert!(context.is_superadmin());
     }
 
     #[tokio::test]

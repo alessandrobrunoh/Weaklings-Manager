@@ -60,6 +60,13 @@ pub struct DiscordUserProfile {
     #[schema(example = true)]
     #[serde(default)]
     pub is_superadmin: bool,
+    /// True when this Discord user holds a control-plane platform role.
+    ///
+    /// Distinct from guild `SuperAdmin` so the `/platform` UI can gate on the
+    /// control-plane assignment even when the session is not yet tenant-scoped.
+    #[schema(example = true)]
+    #[serde(default)]
+    pub is_platform_admin: bool,
     /// Stable permission keys granted to this session.
     ///
     /// The frontend should render privileged actions from this list instead of duplicating role
@@ -67,6 +74,99 @@ pub struct DiscordUserProfile {
     #[schema(example = json!(["splits.manage", "permissions.reload"]))]
     #[serde(default)]
     pub permissions: Vec<String>,
+    /// Discord guild / tenant this session is scoped to.
+    ///
+    /// Absent on cookies issued before multi-tenant login (Stage 4). The tenant
+    /// middleware then falls back to `X-Guild-Id` or the sole active tenant.
+    #[schema(example = "123456789012345678")]
+    #[serde(default)]
+    pub tenant_id: Option<String>,
+    /// Display name of the tenant this session is scoped to.
+    #[schema(example = "Weaklings")]
+    #[serde(default)]
+    pub tenant_name: Option<String>,
+}
+
+/// A registered tenant the user may enter after OAuth.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
+pub struct TenantChoice {
+    /// Discord guild snowflake / `tenants.id`.
+    pub id: String,
+    /// Display name.
+    pub name: String,
+    /// URL-ish slug.
+    pub slug: String,
+    /// Discord guild icon hash, when known.
+    #[serde(default)]
+    pub icon_hash: Option<String>,
+}
+
+/// A Discord guild the user may register as a tenant.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
+pub struct RegisterableGuild {
+    /// Discord guild snowflake.
+    pub id: String,
+    /// Guild display name.
+    pub name: String,
+    /// Guild icon hash, when present.
+    #[serde(default)]
+    pub icon_hash: Option<String>,
+}
+
+/// Discord guild membership row from `/users/@me/guilds`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DiscordGuild {
+    /// Guild snowflake.
+    pub id: String,
+    /// Guild display name.
+    pub name: String,
+    /// Guild icon hash from Discord.
+    #[serde(default)]
+    pub icon: Option<String>,
+    /// True when the OAuth user owns this guild.
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub owner: bool,
+}
+
+/// Encrypted cookie payload while the user picks among several matching tenants.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OauthPending {
+    /// Discord user access token, used to finish role resolution after the pick.
+    pub access_token: String,
+    /// Profile fetched from Discord, not yet tenant-scoped.
+    pub profile: DiscordUserProfile,
+    /// Tenants that intersect the user's Discord guilds.
+    pub tenants: Vec<TenantChoice>,
+}
+
+/// Registered tenants whose Discord guild id appears in `user_guilds`.
+#[must_use]
+pub fn matching_tenants(
+    user_guilds: &[DiscordGuild],
+    registered: &[TenantChoice],
+) -> Vec<TenantChoice> {
+    let held: std::collections::HashSet<&str> = user_guilds.iter().map(|g| g.id.as_str()).collect();
+    let discord_names: std::collections::HashMap<&str, &str> = user_guilds
+        .iter()
+        .map(|g| (g.id.as_str(), g.name.as_str()))
+        .collect();
+    registered
+        .iter()
+        .filter(|tenant| held.contains(tenant.id.as_str()))
+        .map(|tenant| {
+            let mut choice = tenant.clone();
+            if let Some(discord_name) = discord_names.get(tenant.id.as_str()) {
+                if !discord_name.is_empty() {
+                    choice.name = (*discord_name).to_owned();
+                }
+            }
+            if let Some(guild) = user_guilds.iter().find(|g| g.id == tenant.id) {
+                choice.icon_hash = guild.icon.clone();
+            }
+            choice
+        })
+        .collect()
 }
 
 /// Service for interacting with the Discord `OAuth2` API.
@@ -153,6 +253,37 @@ impl AuthService {
             .map_err(|e| AppError::Unauthorized(format!("Failed to parse Discord profile: {e}")))?;
 
         Ok(profile)
+    }
+
+    /// Lists Discord guilds the user belongs to (`guilds` OAuth scope).
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::Unauthorized` if Discord rejects the token.
+    pub async fn fetch_user_guilds(
+        &self,
+        access_token: &str,
+    ) -> Result<Vec<DiscordGuild>, AppError> {
+        let client = reqwest::Client::new();
+        let response = client
+            .get("https://discord.com/api/v10/users/@me/guilds")
+            .bearer_auth(access_token)
+            .header("User-Agent", "WeaklingsBackend (0.0.1)")
+            .send()
+            .await
+            .map_err(|e| AppError::Unauthorized(format!("failed to list discord guilds: {e}")))?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(AppError::Unauthorized(format!(
+                "failed to list discord guilds: {error_text}"
+            )));
+        }
+
+        response
+            .json::<Vec<DiscordGuild>>()
+            .await
+            .map_err(|e| AppError::Unauthorized(format!("failed to parse discord guilds: {e}")))
     }
 
     /// Fetches the user's roles from Discord and maps them to database role names/priorities.
@@ -423,5 +554,45 @@ mod tests {
         let (names, highest) = resolve_linked_roles(&[], &roles);
         assert_eq!(names, vec!["User".to_string()]);
         assert_eq!(highest, "User");
+    }
+
+    fn choice(id: &str, name: &str) -> TenantChoice {
+        TenantChoice {
+            id: id.to_string(),
+            name: name.to_string(),
+            slug: id.to_string(),
+            icon_hash: None,
+        }
+    }
+
+    fn guild(id: &str, name: &str) -> DiscordGuild {
+        DiscordGuild {
+            id: id.to_string(),
+            name: name.to_string(),
+            icon: None,
+            owner: false,
+        }
+    }
+
+    #[test]
+    fn matching_tenants_zero_one_and_many() {
+        let registered = vec![
+            choice("111", "Alpha"),
+            choice("222", "Beta"),
+            choice("333", "Gamma"),
+        ];
+        assert!(matching_tenants(&[guild("999", "Other")], &registered).is_empty());
+        let one = matching_tenants(&[guild("222", "Beta Discord")], &registered);
+        assert_eq!(one.len(), 1);
+        assert_eq!(one[0].id, "222");
+        assert_eq!(one[0].name, "Beta Discord");
+        let many = matching_tenants(
+            &[guild("111", "A"), guild("333", "C"), guild("999", "X")],
+            &registered,
+        );
+        assert_eq!(
+            many.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(),
+            vec!["111", "333"]
+        );
     }
 }

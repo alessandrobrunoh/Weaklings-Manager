@@ -29,13 +29,14 @@ pub fn spawn(
     battles: BattlesService,
     albiondata: AlbionDataService,
     guild_ctx: BattleLinkingContext,
+    tenant_id: String,
 ) {
     tokio::spawn(async move {
         let mut ticker = interval(TICK_INTERVAL);
         loop {
             ticker.tick().await;
             if let Err(e) = run_cycle(&db, &battles, &albiondata, &guild_ctx).await {
-                tracing::warn!(error = %e, "battle-sync worker cycle failed");
+                tracing::warn!(tenant_id, error = %e, "battle-sync worker cycle failed");
             }
         }
     });

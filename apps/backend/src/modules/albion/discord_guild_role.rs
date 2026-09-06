@@ -139,13 +139,19 @@ fn discord_client() -> reqwest::Client {
 }
 
 async fn configured_role_id(db: &DatabaseConnection) -> Option<String> {
-    match AdminService::get_autorole_settings(db).await {
-        Ok(settings) => settings.discord_auto_role_id,
-        Err(error) => {
-            tracing::warn!(error = %error, "failed to load configured Discord guild role");
-            None
+    if let Ok(settings) = AdminService::get_guild_settings(db).await {
+        if let Some(role_id) = settings.discord_applications_accepted_role_id {
+            if !role_id.trim().is_empty() {
+                return Some(role_id);
+            }
+        }
+        if let Some(role_id) = settings.default_role_discord_id {
+            if !role_id.trim().is_empty() {
+                return Some(role_id);
+            }
         }
     }
+    None
 }
 
 fn usable_bot_token(bot_token: Option<&str>) -> Option<&str> {

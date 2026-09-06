@@ -91,6 +91,7 @@ describe('UserDetail Destiny Board', () => {
               roles: ['Officer'],
               highest_role: 'Officer',
               is_superadmin: false,
+              is_platform_admin: false,
               permissions: ['users.specializations.manage'],
             }),
             hasPermission,

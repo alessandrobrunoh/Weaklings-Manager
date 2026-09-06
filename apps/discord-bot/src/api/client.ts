@@ -16,7 +16,13 @@ export class ApiClient {
   constructor(
     private readonly baseUrl: string,
     private readonly botSecret: string,
+    private readonly guildId?: string,
   ) {}
+
+  /** Return a client that stamps `X-Guild-Id` on every request. */
+  withGuild(guildId: string): ApiClient {
+    return new ApiClient(this.baseUrl, this.botSecret, guildId);
+  }
 
   async get<T>(
     path: string,
@@ -102,6 +108,9 @@ export class ApiClient {
     };
     if (discordId) {
       h['X-Discord-Id'] = discordId;
+    }
+    if (this.guildId) {
+      h['X-Guild-Id'] = this.guildId;
     }
     return h;
   }

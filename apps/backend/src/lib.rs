@@ -1,0 +1,178 @@
+//! Weaklings Manager backend library.
+//!
+//! Shared by the HTTP server and one-shot operator binaries (tenant backfill).
+
+#![recursion_limit = "256"]
+
+pub(crate) mod battle_sync;
+pub(crate) mod control_migration;
+pub(crate) mod event_sessions;
+pub(crate) mod migration;
+pub(crate) mod modules;
+pub(crate) mod openapi;
+pub(crate) mod platform_admins;
+pub(crate) mod postgres;
+pub(crate) mod tenant;
+
+pub mod backfill;
+pub mod config;
+pub(crate) mod errors;
+pub(crate) mod pagination;
+pub(crate) mod responses;
+pub(crate) mod serde_helpers;
+
+use axum::Router;
+use sea_orm_migration::MigratorTrait;
+use std::net::SocketAddr;
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use utoipa::OpenApi;
+use utoipa_scalar::{Scalar, Servable};
+
+/// Loads config, migrates, and serves HTTP until the process is stopped.
+///
+/// # Errors
+///
+/// Returns an error if the database connection fails, migration execution fails, or the server
+/// fails to bind to the socket address.
+///
+/// # Panics
+///
+/// Panics if the configuration cannot be parsed from the environment.
+#[allow(clippy::too_many_lines)]
+pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
+    let cfg = config::Config::from_env();
+
+    // Derive the session cookie encryption key once at startup so a misconfigured
+    // `SESSION_SECRET` fails the deployment immediately instead of panicking mid-request.
+    let session_key = cfg.session_key();
+
+    tracing::info!("connecting to database");
+    let admin = sea_orm::Database::connect(&cfg.database_url).await?;
+
+    tracing::info!(
+        schema = postgres::CONTROL_SCHEMA,
+        "ensuring control-plane schema"
+    );
+    postgres::ensure_schema(&admin, postgres::CONTROL_SCHEMA).await?;
+    tracing::info!("connecting to control-plane");
+    let control_db =
+        postgres::connect_with_search_path(cfg.control_plane_url(), postgres::CONTROL_SCHEMA)
+            .await?;
+    tracing::info!("running control-plane migrations");
+    control_migration::Migrator::up(&control_db, None).await?;
+    tracing::info!("control-plane migrations complete");
+
+    let platform_admins = platform_admins::PlatformAdmins::new_empty();
+    platform_admins
+        .reload(&control_db, Some(&cfg.super_admin_discord_id))
+        .await
+        .map_err(|e| format!("Failed to load platform admins: {e}"))?;
+    tracing::info!("platform admin cache loaded");
+
+    let registry =
+        tenant::TenantRegistry::new(cfg.database_url.clone(), control_db.clone(), None, None);
+    tracing::info!("warming tenant registry");
+    let tenant_contexts = registry.warmup().await?;
+    tracing::info!(tenants = tenant_contexts.len(), "tenant registry ready");
+
+    // Fallback pool only when exactly one *registered* tenant exists.
+    // An empty registry must not expose the pre-multi-tenant `public` schema.
+    let fallback_db = tenant_contexts
+        .first()
+        .filter(|_| tenant_contexts.len() == 1)
+        .map(|ctx| ctx.db.clone());
+    let fallback_permissions = tenant_contexts
+        .first()
+        .filter(|_| tenant_contexts.len() == 1)
+        .map_or_else(modules::auth::Permissions::new_empty, |ctx| {
+            ctx.permissions.clone()
+        });
+
+    let addr = SocketAddr::from(([0, 0, 0, 0], cfg.backend_port));
+
+    let openalbion_service = modules::openalbion::service::OpenAlbionService::new();
+    let albiondata_service = modules::albiondata::service::AlbionDataService::new(
+        cfg.albion_api_region.clone(),
+        Some(cfg.albiondata_request_timeout_secs),
+    );
+    let albionbb_client = modules::albionbb::client::AlbionBbApiClient::new(
+        Some(cfg.albionbb_base_url.clone()),
+        Some(cfg.albionbb_request_timeout_secs),
+    );
+    let albionbb_service = modules::albionbb::service::AlbionBbService::new(albionbb_client);
+    let battles_server = modules::albionbb::client::normalize_server(Some(&cfg.albion_api_region));
+    let battles_service = modules::battles::service::BattlesService::new(
+        albionbb_service.clone(),
+        cfg.albion_guild_id.clone(),
+        battles_server,
+    );
+
+    let intel_guild_context = modules::events::service::BattleLinkingContext::new(
+        &cfg.albion_guild_id,
+        &cfg.albion_allied_guild_ids(),
+        &cfg.albion_allied_guild_names(),
+    );
+    for ctx in &tenant_contexts {
+        tracing::info!(tenant_id = %ctx.tenant_id, "starting per-tenant workers");
+        event_sessions::spawn(
+            ctx.db.clone(),
+            albionbb_service.clone(),
+            albiondata_service.clone(),
+            cfg.clone(),
+            ctx.tenant_id.clone(),
+        );
+        battle_sync::spawn(
+            ctx.db.clone(),
+            battles_service.clone(),
+            albiondata_service.clone(),
+            intel_guild_context.clone(),
+            ctx.tenant_id.clone(),
+        );
+    }
+
+    let regear_guild_context = modules::regear::router::RegearGuildContext {
+        guild_id: cfg.albion_guild_id.clone(),
+        server: modules::albionbb::client::normalize_server(Some(&cfg.albion_api_region)),
+    };
+
+    let api = Router::new()
+        .merge(modules::router())
+        .nest("/platform", modules::platform::router())
+        .nest("/tenants", modules::platform::public_router());
+
+    let mut app = Router::new()
+        .nest("/api", api)
+        .merge(Scalar::with_url("/scalar", openapi::ApiDoc::openapi()))
+        .layer(axum::middleware::from_fn_with_state(
+            registry.clone(),
+            tenant::resolve_tenant,
+        ))
+        .layer(axum::Extension(tenant::ControlDb(control_db)))
+        .layer(axum::Extension(registry.clone()))
+        .layer(axum::Extension(cfg.clone()))
+        .layer(axum::Extension(openalbion_service))
+        .layer(axum::Extension(albiondata_service))
+        .layer(axum::Extension(albionbb_service))
+        .layer(axum::Extension(battles_service))
+        .layer(axum::Extension(regear_guild_context))
+        .layer(axum::Extension(modules::intel::cache::ReportCache::new()))
+        .layer(axum::Extension(
+            modules::events::roster_hub::RosterHub::new(),
+        ))
+        .layer(axum::Extension(fallback_permissions))
+        .layer(axum::Extension(platform_admins))
+        .layer(axum::Extension(session_key))
+        .layer(TraceLayer::new_for_http())
+        .layer(CorsLayer::permissive());
+
+    if let Some(db) = fallback_db {
+        app = app.layer(axum::Extension(db));
+    }
+
+    tracing::info!(version = config::VERSION, "listening on {addr}");
+
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}

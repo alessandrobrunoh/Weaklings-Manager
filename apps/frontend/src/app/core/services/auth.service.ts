@@ -4,7 +4,7 @@ import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from './api.service';
 import { API_BASE_URL } from '../tokens/api-base.token';
-import type { DiscordUserProfile } from '../models/api.models';
+import type { DiscordUserProfile, RegisterableGuild, TenantChoice } from '../models/api.models';
 
 /**
  * Session-aware authentication service.
@@ -39,12 +39,48 @@ export class AuthService {
   /** Reactive flag derived from the presence of a profile. */
   readonly isAuthenticated = signal(false);
 
+  /** Tenants the user may enter after Discord returned several guild matches. */
+  async pendingTenants(): Promise<TenantChoice[]> {
+    return firstValueFrom(this.api.get<TenantChoice[]>('api/auth/pending-tenants'));
+  }
+
+  /** Finish OAuth by pinning the session to `tenantId`. */
+  async selectTenant(tenantId: string): Promise<DiscordUserProfile> {
+    const profile = await firstValueFrom(
+      this.api.post<DiscordUserProfile>('api/auth/select-tenant', { tenant_id: tenantId }),
+    );
+    this.setProfile(profile);
+    return profile;
+  }
+
+  /** Tenants this session may switch into. */
+  async myTenants(): Promise<TenantChoice[]> {
+    return firstValueFrom(this.api.get<TenantChoice[]>('api/auth/tenants'));
+  }
+
+  /** Discord servers the user can still register as tenants. */
+  async registerableGuilds(): Promise<RegisterableGuild[]> {
+    return firstValueFrom(this.api.get<RegisterableGuild[]>('api/auth/registerable-guilds'));
+  }
+
+  /** Re-scope the session to another tenant the user already belongs to. */
+  async switchTenant(tenantId: string): Promise<DiscordUserProfile> {
+    const profile = await firstValueFrom(
+      this.api.post<DiscordUserProfile>('api/auth/switch-tenant', { tenant_id: tenantId }),
+    );
+    this.setProfile(profile);
+    return profile;
+  }
+
   /** Trigger the Discord OAuth login flow (full-page redirect). */
-  login(): void {
+  login(next?: string): void {
     if (typeof window === 'undefined') {
       return;
     }
-    window.location.href = this.buildBrowserUrl('api/auth/discord/login');
+    const suffix = next
+      ? `?next=${encodeURIComponent(next)}`
+      : '';
+    window.location.href = this.buildBrowserUrl(`api/auth/discord/login${suffix}`);
   }
 
   /** Clear the session cookie via the backend and reset local state. */
@@ -111,6 +147,11 @@ export class AuthService {
     }
 
     return profile.permissions.includes(permission);
+  }
+
+  /** True when the session holds a control-plane platform role. */
+  isPlatformAdmin(): boolean {
+    return this._profile()?.is_platform_admin === true;
   }
 
   private async fetchProfile(): Promise<DiscordUserProfile | null> {

@@ -105,6 +105,8 @@ pub struct ReportParams {
     pub from: Option<String>,
     /// Window end, RFC 3339. Defaults to now.
     pub to: Option<String>,
+    /// Aggregation bucket size: "day" or "week" (default: "week").
+    pub granularity: Option<String>,
 }
 
 /// Headline combat performance.
@@ -451,6 +453,7 @@ pub async fn build_guild_report(
     db: &DatabaseConnection,
     guild_ctx: &BattleLinkingContext,
     range: DateRange,
+    granularity: &str,
 ) -> Result<GuildReport, AppError> {
     let raw = load(db, range).await?;
     let classifier = RoleClassifier::load(db).await?;
@@ -474,7 +477,7 @@ pub async fn build_guild_report(
     let enemies = compute_enemies(&raw, &matchup_rows);
     let (our_meta, enemy_meta) = compute_meta(&raw, &fights, &classifier);
     let hours = compute_hours(&fights);
-    let trends = compute_trends(&raw, &fights, &range);
+    let trends = compute_trends(&raw, &fights, &range, granularity);
     let timeline = compute_timeline(&raw, &fights);
     let leaderboards = compute_leaderboards(&members);
     let data_quality = ReportDataQuality {
@@ -1383,6 +1386,16 @@ fn compute_hours(fights: &[Fight]) -> Vec<HourBucket> {
     buckets
 }
 
+/// Start of the UTC calendar day containing `dt` (00:00:00 UTC).
+fn day_start_utc(dt: DateTimeWithTimeZone) -> DateTimeWithTimeZone {
+    let utc = dt.with_timezone(&chrono::Utc);
+    utc.date_naive()
+        .and_hms_opt(0, 0, 0)
+        .unwrap_or_default()
+        .and_utc()
+        .into()
+}
+
 /// Start of the Monday-anchored UTC week containing `dt`.
 ///
 /// Every caller routes through this one function, so two timestamps that
@@ -1401,37 +1414,54 @@ fn week_start_utc(dt: DateTimeWithTimeZone) -> DateTimeWithTimeZone {
         .into()
 }
 
-/// Weekly activity across the window.
+/// Periodic activity across the window (daily or weekly).
 ///
-/// Buckets are pre-seeded for every week between `range.from` and `range.to`
-/// before anything is folded in, so a quiet week renders as a zero rather than
+/// Buckets are pre-seeded for every interval between `range.from` and `range.to`
+/// before anything is folded in, so a quiet interval renders as a zero rather than
 /// a gap — the difference matters when the whole point is to read a trend off
 /// the shape of the series. Nothing here re-queries: everything folds from the
 /// same bulk load the rest of the report uses, including figures whose date
 /// column (`finalized_at`, `withdrawn_at`) can fall slightly outside the load
 /// window's own filter column (`created_at`) — those contributions are simply
 /// dropped rather than triggering a second query for a handful of edge rows.
-fn compute_trends(raw: &RawData, fights: &[Fight], range: &DateRange) -> Vec<TrendBucket> {
-    let start_week = week_start_utc(range.from);
-    let end_week = week_start_utc(range.to);
+fn compute_trends(
+    raw: &RawData,
+    fights: &[Fight],
+    range: &DateRange,
+    granularity: &str,
+) -> Vec<TrendBucket> {
+    let is_daily = granularity.eq_ignore_ascii_case("day");
+    let bucket_fn = if is_daily {
+        day_start_utc
+    } else {
+        week_start_utc
+    };
+    let step = if is_daily {
+        chrono::Duration::days(1)
+    } else {
+        chrono::Duration::weeks(1)
+    };
+
+    let start_bucket = bucket_fn(range.from);
+    let end_bucket = bucket_fn(range.to);
 
     let mut order: Vec<DateTimeWithTimeZone> = Vec::new();
-    let mut cursor = start_week;
+    let mut cursor = start_bucket;
     loop {
         order.push(cursor);
-        if cursor >= end_week {
+        if cursor >= end_bucket {
             break;
         }
-        cursor += chrono::Duration::weeks(1);
+        cursor += step;
     }
 
     let mut buckets: HashMap<DateTimeWithTimeZone, TrendBucket> = order
         .iter()
-        .map(|week| {
+        .map(|ts| {
             (
-                *week,
+                *ts,
                 TrendBucket {
-                    week_start: week.to_rfc3339(),
+                    week_start: ts.to_rfc3339(),
                     fights: 0,
                     wins: 0,
                     losses: 0,
@@ -1450,7 +1480,7 @@ fn compute_trends(raw: &RawData, fights: &[Fight], range: &DateRange) -> Vec<Tre
         .collect();
 
     for fight in fights {
-        let Some(bucket) = buckets.get_mut(&week_start_utc(fight.started_at)) else {
+        let Some(bucket) = buckets.get_mut(&bucket_fn(fight.started_at)) else {
             continue;
         };
         bucket.fights += 1;
@@ -1466,17 +1496,17 @@ fn compute_trends(raw: &RawData, fights: &[Fight], range: &DateRange) -> Vec<Tre
     }
 
     // Participations carry no date of their own; attendance is bucketed by
-    // the week of the event they signed up for.
-    let mut event_week: HashMap<i64, DateTimeWithTimeZone> = HashMap::new();
+    // the interval of the event they signed up for.
+    let mut event_interval: HashMap<i64, DateTimeWithTimeZone> = HashMap::new();
     for event_row in &raw.events {
-        let key = week_start_utc(event_row.event_date_utc);
-        event_week.insert(event_row.id, key);
+        let key = bucket_fn(event_row.event_date_utc);
+        event_interval.insert(event_row.id, key);
         if let Some(bucket) = buckets.get_mut(&key) {
             bucket.events += 1;
         }
     }
     for participation in &raw.participations {
-        let Some(key) = event_week.get(&participation.event_id) else {
+        let Some(key) = event_interval.get(&participation.event_id) else {
             continue;
         };
         if let Some(bucket) = buckets.get_mut(key) {
@@ -1492,7 +1522,7 @@ fn compute_trends(raw: &RawData, fights: &[Fight], range: &DateRange) -> Vec<Tre
         // actually paid out, falling back to creation for the rare row
         // completed without that timestamp ever being set.
         let paid_at = split.finalized_at.unwrap_or(split.created_at);
-        if let Some(bucket) = buckets.get_mut(&week_start_utc(paid_at)) {
+        if let Some(bucket) = buckets.get_mut(&bucket_fn(paid_at)) {
             let net = to_i64(split.estimated_market_value) - to_i64(split.repair_value)
                 + to_i64(split.bags_value);
             bucket.loot_in += net.max(0);
@@ -1512,7 +1542,7 @@ fn compute_trends(raw: &RawData, fights: &[Fight], range: &DateRange) -> Vec<Tre
         let Some(withdrawn_at) = tx.withdrawn_at else {
             continue;
         };
-        if let Some(bucket) = buckets.get_mut(&week_start_utc(withdrawn_at)) {
+        if let Some(bucket) = buckets.get_mut(&bucket_fn(withdrawn_at)) {
             let amount = to_i64(tx.amount);
             bucket.outflow += amount;
             if regear_tx_ids.contains(&tx.id) {
@@ -1523,7 +1553,7 @@ fn compute_trends(raw: &RawData, fights: &[Fight], range: &DateRange) -> Vec<Tre
 
     order
         .into_iter()
-        .filter_map(|week| buckets.remove(&week))
+        .filter_map(|ts| buckets.remove(&ts))
         .collect()
 }
 
@@ -1873,10 +1903,33 @@ mod tests {
             from: ts("2026-08-03T00:00:00Z"),
             to: ts("2026-08-20T00:00:00Z"),
         };
-        let buckets = compute_trends(&empty_raw(), &[], &range);
+        let buckets = compute_trends(&empty_raw(), &[], &range, "week");
         // Aug 3 (Mon) .. Aug 17 (Mon) inclusive = 3 weekly buckets.
         assert_eq!(buckets.len(), 3);
         assert!(buckets.iter().all(|b| b.fights == 0 && b.attendance == 0));
+    }
+
+    #[test]
+    fn trends_seed_every_day_in_range_even_when_empty() {
+        let range = DateRange {
+            from: ts("2026-08-03T00:00:00Z"),
+            to: ts("2026-08-05T00:00:00Z"),
+        };
+        let buckets = compute_trends(&empty_raw(), &[], &range, "day");
+        // Aug 3, Aug 4, Aug 5 inclusive = 3 daily buckets.
+        assert_eq!(buckets.len(), 3);
+        assert_eq!(
+            buckets[0].week_start,
+            ts("2026-08-03T00:00:00+00:00").to_rfc3339()
+        );
+        assert_eq!(
+            buckets[1].week_start,
+            ts("2026-08-04T00:00:00+00:00").to_rfc3339()
+        );
+        assert_eq!(
+            buckets[2].week_start,
+            ts("2026-08-05T00:00:00+00:00").to_rfc3339()
+        );
     }
 
     #[test]
@@ -1885,7 +1938,7 @@ mod tests {
             from: ts("2026-08-03T00:00:00Z"),
             to: ts("2026-08-20T00:00:00Z"),
         };
-        let buckets = compute_trends(&empty_raw(), &[], &range);
+        let buckets = compute_trends(&empty_raw(), &[], &range, "week");
         let starts: Vec<&str> = buckets.iter().map(|b| b.week_start.as_str()).collect();
         let mut sorted = starts.clone();
         sorted.sort_unstable();
@@ -1902,7 +1955,7 @@ mod tests {
             fight("2026-08-19T10:00:00Z", true, 5, 1),
             fight("2026-08-20T10:00:00Z", false, 2, 4),
         ];
-        let buckets = compute_trends(&empty_raw(), &fights, &range);
+        let buckets = compute_trends(&empty_raw(), &fights, &range, "week");
         let week_of_19th = buckets
             .iter()
             .find(|b| b.week_start == week_start_utc(ts("2026-08-19T00:00:00Z")).to_rfc3339())
@@ -1921,7 +1974,7 @@ mod tests {
             to: ts("2026-08-20T00:00:00Z"),
         };
         let fights = vec![fight("2026-01-01T00:00:00Z", true, 3, 0)];
-        let buckets = compute_trends(&empty_raw(), &fights, &range);
+        let buckets = compute_trends(&empty_raw(), &fights, &range, "week");
         assert!(buckets.iter().all(|b| b.fights == 0));
     }
 
@@ -1968,7 +2021,7 @@ mod tests {
             updated_at: ts("2026-08-01T00:00:00Z"),
         });
 
-        let buckets = compute_trends(&raw, &[], &range);
+        let buckets = compute_trends(&raw, &[], &range, "week");
         let week = buckets
             .iter()
             .find(|b| b.week_start == week_start_utc(ts("2026-08-19T00:00:00Z")).to_rfc3339())
@@ -2055,7 +2108,7 @@ mod tests {
         assert_eq!(economy.split_completed, 95_000);
         assert_eq!(economy.loot_in, 95_000);
 
-        let buckets = compute_trends(&raw, &[], &range);
+        let buckets = compute_trends(&raw, &[], &range, "week");
         let week = buckets
             .iter()
             .find(|b| b.week_start == week_start_utc(ts("2026-08-19T00:00:00Z")).to_rfc3339())
