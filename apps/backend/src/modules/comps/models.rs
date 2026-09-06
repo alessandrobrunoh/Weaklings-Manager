@@ -463,6 +463,10 @@ pub struct BuildFilters {
     /// When `true`, lists archived builds instead of active ones. Defaults to `false` — every
     /// picker and listing shows active builds only unless a caller explicitly asks to browse the
     /// archive.
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_helpers::optional_bool_from_string_or_bool"
+    )]
     pub archived: Option<bool>,
 }
 
@@ -486,5 +490,9 @@ pub struct CompFilters {
     /// When `true`, lists archived comps instead of active ones. Defaults to `false` — every
     /// picker and listing shows active comps only unless a caller explicitly asks to browse the
     /// archive.
+    #[serde(
+        default,
+        deserialize_with = "crate::serde_helpers::optional_bool_from_string_or_bool"
+    )]
     pub archived: Option<bool>,
 }

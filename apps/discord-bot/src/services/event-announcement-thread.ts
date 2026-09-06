@@ -1,5 +1,5 @@
 import { Message, ThreadAutoArchiveDuration, type ThreadChannel } from "discord.js";
-import type { EventView } from "../api/types.js";
+import type { EventDetailView, EventView } from "../api/types.js";
 import {
   buildEventEmbed,
   buildEventThreadActionRows,
@@ -7,6 +7,7 @@ import {
 import {
   isUnknownDiscordChannel,
   lockAndArchiveThread,
+  withUnarchivedThread,
 } from "./discord-thread.js";
 
 export type EventAnnouncementThread = Awaited<
@@ -89,6 +90,42 @@ export async function closeEventAnnouncementThread(
 }
 
 /**
+ * Deletes the parent announcement message (and its discussion thread) when an event is archived.
+ *
+ * Stopped/cancelled events keep locked history. Archive means the call should disappear from the
+ * events channel; if Discord rejects the delete, the thread is closed instead.
+ */
+export async function deleteEventAnnouncement(
+  thread: ThreadChannel,
+  eventId: number,
+  sourceLabel: string,
+): Promise<boolean> {
+  const reason = `Event #${eventId} archived (${sourceLabel})`;
+  try {
+    const starter = await thread.fetchStarterMessage().catch(() => null);
+    if (starter) {
+      await starter.delete();
+    } else {
+      await thread.delete(reason);
+    }
+    console.log(`[${sourceLabel}] Deleted Discord announcement for event #${eventId}`);
+    return true;
+  } catch (error: unknown) {
+    if (isUnknownDiscordChannel(error)) {
+      console.warn(
+        `[${sourceLabel}] Discord announcement for event #${eventId} is already gone`,
+      );
+      return true;
+    }
+    console.warn(
+      `[${sourceLabel}] Failed to delete Discord announcement for event #${eventId}; closing instead:`,
+      error,
+    );
+    return closeEventAnnouncementThread(thread, eventId, sourceLabel);
+  }
+}
+
+/**
  * Posts the interactive signup card inside an event thread.
  *
  * The parent announcement stays a text ping with a linked thread. Roster, join/leave, Ping,
@@ -102,9 +139,9 @@ export async function sendEventSignupMessage(
   thread: EventAnnouncementThread,
   event: EventView,
   sourceLabel: string,
-): Promise<boolean> {
+): Promise<string | null> {
   try {
-    await thread.send({
+    const message = await thread.send({
       content: "Use the controls below to manage participation or operate the event.",
       embeds: [buildEventEmbed(event)],
       components: buildEventThreadActionRows(event),
@@ -112,13 +149,83 @@ export async function sendEventSignupMessage(
     console.log(
       `[${sourceLabel}] Published signup message in thread for event #${event.id}`,
     );
-    return true;
+    return message.id;
   } catch (error: unknown) {
     console.warn(
       `[${sourceLabel}] Failed to publish signup message in thread for event #${event.id}:`,
       error,
     );
-    return false;
+    return null;
+  }
+}
+
+function isEventSignupMessage(message: Message, eventId: number): boolean {
+  const joinId = `event:join:${eventId}`;
+  return message.components.some((row) => {
+    if (!("components" in row) || !Array.isArray(row.components)) return false;
+    return row.components.some(
+      (component) => "customId" in component && component.customId === joinId,
+    );
+  });
+}
+
+async function findEventSignupMessage(
+  thread: ThreadChannel,
+  eventId: number,
+  messageId?: string | null,
+): Promise<Message | null> {
+  if (!thread.messages) return null;
+  if (messageId) {
+    try {
+      const stored = await thread.messages.fetch(messageId);
+      if (isEventSignupMessage(stored, eventId)) return stored;
+    } catch {
+      // Fall through to a scan of recent thread messages.
+    }
+  }
+  const fetched = await thread.messages.fetch({ limit: 50 });
+  for (const message of fetched.values()) {
+    if (isEventSignupMessage(message, eventId)) return message;
+  }
+  return null;
+}
+
+/**
+ * Rewrites the interactive signup card so website roster changes appear on Discord.
+ *
+ * Returns the message id that was edited, or `null` when the card could not be found.
+ */
+export async function refreshEventSignupCard(
+  thread: ThreadChannel,
+  event: EventView | EventDetailView,
+  sourceLabel: string,
+  messageId?: string | null,
+): Promise<string | null> {
+  try {
+    return await withUnarchivedThread(
+      thread,
+      `Refresh event #${event.id} signup card (${sourceLabel})`,
+      async (active) => {
+        const message = await findEventSignupMessage(active, event.id, messageId);
+        if (!message) {
+          console.warn(
+            `[${sourceLabel}] No signup card found in thread for event #${event.id}`,
+          );
+          return null;
+        }
+        await message.edit({
+          embeds: [buildEventEmbed(event)],
+          components: buildEventThreadActionRows(event),
+        });
+        return message.id;
+      },
+    );
+  } catch (error: unknown) {
+    console.warn(
+      `[${sourceLabel}] Failed to refresh signup card for event #${event.id}:`,
+      error,
+    );
+    return null;
   }
 }
 

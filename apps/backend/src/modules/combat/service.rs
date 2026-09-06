@@ -417,7 +417,9 @@ impl CombatService {
     ) -> Result<ScenarioDetail, AppError> {
         let name = request.name.trim();
         if name.is_empty() {
-            return Err(AppError::Validation("scenario name is required".to_string()));
+            return Err(AppError::Validation(
+                "scenario name is required".to_string(),
+            ));
         }
         ensure_scenario_name_free(db, name, None).await?;
         let now: sea_orm::prelude::DateTimeWithTimeZone = chrono::Utc::now().into();
@@ -460,7 +462,12 @@ impl CombatService {
             .ok_or_else(|| AppError::NotFound(format!("Scenario {id} not found")))?;
 
         let txn = db.begin().await.map_err(AppError::Database)?;
-        if let Some(name) = request.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+        if let Some(name) = request
+            .name
+            .as_deref()
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+        {
             ensure_scenario_name_free(&txn, name, Some(&model.name)).await?;
             let siblings = scenario_version_group(&txn, &model.name).await?;
             for sibling in siblings {
@@ -473,13 +480,12 @@ impl CombatService {
         if let Some(definition) = &request.definition {
             let definition_json = serde_json::to_string(definition)
                 .map_err(|error| AppError::Validation(error.to_string()))?;
-            let mut active: combat_scenario::ActiveModel =
-                combat_scenario::Entity::find_by_id(id)
-                    .one(&txn)
-                    .await
-                    .map_err(AppError::Database)?
-                    .ok_or_else(|| AppError::NotFound(format!("Scenario {id} not found")))?
-                    .into();
+            let mut active: combat_scenario::ActiveModel = combat_scenario::Entity::find_by_id(id)
+                .one(&txn)
+                .await
+                .map_err(AppError::Database)?
+                .ok_or_else(|| AppError::NotFound(format!("Scenario {id} not found")))?
+                .into();
             active.definition_json = Set(definition_json);
             active.updated_at = Set(chrono::Utc::now().into());
             active.update(&txn).await.map_err(AppError::Database)?;
@@ -514,7 +520,12 @@ impl CombatService {
             .ok_or_else(|| AppError::NotFound(format!("Scenario {id} not found")))?;
 
         let siblings = scenario_version_group(db, &source.name).await?;
-        let next_version = siblings.iter().map(|sibling| sibling.version).max().unwrap_or(0) + 1;
+        let next_version = siblings
+            .iter()
+            .map(|sibling| sibling.version)
+            .max()
+            .unwrap_or(0)
+            + 1;
         let now: sea_orm::prelude::DateTimeWithTimeZone = chrono::Utc::now().into();
         let inserted = combat_scenario::ActiveModel {
             name: Set(source.name),
@@ -561,7 +572,11 @@ impl CombatService {
     /// # Errors
     ///
     /// Returns [`AppError::NotFound`] when the scenario does not exist.
-    pub async fn get_scenario(&self, db: &DatabaseConnection, id: i64) -> Result<ScenarioDetail, AppError> {
+    pub async fn get_scenario(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+    ) -> Result<ScenarioDetail, AppError> {
         let model = combat_scenario::Entity::find_by_id(id)
             .one(db)
             .await
@@ -612,12 +627,14 @@ impl CombatService {
             .await
             .map_err(AppError::Database)?
             .ok_or_else(|| AppError::NotFound(format!("Scenario {id} not found")))?;
-        let definition: ScenarioDefinition = serde_json::from_str(&model.definition_json)
-            .map_err(|error| AppError::Validation(format!("stored scenario is unreadable: {error}")))?;
+        let definition: ScenarioDefinition =
+            serde_json::from_str(&model.definition_json).map_err(|error| {
+                AppError::Validation(format!("stored scenario is unreadable: {error}"))
+            })?;
 
         let result = super::scenario::run(&definition.groups, &definition.casts);
-        let result_json =
-            serde_json::to_string(&result).map_err(|error| AppError::Validation(error.to_string()))?;
+        let result_json = serde_json::to_string(&result)
+            .map_err(|error| AppError::Validation(error.to_string()))?;
 
         let inserted = combat_run::ActiveModel {
             scenario_id: Set(id),
@@ -632,7 +649,10 @@ impl CombatService {
         .await
         .map_err(AppError::Database)?;
 
-        Ok(RunDetail { summary: self.run_summary(db, inserted).await?, result })
+        Ok(RunDetail {
+            summary: self.run_summary(db, inserted).await?,
+            result,
+        })
     }
 
     /// Lists a scenario's past runs, most recent first.
@@ -660,7 +680,11 @@ impl CombatService {
     ///
     /// Returns [`AppError::NotFound`] when the run does not exist, or [`AppError::Validation`]
     /// when its stored result cannot be parsed.
-    pub async fn get_run(&self, db: &DatabaseConnection, run_id: i64) -> Result<RunDetail, AppError> {
+    pub async fn get_run(
+        &self,
+        db: &DatabaseConnection,
+        run_id: i64,
+    ) -> Result<RunDetail, AppError> {
         let model = combat_run::Entity::find_by_id(run_id)
             .one(db)
             .await
@@ -668,7 +692,10 @@ impl CombatService {
             .ok_or_else(|| AppError::NotFound(format!("Run {run_id} not found")))?;
         let result: super::scenario::ScenarioResult = serde_json::from_str(&model.result_json)
             .map_err(|error| AppError::Validation(format!("stored run is unreadable: {error}")))?;
-        Ok(RunDetail { summary: self.run_summary(db, model).await?, result })
+        Ok(RunDetail {
+            summary: self.run_summary(db, model).await?,
+            result,
+        })
     }
 
     async fn scenario_summary(
@@ -701,16 +728,25 @@ impl CombatService {
         db: &DatabaseConnection,
         model: combat_scenario::Model,
     ) -> Result<ScenarioDetail, AppError> {
-        let definition: ScenarioDefinition = serde_json::from_str(&model.definition_json)
-            .map_err(|error| AppError::Validation(format!("stored scenario is unreadable: {error}")))?;
+        let definition: ScenarioDefinition =
+            serde_json::from_str(&model.definition_json).map_err(|error| {
+                AppError::Validation(format!("stored scenario is unreadable: {error}"))
+            })?;
         let mut versions = scenario_version_group(db, &model.name).await?;
         versions.sort_by_key(|sibling| sibling.version);
         let versions = versions
             .into_iter()
-            .map(|sibling| ScenarioVersionRef { id: sibling.id, version: sibling.version })
+            .map(|sibling| ScenarioVersionRef {
+                id: sibling.id,
+                version: sibling.version,
+            })
             .collect();
         let summary = self.scenario_summary(db, model).await?;
-        Ok(ScenarioDetail { summary, definition, versions })
+        Ok(ScenarioDetail {
+            summary,
+            definition,
+            versions,
+        })
     }
 
     async fn run_summary(
@@ -730,7 +766,11 @@ impl CombatService {
         })
     }
 
-    async fn resolve_username(&self, db: &DatabaseConnection, user_id: i64) -> Result<String, AppError> {
+    async fn resolve_username(
+        &self,
+        db: &DatabaseConnection,
+        user_id: i64,
+    ) -> Result<String, AppError> {
         let Some(user) = crate::modules::users::entities::Entity::find_by_id(user_id)
             .one(db)
             .await
@@ -1251,7 +1291,9 @@ mod scenario_tests {
     use sea_orm_migration::MigratorTrait;
 
     use super::CombatService;
-    use crate::modules::combat::models::{CreateScenarioRequest, ScenarioDefinition, UpdateScenarioRequest};
+    use crate::modules::combat::models::{
+        CreateScenarioRequest, ScenarioDefinition, UpdateScenarioRequest,
+    };
     use crate::modules::combat::scenario::{DeclaredCast, Side, UnitGroup};
     use crate::modules::combat::sim::AttackerStyle;
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
@@ -1344,7 +1386,10 @@ mod scenario_tests {
             .create_scenario(
                 &db,
                 creator,
-                &CreateScenarioRequest { name: "   ".to_string(), definition: ScenarioDefinition::default() },
+                &CreateScenarioRequest {
+                    name: "   ".to_string(),
+                    definition: ScenarioDefinition::default(),
+                },
             )
             .await
             .expect_err("a blank name should be refused");
@@ -1379,7 +1424,10 @@ mod scenario_tests {
             .create_scenario(
                 &db,
                 creator,
-                &CreateScenarioRequest { name: "Draft".to_string(), definition: ScenarioDefinition::default() },
+                &CreateScenarioRequest {
+                    name: "Draft".to_string(),
+                    definition: ScenarioDefinition::default(),
+                },
             )
             .await
             .expect("scenario should be created");
@@ -1392,7 +1440,10 @@ mod scenario_tests {
             .update_scenario(
                 &db,
                 v2.summary.id,
-                &UpdateScenarioRequest { name: Some("Renamed".to_string()), definition: None },
+                &UpdateScenarioRequest {
+                    name: Some("Renamed".to_string()),
+                    definition: None,
+                },
             )
             .await
             .expect("rename should succeed");
@@ -1414,7 +1465,10 @@ mod scenario_tests {
             .create_scenario(
                 &db,
                 creator,
-                &CreateScenarioRequest { name: "Draft".to_string(), definition: ScenarioDefinition::default() },
+                &CreateScenarioRequest {
+                    name: "Draft".to_string(),
+                    definition: ScenarioDefinition::default(),
+                },
             )
             .await
             .expect("scenario should be created");
@@ -1423,7 +1477,10 @@ mod scenario_tests {
             .update_scenario(
                 &db,
                 created.summary.id,
-                &UpdateScenarioRequest { name: None, definition: Some(lethal_definition()) },
+                &UpdateScenarioRequest {
+                    name: None,
+                    definition: Some(lethal_definition()),
+                },
             )
             .await
             .expect("definition update should succeed");
@@ -1440,7 +1497,10 @@ mod scenario_tests {
             .create_scenario(
                 &db,
                 creator,
-                &CreateScenarioRequest { name: "Draft".to_string(), definition: lethal_definition() },
+                &CreateScenarioRequest {
+                    name: "Draft".to_string(),
+                    definition: lethal_definition(),
+                },
             )
             .await
             .expect("scenario should be created");
@@ -1463,7 +1523,10 @@ mod scenario_tests {
             .create_scenario(
                 &db,
                 creator,
-                &CreateScenarioRequest { name: "Draft".to_string(), definition: ScenarioDefinition::default() },
+                &CreateScenarioRequest {
+                    name: "Draft".to_string(),
+                    definition: ScenarioDefinition::default(),
+                },
             )
             .await
             .expect("scenario should be created");
@@ -1501,7 +1564,10 @@ mod scenario_tests {
             .create_scenario(
                 &db,
                 creator,
-                &CreateScenarioRequest { name: "Lethal".to_string(), definition: lethal_definition() },
+                &CreateScenarioRequest {
+                    name: "Lethal".to_string(),
+                    definition: lethal_definition(),
+                },
             )
             .await
             .expect("scenario should be created");

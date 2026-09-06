@@ -52,6 +52,66 @@ where
         .transpose()
 }
 
+/// Deserializes an optional boolean from a native bool or a string (`true`/`false`/`1`/`0`).
+///
+/// Angular `HttpParams` and axum's `Query` extractor (backed by `serde_urlencoded`) expose every
+/// query value as a string. Flattened filter structs make this worse: serde presents the value
+/// through `deserialize_any`, and the default `bool` visitor rejects strings. Without this
+/// coercion, `?archived=true` fails with "Failed to deserialize query string".
+pub fn optional_bool_from_string_or_bool<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct OptionalBoolVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for OptionalBoolVisitor {
+        type Value = Option<bool>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a boolean or a string boolean")
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E> {
+            Ok(Some(value))
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            match value.trim().to_ascii_lowercase().as_str() {
+                "" => Ok(None),
+                "true" | "1" | "yes" => Ok(Some(true)),
+                "false" | "0" | "no" => Ok(Some(false)),
+                other => Err(E::custom(format!("invalid boolean value: {other}"))),
+            }
+        }
+
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            deserializer.deserialize_any(self)
+        }
+    }
+
+    deserializer.deserialize_option(OptionalBoolVisitor)
+}
+
 #[cfg(test)]
 mod tests {
     #[derive(Debug, serde::Deserialize, PartialEq)]
@@ -103,5 +163,46 @@ mod tests {
     fn optional_integer_accepts_missing_field() {
         let missing: OptionalIntegerProbe = serde_json::from_str("{}").unwrap();
         assert_eq!(missing.field, None);
+    }
+
+    #[derive(Debug, serde::Deserialize, PartialEq)]
+    struct OptionalBoolProbe {
+        #[serde(default, deserialize_with = "super::optional_bool_from_string_or_bool")]
+        field: Option<bool>,
+    }
+
+    #[derive(Debug, serde::Deserialize, PartialEq)]
+    struct FlattenedBoolProbe {
+        page: Option<u64>,
+        #[serde(flatten)]
+        inner: OptionalBoolProbe,
+    }
+
+    #[test]
+    fn optional_bool_accepts_json_bool_and_string() {
+        let native: OptionalBoolProbe = serde_json::from_str(r#"{"field": true}"#).unwrap();
+        let string: OptionalBoolProbe = serde_json::from_str(r#"{"field": "true"}"#).unwrap();
+        assert_eq!(native.field, Some(true));
+        assert_eq!(string.field, Some(true));
+    }
+
+    #[test]
+    fn optional_bool_accepts_missing_field() {
+        let missing: OptionalBoolProbe = serde_json::from_str("{}").unwrap();
+        assert_eq!(missing.field, None);
+    }
+
+    #[test]
+    fn optional_bool_accepts_query_string_true_on_flattened_struct() {
+        let parsed: FlattenedBoolProbe =
+            serde_urlencoded::from_str("page=1&field=true").expect("archived=true must parse");
+        assert_eq!(parsed.page, Some(1));
+        assert_eq!(parsed.inner.field, Some(true));
+    }
+
+    #[test]
+    fn optional_bool_rejects_unknown_query_string() {
+        let error = serde_urlencoded::from_str::<FlattenedBoolProbe>("field=maybe").unwrap_err();
+        assert!(error.to_string().contains("invalid boolean value"));
     }
 }
