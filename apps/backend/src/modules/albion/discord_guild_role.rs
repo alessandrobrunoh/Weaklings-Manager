@@ -13,12 +13,20 @@ pub fn belongs_to_configured_guild(
     player_guild_id.is_some_and(|guild_id| guild_id == configured_guild_id.trim())
 }
 
-/// Assigns the configured Guild base role to a Discord member.
+/// Assigns the configured Guild base role to a Discord member of `guild_id`.
+///
+/// `guild_id` is the tenant's own Discord server (the tenant id *is* the guild
+/// id), so a link made in one server never grants a role in another.
 ///
 /// The side effect intentionally never fails the caller: linking a character is more valuable than
 /// a transient Discord permission, hierarchy, or network error. Discord's role PUT endpoint is
 /// idempotent, so retrying a successful link does not duplicate a role.
-pub async fn assign_guild_role(db: &DatabaseConnection, cfg: &Config, discord_user_id: &str) {
+pub async fn assign_guild_role(
+    db: &DatabaseConnection,
+    cfg: &Config,
+    guild_id: &str,
+    discord_user_id: &str,
+) {
     let Some(role_id) = configured_role_id(db).await else {
         return;
     };
@@ -26,7 +34,7 @@ pub async fn assign_guild_role(db: &DatabaseConnection, cfg: &Config, discord_us
         tracing::debug!("skipping Discord guild-role assignment: bot token is not configured");
         return;
     };
-    let guild_id = cfg.discord_guild_id.trim();
+    let guild_id = guild_id.trim();
     if guild_id.is_empty() || discord_user_id.trim().is_empty() {
         return;
     }
@@ -70,13 +78,18 @@ pub async fn assign_guild_role(db: &DatabaseConnection, cfg: &Config, discord_us
     }
 }
 
-/// Revokes the configured Guild base role from a Discord member.
+/// Revokes the configured Guild base role from a Discord member of `guild_id`.
 ///
 /// The side effect intentionally never fails the caller: unlinking a character must succeed even
 /// if the bot lacks permissions, hierarchy, or Discord is unreachable. Discord's role DELETE
 /// endpoint is idempotent and returns success even if the member never had the role, so this is
 /// safe to call unconditionally on unlink.
-pub async fn revoke_guild_role(db: &DatabaseConnection, cfg: &Config, discord_user_id: &str) {
+pub async fn revoke_guild_role(
+    db: &DatabaseConnection,
+    cfg: &Config,
+    guild_id: &str,
+    discord_user_id: &str,
+) {
     let Some(role_id) = configured_role_id(db).await else {
         return;
     };
@@ -84,7 +97,7 @@ pub async fn revoke_guild_role(db: &DatabaseConnection, cfg: &Config, discord_us
         tracing::debug!("skipping Discord guild-role revocation: bot token is not configured");
         return;
     };
-    let guild_id = cfg.discord_guild_id.trim();
+    let guild_id = guild_id.trim();
     if guild_id.is_empty() || discord_user_id.trim().is_empty() {
         return;
     }

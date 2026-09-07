@@ -17,6 +17,7 @@ use crate::errors::ProblemDetails;
 use crate::modules::audit::service::AuditService;
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedData, PaginationParams};
+use crate::tenant::CurrentTenantId;
 use crate::responses::{
     ApiResponse, ApiResponseEventDetail, ApiResponseEventList, ApiResponseEventRosterRoleList,
     ApiResponseEventView,
@@ -584,12 +585,13 @@ async fn create_event(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Json(req): Json<CreateEventRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     user.require(&perms, Permission::EventsCreate).await?;
 
     if !req.discord_role_ids.is_empty() {
-        let allowed_role_ids: HashSet<String> = AdminService::discord_roles(&cfg)
+        let allowed_role_ids: HashSet<String> = AdminService::discord_roles(&cfg, &tenant.0)
             .await?
             .into_iter()
             .map(|role| role.id)
@@ -600,7 +602,7 @@ async fn create_event(
             .find(|role_id| !allowed_role_ids.contains(role_id.trim()))
         {
             return Err(AppError::Validation(format!(
-                "Discord role {invalid_role_id} was not found in the configured guild or cannot be selected"
+                "Discord role {invalid_role_id} was not found in this server or cannot be selected"
             )));
         }
     }
@@ -616,7 +618,7 @@ async fn create_event(
     path = "/api/events/discord-roles",
     tag = "events",
     summary = "List Discord roles available for event announcements",
-    description = "Returns non-managed roles in the configured Discord guild. Requires events.edit.",
+    description = "Returns non-managed roles in this tenant's Discord server. Requires events.edit.",
     security(("session_cookie" = [])),
     responses(
         (status = 200, description = "Discord roles retrieved", body = [DiscordRoleView]),
@@ -629,10 +631,11 @@ async fn list_event_discord_roles(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(cfg): Extension<Config>,
+    Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<Json<ApiResponse<Vec<DiscordRoleView>>>, AppError> {
     user.require(&perms, Permission::EventsEdit).await?;
     Ok(Json(ApiResponse::new(
-        AdminService::discord_roles(&cfg).await?,
+        AdminService::discord_roles(&cfg, &tenant.0).await?,
     )))
 }
 

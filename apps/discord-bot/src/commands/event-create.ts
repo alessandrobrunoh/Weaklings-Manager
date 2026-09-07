@@ -109,7 +109,7 @@ export async function execute(
   // event up — this is purely a "make it feel instant" nicety, not the only
   // path that announces it.
   try {
-    await getPoller()?.pollNow();
+    await getPoller(api.guildId)?.pollNow();
   } catch (err) {
     console.warn("[EventCreateCommand] Immediate poll after creation failed:", err);
   }

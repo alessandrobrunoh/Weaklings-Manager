@@ -121,21 +121,6 @@ export class AuthService {
     this.isAuthenticated.set(profile !== null);
   }
 
-  /** True when route-level visibility still needs legacy role gating. */
-  hasRole(...roles: DiscordUserProfile['highest_role'][]): boolean {
-    const profile = this._profile();
-    if (!profile) {
-      return false;
-    }
-    if (profile.is_superadmin) {
-      return true;
-    }
-
-    return (
-      roles.includes(profile.highest_role) || profile.roles.some((role) => roles.includes(role))
-    );
-  }
-
   /** True when the backend grants the requested capability to this session. */
   hasPermission(permission: string): boolean {
     const profile = this._profile();

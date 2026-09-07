@@ -11,6 +11,7 @@ use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedUserProfile, PaginationParams};
+use crate::tenant::CurrentTenantId;
 use crate::responses::{ApiResponse, ApiResponseUserMetrics, ApiResponseUserProfile};
 use axum::{
     Extension, Json, Router,
@@ -290,9 +291,10 @@ pub async fn get_user_roles(
     _user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Path(user_id): Path<u64>,
 ) -> Result<Json<ApiResponse<UserRolesView>>, AppError> {
-    let discord = super::member_roles::LiveDiscord::from_config(&cfg)?;
+    let discord = super::member_roles::LiveDiscord::for_guild(&cfg, &tenant.0)?;
     Ok(Json(ApiResponse::new(
         list_user_roles(&db, &discord, user_id).await?,
     )))
@@ -324,11 +326,12 @@ pub async fn post_user_role(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Path(user_id): Path<u64>,
     Json(body): Json<AssignUserRoleRequest>,
 ) -> Result<Json<ApiResponse<UserRolesView>>, AppError> {
     user.require(&perms, Permission::RolesManage).await?;
-    let discord = super::member_roles::LiveDiscord::from_config(&cfg)?;
+    let discord = super::member_roles::LiveDiscord::for_guild(&cfg, &tenant.0)?;
     Ok(Json(ApiResponse::new(
         add_user_role(
             &db,
@@ -370,10 +373,11 @@ pub async fn delete_user_role(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Path((user_id, role_id)): Path<(u64, String)>,
 ) -> Result<Json<ApiResponse<UserRolesView>>, AppError> {
     user.require(&perms, Permission::RolesManage).await?;
-    let discord = super::member_roles::LiveDiscord::from_config(&cfg)?;
+    let discord = super::member_roles::LiveDiscord::for_guild(&cfg, &tenant.0)?;
     Ok(Json(ApiResponse::new(
         remove_user_role(
             &db,

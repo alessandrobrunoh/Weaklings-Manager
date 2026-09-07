@@ -2,7 +2,7 @@
 
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbErr, Statement, Value};
 
-use crate::backfill::{tenant_schema_name, tenant_slug};
+use crate::postgres::{tenant_schema_name, tenant_slug};
 use crate::control_migration::SUPERADMIN_ROLE_ID;
 use crate::errors::AppError;
 use crate::tenant::TenantRegistry;
@@ -1059,7 +1059,7 @@ mod tests {
         assert_eq!(found.owner_discord_id.as_deref(), Some("owner-1"));
         assert_eq!(found.name, "Weaklings");
 
-        let registry = TenantRegistry::new(url, control.clone(), None, None);
+        let registry = TenantRegistry::new(url, control.clone());
         let updated = PlatformService::patch_tenant(
             &control,
             &registry,
@@ -1131,7 +1131,7 @@ mod tests {
         .expect("create");
         assert!(gold.feature_keys.is_empty());
 
-        let registry = TenantRegistry::new(url, control.clone(), None, None);
+        let registry = TenantRegistry::new(url, control.clone());
         let gold = PlatformService::put_rank_features(
             &control,
             &registry,
@@ -1245,7 +1245,7 @@ mod tests {
             .expect("connect");
         Migrator::up(&control, None).await.expect("migrate");
 
-        let registry = TenantRegistry::new(url, control.clone(), None, None);
+        let registry = TenantRegistry::new(url, control.clone());
         let id = unique_schema("gid");
         let created = PlatformService::register_tenant(
             &control,

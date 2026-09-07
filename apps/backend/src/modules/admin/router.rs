@@ -305,10 +305,11 @@ pub async fn list_guild_discord_roles(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(cfg): Extension<Config>,
+    Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<Json<ApiResponse<Vec<DiscordRoleView>>>, AppError> {
     require_discord_catalog(&user, &perms).await?;
     Ok(Json(ApiResponse::new(
-        AdminService::discord_roles(&cfg).await?,
+        AdminService::discord_roles(&cfg, &tenant.0).await?,
     )))
 }
 
@@ -331,10 +332,11 @@ pub async fn list_guild_discord_channels(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(cfg): Extension<Config>,
+    Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<Json<ApiResponse<Vec<DiscordChannelView>>>, AppError> {
     require_discord_catalog(&user, &perms).await?;
     Ok(Json(ApiResponse::new(
-        AdminService::discord_channels(&cfg).await?,
+        AdminService::discord_channels(&cfg, &tenant.0).await?,
     )))
 }
 
@@ -464,10 +466,11 @@ pub async fn list_discord_roles(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(cfg): Extension<Config>,
+    Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<Json<ApiResponse<Vec<DiscordRoleView>>>, AppError> {
     user.require(&perms, Permission::AutoroleManage).await?;
     Ok(Json(ApiResponse::new(
-        AdminService::discord_roles(&cfg).await?,
+        AdminService::discord_roles(&cfg, &tenant.0).await?,
     )))
 }
 
@@ -492,11 +495,19 @@ pub async fn update_autorole(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Json(body): Json<UpdateAutoRoleRequest>,
 ) -> Result<Json<ApiResponse<AutoRoleSettingsView>>, AppError> {
     user.require(&perms, Permission::AutoroleManage).await?;
     Ok(Json(ApiResponse::new(
-        AdminService::update_autorole(&db, user.user_id, &cfg, &body.discord_auto_role_id).await?,
+        AdminService::update_autorole(
+            &db,
+            user.user_id,
+            &cfg,
+            &tenant.0,
+            &body.discord_auto_role_id,
+        )
+        .await?,
     )))
 }
 

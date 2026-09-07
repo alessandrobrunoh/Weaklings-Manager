@@ -2,7 +2,6 @@ import { ChannelType, type Client, type ThreadChannel } from "discord.js";
 import type { ApiClient } from "../api/client.js";
 import type { EventDetailView } from "../api/types.js";
 import { buildEventMassMessage, buildEventStartMessage } from "../embeds/event.embed.js";
-import { config } from "../config.js";
 import { getSettingsService } from "./settings.js";
 import { withUnarchivedThread } from "./discord-thread.js";
 
@@ -73,11 +72,16 @@ async function startDiscordEventLocked(client: Client, api: ApiClient, discordUs
 }
 
 async function createAndBindVoice(client: Client, api: ApiClient, discordUserId: string, event: EventDetailView): Promise<string> {
-  const categoryId = await getSettingsService().eventVoiceCategoryId();
+  // The tenant to provision voice for is whichever guild `api` speaks for.
+  const guildId = api.guildId;
+  if (!guildId) {
+    throw new Error("Cannot provision an event voice channel without a guild-scoped API client.");
+  }
+  const categoryId = await getSettingsService(guildId).eventVoiceCategoryId();
   if (!categoryId) throw new Error("No event voice category is configured. Ask an admin to configure it first.");
   const category = await client.channels.fetch(categoryId);
   if (!category || category.type !== ChannelType.GuildCategory) throw new Error("The configured event voice category is missing or is not a Discord category.");
-  const guild = await client.guilds.fetch(config.DISCORD_GUILD_ID);
+  const guild = await client.guilds.fetch(guildId);
   const voiceChannel = await guild.channels.create({ name: buildEventVoiceChannelName(event.id, event.title), type: ChannelType.GuildVoice, parent: category.id, reason: `Event #${event.id} mass voice` });
   try {
     await api.put(`api/events/${event.id}/discord-voice-channel`, { channel_id: voiceChannel.id }, discordUserId);

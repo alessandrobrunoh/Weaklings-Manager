@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -45,7 +45,7 @@ test("poller drops deleted-event thread mappings and closes auto-archived thread
   const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
   try {
     writeFileSync(
-      join(directory, "poller-state.json"),
+      join(directory, "poller-state-100000000000000001.json"),
       JSON.stringify({
         lastEventId: 40,
         lastBattleId: 0,
@@ -64,6 +64,7 @@ test("poller drops deleted-event thread mappings and closes auto-archived thread
 
     const apiGets: string[] = [];
     const api = {
+      guildId: "100000000000000001",
       get: async (path: string) => {
         apiGets.push(path);
         if (path === "api/events" || path === "api/battles" || path === "api/giveaways") return emptyPage();
@@ -99,7 +100,7 @@ test("poller drops deleted-event thread mappings and closes auto-archived thread
     await poller.pollNow();
 
     const saved = JSON.parse(
-      readFileSync(join(directory, "poller-state.json"), "utf-8"),
+      readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
     ) as { eventThreadIds: Record<string, string> };
     assert.deepEqual(saved.eventThreadIds, {});
     assert.equal(apiGets.includes("api/events/28"), true);
@@ -117,7 +118,7 @@ test("poller deletes the Discord announcement when an event is archived", async 
   const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
   try {
     writeFileSync(
-      join(directory, "poller-state.json"),
+      join(directory, "poller-state-100000000000000001.json"),
       JSON.stringify({
         lastEventId: 40,
         lastBattleId: 0,
@@ -148,6 +149,7 @@ test("poller deletes the Discord announcement when an event is archived", async 
     };
 
     const api = {
+      guildId: "100000000000000001",
       get: async (path: string) => {
         if (path === "api/events" || path === "api/battles" || path === "api/giveaways") return emptyPage();
         if (path === "api/events/28") {
@@ -180,7 +182,7 @@ test("poller deletes the Discord announcement when an event is archived", async 
     await poller.pollNow();
 
     const saved = JSON.parse(
-      readFileSync(join(directory, "poller-state.json"), "utf-8"),
+      readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
     ) as { eventThreadIds: Record<string, string> };
     assert.deepEqual(saved.eventThreadIds, {});
     assert.deepEqual(deleted, ["starter"]);
@@ -193,7 +195,7 @@ test("new events announce text-only in the parent channel and put signup control
   const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
   try {
     writeFileSync(
-      join(directory, "poller-state.json"),
+      join(directory, "poller-state-100000000000000001.json"),
       JSON.stringify({
         lastEventId: 40,
         lastBattleId: 0,
@@ -260,6 +262,7 @@ test("new events announce text-only in the parent channel and put signup control
     };
 
     const api = {
+      guildId: "100000000000000001",
       get: async (path: string) => {
         if (path === "api/events") {
           return { items: [event], total_items: 1, total_pages: 1, current_page: 1, limit: 50 };
@@ -302,7 +305,7 @@ test("new events announce text-only in the parent channel and put signup control
     assert.ok(Array.isArray(threadSends[0]?.components));
 
     const saved = JSON.parse(
-      readFileSync(join(directory, "poller-state.json"), "utf-8"),
+      readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
     ) as { eventThreadIds: Record<string, string>; lastEventId: number };
     assert.equal(saved.lastEventId, 41);
     assert.equal(saved.eventThreadIds["41"], "thread-41");
@@ -315,7 +318,7 @@ test("poller rewrites the event signup card when the website roster changes", as
   const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
   try {
     writeFileSync(
-      join(directory, "poller-state.json"),
+      join(directory, "poller-state-100000000000000001.json"),
       JSON.stringify({
         lastEventId: 41,
         lastBattleId: 0,
@@ -398,6 +401,7 @@ test("poller rewrites the event signup card when the website roster changes", as
 
     const splitGets: string[] = [];
     const api = {
+      guildId: "100000000000000001",
       get: async (path: string) => {
         if (path === "api/events" || path === "api/battles" || path === "api/giveaways") {
           return emptyPage();
@@ -436,10 +440,132 @@ test("poller rewrites the event signup card when the website roster changes", as
 
     assert.equal(edits.length, 1);
     assert.equal(splitGets.length, 1);
-    const saved = JSON.parse(readFileSync(join(directory, "poller-state.json"), "utf-8")) as {
+    const saved = JSON.parse(readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8")) as {
       eventSignupRevisions: Record<string, string>;
     };
     assert.equal(saved.eventSignupRevisions["41"], "4:scheduled");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("each guild keeps its own checkpoint file", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeFileSync(
+      join(directory, "poller-state-111222333444555666.json"),
+      JSON.stringify({ lastEventId: 40, eventThreadIds: { "28": "thread-28" } }),
+      "utf-8",
+    );
+
+    const api = {
+      guildId: "111222333444555666",
+      get: async (path: string) => {
+        if (path === "api/events" || path === "api/battles" || path === "api/giveaways") {
+          return emptyPage();
+        }
+        if (path.startsWith("api/events/")) {
+          throw new ApiError(404, `Event ${path.split("/")[2]} not found`);
+        }
+        throw new Error(`unexpected GET ${path}`);
+      },
+    } as unknown as ApiClient;
+
+    const settings = {
+      applicationsSettings: async () => ({ discord_applications_open: true }),
+      splitsForumChannelId: async () => null,
+      eventsChannelId: async () => null,
+      callToArmsChannelId: async () => null,
+      battlesChannelId: async () => null,
+      giveawaysChannelId: async () => null,
+      giveawaysRoleId: async () => null,
+    } as unknown as SettingsService;
+
+    const client = {
+      channels: {
+        fetch: async () => {
+          throw Object.assign(new Error("Unknown Channel"), { code: 10003 });
+        },
+      },
+    } as unknown as Client;
+
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    assert.equal(poller.guildId, "111222333444555666");
+    await poller.pollNow();
+
+    // The checkpoint was read from, and written back to, this guild's own file.
+    const saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-111222333444555666.json"), "utf-8"),
+    ) as { eventThreadIds: Record<string, string> };
+    assert.deepEqual(saved.eventThreadIds, {});
+    assert.equal(existsSync(join(directory, "poller-state-100000000000000001.json")), false);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a guild never reads another guild's checkpoint file", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeFileSync(
+      join(directory, "poller-state-100000000000000001.json"),
+      JSON.stringify({ lastEventId: 40, eventThreadIds: { "28": "thread-28" } }),
+      "utf-8",
+    );
+
+    const apiGets: string[] = [];
+    const api = {
+      guildId: "999888777666555444",
+      get: async (path: string) => {
+        apiGets.push(path);
+        if (path === "api/events" || path === "api/battles" || path === "api/giveaways") {
+          return emptyPage();
+        }
+        throw new Error(`unexpected GET ${path}`);
+      },
+    } as unknown as ApiClient;
+
+    const settings = {
+      applicationsSettings: async () => ({ discord_applications_open: true }),
+      splitsForumChannelId: async () => null,
+      eventsChannelId: async () => null,
+      callToArmsChannelId: async () => null,
+      battlesChannelId: async () => null,
+      giveawaysChannelId: async () => null,
+      giveawaysRoleId: async () => null,
+    } as unknown as SettingsService;
+    const client = { channels: { fetch: async () => null } } as unknown as Client;
+
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    await poller.pollNow();
+
+    // Reading the neighbouring file would inherit that tenant's event thread
+    // (and its `lastEventId`, silencing this guild's real announcements).
+    assert.equal(
+      apiGets.some((path) => path.startsWith("api/events/")),
+      false,
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a poller refuses an unscoped API client", () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    // Without a guild there is no tenant header, so every backend call would
+    // come back 400 and the checkpoint would have no name to be filed under.
+    assert.throws(
+      () =>
+        new Poller(
+          {} as unknown as Client,
+          {} as unknown as ApiClient,
+          {} as unknown as SettingsService,
+          60_000,
+          directory,
+        ),
+      /needs a guild-scoped ApiClient/,
+    );
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

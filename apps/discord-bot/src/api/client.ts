@@ -16,7 +16,15 @@ export class ApiClient {
   constructor(
     private readonly baseUrl: string,
     private readonly botSecret: string,
-    private readonly guildId?: string,
+    /**
+     * Tenant this client speaks for, or `undefined` for the unscoped client.
+     *
+     * Public because it doubles as the tenant handle everywhere downstream:
+     * helpers that need per-guild settings or the per-guild poller read it off
+     * the client they were already given rather than taking a separate
+     * `guildId` argument that could drift out of sync with the header.
+     */
+    readonly guildId?: string,
   ) {}
 
   /** Return a client that stamps `X-Guild-Id` on every request. */

@@ -15,11 +15,19 @@ pub fn nick_from_albion_name(albion_name: &str) -> Option<String> {
     Some(trimmed.chars().take(DISCORD_NICK_MAX).collect())
 }
 
-/// Sets the guild nickname of `discord_user_id` to the Albion character name.
+/// Sets the nickname of `discord_user_id` in `guild_id` to the Albion character name.
+///
+/// `guild_id` is the tenant's own Discord server (the tenant id *is* the guild
+/// id), so a link made in one server never renames the member in another.
 ///
 /// Failures are logged and never returned: linking must succeed even if the bot lacks
 /// `Manage Nicknames`, the member is above the bot in the role list, or Discord is down.
-pub async fn sync_guild_nickname(cfg: &Config, discord_user_id: &str, albion_name: &str) {
+pub async fn sync_guild_nickname(
+    cfg: &Config,
+    guild_id: &str,
+    discord_user_id: &str,
+    albion_name: &str,
+) {
     let Some(nick) = nick_from_albion_name(albion_name) else {
         return;
     };
@@ -27,7 +35,7 @@ pub async fn sync_guild_nickname(cfg: &Config, discord_user_id: &str, albion_nam
         tracing::debug!("skipping Discord nick sync: bot token is not configured");
         return;
     };
-    let guild_id = cfg.discord_guild_id.trim();
+    let guild_id = guild_id.trim();
     if guild_id.is_empty() || discord_user_id.trim().is_empty() {
         return;
     }

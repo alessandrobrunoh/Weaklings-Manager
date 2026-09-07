@@ -180,7 +180,6 @@ RUST_LOG=backend=debug,tower_http=debug
 DISCORD_CLIENT_ID=your_client_id
 DISCORD_CLIENT_SECRET=your_client_secret
 DISCORD_REDIRECT_URI=http://localhost:5000/api/auth/discord/callback
-DISCORD_GUILD_ID=your_server_id
 SUPER_ADMIN_DISCORD_ID=your_discord_user_id
 
 # Albion
@@ -260,18 +259,11 @@ npm run dev   # watch mode, loads ../../.env
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `BACKEND_PORT` | no | `3000` | HTTP listen port |
-| `DATABASE_URL` | yes | — | PostgreSQL connection string (tenant data; still schema `public` until the multi-tenant backfill) |
+| `DATABASE_URL` | yes | — | PostgreSQL connection string for the cluster holding the per-tenant schemas (`tenant_<guild id>`) |
 | `CONTROL_DATABASE_URL` | no | `DATABASE_URL` | Optional dedicated DSN for the control-plane schema `control`. Same cluster is the default. |
-
-After deploying the control-plane migrator, promote the current single-guild database to tenant #1 (destructive against schema `public` — snapshot first):
-
-```sh
-cargo run -p backend --bin backfill_tenant_one
-```
 | `DISCORD_CLIENT_ID` | yes | — | Discord OAuth2 client ID |
 | `DISCORD_CLIENT_SECRET` | yes | — | Discord OAuth2 client secret |
 | `DISCORD_REDIRECT_URI` | yes | — | OAuth2 redirect URI (`.../api/auth/discord/callback`) |
-| `DISCORD_GUILD_ID` | yes | — | Discord server (guild) ID for role resolution |
 | `SUPER_ADMIN_DISCORD_ID` | yes | — | Discord user ID granted `SuperAdmin` |
 | `FRONTEND_URL` | no | `http://localhost:3001` | Where to redirect after login |
 | `ALBION_GUILD_ID` | yes | — | In-game guild ID for roster / battles |
@@ -297,7 +289,6 @@ no redeploy needed to change one.
 | --- | --- | --- |
 | `DISCORD_BOT_TOKEN` | yes | Bot token |
 | `DISCORD_CLIENT_ID` | yes | Application client ID |
-| `DISCORD_GUILD_ID` | yes | Server ID for command registration |
 | `BACKEND_URL` | yes | Backend base URL |
 | `BOT_API_SECRET` | yes | Must match the backend's `BOT_API_SECRET` |
 | `GUILD_NAME` | no | Display name used in announcements |

@@ -180,11 +180,12 @@ export class SplitForumAdapter {
     try {
       let tagId: string | null;
       try {
-        tagId = await getSettingsService().splitTagId(item.detail.status);
+        tagId = await getSettingsService(this.api.guildId).splitTagId(item.detail.status);
       } catch (error) {
-        // Unit callers can use the adapter without bootstrapping the process-wide settings service.
-        // The real bot initializes it before the poller starts.
-        if (error instanceof Error && error.message.startsWith("SettingsService not initialized")) {
+        // Unit callers can use the adapter without bootstrapping the settings registry, and
+        // without a guild-scoped client. The real bot initializes it before the poller starts
+        // and always hands the adapter a scoped `api`.
+        if (error instanceof Error && error.message.startsWith("SettingsService")) {
           return true;
         }
         throw error;

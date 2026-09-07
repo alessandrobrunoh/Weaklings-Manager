@@ -16,10 +16,10 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(
   interaction: ChatInputCommandInteraction,
-  _api: ApiClient,
+  api: ApiClient,
 ): Promise<void> {
   await interaction.deferReply({ flags: ['Ephemeral'] });
-  const settings: GuildSettingsView = await getSettingsService().applicationsSettings();
+  const settings: GuildSettingsView = await getSettingsService(api.guildId).applicationsSettings();
   const channelId = settings.discord_applications_channel_id;
   if (!channelId) {
     throw new Error('Configura prima il canale delle application dal pannello admin.');
@@ -34,7 +34,7 @@ export async function execute(
     embeds: [buildApplicationPanelEmbed(settings)],
     components: buildApplicationPanelComponents(settings),
   });
-  await _api.put('api/admin/settings', { discord_applications_panel_message_id: panel.id });
+  await api.put('api/admin/settings', { discord_applications_panel_message_id: panel.id });
   await interaction.editReply({
     embeds: [createResponseEmbed('success', 'Application panel', 'La card delle application è stata pubblicata.', 'APPLICATIONS')],
   });

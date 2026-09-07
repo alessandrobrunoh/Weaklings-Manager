@@ -318,20 +318,22 @@ impl AdminService {
         db: &DatabaseConnection,
         editor_user_id: i64,
         cfg: &Config,
+        guild_id: &str,
         raw_role_id: &str,
     ) -> Result<super::models::AutoRoleSettingsView, AppError> {
         let role_id = parse_discord_role_id(Some(raw_role_id))?;
         if let Some(role_id) = &role_id {
-            let roles = fetch_discord_roles(cfg).await?;
+            let roles = fetch_discord_roles(cfg, guild_id).await?;
             let role = roles
                 .iter()
                 .find(|role| role.id == *role_id)
                 .ok_or_else(|| {
                     AppError::Validation(
-                        "Discord role was not found in the configured guild".to_string(),
+                        "Discord role was not found in this server".to_string(),
                     )
                 })?;
-            if role.id == cfg.discord_guild_id || role.managed {
+            // A role whose id equals the guild id is @everyone.
+            if role.id == guild_id || role.managed {
                 return Err(AppError::Validation(
                     "the selected Discord role cannot be assigned by the bot".to_string(),
                 ));
@@ -358,14 +360,15 @@ impl AdminService {
         autorole_view(db).await
     }
 
-    /// Retrieves the non-managed Discord roles available to the configured guild.
+    /// Retrieves the non-managed Discord roles available to this tenant's guild.
     pub async fn discord_roles(
         cfg: &Config,
+        guild_id: &str,
     ) -> Result<Vec<super::models::DiscordRoleView>, AppError> {
-        let mut roles: Vec<super::models::DiscordRoleView> = fetch_discord_roles(cfg)
+        let mut roles: Vec<super::models::DiscordRoleView> = fetch_discord_roles(cfg, guild_id)
             .await?
             .into_iter()
-            .filter(|role| role.id != cfg.discord_guild_id && !role.managed)
+            .filter(|role| role.id != guild_id && !role.managed)
             .map(|role| super::models::DiscordRoleView {
                 id: role.id,
                 name: role.name,
@@ -384,12 +387,14 @@ impl AdminService {
     /// Retrieves Discord guild channels the admin can pick from (text, voice, category, forum).
     pub async fn discord_channels(
         cfg: &Config,
+        guild_id: &str,
     ) -> Result<Vec<super::models::DiscordChannelView>, AppError> {
-        let mut channels: Vec<super::models::DiscordChannelView> = fetch_discord_channels(cfg)
-            .await?
-            .into_iter()
-            .filter_map(map_discord_channel)
-            .collect();
+        let mut channels: Vec<super::models::DiscordChannelView> =
+            fetch_discord_channels(cfg, guild_id)
+                .await?
+                .into_iter()
+                .filter_map(map_discord_channel)
+                .collect();
         channels.sort_by(|a, b| {
             a.position.cmp(&b.position).then_with(|| {
                 a.name
@@ -721,13 +726,15 @@ fn discord_bot_token(cfg: &Config) -> Result<&str, AppError> {
         .ok_or_else(|| AppError::UpstreamService("Discord bot token is not configured".to_string()))
 }
 
-async fn fetch_discord_roles(cfg: &Config) -> Result<Vec<DiscordRolePayload>, AppError> {
+async fn fetch_discord_roles(
+    cfg: &Config,
+    guild_id: &str,
+) -> Result<Vec<DiscordRolePayload>, AppError> {
     let token = discord_bot_token(cfg)?;
 
     let response = reqwest::Client::new()
         .get(format!(
-            "https://discord.com/api/v10/guilds/{}/roles",
-            cfg.discord_guild_id
+            "https://discord.com/api/v10/guilds/{guild_id}/roles"
         ))
         .header("Authorization", format!("Bot {token}"))
         .header("User-Agent", "WeaklingsBackend (0.0.3)")
@@ -749,13 +756,15 @@ async fn fetch_discord_roles(cfg: &Config) -> Result<Vec<DiscordRolePayload>, Ap
     })
 }
 
-async fn fetch_discord_channels(cfg: &Config) -> Result<Vec<DiscordChannelPayload>, AppError> {
+async fn fetch_discord_channels(
+    cfg: &Config,
+    guild_id: &str,
+) -> Result<Vec<DiscordChannelPayload>, AppError> {
     let token = discord_bot_token(cfg)?;
 
     let response = reqwest::Client::new()
         .get(format!(
-            "https://discord.com/api/v10/guilds/{}/channels",
-            cfg.discord_guild_id
+            "https://discord.com/api/v10/guilds/{guild_id}/channels"
         ))
         .header("Authorization", format!("Bot {token}"))
         .header("User-Agent", "WeaklingsBackend (0.0.3)")

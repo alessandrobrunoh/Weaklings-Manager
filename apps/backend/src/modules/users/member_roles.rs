@@ -49,16 +49,19 @@ pub struct LiveDiscord {
 }
 
 impl LiveDiscord {
-    /// Builds a client from deployment config.
+    /// Builds a client for one tenant's Discord server.
+    ///
+    /// `guild_id` is the tenant id: role reads and writes must land in the
+    /// server the request was scoped to, never in a globally configured one.
     ///
     /// # Errors
     ///
     /// Returns [`AppError::UpstreamService`] when the bot token is missing.
-    pub fn from_config(cfg: &Config) -> Result<Self, AppError> {
+    pub fn for_guild(cfg: &Config, guild_id: &str) -> Result<Self, AppError> {
         let token = usable_bot_token(cfg.discord_bot_token.as_deref()).ok_or_else(|| {
             AppError::UpstreamService("Discord bot token is not configured".to_string())
         })?;
-        let guild_id = cfg.discord_guild_id.trim().to_string();
+        let guild_id = guild_id.trim().to_string();
         if guild_id.is_empty() {
             return Err(AppError::UpstreamService(
                 "Discord guild id is not configured".to_string(),

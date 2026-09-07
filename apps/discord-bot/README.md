@@ -27,7 +27,7 @@ A Discord bot built with **discord.js v14** and **TypeScript** that mirrors the 
 1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
 2. Create a new Application → add a Bot
 3. Enable **Message Content Intent** under Privileged Gateway Intents
-4. Copy the **Token**, **Client ID**, and your **Server (Guild) ID**
+4. Copy the **Token** and the **Client ID**
 5. Invite the bot to your server with: `applications.commands` + `bot` scopes, `Send Messages`, `Embed Links` permissions
 
 ### 2. Configure Environment
@@ -37,7 +37,6 @@ Copy `.env.example` to `.env` and fill in:
 ```env
 DISCORD_BOT_TOKEN=your_bot_token
 DISCORD_CLIENT_ID=your_application_client_id
-DISCORD_GUILD_ID=your_server_id
 BACKEND_URL=http://localhost:3000
 BOT_API_SECRET=choose_a_strong_random_secret
 GUILD_NAME=YourInGameGuildName
@@ -49,6 +48,11 @@ GUILD_NAME=YourInGameGuildName
 > longer env vars here — set them once in the web app under **Admin → Discord integration** (after
 > logging in with an Admin account). The bot fetches them from the backend at startup and
 > refreshes periodically, so a change there takes effect without restarting the bot.
+
+> **Multi-server**: one bot process serves every Discord server it is invited to. There is no
+> "the" server: slash commands are registered per guild, and each registered tenant gets its own
+> settings cache, poller, and checkpoint file. A server that has not completed onboarding on the
+> website gets a registration link instead of command output.
 
 ### 3. Install & Run
 

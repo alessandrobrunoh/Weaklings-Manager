@@ -300,7 +300,7 @@ pub async fn assign_admin(
     Json(body): Json<AssignAdminRequest>,
 ) -> Result<Json<ApiResponse<PlatformAdminView>>, AppError> {
     let view = PlatformService::assign_admin(&control.0, body, &admin.discord_id).await?;
-    cache.reload(&control.0, None).await?;
+    cache.reload(&control.0).await?;
     Ok(Json(ApiResponse::new(view)))
 }
 
@@ -324,7 +324,7 @@ pub async fn revoke_admin(
         ));
     }
     PlatformService::revoke_admin(&control.0, &discord_id).await?;
-    cache.reload(&control.0, None).await?;
+    cache.reload(&control.0).await?;
     Ok(Json(ApiResponse::new(())))
 }
 
@@ -340,6 +340,6 @@ pub async fn reload_admins(
     Extension(cache): Extension<PlatformAdmins>,
     Extension(control): Extension<ControlDb>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
-    cache.reload(&control.0, None).await?;
+    cache.reload(&control.0).await?;
     Ok(Json(ApiResponse::new(())))
 }

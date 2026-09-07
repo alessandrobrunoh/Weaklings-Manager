@@ -17,8 +17,11 @@ import type { GuildSettingsView } from '../api/types.js';
  * failing the caller outright — a transient backend hiccup should not stop the bot from
  * announcing to whatever channel it last knew about.
  *
+ * One instance per tenant: the `api` it is built on must already be stamped with that guild's
+ * `X-Guild-Id`, because the backend resolves `guild_settings` inside that tenant's own schema.
+ *
  * @example
- * const settings = new SettingsService(api);
+ * const settings = new SettingsService(api.withGuild(guildId));
  * const channelId = await settings.eventsChannelId();
  */
 export class SettingsService {
@@ -102,25 +105,51 @@ export class SettingsService {
   }
 }
 
-let instance: SettingsService | null = null;
+let baseApi: ApiClient | null = null;
+const services = new Map<string, SettingsService>();
 
 /**
- * Initializes the process-wide `SettingsService` singleton. Call once from `index.ts` at startup.
+ * Initializes the process-wide settings registry. Call once from `index.ts` at startup.
  *
- * A singleton (rather than threading a `SettingsService` through every command's `execute`
- * signature) keeps `BotCommand#execute(interaction, api)` unchanged for the 13 commands that
- * never need it, while still sharing one cache across the 2 that do (`event-create`,
- * `event-start`) and the poller.
+ * `api` is the unscoped client; each guild gets its own `SettingsService` over
+ * `api.withGuild(guildId)`, created on first use. `guild_settings` lives in the tenant's own
+ * schema, so one cache per guild is required — a shared one would hand another server's channel
+ * IDs to the wrong guild.
+ *
+ * A registry (rather than threading a `SettingsService` through every command's `execute`
+ * signature) keeps `BotCommand#execute(interaction, api)` unchanged for the commands that never
+ * need it, while still sharing one cache per guild across the ones that do and the poller.
  */
-export function initSettingsService(api: ApiClient): SettingsService {
-  instance = new SettingsService(api);
-  return instance;
+export function initSettingsService(api: ApiClient): void {
+  baseApi = api;
+  services.clear();
 }
 
-/** Returns the singleton initialized by {@link initSettingsService}. */
-export function getSettingsService(): SettingsService {
-  if (!instance) {
+/**
+ * Returns the `SettingsService` for one guild, creating it on first use.
+ *
+ * @param guildId Discord guild id — in practice `api.guildId` of the guild-scoped client the
+ * caller was handed, so the settings and the API calls around them always target one tenant.
+ * @throws When the registry was never initialized, or the caller has no guild context (a DM, or
+ * an unscoped client). Both messages start with `SettingsService` so callers that legitimately
+ * run without a tenant can recognize them.
+ */
+export function getSettingsService(guildId: string | null | undefined): SettingsService {
+  if (!baseApi) {
     throw new Error('SettingsService not initialized — call initSettingsService() first.');
   }
-  return instance;
+  if (!guildId) {
+    throw new Error('SettingsService requires a guild id — this action has no tenant context.');
+  }
+  let service = services.get(guildId);
+  if (!service) {
+    service = new SettingsService(baseApi.withGuild(guildId));
+    services.set(guildId, service);
+  }
+  return service;
+}
+
+/** Drops a guild's cached settings, e.g. when the bot is removed from that server. */
+export function forgetSettingsService(guildId: string): void {
+  services.delete(guildId);
 }

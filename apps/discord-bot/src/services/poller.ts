@@ -43,7 +43,21 @@ import {
   withUnarchivedThread,
 } from "./discord-thread.js";
 
-const STATE_FILE_NAME = "poller-state.json";
+/**
+ * Checkpoint file for one guild.
+ *
+ * Each tenant gets its own file because the checkpoints inside it (last
+ * announced event, split cursor, Discord thread ids) are all tenant-local — a
+ * shared file would let one server's `lastEventId` suppress another server's
+ * announcements. Guilds are Discord snowflakes, so the name needs no escaping,
+ * but it is asserted here rather than assumed.
+ */
+function stateFileName(guildId: string): string {
+  if (!/^[0-9]+$/.test(guildId)) {
+    throw new Error(`Refusing to build a poller state file for guild id "${guildId}".`);
+  }
+  return `poller-state-${guildId}.json`;
+}
 
 interface PollerState {
   lastEventId: number;
@@ -121,14 +135,14 @@ function ensureStateDirectory(stateDirectory: string): void {
  *
  * @example
  * ```ts
- * const state = loadState("/app/data");
+ * const state = loadState("/app/data", "123456789012345678");
  * console.log(state.lastEventId);
  * ```
  */
-function loadState(stateDirectory: string): PollerState {
+function loadState(stateDirectory: string, fileName: string): PollerState {
   ensureStateDirectory(stateDirectory);
 
-  const stateFile = join(stateDirectory, STATE_FILE_NAME);
+  const stateFile = join(stateDirectory, fileName);
   if (!existsSync(stateFile)) {
     return createDefaultState();
   }
@@ -171,13 +185,13 @@ function loadState(stateDirectory: string): PollerState {
  *
  * @example
  * ```ts
- * saveState("/app/data", { lastEventId: 42, lastBattleId: 7, pinged1hEvents: [] });
+ * saveState("/app/data", "poller-state-1.json", { lastEventId: 42, lastBattleId: 7 });
  * ```
  */
-function saveState(stateDirectory: string, state: PollerState): void {
+function saveState(stateDirectory: string, fileName: string, state: PollerState): void {
   ensureStateDirectory(stateDirectory);
   writeFileSync(
-    join(stateDirectory, STATE_FILE_NAME),
+    join(stateDirectory, fileName),
     JSON.stringify(state, null, 2),
     "utf-8",
   );
@@ -186,9 +200,18 @@ function saveState(stateDirectory: string, state: PollerState): void {
 /**
  * Polling service that checks for new events and battles and posts them
  * to the configured Discord channels.
+ *
+ * One instance per tenant guild. `api` must already be stamped with that
+ * guild's `X-Guild-Id` (see {@link ApiClient.withGuild}) and `settings` must be
+ * the matching per-guild service — the backend resolves every request against
+ * that header and rejects an unscoped one with a 400, because no tenant
+ * database is bound to it.
  */
 export class Poller {
+  /** Guild this poller announces for, taken from the scoped `api`. */
+  readonly guildId: string;
   private readonly stateDirectory: string;
+  private readonly stateFileName: string;
   private readonly state: PollerState;
   private timer: NodeJS.Timeout | undefined;
   /** Guards against a manually-triggered check overlapping a scheduled one —
@@ -203,11 +226,20 @@ export class Poller {
     private readonly intervalMs: number,
     stateDirectory: string = config.POLLER_STATE_DIR,
   ) {
+    if (!api.guildId) {
+      throw new Error("A Poller needs a guild-scoped ApiClient — call api.withGuild(guildId).");
+    }
+    this.guildId = api.guildId;
     this.stateDirectory = stateDirectory;
-    this.state = loadState(this.stateDirectory);
+    this.stateFileName = stateFileName(this.guildId);
+    this.state = loadState(this.stateDirectory, this.stateFileName);
     console.log(
-      `[Poller] Starting — last event ID: ${this.state.lastEventId}, last battle ID: ${this.state.lastBattleId}`,
+      `[Poller] Starting for guild ${this.guildId} — last event ID: ${this.state.lastEventId}, last battle ID: ${this.state.lastBattleId}`,
     );
+  }
+
+  private save(): void {
+    saveState(this.stateDirectory, this.stateFileName, this.state);
   }
 
   /** Start the polling loop. */
@@ -273,7 +305,7 @@ export class Poller {
       const channel = await this.client.channels.fetch(channelId);
       if (!channel?.isTextBased() || channel.isDMBased()) return;
       await channel.send(buildApplicationStatusAnnouncement(settings));
-      saveState(this.stateDirectory, this.state);
+      this.save();
     } catch (error) {
       console.warn('[Poller] Could not announce application status:', error);
     }
@@ -330,7 +362,7 @@ export class Poller {
           `[Poller] Event checkpoint ${this.state.lastEventId} is ahead of the newest known event (${newestEventId}); clamping instead of resetting to avoid re-announcing old events`,
         );
         this.state.lastEventId = newestEventId;
-        saveState(this.stateDirectory, this.state);
+        this.save();
       }
 
       const newEvents = result.items
@@ -384,7 +416,7 @@ export class Poller {
         }
 
         this.state.lastEventId = event.id;
-        saveState(this.stateDirectory, this.state);
+        this.save();
         console.log(
           `[Poller] Announced ${event.call_to_arms ? "Call to Arms" : "event"} #${event.id}: ${event.title}`,
         );
@@ -470,7 +502,7 @@ export class Poller {
     delete this.state.eventThreadIds[key];
     delete this.state.eventSignupMessageIds[key];
     delete this.state.eventSignupRevisions[key];
-    saveState(this.stateDirectory, this.state);
+    this.save();
   }
 
   /**
@@ -509,7 +541,7 @@ export class Poller {
         if (!messageId) continue;
         this.state.eventSignupMessageIds[eventId] = messageId;
         this.state.eventSignupRevisions[eventId] = revision;
-        saveState(this.stateDirectory, this.state);
+        this.save();
 
         if (!adapter || !detail.splits?.length) continue;
         for (const split of detail.splits) {
@@ -548,7 +580,7 @@ export class Poller {
               const thread = await this.getEventThread(event.id);
               await massDiscordEvent(this.client, this.api, "", event.id, thread ?? undefined);
               this.state.massedEvents.push(event.id);
-              saveState(this.stateDirectory, this.state);
+              this.save();
             } catch (error) {
               console.warn(`[Poller] Could not mass event #${event.id}:`, error);
             }
@@ -558,7 +590,7 @@ export class Poller {
             try {
               const thread = await this.getEventThread(event.id);
               await startDiscordEvent(this.client, this.api, "", event.id, thread ?? undefined);
-              saveState(this.stateDirectory, this.state);
+              this.save();
             } catch (error) {
               console.warn(`[Poller] Could not start event #${event.id}:`, error);
             }
@@ -583,7 +615,7 @@ export class Poller {
             await this.closeEventThread(event.id);
             delete this.state.emptyLiveChecks[key];
           }
-          saveState(this.stateDirectory, this.state);
+          this.save();
         } catch (error) {
           console.warn(`[Poller] Could not inspect live event #${event.id}:`, error);
         }
@@ -635,7 +667,7 @@ export class Poller {
 
           this.state.splitUpdatedAt = split.updated_at ?? split.created_at;
           this.state.splitAfterId = split.id;
-          saveState(this.stateDirectory, this.state);
+          this.save();
         }
         hasMore = batch.has_more;
       }
@@ -704,7 +736,7 @@ export class Poller {
         );
 
         this.state.pinged1hEvents.push(event.id);
-        saveState(this.stateDirectory, this.state);
+        this.save();
         console.log(`[Poller] Posted 1h warning in the thread for event #${event.id}`);
       }
 
@@ -715,7 +747,7 @@ export class Poller {
         this.state.eventThreadIds = Object.fromEntries(
           Object.entries(this.state.eventThreadIds).filter(([eventId]) => retainedEventIds.has(eventId)),
         );
-        saveState(this.stateDirectory, this.state);
+        this.save();
       }
     } catch (err) {
       console.error("[Poller] Failed to check upcoming events:", err);
@@ -748,7 +780,7 @@ export class Poller {
         await channel.send({ embeds: [embed] });
 
         this.state.lastBattleId = battle.battle_id;
-        saveState(this.stateDirectory, this.state);
+        this.save();
         console.log(`[Poller] Announced battle #${battle.battle_id}`);
       }
     } catch (err) {
@@ -770,7 +802,7 @@ export class Poller {
           `[Poller] Giveaway checkpoint ${this.state.lastGiveawayId} is ahead of the newest known giveaway (${newestId}); clamping`,
         );
         this.state.lastGiveawayId = newestId;
-        saveState(this.stateDirectory, this.state);
+        this.save();
       }
       const newGiveaways = result.items
         .filter((item) => item.id > this.state.lastGiveawayId)
@@ -797,7 +829,7 @@ export class Poller {
         if (!this.state.postedGiveawayIds.includes(detail.id)) {
           this.state.postedGiveawayIds.push(detail.id);
         }
-        saveState(this.stateDirectory, this.state);
+        this.save();
         console.log(`[Poller] Announced giveaway #${detail.id}: ${detail.title}`);
       }
     } catch (error) {
@@ -830,11 +862,11 @@ export class Poller {
           }
         }
         this.state.announcedGiveawayDraws.push(giveawayId);
-        saveState(this.stateDirectory, this.state);
+        this.save();
       } catch (error) {
         if (error instanceof ApiError && error.status === 404) {
           this.state.announcedGiveawayDraws.push(giveawayId);
-          saveState(this.stateDirectory, this.state);
+          this.save();
           continue;
         }
         console.warn(`[Poller] Could not update giveaway #${giveawayId}:`, error);
@@ -860,19 +892,33 @@ export class Poller {
   }
 }
 
-let instance: Poller | null = null;
+const pollers = new Map<string, Poller>();
 
-/** Registers the process-wide `Poller` singleton. Call once from `index.ts` at startup. */
+/** Registers a guild's `Poller`, replacing any previous one for that guild. */
 export function registerPoller(poller: Poller): void {
-  instance = poller;
+  pollers.set(poller.guildId, poller);
+}
+
+/** Stops and forgets a guild's poller, e.g. when the bot leaves that server. */
+export function unregisterPoller(guildId: string): void {
+  const poller = pollers.get(guildId);
+  if (!poller) return;
+  poller.stop();
+  pollers.delete(guildId);
+}
+
+/** Every registered poller, for shutdown. */
+export function registeredPollers(): Poller[] {
+  return [...pollers.values()];
 }
 
 /**
- * Returns the singleton registered by {@link registerPoller}, or `null` before startup has
- * finished constructing it. Callers that only want a best-effort immediate check (like
- * `/event-create`) should treat `null` as "the scheduled tick will pick it up instead" rather
- * than an error.
+ * Returns the poller for one guild, or `null` when that guild has none yet — startup has not
+ * reached it, or it is not a registered tenant. Callers that only want a best-effort immediate
+ * check (like `/event-create`) should treat `null` as "the scheduled tick will pick it up
+ * instead" rather than an error.
  */
-export function getPoller(): Poller | null {
-  return instance;
+export function getPoller(guildId: string | null | undefined): Poller | null {
+  if (!guildId) return null;
+  return pollers.get(guildId) ?? null;
 }
