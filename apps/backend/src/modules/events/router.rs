@@ -251,6 +251,7 @@ async fn assign_roster_seat(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(hub): Extension<RosterHub>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Path((id, seat_key)): Path<(i64, String)>,
     Json(request): Json<AssignRosterSeatRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
@@ -265,7 +266,7 @@ async fn assign_roster_seat(
         seat_key,
         "roster seat assigned"
     );
-    hub.publish(id, version, "assigned", vec![seat_key]);
+    hub.publish(&tenant.0, id, version, "assigned", vec![seat_key]);
     Ok(Json(ApiResponse::new(
         EventService::new().get_roster(&db, id).await?,
     )))
@@ -276,6 +277,7 @@ async fn clear_roster_seat(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(hub): Extension<RosterHub>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Path((id, seat_key)): Path<(i64, String)>,
     Json(request): Json<RosterVersionRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
@@ -290,7 +292,7 @@ async fn clear_roster_seat(
         seat_key,
         "roster seat cleared"
     );
-    hub.publish(id, version, "cleared", vec![seat_key]);
+    hub.publish(&tenant.0, id, version, "cleared", vec![seat_key]);
     Ok(Json(ApiResponse::new(
         EventService::new().get_roster(&db, id).await?,
     )))
@@ -301,6 +303,7 @@ async fn swap_roster_seats(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(hub): Extension<RosterHub>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
     Json(request): Json<SwapRosterSeatsRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
@@ -318,7 +321,7 @@ async fn swap_roster_seats(
         actor_id = user.user_id,
         "roster seats swapped"
     );
-    hub.publish(id, version, "swapped", keys);
+    hub.publish(&tenant.0, id, version, "swapped", keys);
     Ok(Json(ApiResponse::new(
         EventService::new().get_roster(&db, id).await?,
     )))
@@ -329,6 +332,7 @@ async fn auto_fill_roster(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(hub): Extension<RosterHub>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
     Json(request): Json<RosterVersionRequest>,
 ) -> Result<Json<ApiResponse<EventRosterView>>, AppError> {
@@ -343,17 +347,21 @@ async fn auto_fill_roster(
         assignments = changed.len(),
         "roster auto-filled"
     );
-    hub.publish(id, version, "auto_filled", changed);
+    hub.publish(&tenant.0, id, version, "auto_filled", changed);
     Ok(Json(ApiResponse::new(
         EventService::new().get_roster(&db, id).await?,
     )))
 }
 
+// One more `Extension` than the `clippy::too_many_arguments` default allows —
+// each is a distinct axum extractor, not a group crying out to be bundled.
+#[allow(clippy::too_many_arguments)]
 async fn roster_live(
     _user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
     Extension(hub): Extension<RosterHub>,
+    Extension(tenant): Extension<CurrentTenantId>,
     headers: HeaderMap,
     Path(id): Path<i64>,
     websocket: WebSocketUpgrade,
@@ -371,13 +379,14 @@ async fn roster_live(
             "websocket origin is not allowed".to_string(),
         ));
     }
-    Ok(websocket.on_upgrade(move |socket| roster_socket(socket, hub, db, id)))
+    Ok(websocket.on_upgrade(move |socket| roster_socket(socket, hub, db, tenant.0, id)))
 }
 
 async fn roster_socket(
     mut socket: WebSocket,
     hub: RosterHub,
     db: sea_orm::DatabaseConnection,
+    tenant_id: String,
     event_id: i64,
 ) {
     let mut receiver = hub.subscribe();
@@ -389,13 +398,7 @@ async fn roster_socket(
         Ok(None) | Err(_) => return,
     };
     let mut latest_roster_version = roster_version;
-    let ready = RosterNotification {
-        message_type: "ready",
-        event_id,
-        roster_version,
-        change_kind: None,
-        changed_seat_keys: None,
-    };
+    let ready = RosterNotification::ready(tenant_id.clone(), event_id, roster_version);
     if send_roster_notification(&mut socket, &ready).await.is_err() {
         return;
     }
@@ -403,7 +406,9 @@ async fn roster_socket(
         tokio::select! {
             incoming = socket.recv() => { if incoming.is_none() { return; } }
             received = receiver.recv() => match received {
-            Ok(notification) if notification.event_id == event_id => {
+            Ok(notification)
+                if notification.event_id == event_id && notification.tenant_id == tenant_id =>
+            {
                 latest_roster_version = notification.roster_version;
                 if send_roster_notification(&mut socket, &notification)
                     .await
@@ -414,13 +419,11 @@ async fn roster_socket(
             }
             Ok(_) => {}
             Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                let resync = RosterNotification {
-                    message_type: "resync_required",
+                let resync = RosterNotification::resync_required(
+                    tenant_id.clone(),
                     event_id,
-                    roster_version: latest_roster_version,
-                    change_kind: None,
-                    changed_seat_keys: None,
-                };
+                    latest_roster_version,
+                );
                 if send_roster_notification(&mut socket, &resync)
                     .await
                     .is_err()
@@ -494,6 +497,7 @@ async fn create_event_roster_role(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(hub): Extension<RosterHub>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
     Json(request): Json<CreateEventRosterRoleRequest>,
 ) -> Result<Json<ApiResponse<EventRosterRoleView>>, AppError> {
@@ -501,7 +505,7 @@ async fn create_event_roster_role(
     let role = EventService::new()
         .create_event_roster_role(&db, id, request)
         .await?;
-    notify_roster_roles_changed(&db, &hub, id).await;
+    notify_roster_roles_changed(&db, &hub, &tenant.0, id).await;
     Ok(Json(ApiResponse::new(role)))
 }
 
@@ -528,13 +532,14 @@ async fn delete_event_roster_role(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(hub): Extension<RosterHub>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Path((id, role_id)): Path<(i64, i64)>,
 ) -> Result<StatusCode, AppError> {
     user.require(&perms, Permission::EventsEdit).await?;
     EventService::new()
         .delete_event_roster_role(&db, id, role_id)
         .await?;
-    notify_roster_roles_changed(&db, &hub, id).await;
+    notify_roster_roles_changed(&db, &hub, &tenant.0, id).await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -549,6 +554,7 @@ async fn delete_event_roster_role(
 async fn notify_roster_roles_changed(
     db: &sea_orm::DatabaseConnection,
     hub: &RosterHub,
+    tenant_id: &str,
     event_id: i64,
 ) {
     let version = super::entities::event::Entity::find_by_id(event_id)
@@ -558,7 +564,7 @@ async fn notify_roster_roles_changed(
         .flatten()
         .map(|event| event.roster_version);
     if let Some(version) = version {
-        hub.publish(event_id, version, "roles_changed", Vec::new());
+        hub.publish(tenant_id, event_id, version, "roles_changed", Vec::new());
     }
 }
 
@@ -783,6 +789,7 @@ async fn participate(
     user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(hub): Extension<RosterHub>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
     Json(req): Json<ParticipateEventRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
@@ -790,7 +797,7 @@ async fn participate(
     let (detail, version) = service
         .participate_with_roster_version(&db, id, user.user_id, req)
         .await?;
-    hub.publish(id, version, "participation_changed", Vec::new());
+    hub.publish(&tenant.0, id, version, "participation_changed", Vec::new());
     Ok(Json(ApiResponse::new(detail)))
 }
 
@@ -817,6 +824,7 @@ async fn cancel_participation(
     user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(hub): Extension<RosterHub>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     let service = EventService::new();
@@ -828,6 +836,7 @@ async fn cancel_participation(
         "participation cancelled"
     );
     hub.publish(
+        &tenant.0,
         id,
         version,
         "participant_left",
@@ -898,6 +907,7 @@ async fn add_event_member(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(hub): Extension<RosterHub>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
     Json(req): Json<AddEventMemberRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
@@ -910,7 +920,7 @@ async fn add_event_member(
         actor_id = user.user_id,
         "event member added"
     );
-    hub.publish(id, version, "participation_changed", Vec::new());
+    hub.publish(&tenant.0, id, version, "participation_changed", Vec::new());
     Ok(Json(ApiResponse::new(detail)))
 }
 
@@ -947,6 +957,7 @@ async fn set_participant(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(hub): Extension<RosterHub>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Path((id, target_user_id)): Path<(i64, i64)>,
     Json(req): Json<SetParticipantRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
@@ -955,7 +966,7 @@ async fn set_participant(
     let (detail, version) = service
         .set_participant_with_roster_version(&db, id, target_user_id, req)
         .await?;
-    hub.publish(id, version, "participation_changed", Vec::new());
+    hub.publish(&tenant.0, id, version, "participation_changed", Vec::new());
     Ok(Json(ApiResponse::new(detail)))
 }
 
@@ -986,6 +997,7 @@ async fn remove_participant(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(hub): Extension<RosterHub>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Path((id, target_user_id)): Path<(i64, i64)>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     require_event_management_authority(&user, &perms, &db, id).await?;
@@ -1001,6 +1013,7 @@ async fn remove_participant(
         "participant removed"
     );
     hub.publish(
+        &tenant.0,
         id,
         version,
         "participant_removed",
