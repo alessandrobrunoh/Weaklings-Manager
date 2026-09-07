@@ -123,6 +123,16 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
             ctx.tenant_id.clone(),
         );
     }
+    // From here on, any tenant `registry.provision`s (created after this
+    // point, at runtime, through the platform admin API or self-service
+    // onboarding) starts its own workers immediately instead of waiting for
+    // the next restart — see `TenantRegistry::provision`.
+    registry.set_workers(tenant::TenantWorkers {
+        cfg: cfg.clone(),
+        albionbb_service: albionbb_service.clone(),
+        albiondata_service: albiondata_service.clone(),
+        battles_service: battles_service.clone(),
+    });
 
     let regear_guild_context = modules::regear::router::RegearGuildContext {
         guild_id: cfg.albion_guild_id.clone(),
