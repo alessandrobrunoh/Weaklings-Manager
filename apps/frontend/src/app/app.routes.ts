@@ -309,6 +309,11 @@ export const routes: Routes = [
         loadComponent: () => import('./features/audit/audit').then((m) => m.Audit),
       },
       {
+        path: 'add-server',
+        loadComponent: () =>
+          import('./features/onboarding/add-server').then((m) => m.AddServer),
+      },
+      {
         path: 'profile',
         loadComponent: () => import('./features/settings/settings').then((m) => m.Settings),
       },

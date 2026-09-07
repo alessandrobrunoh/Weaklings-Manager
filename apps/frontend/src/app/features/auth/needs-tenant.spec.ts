@@ -21,6 +21,7 @@ describe('NeedsTenant', () => {
           useValue: {
             profile: () => ({ is_platform_admin: false }),
             registerableGuilds: async () => [{ id: 'g1', name: 'My Guild', icon_hash: null }],
+            botInvite: async () => ({ url: 'https://discord.com/invite', client_id: '1' }),
           },
         },
         { provide: TranslateService, useValue: { t: (key: string) => key } },
@@ -41,5 +42,13 @@ describe('NeedsTenant', () => {
     expect(compiled.textContent).toContain('auth.needs_tenant_body');
     expect(compiled.textContent).toContain('My Guild');
     expect(compiled.textContent).not.toContain('nav.platform');
+  });
+
+  it('offers the bot invite, the step the visitor cannot reach in-app yet', () => {
+    const invite = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>(
+      'a[href="https://discord.com/invite"]',
+    );
+    expect(invite).not.toBeNull();
+    expect(invite?.target).toBe('_blank');
   });
 });
