@@ -2210,19 +2210,6 @@ impl EventService {
             .all(db)
             .await
             .map_err(AppError::Database)?;
-        let mut comp_builds = Vec::with_capacity(active_comp_builds.len());
-        for entry in active_comp_builds {
-            let build = build::Entity::find_by_id(entry.build_id)
-                .one(db)
-                .await
-                .map_err(AppError::Database)?
-                .ok_or_else(|| AppError::NotFound(format!("Build {} not found", entry.build_id)))?;
-            comp_builds.push(EventCompBuildView {
-                build_id: entry.build_id,
-                name: build.name,
-                quantity: entry.quantity,
-            });
-        }
 
         let participant_user_ids: Vec<i64> = participations.iter().map(|p| p.user_id).collect();
         let mut specializations_by_user =
@@ -2239,46 +2226,78 @@ impl EventService {
             .map_err(AppError::Database)?;
         let assigned_build_by_user = assigned_builds_by_user(assignments);
 
-        let mut participant_views = Vec::new();
-        for p in participations {
-            let user = crate::modules::users::entities::Entity::find_by_id(p.user_id)
-                .one(db)
+        // Batched in place of the per-participant lookups this loop used to
+        // make: one query for every user, one for every display name, one for
+        // every distinct build name — regardless of roster size, instead of up
+        // to five queries (user, display name, primary/secondary/assigned
+        // build) for *each* participant. A hundred-signup event used to cost
+        // on the order of 500 round-trips just to build this view.
+        let display_names =
+            crate::modules::users::display_name::resolve_by_ids(db, &participant_user_ids).await?;
+        let users_by_id: HashMap<i64, crate::modules::users::entities::Model> =
+            crate::modules::users::entities::Entity::find()
+                .filter(crate::modules::users::entities::Column::Id.is_in(participant_user_ids))
+                .all(db)
                 .await
                 .map_err(AppError::Database)?
+                .into_iter()
+                .map(|user| (user.id, user))
+                .collect();
+
+        let mut needed_build_ids: HashSet<i64> = active_comp_builds
+            .iter()
+            .map(|entry| entry.build_id)
+            .collect();
+        for p in &participations {
+            needed_build_ids.extend(p.primary_build_id);
+            needed_build_ids.extend(p.secondary_build_id);
+        }
+        needed_build_ids.extend(assigned_build_by_user.values().copied());
+        let build_names: HashMap<i64, String> = if needed_build_ids.is_empty() {
+            HashMap::new()
+        } else {
+            build::Entity::find()
+                .filter(build::Column::Id.is_in(needed_build_ids))
+                .all(db)
+                .await
+                .map_err(AppError::Database)?
+                .into_iter()
+                .map(|b| (b.id, b.name))
+                .collect()
+        };
+        let build_name = |build_id: i64| -> Result<String, AppError> {
+            build_names
+                .get(&build_id)
+                .cloned()
+                .ok_or_else(|| AppError::NotFound(format!("Build {build_id} not found")))
+        };
+
+        let mut participant_views = Vec::with_capacity(participations.len());
+        for p in participations {
+            let user = users_by_id
+                .get(&p.user_id)
                 .ok_or_else(|| AppError::NotFound(format!("User {} not found", p.user_id)))?;
-            let username = crate::modules::users::display_name::resolve(db, &user).await?;
+            let username = display_names
+                .get(&p.user_id)
+                .cloned()
+                .unwrap_or_else(|| user.username.clone());
 
-            let primary_build_name = if let Some(primary_build_id) = p.primary_build_id {
-                build::Entity::find_by_id(primary_build_id)
-                    .one(db)
-                    .await
-                    .map_err(AppError::Database)?
-                    .ok_or_else(|| {
-                        AppError::NotFound(format!("Build {primary_build_id} not found"))
-                    })?
-                    .name
-            } else {
-                "Fill".to_string()
+            let primary_build_name = match p.primary_build_id {
+                Some(build_id) => build_name(build_id)?,
+                None => "Fill".to_string(),
             };
-
-            let secondary_build_name = if let Some(sec_id) = p.secondary_build_id {
-                let sec_build = build::Entity::find_by_id(sec_id)
-                    .one(db)
-                    .await
-                    .map_err(AppError::Database)?
-                    .ok_or_else(|| AppError::NotFound(format!("Build {} not found", sec_id)))?;
-                Some(sec_build.name)
-            } else {
-                None
-            };
+            let secondary_build_name = p.secondary_build_id.map(build_name).transpose()?;
             let assigned_build_id = assigned_build_by_user.get(&p.user_id).copied();
-            let assigned_build_name = resolve_assigned_build_name(
-                db,
-                assigned_build_id,
-                p.primary_build_id,
-                &primary_build_name,
-            )
-            .await?;
+            // Mirrors `resolve_assigned_build_name`'s short-circuit: an
+            // assignment to the participant's own primary build needs no
+            // second lookup, it is already `primary_build_name`.
+            let assigned_build_name = match assigned_build_id {
+                None => None,
+                Some(build_id) if Some(build_id) == p.primary_build_id => {
+                    Some(primary_build_name.clone())
+                }
+                Some(build_id) => Some(build_name(build_id)?),
+            };
 
             participant_views.push(EventParticipantView {
                 user_id: p.user_id,
@@ -2336,32 +2355,19 @@ impl EventService {
             splits.push(split_service.to_summary(db, split).await?);
         }
 
-        let comp_builds = comp_build::Entity::find()
-            .filter(comp_build::Column::CompId.eq(active_comp.id))
-            .all(db)
-            .await
-            .map_err(AppError::Database)?;
-        let mut comp_builds = comp_builds
+        // `active_comp_builds` and `build_name` were already fetched above,
+        // for the same comp — this used to re-run the same query and then
+        // re-resolve every build name one-by-one a second time.
+        let mut comp_build_views = active_comp_builds
             .into_iter()
-            .map(|entry| async move {
-                let build = build::Entity::find_by_id(entry.build_id)
-                    .one(db)
-                    .await
-                    .map_err(AppError::Database)?
-                    .ok_or_else(|| {
-                        AppError::NotFound(format!("Build {} not found", entry.build_id))
-                    })?;
+            .map(|entry| {
                 Ok::<EventCompBuildView, AppError>(EventCompBuildView {
                     build_id: entry.build_id,
-                    name: build.name,
+                    name: build_name(entry.build_id)?,
                     quantity: entry.quantity,
                 })
             })
-            .collect::<Vec<_>>();
-        let mut comp_build_views = Vec::with_capacity(comp_builds.len());
-        for future in comp_builds.drain(..) {
-            comp_build_views.push(future.await?);
-        }
+            .collect::<Result<Vec<_>, AppError>>()?;
         comp_build_views.sort_by_key(|entry| entry.build_id);
 
         Ok(EventDetailView {
