@@ -5,11 +5,10 @@
 //! That is the mechanism Stage 3 will use for per-tenant pools; this module is the
 //! shared, tested entry point.
 //!
-//! The control-plane lives in [`CONTROL_SCHEMA`], **not** `public`. Tenant tables
-//! currently occupy `public` (until Stage 2 moves them), and both migrators write
-//! their own `seaql_migrations` bookkeeping into whichever schema is on `search_path`.
-//! A dedicated schema keeps those trackers from mixing and lets Stage 2 move every
-//! leftover `public` table without special-casing control-plane names.
+//! The control-plane lives in [`CONTROL_SCHEMA`]; each tenant lives in its own
+//! `tenant_<slug>` schema (see [`tenant_schema_name`]). Both migrators write their
+//! own `seaql_migrations` bookkeeping into whichever schema is on `search_path`,
+//! so dedicated schemas keep those trackers from mixing.
 
 use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DbErr, Statement};
 
@@ -41,6 +40,50 @@ pub fn validate_schema_name(schema: &str) -> Result<(), DbErr> {
             "invalid postgres schema name '{schema}': must match [a-z][a-z0-9_]{{0,62}}"
         )))
     }
+}
+
+/// `tenant_<sanitized guild id>` — the schema that holds one tenant's tables.
+///
+/// # Errors
+///
+/// Returns an error when the id contains characters that cannot appear in a
+/// Postgres identifier.
+pub fn tenant_schema_name(discord_guild_id: &str) -> Result<String, DbErr> {
+    let name = format!("tenant_{}", tenant_slug(discord_guild_id)?);
+    validate_schema_name(&name)?;
+    Ok(name)
+}
+
+/// Lowercase `[a-z0-9_]+` form of a Discord guild id, hyphens folded to underscores.
+///
+/// # Errors
+///
+/// Returns an error when the id is empty or contains characters other than
+/// ASCII letters, digits, `_`, or `-`.
+pub fn tenant_slug(discord_guild_id: &str) -> Result<String, DbErr> {
+    let invalid = || {
+        DbErr::Custom(format!(
+            "discord guild id `{discord_guild_id}` cannot be used as a postgres schema name"
+        ))
+    };
+    let mut slug = String::with_capacity(discord_guild_id.len());
+    for b in discord_guild_id.bytes() {
+        match b {
+            b'A'..=b'Z' => slug.push(char::from(b + 32)),
+            b'a'..=b'z' | b'0'..=b'9' => slug.push(char::from(b)),
+            b'-' | b'_' => {
+                if !slug.ends_with('_') {
+                    slug.push('_');
+                }
+            }
+            _ => return Err(invalid()),
+        }
+    }
+    let slug = slug.trim_matches('_');
+    if slug.is_empty() {
+        return Err(invalid());
+    }
+    Ok(slug.to_owned())
 }
 
 /// `CREATE SCHEMA IF NOT EXISTS` for a validated identifier.
@@ -75,60 +118,9 @@ pub async fn connect_with_search_path(
 
 /// Quotes a Postgres identifier. Callers must already trust or validate `ident`.
 #[must_use]
+#[cfg(test)]
 pub fn quote_ident(ident: &str) -> String {
     format!("\"{}\"", ident.replace('"', "\"\""))
-}
-
-/// Whether `schema` exists in the current database.
-pub async fn schema_exists(db: &DatabaseConnection, schema: &str) -> Result<bool, DbErr> {
-    validate_schema_name(schema)?;
-    let row = db
-        .query_one(Statement::from_sql_and_values(
-            db.get_database_backend(),
-            "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = $1)",
-            [schema.into()],
-        ))
-        .await?
-        .ok_or_else(|| DbErr::Custom("EXISTS query returned no row".to_owned()))?;
-    row.try_get_by_index(0)
-}
-
-/// Ordinary tables (`relkind = 'r'`) in `schema`, sorted by name.
-pub async fn list_user_tables(db: &DatabaseConnection, schema: &str) -> Result<Vec<String>, DbErr> {
-    validate_schema_name(schema)?;
-    let rows = db
-        .query_all(Statement::from_sql_and_values(
-            db.get_database_backend(),
-            "SELECT c.relname \
-             FROM pg_class c \
-             JOIN pg_namespace n ON n.oid = c.relnamespace \
-             WHERE n.nspname = $1 AND c.relkind = 'r' \
-             ORDER BY c.relname",
-            [schema.into()],
-        ))
-        .await?;
-    rows.into_iter()
-        .map(|row| row.try_get_by_index(0))
-        .collect()
-}
-
-/// `count(*)` of `schema.table`. Identifiers are quoted after schema validation.
-pub async fn table_row_count(
-    db: &impl sea_orm::ConnectionTrait,
-    schema: &str,
-    table: &str,
-) -> Result<i64, DbErr> {
-    validate_schema_name(schema)?;
-    let sql = format!(
-        "SELECT count(*)::bigint FROM {}.{}",
-        quote_ident(schema),
-        quote_ident(table)
-    );
-    let row = db
-        .query_one(Statement::from_string(db.get_database_backend(), sql))
-        .await?
-        .ok_or_else(|| DbErr::Custom(format!("count(*) returned no row for {schema}.{table}")))?;
-    row.try_get_by_index(0)
 }
 
 /// An active control-plane tenant (id = Discord guild snowflake).
@@ -267,6 +259,32 @@ mod tests {
         assert!(validate_schema_name("tenant_123456789012345678").is_ok());
         assert!(validate_schema_name("a").is_ok());
         assert!(validate_schema_name(&format!("t{}", "x".repeat(62))).is_ok());
+    }
+
+    #[test]
+    fn schema_name_from_snowflake() {
+        assert_eq!(
+            tenant_schema_name("123456789012345678").unwrap(),
+            "tenant_123456789012345678"
+        );
+        assert_eq!(
+            tenant_slug("123456789012345678").unwrap(),
+            "123456789012345678"
+        );
+    }
+
+    #[test]
+    fn schema_name_folds_hyphens_and_case() {
+        assert_eq!(tenant_schema_name("My-Guild").unwrap(), "tenant_my_guild");
+        assert_eq!(tenant_slug("My-Guild").unwrap(), "my_guild");
+    }
+
+    #[test]
+    fn schema_name_rejects_injection() {
+        assert!(tenant_schema_name("foo;drop table users").is_err());
+        assert!(tenant_schema_name("").is_err());
+        assert!(tenant_schema_name("---").is_err());
+        assert!(tenant_schema_name("foo\"bar").is_err());
     }
 
     #[test]

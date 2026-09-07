@@ -13,7 +13,6 @@ use crate::errors::{AppError, ProblemDetails};
 use crate::modules::albion::client::{AlbionRegion, AlbionSearchResult};
 use crate::modules::albion::service::AlbionService;
 use crate::modules::auth::service::DiscordUserProfile;
-use crate::platform_admins::PlatformAdmins;
 use crate::responses::ApiResponse;
 use crate::tenant::{ControlDb, TenantRegistry};
 
@@ -72,7 +71,7 @@ pub async fn albion_search(
     Ok(Json(ApiResponse::new(service.search(q).await?)))
 }
 
-/// First-time tenant registration. The caller becomes the control-plane SuperAdmin.
+/// First-time tenant registration. The caller becomes the tenant SuperAdmin (`owner_discord_id`).
 #[utoipa::path(
     post,
     path = "/api/tenants/register",
@@ -88,7 +87,6 @@ pub async fn register_tenant(
     Extension(control): Extension<ControlDb>,
     Extension(registry): Extension<TenantRegistry>,
     Extension(cfg): Extension<Config>,
-    Extension(admins): Extension<PlatformAdmins>,
     Json(body): Json<RegisterTenantRequest>,
 ) -> Result<Json<ApiResponse<TenantStatusView>>, AppError> {
     let guild_id = body.id.trim().to_owned();
@@ -107,7 +105,6 @@ pub async fn register_tenant(
         icon.as_deref(),
     )
     .await?;
-    admins.reload(&control.0, None).await?;
     Ok(Json(ApiResponse::new(TenantStatusView {
         id: view.id,
         registered: true,

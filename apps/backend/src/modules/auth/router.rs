@@ -620,12 +620,20 @@ pub async fn get_me(
     profile.is_superadmin = admins.contains(&profile.id);
     profile.is_platform_admin = profile.is_superadmin;
 
-    if let Some(tenant_id) = profile.tenant_id.as_deref().filter(|id| !id.is_empty())
-        && registry.get_or_load(tenant_id).await.is_err()
-    {
-        profile.tenant_id = None;
-        profile.tenant_name = None;
-        profile.permissions.clear();
+    if let Some(tenant_id) = profile.tenant_id.as_deref().filter(|id| !id.is_empty()) {
+        match registry.get_or_load(tenant_id).await {
+            Ok(ctx) => {
+                let mut keys: Vec<_> = ctx.features.iter().cloned().collect();
+                keys.sort();
+                profile.features = keys;
+            }
+            Err(_) => {
+                profile.tenant_id = None;
+                profile.tenant_name = None;
+                profile.permissions.clear();
+                profile.features.clear();
+            }
+        }
     }
 
     if let Some(Extension(db)) = db.as_ref() {
@@ -633,21 +641,19 @@ pub async fn get_me(
             profile.username =
                 crate::modules::users::display_name::resolve_by_id(db, profile.user_id).await?;
         }
-        if profile
+        // Roles are read from the tenant's own Discord server. Without a
+        // selected tenant there is no server to ask, so the cookie's roles stand.
+        if let Some(tenant_id) = profile
             .tenant_id
-            .as_deref()
-            .is_some_and(|id| !id.is_empty())
+            .clone()
+            .filter(|id| !id.trim().is_empty())
         {
             let service = AuthService::new();
             if let Some(role_ids) = service
                 .fetch_guild_member_role_ids(
                     &profile.id,
                     "",
-                    profile
-                        .tenant_id
-                        .as_deref()
-                        .filter(|id| !id.is_empty())
-                        .unwrap_or(cfg.discord_guild_id.as_str()),
+                    &tenant_id,
                     cfg.discord_bot_token.as_deref(),
                 )
                 .await

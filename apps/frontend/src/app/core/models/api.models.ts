@@ -127,6 +127,7 @@ export interface DiscordUserProfile {
   permissions: string[];
   tenant_id?: string | null;
   tenant_name?: string | null;
+  features?: string[];
 }
 
 export interface PlatformTenant {
@@ -138,6 +139,21 @@ export interface PlatformTenant {
   owner_discord_id: string | null;
   created_at: string | null;
   suspended_at: string | null;
+  albion_guild_id?: string | null;
+  albion_api_region?: string | null;
+  icon_hash?: string | null;
+  albion_allied_guild_ids?: string | null;
+  albion_allied_guild_names?: string | null;
+  rank_id?: string | null;
+  rank_name?: string | null;
+}
+
+export interface TenantRankView {
+  id: string;
+  name: string;
+  description: string | null;
+  feature_keys: string[];
+  created_at: string | null;
 }
 
 export interface FeatureCatalogItem {
@@ -154,6 +170,9 @@ export interface TenantFeatureFlag {
 export interface TenantFeaturesView {
   catalog: FeatureCatalogItem[];
   flags: TenantFeatureFlag[];
+  rank_id?: string | null;
+  rank_name?: string | null;
+  allowed_keys?: string[];
 }
 
 export interface PlatformAdminView {

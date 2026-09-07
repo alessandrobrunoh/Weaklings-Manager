@@ -18,7 +18,7 @@ pub struct Config {
     /// Port the HTTP server binds to (default: 3000).
     #[serde(default = "default_backend_port")]
     pub backend_port: u16,
-    /// Connection string for the tenant database (today: schema `public`).
+    /// Connection string for the cluster holding the per-tenant schemas.
     pub database_url: String,
     /// Optional dedicated DSN for the control-plane schema.
     ///
@@ -33,8 +33,6 @@ pub struct Config {
     pub discord_client_secret: String,
     /// Discord `OAuth2` Redirect URI.
     pub discord_redirect_uri: String,
-    /// Discord Guild (Server) ID.
-    pub discord_guild_id: String,
     /// Shared secret for bot-to-backend authentication (optional).
     ///
     /// When set, HTTP requests carrying the `X-Bot-Secret` header with this value are
@@ -222,7 +220,6 @@ mod tests {
             discord_client_id: "id".to_string(),
             discord_client_secret: "secret".to_string(),
             discord_redirect_uri: "http://localhost/callback".to_string(),
-            discord_guild_id: "guild".to_string(),
             bot_api_secret: None,
             discord_bot_token: None,
             super_admin_discord_id: "admin".to_string(),

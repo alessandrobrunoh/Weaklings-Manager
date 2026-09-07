@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ApiClient } from "../api/client.js";
 import type { GuildSettingsView } from "../api/types.js";
-import { SettingsService } from "./settings.js";
+import {
+  SettingsService,
+  forgetSettingsService,
+  getSettingsService,
+  initSettingsService,
+} from "./settings.js";
 
 const settings: GuildSettingsView = {
   discord_events_channel_id: null,
@@ -50,4 +55,34 @@ test("SettingsService exposes the configured event voice category", async () => 
   const service = new SettingsService(api);
 
   assert.equal(await service.eventVoiceCategoryId(), "123456789012345678");
+});
+
+test("the settings registry keeps one cache per guild", async () => {
+  const seenGuilds: Array<string | undefined> = [];
+  const api = {
+    guildId: undefined,
+    withGuild(guildId: string) {
+      seenGuilds.push(guildId);
+      return { guildId, get: async () => settings } as unknown as ApiClient;
+    },
+  } as unknown as ApiClient;
+
+  initSettingsService(api);
+
+  const first = getSettingsService('111');
+  assert.equal(getSettingsService('111'), first, 'the same guild reuses its service');
+  assert.notEqual(getSettingsService('222'), first, 'a different guild gets its own');
+  assert.deepEqual(seenGuilds, ['111', '222']);
+
+  forgetSettingsService('111');
+  assert.notEqual(getSettingsService('111'), first, 'forgetting drops the cache');
+});
+
+test("the settings registry refuses to answer without a tenant", () => {
+  initSettingsService({ withGuild: () => ({}) } as unknown as ApiClient);
+
+  // An unscoped client would read another tenant's settings, or 400 at the
+  // backend. Fail here instead, with a message split-forum can recognize.
+  assert.throws(() => getSettingsService(undefined), /^Error: SettingsService requires a guild id/);
+  assert.throws(() => getSettingsService(null), /^Error: SettingsService requires a guild id/);
 });

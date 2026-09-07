@@ -98,7 +98,7 @@ export async function handleButton(
     );
     if (ns === 'application') {
       try {
-        errEmbed = buildApplicationErrorEmbed(await getSettingsService().applicationsSettings());
+        errEmbed = buildApplicationErrorEmbed(await getSettingsService(api.guildId).applicationsSettings());
       } catch {
         // Keep the generic error if settings are unavailable while handling an error.
       }
@@ -127,7 +127,7 @@ async function handleApplicationButton(
   if (!Number.isSafeInteger(applicationId) || applicationId <= 0) {
     throw new Error('Invalid application ID.');
   }
-  const settings = await getSettingsService().applicationsSettings();
+  const settings = await getSettingsService(api.guildId).applicationsSettings();
   const member = interaction.member;
   const roleIds = member && 'roles' in member
     ? Array.isArray(member.roles) ? member.roles : [...member.roles.cache.keys()]
@@ -193,7 +193,7 @@ async function createApplicationChannel(interaction: ButtonInteraction, api: Api
   await interaction.deferReply({ flags: ['Ephemeral'] });
   const guild = interaction.guild;
   if (!guild) throw new Error('Applications can only be opened inside a server.');
-  const settings = await getSettingsService().applicationsSettings();
+  const settings = await getSettingsService(api.guildId).applicationsSettings();
   if (!settings.discord_applications_open) {
     await interaction.editReply({ embeds: [buildApplicationClosedEmbed(settings)] });
     return;
@@ -557,7 +557,7 @@ async function handleEventButton(
       embeds: [buildEventEmbed(event)],
       components: buildEventThreadActionRows(event),
     });
-    const closed = await getPoller()?.closeEventThread(eventId);
+    const closed = await getPoller(api.guildId)?.closeEventThread(eventId);
     if (!closed && interaction.channel?.isThread()) {
       await closeEventAnnouncementThread(interaction.channel, eventId, "Cancel button");
     }
@@ -585,7 +585,7 @@ async function handleEventButton(
       interaction.user.id,
       eventId,
     );
-    await getPoller()?.closeEventThread(eventId);
+    await getPoller(api.guildId)?.closeEventThread(eventId);
     await interaction.message.edit({
       embeds: [buildEventEmbed(result.event)],
       components: buildEventThreadActionRows(result.event),

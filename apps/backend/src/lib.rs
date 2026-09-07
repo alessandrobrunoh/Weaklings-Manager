@@ -1,6 +1,4 @@
 //! Weaklings Manager backend library.
-//!
-//! Shared by the HTTP server and one-shot operator binaries (tenant backfill).
 
 #![recursion_limit = "256"]
 
@@ -14,7 +12,6 @@ pub(crate) mod platform_admins;
 pub(crate) mod postgres;
 pub(crate) mod tenant;
 
-pub mod backfill;
 pub mod config;
 pub(crate) mod errors;
 pub(crate) mod pagination;
@@ -62,31 +59,25 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     control_migration::Migrator::up(&control_db, None).await?;
     tracing::info!("control-plane migrations complete");
 
-    let platform_admins = platform_admins::PlatformAdmins::new_empty();
+    let platform_admins =
+        platform_admins::PlatformAdmins::new(Some(cfg.super_admin_discord_id.as_str()));
     platform_admins
-        .reload(&control_db, Some(&cfg.super_admin_discord_id))
+        .reload(&control_db)
         .await
         .map_err(|e| format!("Failed to load platform admins: {e}"))?;
     tracing::info!("platform admin cache loaded");
 
-    let registry =
-        tenant::TenantRegistry::new(cfg.database_url.clone(), control_db.clone(), None, None);
+    let registry = tenant::TenantRegistry::new(cfg.database_url.clone(), control_db.clone());
     tracing::info!("warming tenant registry");
     let tenant_contexts = registry.warmup().await?;
     tracing::info!(tenants = tenant_contexts.len(), "tenant registry ready");
 
-    // Fallback pool only when exactly one *registered* tenant exists.
-    // An empty registry must not expose the pre-multi-tenant `public` schema.
-    let fallback_db = tenant_contexts
-        .first()
-        .filter(|_| tenant_contexts.len() == 1)
-        .map(|ctx| ctx.db.clone());
-    let fallback_permissions = tenant_contexts
-        .first()
-        .filter(|_| tenant_contexts.len() == 1)
-        .map_or_else(modules::auth::Permissions::new_empty, |ctx| {
-            ctx.permissions.clone()
-        });
+    // Placeholder for the handful of endpoints that answer without a tenant
+    // (`/api/auth/me`, `/api/auth/logout`): they still destructure an
+    // `Extension<Permissions>`, but a request with no tenant has no roles.
+    // `resolve_tenant` overwrites this with the real cache for every scoped
+    // request, so it never grants anything.
+    let unscoped_permissions = modules::auth::Permissions::new_empty();
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.backend_port));
 
@@ -140,7 +131,7 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         .nest("/platform", modules::platform::router())
         .nest("/tenants", modules::platform::public_router());
 
-    let mut app = Router::new()
+    let app = Router::new()
         .nest("/api", api)
         .merge(Scalar::with_url("/scalar", openapi::ApiDoc::openapi()))
         .layer(axum::middleware::from_fn_with_state(
@@ -159,15 +150,11 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         .layer(axum::Extension(
             modules::events::roster_hub::RosterHub::new(),
         ))
-        .layer(axum::Extension(fallback_permissions))
+        .layer(axum::Extension(unscoped_permissions))
         .layer(axum::Extension(platform_admins))
         .layer(axum::Extension(session_key))
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive());
-
-    if let Some(db) = fallback_db {
-        app = app.layer(axum::Extension(db));
-    }
 
     tracing::info!(version = config::VERSION, "listening on {addr}");
 

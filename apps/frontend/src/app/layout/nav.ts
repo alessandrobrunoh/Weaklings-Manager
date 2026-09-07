@@ -12,6 +12,8 @@ export interface NavItem {
   readonly platformAdmin?: boolean;
   /** When true, the item is active only on that exact URL (not its children). */
   readonly exact?: boolean;
+  /** Optional module key; hidden when the tenant Rank/flag does not enable it. */
+  readonly featureKey?: string;
 }
 
 /** Group of nav entries with a small heading label. */
@@ -28,6 +30,7 @@ export interface AdminPanel {
   readonly hintKey: TranslationKey;
   readonly permissions?: readonly string[];
   readonly exact?: boolean;
+  readonly featureKey?: string;
 }
 
 /** Any of these is enough to enter the admin console. */
@@ -75,12 +78,16 @@ export function filterNavSections(
   sections: readonly NavSection[],
   hasPermission: (permission: string) => boolean,
   isPlatformAdmin = false,
+  hasFeature: (key: string) => boolean = () => true,
 ): NavSection[] {
   return sections
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => {
         if (item.platformAdmin && !isPlatformAdmin) {
+          return false;
+        }
+        if (item.featureKey && !hasFeature(item.featureKey)) {
           return false;
         }
         if (!item.permissions?.length) {
@@ -103,29 +110,31 @@ export const APP_NAV_SECTIONS: NavSection[] = [
   {
     headingKey: 'nav.section.operations',
     items: [
-      { path: '/events', icon: 'calendar', labelKey: 'nav.events' },
-      { path: '/comps', icon: 'package', labelKey: 'nav.comps' },
+      { path: '/events', icon: 'calendar', labelKey: 'nav.events', featureKey: 'events' },
+      { path: '/comps', icon: 'package', labelKey: 'nav.comps', featureKey: 'comps' },
       {
         path: '/tests',
         icon: 'activity',
         labelKey: 'nav.tests',
         permissions: ['combat.tests.view'],
+        featureKey: 'tests',
       },
-      { path: '/battles', icon: 'swords', labelKey: 'nav.battles' },
-      { path: '/intel', icon: 'scan', labelKey: 'nav.intel' },
+      { path: '/battles', icon: 'swords', labelKey: 'nav.battles', featureKey: 'battles' },
+      { path: '/intel', icon: 'scan', labelKey: 'nav.intel', featureKey: 'intel' },
     ],
   },
   {
     headingKey: 'nav.section.economy',
     items: [
-      { path: '/bank', icon: 'bank', labelKey: 'nav.bank' },
-      { path: '/splits', icon: 'percent', labelKey: 'nav.splits' },
-      { path: '/regears', icon: 'shield', labelKey: 'nav.regears' },
+      { path: '/bank', icon: 'bank', labelKey: 'nav.bank', featureKey: 'bank' },
+      { path: '/splits', icon: 'percent', labelKey: 'nav.splits', featureKey: 'splits' },
+      { path: '/regears', icon: 'shield', labelKey: 'nav.regears', featureKey: 'regears' },
       {
         path: '/siphoned',
         icon: 'zap',
         labelKey: 'nav.siphoned',
         permissions: ['siphoned.view'],
+        featureKey: 'siphoned',
       },
     ],
   },
@@ -138,6 +147,7 @@ export const APP_NAV_SECTIONS: NavSection[] = [
         icon: 'alert',
         labelKey: 'nav.warns',
         permissions: ['warns.view'],
+        featureKey: 'warns',
       },
     ],
   },
@@ -217,11 +227,19 @@ export const ADMIN_PANELS: readonly AdminPanel[] = [
     permissions: ['admin.settings.manage', 'autorole.manage'],
   },
   {
+    path: '/admin/features',
+    icon: 'sparkles',
+    labelKey: 'nav.admin.features',
+    hintKey: 'admin.hub.featuresHint',
+    permissions: ['admin.settings.manage'],
+  },
+  {
     path: '/admin/applications',
     icon: 'users',
     labelKey: 'nav.admin.applications',
     hintKey: 'admin.hub.applicationsHint',
     permissions: ['admin.settings.manage'],
+    featureKey: 'applications',
   },
   {
     path: '/admin/progression',
@@ -229,6 +247,7 @@ export const ADMIN_PANELS: readonly AdminPanel[] = [
     labelKey: 'nav.admin.progression',
     hintKey: 'admin.hub.progressionHint',
     permissions: ['progression.settings.manage'],
+    featureKey: 'progression',
   },
   {
     path: '/admin/regears',
@@ -236,6 +255,7 @@ export const ADMIN_PANELS: readonly AdminPanel[] = [
     labelKey: 'nav.admin.regears',
     hintKey: 'admin.hub.regearsHint',
     permissions: ['regear.settings.manage'],
+    featureKey: 'regears',
   },
   {
     path: '/admin/islands',
@@ -243,6 +263,7 @@ export const ADMIN_PANELS: readonly AdminPanel[] = [
     labelKey: 'nav.admin.islands',
     hintKey: 'admin.hub.islandsHint',
     permissions: ['splits.islands.manage'],
+    featureKey: 'splits.paid',
   },
   {
     path: '/admin/giveaways',
@@ -250,6 +271,7 @@ export const ADMIN_PANELS: readonly AdminPanel[] = [
     labelKey: 'nav.admin.giveaways',
     hintKey: 'admin.hub.giveawaysHint',
     permissions: ['giveaways.view'],
+    featureKey: 'giveaways',
   },
 ];
 
@@ -265,6 +287,7 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
         labelKey: panel.labelKey,
         permissions: panel.permissions,
         exact: panel.exact,
+        featureKey: panel.featureKey,
       })),
     ],
   },
@@ -276,6 +299,12 @@ export const PLATFORM_PANELS: readonly AdminPanel[] = [
     icon: 'users',
     labelKey: 'nav.platform.tenants',
     hintKey: 'platform.hub.tenantsHint',
+  },
+  {
+    path: '/platform/ranks',
+    icon: 'sparkles',
+    labelKey: 'nav.platform.ranks',
+    hintKey: 'platform.hub.ranksHint',
   },
   {
     path: '/platform/admins',

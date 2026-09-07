@@ -5,11 +5,11 @@ import type { AwardMessageRequest, AwardMessageResponse } from "./api/types.js";
 import { commands } from "./commands/index.js";
 import { handleButton } from "./handlers/button.js";
 import { handleSelectMenu } from "./handlers/select.js";
-import { Poller, registerPoller } from "./services/poller.js";
+import { PollerManager } from "./services/poller-manager.js";
 import { assignJoinRole } from "./services/join-role.js";
 import { initSettingsService, getSettingsService } from "./services/settings.js";
 import { registerCommands } from "./services/registry.js";
-import { requireRegisteredTenant } from "./services/tenant-gate.js";
+import { isRegisteredTenant, requireRegisteredTenant } from "./services/tenant-gate.js";
 import { createResponseEmbed } from "./embeds/theme.js";
 
 const THREAD_AUTOCREATE_BUILD_MARKER = "event-thread-signup-message-2026-08-16";
@@ -24,11 +24,15 @@ async function main(): Promise<void> {
   console.log("🤖 Albion Guild Manager Bot starting…");
   console.log(`[Bot] Build marker: ${THREAD_AUTOCREATE_BUILD_MARKER}`);
 
-  // Create the API client (shared across all handlers)
+  // Unscoped API client. Every call that touches tenant data must go through a
+  // `withGuild(...)` copy of it: the backend resolves the tenant database from
+  // the `X-Guild-Id` header and rejects an unscoped request with a 400 (see
+  // apps/backend/src/tenant.rs). Only the tenant-status lookup and the
+  // onboarding endpoints are safe to call unscoped.
   const api = new ApiClient(config.BACKEND_URL, config.BOT_API_SECRET);
   // Channel/role IDs now live in the backend's admin Settings instead of this
-  // process's own env vars — see services/settings.ts.
-  const settings = initSettingsService(api);
+  // process's own env vars — see services/settings.ts. One cache per guild.
+  initSettingsService(api);
 
   // Slash commands are registered per guild on ready / GuildCreate.
 
@@ -88,27 +92,46 @@ async function main(): Promise<void> {
 
     // Button interactions
     if (interaction.isButton()) {
-      await handleButton(interaction, api);
+      if (!interaction.guildId) return;
+      await handleButton(interaction, api.withGuild(interaction.guildId));
       return;
     }
 
     // Select menu interactions
     if (interaction.isStringSelectMenu()) {
-      await handleSelectMenu(interaction, api);
+      if (!interaction.guildId) return;
+      await handleSelectMenu(interaction, api.withGuild(interaction.guildId));
       return;
     }
   });
+
+  // One poller per registered tenant guild. Created before the ready handler so
+  // GuildCreate can reach it, started once the guild cache is populated.
+  const pollers = new PollerManager(client, api, config.POLL_INTERVAL_MS);
 
   client.on(Events.GuildCreate, (guild) => {
     void registerCommands(guild.id).catch((err: unknown) => {
       console.error(`[Bot] Failed to register commands for ${guild.id}:`, err);
     });
+    void pollers.ensure(guild.id).catch((err: unknown) => {
+      console.error(`[Bot] Failed to start poller for ${guild.id}:`, err);
+    });
+  });
+
+  client.on(Events.GuildDelete, (guild) => {
+    pollers.forget(guild.id);
   });
 
   client.on(Events.GuildMemberAdd, (member) => {
-    void getSettingsService()
-      .get()
-      .then((guildSettings) => assignJoinRole(member, guildSettings))
+    const guildId = member.guild.id;
+    void isRegisteredTenant(api, guildId)
+      .then((registered) =>
+        registered
+          ? getSettingsService(guildId)
+              .get()
+              .then((guildSettings) => assignJoinRole(member, guildSettings))
+          : undefined,
+      )
       .catch((err: unknown) => {
         console.error("[Bot] Base guild role assignment failed:", err);
       });
@@ -127,11 +150,18 @@ async function main(): Promise<void> {
       length: message.content.length,
     };
 
-    void api
-      .post<AwardMessageResponse>(
-        "api/progression/award/message",
-        body,
-        message.author.id,
+    const guildId = message.guild.id;
+    void isRegisteredTenant(api, guildId)
+      .then((registered) =>
+        registered
+          ? api
+              .withGuild(guildId)
+              .post<AwardMessageResponse>(
+                "api/progression/award/message",
+                body,
+                message.author.id,
+              )
+          : undefined,
       )
       .catch((err: unknown) => {
         console.error("[Bot] Message XP award failed:", err);
@@ -143,25 +173,23 @@ async function main(): Promise<void> {
   client.once(Events.ClientReady, (readyClient) => {
     console.log(`✅ Logged in as ${readyClient.user.tag}`);
 
-    const guildIds = new Set(readyClient.guilds.cache.map((guild) => guild.id));
-    if (config.DISCORD_GUILD_ID) {
-      guildIds.add(config.DISCORD_GUILD_ID);
-    }
-    for (const guildId of guildIds) {
+    for (const guildId of readyClient.guilds.cache.keys()) {
       void registerCommands(guildId).catch((err: unknown) => {
         console.error(`[Bot] Failed to register commands for ${guildId}:`, err);
       });
     }
 
-    // Start the polling service after the client is ready
-    const poller = new Poller(readyClient, api, settings, config.POLL_INTERVAL_MS);
-    registerPoller(poller);
-    poller.start();
+    // Start one poller per registered tenant guild, then keep re-checking:
+    // a guild becomes a tenant on the website, which produces no Discord event.
+    void pollers.reconcile().catch((err: unknown) => {
+      console.error("[Bot] Initial poller reconciliation failed:", err);
+    });
+    pollers.start();
 
     // Graceful shutdown
     const shutdown = (): void => {
       console.log("[Bot] Shutting down…");
-      poller.stop();
+      pollers.stop();
       readyClient.destroy();
       process.exit(0);
     };

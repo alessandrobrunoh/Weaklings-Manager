@@ -2189,7 +2189,6 @@ mod tests {
             discord_client_id: "test".to_string(),
             discord_client_secret: "test".to_string(),
             discord_redirect_uri: "http://localhost/callback".to_string(),
-            discord_guild_id: "test-guild".to_string(),
             bot_api_secret: None,
             discord_bot_token: None,
             super_admin_discord_id: "test-admin".to_string(),

@@ -23,7 +23,7 @@ const REGIONS = [
 
 /**
  * First-time tenant onboarding wizard. The Discord user who completes it
- * becomes the control-plane Super Admin for this guild.
+ * becomes Super Admin of this tenant (`owner_discord_id`), not a platform admin.
  */
 @Component({
   selector: 'app-register-tenant',

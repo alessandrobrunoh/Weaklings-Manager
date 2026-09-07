@@ -104,6 +104,8 @@ describe('PlatformTenants', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.textContent).toContain('Weaklings');
     expect(compiled.textContent).toContain('Paused');
+    expect(compiled.textContent).toContain('9');
+    expect(compiled.textContent).toContain('platform.tenants.none');
 
     const suspend = compiled.querySelector('button') as HTMLButtonElement;
     const buttons = Array.from(compiled.querySelectorAll('button'));

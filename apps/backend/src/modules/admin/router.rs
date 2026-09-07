@@ -10,7 +10,10 @@
 use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
+use crate::modules::platform::models::{PutTenantFeaturesRequest, TenantFeaturesView};
+use crate::modules::platform::service::PlatformService;
 use crate::responses::ApiResponse;
+use crate::tenant::{ControlDb, CurrentTenantId, TenantRegistry};
 use axum::{
     Extension, Json, Router,
     extract::Path,
@@ -45,6 +48,10 @@ pub fn router() -> Router {
         )
         .route("/autorole", get(get_autorole).put(update_autorole))
         .route("/autorole/roles", get(list_discord_roles))
+        .route(
+            "/features",
+            get(get_tenant_features).put(put_tenant_features),
+        )
 }
 
 /// Reload the in-memory permission cache from the `role_permissions` table.
@@ -298,10 +305,11 @@ pub async fn list_guild_discord_roles(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(cfg): Extension<Config>,
+    Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<Json<ApiResponse<Vec<DiscordRoleView>>>, AppError> {
     require_discord_catalog(&user, &perms).await?;
     Ok(Json(ApiResponse::new(
-        AdminService::discord_roles(&cfg).await?,
+        AdminService::discord_roles(&cfg, &tenant.0).await?,
     )))
 }
 
@@ -324,10 +332,11 @@ pub async fn list_guild_discord_channels(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(cfg): Extension<Config>,
+    Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<Json<ApiResponse<Vec<DiscordChannelView>>>, AppError> {
     require_discord_catalog(&user, &perms).await?;
     Ok(Json(ApiResponse::new(
-        AdminService::discord_channels(&cfg).await?,
+        AdminService::discord_channels(&cfg, &tenant.0).await?,
     )))
 }
 
@@ -457,10 +466,11 @@ pub async fn list_discord_roles(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(cfg): Extension<Config>,
+    Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<Json<ApiResponse<Vec<DiscordRoleView>>>, AppError> {
     user.require(&perms, Permission::AutoroleManage).await?;
     Ok(Json(ApiResponse::new(
-        AdminService::discord_roles(&cfg).await?,
+        AdminService::discord_roles(&cfg, &tenant.0).await?,
     )))
 }
 
@@ -485,10 +495,82 @@ pub async fn update_autorole(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Json(body): Json<UpdateAutoRoleRequest>,
 ) -> Result<Json<ApiResponse<AutoRoleSettingsView>>, AppError> {
     user.require(&perms, Permission::AutoroleManage).await?;
     Ok(Json(ApiResponse::new(
-        AdminService::update_autorole(&db, user.user_id, &cfg, &body.discord_auto_role_id).await?,
+        AdminService::update_autorole(
+            &db,
+            user.user_id,
+            &cfg,
+            &tenant.0,
+            &body.discord_auto_role_id,
+        )
+        .await?,
+    )))
+}
+
+async fn require_tenant_feature_admin(
+    user: &UserContext,
+    perms: &Permissions,
+    control: &sea_orm::DatabaseConnection,
+    tenant_id: &str,
+) -> Result<(), AppError> {
+    if user
+        .has_permission(perms, Permission::AdminSettingsManage)
+        .await
+    {
+        return Ok(());
+    }
+    let tenant = PlatformService::get_tenant(control, tenant_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("tenant {tenant_id} not found")))?;
+    if tenant.owner_discord_id.as_deref() == Some(user.id.as_str()) {
+        return Ok(());
+    }
+    Err(AppError::Forbidden(
+        "Missing permission to manage tenant features".to_owned(),
+    ))
+}
+
+/// Catalog plus flags the current tenant may toggle within its Rank.
+#[utoipa::path(
+    get,
+    path = "/api/admin/features",
+    tag = "admin",
+    responses((status = 200, description = "Tenant feature flags"))
+)]
+pub async fn get_tenant_features(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(control): Extension<ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
+) -> Result<Json<ApiResponse<TenantFeaturesView>>, AppError> {
+    require_tenant_feature_admin(&user, &perms, &control.0, &tenant.0).await?;
+    Ok(Json(ApiResponse::new(
+        PlatformService::get_features(&control.0, &tenant.0).await?,
+    )))
+}
+
+/// Enable or disable modules allowed by this tenant's Rank.
+#[utoipa::path(
+    put,
+    path = "/api/admin/features",
+    tag = "admin",
+    responses((status = 200, description = "Updated flags"))
+)]
+pub async fn put_tenant_features(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Json(body): Json<PutTenantFeaturesRequest>,
+) -> Result<Json<ApiResponse<TenantFeaturesView>>, AppError> {
+    require_tenant_feature_admin(&user, &perms, &control.0, &tenant.0).await?;
+    Ok(Json(ApiResponse::new(
+        PlatformService::put_features(&control.0, &registry, &tenant.0, body, &user.id, true)
+            .await?,
     )))
 }

@@ -47,6 +47,19 @@ describe('filterNavSections', () => {
     expect(paths).not.toContain('/admin/discord');
   });
 
+  it('hides optional modules when the tenant feature is off', () => {
+    const visible = filterNavSections(
+      APP_NAV_SECTIONS,
+      () => true,
+      false,
+      (key) => key === 'splits',
+    );
+    const paths = visible.flatMap((section) => section.items.map((item) => item.path));
+    expect(paths).toContain('/splits');
+    expect(paths).not.toContain('/events');
+    expect(paths).toContain('/dashboard');
+  });
+
   it('hides the Admin entry on the app nav without any admin permission', () => {
     const visible = filterNavSections(APP_NAV_SECTIONS, () => false);
     const paths = visible.flatMap((section) => section.items.map((item) => item.path));
@@ -96,6 +109,7 @@ describe('isPlatformUrl', () => {
     expect(paths).toContain('/platform');
     expect(paths).toContain('/platform/tenants');
     expect(paths).toContain('/platform/admins');
+    expect(paths).toContain('/platform/ranks');
     expect(paths).toContain('/dashboard');
   });
 });
