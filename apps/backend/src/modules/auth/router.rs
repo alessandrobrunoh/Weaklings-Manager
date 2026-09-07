@@ -75,11 +75,19 @@ pub struct LoginQuery {
 )]
 pub async fn discord_login(
     Extension(cfg): Extension<Config>,
-    jar: CookieJar,
+    Extension(key): Extension<Key>,
+    headers: HeaderMap,
     Query(query): Query<LoginQuery>,
-) -> (CookieJar, Redirect) {
+) -> (PrivateCookieJar, Redirect) {
     // Generate a secure CSRF state token
     let state = Alphanumeric.sample_string(&mut rand::thread_rng(), 32);
+
+    // Encrypted and authenticated, not just signed-readable: a plain cookie
+    // lets anyone who can set a cookie for this domain (a compromised sibling
+    // subdomain, most plausibly) plant their own `oauth_state`/`oauth_next`
+    // and steer a victim's login redirect. `PrivateCookieJar` makes that
+    // forgeable value tamper-evident the same way `session_user` already is.
+    let jar = PrivateCookieJar::from_headers(&headers, key);
 
     // Save the state in a secure cookie
     let state_cookie = Cookie::build(("oauth_state", state.clone()))
@@ -111,6 +119,15 @@ pub async fn discord_login(
     );
 
     (jar, Redirect::temporary(&auth_url))
+}
+
+/// Removal templates for `oauth_state`/`oauth_next`, sharing
+/// [`pending_cookie_tombstone`]'s path so the browser actually matches and
+/// clears them — a removal cookie with no `path` at all does not reliably
+/// match one originally set with `path=/api/auth`.
+fn remove_oauth_cookies(jar: PrivateCookieJar) -> PrivateCookieJar {
+    jar.remove(Cookie::build(("oauth_state", "")).path("/api/auth"))
+        .remove(Cookie::build(("oauth_next", "")).path("/api/auth"))
 }
 
 /// Callback URI invoked by Discord after authorization.
@@ -151,21 +168,19 @@ pub async fn discord_callback(
     Extension(control): Extension<ControlDb>,
     Extension(registry): Extension<TenantRegistry>,
     Extension(key): Extension<Key>,
-    jar: CookieJar,
     headers: HeaderMap,
     Query(query): Query<CallbackQuery>,
-) -> Result<(CookieJar, PrivateCookieJar, Redirect), AppError> {
-    // Retrieve the state cookie
-    let cookie_state = jar.get("oauth_state").map(|c| c.value().to_string());
-
-    // Clean up the state cookie immediately
-    let next_path = jar
+) -> Result<(PrivateCookieJar, Redirect), AppError> {
+    // Retrieve the state cookie. A cookie that fails to decrypt/authenticate
+    // (tampered, forged, or from a stale key) reads as absent, the same as
+    // no cookie at all — either way `cookie_state` ends up `None` and the
+    // state check below rejects the callback.
+    let pending_jar = PrivateCookieJar::from_headers(&headers, key.clone());
+    let cookie_state = pending_jar.get("oauth_state").map(|c| c.value().to_string());
+    let next_path = pending_jar
         .get("oauth_next")
         .map(|c| c.value().to_string())
         .and_then(|value| safe_next_path(Some(&value)));
-    let jar = jar
-        .remove(Cookie::from("oauth_state"))
-        .remove(Cookie::from("oauth_next"));
 
     // Verify CSRF state token to prevent session fixation and CSRF attacks
     if cookie_state.is_none() || cookie_state.as_ref() != Some(&query.state) {
@@ -194,28 +209,27 @@ pub async fn discord_callback(
         .as_deref()
         .is_some_and(|path| path.starts_with("/register-tenant"))
     {
-        let private_jar = with_registerable_guilds(
+        let private_jar = remove_oauth_cookies(with_registerable_guilds(
             PrivateCookieJar::from_headers(&headers, key)
                 .add(session_cookie(&profile)?)
                 .remove(pending_cookie_tombstone()),
             &user_guilds,
-        )?;
+        )?);
         let dest = format!("{}{}", cfg.frontend_url, next_path.unwrap());
-        return Ok((jar, private_jar, Redirect::temporary(&dest)));
+        return Ok((private_jar, Redirect::temporary(&dest)));
     }
 
     let after_login = |path: &str| format!("{}{path}", cfg.frontend_url);
 
     match matches.as_slice() {
         [] => {
-            let private_jar = with_registerable_guilds(
+            let private_jar = remove_oauth_cookies(with_registerable_guilds(
                 PrivateCookieJar::from_headers(&headers, key)
                     .add(session_cookie(&profile)?)
                     .remove(pending_cookie_tombstone()),
                 &user_guilds,
-            )?;
+            )?);
             Ok((
-                jar,
                 private_jar,
                 Redirect::temporary(&format!("{}/needs-tenant", cfg.frontend_url)),
             ))
@@ -231,14 +245,13 @@ pub async fn discord_callback(
                 tenant,
             )
             .await?;
-            let private_jar = with_registerable_guilds(
+            let private_jar = remove_oauth_cookies(with_registerable_guilds(
                 PrivateCookieJar::from_headers(&headers, key)
                     .add(session_cookie(&profile)?)
                     .remove(pending_cookie_tombstone()),
                 &user_guilds,
-            )?;
+            )?);
             Ok((
-                jar,
                 private_jar,
                 Redirect::temporary(&after_login(next_path.as_deref().unwrap_or("/dashboard"))),
             ))
@@ -252,12 +265,11 @@ pub async fn discord_callback(
             let pending_json = serde_json::to_string(&pending).map_err(|e| {
                 AppError::Internal(format!("failed to serialize pending oauth: {e}"))
             })?;
-            let private_jar = with_registerable_guilds(
+            let private_jar = remove_oauth_cookies(with_registerable_guilds(
                 PrivateCookieJar::from_headers(&headers, key).add(pending_cookie(pending_json)),
                 &user_guilds,
-            )?;
+            )?);
             Ok((
-                jar,
                 private_jar,
                 Redirect::temporary(&format!("{}/choose-server", cfg.frontend_url)),
             ))
@@ -950,12 +962,17 @@ mod tests {
         }
     }
 
+    /// `Cookie` values through a `Private` jar are AEAD-encrypted; asserting
+    /// this catches a regression back to a plain `CookieJar` far more
+    /// directly than reading the extractor type in the signature. Checked
+    /// alongside `Secure` since both cookies come out of the same call.
     #[tokio::test]
-    async fn discord_login_issues_secure_state_and_next_cookies() {
-        let jar = CookieJar::new();
+    async fn discord_login_issues_secure_encrypted_state_and_next_cookies() {
+        let key = Key::generate();
         let (jar, _redirect) = discord_login(
             Extension(stub_config()),
-            jar,
+            Extension(key),
+            HeaderMap::new(),
             Query(LoginQuery {
                 next: Some("/dashboard".to_owned()),
             }),
@@ -963,6 +980,18 @@ mod tests {
         .await;
         assert_secure(&jar.get("oauth_state").expect("oauth_state set").clone());
         assert_secure(&jar.get("oauth_next").expect("oauth_next set").clone());
+
+        let response = jar.into_response();
+        for header in response.headers().get_all(axum::http::header::SET_COOKIE) {
+            let raw = header.to_str().expect("ascii Set-Cookie");
+            // A `Private` jar's on-the-wire value is base64 ciphertext, so
+            // neither the 32-char alphanumeric CSRF token nor the plain
+            // "/dashboard" path this cookie carries appears literally in it.
+            assert!(
+                !raw.contains("/dashboard"),
+                "cookie value was not encrypted: {raw}"
+            );
+        }
     }
 
     #[test]
@@ -1017,6 +1046,74 @@ mod tests {
         for header_value in set_cookie_headers {
             let cookie = Cookie::parse_encoded(header_value).expect("valid Set-Cookie");
             assert_eq!(cookie.secure(), Some(true), "cookie {:?} is missing Secure", cookie.name());
+        }
+    }
+
+    /// A forged `oauth_state` — right cookie name, attacker-chosen value, no
+    /// valid encryption tag — must read back as absent, the same as no
+    /// cookie at all, not as a token that happens to equal something.
+    #[test]
+    fn a_forged_oauth_state_cookie_is_unreadable() {
+        let key = Key::generate();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::COOKIE,
+            "oauth_state=attacker-chosen-value"
+                .parse()
+                .expect("header value"),
+        );
+        let jar = PrivateCookieJar::from_headers(&headers, key);
+        assert!(jar.get("oauth_state").is_none());
+    }
+
+    /// A removal `Set-Cookie` only actually clears the cookie in a real
+    /// browser if its `Path` matches the one the cookie was originally set
+    /// with — a bare `remove(Cookie::from("oauth_state"))` (no `path`) does
+    /// not reliably clear a cookie set with `path=/api/auth`, since the
+    /// implicit default path RFC 6265 assigns to a response with no `path`
+    /// attribute is derived from the *request* path, not `/api/auth`.
+    #[tokio::test]
+    async fn remove_oauth_cookies_emits_a_removal_matching_the_original_path() {
+        let key = Key::generate();
+
+        // Round-trip through a real Set-Cookie header, the way a browser
+        // would: this is what makes the cookie "original" to the next jar
+        // that reads it, which is what a removal delta needs to be emitted.
+        let issued = PrivateCookieJar::from_headers(&HeaderMap::new(), key.clone())
+            .add(Cookie::build(("oauth_state", "s")).path("/api/auth"))
+            .add(Cookie::build(("oauth_next", "/x")).path("/api/auth"))
+            .into_response();
+        let mut incoming = HeaderMap::new();
+        for header in issued.headers().get_all(axum::http::header::SET_COOKIE) {
+            let cookie = Cookie::parse_encoded(header.to_str().expect("ascii").to_owned())
+                .expect("valid Set-Cookie");
+            incoming.append(
+                axum::http::header::COOKIE,
+                format!("{}={}", cookie.name(), cookie.value())
+                    .parse()
+                    .expect("header value"),
+            );
+        }
+
+        let jar = remove_oauth_cookies(PrivateCookieJar::from_headers(&incoming, key));
+        assert!(jar.get("oauth_state").is_none());
+        assert!(jar.get("oauth_next").is_none());
+
+        let removed = jar.into_response();
+        let removal_headers: Vec<_> = removed
+            .headers()
+            .get_all(axum::http::header::SET_COOKIE)
+            .iter()
+            .map(|v| v.to_str().expect("ascii").to_owned())
+            .collect();
+        assert_eq!(removal_headers.len(), 2, "{removal_headers:?}");
+        for header in removal_headers {
+            let cookie = Cookie::parse_encoded(header.clone()).expect("valid Set-Cookie");
+            assert_eq!(
+                cookie.path(),
+                Some("/api/auth"),
+                "removal cookie {header:?} does not target the original path"
+            );
         }
     }
 }

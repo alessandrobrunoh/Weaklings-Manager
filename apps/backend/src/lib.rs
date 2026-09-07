@@ -14,6 +14,7 @@ pub(crate) mod tenant;
 
 pub mod config;
 pub(crate) mod errors;
+pub(crate) mod http_client;
 pub(crate) mod pagination;
 pub(crate) mod responses;
 pub(crate) mod serde_helpers;
@@ -21,7 +22,10 @@ pub(crate) mod serde_helpers;
 use axum::Router;
 use sea_orm_migration::MigratorTrait;
 use std::net::SocketAddr;
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tower_http::{
+    cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer},
+    trace::TraceLayer,
+};
 use utoipa::OpenApi;
 use utoipa_scalar::{Scalar, Servable};
 
@@ -120,6 +124,16 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
             ctx.tenant_id.clone(),
         );
     }
+    // From here on, any tenant `registry.provision`s (created after this
+    // point, at runtime, through the platform admin API or self-service
+    // onboarding) starts its own workers immediately instead of waiting for
+    // the next restart — see `TenantRegistry::provision`.
+    registry.set_workers(tenant::TenantWorkers {
+        cfg: cfg.clone(),
+        albionbb_service: albionbb_service.clone(),
+        albiondata_service: albiondata_service.clone(),
+        battles_service: battles_service.clone(),
+    });
 
     let regear_guild_context = modules::regear::router::RegearGuildContext {
         guild_id: cfg.albion_guild_id.clone(),
@@ -130,6 +144,32 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         .merge(modules::router())
         .nest("/platform", modules::platform::router())
         .nest("/tenants", modules::platform::public_router());
+
+    // The browser only ever talks to the frontend's own origin — it proxies
+    // `/api` server-to-server, which CORS never governs — so the one origin
+    // this API legitimately serves credentialed requests to is the frontend's.
+    // `permissive()` let any page on the internet read a signed-in visitor's
+    // data by pointing `fetch` straight at this backend; bot traffic is
+    // unaffected either way, since CORS only constrains browsers and the bot
+    // authenticates server-to-server with `X-Bot-Secret`.
+    let frontend_origin = cfg
+        .frontend_url
+        .trim_end_matches('/')
+        .parse()
+        .unwrap_or_else(|e| {
+            panic!(
+                "FRONTEND_URL {:?} is not a valid header value ({e}) — CORS cannot be configured",
+                cfg.frontend_url
+            )
+        });
+    let cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::exact(frontend_origin))
+        .allow_credentials(true)
+        // Wildcards are rejected by the CORS spec once credentials are
+        // allowed, so these mirror the actual preflight request instead of
+        // sending a literal `*`.
+        .allow_methods(AllowMethods::mirror_request())
+        .allow_headers(AllowHeaders::mirror_request());
 
     let app = Router::new()
         .nest("/api", api)
@@ -154,7 +194,7 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         .layer(axum::Extension(platform_admins))
         .layer(axum::Extension(session_key))
         .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive());
+        .layer(cors);
 
     tracing::info!(version = config::VERSION, "listening on {addr}");
 

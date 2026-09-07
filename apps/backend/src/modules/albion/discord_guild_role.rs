@@ -145,10 +145,7 @@ pub async fn revoke_guild_role(
 }
 
 fn discord_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new())
+    crate::http_client::shared()
 }
 
 async fn configured_role_id(db: &DatabaseConnection) -> Option<String> {
