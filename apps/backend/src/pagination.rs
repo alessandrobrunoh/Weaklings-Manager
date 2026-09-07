@@ -19,11 +19,25 @@ pub struct PaginationParams {
     pub limit: Option<u64>,
 }
 
+/// Largest page a client may ask for.
+///
+/// Not a round number for its own sake: the web client legitimately asks for
+/// 500 when it loads every comp or build name into a picker, so the ceiling has
+/// to clear that with room to spare while still bounding what one request can
+/// pull out of the database.
+pub const MAX_PAGE_LIMIT: u64 = 1_000;
+
 impl PaginationParams {
-    /// Gets the normalized page limit (defaults to 10).
+    /// Gets the normalized page limit (defaults to 10), clamped to
+    /// `1..=`[`MAX_PAGE_LIMIT`].
+    ///
+    /// The lower bound is load-bearing, not tidiness: `SeaORM`'s `paginate`
+    /// asserts `page_size != 0`, so an un-clamped `?limit=0` panics the handler
+    /// before it reaches the database and drops the connection with no
+    /// response.
     #[must_use]
     pub fn limit(&self) -> u64 {
-        self.limit.unwrap_or(10)
+        self.limit.unwrap_or(10).clamp(1, MAX_PAGE_LIMIT)
     }
 
     /// Gets the normalized page number as a 0-based offset index for database queries.
@@ -779,8 +793,38 @@ impl From<PaginatedData<crate::modules::notifications::models::NotificationView>
 
 #[cfg(test)]
 mod tests {
-    use super::{SortOrder, resolve_sort_key};
+    use super::{MAX_PAGE_LIMIT, PaginationParams, SortOrder, resolve_sort_key};
     use crate::errors::AppError;
+
+    fn params(limit: Option<u64>) -> PaginationParams {
+        PaginationParams { page: None, limit }
+    }
+
+    #[test]
+    fn limit_defaults_to_ten() {
+        assert_eq!(params(None).limit(), 10);
+    }
+
+    /// `SeaORM`'s paginator asserts `page_size != 0`, so a zero here would
+    /// panic the handler rather than return an empty page.
+    #[test]
+    fn limit_zero_is_lifted_to_one() {
+        assert_eq!(params(Some(0)).limit(), 1);
+    }
+
+    #[test]
+    fn limit_is_capped() {
+        assert_eq!(params(Some(u64::MAX)).limit(), MAX_PAGE_LIMIT);
+        assert_eq!(params(Some(MAX_PAGE_LIMIT + 1)).limit(), MAX_PAGE_LIMIT);
+    }
+
+    /// The picker screens ask for 500 and must keep getting 500.
+    #[test]
+    fn limits_the_client_actually_uses_pass_through() {
+        for requested in [1, 25, 100, 500] {
+            assert_eq!(params(Some(requested)).limit(), requested);
+        }
+    }
 
     #[test]
     fn resolve_sort_key_falls_back_to_default_when_absent() {
