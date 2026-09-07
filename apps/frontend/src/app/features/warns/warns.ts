@@ -167,7 +167,7 @@ function isWarnsTab(value: string): value is WarnsTab {
         <!-- Card 1: Active Warns -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('warns.stat.active') }}
               </p>
@@ -188,7 +188,7 @@ function isWarnsTab(value: string): value is WarnsTab {
         <!-- Card 2: Strikes -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('warns.stat.strikes') }}
               </p>
@@ -208,7 +208,7 @@ function isWarnsTab(value: string): value is WarnsTab {
         <!-- Card 3: Notes -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('warns.stat.notes') }}
               </p>
@@ -228,7 +228,7 @@ function isWarnsTab(value: string): value is WarnsTab {
         <!-- Card 4: Escalations -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('warns.stat.escalations') }}
               </p>

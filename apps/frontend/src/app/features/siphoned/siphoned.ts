@@ -143,7 +143,7 @@ const STATS_FETCH_LIMIT = 1000;
         <!-- Card 1: Deposited -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('siphoned.stat.deposited') }}
               </p>
@@ -163,7 +163,7 @@ const STATS_FETCH_LIMIT = 1000;
         <!-- Card 2: Withdrawn -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('siphoned.stat.withdrawn') }}
               </p>
@@ -183,7 +183,7 @@ const STATS_FETCH_LIMIT = 1000;
         <!-- Card 3: Net Total -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('siphoned.stat.net') }}
               </p>
@@ -207,7 +207,7 @@ const STATS_FETCH_LIMIT = 1000;
         <!-- Card 4: Active Records -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('siphoned.stat.entries') }}
               </p>

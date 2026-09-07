@@ -74,10 +74,10 @@ import type { NavSection } from '../sidebar/sidebar';
         </button>
 
         <!-- Route Context / Breadcrumb -->
-        <div class="hidden sm:flex items-center gap-2 text-xs font-semibold select-none">
-          <span class="text-[var(--color-text-tertiary)] font-normal">Weaklings</span>
-          <span class="text-[var(--color-text-disabled)]">/</span>
-          <span class="text-[var(--color-text)] tracking-wide">{{ currentRouteTitle() }}</span>
+        <div class="hidden min-w-0 sm:flex items-center gap-2 text-xs font-semibold select-none">
+          <span class="hidden shrink-0 text-[var(--color-text-tertiary)] font-normal lg:inline">Weaklings</span>
+          <span class="hidden shrink-0 text-[var(--color-text-disabled)] lg:inline">/</span>
+          <span class="truncate text-[var(--color-text)] tracking-wide">{{ currentRouteTitle() }}</span>
         </div>
       </div>
 

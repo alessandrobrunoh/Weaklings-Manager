@@ -19,6 +19,7 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
     :host {
       display: flex;
       flex-direction: column;
+      flex-shrink: 0;
       height: 100%;
       width: 72px;
       background: var(--color-surface);

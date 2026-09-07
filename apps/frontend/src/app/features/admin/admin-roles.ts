@@ -62,10 +62,10 @@ interface NewRoleDraft {
             <ul class="flex flex-col gap-2" role="list">
               @for (role of data.roles; track role.role_id) {
                 <li
-                  class="flex flex-col gap-2 rounded-2xl px-3 py-3 sm:flex-row sm:items-end"
+                  class="flex flex-col gap-2 rounded-2xl px-3 py-3 sm:flex-row sm:flex-wrap sm:items-end"
                   style="background: var(--color-surface-2); border: 1px solid var(--color-border)"
                 >
-                  <label class="flex-1">
+                  <label class="min-w-0 flex-1">
                     <span class="block text-xs" style="color: var(--color-text-secondary)">
                       {{ t('common.name') }}
                     </span>
@@ -86,7 +86,7 @@ interface NewRoleDraft {
                       (input)="updateRoleDraft(role, 'priority', $event)"
                     />
                   </label>
-                  <label class="flex-[2]">
+                  <label class="min-w-0 flex-[2]">
                     <span class="block text-xs" style="color: var(--color-text-secondary)">
                       {{ t('admin.roles.discordId') }}
                     </span>
@@ -148,7 +148,7 @@ interface NewRoleDraft {
                       </span>
                     </label>
                   </div>
-                  <div class="flex gap-2 pb-1">
+                  <div class="flex shrink-0 gap-2 pb-1">
                     <button
                       type="button"
                       class="btn btn--outline btn--sm"

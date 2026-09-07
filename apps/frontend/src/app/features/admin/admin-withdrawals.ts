@@ -137,7 +137,7 @@ const GROUPING_FETCH_LIMIT = 500;
         <!-- Card 1: Total Pending Payout -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 Pending Payout
               </p>
@@ -157,7 +157,7 @@ const GROUPING_FETCH_LIMIT = 500;
         <!-- Card 2: Requests in Queue -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 Pending Requests
               </p>
@@ -178,7 +178,7 @@ const GROUPING_FETCH_LIMIT = 500;
         <!-- Card 3: Players Awaiting -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 Players Waiting
               </p>
@@ -198,7 +198,7 @@ const GROUPING_FETCH_LIMIT = 500;
         <!-- Card 4: Total Queue Entries -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('bank.transactions.title') }}
               </p>

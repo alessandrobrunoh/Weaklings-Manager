@@ -57,11 +57,10 @@ import { Topbar } from '../topbar/topbar';
       }
       <!-- Desktop sidebar -->
       <aside
-        class="hidden md:flex flex-col shrink-0 transition-all duration-200 ease-in-out"
+        class="hidden md:flex flex-col shrink-0 transition-all duration-200 ease-in-out bg-[var(--color-surface)] border-r border-[var(--color-border)]"
         [style.width]="isSidebarCollapsed() ? '56px' : '248px'"
         [style.min-width]="isSidebarCollapsed() ? '56px' : '248px'"
         [style.max-width]="isSidebarCollapsed() ? '56px' : '248px'"
-        class="bg-[var(--color-surface)] border-r border-[var(--color-border)]"
       >
         <app-sidebar
           [sections]="navSections()"
@@ -81,12 +80,13 @@ import { Topbar } from '../topbar/topbar';
             aria-label="Close menu"
           ></button>
           <div
-            class="relative max-w-[90%] flex h-full bg-[var(--color-surface)] border-r border-[var(--color-border)]"
+            class="relative w-[19rem] max-w-[85%] flex h-full bg-[var(--color-surface)] border-r border-[var(--color-border)]"
           >
             @if (!inPlatform()) {
               <app-tenant-rail />
             }
             <app-sidebar
+              class="min-w-0 flex-1"
               [sections]="navSections()"
               [ariaLabelKey]="navAriaLabelKey()"
               [collapsed]="false"

@@ -117,7 +117,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         <!-- Card 1: Total -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('users.stat.total') }}
               </p>
@@ -137,7 +137,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         <!-- Card 2: Admins -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('users.stat.admins') }}
               </p>
@@ -157,7 +157,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         <!-- Card 3: Officers -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('users.stat.officers') }}
               </p>
@@ -177,7 +177,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         <!-- Card 4: Members -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('users.stat.members') }}
               </p>

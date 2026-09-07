@@ -143,7 +143,7 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
         <section class="grid gap-4 sm:gap-5 sm:grid-cols-3" aria-label="Permissions summary">
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('admin.permissions.permission') }}
                 </p>
@@ -162,7 +162,7 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
 
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('admin.permissions.roles') }}
                 </p>
@@ -181,7 +181,7 @@ import { groupPermissions, type PermissionGroup } from './permission-groups';
 
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   Modules
                 </p>

@@ -153,7 +153,7 @@ function emptyPageChange(): DataTablePageChange {
         <!-- Card 1: Available credits -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('bank.balance.pending') }}
               </p>
@@ -173,7 +173,7 @@ function emptyPageChange(): DataTablePageChange {
         <!-- Card 2: In Review / Requested -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('bank.balance.requested') }}
               </p>
@@ -193,7 +193,7 @@ function emptyPageChange(): DataTablePageChange {
         <!-- Card 3: Total Withdrawn -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('bank.status.withdrawn') }}
               </p>
@@ -213,7 +213,7 @@ function emptyPageChange(): DataTablePageChange {
         <!-- Card 4: Ledger Entries -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('bank.transactions.title') }}
               </p>
