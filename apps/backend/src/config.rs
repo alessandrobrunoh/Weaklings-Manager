@@ -13,7 +13,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// `modules::admin::service::AdminService` — so an admin can change them from the web app
 /// without a redeploy. `discord_bot_token` below stays here: it is a deployment secret, not a
 /// setting.
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Deserialize, Clone)]
 pub struct Config {
     /// Port the HTTP server binds to (default: 3000).
     #[serde(default = "default_backend_port")]
@@ -83,6 +83,49 @@ pub struct Config {
     /// Request timeout in seconds for Albion Online Data requests. Defaults to 30.
     #[serde(default = "default_albiondata_timeout")]
     pub albiondata_request_timeout_secs: u64,
+}
+
+/// Hand-written so a stray `{cfg:?}` in a log line, panic message, or error
+/// wrapper can never print a live secret. `derive(Debug)` printed every field
+/// verbatim, `database_url`, `session_secret`, `bot_api_secret`,
+/// `discord_client_secret`, `discord_bot_token` and `mistral_api_key`
+/// included — `database_url` in particular embeds the Postgres password
+/// (`postgres://user:pass@host/db`), not just a hostname.
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        /// `Some("<redacted>")`/`None` for an optional secret, so presence is
+        /// still visible without the value.
+        fn redact_option(value: &Option<String>) -> Option<&'static str> {
+            value.as_ref().map(|_| "<redacted>")
+        }
+        f.debug_struct("Config")
+            .field("backend_port", &self.backend_port)
+            .field("database_url", &"<redacted>")
+            .field("control_database_url", &redact_option(&self.control_database_url))
+            .field("discord_client_id", &self.discord_client_id)
+            .field("discord_client_secret", &"<redacted>")
+            .field("discord_redirect_uri", &self.discord_redirect_uri)
+            .field("bot_api_secret", &redact_option(&self.bot_api_secret))
+            .field("discord_bot_token", &redact_option(&self.discord_bot_token))
+            .field("super_admin_discord_id", &self.super_admin_discord_id)
+            .field("session_secret", &"<redacted>")
+            .field("frontend_url", &self.frontend_url)
+            .field("albion_api_region", &self.albion_api_region)
+            .field("albion_guild_id", &self.albion_guild_id)
+            .field("albion_allied_guild_ids", &self.albion_allied_guild_ids)
+            .field("albion_allied_guild_names", &self.albion_allied_guild_names)
+            .field("mistral_api_key", &"<redacted>")
+            .field("albionbb_base_url", &self.albionbb_base_url)
+            .field(
+                "albionbb_request_timeout_secs",
+                &self.albionbb_request_timeout_secs,
+            )
+            .field(
+                "albiondata_request_timeout_secs",
+                &self.albiondata_request_timeout_secs,
+            )
+            .finish()
+    }
 }
 
 fn default_backend_port() -> u16 {
@@ -262,5 +305,42 @@ mod tests {
         let mut cfg = stub();
         cfg.control_database_url = Some("   ".to_string());
         assert_eq!(cfg.control_plane_url(), "postgres://localhost/weaklings");
+    }
+
+    /// A stray `{cfg:?}` in a log line, panic message, or error wrapper must
+    /// never print a live secret — see the `Debug` impl above.
+    #[test]
+    fn debug_output_redacts_every_secret_but_not_the_rest() {
+        let mut cfg = stub();
+        cfg.database_url = "postgres://weaklings:sup3r_secret@db.internal/weaklings".to_owned();
+        cfg.discord_client_secret = "client-secret-value".to_owned();
+        cfg.session_secret = "s".repeat(64);
+        cfg.mistral_api_key = "mistral-key-value".to_owned();
+        cfg.bot_api_secret = Some("bot-secret-value".to_owned());
+        cfg.discord_bot_token = Some("bot-token-value".to_owned());
+        cfg.control_database_url = Some("postgres://weaklings:other_secret@db2/control".to_owned());
+
+        let printed = format!("{cfg:?}");
+
+        for secret in [
+            "sup3r_secret",
+            "client-secret-value",
+            cfg.session_secret.as_str(),
+            "mistral-key-value",
+            "bot-secret-value",
+            "bot-token-value",
+            "other_secret",
+        ] {
+            assert!(
+                !printed.contains(secret),
+                "Debug output leaked a secret: {printed}"
+            );
+        }
+        // Presence of an optional secret is still visible, just not its value —
+        // an operator debugging "why is bot auth 401ing" can see it's set.
+        assert!(printed.contains("bot_api_secret: Some(\"<redacted>\")"));
+        // Non-secret fields are unaffected.
+        assert!(printed.contains("super_admin_discord_id: \"admin\""));
+        assert!(printed.contains("albion_guild_id: \"albion\""));
     }
 }
