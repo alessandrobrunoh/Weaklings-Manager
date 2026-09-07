@@ -537,6 +537,13 @@ async fn finalize_session(
         .permissions
         .granted_permissions(profile.is_superadmin, &profile.roles)
         .await;
+    // Modules are per-tenant, so they must be re-resolved here rather than
+    // inherited. `profile` is the *previous* session on a tenant switch, and
+    // leaving its `features` in place hands the new tenant whatever the old one
+    // had enabled — the session then keeps that until the next `/auth/me`.
+    let mut feature_keys: Vec<_> = ctx.features.iter().cloned().collect();
+    feature_keys.sort();
+    profile.features = feature_keys;
     profile.user_id = AuthService::new().upsert_user(&ctx.db, &profile).await?;
     crate::modules::platform::service::PlatformService::record_membership(
         control,
