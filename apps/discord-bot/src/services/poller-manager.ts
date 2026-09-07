@@ -2,6 +2,7 @@ import type { Client } from "discord.js";
 import type { ApiClient } from "../api/client.js";
 import { config } from "../config.js";
 import { getSettingsService, forgetSettingsService } from "./settings.js";
+import { forgetMessageXpGate } from "./message-xp-gate.js";
 import {
   Poller,
   registerPoller,
@@ -125,6 +126,7 @@ export class PollerManager {
     unregisterPoller(guildId);
     forgetSettingsService(guildId);
     forgetTenantStatus(guildId);
+    forgetMessageXpGate(guildId);
     console.log(`[Poller] Stopped for guild ${guildId}`);
   }
 }

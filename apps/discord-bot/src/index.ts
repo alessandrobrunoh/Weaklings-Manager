@@ -8,6 +8,7 @@ import { handleSelectMenu } from "./handlers/select.js";
 import { PollerManager } from "./services/poller-manager.js";
 import { assignJoinRole } from "./services/join-role.js";
 import { initSettingsService, getSettingsService } from "./services/settings.js";
+import { initMessageXpGate, getMessageXpGate } from "./services/message-xp-gate.js";
 import { registerCommands } from "./services/registry.js";
 import { isRegisteredTenant, requireRegisteredTenant } from "./services/tenant-gate.js";
 import { createResponseEmbed } from "./embeds/theme.js";
@@ -33,6 +34,9 @@ async function main(): Promise<void> {
   // Channel/role IDs now live in the backend's admin Settings instead of this
   // process's own env vars — see services/settings.ts. One cache per guild.
   initSettingsService(api);
+  // Lets the message-XP handler below skip a call it already knows the
+  // backend would answer "skipped" to — see services/message-xp-gate.ts.
+  initMessageXpGate(api);
 
   // Slash commands are registered per guild on ready / GuildCreate.
 
@@ -143,29 +147,38 @@ async function main(): Promise<void> {
     if (!message.guild) return;
     if (!message.content) return;
 
-    const body: AwardMessageRequest = {
-      discord_id: message.author.id,
-      message_id: message.id,
-      channel_id: message.channelId,
-      length: message.content.length,
-    };
-
     const guildId = message.guild.id;
-    void isRegisteredTenant(api, guildId)
-      .then((registered) =>
-        registered
-          ? api
-              .withGuild(guildId)
-              .post<AwardMessageResponse>(
-                "api/progression/award/message",
-                body,
-                message.author.id,
-              )
-          : undefined,
-      )
-      .catch((err: unknown) => {
-        console.error("[Bot] Message XP award failed:", err);
-      });
+    const discordId = message.author.id;
+    const channelId = message.channelId;
+    const length = message.content.length;
+
+    void (async () => {
+      if (!(await isRegisteredTenant(api, guildId))) {
+        return;
+      }
+      // Almost every message in a busy server lands inside its author's own
+      // cooldown from their last award — the gate answers that locally,
+      // from settings and cooldowns it already knows, instead of paying for
+      // a round trip the backend would just answer "skipped" to.
+      const gate = getMessageXpGate(guildId);
+      if (!(await gate.shouldAward(discordId, channelId, length))) {
+        return;
+      }
+      const body: AwardMessageRequest = {
+        discord_id: discordId,
+        message_id: message.id,
+        channel_id: channelId,
+        length,
+      };
+      const result = await api
+        .withGuild(guildId)
+        .post<AwardMessageResponse>("api/progression/award/message", body, discordId);
+      if (result.awarded) {
+        gate.recordAward(discordId);
+      }
+    })().catch((err: unknown) => {
+      console.error("[Bot] Message XP award failed:", err);
+    });
   });
 
 
