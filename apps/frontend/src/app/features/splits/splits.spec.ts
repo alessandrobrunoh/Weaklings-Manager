@@ -19,7 +19,7 @@ import {
 } from './splits';
 
 describe('split creation participants', () => {
-  it('adds the authenticated user and redistributes weights to 100%', () => {
+  it('adds the authenticated user and redistributes everyone to a full share each', () => {
     const participants = addCurrentUserToParticipants(
       [
         { raw_name: 'Alice', user_id: 10, username: 'Alice', weight: 100 },
@@ -29,13 +29,13 @@ describe('split creation participants', () => {
     );
 
     expect(participants).toEqual([
-      { raw_name: 'Alice', user_id: 10, username: 'Alice', weight: 33.33 },
-      { raw_name: 'Bob', user_id: 11, username: 'Bob', weight: 33.33 },
-      { raw_name: 'CurrentUser', user_id: 12, username: 'CurrentUser', weight: 33.33 },
+      { raw_name: 'Alice', user_id: 10, username: 'Alice', weight: 100 },
+      { raw_name: 'Bob', user_id: 11, username: 'Bob', weight: 100 },
+      { raw_name: 'CurrentUser', user_id: 12, username: 'CurrentUser', weight: 100 },
     ]);
   });
 
-  it('gives every participant the same even weight instead of 16.67 vs 16.66', () => {
+  it('gives every participant a full share (100) regardless of headcount', () => {
     const participants = redistributeWeights(
       Array.from({ length: 6 }, (_, index) => ({
         raw_name: `P${index}`,
@@ -44,11 +44,24 @@ describe('split creation participants', () => {
         weight: 1,
       })),
     );
-    expect(participants.every((participant) => participant.weight === 16.67)).toBe(true);
-    expect(evenParticipantWeight(6)).toBe(16.67);
+    expect(participants.every((participant) => participant.weight === 100)).toBe(true);
+    expect(evenParticipantWeight(6)).toBe(100);
     expect(participantWeightsAreValid(participants.map((participant) => participant.weight))).toBe(
       true,
     );
+  });
+
+  it('accepts unequal weights that do not sum to 100 — each is a relative share', () => {
+    // A full share (100) and a half share (50): the backend normalizes by the sum of weights,
+    // so this must be just as valid as two people splitting 50/50.
+    expect(participantWeightsAreValid([100, 50])).toBe(true);
+    expect(participantWeightsAreValid([100, 50, 25])).toBe(true);
+  });
+
+  it('rejects a zero or negative weight', () => {
+    expect(participantWeightsAreValid([100, 0])).toBe(false);
+    expect(participantWeightsAreValid([100, -1])).toBe(false);
+    expect(participantWeightsAreValid([])).toBe(false);
   });
 
   it('does not duplicate the authenticated user when reopening the dialog', () => {

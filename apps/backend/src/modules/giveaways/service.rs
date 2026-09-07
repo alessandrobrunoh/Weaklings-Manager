@@ -174,9 +174,18 @@ impl GiveawayService {
             ));
         }
         let silver = normalize_silver(req.silver_amount)?;
-        if req.prizes.is_empty() && silver.is_none() {
+        let regear_request_bonus = req.regear_request_bonus.filter(|amount| *amount > 0);
+        if let Some(amount) = req.regear_request_bonus {
+            if amount < 0 {
+                return Err(AppError::Validation(
+                    "regear_request_bonus must be >= 0".to_string(),
+                ));
+            }
+        }
+        if req.prizes.is_empty() && silver.is_none() && regear_request_bonus.is_none() {
             return Err(AppError::Validation(
-                "add at least one item prize or a silver amount".to_string(),
+                "add at least one item prize, a silver amount, or a regear request bonus"
+                    .to_string(),
             ));
         }
         let prizes = req
@@ -193,6 +202,7 @@ impl GiveawayService {
             status: Set(GiveawayStatus::Open.as_str().to_string()),
             created_by: Set(creator_id),
             silver_amount: Set(silver),
+            regear_request_bonus: Set(regear_request_bonus),
             ..Default::default()
         }
         .insert(&txn)
@@ -427,6 +437,24 @@ impl GiveawayService {
             .insert(&txn)
             .await?;
             silver_transaction_id = Some(credit.id);
+        }
+
+        if let Some(amount) = model.regear_request_bonus.filter(|amount| *amount > 0) {
+            let regear_settings = crate::modules::regear::service::load_settings(&txn).await?;
+            if let Err(error) = crate::modules::regear::credits::credit_bonus(
+                &txn,
+                &regear_settings,
+                winner_user_id,
+                amount,
+            )
+            .await
+            {
+                tracing::warn!(
+                    giveaway_id,
+                    error = %error,
+                    "failed to credit giveaway's regear request bonus onto the winner's balance"
+                );
+            }
         }
 
         let flip = GiveawayEntity::update_many()
@@ -693,6 +721,7 @@ async fn to_views(
                     .unwrap_or_else(|| model.created_by.to_string()),
                 created_at: model.created_at.to_rfc3339(),
                 silver_amount: model.silver_amount,
+                regear_request_bonus: model.regear_request_bonus,
                 winner_user_id: model.winner_user_id,
                 winner_username: winner.map(|user| user.username.clone()),
                 winner_discord_id: winner.and_then(|user| user.discord_id.clone()),
@@ -822,6 +851,7 @@ mod tests {
             description: Some("Friday loot".to_string()),
             ends_at: future_rfc3339(),
             silver_amount: None,
+            regear_request_bonus: None,
             prizes: vec![sword()],
         }
     }
@@ -954,6 +984,31 @@ mod tests {
         assert_eq!(credit.status, TransactionStatus::Pending.to_string());
         assert_eq!(credit.to_user_id, drawn.giveaway.winner_user_id.unwrap());
         assert_eq!(credit.amount, Decimal::new(100, 0));
+    }
+
+    #[tokio::test]
+    async fn draw_with_regear_bonus_credits_the_winners_balance_clamped_at_the_cap() {
+        let db = seed_db().await;
+        let officer = insert_user(&db, "officer").await;
+        let alice = insert_user(&db, "alice").await;
+        let service = GiveawayService::new();
+        let mut req = create_req();
+        req.regear_request_bonus = Some(50); // far above the default bonus_request_cap
+        let created = service.create(&db, officer, req).await.unwrap();
+        service
+            .enter(&db, created.giveaway.id, alice)
+            .await
+            .unwrap();
+
+        service.draw(&db, created.giveaway.id, true).await.unwrap();
+
+        let settings = crate::modules::regear::service::load_settings(&db)
+            .await
+            .unwrap();
+        let balance = crate::modules::regear::credits::get_or_create_balance(&db, &settings, alice)
+            .await
+            .unwrap();
+        assert_eq!(balance.bonus_balance, settings.bonus_request_cap);
     }
 
     #[tokio::test]

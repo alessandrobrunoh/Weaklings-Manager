@@ -40,6 +40,7 @@ use crate::modules::battles::entities::{
 use crate::modules::battles::models::{
     BattleGuildSummary, BattleLossEstimate, BattlePlayer, GuildLossEstimate, PlayerLossEstimate,
 };
+use crate::modules::battles::outcome::{BattleOutcome, FriendlySide, GuildLine, battle_outcome};
 use crate::modules::combat::fit::{self, FitStrategy};
 use crate::modules::comps::entities::{build, comp, comp_build};
 use crate::modules::comps::status::{BuildLoadout, BuildRole};
@@ -395,6 +396,18 @@ impl BattleLinkingContext {
     pub fn guild_id(&self) -> &str {
         &self.guild_id
     }
+
+    /// Allied guild IDs, in the shape [`FriendlySide`] expects.
+    #[must_use]
+    pub fn allied_guild_ids(&self) -> Vec<String> {
+        self.allied_guild_ids.iter().cloned().collect()
+    }
+
+    /// Allied guild names, already lower-cased by the constructor.
+    #[must_use]
+    pub fn allied_guild_names(&self) -> Vec<String> {
+        self.allied_guild_names.iter().cloned().collect()
+    }
 }
 
 /// Compact battle snapshot derived from AlbionBB for event analytics.
@@ -492,13 +505,38 @@ fn linked_battle_snapshot(
         .max_by_key(|guild| guild.kill_fame)
         .cloned();
 
+    // `is_win` goes through the shared rule rather than the raw upstream flag.
+    // AlbionBB sets `winner` on almost nothing, so reading it directly recorded
+    // a loss for every battle and disagreed with the crowned copy stored in
+    // `guild_battle_snapshots.guilds_json`. A draw or an unresolved battle is
+    // not a win, which is all this boolean column can express; the Fight
+    // resolver keeps the full four-state verdict.
+    let lines = battle
+        .guilds
+        .iter()
+        .map(|guild| GuildLine {
+            id: &guild.id,
+            name: &guild.name,
+            kills: guild.kills,
+            deaths: guild.deaths,
+            kill_fame: guild.kill_fame,
+            winner: guild.winner,
+        })
+        .collect::<Vec<_>>();
+    let side = FriendlySide::new(
+        context.guild_id(),
+        &context.allied_guild_ids(),
+        &context.allied_guild_names(),
+    );
+    let is_win = battle_outcome(&lines, battle.total_fame, &side).outcome == BattleOutcome::Victory;
+
     LinkedBattleSnapshot {
         guild_players_count: guild.map(|guild| guild.players).unwrap_or_default(),
         battle_total_players: battle.total_players,
         guild_kills: guild.map(|guild| guild.kills).unwrap_or_default(),
         guild_deaths: guild.map(|guild| guild.deaths).unwrap_or_default(),
         guild_kill_fame: guild.map(|guild| guild.kill_fame).unwrap_or_default(),
-        is_win: guild.map(|guild| guild.winner).unwrap_or(false),
+        is_win,
         opponent,
     }
 }

@@ -7,14 +7,11 @@
 //!    cross-city fallback).
 //! 4. Filtering by the admin `enabled_slots_mask` so disabled slots are present but excluded.
 
-use std::collections::HashMap;
-
 use sea_orm::prelude::Decimal;
 use serde_json::Value;
 
 use crate::errors::AppError;
-use crate::modules::albiondata::client::AlbionDataMarketPrice;
-use crate::modules::albiondata::service::AlbionDataService;
+use crate::modules::albiondata::service::{AlbionDataService, cheapest_price_index};
 use crate::modules::comps::status::BuildSlot;
 
 use super::entities::RegearSettingModel;
@@ -95,7 +92,7 @@ pub async fn build_breakdown(
         Vec::new()
     };
 
-    let price_index = build_price_index(&prices, &fallback_prices);
+    let price_index = cheapest_price_index(&prices, &fallback_prices);
 
     let mut total = Decimal::ZERO;
     let mut rows = Vec::with_capacity(items.len());
@@ -168,39 +165,6 @@ fn walk_value(value: &Value, slot: BuildSlot, items: &mut Vec<ExtractedItem>) {
             walk_value(nested, slot, items);
         }
     }
-}
-
-/// Picks the cheapest positive sell price per item id.
-///
-/// When the configured-city index has a price, it wins (matches admin intent). Otherwise, if the
-/// fallback strategy is `cheapest_any`, we consult the cross-city index.
-fn build_price_index(
-    configured_city: &[AlbionDataMarketPrice],
-    fallback: &[AlbionDataMarketPrice],
-) -> HashMap<String, i64> {
-    let mut index = HashMap::new();
-    let insert_cheapest = |prices: &[AlbionDataMarketPrice], index: &mut HashMap<String, i64>| {
-        for price in prices {
-            let candidate = [price.sell_price_min, price.sell_price_max]
-                .into_iter()
-                .filter(|p| *p > 0)
-                .min()
-                .unwrap_or(0);
-            if candidate > 0 {
-                index
-                    .entry(price.item_id.clone())
-                    .and_modify(|existing| {
-                        if candidate < *existing {
-                            *existing = candidate;
-                        }
-                    })
-                    .or_insert(candidate);
-            }
-        }
-    };
-    insert_cheapest(fallback, &mut index);
-    insert_cheapest(configured_city, &mut index);
-    index
 }
 
 #[cfg(test)]

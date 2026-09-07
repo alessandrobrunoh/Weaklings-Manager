@@ -10,7 +10,7 @@ use utoipa::ToSchema;
 use crate::modules::comps::status::BuildSlot;
 
 use super::entities::RegearDeathModel;
-use super::status::RegearStatus;
+use super::status::{RegearSource, RegearStatus};
 
 /// One slot's pricing inside a regear breakdown. Stored as JSON in
 /// `regear_deaths.auto_estimate_breakdown_json` and `final_breakdown_json`.
@@ -56,12 +56,14 @@ pub struct DeathView {
     pub event_id: i64,
     /// The event title (joined for display).
     pub event_title: String,
-    /// The `event_battles` row id.
-    pub event_battle_id: i64,
-    /// AlbionBB battle id (for the `/battles/{id}` link).
-    pub albionbb_battle_id: String,
-    /// AlbionBB kill-event id.
-    pub albion_kill_event_id: String,
+    /// The `event_battles` row id. `None` for a self-reported request.
+    pub event_battle_id: Option<i64>,
+    /// AlbionBB battle id (for the `/battles/{id}` link). `None` for a self-reported request.
+    pub albionbb_battle_id: Option<String>,
+    /// AlbionBB kill-event id. `None` for a self-reported request.
+    pub albion_kill_event_id: Option<String>,
+    /// Where this row came from: extracted from a kill feed, or opened by the member.
+    pub source: RegearSource,
     /// RFC3339 timestamp of the death.
     pub killed_at: String,
     /// Linked user id of the victim, or `None` if unlinked.
@@ -114,6 +116,7 @@ impl DeathView {
         event_title: String,
         primary_build_name: Option<String>,
         status: RegearStatus,
+        source: RegearSource,
     ) -> Self {
         let auto_estimate_breakdown =
             serde_json::from_str(&model.auto_estimate_breakdown_json).unwrap_or_default();
@@ -130,6 +133,7 @@ impl DeathView {
             event_battle_id: model.event_battle_id,
             albionbb_battle_id: model.albionbb_battle_id,
             albion_kill_event_id: model.albion_kill_event_id,
+            source,
             killed_at: model.killed_at.to_rfc3339(),
             user_id: model.user_id,
             player_name: model.player_name,
@@ -155,10 +159,12 @@ impl DeathView {
 /// Guild-wide regear settings, as seen by the client.
 #[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct RegearSettingsView {
-    /// Max regears a user can request per CTA event.
-    pub max_regears_per_event: i32,
-    /// Max regears approved per user in a rolling 30-day window.
-    pub max_regears_per_month: i32,
+    /// How many requests are added to a user's weekly pool each elapsed week.
+    pub weekly_request_topup_amount: i32,
+    /// The weekly pool never accumulates past this cap.
+    pub weekly_request_cap: i32,
+    /// The bonus pool (giveaway-earned) never accumulates past this cap.
+    pub bonus_request_cap: i32,
     /// Bitmask over `BuildSlot` deciding which slots are reimbursable.
     pub enabled_slots_mask: i32,
     /// Albion city whose market prices are used for estimates.
@@ -172,8 +178,9 @@ impl RegearSettingsView {
     #[must_use]
     pub fn from_model(model: super::entities::RegearSettingModel) -> Self {
         Self {
-            max_regears_per_event: model.max_regears_per_event,
-            max_regears_per_month: model.max_regears_per_month,
+            weekly_request_topup_amount: model.weekly_request_topup_amount,
+            weekly_request_cap: model.weekly_request_cap,
+            bonus_request_cap: model.bonus_request_cap,
             enabled_slots_mask: model.enabled_slots_mask,
             pricing_location: model.pricing_location,
             pricing_fallback_strategy: model.pricing_fallback_strategy,
@@ -184,10 +191,12 @@ impl RegearSettingsView {
 /// Request body for `PUT /settings`.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct UpdateRegearSettingsRequest {
-    /// New value for `max_regears_per_event`. Must be >= 0.
-    pub max_regears_per_event: Option<i32>,
-    /// New value for `max_regears_per_month`. Must be >= 0.
-    pub max_regears_per_month: Option<i32>,
+    /// New value for `weekly_request_topup_amount`. Must be >= 0.
+    pub weekly_request_topup_amount: Option<i32>,
+    /// New value for `weekly_request_cap`. Must be >= 0.
+    pub weekly_request_cap: Option<i32>,
+    /// New value for `bonus_request_cap`. Must be >= 0.
+    pub bonus_request_cap: Option<i32>,
     /// New bitmask for `enabled_slots_mask`.
     pub enabled_slots_mask: Option<i32>,
     /// New `pricing_location`.
@@ -246,17 +255,79 @@ pub struct DeathFilters {
     pub history: Option<bool>,
 }
 
-/// Per-user budget usage returned by `GET /me/summary`.
+/// Per-user request-credit balance returned by `GET /me/summary`.
 #[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct RegearBudgetSummary {
-    /// Number of deaths the caller has requested or had approved for the most recent CTA event.
-    pub per_event_used: i32,
-    /// Configured per-event cap.
-    pub per_event_max: i32,
-    /// Number of approvals for the caller in the last 30 days.
-    pub per_month_used: i32,
-    /// Configured per-month cap.
-    pub per_month_max: i32,
+    /// Requests currently available from the weekly pool.
+    pub weekly_balance: i32,
+    /// Configured weekly pool cap.
+    pub weekly_cap: i32,
+    /// Requests currently available from the bonus pool (giveaway-earned).
+    pub bonus_balance: i32,
+    /// Configured bonus pool cap.
+    pub bonus_cap: i32,
+}
+
+/// One build available inside an event's comp, for the self-service "swap build" picker.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct SelfServiceCompBuildOption {
+    /// The build id.
+    pub build_id: i64,
+    /// The build name.
+    pub build_name: String,
+    /// How many of this build the comp calls for.
+    pub quantity: i32,
+}
+
+/// One event the caller participated in and may self-report a regear request for.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct SelfServiceEventOption {
+    /// The event id.
+    pub event_id: i64,
+    /// The event title.
+    pub event_title: String,
+    /// The build the caller signed up with, if any (`None` = the virtual "Fill" role).
+    pub primary_build_id: Option<i64>,
+    /// Name of the signed-up build, when available.
+    pub primary_build_name: Option<String>,
+    /// The caller's secondary build, if any.
+    pub secondary_build_id: Option<i64>,
+    /// Name of the secondary build, when available.
+    pub secondary_build_name: Option<String>,
+    /// The comp the event ran, so the frontend can offer a build swap without a second call.
+    pub comp_id: i64,
+    /// Every build in that comp, for the "swap build" picker.
+    pub comp_builds: Vec<SelfServiceCompBuildOption>,
+}
+
+/// One slot's item, replacing the chosen build's canonical item for this request only.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct RegearItemOverride {
+    /// The equipment slot being overridden.
+    pub slot: BuildSlot,
+    /// The `OpenAlbion` catalog id of the replacement item.
+    #[schema(example = 4532)]
+    pub openalbion_item_id: i64,
+    /// Albion quality (`1..=5`) of the replacement item.
+    #[schema(example = 4)]
+    pub openalbion_item_quality: i16,
+    /// Albion enchantment level (`0..=4`) of the replacement item.
+    #[schema(example = 0)]
+    pub openalbion_item_enchantment: i16,
+}
+
+/// Request body for `POST /self-service`.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct CreateSelfServiceRegearRequest {
+    /// The event being claimed for. Must be in the caller's eligible list.
+    pub event_id: i64,
+    /// The build actually being claimed for — the caller's assigned build, or another build
+    /// from the same comp.
+    pub build_id: i64,
+    /// Per-slot replacements relative to `build_id`'s canonical items. Slots not listed keep the
+    /// build's canonical item.
+    #[serde(default)]
+    pub item_overrides: Vec<RegearItemOverride>,
 }
 
 /// Result of an extraction run.

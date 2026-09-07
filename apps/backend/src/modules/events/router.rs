@@ -17,11 +17,11 @@ use crate::errors::ProblemDetails;
 use crate::modules::audit::service::AuditService;
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedData, PaginationParams};
-use crate::tenant::CurrentTenantId;
 use crate::responses::{
     ApiResponse, ApiResponseEventDetail, ApiResponseEventList, ApiResponseEventRosterRoleList,
     ApiResponseEventView,
 };
+use crate::tenant::CurrentTenantId;
 
 use sea_orm::EntityTrait;
 use std::collections::HashSet;

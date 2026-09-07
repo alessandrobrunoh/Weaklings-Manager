@@ -98,6 +98,15 @@ pub struct Model {
     pub discord_giveaways_channel_id: Option<String>,
     /// Optional role pinged on a new giveaway announcement.
     pub discord_giveaways_role_id: Option<String>,
+    /// Brand colour driving actions, active states and focus, as `#rrggbb`.
+    ///
+    /// `None` on all three means this guild never picked colours and keeps the
+    /// product defaults; clearing one is how a guild goes back to them.
+    pub brand_primary_color: Option<String>,
+    /// Supporting brand colour, second stop of the accent gradients.
+    pub brand_secondary_color: Option<String>,
+    /// Third brand colour, final stop of the accent gradients.
+    pub brand_tertiary_color: Option<String>,
     /// Default fee percentage applied to new loot splits when no fee is provided.
     pub default_split_fee: Decimal,
     /// Last admin edit.

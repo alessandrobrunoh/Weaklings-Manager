@@ -74,6 +74,26 @@ pub fn slot_from_albionbb_key(key: &str) -> Option<BuildSlot> {
     }
 }
 
+/// The canonical AlbionBB equipment JSON key for a slot — the inverse of
+/// [`slot_from_albionbb_key`]. Used to build a synthetic `Equipment` object for a self-service
+/// regear request, so [`super::pricing::build_breakdown`] can price it exactly like a kill-feed
+/// loadout.
+#[must_use]
+pub fn albionbb_key_for_slot(slot: BuildSlot) -> &'static str {
+    match slot {
+        BuildSlot::Weapon => "MainHand",
+        BuildSlot::OffHand => "OffHand",
+        BuildSlot::Head => "Head",
+        BuildSlot::Armor => "Armor",
+        BuildSlot::Shoes => "Shoes",
+        BuildSlot::Cape => "Cape",
+        BuildSlot::Bag => "Bag",
+        BuildSlot::Potion => "Potion",
+        BuildSlot::Food => "Food",
+        BuildSlot::Mount => "Mount",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

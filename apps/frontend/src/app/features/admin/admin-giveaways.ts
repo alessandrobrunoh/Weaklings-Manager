@@ -144,6 +144,21 @@ interface PrizeDraft extends CreateGiveawayPrizeRequest {
                 </label>
               </div>
 
+              <label>
+                <span class="label">{{ t('giveaways.field.regearBonus') }}</span>
+                <input
+                  class="input mt-1"
+                  type="number"
+                  min="0"
+                  inputmode="numeric"
+                  [value]="regearRequestBonus()"
+                  (input)="regearRequestBonus.set(inputValue($event))"
+                />
+                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                  {{ t('giveaways.field.regearBonusHint') }}
+                </span>
+              </label>
+
               <div class="grid gap-3">
                 <span class="label">{{ t('giveaways.prizes') }}</span>
                 <div class="grid gap-2 sm:grid-cols-4">
@@ -253,6 +268,7 @@ export class AdminGiveaways {
   protected readonly description = signal('');
   protected readonly endsAt = signal(defaultEndsAtLocal());
   protected readonly silver = signal('');
+  protected readonly regearRequestBonus = signal('');
   protected readonly prizes = signal<PrizeDraft[]>([]);
   protected readonly itemQuery = signal('');
   protected readonly itemQuality = signal(DEFAULT_ALBION_ITEM_QUALITY);
@@ -371,7 +387,8 @@ export class AdminGiveaways {
     event.preventDefault();
     const prizes = this.prizes().map(({ key: _key, ...prize }) => prize);
     const silver = this.silver().trim();
-    if (prizes.length === 0 && !silver) {
+    const regearBonus = Number(this.regearRequestBonus().trim() || 0);
+    if (prizes.length === 0 && !silver && regearBonus <= 0) {
       this.toasts.error(this.t('giveaways.needPrize'));
       return;
     }
@@ -383,12 +400,14 @@ export class AdminGiveaways {
           description: this.description().trim() || null,
           ends_at: new Date(this.endsAt()).toISOString(),
           silver_amount: silver || null,
+          regear_request_bonus: regearBonus > 0 ? regearBonus : null,
           prizes,
         }),
       );
       this.title.set('');
       this.description.set('');
       this.silver.set('');
+      this.regearRequestBonus.set('');
       this.prizes.set([]);
       this.endsAt.set(defaultEndsAtLocal());
       this.toasts.success(this.t('giveaways.created'));

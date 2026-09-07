@@ -318,22 +318,37 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
             <!-- Regear -->
             <article class="card p-5">
               <h2 class="text-sm uppercase tracking-wider font-semibold mb-3" style="color: var(--color-text-secondary)">
-                Regear Mensile
+                Richieste Regear
               </h2>
               @if (userMetrics(); as m) {
-                <div class="flex items-baseline justify-between mb-2">
+                <div class="flex items-baseline justify-between mb-1">
                   <span class="text-2xl font-bold mono" style="color: var(--color-text)">
-                    {{ budget()?.per_month_used ?? 0 }} / {{ budget()?.per_month_max ?? 0 }}
+                    {{ budget()?.weekly_balance ?? 0 }} / {{ budget()?.weekly_cap ?? 0 }}
                   </span>
                   <span class="text-xs" style="color: var(--color-text-secondary)">
-                    Cap mensile
+                    Settimanali
+                  </span>
+                </div>
+                <div class="h-1.5 rounded-full overflow-hidden mb-2" style="background: var(--color-surface-2)">
+                  <div
+                    class="h-full rounded-full"
+                    style="background: var(--color-warning)"
+                    [style.width.%]="regearWeeklyPercent()"
+                  ></div>
+                </div>
+                <div class="flex items-baseline justify-between mb-1">
+                  <span class="text-lg font-bold mono" style="color: var(--color-text)">
+                    {{ budget()?.bonus_balance ?? 0 }} / {{ budget()?.bonus_cap ?? 0 }}
+                  </span>
+                  <span class="text-xs" style="color: var(--color-text-secondary)">
+                    Bonus (giveaway)
                   </span>
                 </div>
                 <div class="h-1.5 rounded-full overflow-hidden mb-3" style="background: var(--color-surface-2)">
                   <div
                     class="h-full rounded-full"
-                    style="background: var(--color-warning)"
-                    [style.width.%]="regearCapPercent()"
+                    style="background: var(--color-success)"
+                    [style.width.%]="regearBonusPercent()"
                   ></div>
                 </div>
                 <div class="grid grid-cols-2 gap-1 text-xs" style="color: var(--color-text-secondary)">
@@ -907,10 +922,16 @@ export class Settings {
     return Math.min(100, Math.max(0, Math.round(value)));
   }
 
-  protected regearCapPercent(): number {
+  protected regearWeeklyPercent(): number {
     const budget = this.budget();
-    if (!budget || budget.per_month_max <= 0) return 0;
-    return this.clampPercent((budget.per_month_used / budget.per_month_max) * 100);
+    if (!budget || budget.weekly_cap <= 0) return 0;
+    return this.clampPercent((budget.weekly_balance / budget.weekly_cap) * 100);
+  }
+
+  protected regearBonusPercent(): number {
+    const budget = this.budget();
+    if (!budget || budget.bonus_cap <= 0) return 0;
+    return this.clampPercent((budget.bonus_balance / budget.bonus_cap) * 100);
   }
 
   protected averageSplitShare(): number {

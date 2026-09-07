@@ -19,7 +19,7 @@ pub mod scouted_comp {
         pub opponent_guild_id: Option<String>,
         /// Opponent guild name; the dedupe fallback when the id is absent.
         pub opponent_guild_name: String,
-        /// Opponent alliance name, when known.
+        /// Opponent alliance name, when the battle payload carried one.
         pub opponent_alliance_name: Option<String>,
         /// Engagement bracket, see `IntelScoutCategory`.
         pub category: String,

@@ -7,6 +7,7 @@
 
 pub mod entities;
 pub mod models;
+pub mod outcome;
 pub mod router;
 pub mod service;
 

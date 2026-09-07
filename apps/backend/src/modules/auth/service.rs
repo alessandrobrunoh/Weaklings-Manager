@@ -3,6 +3,7 @@
 //! Handles communication with Discord API for token exchange and profile retrieval.
 
 use crate::errors::AppError;
+use crate::modules::admin::models::BrandColorsView;
 use crate::modules::users::entities::{self as user_entities, Entity as UserEntity};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
@@ -88,6 +89,13 @@ pub struct DiscordUserProfile {
     /// Optional modules currently enabled for this tenant (`rank ∩ flags`).
     #[serde(default)]
     pub features: Vec<String>,
+    /// This tenant's brand colours, so the app themes itself per server.
+    ///
+    /// Rides along on the session because every member needs them before the
+    /// first paint, not just the admins who can edit them. Absent when the
+    /// guild never picked any, which means "use the product defaults".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brand: Option<BrandColorsView>,
 }
 
 /// A registered tenant the user may enter after OAuth.

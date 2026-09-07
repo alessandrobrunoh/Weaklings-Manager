@@ -15,8 +15,9 @@ use super::entities::{
     ActiveModel as GuildSettingActiveModel, Entity as GuildSettingEntity, Model,
 };
 use super::models::{
-    CreateRoleRequest, GuildSettingsView, PermissionCatalogEntry, PermissionMatrix,
-    RolePermissionsView, UpdateGuildSettingsRequest, UpdateRoleRequest,
+    BrandColorsView, CreateRoleRequest, GuildSettingsView, PermissionCatalogEntry,
+    PermissionMatrix, RolePermissionsView, UpdateBrandColorsRequest, UpdateGuildSettingsRequest,
+    UpdateRoleRequest,
 };
 
 pub struct AdminService;
@@ -34,6 +35,60 @@ impl AdminService {
         let mut view = GuildSettingsView::from_model(model);
         view.default_role_discord_id = default_role_discord_id(db).await?;
         Ok(view)
+    }
+
+    /// Returns the guild's brand colours.
+    ///
+    /// Cheap and permission-free on purpose: every member's session carries
+    /// these so the app can theme itself, not just the admins who set them.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::Internal`] if the settings singleton is missing.
+    pub async fn get_brand_colors(db: &DatabaseConnection) -> Result<BrandColorsView, AppError> {
+        let model = load_settings(db).await?;
+        Ok(BrandColorsView {
+            primary: model.brand_primary_color,
+            secondary: model.brand_secondary_color,
+            tertiary: model.brand_tertiary_color,
+        })
+    }
+
+    /// Replaces the guild's brand colours.
+    ///
+    /// An absent field is left as-is; `""` clears the colour back to the
+    /// product default.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::Validation`] when a colour is not a hex triplet, or
+    /// [`AppError::Database`] on DB failure.
+    pub async fn update_brand_colors(
+        db: &DatabaseConnection,
+        editor_user_id: i64,
+        req: &UpdateBrandColorsRequest,
+    ) -> Result<BrandColorsView, AppError> {
+        let existing = load_settings(db).await?;
+        let mut active: GuildSettingActiveModel = existing.into();
+
+        if let Some(value) = &req.primary {
+            active.brand_primary_color = Set(normalize_hex_color(value, "primary")?);
+        }
+        if let Some(value) = &req.secondary {
+            active.brand_secondary_color = Set(normalize_hex_color(value, "secondary")?);
+        }
+        if let Some(value) = &req.tertiary {
+            active.brand_tertiary_color = Set(normalize_hex_color(value, "tertiary")?);
+        }
+
+        active.updated_at = Set(chrono::Utc::now().into());
+        active.updated_by_user_id = Set(Some(editor_user_id));
+        let saved = active.update(db).await?;
+        Ok(BrandColorsView {
+            primary: saved.brand_primary_color,
+            secondary: saved.brand_secondary_color,
+            tertiary: saved.brand_tertiary_color,
+        })
     }
 
     /// Updates the singleton `guild_settings` row with the non-`None` fields of `req`.
@@ -328,9 +383,7 @@ impl AdminService {
                 .iter()
                 .find(|role| role.id == *role_id)
                 .ok_or_else(|| {
-                    AppError::Validation(
-                        "Discord role was not found in this server".to_string(),
-                    )
+                    AppError::Validation("Discord role was not found in this server".to_string())
                 })?;
             // A role whose id equals the guild id is @everyone.
             if role.id == guild_id || role.managed {
@@ -828,6 +881,37 @@ fn normalize(value: &str) -> Option<String> {
     } else {
         Some(trimmed.to_string())
     }
+}
+
+/// Validates a brand colour and stores it in one canonical form.
+///
+/// These values are interpolated straight into CSS custom properties in the
+/// browser, so nothing but a hex triplet may ever come back out of the
+/// database: anything else would let whoever can edit guild settings inject
+/// arbitrary CSS into every member's page. `#rgb` is expanded to `#rrggbb` and
+/// the digits are lowercased so the stored value round-trips into a colour
+/// input without surprises.
+fn normalize_hex_color(value: &str, field: &str) -> Result<Option<String>, AppError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let digits = trimmed.strip_prefix('#').unwrap_or(trimmed);
+    if !digits.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(AppError::Validation(format!(
+            "{field} colour must be a hex colour like #5865f2"
+        )));
+    }
+    let expanded = match digits.len() {
+        3 => digits.chars().flat_map(|c| [c, c]).collect::<String>(),
+        6 => digits.to_owned(),
+        _ => {
+            return Err(AppError::Validation(format!(
+                "{field} colour must be a hex colour like #5865f2"
+            )));
+        }
+    };
+    Ok(Some(format!("#{}", expanded.to_ascii_lowercase())))
 }
 
 /// Validates a Discord snowflake while retaining the standard empty-string-means-clear convention.
@@ -1541,5 +1625,36 @@ mod tests {
         .await
         .unwrap_err();
         assert!(matches!(err, AppError::Validation(msg) if msg.contains("default")));
+    }
+
+    #[test]
+    fn brand_colour_accepts_both_hex_shapes_and_canonicalises_them() {
+        assert_eq!(
+            normalize_hex_color("#DC2626", "primary").unwrap(),
+            Some("#dc2626".to_owned())
+        );
+        assert_eq!(
+            normalize_hex_color("  abc ", "primary").unwrap(),
+            Some("#aabbcc".to_owned())
+        );
+        assert_eq!(normalize_hex_color("", "primary").unwrap(), None);
+    }
+
+    /// The stored value is interpolated into a CSS custom property in every
+    /// member's browser, so nothing but a hex triplet may ever be persisted.
+    #[test]
+    fn brand_colour_rejects_anything_that_is_not_a_hex_triplet() {
+        for value in [
+            "red",
+            "var(--color-error)",
+            "#dc2626; background: url(https://evil)",
+            "rgb(1,2,3)",
+            "#12345",
+        ] {
+            assert!(
+                normalize_hex_color(value, "primary").is_err(),
+                "{value} should have been rejected"
+            );
+        }
     }
 }

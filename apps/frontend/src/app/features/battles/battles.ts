@@ -36,13 +36,12 @@ import { ViewToggle, type ViewToggleOption } from '../../shared/components/view-
 
 import { Icon } from '../../shared/components/icon/icon';
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
-import { resolveBattleOutcome } from './battle-outcome';
+import { battleOutcomeLabel, type BattleOutcomeType } from './battle-outcome';
 
 const PAGE_SIZE = 10;
 const BATTLE_REFRESH_INTERVAL_SECONDS = 5 * 60;
 
 type BattleTab = 'guild' | 'me';
-type BattleOutcomeType = 'victory' | 'defeat' | 'contested' | 'draw' | 'unknown';
 type BattleListRow = BattleSummary | FightListItem;
 
 function isBattleTab(value: string): value is BattleTab {
@@ -118,12 +117,12 @@ interface BattleScopeStats {
       color: var(--color-error);
       border: 1px solid var(--color-error);
     }
-    .outcome-pill--contested {
+    .outcome-pill--draw {
       background: var(--color-warning-container);
       color: var(--color-warning);
       border: 1px solid var(--color-warning);
     }
-    .outcome-pill--draw {
+    .outcome-pill--unknown {
       background: var(--color-surface-2);
       color: var(--color-text-secondary);
       border: 1px solid var(--color-border-strong);
@@ -342,13 +341,13 @@ interface BattleScopeStats {
                     {{ outcome.label }}
                   </span>
                 }
-                @case ('contested') {
-                  <span class="outcome-pill outcome-pill--contested">
+                @case ('draw') {
+                  <span class="outcome-pill outcome-pill--draw">
                     {{ outcome.label }}
                   </span>
                 }
                 @default {
-                  <span class="outcome-pill outcome-pill--draw">
+                  <span class="outcome-pill outcome-pill--unknown">
                     {{ outcome.label }}
                   </span>
                 }
@@ -471,19 +470,17 @@ export class Battles {
         sortable: true,
         accessor: (row) => this.rowOutcome(row).type,
         comparator: (a, b) => this.rowOutcome(a).type.localeCompare(this.rowOutcome(b).type),
-        filterOptions:
-          this.tab() === 'guild'
-            ? [
-                { value: 'victory', label: this.t('battles.victory') },
-                { value: 'defeat', label: this.t('battles.defeat') },
-                { value: 'draw', label: this.t('battles.draw') },
-                { value: 'unknown', label: this.t('battles.unknown') },
-              ]
-            : [
-                { value: 'victory', label: this.t('battles.victory') },
-                { value: 'defeat', label: this.t('battles.defeat') },
-                { value: 'contested', label: this.t('battles.contested') },
-              ],
+        // Both tabs now speak the same outcome vocabulary: the guild tab reads
+        // fights and the personal tab reads battles, but the backend resolves
+        // both with one rule. The personal tab used to offer "contested"
+        // instead of draw/unknown, which filtered on a value the guild tab
+        // could never produce.
+        filterOptions: [
+          { value: 'victory', label: this.t('battles.victory') },
+          { value: 'defeat', label: this.t('battles.defeat') },
+          { value: 'draw', label: this.t('battles.draw') },
+          { value: 'unknown', label: this.t('battles.unknown') },
+        ],
       },
       {
         key: 'fame',
@@ -645,38 +642,12 @@ export class Battles {
   }
 
   protected rowOutcome(row: BattleListRow): { label: string; type: BattleOutcomeType } {
-    if (this.isBattle(row)) return this.battleOutcome(row);
-    const labels: Record<FightListItem['outcome']['outcome'], TranslationKey> = {
-      victory: 'battles.victory',
-      defeat: 'battles.defeat',
-      draw: 'battles.draw',
-      unknown: 'battles.unknown',
-    };
-    return { label: this.t(labels[row.outcome.outcome]), type: row.outcome.outcome };
+    const type = this.isBattle(row) ? (row.outcome ?? 'unknown') : row.outcome.outcome;
+    return { label: this.t(battleOutcomeLabel(type)), type };
   }
 
   protected battleDeaths(battle: BattleSummary): number {
     return battle.guilds.reduce((sum, guild) => sum + guild.deaths, 0);
-  }
-
-  /** Shares `resolveBattleOutcome` with the battle detail page's own verdict badge. */
-  protected battleOutcome(battle: BattleSummary): { label: string; type: BattleOutcomeType } {
-    const ourG = battle.guilds.find((g) => g.name.toLowerCase() === 'weaklings');
-    if (!ourG) {
-      const top = this.winnerGuild(battle);
-      return { label: top?.name ?? 'BATTLE', type: 'contested' };
-    }
-    const type = resolveBattleOutcome({
-      guilds: battle.guilds,
-      totalFame: battle.total_fame,
-      ourGuildName: 'weaklings',
-    });
-    const labels: Record<'victory' | 'defeat' | 'contested', TranslationKey> = {
-      victory: 'battles.victory',
-      defeat: 'battles.defeat',
-      contested: 'battles.contested',
-    };
-    return { label: this.t(labels[type]), type };
   }
 
   private winnerGuild(battle: Pick<BattleSummary, 'guilds'>): BattleGuildSummary | null {

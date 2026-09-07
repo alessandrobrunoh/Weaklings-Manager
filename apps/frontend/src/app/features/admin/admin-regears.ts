@@ -81,18 +81,18 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
         <app-loading [label]="t('common.loading')" />
       } @else if (settings(); as s) {
         <!-- KPI Cards summary of active policy -->
-        <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Regear policy summary">
+        <section class="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-5" aria-label="Regear policy summary">
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('admin.regears.maxPerEvent') }}
+                  {{ t('admin.regears.weeklyTopup') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                  {{ s.max_regears_per_event }}
+                  {{ s.weekly_request_topup_amount }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  Claims allowed per event
+                  Added to the weekly pool each week
                 </p>
               </div>
               <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
@@ -105,17 +105,36 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('admin.regears.maxPerMonth') }}
+                  {{ t('admin.regears.weeklyCap') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                  {{ s.max_regears_per_month }}
+                  {{ s.weekly_request_cap }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  Monthly quota per member
+                  Weekly pool never rolls over past this
                 </p>
               </div>
               <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
                 <app-icon name="calendar" size="1.25rem" />
+              </div>
+            </div>
+          </article>
+
+          <article class="kpi-card">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
+                  {{ t('admin.regears.bonusCap') }}
+                </p>
+                <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
+                  {{ s.bonus_request_cap }}
+                </p>
+                <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                  Max giveaway-earned requests a member can hold
+                </p>
+              </div>
+              <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
+                <app-icon name="trophy" size="1.25rem" />
               </div>
             </div>
           </article>
@@ -163,23 +182,33 @@ const SLOT_BITS: ReadonlyArray<{ key: string; bit: number; labelKey: Translation
           <form class="grid gap-4" (submit)="onSubmit($event)">
             <div class="grid gap-3 md:grid-cols-2">
               <label>
-                <span class="label">{{ t('admin.regears.maxPerEvent') }}</span>
+                <span class="label">{{ t('admin.regears.weeklyTopup') }}</span>
                 <input
                   class="input"
                   type="number"
                   min="0"
-                  [value]="s.max_regears_per_event"
-                  (input)="updateField('max_regears_per_event', $event)"
+                  [value]="s.weekly_request_topup_amount"
+                  (input)="updateField('weekly_request_topup_amount', $event)"
                 />
               </label>
               <label>
-                <span class="label">{{ t('admin.regears.maxPerMonth') }}</span>
+                <span class="label">{{ t('admin.regears.weeklyCap') }}</span>
                 <input
                   class="input"
                   type="number"
                   min="0"
-                  [value]="s.max_regears_per_month"
-                  (input)="updateField('max_regears_per_month', $event)"
+                  [value]="s.weekly_request_cap"
+                  (input)="updateField('weekly_request_cap', $event)"
+                />
+              </label>
+              <label>
+                <span class="label">{{ t('admin.regears.bonusCap') }}</span>
+                <input
+                  class="input"
+                  type="number"
+                  min="0"
+                  [value]="s.bonus_request_cap"
+                  (input)="updateField('bonus_request_cap', $event)"
                 />
               </label>
               <label>

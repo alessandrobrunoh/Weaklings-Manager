@@ -6,40 +6,39 @@
 
 use std::str::FromStr;
 
-use chrono::{Duration as ChronoDuration, Utc};
+use chrono::Utc;
 use sea_orm::prelude::Decimal;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, ConnectionTrait,
-    DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, TransactionTrait,
 };
 
 use crate::errors::AppError;
+use crate::modules::albion::entities::albion_link;
 use crate::modules::bank::entities::ActiveModel as BankActiveModel;
 use crate::modules::bank::status::TransactionStatus;
-use crate::modules::comps::entities::build;
-use crate::modules::events::entities::event;
+use crate::modules::comps::entities::{build, comp_build};
+use crate::modules::events::entities::{event, event_participation};
+use crate::modules::openalbion::service::aodp_identifier_for_stored_item;
+use crate::modules::users::entities as user_entities;
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
+use super::credits::{consume_request_credit, get_or_create_balance};
 use super::entities::{
     RegearDeathActiveModel, RegearDeathColumn, RegearDeathEntity, RegearDeathModel,
-    RegearSettingActiveModel, RegearSettingEntity,
+    RegearSettingActiveModel, RegearSettingEntity, RegearSettingModel,
 };
 use super::extractor::{ExtractionGuildContext, RegearExtractor};
 use super::models::{
-    AcceptRegearRequest, BreakdownRow, DeathFilters, DeathView, ExtractionReport,
-    RegearBudgetSummary, RegearSettingsView, RejectRegearRequest, UpdateRegearSettingsRequest,
+    AcceptRegearRequest, BreakdownRow, CreateSelfServiceRegearRequest, DeathFilters, DeathView,
+    ExtractionReport, RegearBudgetSummary, RegearSettingsView, RejectRegearRequest,
+    SelfServiceCompBuildOption, SelfServiceEventOption, UpdateRegearSettingsRequest,
 };
-use super::status::RegearStatus;
+use super::slots::albionbb_key_for_slot;
+use super::status::{RegearSource, RegearStatus};
 
 /// The transaction type written into the Guild Bank when a regear is accepted.
 pub const TYPE_REGEAR_CREDIT: &str = "regear_credit";
-
-/// Rolling window (in days) for the per-month regear cap.
-///
-/// Shared with the intel report, which surfaces how much of the cap each
-/// member has used. The two must agree, or officers would be shown a usage
-/// figure that the enforcement below does not actually apply.
-pub(crate) const PER_MONTH_WINDOW_DAYS: i64 = 30;
 
 /// Service for executing regear business logic.
 pub struct RegearService;
@@ -150,16 +149,18 @@ impl RegearService {
         to_view_with_joins(db, model).await
     }
 
-    /// Moves a death from `available` to `pending`, enforcing the per-event and per-month caps.
+    /// Moves a death from `available` to `pending`, consuming one request credit (bonus pool
+    /// first, then weekly).
     ///
-    /// The caps are evaluated inside the same transaction that flips the status, so concurrent
-    /// clicks on different deaths cannot overrun them.
+    /// The credit check runs inside the same transaction that flips the status, so concurrent
+    /// clicks on different deaths cannot overspend the balance. The credit is never refunded if
+    /// an officer later rejects the request.
     ///
     /// # Errors
     ///
     /// Returns [`AppError::NotFound`] if the death does not exist; [`AppError::Forbidden`] if the
     /// caller is not the victim; [`AppError::Conflict`] if the death is not in the `available`
-    /// status; [`AppError::Validation`] if a cap would be exceeded.
+    /// status; [`AppError::Validation`] if the caller has no requests remaining.
     pub async fn request_regear(
         &self,
         db: &DatabaseConnection,
@@ -188,21 +189,7 @@ impl RegearService {
             )));
         }
 
-        let event_used = count_event_active_for_user(&txn, model.event_id, caller_user_id).await?;
-        if event_used >= u64::from(settings.max_regears_per_event.max(0) as u32) {
-            return Err(AppError::Validation(format!(
-                "per-event regear cap reached ({}/{})",
-                event_used, settings.max_regears_per_event
-            )));
-        }
-
-        let month_used = count_recent_approvals_for_user(&txn, caller_user_id).await?;
-        if month_used >= u64::from(settings.max_regears_per_month.max(0) as u32) {
-            return Err(AppError::Validation(format!(
-                "per-month regear cap reached ({}/{})",
-                month_used, settings.max_regears_per_month
-            )));
-        }
+        consume_request_credit(&txn, &settings, caller_user_id).await?;
 
         let now = Utc::now().into();
         let mut active: RegearDeathActiveModel = model.into();
@@ -469,7 +456,9 @@ impl RegearService {
         to_view_with_joins(db, updated).await
     }
 
-    /// Per-user budget usage for the most recent CTA event and the rolling 30-day window.
+    /// The caller's current request-credit balance: weekly pool and bonus pool, each with its
+    /// configured cap. Applies the lazy weekly top-up before returning, so the balance shown is
+    /// always current even though nothing ticks it on a schedule.
     ///
     /// # Errors
     ///
@@ -480,28 +469,13 @@ impl RegearService {
         caller_user_id: i64,
     ) -> Result<RegearBudgetSummary, AppError> {
         let settings = load_settings(db).await?;
-
-        // Most recent CTA event the caller has any death for.
-        let most_recent_event = RegearDeathEntity::find()
-            .filter(RegearDeathColumn::UserId.eq(caller_user_id))
-            .order_by_desc(RegearDeathColumn::EventId)
-            .one(db)
-            .await?
-            .map(|m| m.event_id);
-
-        let per_event_used = match most_recent_event {
-            Some(event_id) => {
-                count_event_active_for_user(db, event_id, caller_user_id).await? as i32
-            }
-            None => 0,
-        };
-        let per_month_used = count_recent_approvals_for_user(db, caller_user_id).await? as i32;
+        let balance = get_or_create_balance(db, &settings, caller_user_id).await?;
 
         Ok(RegearBudgetSummary {
-            per_event_used,
-            per_event_max: settings.max_regears_per_event,
-            per_month_used,
-            per_month_max: settings.max_regears_per_month,
+            weekly_balance: balance.weekly_balance,
+            weekly_cap: settings.weekly_request_cap,
+            bonus_balance: balance.bonus_balance,
+            bonus_cap: settings.bonus_request_cap,
         })
     }
 
@@ -531,18 +505,16 @@ impl RegearService {
         req: &UpdateRegearSettingsRequest,
     ) -> Result<RegearSettingsView, AppError> {
         let existing = load_settings(db).await?;
-        if let Some(value) = req.max_regears_per_event {
-            if value < 0 {
-                return Err(AppError::Validation(
-                    "max_regears_per_event must be >= 0".to_string(),
-                ));
-            }
-        }
-        if let Some(value) = req.max_regears_per_month {
-            if value < 0 {
-                return Err(AppError::Validation(
-                    "max_regears_per_month must be >= 0".to_string(),
-                ));
+        for (name, value) in [
+            (
+                "weekly_request_topup_amount",
+                req.weekly_request_topup_amount,
+            ),
+            ("weekly_request_cap", req.weekly_request_cap),
+            ("bonus_request_cap", req.bonus_request_cap),
+        ] {
+            if value.is_some_and(|value| value < 0) {
+                return Err(AppError::Validation(format!("{name} must be >= 0")));
             }
         }
         if let Some(strategy) = &req.pricing_fallback_strategy {
@@ -554,11 +526,14 @@ impl RegearService {
         }
 
         let mut active: RegearSettingActiveModel = existing.into();
-        if let Some(value) = req.max_regears_per_event {
-            active.max_regears_per_event = Set(value);
+        if let Some(value) = req.weekly_request_topup_amount {
+            active.weekly_request_topup_amount = Set(value);
         }
-        if let Some(value) = req.max_regears_per_month {
-            active.max_regears_per_month = Set(value);
+        if let Some(value) = req.weekly_request_cap {
+            active.weekly_request_cap = Set(value);
+        }
+        if let Some(value) = req.bonus_request_cap {
+            active.bonus_request_cap = Set(value);
         }
         if let Some(mask) = req.enabled_slots_mask {
             active.enabled_slots_mask = Set(mask);
@@ -580,8 +555,9 @@ impl RegearService {
             Some(1),
             Some(officer_user_id),
             Some(serde_json::json!({
-                "max_regears_per_event": req.max_regears_per_event,
-                "max_regears_per_month": req.max_regears_per_month,
+                "weekly_request_topup_amount": req.weekly_request_topup_amount,
+                "weekly_request_cap": req.weekly_request_cap,
+                "bonus_request_cap": req.bonus_request_cap,
                 "enabled_slots_mask": req.enabled_slots_mask,
                 "pricing_location": req.pricing_location,
                 "pricing_fallback_strategy": req.pricing_fallback_strategy,
@@ -622,6 +598,277 @@ impl RegearService {
         .await;
         Ok(report)
     }
+
+    /// Lists the events the caller may open a self-service regear request for: events they
+    /// participated in, that are regear-eligible, and for which they don't already have a
+    /// pending or approved self-reported request.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::Database`] on DB failure.
+    pub async fn get_self_service_events(
+        &self,
+        db: &DatabaseConnection,
+        caller_user_id: i64,
+    ) -> Result<Vec<SelfServiceEventOption>, AppError> {
+        let participations = event_participation::Entity::find()
+            .filter(event_participation::Column::UserId.eq(caller_user_id))
+            .all(db)
+            .await?;
+
+        let mut options = Vec::new();
+        for participation in participations {
+            let Some(event_row) = event::Entity::find_by_id(participation.event_id)
+                .one(db)
+                .await?
+            else {
+                continue;
+            };
+            if !event_row.regear {
+                continue;
+            }
+            if self
+                .has_active_self_report(db, event_row.id, caller_user_id)
+                .await?
+            {
+                continue;
+            }
+
+            let primary_build_name = match participation.primary_build_id {
+                Some(id) => build::Entity::find_by_id(id).one(db).await?.map(|b| b.name),
+                None => None,
+            };
+            let secondary_build_name = match participation.secondary_build_id {
+                Some(id) => build::Entity::find_by_id(id).one(db).await?.map(|b| b.name),
+                None => None,
+            };
+
+            let comp_build_rows = comp_build::Entity::find()
+                .filter(comp_build::Column::CompId.eq(event_row.comp_id))
+                .all(db)
+                .await?;
+            let mut comp_builds = Vec::with_capacity(comp_build_rows.len());
+            for row in comp_build_rows {
+                let Some(build_row) = build::Entity::find_by_id(row.build_id).one(db).await? else {
+                    continue;
+                };
+                comp_builds.push(SelfServiceCompBuildOption {
+                    build_id: row.build_id,
+                    build_name: build_row.name,
+                    quantity: row.quantity,
+                });
+            }
+
+            options.push(SelfServiceEventOption {
+                event_id: event_row.id,
+                event_title: event_row.title,
+                primary_build_id: participation.primary_build_id,
+                primary_build_name,
+                secondary_build_id: participation.secondary_build_id,
+                secondary_build_name,
+                comp_id: event_row.comp_id,
+                comp_builds,
+            });
+        }
+
+        options.sort_by(|a, b| b.event_id.cmp(&a.event_id));
+        Ok(options)
+    }
+
+    /// `true` if the caller already has a pending or approved self-reported request for this
+    /// event — the application-layer duplicate guard, since the DB unique index cannot cover
+    /// self-reported rows (they carry no battle/kill-feed key).
+    async fn has_active_self_report(
+        &self,
+        db: &DatabaseConnection,
+        event_id: i64,
+        user_id: i64,
+    ) -> Result<bool, AppError> {
+        let count = RegearDeathEntity::find()
+            .filter(RegearDeathColumn::EventId.eq(event_id))
+            .filter(RegearDeathColumn::UserId.eq(user_id))
+            .filter(RegearDeathColumn::Source.eq(RegearSource::SelfReported.to_string()))
+            .filter(RegearDeathColumn::Status.is_in([
+                RegearStatus::Pending.to_string(),
+                RegearStatus::Approved.to_string(),
+            ]))
+            .count(db)
+            .await?;
+        Ok(count > 0)
+    }
+
+    /// Opens a member-initiated regear request, without waiting on the kill-feed extractor.
+    ///
+    /// The caller picks an event they participated in and a build from that event's comp
+    /// (typically their assigned build, but they may claim any build in the comp — what they
+    /// signed up with often differs from what they actually equipped), optionally overriding
+    /// individual slots. The resulting loadout is priced the same way an extracted death is
+    /// (`pricing::build_breakdown`) and inserted directly as `pending`, consuming one request
+    /// credit, landing in the same officer queue as extracted deaths.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::Forbidden`] if the caller did not participate in the event;
+    /// [`AppError::Validation`] if the event is not regear-eligible, the build is not part of the
+    /// event's comp, or the caller has no requests remaining; [`AppError::Conflict`] if the
+    /// caller already has an active self-reported request for this event.
+    pub async fn create_self_service_request(
+        &self,
+        db: &DatabaseConnection,
+        albiondata: &crate::modules::albiondata::service::AlbionDataService,
+        guild: &ExtractionGuildContext,
+        caller_user_id: i64,
+        req: &CreateSelfServiceRegearRequest,
+    ) -> Result<DeathView, AppError> {
+        use crate::modules::comps::entities::build_item;
+        use crate::modules::comps::status::{BuildLoadout, BuildSlot};
+
+        let settings = load_settings(db).await?;
+
+        event_participation::Entity::find()
+            .filter(event_participation::Column::EventId.eq(req.event_id))
+            .filter(event_participation::Column::UserId.eq(caller_user_id))
+            .one(db)
+            .await?
+            .ok_or_else(|| {
+                AppError::Forbidden("you did not participate in this event".to_string())
+            })?;
+
+        let event_row = event::Entity::find_by_id(req.event_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("event {} not found", req.event_id)))?;
+        if !event_row.regear {
+            return Err(AppError::Validation(
+                "event is not regear-eligible".to_string(),
+            ));
+        }
+
+        if self
+            .has_active_self_report(db, event_row.id, caller_user_id)
+            .await?
+        {
+            return Err(AppError::Conflict(
+                "you already have a self-reported regear request for this event".to_string(),
+            ));
+        }
+
+        comp_build::Entity::find()
+            .filter(comp_build::Column::CompId.eq(event_row.comp_id))
+            .filter(comp_build::Column::BuildId.eq(req.build_id))
+            .one(db)
+            .await?
+            .ok_or_else(|| {
+                AppError::Validation("build is not part of this event's comp".to_string())
+            })?;
+
+        let build_items = build_item::Entity::find()
+            .filter(build_item::Column::BuildId.eq(req.build_id))
+            .filter(build_item::Column::Loadout.eq(BuildLoadout::Main.as_str()))
+            .all(db)
+            .await?;
+
+        let mut equipment = serde_json::Map::new();
+        let mut covered_slots: Vec<BuildSlot> = Vec::new();
+        for item in &build_items {
+            let Ok(slot) = BuildSlot::from_str(&item.slot) else {
+                continue;
+            };
+            covered_slots.push(slot);
+            let override_item = req.item_overrides.iter().find(|o| o.slot == slot);
+            let (item_id, enchantment, icon) = match override_item {
+                Some(o) => (o.openalbion_item_id, o.openalbion_item_enchantment, None),
+                None => (
+                    item.openalbion_item_id,
+                    item.openalbion_item_enchantment,
+                    item.openalbion_item_icon.as_deref(),
+                ),
+            };
+            if let Some(identifier) = aodp_identifier_for_stored_item(item_id, icon, enchantment) {
+                equipment.insert(
+                    albionbb_key_for_slot(slot).to_string(),
+                    serde_json::json!({ "Type": identifier, "Count": 1 }),
+                );
+            }
+        }
+        for item_override in &req.item_overrides {
+            if covered_slots.contains(&item_override.slot) {
+                continue;
+            }
+            if let Some(identifier) = aodp_identifier_for_stored_item(
+                item_override.openalbion_item_id,
+                None,
+                item_override.openalbion_item_enchantment,
+            ) {
+                equipment.insert(
+                    albionbb_key_for_slot(item_override.slot).to_string(),
+                    serde_json::json!({ "Type": identifier, "Count": 1 }),
+                );
+            }
+        }
+        let equipment_value = serde_json::Value::Object(equipment);
+        let loadout_json =
+            serde_json::to_string(&equipment_value).unwrap_or_else(|_| "{}".to_string());
+
+        let (breakdown, total) =
+            super::pricing::build_breakdown(albiondata, &equipment_value, &settings, guild.server.as_deref())
+                .await
+                .unwrap_or_else(|err| {
+                    tracing::warn!(error = %err, "self-service regear pricing failed; falling back to empty breakdown");
+                    (Vec::new(), Decimal::ZERO)
+                });
+        let breakdown_json = serde_json::to_string(&breakdown).unwrap_or_else(|_| "[]".to_string());
+
+        let player_name = resolve_player_name(db, caller_user_id).await?;
+
+        let txn = db.begin().await?;
+        consume_request_credit(&txn, &settings, caller_user_id).await?;
+
+        let now = Utc::now().into();
+        let active = RegearDeathActiveModel {
+            event_id: Set(req.event_id),
+            event_battle_id: Set(None),
+            albionbb_battle_id: Set(None),
+            albion_kill_event_id: Set(None),
+            killed_at: Set(now),
+            user_id: Set(Some(caller_user_id)),
+            player_name: Set(player_name),
+            guild_id: Set(guild.guild_id.clone()),
+            primary_build_id: Set(Some(req.build_id)),
+            loadout_json: Set(loadout_json.clone()),
+            auto_estimate_total: Set(total),
+            auto_estimate_breakdown_json: Set(breakdown_json),
+            status: Set(RegearStatus::Pending.to_string()),
+            requested_at: Set(Some(now)),
+            source: Set(RegearSource::SelfReported.to_string()),
+            override_loadout_json: Set(if req.item_overrides.is_empty() {
+                None
+            } else {
+                Some(loadout_json)
+            }),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        };
+        let inserted = active.insert(&txn).await?;
+        txn.commit().await?;
+
+        let _ = crate::modules::audit::service::AuditService::log(
+            db,
+            "REGEAR_SELF_REPORTED",
+            Some("REGEAR_DEATH"),
+            Some(inserted.id),
+            Some(caller_user_id),
+            Some(serde_json::json!({
+                "event_id": req.event_id,
+                "build_id": req.build_id,
+                "auto_estimate_total": total.to_string(),
+            })),
+        )
+        .await;
+
+        to_view_with_joins(db, inserted).await
+    }
 }
 
 impl Default for RegearService {
@@ -632,52 +879,19 @@ impl Default for RegearService {
 
 /// Loads the singleton settings row, raising `Internal` if it is missing (it is seeded by the
 /// migration so this should only happen on a corrupted DB).
-async fn load_settings(
-    db: &DatabaseConnection,
-) -> Result<super::entities::RegearSettingModel, AppError> {
+///
+/// Generic over `ConnectionTrait` (not just `DatabaseConnection`) so `giveaways::service` can
+/// call it with `&txn` from inside its own draw transaction — acquiring a second pool connection
+/// there instead would deadlock a single-connection SQLite pool. `pub(crate)` for that same
+/// cross-module use.
+pub(crate) async fn load_settings<C>(db: &C) -> Result<RegearSettingModel, AppError>
+where
+    C: sea_orm::ConnectionTrait,
+{
     RegearSettingEntity::find()
         .one(db)
         .await?
         .ok_or_else(|| AppError::Internal("regear_settings singleton row is missing".to_string()))
-}
-
-/// Counts the caller's `pending + approved` deaths for one event. Used by the per-event cap.
-async fn count_event_active_for_user<C>(
-    db: &C,
-    event_id: i64,
-    user_id: i64,
-) -> Result<u64, AppError>
-where
-    C: ConnectionTrait,
-{
-    let pending = RegearDeathEntity::find()
-        .filter(RegearDeathColumn::EventId.eq(event_id))
-        .filter(RegearDeathColumn::UserId.eq(user_id))
-        .filter(RegearDeathColumn::Status.eq(RegearStatus::Pending.to_string()))
-        .count(db)
-        .await?;
-    let approved = RegearDeathEntity::find()
-        .filter(RegearDeathColumn::EventId.eq(event_id))
-        .filter(RegearDeathColumn::UserId.eq(user_id))
-        .filter(RegearDeathColumn::Status.eq(RegearStatus::Approved.to_string()))
-        .count(db)
-        .await?;
-    Ok(pending + approved)
-}
-
-/// Counts the caller's `approved` deaths in the rolling 30-day window. Used by the per-month cap.
-async fn count_recent_approvals_for_user<C>(db: &C, user_id: i64) -> Result<u64, AppError>
-where
-    C: ConnectionTrait,
-{
-    let cutoff = Utc::now() - ChronoDuration::days(PER_MONTH_WINDOW_DAYS);
-    RegearDeathEntity::find()
-        .filter(RegearDeathColumn::UserId.eq(user_id))
-        .filter(RegearDeathColumn::Status.eq(RegearStatus::Approved.to_string()))
-        .filter(RegearDeathColumn::DecidedAt.gte(cutoff))
-        .count(db)
-        .await
-        .map_err(AppError::Database)
 }
 
 /// Sums the contributions of included breakdown rows. Used by `accept_request` to verify the
@@ -710,13 +924,36 @@ async fn to_view_with_joins(
     let status = RegearStatus::from_str(&model.status).map_err(|err| {
         AppError::Internal(format!("invalid status on death {}: {err}", model.id))
     })?;
+    let source = RegearSource::from_str(&model.source).map_err(|err| {
+        AppError::Internal(format!("invalid source on death {}: {err}", model.id))
+    })?;
 
     Ok(DeathView::from_model(
         model,
         event_title,
         primary_build_name,
         status,
+        source,
     ))
+}
+
+/// Resolves the caller's linked Albion in-game name, for stamping a self-reported request's
+/// `player_name`. Falls back to the Manager username when the caller has no Albion link.
+async fn resolve_player_name(db: &DatabaseConnection, user_id: i64) -> Result<String, AppError> {
+    let user = user_entities::Entity::find_by_id(user_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("user {user_id} not found")))?;
+    if let Some(discord_id) = &user.discord_id {
+        let link = albion_link::Entity::find()
+            .filter(albion_link::Column::DiscordId.eq(discord_id.clone()))
+            .one(db)
+            .await?;
+        if let Some(link) = link {
+            return Ok(link.albion_player_name);
+        }
+    }
+    Ok(user.username)
 }
 
 /// Resolves a batch of model rows into views, reusing [`to_view_with_joins`].
@@ -736,8 +973,13 @@ mod tests {
     use super::*;
     use crate::migration::MigratorTrait;
     use crate::modules::comps::status::BuildSlot;
+    use chrono::Duration as ChronoDuration;
     use sea_orm::entity::prelude::DateTimeWithTimeZone;
     use sea_orm::{ActiveModelTrait, Database, DatabaseConnection};
+
+    use super::super::entities::{
+        RegearRequestBalanceActiveModel, RegearRequestBalanceColumn, RegearRequestBalanceEntity,
+    };
 
     #[test]
     fn sum_included_ignores_excluded_rows() {
@@ -795,9 +1037,9 @@ mod tests {
         let now = Utc::now().into();
         RegearDeathActiveModel {
             event_id: Set(1),
-            event_battle_id: Set(1),
-            albionbb_battle_id: Set("battle-1".into()),
-            albion_kill_event_id: Set(kill_event_id.into()),
+            event_battle_id: Set(Some(1)),
+            albionbb_battle_id: Set(Some("battle-1".into())),
+            albion_kill_event_id: Set(Some(kill_event_id.into())),
             killed_at: Set(killed_at),
             player_name: Set(player_name.into()),
             guild_id: Set("guild-1".into()),
@@ -1000,5 +1242,311 @@ mod tests {
         assert_eq!(inbox.len(), 1);
         assert_eq!(inbox[0].kind, "regear_accepted");
         assert_eq!(inbox[0].source_id, death.id);
+    }
+
+    async fn insert_user_row(db: &DatabaseConnection, username: &str) -> i64 {
+        crate::modules::users::entities::ActiveModel {
+            username: Set(username.into()),
+            email: Set(format!("{username}@example.com")),
+            role: Set("User".into()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert user")
+        .id
+    }
+
+    /// Seeds a balance row directly, bypassing the lazy top-up, so a test can pin an exact
+    /// starting state instead of racing the real clock.
+    async fn seed_balance(db: &DatabaseConnection, user_id: i64, weekly: i32, bonus: i32) {
+        RegearRequestBalanceActiveModel {
+            user_id: Set(user_id),
+            weekly_balance: Set(weekly),
+            weekly_last_topup_at: Set(Utc::now().into()),
+            bonus_balance: Set(bonus),
+            created_at: Set(Utc::now().into()),
+            updated_at: Set(Utc::now().into()),
+        }
+        .insert(db)
+        .await
+        .expect("insert balance");
+    }
+
+    #[tokio::test]
+    async fn request_regear_consumes_bonus_before_weekly() {
+        let db = seed_db().await;
+        let user = insert_user_row(&db, "alice").await;
+        seed_balance(&db, user, 2, 1).await;
+        let now = Utc::now().into();
+        let death = insert_death(&db, "Alice", RegearStatus::Available, now, "k-alice").await;
+        let mut active: RegearDeathActiveModel = death.clone().into();
+        active.user_id = Set(Some(user));
+        active.update(&db).await.expect("link victim");
+
+        RegearService::new()
+            .request_regear(&db, user, death.id)
+            .await
+            .expect("request regear");
+
+        let balance = RegearRequestBalanceEntity::find()
+            .filter(RegearRequestBalanceColumn::UserId.eq(user))
+            .one(&db)
+            .await
+            .unwrap()
+            .expect("balance row");
+        assert_eq!(balance.bonus_balance, 0, "bonus pool is spent first");
+        assert_eq!(
+            balance.weekly_balance, 2,
+            "weekly pool untouched while bonus remained"
+        );
+    }
+
+    #[tokio::test]
+    async fn request_regear_fails_when_no_credit_remaining() {
+        let db = seed_db().await;
+        let user = insert_user_row(&db, "bob").await;
+        seed_balance(&db, user, 0, 0).await;
+        let now = Utc::now().into();
+        let death = insert_death(&db, "Bob", RegearStatus::Available, now, "k-bob-2").await;
+        let mut active: RegearDeathActiveModel = death.clone().into();
+        active.user_id = Set(Some(user));
+        active.update(&db).await.expect("link victim");
+
+        let error = RegearService::new()
+            .request_regear(&db, user, death.id)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::Validation(_)));
+
+        // The death must still be `available` — a failed credit check aborts the whole request.
+        let reloaded = RegearDeathEntity::find_by_id(death.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .expect("death row");
+        assert_eq!(reloaded.status, "available");
+    }
+
+    async fn insert_build_with_item(db: &DatabaseConnection, name: &str, creator: i64) -> i64 {
+        use crate::modules::comps::entities::{build, build_category, build_item};
+        let category = build_category::ActiveModel {
+            name: Set(format!("cat-{name}")),
+            slug: Set(format!("cat-{name}")),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("build category")
+        .id;
+        let build_id = build::ActiveModel {
+            name: Set(name.into()),
+            role: Set("dps".into()),
+            category_id: Set(category),
+            version: Set(1),
+            created_by: Set(creator),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("build")
+        .id;
+        build_item::ActiveModel {
+            build_id: Set(build_id),
+            loadout: Set("main".into()),
+            slot: Set("weapon".into()),
+            openalbion_item_type: Set("weapon".into()),
+            openalbion_item_id: Set(1),
+            openalbion_item_name: Set("Broadsword".into()),
+            openalbion_item_icon: Set(Some(
+                "https://render.albiononline.com/v1/item/T8_MAIN_SWORD.png?quality=1&size=64"
+                    .into(),
+            )),
+            openalbion_item_tier: Set(Some("T8".into())),
+            openalbion_item_quality: Set(4),
+            openalbion_item_enchantment: Set(0),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("build item");
+        build_id
+    }
+
+    async fn insert_comp_with_build(
+        db: &DatabaseConnection,
+        name: &str,
+        creator: i64,
+        build_id: i64,
+    ) -> i64 {
+        use crate::modules::comps::entities::{comp, comp_build, comp_category};
+        let category = comp_category::ActiveModel {
+            name: Set(format!("comp-cat-{name}")),
+            slug: Set(format!("comp-cat-{name}")),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("comp category")
+        .id;
+        let comp_id = comp::ActiveModel {
+            name: Set(name.into()),
+            category_id: Set(category),
+            version: Set(1),
+            created_by: Set(creator),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("comp")
+        .id;
+        comp_build::ActiveModel {
+            comp_id: Set(comp_id),
+            build_id: Set(build_id),
+            quantity: Set(1),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("comp build");
+        comp_id
+    }
+
+    async fn insert_regear_event(
+        db: &DatabaseConnection,
+        title: &str,
+        creator: i64,
+        comp_id: i64,
+    ) -> i64 {
+        event::ActiveModel {
+            title: Set(title.into()),
+            comp_id: Set(comp_id),
+            created_by: Set(creator),
+            event_date_utc: Set(Utc::now().into()),
+            regear: Set(true),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("event")
+        .id
+    }
+
+    #[tokio::test]
+    async fn create_self_service_request_rejects_a_non_participant() {
+        let db = seed_db().await;
+        let officer = insert_user_row(&db, "officer2").await;
+        let member = insert_user_row(&db, "outsider").await;
+        seed_balance(&db, member, 2, 0).await;
+        let build_id = insert_build_with_item(&db, "Healer Build", officer).await;
+        let comp_id = insert_comp_with_build(&db, "Test Comp", officer, build_id).await;
+        let event_id = insert_regear_event(&db, "Test CTA", officer, comp_id).await;
+
+        let albiondata = crate::modules::albiondata::service::AlbionDataService::default();
+        let guild = ExtractionGuildContext {
+            guild_id: "guild-1".into(),
+            server: None,
+        };
+        let error = RegearService::new()
+            .create_self_service_request(
+                &db,
+                &albiondata,
+                &guild,
+                member,
+                &CreateSelfServiceRegearRequest {
+                    event_id,
+                    build_id,
+                    item_overrides: Vec::new(),
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::Forbidden(_)));
+    }
+
+    #[tokio::test]
+    async fn create_self_service_request_opens_a_pending_self_reported_row_and_spends_a_credit() {
+        let db = seed_db().await;
+        let officer = insert_user_row(&db, "officer3").await;
+        let member = insert_user_row(&db, "member1").await;
+        seed_balance(&db, member, 2, 1).await;
+        let build_id = insert_build_with_item(&db, "Tank Build", officer).await;
+        let comp_id = insert_comp_with_build(&db, "Tank Comp", officer, build_id).await;
+        let event_id = insert_regear_event(&db, "Tank CTA", officer, comp_id).await;
+        crate::modules::events::entities::event_participation::ActiveModel {
+            event_id: Set(event_id),
+            user_id: Set(member),
+            primary_build_id: Set(Some(build_id)),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("participation");
+
+        let albiondata = crate::modules::albiondata::service::AlbionDataService::default();
+        let guild = ExtractionGuildContext {
+            guild_id: "guild-1".into(),
+            server: None,
+        };
+        let death = RegearService::new()
+            .create_self_service_request(
+                &db,
+                &albiondata,
+                &guild,
+                member,
+                &CreateSelfServiceRegearRequest {
+                    event_id,
+                    build_id,
+                    item_overrides: Vec::new(),
+                },
+            )
+            .await
+            .expect("self-service request");
+
+        assert_eq!(death.status, RegearStatus::Pending);
+        assert_eq!(death.source, RegearSource::SelfReported);
+        assert!(death.event_battle_id.is_none());
+
+        let balance = RegearRequestBalanceEntity::find()
+            .filter(RegearRequestBalanceColumn::UserId.eq(member))
+            .one(&db)
+            .await
+            .unwrap()
+            .expect("balance row");
+        assert_eq!(balance.bonus_balance, 0, "bonus pool spent first");
+        assert_eq!(balance.weekly_balance, 2);
+
+        // Lands in the same officer queue as an extracted death — no special-casing needed.
+        let queue = RegearService::new()
+            .list_deaths(
+                &db,
+                officer,
+                true,
+                &page(),
+                &DeathFilters {
+                    status: Some(RegearStatus::Pending),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("officer queue");
+        assert!(queue.items.iter().any(|item| item.id == death.id));
+
+        // A second self-service request for the same event is rejected while this one is active.
+        let duplicate = RegearService::new()
+            .create_self_service_request(
+                &db,
+                &albiondata,
+                &guild,
+                member,
+                &CreateSelfServiceRegearRequest {
+                    event_id,
+                    build_id,
+                    item_overrides: Vec::new(),
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(duplicate, AppError::Conflict(_)));
     }
 }

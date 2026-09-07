@@ -125,6 +125,9 @@ pub struct TenantRankView {
     pub description: Option<String>,
     /// Feature keys this rank unlocks.
     pub feature_keys: Vec<String>,
+    /// Whether newly registered tenants are assigned this rank.
+    #[serde(default)]
+    pub is_default: bool,
     /// RFC3339 created timestamp, if present.
     pub created_at: Option<String>,
 }
@@ -139,12 +142,15 @@ pub struct CreateRankRequest {
 }
 
 /// Body for `PATCH /api/platform/ranks/{id}`.
-#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Default, Deserialize, utoipa::ToSchema)]
 pub struct PatchRankRequest {
     /// Rename.
     pub name: Option<String>,
     /// Replace description; omit to leave unchanged.
     pub description: Option<String>,
+    /// `true` makes this the rank new tenants get on registration, clearing the
+    /// flag from whichever rank held it; `false` leaves new tenants rankless.
+    pub is_default: Option<bool>,
 }
 
 /// Body for `PUT /api/platform/ranks/{id}/features`.

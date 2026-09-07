@@ -14,6 +14,7 @@ import type {
   CompCategoryView,
   CompDetail,
   CompPerformanceView,
+  CompPriceView,
   CompReadiness,
   CompSummary,
   CreateCompRequest,
@@ -679,6 +680,37 @@ interface BuildOptionGroup {
                   }
                 </section>
               }
+
+              <!-- Market Price Card -->
+              <section class="card p-5 border border-[var(--color-border)] space-y-4">
+                <div class="flex items-center justify-between gap-2">
+                  <h3 class="text-xs font-bold uppercase tracking-wider text-secondary">
+                    {{ t('comps.price.title') }}
+                  </h3>
+                  @if (compPrice(); as price) {
+                    <span class="chip text-xs font-mono">{{ formatSilverPrice(price.total) }}</span>
+                  }
+                </div>
+                @if (compPrice(); as price) {
+                  @if (price.builds.length > 0) {
+                    <div class="space-y-1.5">
+                      @for (row of price.builds; track row.build_id) {
+                        <div class="flex items-center justify-between gap-2 p-2 bg-[var(--color-surface-2)] rounded-[var(--radius-cards)] border border-[var(--color-border)] text-xs">
+                          <div class="min-w-0">
+                            <span class="font-semibold text-[var(--color-text)]">{{ row.build_name }}</span>
+                            <span class="text-[10px] text-secondary block">×{{ row.quantity }} · {{ formatSilverPrice(row.unit_total) }} {{ t('comps.price.perItem') }}</span>
+                          </div>
+                          <strong class="font-mono text-[var(--color-text)] shrink-0">{{ formatSilverPrice(row.subtotal) }}</strong>
+                        </div>
+                      }
+                    </div>
+                  } @else {
+                    <p class="text-xs text-disabled italic">{{ t('comps.price.unavailable') }}</p>
+                  }
+                } @else {
+                  <p class="text-xs text-disabled italic">{{ t('comps.price.unavailable') }}</p>
+                }
+              </section>
             </div>
           </div>
         }
@@ -1242,6 +1274,8 @@ export class CompDetailPage {
   protected readonly performance = signal<CompPerformanceView | null>(null);
   /** `null` while loading, on failure, or when the viewer lacks `combat.readiness.view`. */
   protected readonly readiness = signal<CompReadiness | null>(null);
+  /** The comp's total market price, priced live from Albion Online Data (Σ build × quantity). */
+  protected readonly compPrice = signal<CompPriceView | null>(null);
   protected readonly canViewReadiness = computed(() => this.auth.hasPermission('combat.readiness.view'));
   protected readonly compCategories = signal<CompCategoryView[]>([]);
   protected readonly buildOptions = signal<BuildSummary[]>([]);
@@ -2214,6 +2248,28 @@ export class CompDetailPage {
   }
 
   /** Loads the equipment required to calculate weapon and readiness statistics. */
+  private async loadCompPrice(compId: number): Promise<void> {
+    try {
+      const price = await firstValueFrom(
+        this.api.get<CompPriceView>(`api/comps/${compId}/price`),
+      );
+      if (compId !== this.compId()) return;
+      this.compPrice.set(price);
+    } catch {
+      if (compId !== this.compId()) return;
+      this.compPrice.set(null);
+    }
+  }
+
+  /** Comp/build prices arrive as `Decimal` strings from the backend; format them like silver. */
+  protected formatSilverPrice(value: number | string): string {
+    const numeric = typeof value === 'string' ? Number(value) : value;
+    if (Number.isNaN(numeric)) {
+      return String(value);
+    }
+    return numeric.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  }
+
   private async loadReadiness(compId: number): Promise<void> {
     try {
       const readiness = await firstValueFrom(
@@ -2278,6 +2334,7 @@ export class CompDetailPage {
       this.comp.set(comp);
       this.performance.set(performance);
       void this.loadBuildDetails(comp);
+      void this.loadCompPrice(compId);
       if (this.canViewReadiness()) {
         void this.loadReadiness(compId);
       }

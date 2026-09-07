@@ -171,10 +171,10 @@ pub struct ReportOperations {
     pub role_fill: HashMap<String, i64>,
     /// Members with no signups in the window.
     pub inactive_members: Vec<String>,
-    /// Per-event regear cap currently configured.
-    pub regear_cap_per_event: i64,
-    /// Per-month regear cap currently configured.
-    pub regear_cap_per_month: i64,
+    /// Weekly regear request-pool cap currently configured.
+    pub regear_weekly_cap: i64,
+    /// Bonus (giveaway-earned) regear request-pool cap currently configured.
+    pub regear_bonus_cap: i64,
 }
 
 /// Silver in and out.
@@ -637,14 +637,15 @@ async fn load(db: &DatabaseConnection, range: DateRange) -> Result<RawData, AppE
         comps: comp::Entity::find().all(db).await?,
         comp_builds: comp_build::Entity::find().all(db).await?,
         builds: build::Entity::find().all(db).await?,
+        // Reporting-only window: regear no longer enforces a per-month cap (it's a
+        // request-credit balance now, see `regear::credits`), but "approvals in the last 30
+        // days" is still a useful informational figure for `MemberRow.regears_used_this_month`.
         monthly_approvals: regear::regear_death::Entity::find()
             .filter(regear::regear_death::Column::Status.eq("approved"))
-            .filter(regear::regear_death::Column::DecidedAt.gte(
-                chrono::Utc::now()
-                    - chrono::Duration::days(
-                        crate::modules::regear::service::PER_MONTH_WINDOW_DAYS,
-                    ),
-            ))
+            .filter(
+                regear::regear_death::Column::DecidedAt
+                    .gte(chrono::Utc::now() - chrono::Duration::days(30)),
+            )
             .all(db)
             .await?,
         regear_settings: regear::regear_setting::Entity::find().one(db).await?,
@@ -934,14 +935,14 @@ fn compute_operations(raw: &RawData, _range: &DateRange) -> ReportOperations {
         role_need,
         role_fill,
         inactive_members,
-        regear_cap_per_event: raw
+        regear_weekly_cap: raw
             .regear_settings
             .as_ref()
-            .map_or(0, |s| i64::from(s.max_regears_per_event)),
-        regear_cap_per_month: raw
+            .map_or(0, |s| i64::from(s.weekly_request_cap)),
+        regear_bonus_cap: raw
             .regear_settings
             .as_ref()
-            .map_or(0, |s| i64::from(s.max_regears_per_month)),
+            .map_or(0, |s| i64::from(s.bonus_request_cap)),
     }
 }
 

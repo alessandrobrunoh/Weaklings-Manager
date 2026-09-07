@@ -106,6 +106,11 @@ mod m20260906_000004_create_combat_runs;
 mod m20260906_000005_seed_combat_tests_permissions;
 mod m20260907_000001_seed_combat_calibration_permission;
 mod m20260907_000002_add_application_accepted_role;
+mod m20260907_000003_add_brand_colors;
+mod m20260907_000004_reopenable_applications;
+mod m20260908_000001_regear_request_credits;
+mod m20260908_000002_regear_self_service_source;
+mod m20260908_000003_add_giveaway_regear_bonus;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -216,6 +221,11 @@ impl MigratorTrait for Migrator {
             Box::new(m20260906_000005_seed_combat_tests_permissions::Migration),
             Box::new(m20260907_000001_seed_combat_calibration_permission::Migration),
             Box::new(m20260907_000002_add_application_accepted_role::Migration),
+            Box::new(m20260907_000003_add_brand_colors::Migration),
+            Box::new(m20260907_000004_reopenable_applications::Migration),
+            Box::new(m20260908_000001_regear_request_credits::Migration),
+            Box::new(m20260908_000002_regear_self_service_source::Migration),
+            Box::new(m20260908_000003_add_giveaway_regear_bonus::Migration),
         ]
     }
 }

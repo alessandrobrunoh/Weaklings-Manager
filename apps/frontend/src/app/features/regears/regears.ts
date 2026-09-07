@@ -132,6 +132,15 @@ const STATS_FETCH_LIMIT = 1000;
         {{ t('common.refreshNow') }}
       </button>
 
+      @if (canOpenNewRequest()) {
+        <a
+          class="btn btn--primary btn--sm"
+          routerLink="/regears/new"
+        >
+          <app-icon name="plus" size="0.875rem" />
+          {{ t('regears.newRequest') }}
+        </a>
+      }
       @if (canManageSettings()) {
         <a
           class="btn btn--outline btn--sm"
@@ -158,13 +167,13 @@ const STATS_FETCH_LIMIT = 1000;
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('regears.budget.event') }}
+                  {{ t('regears.budget.weekly') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                  {{ (summary()?.per_event_used ?? 0) }} / {{ (summary()?.per_event_max ?? 0) }}
+                  {{ (summary()?.weekly_balance ?? 0) }} / {{ (summary()?.weekly_cap ?? 0) }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  Event allowance
+                  {{ t('regears.budget.weeklyHint') }}
                 </p>
               </div>
               <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-primary)] border border-[var(--color-primary)]">
@@ -177,17 +186,17 @@ const STATS_FETCH_LIMIT = 1000;
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                  {{ t('regears.budget.month') }}
+                  {{ t('regears.budget.bonus') }}
                 </p>
                 <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                  {{ (summary()?.per_month_used ?? 0) }} / {{ (summary()?.per_month_max ?? 0) }}
+                  {{ (summary()?.bonus_balance ?? 0) }} / {{ (summary()?.bonus_cap ?? 0) }}
                 </p>
                 <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
-                  Monthly quota
+                  {{ t('regears.budget.bonusHint') }}
                 </p>
               </div>
               <div class="icon-capsule bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
-                <app-icon name="calendar" size="1.25rem" />
+                <app-icon name="trophy" size="1.25rem" />
               </div>
             </div>
           </article>
@@ -330,7 +339,14 @@ const STATS_FETCH_LIMIT = 1000;
       >
         <ng-template dataTableCell="player_name" let-row>
           <div class="flex flex-col gap-0.5">
-            <span class="font-bold text-sm text-(--color-text) hover:underline cursor-pointer">{{ row.player_name }}</span>
+            <span class="font-bold text-sm text-(--color-text) hover:underline cursor-pointer inline-flex items-center gap-1.5">
+              {{ row.player_name }}
+              @if (row.source === 'self_reported') {
+                <span class="status-pill" style="background: var(--color-surface-2); color: var(--color-text-secondary); border: 1px solid var(--color-border);">
+                  {{ t('regears.source.selfReported') }}
+                </span>
+              }
+            </span>
             @if (row.primary_build_name) {
               <span class="text-xs text-[var(--color-text-secondary)] font-medium inline-flex items-center gap-1">
                 <app-icon name="shield" size="0.75rem" class="text-[var(--color-text-tertiary)]" />
@@ -447,6 +463,7 @@ export class Regears {
   private readonly tableFilters = signal<Readonly<Record<string, string>>>({});
 
   protected readonly canAdjudicate = computed(() => this.auth.hasPermission('regear.adjudicate'));
+  protected readonly canOpenNewRequest = computed(() => this.auth.hasPermission('regear.request'));
   protected readonly canManageSettings = computed(() =>
     this.auth.hasPermission('regear.settings.manage'),
   );

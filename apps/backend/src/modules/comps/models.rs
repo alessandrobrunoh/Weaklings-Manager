@@ -3,6 +3,7 @@
 //! Business logic lives in `service.rs`; this module only defines the shapes exchanged over
 //! the API and their `OpenAPI` schemas.
 
+use sea_orm::prelude::Decimal;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -211,6 +212,68 @@ pub struct CompDetail {
     /// including this one, so the switcher can render the whole group from one response.
     #[serde(default)]
     pub versions: Vec<BuildVersionRef>,
+}
+
+/// One item's resolved market price, part of a build's price breakdown.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct ItemPriceRow {
+    /// The equipment slot this item occupies.
+    pub slot: BuildSlot,
+    /// The OpenAlbion item id.
+    pub openalbion_item_id: i64,
+    /// The OpenAlbion item name.
+    pub openalbion_item_name: String,
+    /// Cheapest sell price found for this item, in silver. `0` when no listing was available.
+    #[schema(value_type = String, example = "980000")]
+    pub unit_price: Decimal,
+    /// The city the price was found in (or the fallback city, when `cheapest_any` applied).
+    pub city: String,
+}
+
+/// A build's total market price, computed live from Albion Online Data.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct BuildPriceView {
+    /// The build id.
+    pub build_id: i64,
+    /// Per-item resolved prices.
+    pub items: Vec<ItemPriceRow>,
+    /// Σ of `items[].unit_price`.
+    #[schema(value_type = String, example = "4200000")]
+    pub total: Decimal,
+    /// RFC3339 timestamp this price was computed at (informs the caller how fresh a cached
+    /// response is).
+    pub priced_at: String,
+}
+
+/// One build's contribution to a comp's total market price.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct CompBuildPriceRow {
+    /// The build id.
+    pub build_id: i64,
+    /// The build name.
+    pub build_name: String,
+    /// How many of this build the comp calls for.
+    pub quantity: i32,
+    /// The single build's total price.
+    #[schema(value_type = String, example = "4200000")]
+    pub unit_total: Decimal,
+    /// `unit_total * quantity`.
+    #[schema(value_type = String, example = "8400000")]
+    pub subtotal: Decimal,
+}
+
+/// A comp's total market price, computed live from Albion Online Data.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct CompPriceView {
+    /// The comp id.
+    pub comp_id: i64,
+    /// Per-build price breakdown.
+    pub builds: Vec<CompBuildPriceRow>,
+    /// Σ of `builds[].subtotal`.
+    #[schema(value_type = String, example = "42000000")]
+    pub total: Decimal,
+    /// RFC3339 timestamp this price was computed at.
+    pub priced_at: String,
 }
 
 /// Request body to create a build category.

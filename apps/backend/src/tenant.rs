@@ -377,7 +377,10 @@ fn required_feature(path: &str) -> Option<&'static str> {
     FEATURE_GATES
         .iter()
         .find(|(prefix, _)| {
-            path == *prefix || path.strip_prefix(*prefix).is_some_and(|rest| rest.starts_with('/'))
+            path == *prefix
+                || path
+                    .strip_prefix(*prefix)
+                    .is_some_and(|rest| rest.starts_with('/'))
         })
         .map(|(_, feature)| *feature)
 }

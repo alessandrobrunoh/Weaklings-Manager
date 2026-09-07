@@ -2,10 +2,18 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   type APIEmbed,
 } from 'discord.js';
 import type { GuildSettingsView } from '../api/types.js';
 import { BOT_COLORS, createBaseEmbed, createResponseEmbed } from './theme.js';
+
+/** Custom id of the form shown when someone opens an application. */
+export const APPLICATION_MODAL_ID = 'application:create';
+/** Field inside that form holding the applicant's Albion character. */
+export const APPLICATION_INGAME_FIELD = 'ingame_name';
 
 const DEFAULT_COPY = {
   manageTitle: 'Gestione application',
@@ -85,6 +93,84 @@ export function buildApplicationWelcomeComponents(
       new ButtonBuilder().setCustomId(`application:close${suffix}`).setLabel('Close').setEmoji('🚪').setStyle(ButtonStyle.Danger).setDisabled(disabled),
     ),
   ];
+}
+
+/**
+ * The form Discord shows before the ticket is opened.
+ *
+ * Asking for the Albion character here is what lets the rest happen by itself:
+ * the name goes straight into the link flow, which renames the member and hands
+ * them their role, so nobody has to chase it inside the ticket afterwards.
+ */
+export function buildApplicationModal(settings: GuildSettingsView): ModalBuilder {
+  return new ModalBuilder()
+    .setCustomId(APPLICATION_MODAL_ID)
+    .setTitle((settings.discord_applications_panel_title ?? 'Application').slice(0, 45))
+    .addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder()
+          .setCustomId(APPLICATION_INGAME_FIELD)
+          .setLabel('Come ti chiami in gioco?')
+          .setPlaceholder('Il nome esatto del tuo personaggio Albion')
+          .setStyle(TextInputStyle.Short)
+          .setMinLength(2)
+          .setMaxLength(64)
+          .setRequired(true),
+      ),
+    );
+}
+
+/** Confirms the ticket was brought back instead of a second one being opened. */
+export function buildApplicationReopenedEmbed(
+  settings: GuildSettingsView,
+  reopenCount: number,
+): APIEmbed {
+  return createBaseEmbed({
+    category: 'APPLICATIONS',
+    title: 'Application riaperta',
+    description:
+      `${settings.discord_applications_welcome_message}\n\n` +
+      `Questo ticket era stato archiviato ed è stato riaperto: sopra trovi tutta la conversazione precedente.` +
+      (reopenCount > 1 ? `\n\n**Riaperture:** ${reopenCount}` : ''),
+    color: BOT_COLORS.WARNING,
+  }).toJSON();
+}
+
+/** Reports what the automatic Albion link did, inside the ticket itself. */
+export function buildApplicationLinkEmbed(
+  outcome: 'linked' | 'already-linked' | 'not-found' | 'failed',
+  ingameName: string,
+): APIEmbed {
+  if (outcome === 'linked') {
+    return createResponseEmbed(
+      'success',
+      'Personaggio collegato',
+      `**${ingameName}** è stato collegato a questo account: nickname e ruolo sono già stati sistemati.`,
+      'APPLICATIONS',
+    ).toJSON();
+  }
+  if (outcome === 'already-linked') {
+    return createResponseEmbed(
+      'info',
+      'Account già collegato',
+      `Questo account Discord è già collegato a un personaggio Albion, quindi **${ingameName}** non è stato ricollegato.`,
+      'APPLICATIONS',
+    ).toJSON();
+  }
+  if (outcome === 'not-found') {
+    return createResponseEmbed(
+      'warning',
+      'Personaggio non trovato',
+      `Non ho trovato **${ingameName}** su Albion. L'application resta aperta: un manager può collegarti a mano.`,
+      'APPLICATIONS',
+    ).toJSON();
+  }
+  return createResponseEmbed(
+    'warning',
+    'Collegamento non riuscito',
+    `Non sono riuscito a collegare **${ingameName}** adesso. L'application resta aperta: un manager può collegarti a mano.`,
+    'APPLICATIONS',
+  ).toJSON();
 }
 
 export function buildApplicationManageEmbed(settings: GuildSettingsView): APIEmbed {

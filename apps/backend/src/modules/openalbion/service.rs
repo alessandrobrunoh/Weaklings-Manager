@@ -196,6 +196,52 @@ pub fn base_identifier_for_stored_item(item_id: i64, icon: Option<&str>) -> Opti
     Some(base_identifier(stem))
 }
 
+/// Recovers the full Albion Online Data Project identifier of a stored item — tier kept, an
+/// `@N` enchantment suffix appended when `enchantment > 0`.
+///
+/// Unlike [`base_identifier_for_stored_item`], this does **not** strip the tier: AODP prices are
+/// queried per-tier (`T8_MAIN_SWORD` and `T4_MAIN_SWORD` are different market listings), not per
+/// item family. Used by both the self-service regear request's item-override pricing and comp/build
+/// market pricing (`comps::pricing`), which need exactly the same "catalog id + quality +
+/// enchantment → market identifier" resolution.
+#[must_use]
+pub fn aodp_identifier_for_stored_item(
+    item_id: i64,
+    icon: Option<&str>,
+    enchantment: i16,
+) -> Option<String> {
+    static BY_ID: OnceLock<HashMap<i64, String>> = OnceLock::new();
+    let by_id = BY_ID.get_or_init(|| {
+        catalog_items()
+            .iter()
+            .filter_map(|item| {
+                item.identifier
+                    .clone()
+                    .map(|identifier| (item.id, identifier))
+            })
+            .collect()
+    });
+
+    let base = if let Some(identifier) = by_id.get(&item_id) {
+        identifier.clone()
+    } else {
+        // Icon-URL fallback, same technique as `base_identifier_for_stored_item`.
+        let icon = icon?;
+        let file = icon.rsplit('/').next()?;
+        let stem = file.split(['.', '?']).next()?;
+        if stem.is_empty() {
+            return None;
+        }
+        stem.to_ascii_uppercase()
+    };
+
+    Some(if enchantment > 0 {
+        format!("{base}@{enchantment}")
+    } else {
+        base
+    })
+}
+
 fn filter_items<T>(items: &mut Vec<T>, tier: Option<i64>, query: Option<&str>)
 where
     T: CatalogItem,
@@ -518,5 +564,43 @@ mod ability_catalog_tests {
         );
         assert_eq!(chest.passive_slots, 2, "chest armor has two passive slots");
         assert_eq!(chest.passive.len(), 2, "both passive slots offer choices");
+    }
+}
+
+#[cfg(test)]
+mod aodp_identifier_tests {
+    use super::*;
+
+    // `T8_MAIN_SWORD` in the bundled catalog.
+    const BROADSWORD_ID: i64 = 1_129_082_251_177_166_736;
+
+    #[test]
+    fn plain_item_has_no_enchantment_suffix() {
+        assert_eq!(
+            aodp_identifier_for_stored_item(BROADSWORD_ID, None, 0),
+            Some("T8_MAIN_SWORD".to_string())
+        );
+    }
+
+    #[test]
+    fn enchanted_item_appends_the_at_suffix() {
+        assert_eq!(
+            aodp_identifier_for_stored_item(BROADSWORD_ID, None, 2),
+            Some("T8_MAIN_SWORD@2".to_string())
+        );
+    }
+
+    #[test]
+    fn unknown_id_falls_back_to_the_icon_url() {
+        let icon = "https://render.albiononline.com/v1/item/T4_BAG.png?quality=1&size=64";
+        assert_eq!(
+            aodp_identifier_for_stored_item(-1, Some(icon), 0),
+            Some("T4_BAG".to_string())
+        );
+    }
+
+    #[test]
+    fn unknown_id_and_no_icon_resolves_to_none() {
+        assert_eq!(aodp_identifier_for_stored_item(-1, None, 0), None);
     }
 }

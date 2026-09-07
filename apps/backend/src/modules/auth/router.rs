@@ -9,6 +9,8 @@ use super::service::{
 };
 use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
+use crate::modules::admin::models::BrandColorsView;
+use crate::modules::admin::service::AdminService;
 use crate::platform_admins::PlatformAdmins;
 use crate::postgres::list_active_tenants;
 use crate::responses::{ApiResponse, ApiResponseDiscordUserProfile};
@@ -488,6 +490,21 @@ pub async fn bot_invite(Extension(cfg): Extension<Config>) -> Json<ApiResponse<B
     }))
 }
 
+/// The tenant's brand colours, or `None` when it has not picked any.
+///
+/// Never fails the caller: theming is decoration, and a session must still be
+/// established when the colours cannot be read.
+async fn tenant_brand(db: &sea_orm::DatabaseConnection) -> Option<BrandColorsView> {
+    match AdminService::get_brand_colors(db).await {
+        Ok(brand) if !brand.is_empty() => Some(brand),
+        Ok(_) => None,
+        Err(err) => {
+            tracing::warn!(error = %err, "could not read the tenant's brand colours");
+            None
+        }
+    }
+}
+
 /// True when the session carries no tenant to scope requests to.
 fn session_needs_a_tenant(profile: &DiscordUserProfile) -> bool {
     profile
@@ -565,7 +582,10 @@ async fn adoptable_tenants(
             permissions: String::new(),
         })
         .collect();
-    Ok(matching_tenants(&guilds, &registered_tenants(control).await?))
+    Ok(matching_tenants(
+        &guilds,
+        &registered_tenants(control).await?,
+    ))
 }
 
 fn with_registerable_guilds(
@@ -679,6 +699,9 @@ async fn finalize_session(
     let mut feature_keys: Vec<_> = ctx.features.iter().cloned().collect();
     feature_keys.sort();
     profile.features = feature_keys;
+    // Same reasoning for the brand colours: they belong to the tenant being
+    // entered, so a switch must repaint rather than carry the old server's.
+    profile.brand = tenant_brand(&ctx.db).await;
     profile.user_id = AuthService::new().upsert_user(&ctx.db, &profile).await?;
     crate::modules::platform::service::PlatformService::record_membership(
         control,
@@ -777,12 +800,16 @@ pub async fn get_me(
                 let mut keys: Vec<_> = ctx.features.iter().cloned().collect();
                 keys.sort();
                 profile.features = keys;
+                // Re-read rather than trust the cookie, so an admin's colour
+                // change reaches every other member on their next page load.
+                profile.brand = tenant_brand(&ctx.db).await;
             }
             Err(_) => {
                 profile.tenant_id = None;
                 profile.tenant_name = None;
                 profile.permissions.clear();
                 profile.features.clear();
+                profile.brand = None;
             }
         }
     }
@@ -794,11 +821,7 @@ pub async fn get_me(
         }
         // Roles are read from the tenant's own Discord server. Without a
         // selected tenant there is no server to ask, so the cookie's roles stand.
-        if let Some(tenant_id) = profile
-            .tenant_id
-            .clone()
-            .filter(|id| !id.trim().is_empty())
-        {
+        if let Some(tenant_id) = profile.tenant_id.clone().filter(|id| !id.trim().is_empty()) {
             let service = AuthService::new();
             if let Some(role_ids) = service
                 .fetch_guild_member_role_ids(
@@ -1045,7 +1068,12 @@ mod tests {
         // original around instead of overwriting it with the expired one.
         for header_value in set_cookie_headers {
             let cookie = Cookie::parse_encoded(header_value).expect("valid Set-Cookie");
-            assert_eq!(cookie.secure(), Some(true), "cookie {:?} is missing Secure", cookie.name());
+            assert_eq!(
+                cookie.secure(),
+                Some(true),
+                "cookie {:?} is missing Secure",
+                cookie.name()
+            );
         }
     }
 

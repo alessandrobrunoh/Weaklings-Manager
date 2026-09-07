@@ -10,6 +10,7 @@ use utoipa::ToSchema;
 use crate::modules::albionbb::client::{
     AlbionBbBattleDetail, AlbionBbBattleSummary, AlbionBbGuild, AlbionBbKillEvent, AlbionBbPlayer,
 };
+use crate::modules::battles::outcome::BattleOutcome;
 
 /// A guild summary nested in a battle.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -72,6 +73,13 @@ pub struct BattleSummary {
     /// Canonical Fight metadata, when this battle has been mapped to a Fight.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fight: Option<BattleFightMetadata>,
+    /// Our side's outcome, decided by [`crate::modules::battles::outcome`].
+    ///
+    /// Absent only on summaries that never passed through a guild-scoped
+    /// service call, because the rule needs to know which guilds are ours.
+    /// Clients must render the value rather than deriving their own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<BattleOutcome>,
 }
 
 /// A player in a battle.
@@ -265,6 +273,7 @@ impl From<&AlbionBbBattleSummary> for BattleSummary {
             total_fame: s.total_fame,
             guilds,
             fight: None,
+            outcome: None,
         }
     }
 }

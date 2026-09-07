@@ -822,13 +822,6 @@ function newSplitBag(amount = 0): SplitBagDraft {
                     <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text)]">
                       {{ t('splits.participants') }} ({{ participants().length }})
                     </h3>
-                    <span
-                      class="chip font-mono text-xs font-medium"
-                      [class.chip--success]="draftWeightsAreValid()"
-                      [class.chip--warning]="!draftWeightsAreValid()"
-                    >
-                      {{ draftWeightChip() }}%
-                    </span>
                   </div>
 
                   <div class="flex items-center gap-1.5">
@@ -890,7 +883,6 @@ function newSplitBag(amount = 0): SplitBagDraft {
                               class="input font-mono text-xs text-right py-0.5 px-1 w-14"
                               type="number"
                               min="0.01"
-                              max="100"
                               step="0.01"
                               [value]="participant.weight"
                               (input)="onWeightChange(participant.user_id, $event)"
@@ -928,7 +920,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
               participants().length === 0 ||
               !draftTitle().trim() ||
               !draftTabId() ||
-              totalWeight() !== 100
+              !draftWeightsAreValid()
             "
           >
             {{ saving() ? t('common.loading') : t('common.create') }}
@@ -1366,10 +1358,6 @@ export class Splits {
     return participantWeightsAreValid(this.participants().map((participant) => participant.weight));
   }
 
-  protected draftWeightChip(): number {
-    return participantWeightChip(this.participants().map((participant) => participant.weight));
-  }
-
   protected estimatedShare(netValue: number, weight: number, totalWeight: number): number {
     if (totalWeight <= 0 || netValue <= 0) {
       return 0;
@@ -1501,7 +1489,7 @@ export class Splits {
   }
 
   protected onWeightChange(userId: number, event: Event): void {
-    const weight = Math.min(100, Math.max(1, Number((event.target as HTMLInputElement).value) || 1));
+    const weight = Math.max(0.01, Number((event.target as HTMLInputElement).value) || 1);
     this.weightsCustomized.set(true);
     this.participants.update((list) =>
       list.map((participant) =>
@@ -1933,34 +1921,25 @@ function toDraftParticipants(matched: MatchedParticipant[]): SplitParticipantDra
   }));
 }
 
+/**
+ * The weight given to each participant by "distribute evenly": one full share (100%) each.
+ * Weight is a relative share, not a percentage of the total that must sum to 100 — the backend
+ * (and `estimatedShare`) normalizes by dividing each participant's weight by the sum of
+ * everyone's, so giving every participant the same constant share is exactly "split equally"
+ * regardless of headcount, with no division/rounding to reconcile.
+ */
 export function evenParticipantWeight(count: number): number {
-  if (count <= 0) {
-    return 0;
-  }
-  return Math.round((100 / count) * 100) / 100;
+  return count > 0 ? 100 : 0;
 }
 
+/**
+ * A weight is valid on its own — it never needs to add up to any particular total across
+ * participants. This matches the backend's only real constraint (`weight > 0`, see
+ * `SplitService::create_split`): the payout formula normalizes by the sum of all weights, so
+ * `[100, 50]` (a full share and a half share) is exactly as valid as `[50, 50]`.
+ */
 export function participantWeightsAreValid(weights: readonly number[]): boolean {
-  if (weights.length === 0 || weights.some((weight) => weight <= 0)) {
-    return false;
-  }
-  const first = weights[0];
-  if (weights.every((weight) => weight === first)) {
-    return true;
-  }
-  const sum = weights.reduce((total, weight) => total + weight, 0);
-  return Math.abs(sum - 100) <= 0.01;
-}
-
-export function participantWeightChip(weights: readonly number[]): number {
-  if (weights.length === 0) {
-    return 0;
-  }
-  const first = weights[0];
-  if (first > 0 && weights.every((weight) => weight === first)) {
-    return 100;
-  }
-  return Math.round(weights.reduce((total, weight) => total + weight, 0) * 100) / 100;
+  return weights.length > 0 && weights.every((weight) => weight > 0);
 }
 
 export function redistributeWeights<T extends { weight: number }>(participants: T[]): T[] {

@@ -1,10 +1,10 @@
 //! Control-plane tenant, feature-flag, and admin assignment operations.
 
-use sea_orm::{ConnectionTrait, DatabaseConnection, DbErr, Statement, Value};
+use sea_orm::{ConnectionTrait, DatabaseConnection, DbErr, Statement, TransactionTrait, Value};
 
-use crate::postgres::{tenant_schema_name, tenant_slug};
 use crate::control_migration::SUPERADMIN_ROLE_ID;
 use crate::errors::AppError;
+use crate::postgres::{tenant_schema_name, tenant_slug};
 use crate::tenant::TenantRegistry;
 
 use super::models::{
@@ -103,6 +103,18 @@ impl PlatformService {
                 [id.into()],
             ))
             .await?;
+
+        if let Some(rank_id) = Self::default_rank_id(control).await? {
+            control
+                .execute(Statement::from_sql_and_values(
+                    control.get_database_backend(),
+                    "UPDATE tenants SET rank_id = $2::uuid WHERE id = $1",
+                    [id.into(), rank_id.clone().into()],
+                ))
+                .await?;
+            Self::sync_rank_flags(control, id, Some(&rank_id), actor).await?;
+            registry.evict(id);
+        }
 
         if let Some(region) = body.albion_api_region.as_deref() {
             Self::update_albion_settings(
@@ -669,7 +681,7 @@ impl PlatformService {
         let rows = control
             .query_all(Statement::from_string(
                 control.get_database_backend(),
-                "SELECT id::text, name, description, created_at::text \
+                "SELECT id::text, name, description, is_default, created_at::text \
                  FROM tenant_ranks ORDER BY name"
                     .to_owned(),
             ))
@@ -682,7 +694,8 @@ impl PlatformService {
                 id,
                 name: row.try_get_by_index(1)?,
                 description: row.try_get_by_index(2).ok(),
-                created_at: row.try_get_by_index(3).ok(),
+                is_default: row.try_get_by_index(3)?,
+                created_at: row.try_get_by_index(4).ok(),
                 feature_keys,
             });
         }
@@ -767,6 +780,27 @@ impl PlatformService {
                     [rank_id.into(), value.into()],
                 ))
                 .await?;
+        }
+        if let Some(is_default) = body.is_default {
+            // Clear first, then set: the partial unique index on `is_default`
+            // rejects a second default row whatever order the update scans in.
+            let txn = control.begin().await?;
+            txn.execute(Statement::from_sql_and_values(
+                txn.get_database_backend(),
+                "UPDATE tenant_ranks SET is_default = false \
+                 WHERE is_default AND ($2 OR id = $1::uuid)",
+                [rank_id.into(), is_default.into()],
+            ))
+            .await?;
+            if is_default {
+                txn.execute(Statement::from_sql_and_values(
+                    txn.get_database_backend(),
+                    "UPDATE tenant_ranks SET is_default = true WHERE id = $1::uuid",
+                    [rank_id.into()],
+                ))
+                .await?;
+            }
+            txn.commit().await?;
         }
         Self::get_rank(control, rank_id)
             .await?
@@ -866,7 +900,7 @@ impl PlatformService {
         let row = control
             .query_one(Statement::from_sql_and_values(
                 control.get_database_backend(),
-                "SELECT id::text, name, description, created_at::text \
+                "SELECT id::text, name, description, is_default, created_at::text \
                  FROM tenant_ranks WHERE id = $1::uuid",
                 [rank_id.into()],
             ))
@@ -878,9 +912,24 @@ impl PlatformService {
             id: row.try_get_by_index(0)?,
             name: row.try_get_by_index(1)?,
             description: row.try_get_by_index(2).ok(),
-            created_at: row.try_get_by_index(3).ok(),
+            is_default: row.try_get_by_index(3)?,
+            created_at: row.try_get_by_index(4).ok(),
             feature_keys: Self::rank_feature_keys(control, rank_id).await?,
         }))
+    }
+
+    /// Rank handed to tenants created without an explicit one, if any.
+    async fn default_rank_id(control: &DatabaseConnection) -> Result<Option<String>, AppError> {
+        let row = control
+            .query_one(Statement::from_string(
+                control.get_database_backend(),
+                "SELECT id::text FROM tenant_ranks WHERE is_default LIMIT 1".to_owned(),
+            ))
+            .await?;
+        match row {
+            Some(row) => Ok(Some(row.try_get_by_index(0)?)),
+            None => Ok(None),
+        }
     }
 
     async fn rank_feature_keys(
@@ -1229,6 +1278,158 @@ mod tests {
             .map(|flag| flag.key.as_str())
             .collect();
         assert_eq!(enabled, vec!["splits"]);
+
+        drop_schema(&admin, &schema).await.expect("drop");
+    }
+
+    #[tokio::test]
+    async fn default_rank_lands_on_newly_registered_tenants() {
+        let Some((url, admin)) = try_admin_db().await else {
+            return;
+        };
+        let schema = unique_schema("it_dfr");
+        ensure_schema(&admin, &schema).await.expect("schema");
+        let control = connect_with_search_path(&url, &schema)
+            .await
+            .expect("connect");
+        Migrator::up(&control, None).await.expect("migrate");
+        let registry = TenantRegistry::new(url, control.clone());
+
+        let free = PlatformService::create_rank(
+            &control,
+            CreateRankRequest {
+                name: "Free".into(),
+                description: None,
+            },
+        )
+        .await
+        .expect("free");
+        assert!(!free.is_default);
+        PlatformService::put_rank_features(
+            &control,
+            &registry,
+            &free.id,
+            PutRankFeaturesRequest {
+                keys: vec!["events".into()],
+            },
+            "admin",
+        )
+        .await
+        .expect("free features");
+        let free = PlatformService::patch_rank(
+            &control,
+            &free.id,
+            PatchRankRequest {
+                is_default: Some(true),
+                ..PatchRankRequest::default()
+            },
+        )
+        .await
+        .expect("mark default");
+        assert!(free.is_default);
+
+        let id = unique_schema("gid");
+        let created = PlatformService::register_tenant(
+            &control,
+            &registry,
+            RegisterTenantRequest {
+                id: id.clone(),
+                name: "New Guild".into(),
+                albion_guild_id: "alb-1".into(),
+                albion_api_region: "europe".into(),
+                albion_allied_guild_ids: None,
+                albion_allied_guild_names: None,
+            },
+            "registrar-9",
+            None,
+        )
+        .await
+        .expect("register");
+        assert_eq!(created.rank_name.as_deref(), Some("Free"));
+
+        let flags = PlatformService::get_features(&control, &id)
+            .await
+            .expect("flags");
+        let enabled: Vec<_> = flags
+            .flags
+            .iter()
+            .filter(|flag| flag.enabled)
+            .map(|flag| flag.key.as_str())
+            .collect();
+        assert_eq!(enabled, vec!["events"]);
+
+        drop_schema(&admin, &created.schema_name)
+            .await
+            .expect("drop tenant schema");
+        drop_schema(&admin, &schema).await.expect("drop");
+    }
+
+    #[tokio::test]
+    async fn marking_a_rank_default_clears_the_previous_holder() {
+        let Some((url, admin)) = try_admin_db().await else {
+            return;
+        };
+        let schema = unique_schema("it_dfm");
+        ensure_schema(&admin, &schema).await.expect("schema");
+        let control = connect_with_search_path(&url, &schema)
+            .await
+            .expect("connect");
+        Migrator::up(&control, None).await.expect("migrate");
+
+        let mut ids = Vec::new();
+        for name in ["Free", "Gold"] {
+            let rank = PlatformService::create_rank(
+                &control,
+                CreateRankRequest {
+                    name: (*name).into(),
+                    description: None,
+                },
+            )
+            .await
+            .expect("create");
+            ids.push(rank.id);
+        }
+
+        // Backwards too: the second rank first, then the one stored before it.
+        for id in ids.iter().rev() {
+            PlatformService::patch_rank(
+                &control,
+                id,
+                PatchRankRequest {
+                    is_default: Some(true),
+                    ..PatchRankRequest::default()
+                },
+            )
+            .await
+            .expect("mark default");
+        }
+
+        let defaults: Vec<_> = PlatformService::list_ranks(&control)
+            .await
+            .expect("list")
+            .into_iter()
+            .filter(|rank| rank.is_default)
+            .map(|rank| rank.name)
+            .collect();
+        assert_eq!(defaults, vec!["Free"]);
+
+        // Clearing the flag leaves new tenants rankless.
+        PlatformService::patch_rank(
+            &control,
+            &ids[0],
+            PatchRankRequest {
+                is_default: Some(false),
+                ..PatchRankRequest::default()
+            },
+        )
+        .await
+        .expect("clear default");
+        assert!(
+            PlatformService::default_rank_id(&control)
+                .await
+                .expect("default")
+                .is_none()
+        );
 
         drop_schema(&admin, &schema).await.expect("drop");
     }

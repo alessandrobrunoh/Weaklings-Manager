@@ -23,7 +23,7 @@ import { ThemeService } from '../../core/services/theme.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import { resolveBattleOutcome, type BattleOutcomeType } from './battle-outcome';
+import { battleOutcomeLabel, type BattleOutcomeType } from './battle-outcome';
 import { Chart, type ChartClickEvent, type ChartTableRow } from '../../shared/components/chart/chart';
 import { chartChrome, chartPalette } from '../../shared/components/chart/chart-theme';
 import { DataTable, type DataTableColumn } from '../../shared/components/data-table/data-table';
@@ -180,7 +180,8 @@ export interface GuildEnrichedRow extends BattleGuildSummary {
           class="chip font-semibold"
           [class.chip--success]="battleVerdict().type === 'victory'"
           [class.chip--error]="battleVerdict().type === 'defeat'"
-          [class.chip--warning]="battleVerdict().type === 'contested'"
+          [class.chip--warning]="battleVerdict().type === 'draw'"
+            [class.chip--neutral]="battleVerdict().type === 'unknown'"
         >
           {{ battleVerdict().label }}
         </span>
@@ -1378,24 +1379,12 @@ export class BattleDetailPage {
     );
   });
 
-  // Battle Verdict computation
-  // Shares `resolveBattleOutcome` with the battles list's own outcome badge so
-  // the same battle can't read "Victory" there and "Contested" here.
-  protected readonly battleVerdict = computed<{ label: string; type: 'victory' | 'defeat' | 'contested' }>(() => {
-    const detail = this.battle();
-    if (!detail) return { label: 'BATTLE', type: 'contested' };
-
-    const type = resolveBattleOutcome({
-      guilds: detail.guilds,
-      totalFame: detail.total_fame,
-      ourGuildName: DEFAULT_OUR_GUILD_NAME,
-    });
-    const labels: Record<BattleOutcomeType, TranslationKey> = {
-      victory: 'battles.victory',
-      defeat: 'battles.defeat',
-      contested: 'battles.contested',
-    };
-    return { label: this.t(labels[type]), type };
+  // Renders the verdict `GET /api/battles/{id}` already resolved. The browser
+  // used to score the battle itself against its own fame thresholds, which is
+  // how the same battle could read "Victory" in the list and "Contested" here.
+  protected readonly battleVerdict = computed<{ label: string; type: BattleOutcomeType }>(() => {
+    const type = this.battle()?.outcome ?? 'unknown';
+    return { label: this.t(battleOutcomeLabel(type)), type };
   });
 
   // Enemy forces totals

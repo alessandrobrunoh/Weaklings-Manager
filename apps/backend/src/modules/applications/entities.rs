@@ -16,6 +16,12 @@ pub struct Model {
     pub created_at: DateTimeWithTimeZone,
     pub resolved_at: Option<DateTimeWithTimeZone>,
     pub resolved_by_discord_id: Option<String>,
+    /// Albion character the applicant gave when opening the ticket.
+    pub ingame_name: Option<String>,
+    /// When this ticket was last brought back from the archive.
+    pub reopened_at: Option<DateTimeWithTimeZone>,
+    /// How many times the applicant has come back to this same ticket.
+    pub reopen_count: i32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

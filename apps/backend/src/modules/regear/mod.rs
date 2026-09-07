@@ -6,6 +6,7 @@
 //!
 //! See `plans/regear-module.md` for the full design.
 
+pub(crate) mod credits;
 pub mod entities;
 pub mod extractor;
 pub mod models;

@@ -1,6 +1,8 @@
 //! `Battles` routing module.
 //!
-//! Three endpoints, all session-protected:
+//! Three endpoints, all gated on `fights.view`. They used to be session-only,
+//! which meant any authenticated member could read the guild's full killboard
+//! history while the equivalent `/api/fights` endpoints required a permission.
 //! - `GET /` — list battles of the configured Weaklings guild (paginated).
 //! - `GET /{battle_id}` — full detail (battle + kills).
 //! - `GET /me` — battles the calling user participated in.
@@ -18,7 +20,7 @@ use super::models::BattleDetail;
 use super::service::BattlesService;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::albiondata::service::AlbionDataService;
-use crate::modules::auth::UserContext;
+use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedBattleSummary, PaginationParams, SortOrder};
 use crate::responses::{ApiResponse, ApiResponsePaginatedBattles};
 
@@ -80,20 +82,23 @@ pub struct MyBattlesQuery {
     description = "Paginated list of battles involving the configured guild. AlbionBB cannot sort, \
         so the backend hydrates recent pages, then filters/sorts/paginates locally. \
         `min_players` defaults to 10. Use `/battles/{battle_id}` for full per-player details.",
-    security(("session_cookie" = [])),
+    security(("session_cookie" = ["fights.view"])),
     params(BattlesListQuery),
     responses(
         (status = 200, description = "Battles retrieved successfully", body = ApiResponsePaginatedBattles),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Missing the fights.view permission", body = ProblemDetails),
         (status = 502, description = "Upstream AlbionBB API error", body = ProblemDetails)
     )
 )]
 pub async fn list_battles(
-    _user: UserContext,
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(service): Extension<BattlesService>,
     Extension(db): Extension<DatabaseConnection>,
     Query(query): Query<BattlesListQuery>,
 ) -> Result<Json<ApiResponse<PaginatedBattleSummary>>, AppError> {
+    user.require(&perms, Permission::FightsView).await?;
     let pagination = PaginationParams {
         page: query.page,
         limit: query.limit,
@@ -122,22 +127,25 @@ pub async fn list_battles(
     summary = "Get full detail for a single battle (players + kill timeline)",
     description = "Combines AlbionBB's battle detail and kill feed into one response. The kill \
         timeline preserves the entire upstream kill event in each entry's `raw` field.",
-    security(("session_cookie" = [])),
+    security(("session_cookie" = ["fights.view"])),
     params(("battle_id" = i64, Path, description = "AlbionBB battle id")),
     responses(
         (status = 200, description = "Battle retrieved successfully", body = crate::responses::ApiResponseBattleDetail),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Missing the fights.view permission", body = ProblemDetails),
         (status = 404, description = "No battle exists with this id", body = ProblemDetails),
         (status = 502, description = "Upstream AlbionBB API error", body = ProblemDetails)
     )
 )]
 pub async fn get_battle(
-    _user: UserContext,
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(service): Extension<BattlesService>,
     Extension(albiondata): Extension<AlbionDataService>,
     Extension(db): Extension<DatabaseConnection>,
     Path(battle_id): Path<i64>,
 ) -> Result<Json<ApiResponse<BattleDetail>>, AppError> {
+    user.require(&perms, Permission::FightsView).await?;
     let detail = service
         .get_battle_detail_with_losses(&db, battle_id, &albiondata)
         .await?;
@@ -154,21 +162,24 @@ pub async fn get_battle(
         Returns `400` otherwise. Pages through up to 5 AlbionBB pages of the configured guild's \
         battles, fetches each battle's detail (cached 24h), and keeps only those whose players list \
         contains the linked Albion player id. Results are sorted newest-first and paginated locally.",
-    security(("session_cookie" = [])),
+    security(("session_cookie" = ["fights.view"])),
     params(MyBattlesQuery),
     responses(
         (status = 200, description = "Battles retrieved successfully", body = ApiResponsePaginatedBattles),
         (status = 400, description = "Caller has not linked an Albion character", body = ProblemDetails),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Missing the fights.view permission", body = ProblemDetails),
         (status = 502, description = "Upstream AlbionBB API error", body = ProblemDetails)
     )
 )]
 pub async fn list_my_battles(
     user: UserContext,
+    Extension(perms): Extension<Permissions>,
     Extension(service): Extension<BattlesService>,
     Extension(db): Extension<DatabaseConnection>,
     Query(query): Query<MyBattlesQuery>,
 ) -> Result<Json<ApiResponse<PaginatedBattleSummary>>, AppError> {
+    user.require(&perms, Permission::FightsView).await?;
     let pagination = PaginationParams {
         page: query.page,
         limit: query.limit,

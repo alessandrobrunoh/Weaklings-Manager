@@ -148,6 +148,12 @@ export const routes: Routes = [
         loadComponent: () => import('./features/regears/regears').then((m) => m.Regears),
       },
       {
+        path: 'regears/new',
+        canActivate: [permissionGuard('regear.request')],
+        loadComponent: () =>
+          import('./features/regears/regear-new-request').then((m) => m.RegearNewRequest),
+      },
+      {
         path: 'regears/:deathId',
         loadComponent: () =>
           import('./features/regears/regear-detail').then((m) => m.RegearDetailPage),
@@ -202,6 +208,12 @@ export const routes: Routes = [
             canActivate: [permissionGuardTo('/admin', 'roles.manage', 'permissions.reload')],
             loadComponent: () =>
               import('./features/admin/admin-permissions').then((m) => m.AdminPermissions),
+          },
+          {
+            path: 'general',
+            canActivate: [permissionGuardTo('/admin', 'admin.settings.manage')],
+            loadComponent: () =>
+              import('./features/admin/admin-general').then((m) => m.AdminGeneral),
           },
           {
             path: 'features',

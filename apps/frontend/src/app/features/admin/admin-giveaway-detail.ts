@@ -50,6 +50,9 @@ import { albionItemQualityLabel } from '../../shared/data/albion-item-quality';
             @if (giveaway.silver_amount && +giveaway.silver_amount > 0) {
               <li>{{ giveaway.silver_amount }} silver</li>
             }
+            @if (giveaway.regear_request_bonus && giveaway.regear_request_bonus > 0) {
+              <li>+{{ giveaway.regear_request_bonus }} {{ t('giveaways.field.regearBonus') }}</li>
+            }
           </ul>
           <p class="text-sm">
             {{ t('giveaways.winner') }}:

@@ -19,7 +19,17 @@ const gold: TenantRankView = {
   name: 'Gold',
   description: null,
   feature_keys: ['splits'],
+  is_default: true,
   created_at: '2026-01-01',
+};
+
+const silver: TenantRankView = {
+  id: 'rank-2',
+  name: 'Silver',
+  description: null,
+  feature_keys: [],
+  is_default: false,
+  created_at: '2026-01-02',
 };
 
 describe('PlatformRanks', () => {
@@ -28,6 +38,7 @@ describe('PlatformRanks', () => {
     get: ReturnType<typeof vi.fn>;
     post: ReturnType<typeof vi.fn>;
     put: ReturnType<typeof vi.fn>;
+    patch: ReturnType<typeof vi.fn>;
     delete: ReturnType<typeof vi.fn>;
   };
 
@@ -37,18 +48,20 @@ describe('PlatformRanks', () => {
         if (path === 'api/platform/features') {
           return of(catalog);
         }
-        return of([gold]);
+        return of([gold, silver]);
       }),
       post: vi.fn().mockReturnValue(
         of({
-          id: 'rank-2',
-          name: 'Silver',
+          id: 'rank-3',
+          name: 'Bronze',
           description: null,
           feature_keys: [],
-          created_at: '2026-01-02',
+          is_default: false,
+          created_at: '2026-01-03',
         } satisfies TenantRankView),
       ),
       put: vi.fn().mockReturnValue(of({ ...gold, feature_keys: ['splits', 'events'] })),
+      patch: vi.fn().mockReturnValue(of({ ...silver, is_default: true })),
       delete: vi.fn().mockReturnValue(of(null)),
     };
 
@@ -77,16 +90,36 @@ describe('PlatformRanks', () => {
     expect(compiled.textContent).toContain('Gold');
 
     const name = compiled.querySelector('#rank-name') as HTMLInputElement;
-    name.value = 'Silver';
+    name.value = 'Bronze';
     name.dispatchEvent(new Event('input'));
     const form = compiled.querySelector('form') as HTMLFormElement;
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     await fixture.whenStable();
     fixture.detectChanges();
     expect(api.post).toHaveBeenCalledWith('api/platform/ranks', {
-      name: 'Silver',
+      name: 'Bronze',
       description: undefined,
     });
-    expect(compiled.textContent).toContain('Silver');
+    expect(compiled.textContent).toContain('Bronze');
+  });
+
+  it('moves the default flag onto the rank whose button was pressed', async () => {
+    const compiled = fixture.nativeElement as HTMLElement;
+    const setDefault = [...compiled.querySelectorAll('button')].filter(
+      (button) => button.textContent?.trim() === 'platform.ranks.setDefault',
+    );
+    // Only the non-default rank offers the action.
+    expect(setDefault).toHaveLength(1);
+
+    setDefault[0].click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(api.patch).toHaveBeenCalledWith('api/platform/ranks/rank-2', { is_default: true });
+    const remaining = [...compiled.querySelectorAll('button')].filter(
+      (button) => button.textContent?.trim() === 'platform.ranks.setDefault',
+    );
+    expect(remaining).toHaveLength(1);
+    expect(compiled.querySelectorAll('.chip--success')).toHaveLength(1);
   });
 });
