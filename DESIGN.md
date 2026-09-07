@@ -1,73 +1,80 @@
-# Linear — Style Reference
-> midnight precision instrument
+# Discord — Style Reference
+> Game world behind a chat bubble — every section is a self-contained environment with its own lighting and cast of characters.
 
 **Theme:** dark
 
-> **Weaklings brand override:** retain Linear's compact, precision-oriented product grammar, but use the Weaklings logo red, `#dc2626`, as the functional action accent. Red is never decorative. Status colors remain semantic and distinct from primary actions.
-
-Weaklings Manager is a midnight command center built on near-black surfaces (#08090a) with paper-white type and one controlled Weaklings-red accent (#dc2626) that functions as a functional flashlight — small, high-contrast, and used sparingly to signal action. The interface treats darkness as a substrate rather than a theme: text is crisp white at tight tracking (-0.022em), weights sit in a low 400–510 band rather than bold, and borders are hairline-thin (0.5px) to let geometry do the work that shadows usually would. Components feel precision-machined — 6px and 12px radii, compact 8–12px paddings, and almost no decorative ornament — letting the product UI (issue cards, kanban boards, AI agent panels) be the only visual texture in an otherwise quiet system.
-
-
+Deep cosmic blue fills every section like a starfield at 2am — not a background choice but a total environment. The hero plunges into a rich indigo-to-navy gradient populated with 3D characters, product screens, and floating mascots, making the UI feel like a game world rather than a marketing page. Blurple (#5865F2) — Discord's owned hue — appears only on primary CTAs, creating a controlled pop against the blue-black atmosphere. Typography does the heavy lifting: ABC Ginto Nord at weight 800 with tight -0.01em tracking slams headlines into all-caps blocks that feel like stamped metal, while body copy at 16px/1.5 stays conversational. The overall effect is a gaming-native space where every section is its own immersive stage, not a content column.
 
 ## Tokens — Colors
 
 | Name | Value | Token | Role |
 |------|-------|-------|------|
-| Void | `#08090a` | `--color-void` | Page canvas, full-bleed backgrounds — the default everything sits on |
-| Carbon | `#0f1011` | `--color-carbon` | Card surfaces, nav bars — one step above canvas for contained content |
-| Obsidian | `#161718` | `--color-obsidian` | Elevated surfaces, deeper card panels |
-| Graphite | `#23252a` | `--color-graphite` | Subtle borders, dividers, ghost button outlines — low-contrast structural edges |
-| Smoke | `#383b3f` | `--color-smoke` | Hairline borders at higher contrast than graphite — section separators |
-| Ash | `#62666d` | `--color-ash` | Muted body text, inactive icons, secondary metadata |
-| Fog | `#8a8f98` | `--color-fog` | Tertiary text, placeholder copy, icon fills |
-| Mist | `#d0d6e0` | `--color-mist` | Secondary headings, button text on dark surfaces |
-| Bone | `#e5e5e6` | `--color-bone` | Near-white surface fills, high-contrast button text |
-| Paper | `#ffffff` | `--color-paper` | Primary headings, hero type, max-contrast emphasis text |
-| Weaklings Red | `#dc2626` | `--color-weaklings-red` | Primary action buttons, active nav indicator, focus treatment — derived from the Weaklings logo |
-| Pulse Green | `#27a644` | `--color-pulse-green` | Green outline accent for tags, dividers, and focused UI edges. Use as a supporting accent, not as a status color |
-| Coral Red | `#eb5757` | `--color-coral-red` | Red wash for highlight backgrounds, decorative bands, and soft emphasis behind content. Use as a supporting accent, not as a status color |
-| Signal Teal | `#02b8cc` | `--color-signal-teal` | Decorative accent, informational icon fills |
-| Iris Violet | `#6366f1` | `--color-iris-violet` | Tag/badge fills — soft chromatic punctuation on tags and labels |
-| Lavender | `#8b5cf6` | `--color-lavender` | Secondary tag fills, category indicators |
+| Blurple | `#5865f2` | `--color-blurple` | Primary CTA buttons, brand icon, active states — the single chromatic anchor in a near-monochrome blue-black space, creating instant recognition as the only saturated element in the layout |
+| Dark Blurple | `#3442d9` | `--color-dark-blurple` | Hover state for primary buttons, pressed states |
+| Hover Blurple | `#8891f2` | `--color-hover-blurple` | Button hover tint, elevated blurple interactions |
+| Spring Green | `#57f287` | `--color-spring-green` | Online status indicators, success states |
+| Fuchsia | `#eb459` | `--color-fuchsia` | Nitro gradient accents, special event highlights |
+| Vivid Cerulean | `#00b0f4` | `--color-vivid-cerulean` | Voice/video channel indicators, info states |
+| Ember Orange | `#fda220` | `--color-ember-orange` | Quest indicators, achievement highlights |
+| Ekko Red | `#de2761` | `--color-ekko-red` | Destructive actions, critical alerts |
+| Void | `#000000` | `--color-void` | Text on light surfaces, icon fills, overlay backgrounds |
+| Snow | `#ffffff` | `--color-snow` | Primary text on dark backgrounds, button text, nav links, card backgrounds |
+| Not Quite Black | `#23272a` | `--color-not-quite-black` | Secondary button text and borders, dark UI surface color |
+| Dark Charcoal | `#2c2f33` | `--color-dark-charcoal` | App UI chrome surfaces, elevated dark panels |
+| Graphite | `#333333` | `--color-graphite` | Tertiary text on light surfaces, image overlays |
+| Fog | `#babcd9` | `--color-fog` | Subdued headings and body text on dark backgrounds — a lavender-tinted neutral that stays on-brand while reducing contrast |
+| Greyple | `#99aab5` | `--color-greyple` | Disabled states, placeholder text, muted metadata |
+| Dim Grey | `#50555f` | `--color-dim-grey` | Input borders, dividers, secondary icon fills |
+| Off White | `#f6f6f6` | `--color-off-white` | Light section backgrounds, card surfaces in light contexts |
 
 ## Tokens — Typography
 
-### Inter Variable — Primary UI and heading typeface — used across nav, body, headings, buttons, cards · `--font-inter-variable`
-- **Substitute:** Inter (variable), or system-ui as fallback
-- **Weights:** 300, 400, 510, 590
-- **Sizes:** 10, 11, 12, 13, 14, 15, 16, 17, 20, 24, 32, 48, 64, 72
-- **Line height:** 1.0–2.75
-- **Letter spacing:** -0.022em at 48–72px, -0.012em at 20–32px, -0.011em at 15px, -0.010em at 13–16px
-- **OpenType features:** `"cv01" on, "ss03" on, "zero" on`
-- **Role:** Primary UI and heading typeface — used across nav, body, headings, buttons, cards
+### ABC Ginto Nord Discord — All display headlines and section headings. Weight 800 is the signature move — combined with all-caps styling and -0.01em tracking, headlines compress into dense rectangular blocks. No other font or weight creates this stamped-label effect. Used at 56–61px for hero, 48px for section leads, 36px for subsections. · `--font-abc-ginto-nord-discord`
+- **Substitute:** Nunito Black, Poppins 800, or Rounded Mplus 1c 800
+- **Weights:** 700, 800
+- **Sizes:** 36px, 48px, 56px, 61px
+- **Line height:** 0.86–1.20
+- **Letter spacing:** -0.01em (approx -0.56px at 56px, -0.61px at 61px)
+- **Role:** All display headlines and section headings. Weight 800 is the signature move — combined with all-caps styling and -0.01em tracking, headlines compress into dense rectangular blocks. No other font or weight creates this stamped-label effect. Used at 56–61px for hero, 48px for section leads, 36px for subsections.
 
-### Berkeley Mono — Code-adjacent UI text — issue IDs (ENG-2703), keyboard shortcuts, monospaced metadata · `--font-berkeley-mono`
-- **Substitute:** JetBrains Mono, IBM Plex Mono, or ui-monospace
+### ABC Ginto Discord — Navigation labels, body copy, button text, UI labels. Letter-spacing at 0.013–0.016em adds subtle openness at small sizes — compensating for the condensed feel of the Nord headline font above. Weight 500 for buttons and nav emphasis, 400 for body and metadata. · `--font-abc-ginto-discord`
+- **Substitute:** Inter, DM Sans, or Nunito 400/500
+- **Weights:** 400, 500
+- **Sizes:** 16px, 20px
+- **Line height:** 1.20–1.50
+- **Letter spacing:** 0.013–0.016em
+- **Role:** Navigation labels, body copy, button text, UI labels. Letter-spacing at 0.013–0.016em adds subtle openness at small sizes — compensating for the condensed feel of the Nord headline font above. Weight 500 for buttons and nav emphasis, 400 for body and metadata.
+
+### GG Sans — Discord's proprietary UI font used inside product UI mock-ups and app interface screenshots embedded in marketing sections. Appears at 16px/1.5 exclusively — mirrors the in-product typeface to keep screenshots authentic. · `--font-gg-sans`
+- **Substitute:** Inter 400
 - **Weights:** 400
-- **Sizes:** 12, 14
-- **Line height:** 1.40–1.71
-- **Letter spacing:** -0.013em
-- **OpenType features:** `"cv01" on, "ss03" on`
-- **Role:** Code-adjacent UI text — issue IDs (ENG-2703), keyboard shortcuts, monospaced metadata
+- **Sizes:** 16px
+- **Line height:** 1.50
+- **Role:** Discord's proprietary UI font used inside product UI mock-ups and app interface screenshots embedded in marketing sections. Appears at 16px/1.5 exclusively — mirrors the in-product typeface to keep screenshots authentic.
+
+### ABC Ginto Normal — Long-form paragraph body text in feature sections, link lists in footer. Functionally identical metrics to ABC Ginto Discord but a separate optical variant for extended reading. · `--font-abc-ginto-normal`
+- **Substitute:** Inter 400
+- **Weights:** 400
+- **Sizes:** 16px
+- **Line height:** 1.50
+- **Role:** Long-form paragraph body text in feature sections, link lists in footer. Functionally identical metrics to ABC Ginto Discord but a separate optical variant for extended reading.
 
 ### Type Scale
 
 | Role | Size | Line Height | Letter Spacing | Token |
 |------|------|-------------|----------------|-------|
-| caption | 13px | 1.2 | — | `--text-caption` |
-| body-sm | 15px | 1.6 | -0.165px | `--text-body-sm` |
-| body-lg | 20px | 1.33 | -0.24px | `--text-body-lg` |
-| subheading | 24px | 1.33 | -0.288px | `--text-subheading` |
-| heading-sm | 32px | 1.13 | -0.704px | `--text-heading-sm` |
-| heading | 48px | 1 | -1.056px | `--text-heading` |
-| heading-lg | 64px | 1 | -1.408px | `--text-heading-lg` |
-| display | 72px | 1 | -1.584px | `--text-display` |
+| body | 16px | 1.5 | — | `--text-body` |
+| body-lg | 20px | 1.38 | — | `--text-body-lg` |
+| heading-sm | 36px | 1.2 | -0.36px | `--text-heading-sm` |
+| heading | 48px | 0.93 | -0.48px | `--text-heading` |
+| heading-lg | 56px | 0.86 | -0.56px | `--text-heading-lg` |
+| display | 61px | 0.86 | -0.61px | `--text-display` |
 
 ## Tokens — Spacing & Shapes
 
 **Base unit:** 4px
 
-**Density:** compact
+**Density:** comfortable
 
 ### Spacing Scale
 
@@ -80,195 +87,160 @@ Weaklings Manager is a midnight command center built on near-black surfaces (#08
 | 20 | 20px | `--spacing-20` |
 | 24 | 24px | `--spacing-24` |
 | 28 | 28px | `--spacing-28` |
-| 32 | 32px | `--spacing-32` |
 | 36 | 36px | `--spacing-36` |
 | 40 | 40px | `--spacing-40` |
 | 48 | 48px | `--spacing-48` |
+| 52 | 52px | `--spacing-52` |
 | 56 | 56px | `--spacing-56` |
-| 64 | 64px | `--spacing-64` |
 | 80 | 80px | `--spacing-80` |
-| 96 | 96px | `--spacing-96` |
-| 128 | 128px | `--spacing-128` |
+| 112 | 112px | `--spacing-112` |
+| 136 | 136px | `--spacing-136` |
+| 176 | 176px | `--spacing-176` |
 
 ### Border Radius
 
 | Element | Value |
 |---------|-------|
-| cards | 12px |
-| pills | 9999px |
-| small | 2px |
-| badges | 4px |
-| inputs | 6px |
-| buttons | 6px |
-
-### Shadows
-
-| Name | Value | Token |
-|------|-------|-------|
-| sm | `rgba(0, 0, 0, 0.4) 0px 2px 4px 0px` | `--shadow-sm` |
-| md | `rgba(0, 0, 0, 0.2) 0px 0px 12px 0px inset` | `--shadow-md` |
-| subtle | `rgb(35, 37, 42) 0px 0px 0px 1px inset` | `--shadow-subtle` |
-| subtle-2 | `rgba(0, 0, 0, 0.2) 0px 0px 0px 1px` | `--shadow-subtle-2` |
-| subtle-3 | `rgba(0, 0, 0, 0.01) 0px 5px 2px 0px, rgba(0, 0, 0, 0.04) ...` | `--shadow-subtle-3` |
-| xl | `rgba(8, 9, 10, 0.6) 0px 4px 32px 0px` | `--shadow-xl` |
-| subtle-4 | `rgba(255, 255, 255, 0.03) 0px 0px 0px 1px inset, rgba(255...` | `--shadow-subtle-4` |
-| subtle-5 | `rgba(0, 0, 0, 0.1) 0px 0px 0px 2px` | `--shadow-subtle-5` |
+| cards | 16px |
+| pills | 104px |
+| buttons | 12px |
+| buttonsLarge | 16px |
+| featurePanels | 24px |
 
 ### Layout
 
 - **Page max-width:** 1200px
-- **Section gap:** 96px
-- **Card padding:** 24px
-- **Element gap:** 8px
+- **Section gap:** 80-120px
+- **Card padding:** 32-48px
+- **Element gap:** 8-16px
 
 ## Components
 
-### Primary Action Button (Weaklings Red)
-**Role:** High-emphasis CTA — the one chromatic button in the system
+### Primary CTA Button (Blurple Filled)
+**Role:** Main call-to-action, e.g. 'Open Discord in your browser'
 
-Background #dc2626, text #ffffff, border-radius 6px, padding 10px 16px, Inter 14px / weight 510, letter-spacing -0.011em. Sits as the sole filled chromatic element — every other button on the site is neutral.
+backgroundColor #5865F2, color #FFFFFF, borderRadius 12px, padding 19.5px 24px. No border visible — the blurple fill is self-contained. Hover shifts to #3442D9. The 19.5px vertical padding makes this the tallest button variant on the page — physically dominant in the CTA pair.
 
-### Nav Text Button
-**Role:** Top navigation items
+### Secondary CTA Button (White Filled)
+**Role:** Download prompt, paired with primary CTA
 
-Transparent background, text #d0d6e0, padding 8px 12px, Inter 13px / weight 400. No border, no fill — pure typographic nav with underline on hover.
+backgroundColor #FFFFFF, color #23272A, borderRadius 12px, padding 15px 24px. A clean white pill against the dark background — high contrast without blurple. Border is #23272A at 1px. The softer padding (vs primary) visually subordinates it as the secondary choice.
 
-### Pill Button
-**Role:** Tag chips, status pills, compact action triggers
+### Ghost Navigation Button (Transparent Outlined)
+**Role:** Nav dropdown triggers and secondary navigation actions
 
-Background rgba(255,255,255,0.05), text #d0d6e0, border-radius 9999px, padding 4px 12px, Inter 12–13px / weight 400.
+backgroundColor transparent, color #FFFFFF, border 1px solid #FFFFFF, borderRadius 12px, padding 10px 16px. Used for nav menu items with dropdown arrows. The all-white outline on dark keeps it visible without competing with blurple.
 
-### Ghost / Outline Button
-**Role:** Secondary actions, less prominent CTAs
+### Log In Button (White Outlined)
+**Role:** Top-right header authentication action
 
-Transparent background, border 1px #23252a, text #d0d6e0, border-radius 6px, padding 8px 12px, Inter 13px / weight 400.
+backgroundColor #FFFFFF, color #000000, border 1px solid #000000, borderRadius 16px, padding 10px 16px. Uses a larger 16px radius than other buttons — matches the pill-like header style. Appears on the light/frosted header strip, making the filled white surface legible against the nav background.
 
-### Sign-up Button (Rounded Pill, Neutral)
-**Role:** High-emphasis nav CTA
+### Feature Showcase Card
+**Role:** Full-bleed section content containers holding product screenshots and feature copy
 
-Background #ffffff, text #08090a, border-radius 9999px, padding 8px 16px, Inter 13px / weight 510. White pill against the dark nav bar — the second highest-contrast element after the Weaklings-red CTA.
+Large rounded containers with 24px+ radius, set against the page's deep blue background. Each card uses its own gradient or solid background (purple-to-magenta for 'Group Chats', green for 'Watch Together') — section identity is expressed through the card background color, not the page background. Content splits 50/50: product screenshot left, text right. Cards span full viewport width on mobile, max ~1100px on desktop.
 
-### Card (Product Screenshot Frame)
-**Role:** Large showcase surface for product UI screenshots
+### 3D Character Float
+**Role:** Decorative mascot and character illustrations scattered at section edges
 
-Background #0f1011, border-radius 12px, inset shadow rgb(35,37,42) 0 0 0 1px, padding 24px. Hairline inner border defines the card edge — no outer shadow, no glow.
+Not interactive UI — these are 3D-rendered PNG/WebP assets positioned absolutely at section boundaries, overlapping card edges. Sizes range from ~100px to ~300px. They exit and enter sections unpredictably, creating the 'world' atmosphere. No background, no border, no radius — raw edge compositing into the page.
 
-### Card (Subtle)
-**Role:** Small content cards, nested panels
+### Product Screen Mock-up
+**Role:** Embedded Discord UI screenshots within feature cards
 
-Background rgba(255,255,255,0.02), border-radius 6px, shadow rgba(0,0,0,0.4) 0 2px 4px, padding 8px. Almost invisible — the card barely separates from the canvas.
+Screenshots of the actual Discord app rendered inside feature cards with 12-16px radius. They float slightly off-center with a subtle drop shadow. Mobile frames shown as phone outlines. Desktop frames shown as monitor bezels. The mock-ups use the real Discord dark UI (#2C2F33 surface, #23272A sidebar), grounding marketing claims in the actual product.
 
-### Text Input
-**Role:** Form fields, search inputs
+### Navigation Bar
+**Role:** Global top navigation
 
-Background rgba(255,255,255,0.02), border 1px rgba(255,255,255,0.08), text #d0d6e0, border-radius 6px, padding 12px 14px, Inter 14px / weight 400. Focus ring: border brightens to #d0d6e0.
+Fixed header spanning full viewport width. Background is semi-transparent over the hero image — appears near-white/frosted. Contains Discord wordmark left, text nav links center (16px ABC Ginto, #FFFFFF or #000000 depending on scroll state), and 'Log In' button far right. Dropdown triggers use the ghost outlined button variant. No visible shadow — floats as a flat strip.
 
-### Badge / Status Tag
-**Role:** Issue status, category labels, inline metadata
+### Hero Section
+**Role:** Full-viewport landing block
 
-Background rgba(255,255,255,0.05), text #8a8f98, border-radius 4px, padding 0px 6px, Inter 12px / weight 400. Color-coded variants use Pulse Green, Coral Red, Iris Violet, or Lavender fills.
+Full-bleed dark indigo background (#0E0F2D to near-black gradient implied). Headline in ABC Ginto Nord 800 at 56-61px, color #FFFFFF, all-caps, line-height 0.86, crammed into the left 50% of the viewport. Body copy at 16px ABC Ginto 400, color #FFFFFF, max-width ~380px. CTA pair (white + blurple buttons) sits below body. Right 50% holds the product mock-up composite with 3D characters overlapping both halves.
 
-### Logo Mark
-**Role:** Brand identification in nav
+### Footer Navigation
+**Role:** Site-wide footer link groups
 
-Linear wordmark + geometric glyph, Inter 16px / weight 510, color #ffffff. Glyph rendered as inline SVG in white.
-
-### Logo Bar (Customer Strip)
-**Role:** Social proof — customer logos in a horizontal row
-
-Neutral grey logos (Vercel, Cursor, Oscar, OpenAI, Coinbase, Cash App, Boom, Ramp) at #8a8f98–#d0d6e0, evenly spaced with 48–64px gaps, no card backgrounds.
-
-### Hero Gradient Floor
-**Role:** Atmospheric base under the product screenshot
-
-Linear gradient from rgb(8,9,10) at 10% to rgb(208,214,224) at 100% — a subtle light wash that grounds the floating product UI against the void.
+Dark background (#23272A or #000000). Multi-column link grid with group headings in 16px ABC Ginto 500 + positive letter-spacing. Link text at 16px/1.5 weight 400, color #BABCD9 (Fog) on dark. Discord wordmark and social icons top-left. No dividers — columns separated by gap only.
 
 ## Do's and Don'ts
 
 ### Do
-- Use Inter Variable with font-feature-settings 'cv01' on, 'ss03' on, 'zero' on — these alternate glyphs define Linear's typographic identity
-- Use #dc2626 exclusively for the single primary action per view — never for decoration, never for secondary buttons
-- Set body text at 16px Inter weight 400 with line-height 1.5 — larger reading sizes (17px+ at weight 590) are reserved for body emphasis blocks
-- Use letter-spacing -0.022em at 48px and above — tight tracking is non-negotiable for display type
-- Set card radius to 12px, button radius to 6px, pill radius to 9999px — three radii is the entire radius vocabulary
-- Use 0.5px hairline borders (#23252a or #383b3f) instead of shadows for surface separation — Linear's elevation comes from borders and subtle inner shadows
-- Keep section gaps at 96px and element gaps at 8px — the 8/12/24/96 spacing ladder is the rhythm
+- Use ABC Ginto Nord 800 in all-caps for all section headlines; letter-spacing must be -0.01em to maintain the compressed rectangular silhouette.
+- Keep #5865F2 (Blurple) exclusively on primary CTA buttons and interactive focus states — it is the only saturated color with a guaranteed role on every page.
+- Set feature section cards with their own gradient or solid background color (purple-magenta, green, etc.) to differentiate sections, since the global page background never changes.
+- Pair the blurple CTA button with a white filled secondary button using padding 15px 24px and radius 12px — never use blurple for both primary and secondary in the same CTA cluster.
+- Position 3D characters and mascot assets at card edges, overlapping between sections — the overlap is what creates the immersive environment, not isolated placement.
+- Apply 12px border-radius to standard buttons and 16px to the Log In/header button to maintain the subtle size hierarchy between interaction contexts.
+- Use the Fog color (#BABCD9) for body text in dark sections where full white (#FFFFFF) would overpower headlines — reserve pure white for headlines and critical UI labels.
 
 ### Don't
-- Do not use bold weights (700+) — Linear's type scale caps at weight 590, the system deliberately avoids heavy display weights
-- Do not use decorative gradients on buttons, cards, or text — gradients are reserved for the hero atmospheric floor only
-- Do not introduce additional chromatic accent colors as actions — the Weaklings-red button is the only chromatic UI element
-- Do not use large radii (16px+) on cards or panels — 12px is the max card radius in this system
-- Do not use shadows to separate cards from the canvas — use hairline borders (#23252a) and inner inset shadows instead
-- Do not use chromatic text colors for body copy — all body text sits in the #d0d6e0 / #8a8f98 / #62666d grey scale
-- Do not use Berkeley Mono for headings or marketing copy — it is reserved for issue IDs, keyboard shortcuts, and technical metadata
+- Never use a white or light-gray page background — the deep blue-black environment is non-negotiable for the brand atmosphere; even light-themed sections should be contained within cards.
+- Never apply ABC Ginto Nord headlines at mixed-case — the all-caps + tight tracking combination is inseparable from the visual identity.
+- Never place Blurple as a background color on large areas (sections, cards) — at scale it overwhelms the controlled accent role and collapses contrast with Blurple text.
+- Never use gradient text on headlines — the weight and mass of the black-filled letterforms is the visual statement; gradients would undermine the stamped-metal quality.
+- Never add drop shadows to feature cards — section identity comes from contrasting card backgrounds, not elevation shadow depth.
+- Never reduce button border-radius below 12px — anything sharper breaks the rounded-corner system that softens the otherwise heavy typographic tone.
+- Never use Greyple (#99AAB5) or Dim Grey (#50555F) as primary text colors — they are reserved for disabled, muted, and placeholder states only.
 
 ## Surfaces
 
 | Level | Name | Value | Purpose |
 |-------|------|-------|---------|
-| 0 | Void | `#08090a` | Page canvas — the default full-bleed background |
-| 1 | Carbon | `#0f1011` | Card surfaces, product screenshot frames, nav containers |
-| 2 | Obsidian | `#161718` | Elevated panels, deeper nested surfaces |
-| 3 | Slate | `#23252a` | Interactive surface tint, ghost button fills, border-adjacent backgrounds |
+| 0 | Cosmic Page | `#0e0f2d` | Global page background — deep indigo-navy environment that all sections sit within |
+| 1 | App Chrome | `#23272a` | Product UI sidebar and panel backgrounds shown in mock-ups |
+| 2 | App Surface | `#2c2f33` | Main content area inside product screenshots |
+| 3 | Feature Card | `#5865f2` | Feature section card backgrounds — each card uses its own themed gradient/solid (not always blurple), but this represents the brand-colored variant |
 
 ## Elevation
 
-Elevation is achieved almost entirely through hairline borders (0.5px #23252a or 1px inset #23252a) and subtle dark drop shadows (rgba(0,0,0,0.4) 0 2px 4px) rather than layered shadow stacks. The visual hierarchy comes from the surface-level progression (#08090a → #0f1011 → #161718 → #23252a) and border definition, not from ambient shadow. The Weaklings-red CTA may use a restrained inset shadow — the only place where chrome carries a real shadow.
+Discord marketing pages use no traditional box-shadow elevation. Depth is created entirely through color contrast between section backgrounds and floating card surfaces. 3D rendered characters establish z-depth through artistic perspective and overlap, not CSS shadows. The only elevation cue is scale — larger elements read as closer.
 
 ## Imagery
 
-Linear's visual language is product-screenshot-first: the hero and section illustrations are real Linear app UI captured at full fidelity — issue cards, kanban boards, AI agent panels, command palettes — placed inside framed card containers with hairline borders. No stock photography, no lifestyle imagery, no abstract illustration. Logos appear as a customer strip in neutral grey (#8a8f98) at uniform size. Icons are minimal line-art SVGs in single-color grey scale. The hero screenshot floats on a subtle linear gradient (dark-to-light) that creates atmospheric depth without literal scenery. Every visual element is a functional artifact of the product itself.
+Entirely 3D illustration and product screenshots — no photography. Characters are rendered in a cartoon-realistic 3D style with soft subsurface lighting, purple-blue-tinted shadows, and saturated clothing colors (orange, lavender, pink hoodie). They're posed mid-gesture and placed off-axis against the page, creating dynamism without a static layout grid. Product screenshots are composited into device frames (monitor bezel, phone outline) rendered in the same 3D style, making the 'product demo' feel like part of the illustration world rather than a flat screen-grab. Feature cards use full-bleed gradient backgrounds (purple-to-magenta, deep green) as the canvas for these screenshot composites — the gradient IS the scene lighting. Floating 3D props (a peach, a crystal, a robot mascot in lime green) appear at section boundaries as scene accessories. Zero photography — the visual world is entirely constructed, reinforcing that Discord is a space you build rather than a place that exists.
 
 ## Layout
 
-Layout is max-width contained at ~1200px, centered, with full-bleed dark backgrounds extending to viewport edges. The hero is a left-aligned oversized headline (64–72px) paired with a right-aligned link CTA, followed by a large product screenshot that bleeds beyond the max-width slightly. Section rhythm alternates between text-left/image-right 2-column compositions and full-width product showcase bands, separated by 96px vertical gaps. The customer logo strip is a single horizontal row. The page never uses 3-column card grids or masonry — information density stays low, with most sections using generous whitespace and a single focal point per screen. Navigation is a fixed top bar with left-aligned logo and right-aligned links, no sidebar, no mega-menu.
+Full-bleed at the page level with no explicit max-width container visible — the deep blue background extends edge-to-edge. Hero is a split composition: text block flush-left with 3D product composite filling the right half, both contained within viewport height. Feature sections below the hero use large-radius cards (~24px) that span 80-90% of the viewport width, each card being a self-contained stage. Within cards, layout is 50/50 split — product screenshot left, headline + body right (or reversed). No alternating light/dark band rhythm — all sections share the same dark background; differentiation comes from card background colors. Navigation is a fixed-top full-width bar with centered link groups. Footer uses a 4-5 column link grid. The page is extremely long (7300px+), with generous inter-section gaps of 80-120px giving each feature room to breathe.
 
 ## Agent Prompt Guide
 
-**Quick Color Reference:**
-- text (primary heading): #ffffff
-- text (body): #d0d6e0
-- text (muted): #8a8f98
-- background (canvas): #08090a
-- background (card): #0f1011
-- border (hairline): #23252a
-- accent (CTA): #dc2626
-- primary action: #dc2626 (filled action)
+**Quick Color Reference**
+- Page background: #0E0F2D (deep indigo)
+- Primary headline text: #FFFFFF
+- Body text on dark: #BABCD9 (Fog)
+- Primary CTA: #5865F2 (Blurple), white text
+- Secondary CTA: #FFFFFF background, #23272A text
+- Nav links: #FFFFFF
+- Border / UI outlines: #FFFFFF (on dark) or #23272A (on light)
 
-**3-5 Example Component Prompts:**
+**Example Component Prompts**
 
-1. **Hero headline block:** Full-bleed #08090a canvas. Headline at 64px Inter Variable weight 510, color #ffffff, letter-spacing -0.022em, line-height 1.0. Subtext at 16px Inter weight 400, color #8a8f98. No button — secondary link text in #d0d6e0 with arrow glyph.
+1. **Hero Section**: Full-bleed background #0E0F2D. Left 50%: headline 'GROUP CHAT THAT'S ALL FUN & GAMES' in ABC Ginto Nord 800, 56px, #FFFFFF, all-caps, letter-spacing -0.56px, line-height 0.86. Subtext 16px ABC Ginto 400, #FFFFFF, max-width 380px, line-height 1.5. Below: two buttons — white filled (#FFFFFF bg, #23272A text, 12px radius, 15px 24px padding) + blurple filled (#5865F2 bg, #FFFFFF text, 12px radius, 19.5px 24px padding), gap 16px. Right 50%: product screen composite with 3D character overlaps.
 
-2. **Product screenshot card:** Background #0f1011, border-radius 12px, inset border 1px #23252a via box-shadow, padding 24px. Contains a simulated app UI at full opacity over the card surface. No outer drop shadow.
+2. **Feature Section Card** (purple variant): Card background linear-gradient from #8B31A0 to #E040A0, border-radius 24px, width 90vw centered, padding 48px. Left: Discord app screenshot in phone/desktop frame. Right: headline 'MAKE YOUR GROUP CHATS MORE FUN' in ABC Ginto Nord 800, 48px, #FFFFFF, all-caps, letter-spacing -0.48px. Body text 16px ABC Ginto 400, #FFFFFF, line-height 1.5, max-width 360px.
 
-3. **Weaklings-red primary action button:** Background #dc2626, text #ffffff, border-radius 6px, padding 10px 16px, Inter 14px weight 510, letter-spacing -0.011em. Only one per view.
+3. **Navigation Bar**: Full-width fixed bar, semi-transparent background. Left: Discord logo + wordmark. Center: text links in ABC Ginto 400 16px, #FFFFFF, gap 4-8px. Dropdown triggers as ghost buttons (transparent bg, #FFFFFF border 1px, 12px radius, 10px 16px padding). Far right: 'Log In' button (#FFFFFF bg, #000000 text, 16px radius, 10px 16px padding).
 
-4. **Nav top bar:** Background #08090a (transparent over canvas), padding 16px horizontal, max-width 1200px centered. Logo wordmark #ffffff at 16px weight 510 left-aligned. Nav links #d0d6e0 at 13px weight 400, 8px gaps. Right-aligned white pill sign-up button: bg #ffffff, text #08090a, border-radius 9999px, padding 8px 16px.
+4. **Primary CTA Button**: backgroundColor #5865F2, color #FFFFFF, border none, borderRadius 12px, padding 19.5px 24px, font ABC Ginto 500 16px, letter-spacing 0.016em. Hover state: backgroundColor #3442D9.
 
-5. **Status badge row:** Horizontal flex, 8px gap. Each badge: background rgba(255,255,255,0.05), text #8a8f98, border-radius 4px, padding 0px 6px, Inter 12px weight 400. Color-coded variants: #27a644 for success, #eb5757 for error, #6366f1 for tags.
+5. **Footer Link Column**: Dark background #23272A. Column heading: ABC Ginto 500, 16px, #FFFFFF, letter-spacing 0.013em. Links: ABC Ginto 400, 16px, #BABCD9, line-height 1.5, gap 8px between items. 4-5 columns in a row, gap 32px between columns.
 
-## Type Scale Detail
+## Brand Color System
 
-Display: 72px / 510 / lh 1.0 / ls -0.022em
-Hero: 64px / 510 / lh 1.0 / ls -0.022em
-Section heading: 48px / 510 / lh 1.0 / ls -0.022em
-Subheading: 32px / 400 / lh 1.13 / ls -0.022em
-Heading: 24px / 400 / lh 1.33 / ls -0.012em
-Body emphasis: 20px / 590 / lh 1.33 / ls -0.012em
-Body large: 17px / 590 / lh 1.6 / ls default
-Body: 16px / 400 / lh 1.5 / ls default
-Body small: 15px / 400 / lh 1.6 / ls -0.011em
-Caption: 13px / 400 / lh 1.2 / ls default
-Label: 12px / 400 / lh 1.4 / ls default
-Micro: 10px / 510 / lh 1.5 / ls default
+Discord's color palette is a deliberate two-tier system: a near-monochromatic dark environment (indigo-black page, white text, charcoal UI) plus a single owned hue — Blurple (#5865F2). Every other color (Spring Green for online, Fuchsia for Nitro, Cerulean for voice) appears only in contextual UI states or seasonal campaigns. This means new page designs should default to white text on dark backgrounds with Blurple as the ONLY chromatic element in the layout chrome. The extended palette (Fuchsia, Yellow, Orange, Green) is available for in-product UI mock-ups, illustration coloring, and special campaign moments — not for general page components.
 
 ## Similar Brands
 
-- **Vercel** — Same dark-canvas-first approach with hairline borders, tight Inter typography, and product-screenshot-as-hero layout — both treat the product UI as the visual content rather than illustration
-- **Cursor** — Similar midnight dark mode, compact Inter type at 400–510 weights, and product-screenshot showcase cards at 12px radius
-- **Raycast** — Shared dark precision-instrument aesthetic — compact spacing, 6px button radius, monochromatic chrome with a single functional accent color for active states
-- **Framer** — Same dark-canvas layout language with large 48–64px Inter headings at tight tracking, product-screenshot hero cards, and minimal ornament between sections
+- **Roblox** — Same all-caps heavy display type + 3D character mascots as primary visual storytelling, placed loosely against colored environments
+- **Twitch** — Deep purple-dominant dark theme with a single vivid brand accent color reserved for CTAs, gaming-community audience
+- **Epic Games Store** — Full-bleed dark environments, product screenshot composites inside illustrated frames, large-type section headers in white on near-black
+- **Spotify (gaming campaigns)** — Saturated gradient card backgrounds as section differentiators within an otherwise monochromatic dark page structure
+- **Supercell** — 3D cartoon characters with subsurface-lit rendering, posed dynamically at section edges, overlapping layout containers
 
 ## Quick Start
 
@@ -277,57 +249,53 @@ Micro: 10px / 510 / lh 1.5 / ls default
 ```css
 :root {
   /* Colors */
-  --color-void: #08090a;
-  --color-carbon: #0f1011;
-  --color-obsidian: #161718;
-  --color-graphite: #23252a;
-  --color-smoke: #383b3f;
-  --color-ash: #62666d;
-  --color-fog: #8a8f98;
-  --color-mist: #d0d6e0;
-  --color-bone: #e5e5e6;
-  --color-paper: #ffffff;
-  --color-weaklings-red: #dc2626;
-  --color-pulse-green: #27a644;
-  --color-coral-red: #eb5757;
-  --color-signal-teal: #02b8cc;
-  --color-iris-violet: #6366f1;
-  --color-lavender: #8b5cf6;
+  --color-blurple: #5865f2;
+  --color-dark-blurple: #3442d9;
+  --color-hover-blurple: #8891f2;
+  --color-spring-green: #57f287;
+  --color-fuchsia: #eb459;
+  --color-vivid-cerulean: #00b0f4;
+  --color-ember-orange: #fda220;
+  --color-ekko-red: #de2761;
+  --color-void: #000000;
+  --color-snow: #ffffff;
+  --color-not-quite-black: #23272a;
+  --color-dark-charcoal: #2c2f33;
+  --color-graphite: #333333;
+  --color-fog: #babcd9;
+  --color-greyple: #99aab5;
+  --color-dim-grey: #50555f;
+  --color-off-white: #f6f6f6;
 
   /* Typography — Font Families */
-  --font-inter-variable: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-berkeley-mono: 'Berkeley Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-abc-ginto-nord-discord: 'ABC Ginto Nord Discord', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-abc-ginto-discord: 'ABC Ginto Discord', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-gg-sans: 'GG Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-abc-ginto-normal: 'ABC Ginto Normal', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
   /* Typography — Scale */
-  --text-caption: 13px;
-  --leading-caption: 1.2;
-  --text-body-sm: 15px;
-  --leading-body-sm: 1.6;
-  --tracking-body-sm: -0.165px;
+  --text-body: 16px;
+  --leading-body: 1.5;
   --text-body-lg: 20px;
-  --leading-body-lg: 1.33;
-  --tracking-body-lg: -0.24px;
-  --text-subheading: 24px;
-  --leading-subheading: 1.33;
-  --tracking-subheading: -0.288px;
-  --text-heading-sm: 32px;
-  --leading-heading-sm: 1.13;
-  --tracking-heading-sm: -0.704px;
+  --leading-body-lg: 1.38;
+  --text-heading-sm: 36px;
+  --leading-heading-sm: 1.2;
+  --tracking-heading-sm: -0.36px;
   --text-heading: 48px;
-  --leading-heading: 1;
-  --tracking-heading: -1.056px;
-  --text-heading-lg: 64px;
-  --leading-heading-lg: 1;
-  --tracking-heading-lg: -1.408px;
-  --text-display: 72px;
-  --leading-display: 1;
-  --tracking-display: -1.584px;
+  --leading-heading: 0.93;
+  --tracking-heading: -0.48px;
+  --text-heading-lg: 56px;
+  --leading-heading-lg: 0.86;
+  --tracking-heading-lg: -0.56px;
+  --text-display: 61px;
+  --leading-display: 0.86;
+  --tracking-display: -0.61px;
 
   /* Typography — Weights */
-  --font-weight-light: 300;
   --font-weight-regular: 400;
-  --font-weight-w510: 510;
-  --font-weight-w590: 590;
+  --font-weight-medium: 500;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
 
   /* Spacing */
   --spacing-unit: 4px;
@@ -338,54 +306,40 @@ Micro: 10px / 510 / lh 1.5 / ls default
   --spacing-20: 20px;
   --spacing-24: 24px;
   --spacing-28: 28px;
-  --spacing-32: 32px;
   --spacing-36: 36px;
   --spacing-40: 40px;
   --spacing-48: 48px;
+  --spacing-52: 52px;
   --spacing-56: 56px;
-  --spacing-64: 64px;
   --spacing-80: 80px;
-  --spacing-96: 96px;
-  --spacing-128: 128px;
+  --spacing-112: 112px;
+  --spacing-136: 136px;
+  --spacing-176: 176px;
 
   /* Layout */
   --page-max-width: 1200px;
-  --section-gap: 96px;
-  --card-padding: 24px;
-  --element-gap: 8px;
+  --section-gap: 80-120px;
+  --card-padding: 32-48px;
+  --element-gap: 8-16px;
 
   /* Border Radius */
-  --radius-sm: 2px;
-  --radius-md: 6px;
   --radius-xl: 12px;
   --radius-2xl: 16px;
-  --radius-2xl-2: 22px;
-  --radius-full: 400px;
-  --radius-full-2: 9999px;
+  --radius-full: 104px;
+  --radius-full-2: 120px;
 
   /* Named Radii */
-  --radius-cards: 12px;
-  --radius-pills: 9999px;
-  --radius-small: 2px;
-  --radius-badges: 4px;
-  --radius-inputs: 6px;
-  --radius-buttons: 6px;
-
-  /* Shadows */
-  --shadow-sm: rgba(0, 0, 0, 0.4) 0px 2px 4px 0px;
-  --shadow-md: rgba(0, 0, 0, 0.2) 0px 0px 12px 0px inset;
-  --shadow-subtle: rgb(35, 37, 42) 0px 0px 0px 1px inset;
-  --shadow-subtle-2: rgba(0, 0, 0, 0.2) 0px 0px 0px 1px;
-  --shadow-subtle-3: rgba(0, 0, 0, 0.01) 0px 5px 2px 0px, rgba(0, 0, 0, 0.04) 0px 3px 2px 0px, rgba(0, 0, 0, 0.07) 0px 1px 1px 0px, rgba(0, 0, 0, 0.08) 0px 0px 1px 0px;
-  --shadow-xl: rgba(8, 9, 10, 0.6) 0px 4px 32px 0px;
-  --shadow-subtle-4: rgba(255, 255, 255, 0.03) 0px 0px 0px 1px inset, rgba(255, 255, 255, 0.04) 0px 1px 0px 0px inset, rgba(0, 0, 0, 0.6) 0px 0px 0px 1px, rgba(0, 0, 0, 0.1) 0px 4px 4px 0px;
-  --shadow-subtle-5: rgba(0, 0, 0, 0.1) 0px 0px 0px 2px;
+  --radius-cards: 16px;
+  --radius-pills: 104px;
+  --radius-buttons: 12px;
+  --radius-buttonslarge: 16px;
+  --radius-featurepanels: 24px;
 
   /* Surfaces */
-  --surface-void: #08090a;
-  --surface-carbon: #0f1011;
-  --surface-obsidian: #161718;
-  --surface-slate: #23252a;
+  --surface-cosmic-page: #0e0f2d;
+  --surface-app-chrome: #23272a;
+  --surface-app-surface: #2c2f33;
+  --surface-feature-card: #5865f2;
 }
 ```
 
@@ -394,51 +348,47 @@ Micro: 10px / 510 / lh 1.5 / ls default
 ```css
 @theme {
   /* Colors */
-  --color-void: #08090a;
-  --color-carbon: #0f1011;
-  --color-obsidian: #161718;
-  --color-graphite: #23252a;
-  --color-smoke: #383b3f;
-  --color-ash: #62666d;
-  --color-fog: #8a8f98;
-  --color-mist: #d0d6e0;
-  --color-bone: #e5e5e6;
-  --color-paper: #ffffff;
-  --color-weaklings-red: #dc2626;
-  --color-pulse-green: #27a644;
-  --color-coral-red: #eb5757;
-  --color-signal-teal: #02b8cc;
-  --color-iris-violet: #6366f1;
-  --color-lavender: #8b5cf6;
+  --color-blurple: #5865f2;
+  --color-dark-blurple: #3442d9;
+  --color-hover-blurple: #8891f2;
+  --color-spring-green: #57f287;
+  --color-fuchsia: #eb459;
+  --color-vivid-cerulean: #00b0f4;
+  --color-ember-orange: #fda220;
+  --color-ekko-red: #de2761;
+  --color-void: #000000;
+  --color-snow: #ffffff;
+  --color-not-quite-black: #23272a;
+  --color-dark-charcoal: #2c2f33;
+  --color-graphite: #333333;
+  --color-fog: #babcd9;
+  --color-greyple: #99aab5;
+  --color-dim-grey: #50555f;
+  --color-off-white: #f6f6f6;
 
   /* Typography */
-  --font-inter-variable: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-berkeley-mono: 'Berkeley Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-abc-ginto-nord-discord: 'ABC Ginto Nord Discord', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-abc-ginto-discord: 'ABC Ginto Discord', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-gg-sans: 'GG Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-abc-ginto-normal: 'ABC Ginto Normal', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
   /* Typography — Scale */
-  --text-caption: 13px;
-  --leading-caption: 1.2;
-  --text-body-sm: 15px;
-  --leading-body-sm: 1.6;
-  --tracking-body-sm: -0.165px;
+  --text-body: 16px;
+  --leading-body: 1.5;
   --text-body-lg: 20px;
-  --leading-body-lg: 1.33;
-  --tracking-body-lg: -0.24px;
-  --text-subheading: 24px;
-  --leading-subheading: 1.33;
-  --tracking-subheading: -0.288px;
-  --text-heading-sm: 32px;
-  --leading-heading-sm: 1.13;
-  --tracking-heading-sm: -0.704px;
+  --leading-body-lg: 1.38;
+  --text-heading-sm: 36px;
+  --leading-heading-sm: 1.2;
+  --tracking-heading-sm: -0.36px;
   --text-heading: 48px;
-  --leading-heading: 1;
-  --tracking-heading: -1.056px;
-  --text-heading-lg: 64px;
-  --leading-heading-lg: 1;
-  --tracking-heading-lg: -1.408px;
-  --text-display: 72px;
-  --leading-display: 1;
-  --tracking-display: -1.584px;
+  --leading-heading: 0.93;
+  --tracking-heading: -0.48px;
+  --text-heading-lg: 56px;
+  --leading-heading-lg: 0.86;
+  --tracking-heading-lg: -0.56px;
+  --text-display: 61px;
+  --leading-display: 0.86;
+  --tracking-display: -0.61px;
 
   /* Spacing */
   --spacing-4: 4px;
@@ -448,33 +398,20 @@ Micro: 10px / 510 / lh 1.5 / ls default
   --spacing-20: 20px;
   --spacing-24: 24px;
   --spacing-28: 28px;
-  --spacing-32: 32px;
   --spacing-36: 36px;
   --spacing-40: 40px;
   --spacing-48: 48px;
+  --spacing-52: 52px;
   --spacing-56: 56px;
-  --spacing-64: 64px;
   --spacing-80: 80px;
-  --spacing-96: 96px;
-  --spacing-128: 128px;
+  --spacing-112: 112px;
+  --spacing-136: 136px;
+  --spacing-176: 176px;
 
   /* Border Radius */
-  --radius-sm: 2px;
-  --radius-md: 6px;
   --radius-xl: 12px;
   --radius-2xl: 16px;
-  --radius-2xl-2: 22px;
-  --radius-full: 400px;
-  --radius-full-2: 9999px;
-
-  /* Shadows */
-  --shadow-sm: rgba(0, 0, 0, 0.4) 0px 2px 4px 0px;
-  --shadow-md: rgba(0, 0, 0, 0.2) 0px 0px 12px 0px inset;
-  --shadow-subtle: rgb(35, 37, 42) 0px 0px 0px 1px inset;
-  --shadow-subtle-2: rgba(0, 0, 0, 0.2) 0px 0px 0px 1px;
-  --shadow-subtle-3: rgba(0, 0, 0, 0.01) 0px 5px 2px 0px, rgba(0, 0, 0, 0.04) 0px 3px 2px 0px, rgba(0, 0, 0, 0.07) 0px 1px 1px 0px, rgba(0, 0, 0, 0.08) 0px 0px 1px 0px;
-  --shadow-xl: rgba(8, 9, 10, 0.6) 0px 4px 32px 0px;
-  --shadow-subtle-4: rgba(255, 255, 255, 0.03) 0px 0px 0px 1px inset, rgba(255, 255, 255, 0.04) 0px 1px 0px 0px inset, rgba(0, 0, 0, 0.6) 0px 0px 0px 1px, rgba(0, 0, 0, 0.1) 0px 4px 4px 0px;
-  --shadow-subtle-5: rgba(0, 0, 0, 0.1) 0px 0px 0px 2px;
+  --radius-full: 104px;
+  --radius-full-2: 120px;
 }
 ```

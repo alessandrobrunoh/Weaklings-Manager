@@ -4,7 +4,12 @@ import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from './api.service';
 import { API_BASE_URL } from '../tokens/api-base.token';
-import type { DiscordUserProfile, RegisterableGuild, TenantChoice } from '../models/api.models';
+import type {
+  BotInvite,
+  DiscordUserProfile,
+  RegisterableGuild,
+  TenantChoice,
+} from '../models/api.models';
 
 /**
  * Session-aware authentication service.
@@ -61,6 +66,11 @@ export class AuthService {
   /** Discord servers the user can still register as tenants. */
   async registerableGuilds(): Promise<RegisterableGuild[]> {
     return firstValueFrom(this.api.get<RegisterableGuild[]>('api/auth/registerable-guilds'));
+  }
+
+  /** OAuth URL that adds the manager bot to a Discord server. */
+  async botInvite(): Promise<BotInvite> {
+    return firstValueFrom(this.api.get<BotInvite>('api/auth/bot-invite'));
   }
 
   /** Re-scope the session to another tenant the user already belongs to. */

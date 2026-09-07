@@ -43,6 +43,7 @@ pub fn router() -> Router {
         .route("/select-tenant", post(select_tenant))
         .route("/tenants", get(list_session_tenants))
         .route("/registerable-guilds", get(list_registerable_guilds))
+        .route("/bot-invite", get(bot_invite))
         .route("/switch-tenant", post(switch_tenant))
         .route("/me", get(get_me))
         .route("/logout", post(logout))
@@ -435,6 +436,120 @@ pub async fn list_registerable_guilds(
     )))
 }
 
+/// Discord permission bitfield the bot is invited with.
+///
+/// View Channels, Send Messages, Manage Messages, Embed Links, Attach Files,
+/// Read Message History, Mention Everyone, Add Reactions and Manage Roles —
+/// the set the guild automations (autorole, event pings, tickets) rely on.
+const BOT_INVITE_PERMISSIONS: u64 = 268_692_544;
+
+/// OAuth URL that adds the Weaklings Manager bot to a Discord server.
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+pub struct BotInvite {
+    /// Ready-to-open `discord.com` authorize URL.
+    pub url: String,
+    /// Discord application id the invite points at.
+    pub client_id: String,
+}
+
+/// Returns the bot invite link for the onboarding guide.
+///
+/// Public on purpose: the "add your server" page has to render before the
+/// visitor has a tenant, and the URL only exposes the public application id.
+#[utoipa::path(
+    get,
+    path = "/api/auth/bot-invite",
+    tag = "auth",
+    summary = "Invite URL used by the add-a-server onboarding guide",
+    responses((status = 200, description = "Bot invite URL"))
+)]
+pub async fn bot_invite(Extension(cfg): Extension<Config>) -> Json<ApiResponse<BotInvite>> {
+    let url = format!(
+        "https://discord.com/oauth2/authorize?client_id={}&scope=bot%20applications.commands&permissions={BOT_INVITE_PERMISSIONS}",
+        cfg.discord_client_id
+    );
+    Json(ApiResponse::new(BotInvite {
+        url,
+        client_id: cfg.discord_client_id,
+    }))
+}
+
+/// True when the session carries no tenant to scope requests to.
+fn session_needs_a_tenant(profile: &DiscordUserProfile) -> bool {
+    profile
+        .tenant_id
+        .as_deref()
+        .is_none_or(|id| id.trim().is_empty())
+}
+
+/// Re-scopes a tenant-less session onto the one registered tenant it matches.
+///
+/// A session opened before the user's Discord server was registered carries no
+/// tenant, and nothing ever revisits that: the tenant is pinned into the cookie
+/// at login and only read back. Without this the user sits on the "this server
+/// is not registered" screen even after someone registers it, until they log
+/// out and back in by hand.
+///
+/// Runs the same guild match the OAuth callback does and adopts the tenant only
+/// when exactly one matches — an ambiguous set is the callback's
+/// `/choose-server` case, and picking one for the user would be a guess.
+///
+/// Best-effort by design: a tenant that fails to open leaves the session as it
+/// was rather than turning the session probe into a `500`.
+async fn adopt_matching_tenant(
+    jar: &PrivateCookieJar,
+    cfg: &Config,
+    registry: &TenantRegistry,
+    admins: &PlatformAdmins,
+    control: &sea_orm::DatabaseConnection,
+    profile: &mut DiscordUserProfile,
+) -> Result<(), AppError> {
+    let candidates = adoptable_tenants(jar, control).await?;
+    let [tenant] = candidates.as_slice() else {
+        return Ok(());
+    };
+    match finalize_session(cfg, registry, admins, control, "", profile.clone(), tenant).await {
+        Ok(adopted) => *profile = adopted,
+        Err(err) => tracing::warn!(
+            tenant_id = %tenant.id,
+            error = %err,
+            "could not adopt the session's matching tenant"
+        ),
+    }
+    Ok(())
+}
+
+/// Registered tenants the session's own Discord guilds match.
+///
+/// Reads the guild list cached in the `registerable_guilds` cookie at login,
+/// so re-resolving a tenant-less session costs one control-plane query and no
+/// Discord round-trip. An unreadable or absent cookie simply yields nothing:
+/// the caller then leaves the session as it was.
+async fn adoptable_tenants(
+    jar: &PrivateCookieJar,
+    control: &sea_orm::DatabaseConnection,
+) -> Result<Vec<TenantChoice>, AppError> {
+    let Some(cookie) = jar.get("registerable_guilds") else {
+        return Ok(Vec::new());
+    };
+    let Ok(cached) = serde_json::from_str::<Vec<RegisterableGuild>>(cookie.value()) else {
+        return Ok(Vec::new());
+    };
+    if cached.is_empty() {
+        return Ok(Vec::new());
+    }
+    let guilds: Vec<DiscordGuild> = cached
+        .into_iter()
+        .map(|guild| DiscordGuild {
+            id: guild.id,
+            name: guild.name,
+            icon: guild.icon_hash,
+            owner: false,
+        })
+        .collect();
+    Ok(matching_tenants(&guilds, &registered_tenants(control).await?))
+}
+
 fn with_registerable_guilds(
     jar: PrivateCookieJar,
     guilds: &[DiscordGuild],
@@ -604,12 +719,14 @@ fn pending_cookie_tombstone() -> Cookie<'static> {
         (status = 401, description = "Unauthorized - no active session or invalid/expired session cookie", body = ProblemDetails)
     )
 )]
+#[allow(clippy::too_many_arguments)]
 pub async fn get_me(
     headers: HeaderMap,
     Extension(cfg): Extension<Config>,
     Extension(perms): Extension<Permissions>,
     db: Option<Extension<sea_orm::DatabaseConnection>>,
     Extension(admins): Extension<PlatformAdmins>,
+    Extension(control): Extension<ControlDb>,
     Extension(registry): Extension<TenantRegistry>,
     Extension(key): Extension<Key>,
 ) -> Result<(PrivateCookieJar, Json<ApiResponse<DiscordUserProfile>>), AppError> {
@@ -626,6 +743,10 @@ pub async fn get_me(
     // requiring a fresh login.
     profile.is_superadmin = admins.contains(&profile.id);
     profile.is_platform_admin = profile.is_superadmin;
+
+    if session_needs_a_tenant(&profile) {
+        adopt_matching_tenant(&jar, &cfg, &registry, &admins, &control.0, &mut profile).await?;
+    }
 
     if let Some(tenant_id) = profile.tenant_id.as_deref().filter(|id| !id.is_empty()) {
         match registry.get_or_load(tenant_id).await {

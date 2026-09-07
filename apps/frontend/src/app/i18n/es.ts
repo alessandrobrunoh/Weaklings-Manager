@@ -2197,7 +2197,8 @@ export const es: TranslationDict = {
   'platform.features.saved': 'Flags guardados.',
   'platform.features.empty': 'No hay funciones en el catálogo.',
   'platform.ranks.title': 'Rangos',
-  'platform.ranks.subtitle': 'Planes que creas tú. Cada rango desbloquea un conjunto de módulos.',
+  'platform.ranks.subtitle':
+    'Planes que creas tú. Cada rango desbloquea un conjunto de módulos. El rango predeterminado se asigna a cada servidor que se registra.',
   'platform.ranks.name': 'Nombre',
   'platform.ranks.description': 'Descripción',
   'platform.ranks.create': 'Nuevo rango',
@@ -2205,9 +2206,12 @@ export const es: TranslationDict = {
   'platform.ranks.features': 'Módulos',
   'platform.ranks.noFeatures': 'Ninguno',
   'platform.ranks.edit': 'Editar módulos',
+  'platform.ranks.default': 'Predeterminado',
+  'platform.ranks.setDefault': 'Marcar como predeterminado',
   'platform.ranks.created': 'Rango creado.',
   'platform.ranks.saved': 'Módulos del rango guardados.',
   'platform.ranks.deleted': 'Rango eliminado.',
+  'platform.ranks.defaultSaved': 'Rango predeterminado actualizado.',
   'platform.admins.title': 'Admins de plataforma',
   'platform.admins.subtitle': 'Usuarios de Discord con SuperAdmin en el plano de control.',
   'platform.admins.assign': 'Conceder SuperAdmin',
@@ -2233,4 +2237,49 @@ export const es: TranslationDict = {
   'register.submit': 'Crear tenant',
   'register.already': 'Este servidor ya está registrado.',
   'register.missingGuild': 'Falta el id del gremio de Discord. Abre esta página desde el enlace del bot.',
+
+  'addServer.title': 'Añadir un servidor',
+  'addServer.railTooltip': 'Añadir un servidor',
+  'addServer.eyebrow': 'Primeros pasos',
+  'addServer.heroTitle': 'Dirige tu gremio desde Discord',
+  'addServer.heroBody':
+    'Weaklings Manager se conecta a cualquier servidor de Discord: invita al bot, registra el servidor y tu gremio tendrá eventos, comps, batallas, banco y repartos — todo limitado a ese servidor.',
+  'addServer.inviteCta': 'Invitar al bot',
+  'addServer.stepsCta': 'Ver los pasos',
+  'addServer.inviteUnavailable': 'El enlace de invitación no está disponible ahora. Inténtalo en un momento.',
+  'addServer.stepsTitle': 'Pasos de configuración',
+  'addServer.requirements.title': 'Antes de empezar',
+  'addServer.requirements.manageGuild': 'Necesitas el permiso Gestionar servidor en Discord.',
+  'addServer.requirements.albionGuild': 'Debes saber el nombre y la región de tu gremio de Albion.',
+  'addServer.requirements.oneTenant':
+    'Cada servidor de Discord se registra una sola vez; te conviertes en su Super Admin.',
+  'addServer.step1.title': 'Invita al bot',
+  'addServer.step1.body':
+    'Abre el enlace de invitación y elige tu servidor de Discord. El bot entra con los permisos que necesita para publicar eventos, repartir roles y responder a los comandos.',
+  'addServer.step2.title': 'Registra el servidor',
+  'addServer.step2.body':
+    'El registro crea el espacio privado que guarda los datos del gremio. Elige un servidor abajo para iniciar el asistente: nada se comparte con otros servidores.',
+  'addServer.step3.title': 'Vincula tu gremio de Albion',
+  'addServer.step3.body':
+    'El asistente pide tu región y tu gremio en el juego, y luego descarga el roster, las batallas y las muertes de ese gremio automáticamente.',
+  'addServer.step4.title': 'Activa los módulos que quieras',
+  'addServer.step4.body':
+    'Eventos, comps, banco, repartos, regears y los demás se activan por servidor. Configura los roles y permisos de la misma manera.',
+  'addServer.step5.title': 'Trae a tus miembros',
+  'addServer.step5.body':
+    'Los miembros inician sesión con Discord y llegan directamente a tu servidor: sus roles deciden qué pueden ver y hacer.',
+  'addServer.yourServers': 'Tus servidores',
+  'addServer.registerAction': 'Registrar',
+  'addServer.noGuilds':
+    'Ningún servidor tuyo está disponible para registrar. Invita primero al bot y vuelve a entrar para actualizar la lista.',
+  'addServer.faq.title': 'Preguntas',
+  'addServer.faq.q1': '¿Tengo que invitar al bot antes de registrar?',
+  'addServer.faq.a1':
+    'Sí. El bot debe estar en el servidor para que la sincronización de roles, los avisos de eventos y los comandos funcionen.',
+  'addServer.faq.q2': '¿Puedo gestionar más de un servidor?',
+  'addServer.faq.a2':
+    'Sí. Cada servidor al que perteneces tiene su círculo en la barra izquierda; al cambiar de servidor cambia toda la aplicación.',
+  'addServer.faq.q3': '¿Quién puede ver los datos de mi gremio?',
+  'addServer.faq.a3':
+    'Solo los miembros de ese servidor de Discord, y solo lo que sus roles permiten. Los datos se guardan por servidor y nunca se mezclan.',
 };

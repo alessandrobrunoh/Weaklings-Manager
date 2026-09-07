@@ -17,31 +17,26 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [WeaklingsLogo],
   template: `
-    <div
-      class="min-h-dvh flex items-center justify-center p-4 sm:p-6"
-      style="background-color: var(--color-bg)"
-    >
-      <section class="card w-full max-w-md p-6 sm:p-8" aria-labelledby="needs-tenant-title">
+    <div class="auth-shell">
+      <section class="auth-card" aria-labelledby="needs-tenant-title">
         <div class="mb-6 flex flex-col items-center text-center">
-          <app-weaklings-logo />
-          <h1 id="needs-tenant-title" class="mt-4 text-lg font-semibold">
+          <app-weaklings-logo [compact]="true" />
+          <h1 id="needs-tenant-title" class="auth-card__title mt-5">
             {{ t('auth.needs_tenant_title') }}
           </h1>
-          <p class="mt-2 text-sm" style="color: var(--color-text-secondary)">
-            {{ t('auth.needs_tenant_body') }}
-          </p>
+          <p class="auth-card__subtitle">{{ t('auth.needs_tenant_body') }}</p>
         </div>
 
         @if (loading()) {
-          <p class="text-center text-sm" style="color: var(--color-text-secondary)">
+          <p class="text-center text-sm text-[var(--color-text-secondary)]">
             {{ t('common.loading') }}
           </p>
         } @else if (guilds().length === 0) {
-          <p class="text-sm text-center" style="color: var(--color-text-secondary)">
+          <p class="text-center text-sm text-[var(--color-text-secondary)]">
             {{ t('auth.needs_tenant_empty') }}
           </p>
         } @else {
-          <ul class="flex flex-col gap-2">
+          <ul class="flex flex-col gap-2" role="list">
             @for (guild of guilds(); track guild.id) {
               <li>
                 <button
@@ -59,6 +54,17 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
           </ul>
         }
 
+        <!-- The tenant-less visitor cannot reach the in-app guide (it lives
+             behind the tenant guard), so the first step of it comes here. -->
+        <div class="mt-6 border-t border-[var(--color-border)] pt-5">
+          <p class="text-sm text-[var(--color-text-secondary)]">{{ t('addServer.step1.body') }}</p>
+          @if (inviteUrl(); as url) {
+            <a class="btn btn--tonal mt-3 w-full" [href]="url" target="_blank" rel="noopener noreferrer">
+              {{ t('addServer.inviteCta') }}
+            </a>
+          }
+        </div>
+
         <button type="button" class="btn btn--ghost mt-4 w-full" (click)="logout()">
           {{ t('nav.logout') }}
         </button>
@@ -72,15 +78,25 @@ export class NeedsTenant implements OnInit {
   private readonly translate = inject(TranslateService);
   protected readonly guilds = signal<RegisterableGuild[]>([]);
   protected readonly loading = signal(true);
+  protected readonly inviteUrl = signal<string | null>(null);
   protected t = (key: TranslationKey) => this.translate.t(key);
 
   async ngOnInit(): Promise<void> {
+    void this.loadInvite();
     try {
       this.guilds.set(await this.auth.registerableGuilds());
     } catch {
       this.guilds.set([]);
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  private async loadInvite(): Promise<void> {
+    try {
+      this.inviteUrl.set((await this.auth.botInvite()).url);
+    } catch {
+      this.inviteUrl.set(null);
     }
   }
 

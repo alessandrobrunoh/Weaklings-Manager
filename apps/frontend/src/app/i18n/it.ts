@@ -2202,7 +2202,8 @@ export const it: TranslationDict = {
   'platform.features.saved': 'Flag salvati.',
   'platform.features.empty': 'Nessuna feature nel catalogo.',
   'platform.ranks.title': 'Rank',
-  'platform.ranks.subtitle': 'Piani che crei tu. Ogni Rank sblocca un set di moduli per un tenant.',
+  'platform.ranks.subtitle':
+    'Piani che crei tu. Ogni Rank sblocca un set di moduli per un tenant. Il Rank predefinito viene assegnato a ogni server che si registra.',
   'platform.ranks.name': 'Nome',
   'platform.ranks.description': 'Descrizione',
   'platform.ranks.create': 'Nuovo Rank',
@@ -2210,9 +2211,12 @@ export const it: TranslationDict = {
   'platform.ranks.features': 'Moduli',
   'platform.ranks.noFeatures': 'Nessuno',
   'platform.ranks.edit': 'Modifica moduli',
+  'platform.ranks.default': 'Predefinito',
+  'platform.ranks.setDefault': 'Imposta come predefinito',
   'platform.ranks.created': 'Rank creato.',
   'platform.ranks.saved': 'Moduli del Rank salvati.',
   'platform.ranks.deleted': 'Rank eliminato.',
+  'platform.ranks.defaultSaved': 'Rank predefinito aggiornato.',
   'platform.admins.title': 'Admin piattaforma',
   'platform.admins.subtitle': 'Utenti Discord con SuperAdmin sul control-plane.',
   'platform.admins.assign': 'Concedi SuperAdmin',
@@ -2238,4 +2242,49 @@ export const it: TranslationDict = {
   'register.submit': 'Crea tenant',
   'register.already': 'Questo server è già registrato.',
   'register.missingGuild': 'Manca l’id della gilda Discord. Apri questa pagina dal link del bot.',
+
+  'addServer.title': 'Aggiungi un server',
+  'addServer.railTooltip': 'Aggiungi un server',
+  'addServer.eyebrow': 'Primi passi',
+  'addServer.heroTitle': 'Gestisci la gilda da Discord',
+  'addServer.heroBody':
+    'Weaklings Manager si collega a qualsiasi server Discord: invita il bot, registra il server e la tua gilda ottiene eventi, comps, battaglie, banca e split — tutto limitato a quel server.',
+  'addServer.inviteCta': 'Invita il bot',
+  'addServer.stepsCta': 'Vedi i passaggi',
+  'addServer.inviteUnavailable': 'Il link di invito non è disponibile ora. Riprova tra poco.',
+  'addServer.stepsTitle': 'Passaggi di configurazione',
+  'addServer.requirements.title': 'Prima di iniziare',
+  'addServer.requirements.manageGuild': 'Ti serve il permesso Gestisci server su Discord.',
+  'addServer.requirements.albionGuild': 'Devi sapere nome e regione della tua gilda Albion.',
+  'addServer.requirements.oneTenant':
+    'Ogni server Discord si registra una sola volta: ne diventi Super Admin.',
+  'addServer.step1.title': 'Invita il bot',
+  'addServer.step1.body':
+    'Apri il link di invito e scegli il tuo server Discord. Il bot entra con i permessi necessari per pubblicare eventi, assegnare ruoli e rispondere ai comandi.',
+  'addServer.step2.title': 'Registra il server',
+  'addServer.step2.body':
+    'La registrazione crea lo spazio privato che contiene i dati della gilda. Scegli un server qui sotto per avviare la procedura: niente viene condiviso con altri server.',
+  'addServer.step3.title': 'Collega la gilda Albion',
+  'addServer.step3.body':
+    'La procedura chiede regione e gilda in-game, poi scarica automaticamente roster, battaglie e kill di quella gilda.',
+  'addServer.step4.title': 'Attiva i moduli che ti servono',
+  'addServer.step4.body':
+    'Eventi, comps, banca, split, regear e gli altri si attivano per singolo server. Imposta allo stesso modo ruoli e permessi.',
+  'addServer.step5.title': 'Fai entrare i membri',
+  'addServer.step5.body':
+    'I membri accedono con Discord e arrivano direttamente nel tuo server: i loro ruoli decidono cosa possono vedere e fare.',
+  'addServer.yourServers': 'I tuoi server',
+  'addServer.registerAction': 'Registra',
+  'addServer.noGuilds':
+    'Nessun tuo server è disponibile per la registrazione. Invita prima il bot, poi rientra per aggiornare la lista.',
+  'addServer.faq.title': 'Domande',
+  'addServer.faq.q1': 'Devo invitare il bot prima di registrare?',
+  'addServer.faq.a1':
+    'Sì. Il bot deve essere nel server perché sincronizzazione ruoli, ping degli eventi e comandi slash funzionino.',
+  'addServer.faq.q2': 'Posso gestire più di un server?',
+  'addServer.faq.a2':
+    'Sì. Ogni server a cui appartieni ha il suo cerchio nella barra a sinistra; cambiando server cambia tutta l’app.',
+  'addServer.faq.q3': 'Chi può vedere i dati della mia gilda?',
+  'addServer.faq.a3':
+    'Solo i membri di quel server Discord, e solo ciò che i loro ruoli permettono. I dati sono separati per server e non si mescolano mai.',
 };

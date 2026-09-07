@@ -23,6 +23,7 @@ use utoipa::OpenApi;
         crate::modules::auth::router::select_tenant,
         crate::modules::auth::router::list_session_tenants,
         crate::modules::auth::router::list_registerable_guilds,
+        crate::modules::auth::router::bot_invite,
         crate::modules::auth::router::switch_tenant,
         crate::modules::auth::router::get_me,
         crate::modules::auth::router::logout,

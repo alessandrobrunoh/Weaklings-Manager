@@ -40,11 +40,13 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
     </div>
   `,
   styles: `
+    /* The mark keeps the guild's own red even though Blurple now owns the
+       product accent — the logo is the one thing that must stay Weaklings. */
     .brand {
       display: inline-flex;
       align-items: center;
       gap: 0.75rem;
-      color: var(--color-primary);
+      color: var(--color-weaklings-red);
     }
 
     .brand--compact {
@@ -108,20 +110,20 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
       line-height: 1;
     }
 
-    /* The wordmark is the one place the serif survives: it is the brand
-       signature, kept alongside the red as the two things that stay
-       recognisably Weaklings in an otherwise monochrome system. */
+    /* All-caps display weight, per DESIGN.md: the wordmark is a stamped
+       block, never mixed case. */
     .brand__name {
       color: var(--color-text);
-      font-family: var(--font-wordmark);
+      font-family: var(--font-display);
       font-size: 1.0625rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
     }
 
     .brand__tagline {
       margin-top: 0.25rem;
-      color: var(--color-primary);
+      color: var(--color-weaklings-red);
       font-family: var(--font-mono);
       font-size: 0.625rem;
       font-weight: 500;

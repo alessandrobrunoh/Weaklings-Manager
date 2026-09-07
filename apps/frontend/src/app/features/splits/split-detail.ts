@@ -501,12 +501,12 @@ function parsePercentageInput(raw: string): number | null {
                   <span class="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
                     {{ t('splits.fee') }}
                   </span>
-                  <span class="icon-capsule bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                  <span class="icon-capsule bg-[var(--color-error-container)] text-[var(--color-error)] border border-[color-mix(in_oklab,var(--color-error)_25%,transparent)]">
                     <app-icon name="shield" size="1rem" />
                   </span>
                 </div>
                 <div class="mt-3">
-                  <span class="font-mono text-lg font-bold text-rose-400">
+                  <span class="font-mono text-lg font-bold text-[var(--color-error)]">
                     {{ formatAmount((toNumber(detail.estimated_market_value) - toNumber(detail.repair_value) + toNumber(detail.bags_value)) * toNumber(detail.fee ?? defaultFee) / 100) }}
                   </span>
                   <span class="ml-1 text-xs text-[var(--color-text-secondary)]">({{ detail.fee ?? defaultFee }}%)</span>

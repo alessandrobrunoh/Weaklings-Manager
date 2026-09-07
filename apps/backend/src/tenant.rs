@@ -230,6 +230,7 @@ pub fn skip_tenant_resolution(path: &str) -> bool {
         || path == "/api/auth/tenants"
         || path == "/api/auth/switch-tenant"
         || path == "/api/auth/registerable-guilds"
+        || path == "/api/auth/bot-invite"
 }
 
 /// API prefixes that belong to an optional module, and the feature key that
@@ -297,6 +298,7 @@ fn is_unscoped_auth_path(path: &str) -> bool {
         || path == "/api/auth/logout"
         || path == "/api/auth/tenants"
         || path == "/api/auth/registerable-guilds"
+        || path == "/api/auth/bot-invite"
 }
 
 /// Resolve a tenant id from the bot header or the session cookie.
@@ -487,6 +489,7 @@ mod tests {
         assert!(skip_tenant_resolution("/api/auth/tenants"));
         assert!(skip_tenant_resolution("/api/auth/switch-tenant"));
         assert!(skip_tenant_resolution("/api/auth/registerable-guilds"));
+        assert!(skip_tenant_resolution("/api/auth/bot-invite"));
         assert!(!skip_tenant_resolution("/api/auth/me"));
         assert!(!skip_tenant_resolution("/api/splits"));
     }

@@ -26,10 +26,7 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Icon, TooltipDirective, WeaklingsLogo],
   template: `
-    <div
-      class="min-h-dvh flex items-center justify-center p-4 sm:p-6"
-      style="background-color: var(--color-bg)"
-    >
+    <div class="auth-shell">
       <div class="absolute top-4 right-4 flex items-center gap-2">
         <select
           class="select text-xs"
@@ -56,17 +53,15 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
         </button>
       </div>
 
-      <section class="card w-full max-w-md p-6 sm:p-8" aria-labelledby="login-title">
-        <div class="mb-6 flex flex-col items-center text-center">
-          <app-weaklings-logo />
-          <h1 id="login-title" class="sr-only">{{ t('app.title') }}</h1>
-          <p class="mt-1 text-sm" style="color: var(--color-text-secondary)">
-            {{ t('auth.login_subtitle') }}
-          </p>
+      <section class="auth-card" aria-labelledby="login-title">
+        <div class="mb-7 flex flex-col items-center text-center">
+          <app-weaklings-logo [compact]="true" />
+          <h1 id="login-title" class="auth-card__title mt-5">{{ t('app.title') }}</h1>
+          <p class="auth-card__subtitle">{{ t('auth.login_subtitle') }}</p>
         </div>
 
         @if (noTenant()) {
-          <p class="mb-4 text-center text-sm" style="color: var(--color-danger)" role="alert">
+          <p class="mb-4 text-center text-sm text-[var(--color-error)]" role="alert">
             {{ t('auth.no_tenant') }}
           </p>
         }
@@ -76,7 +71,7 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
           {{ t('auth.login_discord') }}
         </button>
 
-        <p class="mt-6 text-center text-xs" style="color: var(--color-text-disabled)">
+        <p class="mt-6 text-center text-xs text-[var(--color-text-tertiary)]">
           {{ t('app.tagline') }}
         </p>
       </section>

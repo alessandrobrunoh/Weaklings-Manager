@@ -2074,7 +2074,8 @@ export const fr: TranslationDict = {
   'platform.features.saved': 'Flags enregistrés.',
   'platform.features.empty': 'Aucune fonctionnalité dans le catalogue.',
   'platform.ranks.title': 'Rangs',
-  'platform.ranks.subtitle': 'Plans que vous créez. Chaque rang débloque un ensemble de modules.',
+  'platform.ranks.subtitle':
+    'Plans que vous créez. Chaque rang débloque un ensemble de modules. Le rang par défaut est attribué à chaque serveur qui s\'inscrit.',
   'platform.ranks.name': 'Nom',
   'platform.ranks.description': 'Description',
   'platform.ranks.create': 'Nouveau rang',
@@ -2082,9 +2083,12 @@ export const fr: TranslationDict = {
   'platform.ranks.features': 'Modules',
   'platform.ranks.noFeatures': 'Aucun',
   'platform.ranks.edit': 'Modifier les modules',
+  'platform.ranks.default': 'Par défaut',
+  'platform.ranks.setDefault': 'Définir par défaut',
   'platform.ranks.created': 'Rang créé.',
   'platform.ranks.saved': 'Modules du rang enregistrés.',
   'platform.ranks.deleted': 'Rang supprimé.',
+  'platform.ranks.defaultSaved': 'Rang par défaut mis à jour.',
   'platform.admins.title': 'Admins plateforme',
   'platform.admins.subtitle': 'Utilisateurs Discord avec SuperAdmin sur le plan de contrôle.',
   'platform.admins.assign': 'Accorder SuperAdmin',
@@ -2110,4 +2114,49 @@ export const fr: TranslationDict = {
   'register.submit': 'Créer le tenant',
   'register.already': 'Ce serveur est déjà enregistré.',
   'register.missingGuild': 'Id de guilde Discord manquant. Ouvrez cette page depuis le lien du bot.',
+
+  'addServer.title': 'Ajouter un serveur',
+  'addServer.railTooltip': 'Ajouter un serveur',
+  'addServer.eyebrow': 'Prise en main',
+  'addServer.heroTitle': 'Pilotez votre guilde depuis Discord',
+  'addServer.heroBody':
+    'Weaklings Manager se branche sur n’importe quel serveur Discord : invitez le bot, enregistrez le serveur, et votre guilde obtient événements, compos, batailles, banque et partages — le tout limité à ce serveur.',
+  'addServer.inviteCta': 'Inviter le bot',
+  'addServer.stepsCta': 'Voir les étapes',
+  'addServer.inviteUnavailable': 'Le lien d’invitation est indisponible pour le moment. Réessayez dans un instant.',
+  'addServer.stepsTitle': 'Étapes de configuration',
+  'addServer.requirements.title': 'Avant de commencer',
+  'addServer.requirements.manageGuild': 'Il vous faut la permission Gérer le serveur sur Discord.',
+  'addServer.requirements.albionGuild': 'Connaissez le nom et la région de votre guilde Albion.',
+  'addServer.requirements.oneTenant':
+    'Chaque serveur Discord ne s’enregistre qu’une fois ; vous en devenez Super Admin.',
+  'addServer.step1.title': 'Invitez le bot',
+  'addServer.step1.body':
+    'Ouvrez le lien d’invitation et choisissez votre serveur Discord. Le bot arrive avec les permissions nécessaires pour publier les événements, attribuer les rôles et répondre aux commandes.',
+  'addServer.step2.title': 'Enregistrez le serveur',
+  'addServer.step2.body':
+    'L’enregistrement crée l’espace privé qui contient les données de la guilde. Choisissez un serveur ci-dessous pour lancer l’assistant : rien n’est partagé avec les autres serveurs.',
+  'addServer.step3.title': 'Reliez votre guilde Albion',
+  'addServer.step3.body':
+    'L’assistant demande votre région et votre guilde en jeu, puis récupère automatiquement le roster, les batailles et les morts de cette guilde.',
+  'addServer.step4.title': 'Activez les modules voulus',
+  'addServer.step4.body':
+    'Événements, compos, banque, partages, regears et les autres s’activent serveur par serveur. Réglez rôles et permissions de la même façon.',
+  'addServer.step5.title': 'Faites venir vos membres',
+  'addServer.step5.body':
+    'Les membres se connectent avec Discord et arrivent directement dans votre serveur : leurs rôles décident de ce qu’ils voient et font.',
+  'addServer.yourServers': 'Vos serveurs',
+  'addServer.registerAction': 'Enregistrer',
+  'addServer.noGuilds':
+    'Aucun de vos serveurs n’est disponible à l’enregistrement. Invitez d’abord le bot, puis reconnectez-vous pour rafraîchir la liste.',
+  'addServer.faq.title': 'Questions',
+  'addServer.faq.q1': 'Dois-je inviter le bot avant d’enregistrer ?',
+  'addServer.faq.a1':
+    'Oui. Le bot doit être membre du serveur pour que la synchronisation des rôles, les pings d’événements et les commandes fonctionnent.',
+  'addServer.faq.q2': 'Puis-je gérer plusieurs serveurs ?',
+  'addServer.faq.a2':
+    'Oui. Chaque serveur auquel vous appartenez a son cercle dans la barre de gauche ; changer de serveur change toute l’application.',
+  'addServer.faq.q3': 'Qui peut voir les données de ma guilde ?',
+  'addServer.faq.a3':
+    'Seulement les membres de ce serveur Discord, et uniquement ce que leurs rôles autorisent. Les données sont stockées par serveur et ne se croisent jamais.',
 };

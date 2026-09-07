@@ -2195,7 +2195,8 @@ export const en = {
   'platform.features.saved': 'Flags saved.',
   'platform.features.empty': 'No features in the catalog.',
   'platform.ranks.title': 'Ranks',
-  'platform.ranks.subtitle': 'Plans you create. Each rank unlocks a set of modules for a tenant.',
+  'platform.ranks.subtitle':
+    'Plans you create. Each rank unlocks a set of modules for a tenant. The default rank is handed to every server that registers.',
   'platform.ranks.name': 'Name',
   'platform.ranks.description': 'Description',
   'platform.ranks.create': 'New rank',
@@ -2203,9 +2204,12 @@ export const en = {
   'platform.ranks.features': 'Modules',
   'platform.ranks.noFeatures': 'None',
   'platform.ranks.edit': 'Edit modules',
+  'platform.ranks.default': 'Default',
+  'platform.ranks.setDefault': 'Set as default',
   'platform.ranks.created': 'Rank created.',
   'platform.ranks.saved': 'Rank modules saved.',
   'platform.ranks.deleted': 'Rank deleted.',
+  'platform.ranks.defaultSaved': 'Default rank updated.',
   'platform.admins.title': 'Platform admins',
   'platform.admins.subtitle': 'Discord users with control-plane SuperAdmin.',
   'platform.admins.assign': 'Grant SuperAdmin',
@@ -2231,6 +2235,51 @@ export const en = {
   'register.submit': 'Create tenant',
   'register.already': 'This server is already registered.',
   'register.missingGuild': 'Missing Discord guild id. Open this page from the bot link.',
+
+  // Add-a-server onboarding guide (the `+` orb in the server rail)
+  'addServer.title': 'Add a server',
+  'addServer.railTooltip': 'Add a server',
+  'addServer.eyebrow': 'Onboarding',
+  'addServer.heroTitle': 'Run your guild from Discord',
+  'addServer.heroBody':
+    'Weaklings Manager plugs into any Discord server: invite the bot, register the server, and your guild gets events, comps, battles, bank and splits — all scoped to that server alone.',
+  'addServer.inviteCta': 'Invite the bot',
+  'addServer.stepsCta': 'See the steps',
+  'addServer.inviteUnavailable': 'The invite link is unavailable right now. Try again in a moment.',
+  'addServer.stepsTitle': 'Setup steps',
+  'addServer.requirements.title': 'Before you start',
+  'addServer.requirements.manageGuild': 'You need Manage Server on the Discord server.',
+  'addServer.requirements.albionGuild': 'Know your Albion guild name and region.',
+  'addServer.requirements.oneTenant': 'Each Discord server is registered once; you become its Super Admin.',
+  'addServer.step1.title': 'Invite the bot',
+  'addServer.step1.body':
+    'Open the invite link and pick your Discord server. The bot joins with the permissions it needs to post events, hand out roles and read command replies.',
+  'addServer.step2.title': 'Register the server',
+  'addServer.step2.body':
+    'Registration creates the private space that holds your guild data. Pick a server below to start the wizard — nothing is shared with other servers.',
+  'addServer.step3.title': 'Link your Albion guild',
+  'addServer.step3.body':
+    'The wizard asks for your region and in-game guild, then pulls the roster, battles and kill data for that guild automatically.',
+  'addServer.step4.title': 'Turn on the modules you want',
+  'addServer.step4.body':
+    'Events, comps, bank, splits, regears and the rest are switched on per server. Set your roles and permissions the same way.',
+  'addServer.step5.title': 'Bring your members in',
+  'addServer.step5.body':
+    'Members sign in with Discord and land straight in your server — their roles decide what they can see and do.',
+  'addServer.yourServers': 'Your servers',
+  'addServer.registerAction': 'Register',
+  'addServer.noGuilds':
+    'No server of yours is available to register. Invite the bot first, then sign in again to refresh the list.',
+  'addServer.faq.title': 'Questions',
+  'addServer.faq.q1': 'Do I have to invite the bot before registering?',
+  'addServer.faq.a1':
+    'Yes. The bot has to be a member of the server for role sync, event pings and slash commands to work.',
+  'addServer.faq.q2': 'Can I manage more than one server?',
+  'addServer.faq.a2':
+    'Yes. Every server you belong to gets its own circle in the left rail; switching servers switches the whole app with it.',
+  'addServer.faq.q3': 'Who can see my guild data?',
+  'addServer.faq.a3':
+    'Only members of that Discord server, and only what their roles allow. Data is stored per server and never crosses over.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

@@ -15,11 +15,22 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
        the wrong moment and lets the actions overflow the column in between. */
     .page-header__row { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 0.75rem 1rem; }
     .page-header__identity { display: flex; flex: 1 1 16rem; flex-direction: column; min-inline-size: 0; }
-    .page-header__title { margin: 0; color: var(--color-text); font-size: 1.5rem; font-weight: 700; letter-spacing: -0.025em; line-height: 1.25; }
+    /* DESIGN.md's signature: display weight 800, all-caps, tight tracking —
+       every page opens on the same stamped block. */
+    .page-header__title {
+      margin: 0;
+      color: var(--color-text-heading);
+      font-family: var(--font-display);
+      font-size: 1.5rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: -0.01em;
+      line-height: 1.1;
+    }
     @media (min-width: 40rem) {
       .page-header__title { font-size: 1.875rem; }
     }
-    .page-header__subtitle { min-inline-size: 0; margin: 0.25rem 0 0 0; color: var(--color-text-tertiary); font-size: 0.875rem; line-height: 1.4; }
+    .page-header__subtitle { min-inline-size: 0; margin: 0.5rem 0 0 0; color: var(--color-text-secondary); font-size: 0.875rem; line-height: 1.5; }
     .page-header__actions { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
     .page-header__tabs { margin-block-start: 1rem; }
     .page-header__tabs:empty { display: none; }

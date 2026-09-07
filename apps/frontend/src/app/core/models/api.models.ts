@@ -153,6 +153,8 @@ export interface TenantRankView {
   name: string;
   description: string | null;
   feature_keys: string[];
+  /** Rank handed to every tenant that registers from now on. At most one. */
+  is_default: boolean;
   created_at: string | null;
 }
 
@@ -192,6 +194,12 @@ export interface RegisterableGuild {
   id: string;
   name: string;
   icon_hash?: string | null;
+}
+
+/** OAuth link that adds the manager bot to a Discord server. */
+export interface BotInvite {
+  url: string;
+  client_id: string;
 }
 
 export interface TenantStatus {

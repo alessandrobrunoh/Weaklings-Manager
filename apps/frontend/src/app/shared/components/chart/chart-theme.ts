@@ -5,7 +5,8 @@
  * appear together in one plot clears the colour-blind separation floor
  * (OKLab ΔE ≥ 8 under protan/deutan/tritan simulation) and the normal-vision
  * floor (ΔE ≥ 15) against this app's two chart surfaces (`#ffffff` light,
- * `#0f1011` dark). Do not re-order or hand-tune these hexes without re-running
+ * `#2b2c36` dark — the Discord card ground; the closest series still clears the
+ * floor at ΔE 30). Do not re-order or hand-tune these hexes without re-running
  * that validation — the ordering *is* the accessibility mechanism.
  *
  * Slots are assigned to entities, never to rank, so filtering a series out
@@ -79,21 +80,21 @@ export interface ChartChrome {
 const LIGHT_CHROME: ChartChrome = {
   surface: '#ffffff',
   elevated: '#ffffff',
-  textPrimary: '#151617',
-  textSecondary: '#42464d',
-  textMuted: '#62666d',
-  gridline: '#e7e9ed',
-  axis: '#c6c9cf',
+  textPrimary: '#1d1e26',
+  textSecondary: '#4a4d63',
+  textMuted: '#61657f',
+  gridline: '#e3e5f0',
+  axis: '#c2c5d8',
 };
 
 const DARK_CHROME: ChartChrome = {
-  surface: '#0f1011',
-  elevated: '#161718',
+  surface: '#2b2c36',
+  elevated: '#33353f',
   textPrimary: '#ffffff',
-  textSecondary: '#d0d6e0',
-  textMuted: '#8a8f98',
-  gridline: '#1d1f22',
-  axis: '#383b3f',
+  textSecondary: '#babcd9',
+  textMuted: '#9aa0bf',
+  gridline: '#383a45',
+  axis: '#4a4c58',
 };
 
 export function chartPalette(isDark: boolean): ChartPalette {

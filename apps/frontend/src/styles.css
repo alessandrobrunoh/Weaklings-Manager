@@ -1,9 +1,13 @@
 /* =================================================================
    Weaklings Guild Manager — Global stylesheet
-   Style reference: xAI (warm cream laboratory with a black pill)
-   Editorial typography, paper page, cream cards, hairline depth,
-   pill actions, and monochrome restraint with warm accents.
-   Tailwind v4 imports and theme-aware token layer.
+   Style reference: DESIGN.md — Discord ("game world behind a chat bubble")
+
+   The whole product is token driven: features only ever reference the
+   semantic `--color-*` / `--radius-*` variables declared here, so the
+   palette below is what gives every route its look. Chrome geometry
+   follows the Discord client (server rail → channel sidebar → content),
+   while the palette, radii and type scale come from DESIGN.md: an
+   indigo-black environment with Blurple as the single saturated accent.
    ================================================================= */
 
 @import 'tailwindcss';
@@ -12,28 +16,46 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* -----------------------------------------------------------------
-   Tailwind v4 Theme Configuration
+   Tailwind v4 Theme Configuration — brand scale, available as utilities
    ----------------------------------------------------------------- */
 @theme {
-  /* Midnight palette and compatibility aliases */
-  --color-void: #08090a;
-  --color-carbon: #0f1011;
-  --color-obsidian: #161718;
-  --color-graphite: #23252a;
-  --color-smoke: #383b3f;
-  --color-ash: #62666d;
-  --color-fog: #8a8f98;
-  --color-mist: #d0d6e0;
-  --color-bone: #e5e5e6;
+  /* Discord brand palette (DESIGN.md § Tokens — Colors) */
+  --color-blurple: #5865f2;
+  --color-dark-blurple: #3442d9;
+  --color-hover-blurple: #8891f2;
+  --color-spring-green: #57f287;
+  --color-fuchsia: #eb459e;
+  --color-vivid-cerulean: #00b0f4;
+  --color-ember-orange: #fda220;
+  --color-ekko-red: #de2761;
+  --color-snow: #ffffff;
+  --color-fog: #babcd9;
+  --color-greyple: #99aab5;
+  --color-dim-grey: #50555f;
+  --color-off-white: #f6f6f6;
+
+  /* Environment surfaces — indigo-black, from the rail outwards */
+  --color-void: #0b0c11;
+  --color-cosmic: #15161c;
+  --color-chrome: #1d1e26;
+  --color-carbon: #24252e;
+  --color-obsidian: #2b2c36;
+  --color-graphite: #33353f;
+  --color-smoke: #43454f;
+  --color-ash: #7c8195;
+  --color-mist: #babcd9;
+  --color-bone: #e3e4ef;
   --color-paper: #ffffff;
+
+  /* Legacy aliases kept so older feature markup keeps resolving */
   --color-weaklings-red: #dc2626;
-  --color-pulse-green: #27a644;
-  --color-coral-red: #eb5757;
-  --color-signal-teal: #02b8cc;
-  --color-iris-violet: #6366f1;
-  --color-lavender: #8b5cf6;
+  --color-pulse-green: #57f287;
+  --color-coral-red: #ed4245;
+  --color-signal-teal: #00b0f4;
+  --color-iris-violet: #5865f2;
+  --color-lavender: #8891f2;
   --color-jet-ink: var(--color-void);
-  --color-charcoal: var(--color-carbon);
+  --color-charcoal: var(--color-cosmic);
   --color-pewter: var(--color-mist);
   --color-steel: var(--color-ash);
   --color-dove: var(--color-mist);
@@ -41,79 +63,241 @@
   --color-sand: var(--color-obsidian);
   --color-slate: var(--color-graphite);
   --color-ember: var(--color-coral-red);
-  --color-sunbeam: #eab308;
-  --color-sprout: var(--color-pulse-green);
+  --color-sunbeam: var(--color-ember-orange);
+  --color-sprout: var(--color-spring-green);
 
-  /* Typography */
-  --font-universalsans: 'universalSans', 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-universalsansdisplay: 'universalSansDisplay', 'Inter Tight', 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-geistmono: 'GeistMono', 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --font-wordmark: 'Cinzel', 'Times New Roman', serif;
+  /* Typography — Ginto Nord stands in as Nunito 800 (DESIGN.md substitute),
+     gg sans stands in as Inter, mono stays for ids and silver amounts. */
+  --font-display: 'Nunito', 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-universalsans: var(--font-sans);
+  --font-universalsansdisplay: var(--font-display);
+  --font-geistmono: var(--font-mono);
+  --font-wordmark: var(--font-display);
 
-  /* Typography — Scale */
+  /* Type scale (DESIGN.md § Type Scale, trimmed for an app density) */
   --text-caption: 12px;
-  --leading-caption: 20px;
-  --tracking-caption: -0.12px;
+  --leading-caption: 16px;
   --text-body-sm: 14px;
   --leading-body-sm: 20px;
   --text-body: 16px;
   --leading-body: 24px;
   --text-heading-sm: 24px;
-  --leading-heading-sm: 32px;
-  --tracking-heading-sm: -0.6px;
+  --leading-heading-sm: 28px;
+  --tracking-heading-sm: -0.24px;
   --text-subheading: 30px;
-  --leading-subheading: 36px;
-  --tracking-subheading: -0.75px;
-  --text-heading: 48px;
-  --leading-heading: 48px;
-  --tracking-heading: -1.2px;
-  --text-heading-lg: 60px;
-  --leading-heading-lg: 60px;
-  --tracking-heading-lg: -1.5px;
-  --text-display: 72px;
-  --leading-display: 72px;
-  --tracking-display: -1.8px;
+  --leading-subheading: 34px;
+  --tracking-subheading: -0.3px;
+  --text-heading: 36px;
+  --leading-heading: 40px;
+  --tracking-heading: -0.36px;
+  --text-heading-lg: 48px;
+  --leading-heading-lg: 46px;
+  --tracking-heading-lg: -0.48px;
+  --text-display: 56px;
+  --leading-display: 52px;
+  --tracking-display: -0.56px;
 
-  /* Border Radius */
-  --radius-sm: 2px;
-  --radius-md: 6px;
-  --radius-xl: 12px;
-  --radius-2xl: 12px;
+  /* Border radius (DESIGN.md § Border Radius) */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
   --radius-full: 9999px;
-  --radius-cards: 12px;
+  --radius-cards: 16px;
+  --radius-panels: 24px;
   --radius-pills: 9999px;
-  --radius-inputs: 6px;
-  --radius-buttons: 6px;
-  --radius-smallcards: 6px;
+  --radius-inputs: 8px;
+  --radius-buttons: 12px;
+  --radius-smallcards: 12px;
+  --radius-badges: 6px;
 
-  /* Shadows */
-  --shadow-subtle: rgba(10, 10, 10, 0.15) 0px 0px 0px 1px;
-  --shadow-xl: rgba(0, 0, 0, 0.1) 0px 20px 25px -5px, rgba(0, 0, 0, 0.1) 0px 8px 10px -6px;
-  --shadow-subtle-2: rgba(0, 0, 0, 0.06) 0px 0px 0px 1px, rgba(15, 23, 42, 0.18) 0px 18px 40px -24px;
+  /* Elevation — Discord builds depth from contrast, so shadows stay quiet */
+  --shadow-subtle: 0 0 0 1px rgb(11 12 17 / 30%);
+  --shadow-subtle-2: 0 1px 2px rgb(11 12 17 / 24%);
+  --shadow-xl: 0 8px 32px rgb(11 12 17 / 48%);
 }
 
 /* -----------------------------------------------------------------
-   Design tokens — semantic surface / text colors, radius, elevation.
-   Midnight is the base theme; html.light provides the accessible light override.
+   Semantic tokens — the single source of truth every feature reads.
+   Dark ("midnight indigo") is the base; `html.light` is the accessible
+   light override, mirroring Discord's own light client.
+   ----------------------------------------------------------------- */
+:root,
+html.dark {
+  color-scheme: dark;
+
+  /* Chrome layers, rail → sidebar → content → cards */
+  --color-rail: var(--color-cosmic);
+  --color-chrome: #1d1e26;
+  --color-bg: var(--color-carbon);
+  --color-surface: var(--color-obsidian);
+  --color-surface-1: var(--color-obsidian);
+  --color-surface-2: var(--color-graphite);
+  --color-surface-3: var(--color-smoke);
+  --color-surface-muted: var(--color-graphite);
+  --color-surface-hover: #343640;
+  --color-surface-active: #3c3e49;
+  --color-surface-charcoal: var(--color-cosmic);
+  --color-border: #383a45;
+  --color-border-strong: #4a4c58;
+  --color-border-hover: var(--color-border-strong);
+  --color-overlay: rgb(11 12 17 / 72%);
+
+  /* Text — pure white for headings, Fog for body (DESIGN.md Do's) */
+  --color-text: #ffffff;
+  --color-text-heading: #ffffff;
+  --color-text-secondary: var(--color-fog);
+  --color-text-tertiary: #9aa0bf;
+  --color-text-muted: var(--color-ash);
+  --color-text-steel: var(--color-ash);
+  --color-text-disabled: #6e7387;
+
+  /* Blurple is the only saturated colour in the layout chrome */
+  --color-primary: var(--color-blurple);
+  --color-primary-hover: var(--color-dark-blurple);
+  --color-primary-active: #2b37b8;
+  --color-primary-container: color-mix(in oklab, var(--color-blurple) 18%, transparent);
+  --color-primary-soft: var(--color-primary-container);
+  --color-primary-subtle: color-mix(in oklab, var(--color-blurple) 10%, transparent);
+  --color-on-primary: #ffffff;
+  --color-logo-glow: color-mix(in oklab, var(--color-blurple) 26%, transparent);
+
+  /* Status colours — Discord's product states */
+  --color-success: var(--color-spring-green);
+  --color-success-container: color-mix(in oklab, var(--color-spring-green) 14%, transparent);
+  --color-success-subtle: color-mix(in oklab, var(--color-spring-green) 9%, transparent);
+  --color-success-solid: #248046;
+  --color-warning: var(--color-ember-orange);
+  --color-warning-container: color-mix(in oklab, var(--color-ember-orange) 14%, transparent);
+  --color-error: #f0596c;
+  --color-error-container: color-mix(in oklab, #f0596c 15%, transparent);
+  --color-error-solid: var(--color-ekko-red);
+  --color-danger: var(--color-error);
+  --color-info: var(--color-vivid-cerulean);
+  --color-info-container: color-mix(in oklab, var(--color-vivid-cerulean) 14%, transparent);
+  --color-accent-gold: var(--color-ember-orange);
+  --color-accent-gold-soft: color-mix(in oklab, var(--color-ember-orange) 16%, transparent);
+
+  /* Role colours used by comps / builds */
+  --role-tank: #5865f2;
+  --role-healer: #57f287;
+  --role-support: #fda220;
+  --role-dps: #ed4245;
+  --role-bm: #eb459e;
+  --role-brawler: #00b0f4;
+
+  /* Layout constants */
+  --page-max-width: 1440px;
+  --page-gap: 1.5rem;
+  --section-gap: 5rem;
+  --card-padding: 1.5rem;
+  --element-gap: 0.75rem;
+  --rail-width: 72px;
+  --sidebar-width: 248px;
+  --chrome-height: 3rem;
+  --motion-fast: 150ms ease;
+
+  --shadow-1: var(--shadow-subtle);
+  --shadow-2: var(--shadow-subtle-2);
+  --shadow-3: var(--shadow-xl);
+
+  /* Component-level spacing aliases (safe in :root, Tailwind utilities unaffected) */
+  --spacing-4: 0.25rem;
+  --spacing-8: 0.5rem;
+  --spacing-12: 0.75rem;
+  --spacing-16: 1rem;
+  --spacing-20: 1.25rem;
+  --spacing-24: 1.5rem;
+  --spacing-32: 2rem;
+  --spacing-40: 2.5rem;
+  --spacing-48: 3rem;
+  --spacing-64: 4rem;
+  --spacing-96: 6rem;
+  --spacing-144: 9rem;
+
+  /* Podium medal gradients — theme-invariant self-contained badges. */
+  --color-medal-gold-1: #fde047;
+  --color-medal-gold-2: #eab308;
+  --color-medal-gold-3: #ca8a04;
+  --color-medal-gold-text: #4a2c05;
+  --color-medal-silver-1: #f4f4f5;
+  --color-medal-silver-2: #cbd5e1;
+  --color-medal-silver-3: #94a3b8;
+  --color-medal-silver-text: #2c3242;
+  --color-medal-bronze-1: #fdba74;
+  --color-medal-bronze-2: #ea580c;
+  --color-medal-bronze-3: #9a3412;
+  --color-medal-bronze-text: #ffffff;
+}
+
+html.light {
+  color-scheme: light;
+
+  --color-rail: #dfe1f0;
+  --color-chrome: #eceef5;
+  --color-bg: #f6f7fb;
+  --color-surface: #ffffff;
+  --color-surface-1: #ffffff;
+  --color-surface-2: #f0f1f7;
+  --color-surface-3: #e3e5f0;
+  --color-surface-muted: #f0f1f7;
+  --color-surface-hover: #e8eaf4;
+  --color-surface-active: #dcdfee;
+  --color-surface-charcoal: #1d1e26;
+  --color-border: #dcdeeb;
+  --color-border-strong: #c2c5d8;
+  --color-overlay: rgb(29 30 38 / 55%);
+
+  --color-text: #1d1e26;
+  --color-text-heading: #0b0c11;
+  --color-text-secondary: #4a4d63;
+  --color-text-tertiary: #61657f;
+  --color-text-muted: #6e7287;
+  --color-text-steel: #61657f;
+  --color-text-disabled: #8a8fa5;
+
+  --color-primary: #4e5bd8;
+  --color-primary-hover: #3442d9;
+  --color-primary-active: #2b37b8;
+  --color-primary-container: color-mix(in oklab, #5865f2 14%, transparent);
+  --color-primary-soft: var(--color-primary-container);
+  --color-primary-subtle: color-mix(in oklab, #5865f2 8%, transparent);
+  --color-on-primary: #ffffff;
+
+  --color-success: #1a7f43;
+  --color-success-container: #e2f7e9;
+  --color-success-subtle: #eefaf2;
+  --color-success-solid: #248046;
+  --color-warning: #9a6300;
+  --color-warning-container: #fdf1d8;
+  --color-error: #c62a4d;
+  --color-error-container: #fde8ed;
+  --color-error-solid: #de2761;
+  --color-danger: var(--color-error);
+  --color-info: #0273a6;
+  --color-info-container: #dcf1fb;
+  --color-accent-gold: #96590a;
+  --color-accent-gold-soft: #fdf1d8;
+
+  --role-tank: #3b45c9;
+  --role-healer: #1a7f43;
+  --role-support: #9a6300;
+  --role-dps: #c62a4d;
+  --role-bm: #a1256d;
+  --role-brawler: #0273a6;
+
+  --shadow-subtle: 0 0 0 1px rgb(29 30 38 / 8%);
+  --shadow-subtle-2: 0 1px 2px rgb(29 30 38 / 10%);
+  --shadow-xl: 0 8px 32px rgb(29 30 38 / 16%);
+}
+
+/* -----------------------------------------------------------------
+   Base
    ----------------------------------------------------------------- */
 @layer base {
-  /* Everything theme-related (colors, radii, shadows, fonts) now lives in the
-     unlayered `:root, .dark` / `.light` block further down this file, which
-     always wins the cascade over anything in @layer — so it's the single
-     source of truth for those tokens. This block keeps only what that block
-     does NOT redefine: layout constants, and the two accent-gold values
-     (still consumed by the equipment picker and battle-detail highlights). */
-  :root {
-    --font-wordmark: 'Cinzel', 'Times New Roman', serif;
-    --page-max-width: 1200px;
-    --section-gap: 96px;
-    --card-padding: 24px;
-    --element-gap: 8px;
-    --shadow-1: var(--shadow-subtle);
-    --shadow-2: var(--shadow-subtle-2);
-    --shadow-3: var(--shadow-xl);
-  }
-
   html,
   body {
     height: 100%;
@@ -123,10 +307,12 @@
     margin: 0;
     background-color: var(--color-bg);
     color: var(--color-text);
-    font-family: var(--font-universalsans);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    letter-spacing: 0.005em;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    line-height: 1.5;
   }
 
   *,
@@ -141,7 +327,11 @@
     border-radius: var(--radius-inputs);
   }
 
-  /* Smooth theme transition */
+  ::selection {
+    background: color-mix(in oklab, var(--color-primary) 45%, transparent);
+    color: var(--color-text);
+  }
+
   body,
   .surface,
   .card {
@@ -153,10 +343,114 @@
 }
 
 /* -----------------------------------------------------------------
-   Reusable Component Layer
+   Typography primitives
    ----------------------------------------------------------------- */
 @layer components {
-  /* Cards and surfaces use the shared midnight tokens and a 12px card radius. */
+  /* Display headings are the signature move: Nord-substitute at 800,
+     all-caps, tight tracking, compressed into a stamped block. */
+  .display,
+  .heading-lg,
+  .heading,
+  .subheading {
+    font-family: var(--font-display);
+    font-weight: 800;
+    text-transform: uppercase;
+    color: var(--color-text-heading);
+  }
+
+  .display {
+    font-size: var(--text-display);
+    line-height: var(--leading-display);
+    letter-spacing: var(--tracking-display);
+  }
+
+  .heading-lg {
+    font-size: var(--text-heading-lg);
+    line-height: var(--leading-heading-lg);
+    letter-spacing: var(--tracking-heading-lg);
+  }
+
+  .heading {
+    font-size: var(--text-heading);
+    line-height: var(--leading-heading);
+    letter-spacing: var(--tracking-heading);
+  }
+
+  .subheading {
+    font-size: var(--text-subheading);
+    line-height: var(--leading-subheading);
+    letter-spacing: var(--tracking-subheading);
+  }
+
+  /* Section-level heading: dense UI label, so it stays mixed case. */
+  .heading-sm {
+    font-family: var(--font-sans);
+    font-size: var(--text-heading-sm);
+    line-height: var(--leading-heading-sm);
+    letter-spacing: var(--tracking-heading-sm);
+    font-weight: 700;
+    color: var(--color-text-heading);
+  }
+
+  .body {
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+    font-weight: 400;
+  }
+
+  .body-sm {
+    font-family: var(--font-sans);
+    font-size: var(--text-body-sm);
+    line-height: var(--leading-body-sm);
+    font-weight: 400;
+  }
+
+  .caption {
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    line-height: var(--leading-caption);
+  }
+
+  .mono,
+  .tabular {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  /* Channel-category label: Discord's uppercase micro-heading. */
+  .eyebrow {
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-tertiary);
+  }
+
+  .wordmark {
+    font-family: var(--font-display);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: -0.01em;
+  }
+
+  .text-success {
+    color: var(--color-success);
+  }
+  .text-warning {
+    color: var(--color-warning);
+  }
+  .text-error {
+    color: var(--color-error);
+  }
+}
+
+/* -----------------------------------------------------------------
+   Surfaces
+   ----------------------------------------------------------------- */
+@layer components {
   .surface,
   .card {
     background-color: var(--color-surface);
@@ -178,6 +472,50 @@
     border: none;
   }
 
+  .card--elevated {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-cards);
+    box-shadow: var(--shadow-xl);
+  }
+
+  /* Feature panel: a self-contained stage with its own background, the way
+     DESIGN.md differentiates sections without changing the page ground. */
+  .panel {
+    border-radius: var(--radius-panels);
+    padding: clamp(1.5rem, 3vw, 2.5rem);
+    background: linear-gradient(
+      135deg,
+      color-mix(in oklab, var(--color-primary) 22%, var(--color-surface)),
+      var(--color-surface) 70%
+    );
+    border: 1px solid var(--color-border);
+  }
+
+  .kpi-card {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-cards);
+    background: var(--color-surface);
+    padding: 1.125rem 1.25rem;
+    transition:
+      border-color var(--motion-fast),
+      background-color var(--motion-fast);
+  }
+
+  .kpi-card:hover {
+    border-color: var(--color-border-strong);
+  }
+
+  .icon-capsule {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: var(--radius-inputs);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
   .page-header__tabs:not(:has(*)) {
     display: none;
   }
@@ -185,7 +523,415 @@
   .page-header__tabs:has(*) {
     margin-top: 1rem;
   }
+}
 
+/* -----------------------------------------------------------------
+   Buttons — 12px radius floor (DESIGN.md), blurple reserved for the
+   primary action only.
+   ----------------------------------------------------------------- */
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.25rem;
+    padding: 0.4375rem 1rem;
+    border-radius: var(--radius-buttons);
+    border: 1px solid transparent;
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1.25rem;
+    letter-spacing: 0.014em;
+    cursor: pointer;
+    user-select: none;
+    transition:
+      background-color 150ms ease,
+      color 150ms ease,
+      border-color 150ms ease,
+      box-shadow 150ms ease;
+  }
+
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .btn--primary {
+    background-color: var(--color-primary);
+    color: var(--color-on-primary);
+    border-color: transparent;
+  }
+
+  .btn--primary:hover:not(:disabled) {
+    background-color: var(--color-primary-hover);
+  }
+
+  .btn--primary:active:not(:disabled) {
+    background-color: var(--color-primary-active);
+  }
+
+  /* Secondary: the filled neutral surface Discord pairs with blurple. */
+  .btn--tonal {
+    background-color: var(--color-surface-2);
+    color: var(--color-text);
+    border-color: transparent;
+  }
+
+  .btn--tonal:hover:not(:disabled) {
+    background-color: var(--color-surface-3);
+  }
+
+  .btn--ghost {
+    background-color: transparent;
+    color: var(--color-text-secondary);
+    border-color: transparent;
+  }
+
+  .btn--ghost:hover:not(:disabled) {
+    background-color: var(--color-surface-hover);
+    color: var(--color-text);
+  }
+
+  .btn--outline {
+    background-color: transparent;
+    border-color: var(--color-border-strong);
+    color: var(--color-text);
+  }
+
+  .btn--outline:hover:not(:disabled) {
+    background-color: var(--color-surface-hover);
+    border-color: var(--color-text-secondary);
+  }
+
+  .btn--danger {
+    background-color: var(--color-error-solid);
+    color: #ffffff;
+    border-color: transparent;
+  }
+
+  .btn--danger:hover:not(:disabled) {
+    background-color: color-mix(in oklab, var(--color-error-solid) 82%, #000);
+  }
+
+  .btn--success {
+    background-color: var(--color-success-container);
+    color: var(--color-success);
+    border-color: color-mix(in oklab, var(--color-success) 30%, transparent);
+  }
+
+  .btn--success:hover:not(:disabled) {
+    background-color: color-mix(in oklab, var(--color-success) 22%, transparent);
+  }
+
+  .btn--error {
+    background-color: var(--color-error-container);
+    color: var(--color-error);
+    border-color: color-mix(in oklab, var(--color-error) 30%, transparent);
+  }
+
+  .btn--error:hover:not(:disabled) {
+    background-color: color-mix(in oklab, var(--color-error) 22%, transparent);
+  }
+
+  .btn--sm {
+    min-height: 2rem;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.8125rem;
+    gap: 0.375rem;
+  }
+
+  .btn--icon {
+    min-height: 2rem;
+    min-width: 2rem;
+    padding: 0.375rem;
+    border-radius: var(--radius-inputs);
+  }
+
+  .btn--nav {
+    background-color: var(--color-surface-2);
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-buttons);
+    padding: 0.375rem 0.875rem;
+    font-size: 0.8125rem;
+  }
+
+  .btn--nav:hover:not(:disabled) {
+    background-color: var(--color-surface-hover);
+    border-color: var(--color-border-strong);
+    color: var(--color-text);
+  }
+
+  .cta-star {
+    display: inline-block;
+    margin-right: 0.25rem;
+    color: var(--color-primary);
+  }
+}
+
+/* -----------------------------------------------------------------
+   Form controls
+   ----------------------------------------------------------------- */
+@layer components {
+  .input,
+  .select,
+  .textarea {
+    width: 100%;
+    min-height: 2.25rem;
+    padding: 0.5rem 0.75rem;
+    background-color: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-inputs);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    transition:
+      border-color 150ms ease,
+      background-color 150ms ease;
+  }
+
+  .textarea {
+    resize: vertical;
+  }
+
+  .input::placeholder,
+  .textarea::placeholder {
+    color: var(--color-text-disabled);
+  }
+
+  .input:focus,
+  .select:focus,
+  .textarea:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: none;
+  }
+
+  .input:focus-visible,
+  .select:focus-visible,
+  .textarea:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 1px;
+    border-color: var(--color-primary);
+  }
+
+  .input--sm,
+  .select--sm {
+    min-height: 2rem;
+    padding: 0.3125rem 0.5rem;
+    font-size: 0.8125rem;
+  }
+
+  .label {
+    display: block;
+    margin-bottom: 0.375rem;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .checkbox,
+  .radio {
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--color-primary);
+    cursor: pointer;
+  }
+}
+
+/* -----------------------------------------------------------------
+   Chips, badges and status dots
+   ----------------------------------------------------------------- */
+@layer components {
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 1.375rem;
+    padding: 0.125rem 0.5rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-pills);
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  .status-dot {
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: var(--radius-pills);
+    background-color: currentColor;
+    flex-shrink: 0;
+  }
+
+  .chip--neutral {
+    background: color-mix(in oklab, var(--color-greyple) 14%, transparent);
+    color: var(--color-text-secondary);
+    border-color: color-mix(in oklab, var(--color-greyple) 24%, transparent);
+  }
+  .chip--info {
+    background: var(--color-info-container);
+    color: var(--color-info);
+    border-color: color-mix(in oklab, var(--color-info) 28%, transparent);
+  }
+  .chip--success {
+    background: var(--color-success-container);
+    color: var(--color-success);
+    border-color: color-mix(in oklab, var(--color-success) 28%, transparent);
+  }
+  .chip--warning {
+    background: var(--color-warning-container);
+    color: var(--color-warning);
+    border-color: color-mix(in oklab, var(--color-warning) 28%, transparent);
+  }
+  .chip--error {
+    background: var(--color-error-container);
+    color: var(--color-error);
+    border-color: color-mix(in oklab, var(--color-error) 28%, transparent);
+  }
+
+  .pill-beta,
+  .chip--beta {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: var(--radius-pills);
+    background-color: var(--color-primary);
+    color: var(--color-on-primary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 600;
+  }
+}
+
+/* -----------------------------------------------------------------
+   Tables
+   ----------------------------------------------------------------- */
+@layer components {
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+  }
+
+  .table thead th {
+    text-align: left;
+    padding: 0.5625rem 0.75rem;
+    background: var(--color-surface-2);
+    color: var(--color-text-tertiary);
+    font-family: var(--font-sans);
+    font-weight: 700;
+    border-bottom: 1px solid var(--color-border);
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .table tbody td {
+    padding: 0.625rem 0.75rem;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+  }
+
+  .table tbody th {
+    padding: 0.625rem 0.75rem;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text);
+    font-weight: 600;
+    text-align: left;
+  }
+
+  .table tbody tr:hover {
+    background-color: var(--color-surface-hover);
+  }
+
+  .table tbody tr:last-child td,
+  .table tbody tr:last-child th {
+    border-bottom: none;
+  }
+
+  .table caption {
+    caption-side: bottom;
+    padding-top: 0.625rem;
+    color: var(--color-text-tertiary);
+    font-size: 0.6875rem;
+    text-align: left;
+  }
+}
+
+/* -----------------------------------------------------------------
+   Navigation — Discord channel rows
+   ----------------------------------------------------------------- */
+@layer components {
+  .nav-link {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.4375rem 0.5rem;
+    border-radius: var(--radius-inputs);
+    color: var(--color-text-tertiary);
+    text-decoration: none;
+    font-family: var(--font-sans);
+    font-size: 0.9375rem;
+    font-weight: 500;
+    line-height: 1.25rem;
+    white-space: nowrap;
+    border: 1px solid transparent;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .nav-link:hover {
+    background-color: var(--color-surface-hover);
+    color: var(--color-text-secondary);
+  }
+
+  .nav-link--active,
+  .nav-link--active:hover {
+    background-color: var(--color-surface-active);
+    color: var(--color-text);
+    font-weight: 600;
+  }
+
+  .nav-link--active app-icon,
+  .nav-link--active .app-icon {
+    color: var(--color-text);
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-rail) transparent;
+    scrollbar-gutter: stable;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: var(--color-rail);
+    border-radius: var(--radius-pills);
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* -----------------------------------------------------------------
+   Dialogs
+   ----------------------------------------------------------------- */
+@layer components {
   .app-dialog {
     width: min(520px, calc(100vw - 2rem));
     max-height: min(90vh, 52rem);
@@ -202,15 +948,12 @@
   .app-dialog--sm {
     width: min(380px, calc(100vw - 2rem));
   }
-
   .app-dialog--md {
     width: min(520px, calc(100vw - 2rem));
   }
-
   .app-dialog--lg {
     width: min(720px, calc(100vw - 2rem));
   }
-
   .app-dialog--xl {
     width: min(900px, calc(100vw - 2rem));
   }
@@ -222,9 +965,7 @@
   }
 
   .app-dialog::backdrop {
-    background-color: rgba(0, 0, 0, 0.65);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
+    background-color: var(--color-overlay);
     animation: dialogBackdropFadeIn 150ms ease forwards;
   }
 
@@ -280,16 +1021,16 @@
     width: 2rem;
     height: 2rem;
     border-radius: var(--radius-inputs);
-    background-color: var(--color-surface-2);
-    border: 1px solid var(--color-border);
+    background-color: var(--color-primary-container);
+    border: 1px solid color-mix(in oklab, var(--color-primary) 30%, transparent);
     color: var(--color-primary);
     flex-shrink: 0;
   }
 
   .app-dialog__title {
     margin: 0;
-    font-size: 1.0625rem;
-    font-weight: 600;
+    font-size: 1rem;
+    font-weight: 700;
     color: var(--color-text);
     line-height: 1.35;
   }
@@ -334,373 +1075,108 @@
     flex-shrink: 0;
   }
 
-  .card--elevated {
-    background-color: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-cards);
-    box-shadow: var(--shadow-subtle-2);
-  }
-
-  /* Buttons: compact 6px radius, 14px/20px Inter 510 */
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.625rem 1.25rem;
-    min-height: 40px;
-    border-radius: var(--radius-buttons);
-    border: 1px solid transparent;
-    font-family: var(--font-universalsans);
-    font-weight: 500;
-    font-size: 0.875rem;
-    line-height: 1.25rem;
-    cursor: pointer;
-    user-select: none;
-    transition:
-      background-color 150ms ease,
-      color 150ms ease,
-      border-color 150ms ease,
-      box-shadow 150ms ease,
-      transform 120ms ease;
-  }
-
-  .btn:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-
-  /* Filled primary CTA: near-black #0a0a0a, text white, no border */
-  .btn--primary {
-    background-color: var(--color-primary);
-    color: var(--color-on-primary);
-    border-color: transparent;
-  }
-
-  .btn--primary:hover:not(:disabled) {
-    background-color: var(--color-primary-hover);
-  }
-
-  /* Ghost button: soft alternative, surface hover */
-  .btn--ghost {
-    background-color: transparent;
+  /* Global micro-tooltip — Discord's black capsule. */
+  .app-tooltip {
+    position: fixed;
+    z-index: 10000;
+    pointer-events: none;
+    background-color: var(--color-void);
     color: var(--color-text);
-    border-color: transparent;
-  }
-
-  .btn--ghost:hover:not(:disabled) {
-    background-color: var(--color-surface-hover);
-    color: var(--color-text);
-  }
-
-  /* Outlined secondary button */
-  .btn--outline {
-    background-color: transparent;
-    border-color: var(--color-border);
-    color: var(--color-text);
-  }
-
-  .btn--outline:hover:not(:disabled) {
-    background-color: var(--color-surface-hover);
-    border-color: var(--color-border-strong);
-  }
-
-  /* Tonal action button */
-  .btn--tonal {
-    background-color: var(--color-surface-2);
-    color: var(--color-text);
-    border-color: transparent;
-  }
-
-  .btn--tonal:hover:not(:disabled) {
-    background-color: var(--color-surface-hover);
-  }
-
-  /* Danger action button */
-  .btn--danger {
-    background-color: var(--color-error);
-    color: #ffffff;
-  }
-
-  .btn--danger:hover:not(:disabled) {
-    background-color: #a82e22;
-  }
-
-  /* Compact button (tables, toolbars) */
-  .btn--sm {
-    min-height: 32px;
-    padding: 0.25rem 0.75rem;
-    font-size: 0.8125rem;
-    border-radius: var(--radius-buttons);
-    gap: 0.375rem;
-  }
-
-  /* Compact icon-only button */
-  .btn--icon {
-    min-height: 32px;
-    min-width: 32px;
-    padding: 0;
-    border-radius: var(--radius-buttons);
-  }
-
-  /* Top bar compact nav button */
-  .btn--nav {
-    background-color: var(--color-bg);
-    color: var(--color-text);
-    border-radius: var(--radius-buttons);
-    padding: 0.375rem 0.875rem;
-    font-size: 0.8125rem;
-    border: 1px solid var(--color-border);
-  }
-
-  .btn--nav:hover:not(:disabled) {
-    background-color: var(--color-surface-hover);
-    border-color: var(--color-border-strong);
-  }
-
-  /* Status-tinted text helpers */
-  .text-success {
-    color: var(--color-success);
-  }
-  .text-warning {
-    color: var(--color-warning);
-  }
-  .text-error {
-    color: var(--color-error);
-  }
-
-  /* Inputs, selects, textareas: radius 6px, border 1px #d5d9e2 */
-  .input,
-  .select,
-  .textarea {
-    width: 100%;
-    padding: 0.5rem 0.875rem;
-    min-height: 38px;
-    background-color: var(--color-surface-1);
-    border: 1px solid var(--color-border);
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.3;
+    padding: 6px 10px;
     border-radius: var(--radius-inputs);
-    color: var(--color-text);
-    font-family: var(--font-universalsans);
-    font-size: 0.875rem;
-    line-height: 1.25rem;
+    border: 1px solid transparent;
+    box-shadow: var(--shadow-xl);
+    white-space: nowrap;
+    opacity: 0;
+    transform: scale(0.96);
     transition:
-      border-color 150ms ease,
-      box-shadow 150ms ease;
+      opacity 120ms cubic-bezier(0.16, 1, 0.3, 1),
+      transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: transform, opacity;
   }
 
-  .input::placeholder,
-  .textarea::placeholder {
-    color: var(--color-text-disabled);
+  .app-tooltip--visible {
+    opacity: 1;
+    transform: scale(1);
   }
+}
 
-  .input:focus,
-  .select:focus,
-  .textarea:focus {
-    outline: none;
-    border-color: var(--color-text);
-    box-shadow: 0 0 0 1px var(--color-text);
-  }
-
-  .input--sm {
-    padding: 0.25rem 0.625rem;
-    min-height: 32px;
-    font-size: 0.8125rem;
-  }
-
-  .label {
-    display: block;
-    margin-bottom: 0.375rem;
-    color: var(--color-text-secondary);
-    font-family: var(--font-universalsans);
-    font-size: 0.8125rem;
-    font-weight: 500;
-  }
-
-  .checkbox {
-    width: 1rem;
-    height: 1rem;
-    accent-color: var(--color-primary);
-    cursor: pointer;
-  }
-
-  .cta-star {
-    display: inline-block;
-    margin-right: 0.25rem;
-    color: var(--color-sunbeam);
-    animation: cta-pulse 1.6s ease-in-out infinite;
-  }
-
-  @keyframes cta-pulse {
-    0%,
-    100% {
-      transform: scale(1);
-      opacity: 1;
-    }
-    50% {
-      transform: scale(1.25);
-      opacity: 0.75;
-    }
-  }
-
-  /* .chip / .chip--* have a single definition further down this file (in the
-     Linear-inspired unlayered block), which already superseded this one. */
-
-  /* Beta Tag Pill: #f2ede5 background, #0a0a0a text, 12px weight 500 */
-  .pill-beta,
-  .chip--beta {
-    display: inline-flex;
-    align-items: center;
-    padding: 2px 8px;
-    border-radius: var(--radius-pills);
-    background-color: var(--color-sand);
-    color: var(--color-jet-ink);
-    font-family: var(--font-universalsans);
-    font-size: 12px;
-    font-weight: 500;
-    letter-spacing: -0.12px;
-  }
-
-  /* Semantic action buttons */
-  .btn--success {
-    background-color: var(--color-success-container);
-    color: var(--color-success);
-    border-color: color-mix(in srgb, var(--color-success) 30%, transparent);
-  }
-  .btn--success:hover:not(:disabled) {
-    background-color: color-mix(in srgb, var(--color-success-container) 75%, var(--color-surface-1));
-  }
-
-  .btn--error {
-    background-color: var(--color-error-container);
-    color: var(--color-error);
-    border-color: color-mix(in srgb, var(--color-error) 30%, transparent);
-  }
-  .btn--error:hover:not(:disabled) {
-    background-color: color-mix(in srgb, var(--color-error-container) 75%, var(--color-surface-1));
-  }
-
-  /* Table: Clean editorial layout with hairline dividers.
-     Sizing/colors here match what previously lived as a second, later
-     `.table` override further down this file — merged into one definition. */
-  .table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.8125rem;
-  }
-
-  .table thead th {
-    text-align: left;
-    padding: 0.5625rem 0.75rem;
-    background: var(--color-surface-2);
-    color: var(--color-text-tertiary);
-    font-family: var(--font-universalsans);
-    font-weight: 510;
-    border-bottom: 1px solid var(--color-border);
-    font-size: 0.6875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .table tbody td {
-    padding: 0.625rem 0.75rem;
-    border-bottom: 1px solid var(--color-border);
-    color: var(--color-text-secondary);
-  }
-
-  /* Accessible tables sometimes use `<th scope="row">` for the row label
-     instead of a plain `<td>` — style it like a cell, not a header. */
-  .table tbody th {
-    padding: 0.625rem 0.75rem;
-    border-bottom: 1px solid var(--color-border);
-    color: var(--color-text);
-    font-weight: 500;
-    text-align: left;
-  }
-
-  .table tbody tr:hover {
-    background-color: var(--color-surface-hover);
-  }
-
-  .table tbody tr:last-child td,
-  .table tbody tr:last-child th {
-    border-bottom: none;
-  }
-
-  .table caption {
-    caption-side: bottom;
-    padding-top: 0.625rem;
-    color: var(--color-text-secondary);
-    font-size: 0.6875rem;
-    text-align: left;
-  }
-
-  /* Sidebar nav link: compact midnight navigation with semantic states. */
-  .nav-link {
+/* -----------------------------------------------------------------
+   Auth & onboarding surfaces — the one place the marketing treatment
+   from DESIGN.md applies in full: a cosmic ground with the card as a
+   self-contained stage floating in it.
+   ----------------------------------------------------------------- */
+@layer components {
+  .auth-shell {
+    position: relative;
+    min-height: 100dvh;
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    justify-content: center;
+    padding: 1.5rem;
+    background:
+      radial-gradient(
+        1100px 620px at 10% -12%,
+        color-mix(in oklab, var(--color-blurple) 55%, transparent),
+        transparent 62%
+      ),
+      radial-gradient(
+        900px 520px at 94% 112%,
+        color-mix(in oklab, var(--color-fuchsia) 38%, transparent),
+        transparent 58%
+      ),
+      var(--color-rail);
+  }
+
+  .auth-card {
+    position: relative;
     width: 100%;
-    padding: 0.5rem 0.75rem;
-    border-radius: var(--radius-buttons);
+    max-width: 26rem;
+    padding: clamp(1.5rem, 4vw, 2.25rem);
+    border-radius: var(--radius-panels);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-xl);
+  }
+
+  .auth-card--wide {
+    max-width: 34rem;
+  }
+
+  .auth-card__title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 800;
+    text-transform: uppercase;
+    font-size: 1.625rem;
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+    color: var(--color-text-heading);
+  }
+
+  .auth-card__subtitle {
+    margin: 0.625rem 0 0;
     color: var(--color-text-secondary);
-    text-decoration: none;
-    font-family: var(--font-universalsans);
-    font-size: 0.875rem;
-    font-weight: 500;
-    line-height: 1.25rem;
-    white-space: nowrap;
-    border: 1px solid transparent;
-    transition:
-      background-color 150ms ease,
-      border-color 150ms ease,
-      color 150ms ease;
+    font-size: 0.9375rem;
+    line-height: 1.5;
   }
+}
 
-  .nav-link:hover {
-    background-color: color-mix(in srgb, var(--color-paper) 5%, transparent);
-    color: var(--color-text);
-  }
-
-  .nav-link--active {
-    background-color: var(--color-primary-container);
-    border-color: color-mix(in srgb, var(--color-primary) 28%, transparent);
-    color: var(--color-text);
-    font-weight: 600;
-  }
-
-  .nav-link--active:hover {
-    background-color: color-mix(in srgb, var(--color-primary) 22%, transparent);
-    border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
-    color: var(--color-text);
-  }
-
-  .nav-link--active app-icon,
-  .nav-link--active .app-icon {
-    color: var(--color-primary-hover);
-  }
-
-  .scrollbar-thin {
-    scrollbar-width: thin;
-    scrollbar-color: var(--color-border-strong) transparent;
-  }
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: var(--color-border-strong);
-    border-radius: var(--radius-full);
-  }
-
-  /* -----------------------------------------------------------------
-     Terminal & Code block mockup
-     ----------------------------------------------------------------- */
+/* -----------------------------------------------------------------
+   Terminal & code block mock-up
+   ----------------------------------------------------------------- */
+@layer components {
   .terminal-block,
   .code-block {
-    background-color: var(--color-charcoal);
+    background-color: var(--color-cosmic);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-cards);
-    font-family: var(--font-geistmono);
-    color: var(--color-text);
+    font-family: var(--font-mono);
+    color: var(--color-text-secondary);
     padding: 1rem 1.25rem;
   }
 
@@ -718,18 +1194,20 @@
   }
 
   .terminal-dot--red {
-    background-color: var(--color-ember);
+    background-color: var(--color-error);
   }
   .terminal-dot--yellow {
-    background-color: var(--color-sunbeam);
+    background-color: var(--color-warning);
   }
   .terminal-dot--green {
-    background-color: var(--color-sprout);
+    background-color: var(--color-success);
   }
+}
 
-  /* -----------------------------------------------------------------
-     Equipment grid — character-sheet style layout for build loadouts
-     ----------------------------------------------------------------- */
+/* -----------------------------------------------------------------
+   Equipment grid — character-sheet layout for build loadouts
+   ----------------------------------------------------------------- */
+@layer components {
   .equipment-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -789,16 +1267,14 @@
     gap: 0.25rem;
     aspect-ratio: 1 / 1;
     padding: 0.5rem;
-    background-color: var(--color-surface);
+    background-color: var(--color-surface-2);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-cards);
-    color: var(--color-text-secondary);
+    color: var(--color-text-tertiary);
     text-align: center;
     transition:
       border-color 150ms ease,
-      background-color 150ms ease,
-      transform 120ms ease,
-      box-shadow 150ms ease;
+      background-color 150ms ease;
   }
 
   .equipment-slot--interactive {
@@ -818,8 +1294,8 @@
 
   .equipment-slot--editing {
     z-index: 30;
-    border-color: var(--color-text);
-    box-shadow: 0 0 0 2px var(--color-text);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px var(--color-primary);
   }
 
   .equipment-slot__icon {
@@ -836,7 +1312,7 @@
     width: 3rem;
     height: 3rem;
     border-radius: var(--radius-inputs);
-    background-color: var(--color-surface-2);
+    background-color: var(--color-surface-3);
     color: var(--color-text-disabled);
     font-size: 1.5rem;
     line-height: 1;
@@ -844,7 +1320,7 @@
 
   .equipment-slot__label {
     font-size: 0.7rem;
-    font-weight: 500;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
@@ -866,8 +1342,8 @@
     font-size: 0.625rem;
     font-weight: 700;
     padding: 0.05rem 0.35rem;
-    border-radius: var(--radius-inputs);
-    background-color: var(--color-surface-2);
+    border-radius: var(--radius-badges);
+    background-color: var(--color-surface-3);
     color: var(--color-text);
   }
 
@@ -878,16 +1354,26 @@
     font-size: 0.625rem;
     font-weight: 700;
     padding: 0.05rem 0.3rem;
-    border-radius: var(--radius-inputs);
-    background-color: var(--color-surface-2);
+    border-radius: var(--radius-badges);
+    background-color: var(--color-surface-3);
     color: var(--color-text-secondary);
   }
 
-  .equipment-slot__quality--1 { color: #9ca3af; }
-  .equipment-slot__quality--2 { color: #22c55e; }
-  .equipment-slot__quality--3 { color: #3b82f6; }
-  .equipment-slot__quality--4 { color: #a855f7; }
-  .equipment-slot__quality--5 { color: #f59e0b; }
+  .equipment-slot__quality--1 {
+    color: var(--color-greyple);
+  }
+  .equipment-slot__quality--2 {
+    color: var(--color-spring-green);
+  }
+  .equipment-slot__quality--3 {
+    color: var(--color-vivid-cerulean);
+  }
+  .equipment-slot__quality--4 {
+    color: var(--color-fuchsia);
+  }
+  .equipment-slot__quality--5 {
+    color: var(--color-ember-orange);
+  }
 
   .equipment-slot__trigger {
     position: absolute;
@@ -911,7 +1397,7 @@
     padding: 0;
     border-radius: var(--radius-pills);
     border: none;
-    background-color: var(--color-surface-2);
+    background-color: var(--color-surface-3);
     color: var(--color-text-secondary);
     cursor: pointer;
     transition:
@@ -920,11 +1406,10 @@
   }
 
   .equipment-slot__clear:hover {
-    background-color: var(--color-error);
+    background-color: var(--color-error-solid);
     color: #fff;
   }
 
-  /* Equipment popover */
   .equipment-popover {
     position: absolute;
     top: calc(100% + 0.5rem);
@@ -937,7 +1422,7 @@
     background-color: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-cards);
-    box-shadow: var(--shadow-subtle-2);
+    box-shadow: var(--shadow-xl);
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -1011,8 +1496,8 @@
   }
 
   .equipment-picker__option--selected {
-    background: color-mix(in srgb, var(--color-accent-gold) 14%, transparent);
-    border-color: var(--color-accent-gold);
+    background: var(--color-primary-container);
+    border-color: var(--color-primary);
   }
 
   .equipment-picker__option-icon {
@@ -1043,12 +1528,12 @@
 
   .equipment-picker__option-copy small {
     color: var(--color-text-secondary);
-    font-family: var(--font-geistmono);
+    font-family: var(--font-mono);
     font-size: 0.62rem;
   }
 
   .equipment-picker__check {
-    color: var(--color-accent-gold);
+    color: var(--color-primary);
     font-size: 1rem;
     font-weight: 700;
   }
@@ -1063,451 +1548,33 @@
 }
 
 /* -----------------------------------------------------------------
-   Editorial & Technical Typography Classes
+   Workspace treatment — applied inside the app shell so every feature
+   route inherits the same chrome geometry without touching its markup.
    ----------------------------------------------------------------- */
-@layer components {
-  /* Technical Monospace */
-  .mono,
-  .tabular {
-    font-family: var(--font-geistmono);
-    font-variant-numeric: tabular-nums;
-    letter-spacing: -0.01em;
-  }
-
-  /* Eyebrow / Meta label */
-  .eyebrow {
-    font-family: var(--font-universalsans);
-    font-size: 0.6875rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--color-text-secondary);
-  }
-
-  /* Editorial Display Headings (near 100% line height, tight tracking) */
-  .display {
-    font-family: var(--font-universalsansdisplay);
-    font-weight: 400;
-    line-height: 1.05;
-    letter-spacing: -0.025em;
-  }
-
-  .heading-lg {
-    font-family: var(--font-universalsansdisplay);
-    font-size: 60px;
-    line-height: 60px;
-    letter-spacing: -1.5px;
-    font-weight: 400;
-  }
-
-  .heading {
-    font-family: var(--font-universalsansdisplay);
-    font-size: 48px;
-    line-height: 48px;
-    letter-spacing: -1.2px;
-    font-weight: 400;
-  }
-
-  .subheading {
-    font-family: var(--font-universalsansdisplay);
-    font-size: 30px;
-    line-height: 36px;
-    letter-spacing: -0.75px;
-    font-weight: 500;
-  }
-
-  .heading-sm {
-    font-family: var(--font-universalsansdisplay);
-    font-size: 24px;
-    line-height: 32px;
-    letter-spacing: -0.6px;
-    font-weight: 500;
-  }
-
-  .body {
-    font-family: var(--font-universalsans);
-    font-size: 16px;
-    line-height: 24px;
-    font-weight: 400;
-  }
-
-  .body-sm {
-    font-family: var(--font-universalsans);
-    font-size: 14px;
-    line-height: 20px;
-    font-weight: 400;
-  }
-
-  .caption {
-    font-family: var(--font-universalsans);
-    font-size: 12px;
-    line-height: 20px;
-    letter-spacing: -0.12px;
-  }
-
-  .wordmark {
-    font-family: var(--font-wordmark);
-    letter-spacing: 0.04em;
-  }
-
-  /* Global micro-tooltip */
-  .app-tooltip {
-    position: fixed;
-    z-index: 10000;
-    pointer-events: none;
-    background-color: var(--color-charcoal);
-    color: var(--color-cream);
-    font-family: var(--font-universalsans);
-    font-size: 11px;
-    font-weight: 500;
-    line-height: 1.3;
-    padding: 5px 9px;
-    border-radius: 6px;
-    border: 1px solid var(--color-border);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-    white-space: nowrap;
-    opacity: 0;
-    transform: scale(0.96);
-    transition: opacity 120ms cubic-bezier(0.16, 1, 0.3, 1), transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
-    will-change: transform, opacity;
-  }
-
-  .app-tooltip--visible {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-/* -----------------------------------------------------------------
-   Weaklings Manager product system — Linear-inspired, compact dark UI.
-   These overrides deliberately keep the existing primitive API stable while
-   bringing every route onto the same operational visual language.
-   ----------------------------------------------------------------- */
-:root {
-  color-scheme: dark;
-  --color-void: #08090a;
-  --color-carbon: #0f1011;
-  --color-obsidian: #161718;
-  --color-graphite: #23252a;
-  --color-smoke: #383b3f;
-  --color-mist: #d0d6e0;
-  --color-bg: var(--color-void);
-  --color-surface: var(--color-carbon);
-  --color-surface-1: var(--color-carbon);
-  --color-surface-2: var(--color-obsidian);
-  --color-surface-3: var(--color-graphite);
-  --color-surface-muted: var(--color-obsidian);
-  --color-surface-hover: #1c1e21;
-  --color-surface-charcoal: var(--color-void);
-  --color-border: var(--color-graphite);
-  --color-border-strong: var(--color-smoke);
-  --color-text: var(--color-paper);
-  --color-text-heading: var(--color-paper);
-  --color-text-secondary: var(--color-mist);
-  --color-text-tertiary: var(--color-fog);
-  --color-text-muted: var(--color-ash);
-  --color-text-steel: var(--color-fog);
-  --color-text-disabled: var(--color-ash);
-  --color-weaklings-red: #dc2626;
-  --color-primary: var(--color-weaklings-red);
-  --color-primary-hover: #ef4444;
-  --color-primary-container: color-mix(in oklab, var(--color-primary) 16%, transparent);
-  --color-primary-soft: var(--color-primary-container);
-  --color-on-primary: var(--color-paper);
-  --color-logo-glow: color-mix(in oklab, var(--color-coral-red) 18%, transparent);
-  --color-success: var(--color-pulse-green);
-  --color-success-container: color-mix(in oklab, var(--color-success) 13%, transparent);
-  --color-warning: #eab308;
-  --color-warning-container: color-mix(in oklab, var(--color-warning) 13%, transparent);
-  --color-error: var(--color-coral-red);
-  --color-error-container: color-mix(in oklab, var(--color-error) 13%, transparent);
-  --color-danger: var(--color-error);
-  --color-info: var(--color-signal-teal);
-  --role-tank: #3b82f6;
-  --role-healer: #22c55e;
-  --role-support: #f59e0b;
-  --role-dps: #ef4444;
-  --role-bm: #a855f7;
-  --role-brawler: #06b6d4;
-  --radius-sm: 2px;
-  --radius-md: 6px;
-  --radius-lg: 6px;
-  --radius-xl: 12px;
-  --radius-2xl: 12px;
-  --radius-cards: 12px;
-  --radius-badges: 4px;
-  --radius-inputs: 6px;
-  --radius-buttons: 6px;
-  --radius-smallcards: 6px;
-  --shadow-subtle: inset 0 0 0 1px var(--color-graphite);
-  --shadow-subtle-2: inset 0 0 0 1px var(--color-graphite);
-  --shadow-xl: 0 4px 32px color-mix(in srgb, var(--color-void) 60%, transparent);
-  --font-universalsans: 'Inter Variable', Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-universalsansdisplay: var(--font-universalsans);
-  --font-geistmono: 'Berkeley Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --font-sans: var(--font-universalsans);
-  --font-display: var(--font-universalsans);
-  --font-mono: var(--font-geistmono);
-  --page-gap: 1.5rem;
-  --motion-fast: 150ms ease;
-  --color-border-hover: var(--color-border-strong);
-
-  /* Component-level spacing token aliases (safe in :root, won't hijack Tailwind utilities) */
-  --spacing-4: 0.25rem;
-  --spacing-8: 0.5rem;
-  --spacing-12: 0.75rem;
-  --spacing-16: 1rem;
-  --spacing-20: 1.25rem;
-  --spacing-24: 1.5rem;
-  --spacing-32: 2rem;
-  --spacing-40: 2.5rem;
-  --spacing-48: 3rem;
-  --spacing-64: 4rem;
-  --spacing-96: 6rem;
-  --spacing-144: 9rem;
-
-  /* Podium medal gradients — theme-invariant: each is a self-contained
-     badge with its own internal contrast, not something that should
-     shift with the page theme. Centralized here instead of living as
-     raw hex inside the leaderboards component. */
-  --color-medal-gold-1: #fde047;
-  --color-medal-gold-2: #eab308;
-  --color-medal-gold-3: #ca8a04;
-  --color-medal-gold-text: #713f12;
-  --color-medal-silver-1: #f4f4f5;
-  --color-medal-silver-2: #cbd5e1;
-  --color-medal-silver-3: #94a3b8;
-  --color-medal-silver-text: #334155;
-  --color-medal-bronze-1: #fdba74;
-  --color-medal-bronze-2: #ea580c;
-  --color-medal-bronze-3: #9a3412;
-  --color-medal-bronze-text: #ffffff;
-}
-
-html.dark {
-  color-scheme: dark;
-}
-
-html.light {
-  color-scheme: light;
-  --color-bg: #f5f6f8;
-  --color-surface: #ffffff;
-  --color-surface-1: #ffffff;
-  --color-surface-2: #f1f2f4;
-  --color-surface-3: #e7e9ed;
-  --color-surface-muted: #f1f2f4;
-  --color-surface-hover: #eceef1;
-  --color-surface-charcoal: #151617;
-  --color-border: #dfe1e5;
-  --color-border-strong: #c6c9cf;
-  --color-text: #151617;
-  --color-text-heading: #08090a;
-  --color-text-secondary: #42464d;
-  --color-text-tertiary: #62666d;
-  --color-text-steel: #4e5259;
-  --color-text-muted: #62666d;
-  --color-text-disabled: #8a8f98;
-  --color-weaklings-red: #b91c1c;
-  --color-primary: var(--color-weaklings-red);
-  --color-primary-hover: #991b1b;
-  --color-primary-container: #fee2e2;
-  --color-primary-soft: var(--color-primary-container);
-  --color-on-primary: #ffffff;
-  --color-success: #247a3a;
-  --color-success-container: #e5f5e9;
-  --color-warning: #956d00;
-  --color-warning-container: #fff5cc;
-  --color-error: #c53b3b;
-  --color-error-container: #ffebeb;
-  --color-danger: var(--color-error);
-  --color-info: #176bb8;
-  --role-tank: #2563eb;
-  --role-healer: #16a34a;
-  --role-support: #d97706;
-  --role-dps: #dc2626;
-  --role-bm: #9333ea;
-  --role-brawler: #0891b2;
-  --shadow-subtle: inset 0 0 0 1px #dfe1e5;
-  --shadow-subtle-2: inset 0 0 0 1px #dfe1e5;
-  --shadow-xl: 0 1rem 2rem rgb(21 22 23 / 12%);
-}
-
-@layer components {
-  body {
-    background: var(--color-bg);
-    color: var(--color-text);
-    font-family: var(--font-sans);
-    font-feature-settings: 'cv01' on, 'ss03' on, 'zero' on;
-    letter-spacing: -0.01em;
-  }
-
-  :focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: 2px;
-  }
-
-  /* .card/.surface/.card--flat/.card--elevated have a single definition
-     earlier in this file (Reusable Component Layer) — this used to
-     redundantly redefine them (and force .card--elevated's shadow to
-     `none`, silently overriding its intended elevation). */
-
-  .btn {
-    min-height: 2.25rem;
-    padding: 0.4375rem 0.75rem;
-    border-radius: var(--radius-buttons);
-    font-family: var(--font-sans);
-    font-size: 0.8125rem;
-    font-weight: 510;
-    letter-spacing: -0.01em;
-    transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out, transform 150ms ease-out;
-  }
-
-  .btn--primary { background: var(--color-primary); color: var(--color-on-primary); }
-  .btn--primary:hover:not(:disabled) { background: var(--color-primary-hover); }
-  .btn--ghost { color: var(--color-text-secondary); }
-  .btn--ghost:hover:not(:disabled), .btn--tonal:hover:not(:disabled) { background: var(--color-surface-hover); color: var(--color-text); }
-  .btn--outline { border-color: var(--color-border); color: var(--color-text-secondary); }
-  .btn--outline:hover:not(:disabled) { background: var(--color-surface-hover); border-color: var(--color-border-strong); color: var(--color-text); }
-  .btn--tonal { background: var(--color-surface-2); color: var(--color-text); }
-  .btn--danger { background: var(--color-error-container); border-color: color-mix(in oklab, var(--color-error) 30%, transparent); color: var(--color-error); }
-  .btn--danger:hover:not(:disabled) { background: color-mix(in oklab, var(--color-error) 20%, var(--color-surface)); }
-  .btn--sm { min-height: 2rem; padding: 0.3125rem 0.625rem; font-size: 0.75rem; }
-  .btn--icon { min-width: 2rem; min-height: 2rem; padding: 0.375rem; }
-
-  .input, .select, .textarea {
-    min-height: 2.25rem;
-    padding: 0.5rem 0.625rem;
-    background: var(--color-surface-2);
-    border-color: var(--color-border);
-    border-radius: var(--radius-inputs);
-    color: var(--color-text);
-    font-family: var(--font-sans);
-    font-size: 0.8125rem;
-  }
-  .textarea { resize: vertical; }
-  .input::placeholder, .textarea::placeholder { color: var(--color-text-tertiary); }
-  .input:focus-visible, .select:focus-visible, .textarea:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; border-color: var(--color-primary); box-shadow: none; }
-  .input:focus, .select:focus, .textarea:focus { box-shadow: none; }
-  .input--sm, .select--sm { min-height: 2rem; padding: 0.3125rem 0.5rem; font-size: 0.75rem; }
-  .label { margin-bottom: 0.25rem; color: var(--color-text-secondary); font-size: 0.75rem; font-weight: 510; letter-spacing: -0.01em; }
-
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    min-height: 1.375rem;
-    padding: 0.125rem 0.5rem;
-    border: 1px solid transparent;
-    border-radius: 9999px;
-    font-family: var(--font-sans);
-    font-size: 0.6875rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    white-space: nowrap;
-  }
-  .status-dot {
-    display: inline-block;
-    width: 0.375rem;
-    height: 0.375rem;
-    border-radius: 9999px;
-    background-color: currentColor;
-    flex-shrink: 0;
-  }
-  .chip--neutral { background: rgba(148, 163, 184, 0.1); color: #94a3b8; border-color: rgba(148, 163, 184, 0.2); }
-  .chip--info { background: rgba(56, 189, 248, 0.12); color: #38bdf8; border-color: rgba(56, 189, 248, 0.25); }
-  .chip--success { background: rgba(74, 222, 128, 0.12); color: #4ade80; border-color: rgba(74, 222, 128, 0.25); }
-  .chip--warning { background: rgba(250, 204, 21, 0.12); color: #facc15; border-color: rgba(250, 204, 21, 0.25); }
-  .chip--error { background: rgba(248, 113, 113, 0.12); color: #f87171; border-color: rgba(248, 113, 113, 0.25); }
-
-  .kpi-card {
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-cards);
-    background: var(--color-surface);
-    padding: 1.125rem 1.25rem;
-    transition: border-color var(--motion-fast), transform var(--motion-fast);
-  }
-  .kpi-card:hover {
-    border-color: var(--color-border-hover);
-  }
-  .icon-capsule {
-    width: 2.25rem;
-    height: 2.25rem;
-    border-radius: 0.5rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-
-  /* .table already carries these exact values from its single definition
-     earlier in this file (Reusable Component Layer). */
-
-  .mono, .tabular { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.013em; }
-  .eyebrow { color: var(--color-text-tertiary); font-family: var(--font-sans); font-size: 0.6875rem; font-weight: 510; letter-spacing: 0.04em; }
-  .display, .heading-lg, .heading, .subheading, .heading-sm { font-family: var(--font-sans); color: var(--color-text-heading); font-weight: 510; letter-spacing: -0.022em; }
-  .app-tooltip { background: var(--color-obsidian); color: var(--color-mist); border-color: var(--color-border-strong); border-radius: var(--radius-md); box-shadow: var(--shadow-xl); }
-  .scrollbar-thin { scrollbar-color: var(--color-border-strong) transparent; scrollbar-gutter: stable; }
-
-  .app-dialog { background: var(--color-surface); border-color: var(--color-border-strong); border-radius: var(--radius-xl); box-shadow: var(--shadow-xl); }
-  .app-dialog__header, .app-dialog__body { background: var(--color-surface); }
-  .app-dialog__footer { background: var(--color-surface-2); }
-  .app-dialog__title { color: var(--color-text); font-size: 0.9375rem; font-weight: 510; }
-  .app-dialog__subtitle { color: var(--color-text-secondary); }
-  .app-dialog::backdrop { background: rgb(8 9 10 / 72%); backdrop-filter: none; }
-
-  .workspace-header {
-    display: inline-flex;
-    min-width: 0;
-    align-items: center;
-    gap: 0.625rem;
-    color: var(--color-text);
-    font-size: 0.8125rem;
-    font-weight: 510;
-    letter-spacing: -0.012em;
-  }
-  .workspace-header__mark {
-    inline-size: 0.5rem;
-    block-size: 0.5rem;
-    border-radius: 2px;
-    background: var(--color-primary);
-    box-shadow: 0 0 0 3px var(--color-primary-container);
-  }
-  .workspace-header__meta { color: var(--color-text-tertiary); font-size: 0.75rem; font-weight: 400; }
-
-  .cta-star { color: var(--color-primary); animation: none; }
-}
-
-@media (pointer: coarse) {
-  .btn, .input, .select, .textarea { min-height: 2.5rem; }
-  .btn--sm, .btn--icon { min-width: 2.5rem; min-height: 2.5rem; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  .btn, .card, .surface, .nav-link, .app-tooltip, .app-dialog, .spinner { transition-duration: 0.01ms; animation-duration: 0.01ms; animation-iteration-count: 1; }
-}
-
-/* Issue-tracker workspace treatment. Kept outside Tailwind layers so existing
-   feature templates inherit the same dense product geometry immediately. */
-app-shell .card {
-  border-color: var(--color-border);
-  border-radius: 8px;
+app-shell .card,
+app-shell .surface {
+  border-radius: var(--radius-cards);
   background: var(--color-surface);
-  box-shadow: inset 0 1px rgb(255 255 255 / 2%);
 }
 
-app-shell .card.p-5 { padding: 1rem; }
-app-shell .card.p-4 { padding: 0.875rem; }
-app-shell .card.p-3 { padding: 0.75rem; }
-app-shell .surface { border-radius: 6px; }
+app-shell .card.p-5 {
+  padding: 1.25rem;
+}
+app-shell .card.p-4 {
+  padding: 1rem;
+}
+app-shell .card.p-3 {
+  padding: 0.875rem;
+}
 
 app-shell .card > :where(h2, h3) {
-  font-weight: 510;
-  letter-spacing: -0.012em;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
-app-shell .card :where(.rounded-xl, .rounded-2xl) { border-radius: 6px; }
+app-shell .card :where(.rounded-xl, .rounded-2xl) {
+  border-radius: var(--radius-inputs);
+}
 
 app-shell .table thead th {
   position: sticky;
@@ -1521,7 +1588,7 @@ app-shell .table tbody tr {
 }
 
 app-shell .table tbody tr:hover {
-  background: color-mix(in oklab, var(--color-primary) 4%, var(--color-surface));
+  background: var(--color-surface-hover);
 }
 
 app-shell .data-table-card {
@@ -1541,6 +1608,39 @@ app-shell .data-table__table thead th {
 
 app-shell .data-table__row--clickable:hover,
 app-shell .data-table__row--clickable:focus-visible {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--color-surface-hover);
 }
 
+/* -----------------------------------------------------------------
+   Responsive & motion preferences
+   ----------------------------------------------------------------- */
+@media (pointer: coarse) {
+  .btn,
+  .input,
+  .select,
+  .textarea {
+    min-height: 2.5rem;
+  }
+  .btn--sm,
+  .btn--icon {
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .btn,
+  .card,
+  .surface,
+  .nav-link,
+  .app-tooltip,
+  .app-dialog,
+  .spinner {
+    transition-duration: 0.01ms;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+  }
+}
