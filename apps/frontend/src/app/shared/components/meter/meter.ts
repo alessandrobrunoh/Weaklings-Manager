@@ -81,13 +81,13 @@ export class Meter {
   protected barColor(): string {
     switch (this.tone()) {
       case 'success':
-        return '#4ade80';
+        return 'var(--color-success)';
       case 'danger':
-        return '#f87171';
+        return 'var(--color-error)';
       case 'neutral':
-        return 'rgba(148, 163, 184, 0.6)';
+        return 'var(--color-text-tertiary)';
       default:
-        return '#38bdf8';
+        return 'var(--color-info)';
     }
   }
 }

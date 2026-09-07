@@ -30,16 +30,14 @@ const REGIONS = [
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Icon, RouterLink, WeaklingsLogo],
   template: `
-    <div class="min-h-dvh flex items-center justify-center p-4 sm:p-6" style="background-color: var(--color-bg)">
-      <section class="card w-full max-w-lg p-6 sm:p-8" aria-labelledby="register-title">
+    <div class="auth-shell">
+      <section class="auth-card auth-card--wide" aria-labelledby="register-title">
         <div class="mb-6 flex flex-col items-center text-center">
-          <app-weaklings-logo />
-          <h1 id="register-title" class="mt-4 text-lg font-semibold">
+          <app-weaklings-logo [compact]="true" />
+          <h1 id="register-title" class="auth-card__title mt-5">
             {{ t('register.title') }}
           </h1>
-          <p class="mt-1 text-sm" style="color: var(--color-text-secondary)">
-            {{ t('register.subtitle') }}
-          </p>
+          <p class="auth-card__subtitle">{{ t('register.subtitle') }}</p>
         </div>
 
         @if (alreadyRegistered()) {

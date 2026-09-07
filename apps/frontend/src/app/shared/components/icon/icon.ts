@@ -18,6 +18,7 @@ export type IconName =
   | 'filter'
   | 'grip'
   | 'hammer'
+  | 'hash'
   | 'info'
   | 'link'
   | 'list'
@@ -162,6 +163,12 @@ export type IconName =
           <path d="m15 12-8.5 8.5a2.1 2.1 0 0 1-3-3L12 9" />
           <path d="m17.5 10.5 2-2a2.1 2.1 0 0 0 0-3l-1-1a2.1 2.1 0 0 0-3 0l-2 2" />
           <path d="m9 6 9 9" />
+        }
+        @case ('hash') {
+          <path d="M4 9h16" />
+          <path d="M4 15h16" />
+          <path d="M10 3 8 21" />
+          <path d="M16 3l-2 18" />
         }
         @case ('info') {
           <circle cx="12" cy="12" r="10" />

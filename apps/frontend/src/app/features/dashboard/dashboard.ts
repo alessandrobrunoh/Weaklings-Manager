@@ -221,8 +221,8 @@ interface NextMassCard {
               <div class="flex flex-wrap items-center gap-2 mt-1.5 text-sm text-[var(--color-text-secondary)]">
                 <span
                   class="h-2 w-2 rounded-full shrink-0"
-                  [class.bg-emerald-400]="albionLinked()"
-                  [class.bg-amber-400]="!albionLinked()"
+                  [class.bg-[var(--color-success)]]="albionLinked()"
+                  [class.bg-[var(--color-warning)]]="!albionLinked()"
                 ></span>
                 <span class="truncate">
                   {{ albionLabel() }}
@@ -374,7 +374,7 @@ interface NextMassCard {
                     <div class="flex items-center gap-3 min-w-0">
                       <div
                         class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                        [class]="item.iconTone === 'warning' ? 'bg-amber-500/10 text-amber-400' : 'bg-blue-500/10 text-blue-400'"
+                        [class]="item.iconTone === 'warning' ? 'bg-[var(--color-warning-container)] text-[var(--color-warning)]' : 'bg-[var(--color-info-container)] text-[var(--color-info)]'"
                       >
                         <app-icon [name]="item.icon" size="1.125rem" />
                       </div>
@@ -384,7 +384,7 @@ interface NextMassCard {
                     </div>
                     <a
                       [routerLink]="item.link"
-                      class="action-link text-xs font-semibold text-[#dc2626] hover:text-red-400 transition-colors shrink-0 inline-flex items-center gap-1 no-underline"
+                      class="action-link text-xs font-semibold text-[var(--color-primary)] hover:text-[var(--color-hover-blurple)] transition-colors shrink-0 inline-flex items-center gap-1 no-underline"
                     >
                       <span>{{ item.actionText }}</span>
                       <app-icon name="arrow-right" size="0.75rem" />
@@ -394,7 +394,7 @@ interface NextMassCard {
               </ul>
             } @else {
               <div class="caught-up-banner p-3.5 rounded-xl flex items-center gap-3.5">
-                <div class="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0">
+                <div class="w-8 h-8 rounded-full bg-[var(--color-success-container)] text-[var(--color-success)] flex items-center justify-center shrink-0">
                   <app-icon name="check" size="1rem" />
                 </div>
                 <div class="min-w-0">
@@ -412,9 +412,9 @@ interface NextMassCard {
               <div class="flex items-center gap-2 mb-5">
                 <span
                   class="h-2 w-2 rounded-full"
-                  [class.bg-red-500]="mass.live"
+                  [class.bg-[var(--color-error)]]="mass.live"
                   [class.animate-pulse]="mass.live"
-                  [class.bg-zinc-500]="!mass.live"
+                  [class.bg-[var(--color-text-disabled)]]="!mass.live"
                 ></span>
                 <h2 class="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider m-0">
                   {{ t('dashboard.next_mass') }}
@@ -423,8 +423,8 @@ interface NextMassCard {
 
               <div class="flex items-center gap-4 sm:gap-6 mt-1">
                 <div class="date-box shrink-0 flex flex-col items-center justify-center rounded-xl p-3 sm:px-4 sm:py-3.5">
-                  <app-icon name="calendar" size="1.25rem" class="text-red-500 mb-1" />
-                  <span class="text-[10px] font-bold text-red-500 tracking-wider uppercase">
+                  <app-icon name="calendar" size="1.25rem" class="text-[var(--color-primary)] mb-1" />
+                  <span class="text-[10px] font-bold text-[var(--color-primary)] tracking-wider uppercase">
                     {{ mass.dayLabel }}
                   </span>
                   <span class="text-2xl sm:text-3xl font-bold text-(--color-text) tracking-tight leading-none mt-1">

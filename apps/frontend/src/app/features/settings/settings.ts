@@ -642,7 +642,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
           </button>
           <button
             type="button"
-            class="btn btn--outline btn--sm text-red-400 border-red-500/30 hover:bg-red-500/10"
+            class="btn btn--outline btn--sm text-[var(--color-error)] border-[color-mix(in_oklab,var(--color-error)_35%,transparent)] hover:bg-[var(--color-error-container)]"
             (click)="confirmUnlink()"
             [disabled]="savingLink()"
           >

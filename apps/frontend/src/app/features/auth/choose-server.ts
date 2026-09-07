@@ -17,27 +17,22 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Icon, WeaklingsLogo],
   template: `
-    <div
-      class="min-h-dvh flex items-center justify-center p-4 sm:p-6"
-      style="background-color: var(--color-bg)"
-    >
-      <section class="card w-full max-w-md p-6 sm:p-8" aria-labelledby="choose-server-title">
+    <div class="auth-shell">
+      <section class="auth-card" aria-labelledby="choose-server-title">
         <div class="mb-6 flex flex-col items-center text-center">
-          <app-weaklings-logo />
-          <h1 id="choose-server-title" class="mt-4 text-lg font-semibold">
+          <app-weaklings-logo [compact]="true" />
+          <h1 id="choose-server-title" class="auth-card__title mt-5">
             {{ t('auth.choose_server_title') }}
           </h1>
-          <p class="mt-1 text-sm" style="color: var(--color-text-secondary)">
-            {{ t('auth.choose_server_subtitle') }}
-          </p>
+          <p class="auth-card__subtitle">{{ t('auth.choose_server_subtitle') }}</p>
         </div>
 
         @if (loading()) {
-          <p class="text-center text-sm" style="color: var(--color-text-secondary)">
+          <p class="text-center text-sm text-[var(--color-text-secondary)]">
             {{ t('common.loading') }}
           </p>
         } @else if (tenants().length === 0) {
-          <p class="text-center text-sm" style="color: var(--color-danger)">
+          <p class="text-center text-sm text-[var(--color-error)]">
             {{ t('auth.choose_server_empty') }}
           </p>
           <button type="button" class="btn btn--primary mt-4 w-full" (click)="auth.login()">
@@ -62,7 +57,7 @@ import { WeaklingsLogo } from '../../shared/components/weaklings-logo/weaklings-
         }
 
         @if (failed()) {
-          <p class="mt-4 text-center text-sm" style="color: var(--color-danger)">
+          <p class="mt-4 text-center text-sm text-[var(--color-error)]" role="alert">
             {{ t('auth.choose_server_error') }}
           </p>
         }

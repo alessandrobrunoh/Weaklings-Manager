@@ -292,7 +292,7 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
           [class.hover:text-[var(--color-text)]]="statusFilter() !== 'stopped'"
           (click)="setStatusFilter('stopped')"
         >
-          <span class="h-1.5 w-1.5 rounded-full bg-neutral-400"></span>
+          <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-text-tertiary)]"></span>
           <span>Finished</span>
           <span
             class="rounded-full px-2 py-0.5 text-[11px] font-mono border"

@@ -35,10 +35,10 @@ import { Icon } from '../icon/icon';
 import { Loading } from '../loading/loading';
 
 const HUE_COLOR: Record<DestinyHue, string> = {
-  warrior: '#eb5757',
-  hunter: '#27a644',
-  mage: '#02b8cc',
-  neutral: '#d0d6e0',
+  warrior: 'var(--color-ekko-red)',
+  hunter: 'var(--color-spring-green)',
+  mage: 'var(--color-vivid-cerulean)',
+  neutral: 'var(--color-fog)',
 };
 
 /**
@@ -299,7 +299,7 @@ const HUE_COLOR: Record<DestinyHue, string> = {
                     [attr.cx]="node.x"
                     [attr.cy]="node.y"
                     [attr.r]="nodeRadius(node)"
-                    [attr.fill]="node.icon ? '#0f1011' : nodeFill(node)"
+                    [attr.fill]="node.icon ? 'var(--color-rail)' : nodeFill(node)"
                     [attr.stroke]="selectedId() === node.id ? '#ffffff' : hueColor(node.hue)"
                     [attr.stroke-width]="selectedId() === node.id ? 3.5 : 2.2"
                     [attr.opacity]="nodeOpacity(node)"
@@ -321,7 +321,7 @@ const HUE_COLOR: Record<DestinyHue, string> = {
                       [attr.x]="node.x"
                       [attr.y]="node.y + nodeRadius(node) + 22"
                       text-anchor="middle"
-                      fill="var(--color-mist, #d0d6e0)"
+                      fill="var(--color-text-secondary)"
                       font-size="22"
                       font-weight="500"
                       style="pointer-events: none"
@@ -563,7 +563,7 @@ export class DestinyBoard {
 
   protected nodeFill(node: DestinyRadialNode): string {
     const amount = node.leafCount <= 0 ? 0 : node.sum / (node.leafCount * 120);
-    return amount <= 0 ? '#161718' : this.hueColor(node.hue);
+    return amount <= 0 ? 'var(--color-surface-2)' : this.hueColor(node.hue);
   }
 
   protected nodeOpacity(node: DestinyRadialNode): number {
