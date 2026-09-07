@@ -17,7 +17,9 @@ use axum_extra::extract::cookie::{Key, PrivateCookieJar};
 use dashmap::DashMap;
 use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
 use sea_orm_migration::MigratorTrait;
+use subtle::ConstantTimeEq;
 
+use crate::config::Config;
 use crate::errors::AppError;
 use crate::migration::Migrator;
 use crate::modules::auth::Permissions;
@@ -25,7 +27,12 @@ use crate::modules::auth::service::DiscordUserProfile;
 use crate::postgres::{self, connect_with_search_path, list_active_tenants};
 
 /// Header the Discord bot sends to select a guild/tenant.
+///
+/// Only trusted alongside [`BOT_SECRET_HEADER`] — see [`resolve_tenant_id`].
 pub const GUILD_ID_HEADER: &str = "X-Guild-Id";
+
+/// Shared-secret header proving a request came from the Discord bot.
+pub const BOT_SECRET_HEADER: &str = "X-Bot-Secret";
 
 /// Control-plane pool, distinct from the per-tenant `DatabaseConnection`.
 #[derive(Clone)]
@@ -301,18 +308,51 @@ fn is_unscoped_auth_path(path: &str) -> bool {
         || path == "/api/auth/bot-invite"
 }
 
+/// Whether this request proved it is the Discord bot.
+///
+/// The bot is the only caller allowed to name a guild it is not signed into,
+/// because it holds `BOT_API_SECRET` and speaks for every tenant it serves.
+/// A browser session names its guild through the cookie instead, which the
+/// user cannot rewrite.
+fn is_bot_request(headers: &HeaderMap, cfg: Option<&Config>) -> bool {
+    let Some(expected) = cfg.and_then(|cfg| cfg.bot_api_secret.as_deref()) else {
+        return false;
+    };
+    let Some(provided) = headers
+        .get(BOT_SECRET_HEADER)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return false;
+    };
+    // Constant-time, for the same reason `UserContext` compares it that way:
+    // an early-exit `!=` leaks the mismatch position.
+    provided.as_bytes().ct_eq(expected.as_bytes()).into()
+}
+
 /// Resolve a tenant id from the bot header or the session cookie.
+///
+/// `X-Guild-Id` is honoured **only** when `header_is_trusted` — that is, when
+/// the request carried a valid `X-Bot-Secret`. For a cookie session the header
+/// is inert: it is user-controlled, and a session's roles are role *names*
+/// resolved against whichever tenant is loaded, so letting the header pick the
+/// tenant would let any member of one guild inherit the same-named role in
+/// every other guild. The web client never sends it.
 ///
 /// There is deliberately no "if there is only one tenant, use it" branch: a
 /// caller that names no guild is a caller with a bug, and guessing one would
 /// silently serve one tenant's data to a request meant for another.
 #[must_use]
-pub fn resolve_tenant_id(headers: &HeaderMap, cookie_tenant_id: Option<&str>) -> Option<String> {
-    if let Some(id) = headers
-        .get(GUILD_ID_HEADER)
-        .and_then(|value| value.to_str().ok())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+pub fn resolve_tenant_id(
+    headers: &HeaderMap,
+    cookie_tenant_id: Option<&str>,
+    header_is_trusted: bool,
+) -> Option<String> {
+    if header_is_trusted
+        && let Some(id) = headers
+            .get(GUILD_ID_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
     {
         return Some(id.to_owned());
     }
@@ -333,6 +373,40 @@ fn cookie_tenant_id(headers: &HeaderMap, key: Option<&Key>) -> Option<String> {
         .filter(|id| !id.is_empty())
 }
 
+/// The tenant this request is allowed to address.
+///
+/// Split out of [`resolve_tenant`] so it can be exercised through a real
+/// router: the answer depends on `Config` and `Key` being present in the
+/// request extensions, which is a property of the layer order in `lib.rs`, not
+/// of this function.
+fn tenant_for_request(
+    headers: &HeaderMap,
+    extensions: &axum::http::Extensions,
+    path: &str,
+) -> Option<String> {
+    let key = extensions.get::<Key>().cloned();
+    let from_cookie = cookie_tenant_id(headers, key.as_ref());
+    let trust_header = is_bot_request(headers, extensions.get::<Config>());
+    if !trust_header
+        && let Some(requested) = headers
+            .get(GUILD_ID_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        && Some(requested) != from_cookie.as_deref()
+    {
+        // Not an error — the request still runs against the session's own
+        // tenant — but nothing legitimate sends this, so it is worth seeing.
+        tracing::warn!(
+            requested_tenant = requested,
+            session_tenant = from_cookie.as_deref().unwrap_or("<none>"),
+            path,
+            "ignoring {GUILD_ID_HEADER} on a request that is not bot-authenticated"
+        );
+    }
+    resolve_tenant_id(headers, from_cookie.as_deref(), trust_header)
+}
+
 /// Middleware: pin `DatabaseConnection` / `Permissions` / [`TenantFeatures`] to the tenant.
 pub async fn resolve_tenant(
     State(registry): State<TenantRegistry>,
@@ -345,9 +419,7 @@ pub async fn resolve_tenant(
     }
 
     let headers = req.headers().clone();
-    let key = req.extensions().get::<Key>().cloned();
-    let from_cookie = cookie_tenant_id(&headers, key.as_ref());
-    let Some(tenant_id) = resolve_tenant_id(&headers, from_cookie.as_deref()) else {
+    let Some(tenant_id) = tenant_for_request(&headers, req.extensions(), &path) else {
         if needs_tenant(&path) {
             // No tenant, so no database is bound to this request. Handlers
             // destructure `Extension(db)`, so letting it through would trade a
@@ -405,6 +477,7 @@ mod tests {
     use crate::postgres::test_support::{cleanup_control_tenant, try_admin_db, unique_schema};
     use crate::postgres::{CONTROL_SCHEMA, drop_schema, ensure_schema, quote_ident};
     use axum::http::HeaderValue;
+    use axum::response::IntoResponse;
 
     #[test]
     fn feature_gate_matches_whole_segments_only() {
@@ -506,28 +579,213 @@ mod tests {
     }
 
     #[test]
-    fn header_wins_over_cookie() {
+    fn header_wins_over_cookie_for_the_bot() {
         let mut headers = HeaderMap::new();
         headers.insert(GUILD_ID_HEADER, HeaderValue::from_static("guild-header"));
-        let id = resolve_tenant_id(&headers, Some("guild-cookie"));
+        let id = resolve_tenant_id(&headers, Some("guild-cookie"), true);
         assert_eq!(id.as_deref(), Some("guild-header"));
+    }
+
+    /// The escalation this gate exists to stop: role names are shared across
+    /// tenant schemas, so a session that could name any guild would inherit the
+    /// same-named role's permissions in every other guild.
+    #[test]
+    fn header_is_ignored_for_a_cookie_session() {
+        let mut headers = HeaderMap::new();
+        headers.insert(GUILD_ID_HEADER, HeaderValue::from_static("victim-guild"));
+        let id = resolve_tenant_id(&headers, Some("guild-cookie"), false);
+        assert_eq!(id.as_deref(), Some("guild-cookie"));
+    }
+
+    /// A session with no tenant cannot borrow one from the header either.
+    #[test]
+    fn untrusted_header_alone_resolves_nothing() {
+        let mut headers = HeaderMap::new();
+        headers.insert(GUILD_ID_HEADER, HeaderValue::from_static("victim-guild"));
+        assert!(resolve_tenant_id(&headers, None, false).is_none());
     }
 
     #[test]
     fn cookie_used_when_header_absent() {
         let headers = HeaderMap::new();
-        let id = resolve_tenant_id(&headers, Some("guild-cookie"));
+        let id = resolve_tenant_id(&headers, Some("guild-cookie"), true);
         assert_eq!(id.as_deref(), Some("guild-cookie"));
     }
 
     #[test]
     fn no_tenant_is_ever_guessed() {
         let headers = HeaderMap::new();
-        assert!(resolve_tenant_id(&headers, None).is_none());
+        assert!(resolve_tenant_id(&headers, None, true).is_none());
         // A blank header or cookie is "unset", never an empty tenant id.
         let mut blank = HeaderMap::new();
         blank.insert(GUILD_ID_HEADER, HeaderValue::from_static("  "));
-        assert!(resolve_tenant_id(&blank, Some(" ")).is_none());
+        assert!(resolve_tenant_id(&blank, Some(" "), true).is_none());
+    }
+
+    fn cfg_with_bot_secret(secret: Option<&str>) -> Config {
+        Config {
+            backend_port: 3000,
+            database_url: "postgres://localhost/weaklings".to_owned(),
+            control_database_url: None,
+            discord_client_id: "id".to_owned(),
+            discord_client_secret: "secret".to_owned(),
+            discord_redirect_uri: "http://localhost/callback".to_owned(),
+            bot_api_secret: secret.map(ToOwned::to_owned),
+            discord_bot_token: None,
+            super_admin_discord_id: "admin".to_owned(),
+            session_secret: "x".repeat(64),
+            frontend_url: "http://localhost".to_owned(),
+            albion_api_region: "europe".to_owned(),
+            albion_guild_id: "albion".to_owned(),
+            albion_allied_guild_ids: String::new(),
+            albion_allied_guild_names: String::new(),
+            mistral_api_key: String::new(),
+            albionbb_base_url: "http://localhost".to_owned(),
+            albionbb_request_timeout_secs: 60,
+            albiondata_request_timeout_secs: 30,
+        }
+    }
+
+    #[test]
+    fn only_the_matching_bot_secret_is_trusted() {
+        let cfg = cfg_with_bot_secret(Some("s3cret"));
+
+        let mut good = HeaderMap::new();
+        good.insert(BOT_SECRET_HEADER, HeaderValue::from_static("s3cret"));
+        assert!(is_bot_request(&good, Some(&cfg)));
+
+        let mut wrong = HeaderMap::new();
+        wrong.insert(BOT_SECRET_HEADER, HeaderValue::from_static("nope"));
+        assert!(!is_bot_request(&wrong, Some(&cfg)));
+
+        // A prefix of the real secret must not pass either.
+        let mut prefix = HeaderMap::new();
+        prefix.insert(BOT_SECRET_HEADER, HeaderValue::from_static("s3c"));
+        assert!(!is_bot_request(&prefix, Some(&cfg)));
+
+        assert!(!is_bot_request(&HeaderMap::new(), Some(&cfg)));
+    }
+
+    /// Drives [`tenant_for_request`] through a router layered exactly the way
+    /// `lib.rs` layers `resolve_tenant`, and answers with the tenant it picked.
+    ///
+    /// The layer order is the whole point: `Config` and `Key` are added *after*
+    /// the tenant middleware in source order, and only Axum's bottom-up layer
+    /// application makes them visible to it. Get that wrong and `is_bot_request`
+    /// silently answers `false` for every request — which would not fail any of
+    /// the unit tests above, but would take the Discord bot completely offline.
+    async fn resolved_tenant_through_router(
+        request: axum::http::Request<axum::body::Body>,
+        cfg: Config,
+        key: Key,
+    ) -> String {
+        use tower::ServiceExt;
+
+        async fn echo(req: Request, _next: Next) -> Response {
+            let path = req.uri().path().to_owned();
+            let answer = tenant_for_request(req.headers(), req.extensions(), &path)
+                .unwrap_or_else(|| "<none>".to_owned());
+            answer.into_response()
+        }
+
+        let app = axum::Router::new()
+            .route("/api/probe", axum::routing::get(|| async { "unused" }))
+            .layer(axum::middleware::from_fn(echo))
+            .layer(axum::Extension(cfg))
+            .layer(axum::Extension(key));
+
+        let response = app.oneshot(request).await.expect("router responds");
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        String::from_utf8(body.to_vec()).expect("utf-8 body")
+    }
+
+    fn session_cookie_for(key: &Key, tenant_id: &str) -> String {
+        let profile = serde_json::json!({
+            "id": "111",
+            "username": "bob",
+            "email": null,
+            "avatar": null,
+            "roles": ["Officer"],
+            "highest_role": "Officer",
+            "user_id": 1,
+            "tenant_id": tenant_id,
+        });
+        let response = PrivateCookieJar::new(key.clone())
+            .add(("session_user", profile.to_string()))
+            .into_response();
+        response
+            .headers()
+            .get(axum::http::header::SET_COOKIE)
+            .expect("set-cookie")
+            .to_str()
+            .expect("ascii cookie")
+            .split(';')
+            .next()
+            .expect("cookie pair")
+            .to_owned()
+    }
+
+    /// The bot keeps working: its header still selects the guild it serves.
+    #[tokio::test]
+    async fn bot_request_still_selects_the_guild_from_the_header() {
+        let key = Key::generate();
+        let request = axum::http::Request::builder()
+            .uri("/api/probe")
+            .header(BOT_SECRET_HEADER, "s3cret")
+            .header(GUILD_ID_HEADER, "guild-b")
+            .body(axum::body::Body::empty())
+            .expect("request");
+        let resolved =
+            resolved_tenant_through_router(request, cfg_with_bot_secret(Some("s3cret")), key).await;
+        assert_eq!(resolved, "guild-b");
+    }
+
+    /// The escalation, end to end: a real session cookie for guild A plus an
+    /// `X-Guild-Id` naming guild B still lands on guild A.
+    #[tokio::test]
+    async fn cookie_session_cannot_reach_another_guild_through_the_header() {
+        let key = Key::generate();
+        let cookie = session_cookie_for(&key, "guild-a");
+        let request = axum::http::Request::builder()
+            .uri("/api/probe")
+            .header(axum::http::header::COOKIE, cookie)
+            .header(GUILD_ID_HEADER, "guild-b")
+            .body(axum::body::Body::empty())
+            .expect("request");
+        let resolved =
+            resolved_tenant_through_router(request, cfg_with_bot_secret(Some("s3cret")), key).await;
+        assert_eq!(resolved, "guild-a");
+    }
+
+    /// A wrong secret is not a bot, even with the header present.
+    #[tokio::test]
+    async fn a_forged_bot_secret_does_not_unlock_the_header() {
+        let key = Key::generate();
+        let cookie = session_cookie_for(&key, "guild-a");
+        let request = axum::http::Request::builder()
+            .uri("/api/probe")
+            .header(axum::http::header::COOKIE, cookie)
+            .header(BOT_SECRET_HEADER, "wrong")
+            .header(GUILD_ID_HEADER, "guild-b")
+            .body(axum::body::Body::empty())
+            .expect("request");
+        let resolved =
+            resolved_tenant_through_router(request, cfg_with_bot_secret(Some("s3cret")), key).await;
+        assert_eq!(resolved, "guild-a");
+    }
+
+    #[test]
+    fn bot_auth_is_closed_when_no_secret_is_configured() {
+        // With `BOT_API_SECRET` unset, bot header auth is disabled entirely —
+        // an attacker must not be able to unlock the guild header by sending a
+        // blank secret against a blank config.
+        let cfg = cfg_with_bot_secret(None);
+        let mut headers = HeaderMap::new();
+        headers.insert(BOT_SECRET_HEADER, HeaderValue::from_static(""));
+        assert!(!is_bot_request(&headers, Some(&cfg)));
+        assert!(!is_bot_request(&headers, None));
     }
 
     #[tokio::test]

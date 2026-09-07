@@ -41,3 +41,4 @@ dashmap = "6"
 
 [dev-dependencies]
 serde_urlencoded = "0.7"
+tower = { version = "0.5.3", features = ["util"] }

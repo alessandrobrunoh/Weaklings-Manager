@@ -134,7 +134,7 @@ async fn try_from_bot_headers(parts: &mut Parts) -> Result<Option<UserContext>, 
     // Read the bot secret header. Absence means this isn't a bot request at all.
     let provided_secret = match parts
         .headers
-        .get("X-Bot-Secret")
+        .get(crate::tenant::BOT_SECRET_HEADER)
         .and_then(|v| v.to_str().ok())
     {
         Some(s) => s.to_string(),
@@ -270,7 +270,7 @@ where
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         let provided_secret = parts
             .headers
-            .get("X-Bot-Secret")
+            .get(crate::tenant::BOT_SECRET_HEADER)
             .and_then(|v| v.to_str().ok())
             .ok_or_else(|| AppError::Unauthorized("Missing X-Bot-Secret".to_string()))?;
 
