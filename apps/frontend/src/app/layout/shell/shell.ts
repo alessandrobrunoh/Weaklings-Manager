@@ -44,12 +44,20 @@ import { Topbar } from '../topbar/topbar';
     '(document:keydown.escape)': 'closeDrawer()',
   },
   styles: `
+    /* Chrome geometry follows the Discord client: a dark server rail, a
+       channel sidebar, then the content pane on the lightest ground. */
+    .workspace { background: var(--color-rail); }
+    .workspace-sidebar {
+      transition: width 200ms ease-in-out;
+    }
+    .workspace-content { background: var(--color-bg); }
     .workspace-main { padding: 1rem; }
     @media (min-width: 40rem) { .workspace-main { padding: 1.25rem; } }
-    @media (min-width: 64rem) { .workspace-main { padding: 1.5rem; } }
+    @media (min-width: 64rem) { .workspace-main { padding: 1.5rem 2rem; } }
+    .workspace-main__inner { max-width: var(--page-max-width); margin-inline: auto; }
   `,
   template: `
-    <div class="flex h-dvh overflow-hidden bg-[var(--color-bg)]">
+    <div class="workspace flex h-dvh overflow-hidden">
       @if (!inPlatform()) {
         <aside class="hidden md:flex shrink-0" aria-hidden="false">
           <app-tenant-rail />
@@ -57,10 +65,10 @@ import { Topbar } from '../topbar/topbar';
       }
       <!-- Desktop sidebar -->
       <aside
-        class="hidden md:flex flex-col shrink-0 transition-all duration-200 ease-in-out bg-[var(--color-surface)] border-r border-[var(--color-border)]"
-        [style.width]="isSidebarCollapsed() ? '56px' : '248px'"
-        [style.min-width]="isSidebarCollapsed() ? '56px' : '248px'"
-        [style.max-width]="isSidebarCollapsed() ? '56px' : '248px'"
+        class="workspace-sidebar hidden md:flex flex-col shrink-0"
+        [style.width]="isSidebarCollapsed() ? '68px' : 'var(--sidebar-width)'"
+        [style.min-width]="isSidebarCollapsed() ? '68px' : 'var(--sidebar-width)'"
+        [style.max-width]="isSidebarCollapsed() ? '68px' : 'var(--sidebar-width)'"
       >
         <app-sidebar
           [sections]="navSections()"
@@ -75,15 +83,13 @@ import { Topbar } from '../topbar/topbar';
         <div class="md:hidden fixed inset-0 z-40 flex" role="dialog" aria-modal="true" aria-label="Navigation menu">
           <button
             type="button"
-            class="absolute inset-0 bg-[color-mix(in_srgb,var(--color-void)_45%,transparent)]"
+            class="absolute inset-0 bg-[var(--color-overlay)]"
             (click)="closeDrawer()"
             aria-label="Close menu"
           ></button>
-          <div
-            class="relative w-[19rem] max-w-[85%] flex h-full bg-[var(--color-surface)] border-r border-[var(--color-border)]"
-          >
+          <div class="relative flex h-full w-[19rem] max-w-[85%] bg-[var(--color-chrome)]">
             @if (!inPlatform()) {
-              <app-tenant-rail />
+              <app-tenant-rail (navigate)="closeDrawer()" />
             }
             <app-sidebar
               class="min-w-0 flex-1"
@@ -97,10 +103,10 @@ import { Topbar } from '../topbar/topbar';
       }
 
       <!-- Main column -->
-      <div class="flex flex-1 flex-col min-w-0 overflow-hidden">
+      <div class="workspace-content flex flex-1 flex-col min-w-0 overflow-hidden">
         <app-topbar (menuToggle)="toggleDrawer()" />
         <main #main class="workspace-main flex-1 overflow-y-auto overscroll-contain scrollbar-thin">
-          <div class="w-full min-w-0">
+          <div class="workspace-main__inner w-full min-w-0">
             <router-outlet />
           </div>
         </main>

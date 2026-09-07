@@ -55,4 +55,11 @@ describe('TenantRail', () => {
     await fixture.whenStable();
     expect(auth.switchTenant).toHaveBeenCalledWith('222');
   });
+
+  it('pins the add-a-server orb under the tenants', () => {
+    const compiled = fixture.nativeElement as HTMLElement;
+    const add = compiled.querySelector<HTMLAnchorElement>('a.rail__orb--add');
+    expect(add).not.toBeNull();
+    expect(add?.getAttribute('href')).toBe('/add-server');
+  });
 });
