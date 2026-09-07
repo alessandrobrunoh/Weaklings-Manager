@@ -7,7 +7,7 @@
 //! into request extensions so existing handlers keep their signatures.
 
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use axum::extract::{Request, State};
 use axum::http::HeaderMap;
@@ -22,9 +22,14 @@ use subtle::ConstantTimeEq;
 use crate::config::Config;
 use crate::errors::AppError;
 use crate::migration::Migrator;
+use crate::modules::albionbb::service::AlbionBbService;
+use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::auth::Permissions;
 use crate::modules::auth::service::DiscordUserProfile;
+use crate::modules::battles::service::BattlesService;
+use crate::modules::events::service::BattleLinkingContext;
 use crate::postgres::{self, connect_with_search_path, list_active_tenants};
+use crate::{battle_sync, event_sessions};
 
 /// Header the Discord bot sends to select a guild/tenant.
 ///
@@ -68,23 +73,87 @@ pub struct TenantContext {
     pub features: HashSet<String>,
 }
 
+/// The background workers every tenant needs (`event_sessions`, `battle_sync`),
+/// bundled with what starting them takes.
+///
+/// `run_server` starts these itself for every tenant found `active` at boot,
+/// by iterating [`TenantRegistry::warmup`]'s result — that loop has no reason
+/// to move into the registry. This bundle exists for the tenant that shows up
+/// *after* boot: [`TenantRegistry::provision`] needs the same four
+/// dependencies to do the same thing for it, and can only reach them if the
+/// registry is holding onto a copy.
+#[derive(Clone)]
+pub struct TenantWorkers {
+    /// Used to derive [`BattleLinkingContext`] and passed through to
+    /// `event_sessions`, exactly as `run_server`'s own startup loop does.
+    pub cfg: Config,
+    pub albionbb_service: AlbionBbService,
+    pub albiondata_service: AlbionDataService,
+    pub battles_service: BattlesService,
+}
+
+impl TenantWorkers {
+    fn spawn_for(&self, db: DatabaseConnection, tenant_id: &str) {
+        let guild_context = BattleLinkingContext::new(
+            &self.cfg.albion_guild_id,
+            &self.cfg.albion_allied_guild_ids(),
+            &self.cfg.albion_allied_guild_names(),
+        );
+        event_sessions::spawn(
+            db.clone(),
+            self.albionbb_service.clone(),
+            self.albiondata_service.clone(),
+            self.cfg.clone(),
+            tenant_id.to_owned(),
+        );
+        battle_sync::spawn(
+            db,
+            self.battles_service.clone(),
+            self.albiondata_service.clone(),
+            guild_context,
+            tenant_id.to_owned(),
+        );
+    }
+}
+
 /// Lazy cache of [`TenantContext`] keyed by Discord guild id.
 #[derive(Clone)]
 pub struct TenantRegistry {
     database_url: String,
     control_db: DatabaseConnection,
     inner: Arc<DashMap<String, Arc<TenantContext>>>,
+    /// Set once by `run_server` before it starts serving traffic. `OnceLock`
+    /// rather than a mutable field: every clone of the registry — one per
+    /// request, via the `Extension` layer — shares the same slot, and nothing
+    /// after startup ever needs to change which services `provision` uses.
+    workers: Arc<OnceLock<TenantWorkers>>,
 }
 
 impl TenantRegistry {
-    /// Build an empty registry. Call [`Self::warmup`] before serving traffic.
+    /// Build an empty registry. Call [`Self::warmup`] before serving traffic,
+    /// and [`Self::set_workers`] before any request can reach
+    /// [`Self::provision`].
     #[must_use]
     pub fn new(database_url: String, control_db: DatabaseConnection) -> Self {
         Self {
             database_url,
             control_db,
             inner: Arc::new(DashMap::new()),
+            workers: Arc::new(OnceLock::new()),
         }
+    }
+
+    /// Supplies the dependencies [`Self::provision`] needs to start a freshly
+    /// registered tenant's background workers.
+    ///
+    /// A tenant that registers today has no reason to wait for a restart
+    /// before its event auto-stop and battle sync start running — but without
+    /// this, `provision` had no way to reach `event_sessions`/`battle_sync`'s
+    /// dependencies at all, so it silently never started them. Call once,
+    /// before the server accepts its first request; later calls are ignored
+    /// (see [`OnceLock::set`]).
+    pub fn set_workers(&self, workers: TenantWorkers) {
+        let _ = self.workers.set(workers);
     }
 
     /// Load every active tenant so workers can start.
@@ -130,9 +199,14 @@ impl TenantRegistry {
         self.inner.remove(tenant_id);
     }
 
-    /// Create the Postgres schema, run tenant migrations, and cache the context.
+    /// Create the Postgres schema, run tenant migrations, cache the context,
+    /// and start its background workers.
     ///
-    /// Used when provisioning a brand-new tenant (row may still be `provisioning`).
+    /// Used when provisioning a brand-new tenant (row may still be
+    /// `provisioning`). Every *other* active tenant gets `event_sessions` and
+    /// `battle_sync` from `run_server`'s own startup loop, which iterates
+    /// [`Self::warmup`]'s result — a tenant provisioned after that loop ran
+    /// has no other path to them.
     ///
     /// # Errors
     ///
@@ -147,6 +221,23 @@ impl TenantRegistry {
             .map_err(AppError::Database)?;
         let ctx = self.open_context(tenant_id, schema_name).await?;
         self.inner.insert(tenant_id.to_owned(), ctx.clone());
+        match self.workers.get() {
+            Some(workers) => {
+                tracing::info!(tenant_id, "starting workers for a newly provisioned tenant");
+                workers.spawn_for(ctx.db.clone(), tenant_id);
+            }
+            // Should not happen outside of tests: `run_server` calls
+            // `set_workers` before the router can accept a request that
+            // reaches here. Proceeding without workers over failing the
+            // registration outright — a tenant that exists but is not yet
+            // auto-stopping sessions is recoverable with a restart; one that
+            // never got created is not.
+            None => tracing::warn!(
+                tenant_id,
+                "tenant provisioned with no worker dependencies configured; \
+                 event_sessions/battle_sync will not run for it until the next restart"
+            ),
+        }
         Ok(ctx)
     }
 
@@ -889,5 +980,48 @@ mod tests {
         cleanup_control_tenant(&control, &id_b, "")
             .await
             .expect("cleanup b");
+    }
+
+    /// `provision` must not fail a brand-new tenant's creation just because no
+    /// one wired up `set_workers` yet — it should register successfully and
+    /// only warn, so the tenant is recoverable with a restart instead of
+    /// simply not existing. This is the state every `TenantRegistry` starts
+    /// in, and the state tests build one in without ever calling
+    /// `set_workers` (see `two_tenant_pools_never_see_each_others_rows` above).
+    ///
+    /// The "workers *are* configured and actually start" path is not covered
+    /// here: `event_sessions`/`battle_sync` call the real AlbionBB/Albion Data
+    /// APIs on their very first tick (`tokio::time::interval`'s first tick
+    /// fires immediately, not after the interval), and none of those services
+    /// accept a redirectable base URL — there is no way to exercise that path
+    /// without a live network call inside the test.
+    #[tokio::test]
+    async fn provision_succeeds_without_workers_configured() {
+        let Some((url, admin)) = try_admin_db().await else {
+            return;
+        };
+
+        ensure_schema(&admin, CONTROL_SCHEMA)
+            .await
+            .expect("control schema");
+        let control = connect_with_search_path(&url, CONTROL_SCHEMA)
+            .await
+            .expect("control connect");
+        control_migration::Migrator::up(&control, None)
+            .await
+            .expect("control migrations");
+
+        let id = unique_schema("tp");
+        let schema = format!("tenant_{id}");
+        let registry = TenantRegistry::new(url, control.clone());
+
+        let ctx = registry
+            .provision(&id, &schema)
+            .await
+            .expect("provision succeeds with no workers configured");
+        assert_eq!(ctx.schema_name, schema);
+        assert_eq!(registry.cached_len(), 1);
+
+        drop_schema(&admin, &schema).await.expect("drop schema");
     }
 }
