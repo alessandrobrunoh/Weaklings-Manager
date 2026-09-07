@@ -546,7 +546,11 @@ async fn adoptable_tenants(
             id: guild.id,
             name: guild.name,
             icon: guild.icon_hash,
+            // `matching_tenants` below only reads `id`/`name`/`icon`; these
+            // never mattered for the login-adoption path and are already
+            // collapsed once into `RegisterableGuild::can_manage`.
             owner: false,
+            permissions: String::new(),
         })
         .collect();
     Ok(matching_tenants(&guilds, &registered_tenants(control).await?))
@@ -563,6 +567,7 @@ fn with_registerable_guilds(
             id: guild.id.clone(),
             name: guild.name.clone(),
             icon_hash: guild.icon.clone(),
+            can_manage: guild.can_manage(),
         })
         .collect();
     let json = serde_json::to_string(&payload)

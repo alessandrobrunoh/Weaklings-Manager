@@ -114,7 +114,24 @@ pub struct RegisterableGuild {
     /// Guild icon hash, when present.
     #[serde(default)]
     pub icon_hash: Option<String>,
+    /// Whether this Discord user owns the guild or holds `Manage Server` /
+    /// `Administrator` in it.
+    ///
+    /// Computed once at login from the OAuth `guilds` scope and carried in the
+    /// signed `registerable_guilds` cookie, so `POST /api/tenants/register`
+    /// can check it as a fast path with no Discord round trip. It is a cache,
+    /// not the only guard: that handler also re-verifies live via the bot
+    /// token when this is stale, absent, or `false`, so a session older than
+    /// the cookie's lifetime — or a brand-new server the bot just joined —
+    /// still registers correctly. See [`DiscordGuild::can_manage`].
+    #[serde(default)]
+    pub can_manage: bool,
 }
+
+/// Discord's `MANAGE_GUILD` permission bit.
+pub const PERMISSION_MANAGE_GUILD: u64 = 0x0000_0000_0000_0020;
+/// Discord's `ADMINISTRATOR` permission bit, which implies every other one.
+pub const PERMISSION_ADMINISTRATOR: u64 = 0x0000_0000_0000_0008;
 
 /// Discord guild membership row from `/users/@me/guilds`.
 #[derive(Debug, Clone, Deserialize)]
@@ -128,8 +145,32 @@ pub struct DiscordGuild {
     pub icon: Option<String>,
     /// True when the OAuth user owns this guild.
     #[serde(default)]
-    #[allow(dead_code)]
     pub owner: bool,
+    /// The calling user's computed permission bitfield in this guild, as a
+    /// decimal string (Discord's own encoding — the value can exceed `i64`).
+    /// Present because the `guilds` OAuth scope was requested; absent (never
+    /// happens per Discord's docs, but treated as "no permissions" rather than
+    /// a parse error) reads as `0`.
+    #[serde(default)]
+    pub permissions: String,
+}
+
+impl DiscordGuild {
+    /// Whether this user may register `self` as a tenant: owns it, or holds
+    /// `Manage Server` / `Administrator`.
+    ///
+    /// Registration hands the caller the tenant's owner/SuperAdmin seat, so
+    /// this is deliberately narrower than "is a member" — the check
+    /// `assert_guild_member` used to make, and the only one left standing
+    /// whenever `DISCORD_BOT_TOKEN` was unset.
+    #[must_use]
+    pub fn can_manage(&self) -> bool {
+        if self.owner {
+            return true;
+        }
+        let bits: u64 = self.permissions.parse().unwrap_or(0);
+        bits & (PERMISSION_MANAGE_GUILD | PERMISSION_ADMINISTRATOR) != 0
+    }
 }
 
 /// Encrypted cookie payload while the user picks among several matching tenants.
@@ -480,6 +521,46 @@ mod tests {
     use super::*;
     use crate::modules::auth::entities::role;
 
+    fn discord_guild(owner: bool, permissions: &str) -> DiscordGuild {
+        DiscordGuild {
+            id: "1".to_owned(),
+            name: "Guild".to_owned(),
+            icon: None,
+            owner,
+            permissions: permissions.to_owned(),
+        }
+    }
+
+    #[test]
+    fn owner_can_manage_regardless_of_permission_bits() {
+        assert!(discord_guild(true, "0").can_manage());
+    }
+
+    #[test]
+    fn manage_guild_bit_grants_can_manage() {
+        // 0x20 = MANAGE_GUILD, plus an unrelated bit (VIEW_CHANNEL = 0x400) to
+        // confirm this reads the specific bit rather than "nonzero".
+        assert!(discord_guild(false, "1056").can_manage());
+    }
+
+    #[test]
+    fn administrator_bit_grants_can_manage() {
+        assert!(discord_guild(false, "8").can_manage());
+    }
+
+    #[test]
+    fn plain_member_without_either_bit_cannot_manage() {
+        // SEND_MESSAGES (0x800) and VIEW_CHANNEL (0x400): an ordinary member,
+        // not an officer — the escalation this check exists to close.
+        assert!(!discord_guild(false, "3072").can_manage());
+    }
+
+    #[test]
+    fn unparseable_permissions_field_reads_as_no_permissions() {
+        assert!(!discord_guild(false, "").can_manage());
+        assert!(!discord_guild(false, "not-a-number").can_manage());
+    }
+
     fn role(
         id: &str,
         name: &str,
@@ -574,6 +655,7 @@ mod tests {
             name: name.to_string(),
             icon: None,
             owner: false,
+            permissions: String::new(),
         }
     }
 
