@@ -52,5 +52,6 @@ describe('PlatformHub', () => {
     expect(compiled.textContent).toContain('1');
     expect(compiled.querySelector('a[href="/platform/tenants"]')).toBeTruthy();
     expect(compiled.querySelector('a[href="/platform/admins"]')).toBeTruthy();
+    expect(compiled.querySelector('a[href="/platform/ranks"]')).toBeTruthy();
   });
 });

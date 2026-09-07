@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
-import type { PlatformTenant } from '../../core/models/api.models';
+import type { PlatformTenant, TenantRankView } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
@@ -11,8 +11,14 @@ import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
 
+const REGIONS = [
+  { id: 'europe', labelKey: 'register.region.europe' as const },
+  { id: 'americas', labelKey: 'register.region.americas' as const },
+  { id: 'asia', labelKey: 'register.region.asia' as const },
+] as const;
+
 /**
- * Single tenant on the control plane: rename, suspend/resume, open flags.
+ * Single tenant on the control plane: full record, SuperAdmin, Albion, flags.
  */
 @Component({
   selector: 'app-platform-tenant-detail',
@@ -50,24 +56,122 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
             <span class="font-mono text-sm">{{ row.slug }}</span>
           </p>
           <p>
+            <span class="label">{{ t('platform.tenants.id') }}</span>
+            <span class="font-mono text-sm">{{ row.id }}</span>
+          </p>
+          <p>
             <span class="label">{{ t('platform.tenants.created') }}</span>
             <span class="text-sm">{{ row.created_at ?? '—' }}</span>
           </p>
+          <p>
+            <span class="label">{{ t('platform.tenants.suspendedAt') }}</span>
+            <span class="text-sm">{{ row.suspended_at ?? '—' }}</span>
+          </p>
+          <p>
+            <span class="label">{{ t('platform.tenants.icon') }}</span>
+            <span class="font-mono text-sm">{{ row.icon_hash || '—' }}</span>
+          </p>
         </section>
 
-        <form class="card p-4 grid gap-3 max-w-lg" (submit)="onRename($event)">
-          <label class="block" for="rename-tenant">
+        <form class="card p-4 grid gap-4 max-w-lg" (submit)="onSave($event)">
+          <label class="block" for="tenant-name">
             <span class="label">{{ t('platform.tenant.rename') }}</span>
             <input
-              id="rename-tenant"
+              id="tenant-name"
               class="input"
               name="name"
               type="text"
               required
+              autocomplete="off"
               [value]="nameDraft()"
-              (input)="onNameInput($event)"
+              (input)="onText(nameDraft, $event)"
             />
           </label>
+          <label class="block" for="tenant-rank">
+            <span class="label">{{ t('platform.tenants.rank') }}</span>
+            <select
+              id="tenant-rank"
+              class="input"
+              name="rank_id"
+              [value]="rankDraft()"
+              (change)="onRankChange($event)"
+            >
+              <option value="">{{ t('platform.tenants.none') }}</option>
+              @for (rank of ranks(); track rank.id) {
+                <option [value]="rank.id">{{ rank.name }}</option>
+              }
+            </select>
+          </label>
+          <label class="block" for="tenant-owner">
+            <span class="label">{{ t('platform.tenants.superadmin') }}</span>
+            <input
+              id="tenant-owner"
+              class="input"
+              name="owner_discord_id"
+              type="text"
+              inputmode="numeric"
+              required
+              autocomplete="off"
+              [value]="ownerDraft()"
+              (input)="onText(ownerDraft, $event)"
+            />
+          </label>
+
+          <fieldset class="grid gap-3">
+            <legend class="label">{{ t('register.region') }}</legend>
+            @for (region of regions; track region.id) {
+              <label class="flex items-center gap-2" [attr.for]="'region-' + region.id">
+                <input
+                  class="radio"
+                  type="radio"
+                  name="albion_api_region"
+                  [id]="'region-' + region.id"
+                  [value]="region.id"
+                  [checked]="regionDraft() === region.id"
+                  (change)="regionDraft.set(region.id)"
+                />
+                <span class="text-sm">{{ t(region.labelKey) }}</span>
+              </label>
+            }
+          </fieldset>
+
+          <label class="block" for="tenant-albion-guild">
+            <span class="label">{{ t('platform.tenants.albionGuild') }}</span>
+            <input
+              id="tenant-albion-guild"
+              class="input"
+              name="albion_guild_id"
+              type="text"
+              autocomplete="off"
+              [value]="albionGuildDraft()"
+              (input)="onText(albionGuildDraft, $event)"
+            />
+          </label>
+          <label class="block" for="tenant-allied-ids">
+            <span class="label">{{ t('platform.tenants.alliedIds') }}</span>
+            <input
+              id="tenant-allied-ids"
+              class="input"
+              name="albion_allied_guild_ids"
+              type="text"
+              autocomplete="off"
+              [value]="alliedIdsDraft()"
+              (input)="onText(alliedIdsDraft, $event)"
+            />
+          </label>
+          <label class="block" for="tenant-allied-names">
+            <span class="label">{{ t('platform.tenants.alliedNames') }}</span>
+            <input
+              id="tenant-allied-names"
+              class="input"
+              name="albion_allied_guild_names"
+              type="text"
+              autocomplete="off"
+              [value]="alliedNamesDraft()"
+              (input)="onText(alliedNamesDraft, $event)"
+            />
+          </label>
+
           <div class="flex flex-wrap gap-2">
             <button type="submit" class="btn btn--primary btn--sm" [disabled]="busy()">
               {{ t('common.save') }}
@@ -117,14 +221,26 @@ export class PlatformTenantDetail {
   protected readonly tenantId = this.route.snapshot.paramMap.get('tenantId') ?? '';
   protected readonly tenant = signal<PlatformTenant | null>(null);
   protected readonly nameDraft = signal('');
+  protected readonly ownerDraft = signal('');
+  protected readonly regionDraft = signal<(typeof REGIONS)[number]['id']>('europe');
+  protected readonly albionGuildDraft = signal('');
+  protected readonly alliedIdsDraft = signal('');
+  protected readonly alliedNamesDraft = signal('');
+  protected readonly rankDraft = signal('');
+  protected readonly ranks = signal<TenantRankView[]>([]);
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
   protected readonly busy = signal(false);
+  protected readonly regions = REGIONS;
 
   protected t = (key: TranslationKey) => this.translate.t(key);
 
-  protected onNameInput(event: Event): void {
-    this.nameDraft.set((event.target as HTMLInputElement).value);
+  protected onText(target: ReturnType<typeof signal<string>>, event: Event): void {
+    target.set((event.target as HTMLInputElement).value);
+  }
+
+  protected onRankChange(event: Event): void {
+    this.rankDraft.set((event.target as HTMLSelectElement).value);
   }
 
   constructor() {
@@ -148,10 +264,12 @@ export class PlatformTenantDetail {
     this.loading.set(true);
     this.loadFailed.set(false);
     try {
-      const rows = await firstValueFrom(this.api.get<PlatformTenant[]>('api/platform/tenants'));
-      const match = rows.find((row) => row.id === this.tenantId) ?? null;
-      this.tenant.set(match);
-      this.nameDraft.set(match?.name ?? '');
+      const [match, ranks] = await Promise.all([
+        firstValueFrom(this.api.get<PlatformTenant>(`api/platform/tenants/${this.tenantId}`)),
+        firstValueFrom(this.api.get<TenantRankView[]>('api/platform/ranks')),
+      ]);
+      this.ranks.set(ranks);
+      this.applyTenant(match);
     } catch {
       this.loadFailed.set(true);
     } finally {
@@ -159,19 +277,27 @@ export class PlatformTenantDetail {
     }
   }
 
-  protected async onRename(event: SubmitEvent): Promise<void> {
+  protected async onSave(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     const name = this.nameDraft().trim();
-    if (!name || !this.tenantId) {
+    const owner = this.ownerDraft().trim();
+    if (!name || !owner || !this.tenantId) {
       return;
     }
     this.busy.set(true);
     try {
       const updated = await firstValueFrom(
-        this.api.patch<PlatformTenant>(`api/platform/tenants/${this.tenantId}`, { name }),
+        this.api.patch<PlatformTenant>(`api/platform/tenants/${this.tenantId}`, {
+          name,
+          owner_discord_id: owner,
+          albion_guild_id: this.albionGuildDraft().trim(),
+          albion_api_region: this.regionDraft(),
+          albion_allied_guild_ids: this.alliedIdsDraft().trim(),
+          albion_allied_guild_names: this.alliedNamesDraft().trim(),
+          rank_id: this.rankDraft(),
+        }),
       );
-      this.tenant.set(updated);
-      this.nameDraft.set(updated.name);
+      this.applyTenant(updated);
       this.toasts.success(this.t('platform.tenants.updatedToast'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -186,12 +312,26 @@ export class PlatformTenantDetail {
       const updated = await firstValueFrom(
         this.api.patch<PlatformTenant>(`api/platform/tenants/${this.tenantId}`, { status }),
       );
-      this.tenant.set(updated);
+      this.applyTenant(updated);
       this.toasts.success(this.t('platform.tenants.updatedToast'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.busy.set(false);
+    }
+  }
+
+  private applyTenant(row: PlatformTenant): void {
+    this.tenant.set(row);
+    this.nameDraft.set(row.name);
+    this.ownerDraft.set(row.owner_discord_id ?? '');
+    this.albionGuildDraft.set(row.albion_guild_id ?? '');
+    this.alliedIdsDraft.set(row.albion_allied_guild_ids ?? '');
+    this.alliedNamesDraft.set(row.albion_allied_guild_names ?? '');
+    this.rankDraft.set(row.rank_id ?? '');
+    const region = row.albion_api_region;
+    if (region === 'americas' || region === 'asia' || region === 'europe') {
+      this.regionDraft.set(region);
     }
   }
 }

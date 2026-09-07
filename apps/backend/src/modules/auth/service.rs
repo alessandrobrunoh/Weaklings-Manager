@@ -85,6 +85,9 @@ pub struct DiscordUserProfile {
     #[schema(example = "Weaklings")]
     #[serde(default)]
     pub tenant_name: Option<String>,
+    /// Optional modules currently enabled for this tenant (`rank ∩ flags`).
+    #[serde(default)]
+    pub features: Vec<String>,
 }
 
 /// A registered tenant the user may enter after OAuth.

@@ -19,6 +19,11 @@ const mockTenant: PlatformTenant = {
   owner_discord_id: '9',
   created_at: '2026-01-01',
   suspended_at: null,
+  albion_guild_id: 'alb-1',
+  albion_api_region: 'europe',
+  icon_hash: 'abc',
+  albion_allied_guild_ids: 'a,b',
+  albion_allied_guild_names: 'Ally',
 };
 
 describe('PlatformTenantDetail', () => {
@@ -28,8 +33,20 @@ describe('PlatformTenantDetail', () => {
 
   beforeEach(async () => {
     api = {
-      get: vi.fn().mockReturnValue(of([mockTenant])),
-      patch: vi.fn().mockReturnValue(of({ ...mockTenant, name: 'Renamed', status: 'suspended' })),
+      get: vi.fn((path: string) => {
+        if (path === 'api/platform/ranks') {
+          return of([]);
+        }
+        return of(mockTenant);
+      }),
+      patch: vi.fn().mockReturnValue(
+        of({
+          ...mockTenant,
+          name: 'Renamed',
+          owner_discord_id: '42',
+          status: 'suspended',
+        }),
+      ),
     };
     toasts = { success: vi.fn(), error: vi.fn() };
 
@@ -59,20 +76,36 @@ describe('PlatformTenantDetail', () => {
     fixture.destroy();
   });
 
-  it('loads the tenant and can rename it', async () => {
-    expect(api.get).toHaveBeenCalledWith('api/platform/tenants');
+  it('loads the tenant by id and can save SuperAdmin and Albion fields', async () => {
+    expect(api.get).toHaveBeenCalledWith('api/platform/tenants/111');
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.textContent).toContain('Weaklings');
+    expect(compiled.textContent).toContain('tenant_111');
+    expect((compiled.querySelector('#tenant-owner') as HTMLInputElement).value).toBe('9');
+    expect((compiled.querySelector('#tenant-albion-guild') as HTMLInputElement).value).toBe(
+      'alb-1',
+    );
     expect(compiled.querySelector('a[href="/platform/tenants/111/features"]')).toBeTruthy();
 
-    const input = compiled.querySelector('#rename-tenant') as HTMLInputElement;
-    input.value = 'Renamed';
-    input.dispatchEvent(new Event('input'));
+    const nameInput = compiled.querySelector('#tenant-name') as HTMLInputElement;
+    nameInput.value = 'Renamed';
+    nameInput.dispatchEvent(new Event('input'));
+    const ownerInput = compiled.querySelector('#tenant-owner') as HTMLInputElement;
+    ownerInput.value = '42';
+    ownerInput.dispatchEvent(new Event('input'));
     const form = compiled.querySelector('form') as HTMLFormElement;
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(api.patch).toHaveBeenCalledWith('api/platform/tenants/111', { name: 'Renamed' });
+    expect(api.patch).toHaveBeenCalledWith('api/platform/tenants/111', {
+      name: 'Renamed',
+      owner_discord_id: '42',
+      albion_guild_id: 'alb-1',
+      albion_api_region: 'europe',
+      albion_allied_guild_ids: 'a,b',
+      albion_allied_guild_names: 'Ally',
+      rank_id: '',
+    });
     expect(toasts.success).toHaveBeenCalledWith('platform.tenants.updatedToast');
   });
 });

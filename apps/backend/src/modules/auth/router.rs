@@ -620,12 +620,20 @@ pub async fn get_me(
     profile.is_superadmin = admins.contains(&profile.id);
     profile.is_platform_admin = profile.is_superadmin;
 
-    if let Some(tenant_id) = profile.tenant_id.as_deref().filter(|id| !id.is_empty())
-        && registry.get_or_load(tenant_id).await.is_err()
-    {
-        profile.tenant_id = None;
-        profile.tenant_name = None;
-        profile.permissions.clear();
+    if let Some(tenant_id) = profile.tenant_id.as_deref().filter(|id| !id.is_empty()) {
+        match registry.get_or_load(tenant_id).await {
+            Ok(ctx) => {
+                let mut keys: Vec<_> = ctx.features.iter().cloned().collect();
+                keys.sort();
+                profile.features = keys;
+            }
+            Err(_) => {
+                profile.tenant_id = None;
+                profile.tenant_name = None;
+                profile.permissions.clear();
+                profile.features.clear();
+            }
+        }
     }
 
     if let Some(Extension(db)) = db.as_ref() {

@@ -30,6 +30,18 @@ pub struct TenantView {
     /// Discord guild icon hash, when known.
     #[serde(default)]
     pub icon_hash: Option<String>,
+    /// Optional comma-separated allied Albion guild ids.
+    #[serde(default)]
+    pub albion_allied_guild_ids: Option<String>,
+    /// Optional comma-separated allied Albion guild names.
+    #[serde(default)]
+    pub albion_allied_guild_names: Option<String>,
+    /// Assigned tenant rank id, if any.
+    #[serde(default)]
+    pub rank_id: Option<String>,
+    /// Assigned tenant rank name, if any.
+    #[serde(default)]
+    pub rank_name: Option<String>,
 }
 
 /// Body for `POST /api/platform/tenants`.
@@ -82,12 +94,64 @@ pub struct TenantStatusView {
 }
 
 /// Body for `PATCH /api/platform/tenants/{id}`.
-#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Default, Deserialize, utoipa::ToSchema)]
 pub struct PatchTenantRequest {
     /// Set to `active` or `suspended`.
     pub status: Option<String>,
     /// Optional rename.
     pub name: Option<String>,
+    /// Tenant SuperAdmin Discord snowflake.
+    pub owner_discord_id: Option<String>,
+    /// Albion Online guild id.
+    pub albion_guild_id: Option<String>,
+    /// Albion gameinfo region: `europe`, `americas`, or `asia`.
+    pub albion_api_region: Option<String>,
+    /// Optional comma-separated allied Albion guild ids.
+    pub albion_allied_guild_ids: Option<String>,
+    /// Optional comma-separated allied Albion guild names.
+    pub albion_allied_guild_names: Option<String>,
+    /// Rank to assign; empty string clears it.
+    pub rank_id: Option<String>,
+}
+
+/// A platform-created tenant rank (plan).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
+pub struct TenantRankView {
+    /// Rank id.
+    pub id: String,
+    /// Display name.
+    pub name: String,
+    /// Optional description.
+    pub description: Option<String>,
+    /// Feature keys this rank unlocks.
+    pub feature_keys: Vec<String>,
+    /// RFC3339 created timestamp, if present.
+    pub created_at: Option<String>,
+}
+
+/// Body for `POST /api/platform/ranks`.
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
+pub struct CreateRankRequest {
+    /// Display name (unique).
+    pub name: String,
+    /// Optional description.
+    pub description: Option<String>,
+}
+
+/// Body for `PATCH /api/platform/ranks/{id}`.
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
+pub struct PatchRankRequest {
+    /// Rename.
+    pub name: Option<String>,
+    /// Replace description; omit to leave unchanged.
+    pub description: Option<String>,
+}
+
+/// Body for `PUT /api/platform/ranks/{id}/features`.
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
+pub struct PutRankFeaturesRequest {
+    /// Catalog keys this rank unlocks.
+    pub keys: Vec<String>,
 }
 
 /// One feature in the catalog.
@@ -117,6 +181,15 @@ pub struct TenantFeaturesView {
     pub catalog: Vec<FeatureCatalogItem>,
     /// Current flags for this tenant.
     pub flags: Vec<TenantFeatureFlag>,
+    /// Assigned rank id, if any.
+    #[serde(default)]
+    pub rank_id: Option<String>,
+    /// Assigned rank name, if any.
+    #[serde(default)]
+    pub rank_name: Option<String>,
+    /// Feature keys the tenant Rank allows (empty when no rank).
+    #[serde(default)]
+    pub allowed_keys: Vec<String>,
 }
 
 /// PUT payload for a tenant's flags.

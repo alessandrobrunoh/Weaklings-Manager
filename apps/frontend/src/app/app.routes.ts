@@ -204,6 +204,12 @@ export const routes: Routes = [
               import('./features/admin/admin-permissions').then((m) => m.AdminPermissions),
           },
           {
+            path: 'features',
+            canActivate: [permissionGuardTo('/admin', 'admin.settings.manage')],
+            loadComponent: () =>
+              import('./features/admin/admin-features').then((m) => m.AdminFeatures),
+          },
+          {
             path: 'discord',
             canActivate: [permissionGuardTo('/admin', 'admin.settings.manage', 'autorole.manage')],
             loadComponent: () => import('./features/admin/admin-discord').then((m) => m.AdminDiscord),
@@ -284,6 +290,11 @@ export const routes: Routes = [
               import('./features/platform/platform-feature-flags').then(
                 (m) => m.PlatformFeatureFlags,
               ),
+          },
+          {
+            path: 'ranks',
+            loadComponent: () =>
+              import('./features/platform/platform-ranks').then((m) => m.PlatformRanks),
           },
           {
             path: 'admins',

@@ -31,6 +31,10 @@ pub const GUILD_ID_HEADER: &str = "X-Guild-Id";
 #[derive(Clone)]
 pub struct ControlDb(pub DatabaseConnection);
 
+/// Discord guild id of the tenant resolved for this request.
+#[derive(Clone)]
+pub struct CurrentTenantId(pub String);
+
 /// Feature flags enabled for the current tenant.
 #[derive(Clone, Debug, Default)]
 #[allow(dead_code)] // read by Stage 6 handlers via [`TenantFeatures::contains`]
@@ -366,6 +370,9 @@ pub async fn resolve_tenant(
     parts
         .extensions
         .insert(TenantFeatures(ctx.features.clone()));
+    parts
+        .extensions
+        .insert(CurrentTenantId(ctx.tenant_id.clone()));
     Ok(next.run(Request::from_parts(parts, body)).await)
 }
 

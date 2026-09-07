@@ -53,6 +53,12 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
             {{ row.name }}
           </a>
         </ng-template>
+        <ng-template dataTableCell="superadmin" let-row>
+          <span class="font-mono text-sm">{{ row.owner_discord_id || t('platform.tenants.none') }}</span>
+        </ng-template>
+        <ng-template dataTableCell="rank" let-row>
+          <span class="text-sm">{{ row.rank_name || t('platform.tenants.none') }}</span>
+        </ng-template>
         <ng-template dataTableCell="status" let-row>
           <span class="chip">{{ statusLabel(row.status) }}</span>
         </ng-template>
@@ -166,6 +172,18 @@ export class PlatformTenants {
   protected readonly columns = computed<readonly DataTableColumn<PlatformTenant>[]>(() => [
     { key: 'name', label: 'platform.tenants.name', searchable: true, accessor: (row) => row.name },
     { key: 'id', label: 'platform.tenants.id', searchable: true, accessor: (row) => row.id },
+    {
+      key: 'superadmin',
+      label: 'platform.tenants.superadmin',
+      searchable: true,
+      accessor: (row) => row.owner_discord_id ?? '',
+    },
+    {
+      key: 'rank',
+      label: 'platform.tenants.rank',
+      searchable: true,
+      accessor: (row) => row.rank_name ?? '',
+    },
     { key: 'status', label: 'platform.tenants.status' },
     { key: 'actions', label: 'common.actions', align: 'right' },
   ]);
