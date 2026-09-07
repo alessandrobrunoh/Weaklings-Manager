@@ -677,6 +677,7 @@ export const es: TranslationDict = {
   'comps.categories': 'Categorías',
   'comps.delete.confirm': '¿Estás seguro de que deseas eliminar esto?',
   'comps.createComp': 'Crear composición',
+  'comps.editComp': 'Editar composición',
   'comps.createBuild': 'Crear build',
   'comps.createCategory': 'Crear categoría',
   'comps.editCategory': 'Editar categoría',

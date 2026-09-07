@@ -635,6 +635,7 @@ export const fr: TranslationDict = {
   'comps.categories': 'Categories',
   'comps.delete.confirm': 'Are you sure you want to delete this?',
   'comps.createComp': 'Create composition',
+  'comps.editComp': 'Edit composition',
   'comps.createBuild': 'Create build',
   'comps.createCategory': 'Create category',
   'comps.editCategory': 'Edit category',
