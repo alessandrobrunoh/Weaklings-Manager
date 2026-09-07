@@ -85,6 +85,7 @@ pub async fn discord_login(
     let state_cookie = Cookie::build(("oauth_state", state.clone()))
         .path("/api/auth")
         .http_only(true)
+        .secure(true)
         .same_site(SameSite::Lax)
         .max_age(time::Duration::minutes(10));
 
@@ -94,6 +95,7 @@ pub async fn discord_login(
             Cookie::build(("oauth_next", next))
                 .path("/api/auth")
                 .http_only(true)
+                .secure(true)
                 .same_site(SameSite::Lax)
                 .max_age(time::Duration::minutes(10)),
         );
@@ -544,7 +546,11 @@ async fn adoptable_tenants(
             id: guild.id,
             name: guild.name,
             icon: guild.icon_hash,
+            // `matching_tenants` below only reads `id`/`name`/`icon`; these
+            // never mattered for the login-adoption path and are already
+            // collapsed once into `RegisterableGuild::can_manage`.
             owner: false,
+            permissions: String::new(),
         })
         .collect();
     Ok(matching_tenants(&guilds, &registered_tenants(control).await?))
@@ -561,6 +567,7 @@ fn with_registerable_guilds(
             id: guild.id.clone(),
             name: guild.name.clone(),
             icon_hash: guild.icon.clone(),
+            can_manage: guild.can_manage(),
         })
         .collect();
     let json = serde_json::to_string(&payload)
@@ -569,6 +576,7 @@ fn with_registerable_guilds(
         Cookie::build(("registerable_guilds", json))
             .path("/api/auth")
             .http_only(true)
+            .secure(true)
             .same_site(SameSite::Lax)
             .max_age(time::Duration::days(7)),
     ))
@@ -675,6 +683,7 @@ fn session_cookie(profile: &DiscordUserProfile) -> Result<Cookie<'static>, AppEr
     Ok(Cookie::build(("session_user", profile_json))
         .path("/")
         .http_only(true)
+        .secure(true)
         .same_site(SameSite::Lax)
         .max_age(time::Duration::days(7))
         .into())
@@ -684,6 +693,7 @@ fn pending_cookie(value: String) -> Cookie<'static> {
     Cookie::build(("oauth_pending", value))
         .path("/api/auth")
         .http_only(true)
+        .secure(true)
         .same_site(SameSite::Lax)
         .max_age(time::Duration::minutes(10))
         .into()
@@ -693,6 +703,7 @@ fn pending_cookie_tombstone() -> Cookie<'static> {
     Cookie::build(("oauth_pending", ""))
         .path("/api/auth")
         .http_only(true)
+        .secure(true)
         .same_site(SameSite::Lax)
         .into()
 }
@@ -821,6 +832,7 @@ pub async fn get_me(
         Cookie::build(("session_user", profile_json))
             .path("/")
             .http_only(true)
+            .secure(true)
             .same_site(SameSite::Lax)
             .max_age(time::Duration::days(7)),
     );
@@ -872,6 +884,7 @@ pub async fn logout(jar: CookieJar) -> (CookieJar, Json<ApiResponse<()>>) {
         Cookie::build(("session_user", ""))
             .path("/")
             .http_only(true)
+            .secure(true)
             .same_site(SameSite::Lax)
             .max_age(time::Duration::ZERO),
     );
@@ -880,7 +893,130 @@ pub async fn logout(jar: CookieJar) -> (CookieJar, Json<ApiResponse<()>>) {
         Cookie::build(("registerable_guilds", ""))
             .path("/api/auth")
             .http_only(true)
+            .secure(true)
             .same_site(SameSite::Lax),
     );
     (jar, Json(ApiResponse::new(())))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::response::IntoResponse;
+
+    /// Every auth cookie this module issues must carry `Secure`. The stack was
+    /// deployed with the backend's port published on every interface
+    /// (`docker-compose.yml`, fixed alongside this), and without `Secure` a
+    /// session cookie set over the app's real HTTPS origin would still be
+    /// replayable over a plain-HTTP request straight to that port.
+    fn assert_secure(cookie: &Cookie<'static>) {
+        assert_eq!(
+            cookie.secure(),
+            Some(true),
+            "cookie {:?} is missing Secure",
+            cookie.name()
+        );
+    }
+
+    fn stub_profile() -> DiscordUserProfile {
+        serde_json::from_str(
+            r#"{"id":"111","username":"bob","email":null,"avatar":null,
+                "roles":[],"highest_role":"User","user_id":1}"#,
+        )
+        .expect("valid profile fixture")
+    }
+
+    fn stub_config() -> Config {
+        Config {
+            backend_port: 3000,
+            database_url: "postgres://localhost/weaklings".to_owned(),
+            control_database_url: None,
+            discord_client_id: "id".to_owned(),
+            discord_client_secret: "secret".to_owned(),
+            discord_redirect_uri: "http://localhost/callback".to_owned(),
+            bot_api_secret: None,
+            discord_bot_token: None,
+            super_admin_discord_id: "admin".to_owned(),
+            session_secret: "x".repeat(64),
+            frontend_url: "http://localhost".to_owned(),
+            albion_api_region: "europe".to_owned(),
+            albion_guild_id: "albion".to_owned(),
+            albion_allied_guild_ids: String::new(),
+            albion_allied_guild_names: String::new(),
+            mistral_api_key: String::new(),
+            albionbb_base_url: "http://localhost".to_owned(),
+            albionbb_request_timeout_secs: 60,
+            albiondata_request_timeout_secs: 30,
+        }
+    }
+
+    #[tokio::test]
+    async fn discord_login_issues_secure_state_and_next_cookies() {
+        let jar = CookieJar::new();
+        let (jar, _redirect) = discord_login(
+            Extension(stub_config()),
+            jar,
+            Query(LoginQuery {
+                next: Some("/dashboard".to_owned()),
+            }),
+        )
+        .await;
+        assert_secure(&jar.get("oauth_state").expect("oauth_state set").clone());
+        assert_secure(&jar.get("oauth_next").expect("oauth_next set").clone());
+    }
+
+    #[test]
+    fn session_cookie_is_secure() {
+        let cookie = session_cookie(&stub_profile()).expect("builds");
+        assert_secure(&cookie);
+    }
+
+    #[test]
+    fn pending_cookie_and_its_tombstone_are_secure() {
+        assert_secure(&pending_cookie("payload".to_owned()));
+        assert_secure(&pending_cookie_tombstone());
+    }
+
+    #[test]
+    fn registerable_guilds_cookie_is_secure() {
+        let key = Key::generate();
+        let jar = with_registerable_guilds(PrivateCookieJar::new(key), &[]).expect("builds");
+        assert_secure(&jar.get("registerable_guilds").expect("cookie set").clone());
+    }
+
+    #[tokio::test]
+    async fn logout_removal_cookies_are_secure() {
+        // `CookieJar::remove` only emits a removal `Set-Cookie` for a name the
+        // jar already holds as an "original" — what a real request's incoming
+        // `Cookie` header seeds — so the fixture has to look like a browser
+        // that is actually logged in, built the same way axum does it.
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::COOKIE,
+            "session_user=stub; registerable_guilds=stub"
+                .parse()
+                .expect("header value"),
+        );
+        let incoming = CookieJar::from_headers(&headers);
+
+        let response = logout(incoming).await.into_response();
+        let set_cookie_headers: Vec<_> = response
+            .headers()
+            .get_all(axum::http::header::SET_COOKIE)
+            .iter()
+            .map(|value| value.to_str().expect("ascii header").to_owned())
+            .collect();
+        assert_eq!(
+            set_cookie_headers.len(),
+            2,
+            "both cookies should have a removal Set-Cookie: {set_cookie_headers:?}"
+        );
+        // A removal cookie is still a `Cookie` with attributes on the wire; it
+        // must match the creation cookie's `Secure`, or some browsers keep the
+        // original around instead of overwriting it with the expired one.
+        for header_value in set_cookie_headers {
+            let cookie = Cookie::parse_encoded(header_value).expect("valid Set-Cookie");
+            assert_eq!(cookie.secure(), Some(true), "cookie {:?} is missing Secure", cookie.name());
+        }
+    }
 }

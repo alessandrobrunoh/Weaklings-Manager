@@ -123,13 +123,24 @@ impl IntoResponse for AppError {
                         "That value is already in use.".to_string(),
                         None,
                     ),
-                    _ => (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "/errors/database-error",
-                        "Database Error",
-                        err.to_string(),
-                        None,
-                    ),
+                    _ => {
+                        // Every other `DbErr` is a genuine server fault, and its
+                        // `Display` carries the raw driver text — SQL, table and
+                        // column names, and on this multi-tenant deployment the
+                        // Postgres schema name, which doubles as a tenant
+                        // identifier. Log it for operators; the client gets an
+                        // honest-but-generic message instead.
+                        tracing::error!(error = %err, "unclassified database error");
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "/errors/database-error",
+                            "Database Error",
+                            "A database error occurred. Please try again, or contact support if \
+                             the problem persists."
+                                .to_string(),
+                            None,
+                        )
+                    }
                 }
             }
             Self::NotFound(msg) => (
@@ -208,5 +219,56 @@ impl IntoResponse for AppError {
             Json(problem),
         )
             .into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
+
+    async fn problem_of(err: AppError) -> ProblemDetailsJson {
+        let response = err.into_response();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body reads");
+        let json: serde_json::Value =
+            serde_json::from_slice(&bytes).expect("problem+json body parses");
+        ProblemDetailsJson {
+            status,
+            detail: json["detail"].as_str().expect("detail is a string").to_owned(),
+        }
+    }
+
+    struct ProblemDetailsJson {
+        status: StatusCode,
+        detail: String,
+    }
+
+    /// An unclassified `DbErr` (not a FK/unique violation `sea_orm` can name —
+    /// `DbErr::Custom`, `RecordNotFound`, `Conn`, `Exec`, `Query`, ... all land
+    /// here, since a *classified* violation needs a live `sqlx::Error::Database`
+    /// this test cannot construct outside the crate) is a genuine server
+    /// fault. It must not hand the client the driver's raw text: on this
+    /// multi-tenant deployment a Postgres error routinely names the schema,
+    /// which doubles as a tenant identifier, plus table and column names no
+    /// API consumer needs to see.
+    #[tokio::test]
+    async fn unclassified_database_error_hides_the_driver_message() {
+        let leaky = r#"column "control.tenants.owner_discord_id" does not exist"#;
+        let problem = problem_of(AppError::Database(sea_orm::DbErr::RecordNotFound(
+            leaky.to_owned(),
+        )))
+        .await;
+        assert_eq!(problem.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(
+            !problem.detail.contains("control")
+                && !problem.detail.contains("tenants")
+                && !problem.detail.contains("owner_discord_id"),
+            "leaked driver text into a client-facing response: {}",
+            problem.detail
+        );
+        assert!(!problem.detail.is_empty());
     }
 }
