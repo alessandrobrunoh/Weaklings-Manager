@@ -78,6 +78,17 @@ interface PollerState {
   lastGiveawayId: number;
   postedGiveawayIds: number[];
   announcedGiveawayDraws: number[];
+  /**
+   * False until the checkpoints below have been seeded from the live API.
+   *
+   * Without this, a guild with no checkpoint file starts every cursor at zero
+   * and the first poll treats the whole first API page as brand new — up to 50
+   * events, 10 battles and every open giveaway re-announced at once. That is
+   * what a restart onto an empty state directory (a container without a
+   * persistent volume, a wiped file, a newly added tenant) looks like from
+   * Discord: the bot spams its entire backlog.
+   */
+  initialized: boolean;
 }
 
 function createDefaultState(): PollerState {
@@ -96,6 +107,7 @@ function createDefaultState(): PollerState {
     lastGiveawayId: 0,
     postedGiveawayIds: [],
     announcedGiveawayDraws: [],
+    initialized: false,
   };
 }
 
@@ -166,6 +178,10 @@ function loadState(stateDirectory: string, fileName: string): PollerState {
       lastGiveawayId: parsedState.lastGiveawayId ?? 0,
       postedGiveawayIds: parsedState.postedGiveawayIds ?? [],
       announcedGiveawayDraws: parsedState.announcedGiveawayDraws ?? [],
+      // A file written before this flag existed already holds real checkpoints,
+      // so it is initialized. Treating it as fresh would re-seed the cursors to
+      // "now" and silently swallow anything created while the bot was down.
+      initialized: parsedState.initialized ?? true,
     };
   } catch (error) {
     console.warn(
@@ -244,7 +260,17 @@ export class Poller {
 
   /** Start the polling loop. */
   start(): void {
-    void this.poll();
+    // Seeding runs before the first real cycle so a command that asks for an
+    // immediate poll (`/event-create` calls `pollNow`) never lands on an
+    // unseeded poller: the event it just created would be folded into the
+    // baseline and never announced. `poll` keeps its own guard for the case
+    // where this first attempt fails and has to be retried on a later tick.
+    void (async () => {
+      if (!this.state.initialized) {
+        await this.adoptCheckpointBaseline();
+      }
+      await this.poll();
+    })();
     this.timer = setInterval(() => void this.poll(), this.intervalMs);
   }
 
@@ -270,6 +296,10 @@ export class Poller {
     }
     this.polling = true;
     try {
+      if (!this.state.initialized) {
+        await this.adoptCheckpointBaseline();
+        return;
+      }
       await this.checkApplicationStatus();
       // Event announcements must complete before checking reminders so a newly
       // created event already has its discussion thread recorded.
@@ -286,6 +316,80 @@ export class Poller {
       ]);
     } finally {
       this.polling = false;
+    }
+  }
+
+  /**
+   * Seeds every announcement cursor from the live API and sends nothing.
+   *
+   * Runs once, on the first poll of a guild that has no usable checkpoint file.
+   * Announcements are only ever meant to fire for something created while the
+   * bot is watching; anything that already exists when the bot first looks has
+   * had its chance and must stay silent. Cursors start at zero, so without this
+   * the first poll would read the whole first page as new and replay the
+   * backlog into Discord.
+   *
+   * This cycle deliberately returns before any other check: the point is that a
+   * restart onto an empty state directory produces no messages at all, not
+   * fewer messages. Normal polling resumes on the next tick.
+   */
+  private async adoptCheckpointBaseline(): Promise<void> {
+    try {
+      const [events, battles, giveaways] = await Promise.all([
+        this.api
+          .get<PaginatedData<EventView>>("api/events", undefined, {
+            page: 1,
+            limit: 50,
+            sort: "created_at",
+            order: "desc",
+          })
+          .catch(() => ({ items: [] as EventView[] })),
+        this.api
+          .get<PaginatedData<BattleSummary>>("api/battles", undefined, {
+            page: 1,
+            limit: 10,
+          })
+          .catch(() => ({ items: [] as BattleSummary[] })),
+        this.api
+          .get<PaginatedData<GiveawayView>>("api/giveaways", undefined, {
+            page: 1,
+            limit: 50,
+          })
+          .catch(() => ({ items: [] as GiveawayView[] })),
+      ]);
+
+      this.state.lastEventId = events.items.reduce(
+        (max, event) => Math.max(max, event.id),
+        this.state.lastEventId,
+      );
+      this.state.lastBattleId = battles.items.reduce(
+        (max, battle) => Math.max(max, battle.battle_id),
+        this.state.lastBattleId,
+      );
+      this.state.lastGiveawayId = giveaways.items.reduce(
+        (max, giveaway) => Math.max(max, giveaway.id),
+        this.state.lastGiveawayId,
+      );
+      // The application panel announces transitions, not a current value, so
+      // recording the current one here keeps the first real change as the first
+      // message rather than announcing the status the bot booted into.
+      this.state.applicationsOpen = await this.settings
+        .applicationsSettings()
+        .then((settings) => settings.discord_applications_open)
+        .catch(() => this.state.applicationsOpen);
+
+      this.state.initialized = true;
+      this.save();
+      console.log(
+        `[Poller] Seeded checkpoints for guild ${this.guildId} without announcing — event #${this.state.lastEventId}, battle #${this.state.lastBattleId}, giveaway #${this.state.lastGiveawayId}`,
+      );
+    } catch (error) {
+      // Leave the state uninitialized so the next tick retries. Announcing from
+      // a zeroed cursor would be worse than waiting.
+      console.error(
+        `[Poller] Could not seed checkpoints for guild ${this.guildId}; staying silent until it succeeds:`,
+        error,
+      );
     }
   }
 
@@ -373,12 +477,26 @@ export class Poller {
         return;
       }
 
+      // An announcement belongs to the moment an event is created and to nothing
+      // else. Anything already started, stopped, cancelled or archived by the
+      // time the bot sees it is history: announcing it would put a call to arms
+      // in the channel for a mass that is already over. Their ids still advance
+      // the checkpoint so they are never reconsidered.
+      const announceable = newEvents.filter(
+        (event) => event.status === "scheduled" && !event.archived_at,
+      );
+      if (announceable.length === 0) {
+        this.state.lastEventId = newEvents[newEvents.length - 1]!.id;
+        this.save();
+        return;
+      }
+
       const [eventsChannelId, callToArmsChannelId] = await Promise.all([
         this.settings.eventsChannelId(),
         this.settings.callToArmsChannelId(),
       ]);
 
-      for (const event of newEvents) {
+      for (const event of announceable) {
         const channelId = event.call_to_arms ? callToArmsChannelId : eventsChannelId;
         if (!channelId) {
           console.warn(

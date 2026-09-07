@@ -101,7 +101,7 @@ import type { AuditLog } from '../audit/audit';
         <!-- Card 1: Total Members -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-2">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.stat.totalMembers') }}
               </p>
@@ -121,7 +121,7 @@ import type { AuditLog } from '../audit/audit';
         <!-- Card 2: Ledger Volume -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-2">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.stat.ledgerVolume') }}
               </p>
@@ -141,7 +141,7 @@ import type { AuditLog } from '../audit/audit';
         <!-- Card 3: Open Liability -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-2">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.stat.openLiability') }}
               </p>
@@ -162,7 +162,7 @@ import type { AuditLog } from '../audit/audit';
         <!-- Card 4: Paid Out -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-2">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.stat.paidOut') }}
               </p>
@@ -182,7 +182,7 @@ import type { AuditLog } from '../audit/audit';
         <!-- Card 5: Total Roles -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-2">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.stat.totalRoles') }}
               </p>
@@ -202,7 +202,7 @@ import type { AuditLog } from '../audit/audit';
         <!-- Card 6: Total Events -->
         <article class="kpi-card">
           <div class="flex items-start justify-between gap-2">
-            <div>
+            <div class="min-w-0">
               <p class="text-[0.625rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                 {{ t('admin.stat.totalEvents') }}
               </p>

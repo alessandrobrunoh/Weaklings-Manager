@@ -570,3 +570,168 @@ test("a poller refuses an unscoped API client", () => {
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+/**
+ * Builds a guild whose backlog would be replayed into Discord if the poller
+ * ever treated an absent or unreadable checkpoint file as "everything is new".
+ */
+function backlogFixtures() {
+  const events = [
+    { id: 11, title: "Old mass", status: "stopped", call_to_arms: false, archived_at: null },
+    { id: 12, title: "Cancelled mass", status: "cancelled", call_to_arms: false, archived_at: null },
+    { id: 13, title: "Open mass", status: "scheduled", call_to_arms: false, archived_at: null },
+  ];
+  const battles = [{ battle_id: 900 }, { battle_id: 901 }];
+  const giveaways = [{ id: 5 }, { id: 6 }];
+  return { events, battles, giveaways };
+}
+
+function backlogHarness(sent: string[]) {
+  const { events, battles, giveaways } = backlogFixtures();
+  const page = (items: unknown[]) => ({
+    items,
+    total_items: items.length,
+    total_pages: 1,
+    current_page: 1,
+    limit: 50,
+  });
+
+  const api = {
+    guildId: "100000000000000002",
+    get: async (path: string) => {
+      if (path === "api/events") return page(events);
+      if (path === "api/battles") return page(battles);
+      if (path === "api/giveaways") return page(giveaways);
+      if (path === "api/splits/discord-sync") return { items: [], has_more: false };
+      const eventMatch = /^api\/events\/(\d+)$/.exec(path);
+      if (eventMatch) {
+        const found = events.find((event) => event.id === Number(eventMatch[1]));
+        if (!found) throw new ApiError(404, `Event ${eventMatch[1]} not found`);
+        return { ...found, roster_version: 1, participants: [], comp: null };
+      }
+      const giveawayMatch = /^api\/giveaways\/(\d+)$/.exec(path);
+      if (giveawayMatch) return { id: Number(giveawayMatch[1]), status: "open", entries: [] };
+      throw new Error(`unexpected GET ${path}`);
+    },
+  } as unknown as ApiClient;
+
+  const settings = {
+    applicationsSettings: async () => ({ discord_applications_open: true }),
+    splitsForumChannelId: async () => null,
+    eventsChannelId: async () => "events-channel",
+    callToArmsChannelId: async () => "cta-channel",
+    battlesChannelId: async () => "battles-channel",
+    giveawaysChannelId: async () => "giveaways-channel",
+    giveawaysRoleId: async () => null,
+  } as unknown as SettingsService;
+
+  const channel = {
+    id: "events-channel",
+    isTextBased: () => true,
+    isDMBased: () => false,
+    send: async () => {
+      sent.push("message");
+      return {
+        id: "message",
+        startThread: async () => null,
+        edit: async () => undefined,
+      };
+    },
+  };
+
+  const client = {
+    channels: { fetch: async () => channel },
+  } as unknown as Client;
+
+  return { api, settings, client, events };
+}
+
+test("poller announces nothing on a first run with no checkpoint file", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    const sent: string[] = [];
+    const { api, settings, client } = backlogHarness(sent);
+
+    // No state file: this is a restart onto an empty state directory, a fresh
+    // container, or a newly added tenant.
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    await poller.pollNow();
+
+    assert.deepEqual(sent, [], "a first poll must not replay the existing backlog");
+
+    const saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-100000000000000002.json"), "utf-8"),
+    ) as { lastEventId: number; lastBattleId: number; lastGiveawayId: number; initialized: boolean };
+    assert.equal(saved.initialized, true);
+    assert.equal(saved.lastEventId, 13);
+    assert.equal(saved.lastBattleId, 901);
+    assert.equal(saved.lastGiveawayId, 6);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("poller announces nothing when the checkpoint file is corrupt", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeFileSync(
+      join(directory, "poller-state-100000000000000002.json"),
+      "{ not json",
+      "utf-8",
+    );
+
+    const sent: string[] = [];
+    const { api, settings, client } = backlogHarness(sent);
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    await poller.pollNow();
+
+    assert.deepEqual(sent, [], "an unreadable checkpoint must not replay the backlog");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("poller never announces an event that is no longer awaiting its start", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    // A real checkpoint that sits behind the whole backlog: these events are
+    // "new" to the poller, but two of them are already over.
+    writeFileSync(
+      join(directory, "poller-state-100000000000000002.json"),
+      JSON.stringify({
+        lastEventId: 10,
+        lastBattleId: 901,
+        lastGiveawayId: 6,
+        pinged1hEvents: [],
+        eventThreadIds: {},
+        splitUpdatedAt: null,
+        splitAfterId: null,
+        massedEvents: [],
+        emptyLiveChecks: {},
+        applicationsOpen: true,
+        initialized: true,
+      }),
+      "utf-8",
+    );
+
+    const sent: string[] = [];
+    const { api, settings, client } = backlogHarness(sent);
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    await poller.pollNow();
+
+    // Only the scheduled event is announced; the stopped and cancelled ones are
+    // skipped, and the checkpoint moves past all three.
+    assert.equal(sent.length, 1, "only the still-scheduled event may be announced");
+
+    const saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-100000000000000002.json"), "utf-8"),
+    ) as { lastEventId: number };
+    assert.equal(saved.lastEventId, 13);
+
+    sent.length = 0;
+    await poller.pollNow();
+    assert.deepEqual(sent, [], "a second poll must not re-announce anything");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

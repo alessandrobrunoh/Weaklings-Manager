@@ -156,7 +156,7 @@ const STATS_FETCH_LIMIT = 1000;
         @if (tab() === 'mine') {
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.budget.event') }}
                 </p>
@@ -175,7 +175,7 @@ const STATS_FETCH_LIMIT = 1000;
 
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.budget.month') }}
                 </p>
@@ -194,7 +194,7 @@ const STATS_FETCH_LIMIT = 1000;
 
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.status.pending') }}
                 </p>
@@ -216,7 +216,7 @@ const STATS_FETCH_LIMIT = 1000;
 
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.status.approved') }}
                 </p>
@@ -235,7 +235,7 @@ const STATS_FETCH_LIMIT = 1000;
         } @else {
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.stat.pending') }}
                 </p>
@@ -255,7 +255,7 @@ const STATS_FETCH_LIMIT = 1000;
 
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.stat.approved') }}
                 </p>
@@ -274,7 +274,7 @@ const STATS_FETCH_LIMIT = 1000;
 
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.stat.rejected') }}
                 </p>
@@ -293,7 +293,7 @@ const STATS_FETCH_LIMIT = 1000;
 
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('regears.stat.totalReimbursed') }}
                 </p>

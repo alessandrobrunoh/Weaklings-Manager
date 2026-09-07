@@ -161,8 +161,7 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
 
         @if (!s.full_weapon_coverage) {
           <div
-            class="mb-6 flex items-start gap-2.5 rounded-2xl border p-3.5 text-sm"
-            class="bg-[var(--color-warning-container)] border-[var(--color-warning)] text-warning"
+            class="mb-6 flex items-start gap-2.5 rounded-2xl border p-3.5 text-sm bg-[var(--color-warning-container)] border-[var(--color-warning)] text-warning"
             role="note"
           >
             <app-icon name="info" size="1rem" />
@@ -233,9 +232,8 @@ import { StatusChip } from '../../shared/components/status-chip/status-chip';
             @for (row of s.matchups; track row.our_comp_id) {
               <div class="flex items-center justify-between border-t py-2" style="border-color: var(--color-border)">
                 <a
-                  class="truncate text-sm no-underline"
+                  class="truncate text-sm no-underline text-[var(--color-text)]"
                   [routerLink]="['/comps', row.our_comp_id]"
-                  class="text-[var(--color-text)]"
                 >
                   {{ row.our_comp_name }}
                 </a>

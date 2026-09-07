@@ -37,13 +37,11 @@ pub struct CurrentTenantId(pub String);
 
 /// Feature flags enabled for the current tenant.
 #[derive(Clone, Debug, Default)]
-#[allow(dead_code)] // read by Stage 6 handlers via [`TenantFeatures::contains`]
 pub struct TenantFeatures(pub HashSet<String>);
 
 impl TenantFeatures {
     /// Whether `key` is enabled for this tenant.
     #[must_use]
-    #[allow(dead_code)] // used by Stage 6 feature gates and tests
     pub fn contains(&self, key: &str) -> bool {
         self.0.contains(key)
     }
@@ -234,6 +232,57 @@ pub fn skip_tenant_resolution(path: &str) -> bool {
         || path == "/api/auth/registerable-guilds"
 }
 
+/// API prefixes that belong to an optional module, and the feature key that
+/// unlocks them.
+///
+/// This mirrors the `featureKey` entries the web client uses to hide nav items:
+/// hiding a link is a convenience, not a control, and without this table anyone
+/// who knows the URL reaches a module the tenant's Rank never granted.
+///
+/// Order matters — the first match wins, so a narrower prefix has to come before
+/// the broader one it sits inside. Only what the client gates is gated here: a
+/// prefix that also backs an always-available page must not be listed, or that
+/// page breaks for tenants without the module.
+const FEATURE_GATES: &[(&str, &str)] = &[
+    // Paid splits: islands are the gated part, the rest of `/api/splits` is not.
+    ("/api/splits/islands", "splits.paid"),
+    ("/api/splits", "splits"),
+    // Only the tests console is gated. The rest of `/api/combat` — item power,
+    // simulation, mastery data — backs the comps and builds pages.
+    ("/api/combat/tests", "tests"),
+    ("/api/combat/runs", "tests"),
+    // The dashboard and `/season` read `/api/progression/{me,leaderboard,seasons}`
+    // and are never feature-gated in the client, so only the settings owned by
+    // the gated admin panel are gated here.
+    ("/api/progression/settings", "progression"),
+    ("/api/applications", "applications"),
+    ("/api/bank", "bank"),
+    ("/api/battles", "battles"),
+    // Fights are the drill-down of a battle and have no module of their own.
+    ("/api/fights", "battles"),
+    ("/api/comps", "comps"),
+    ("/api/events", "events"),
+    ("/api/giveaways", "giveaways"),
+    ("/api/intel", "intel"),
+    ("/api/regear", "regears"),
+    ("/api/siphoned", "siphoned"),
+    ("/api/warns", "warns"),
+];
+
+/// The feature key `path` requires, if it belongs to an optional module.
+///
+/// Matches on whole path segments so `/api/compsomething` never counts as
+/// `/api/comps`.
+fn required_feature(path: &str) -> Option<&'static str> {
+    let path = path.trim_end_matches('/');
+    FEATURE_GATES
+        .iter()
+        .find(|(prefix, _)| {
+            path == *prefix || path.strip_prefix(*prefix).is_some_and(|rest| rest.starts_with('/'))
+        })
+        .map(|(_, feature)| *feature)
+}
+
 /// Whether a handler on `path` needs a tenant database bound to the request.
 ///
 /// False for the unscoped auth endpoints (they take an `Option<Extension<_>>`)
@@ -328,12 +377,19 @@ pub async fn resolve_tenant(
         schema = %ctx.schema_name,
         "resolved tenant"
     );
+    let features = TenantFeatures(ctx.features.clone());
+    if let Some(feature) = required_feature(&path) {
+        if !features.contains(feature) {
+            return Err(AppError::Forbidden(format!(
+                "the {feature} module is not enabled for this guild"
+            )));
+        }
+    }
+
     let (mut parts, body) = req.into_parts();
     parts.extensions.insert(ctx.db.clone());
     parts.extensions.insert(ctx.permissions.clone());
-    parts
-        .extensions
-        .insert(TenantFeatures(ctx.features.clone()));
+    parts.extensions.insert(features);
     parts
         .extensions
         .insert(CurrentTenantId(ctx.tenant_id.clone()));
@@ -347,6 +403,76 @@ mod tests {
     use crate::postgres::test_support::{cleanup_control_tenant, try_admin_db, unique_schema};
     use crate::postgres::{CONTROL_SCHEMA, drop_schema, ensure_schema, quote_ident};
     use axum::http::HeaderValue;
+
+    #[test]
+    fn feature_gate_matches_whole_segments_only() {
+        assert_eq!(required_feature("/api/comps"), Some("comps"));
+        assert_eq!(required_feature("/api/comps/"), Some("comps"));
+        assert_eq!(required_feature("/api/comps/12/builds"), Some("comps"));
+        // A longer name that merely starts with a gated prefix is not that module.
+        assert_eq!(required_feature("/api/compsomething"), None);
+        assert_eq!(required_feature("/api/bankruptcy"), None);
+    }
+
+    #[test]
+    fn feature_gate_prefers_the_narrower_prefix() {
+        assert_eq!(required_feature("/api/splits"), Some("splits"));
+        assert_eq!(required_feature("/api/splits/42/complete"), Some("splits"));
+        assert_eq!(required_feature("/api/splits/islands"), Some("splits.paid"));
+        assert_eq!(
+            required_feature("/api/splits/islands/7/tabs"),
+            Some("splits.paid")
+        );
+    }
+
+    #[test]
+    fn feature_gate_leaves_always_available_endpoints_open() {
+        // `/season`, the dashboard and the leaderboards are never gated in the
+        // client, so the progression endpoints they read must stay reachable.
+        assert_eq!(required_feature("/api/progression/me"), None);
+        assert_eq!(required_feature("/api/progression/leaderboard"), None);
+        assert_eq!(required_feature("/api/progression/seasons"), None);
+        assert_eq!(
+            required_feature("/api/progression/settings"),
+            Some("progression")
+        );
+        // Item power and simulation back the comps pages, not the tests console.
+        assert_eq!(required_feature("/api/combat/item-power"), None);
+        assert_eq!(required_feature("/api/combat/simulate"), None);
+        assert_eq!(required_feature("/api/combat/tests/3/run"), Some("tests"));
+        // Session, admin and platform surfaces are never module-gated.
+        assert_eq!(required_feature("/api/auth/me"), None);
+        assert_eq!(required_feature("/api/admin/roles"), None);
+        assert_eq!(required_feature("/api/users/me/metrics"), None);
+    }
+
+    #[test]
+    fn feature_gate_covers_every_key_the_client_gates() {
+        // Keys come from `APP_NAV_SECTIONS` / `ADMIN_PANELS` in the web client's
+        // `layout/nav.ts`. A key the client hides but the server serves is the
+        // hole this table exists to close.
+        for key in [
+            "applications",
+            "bank",
+            "battles",
+            "comps",
+            "events",
+            "giveaways",
+            "intel",
+            "progression",
+            "regears",
+            "siphoned",
+            "splits",
+            "splits.paid",
+            "tests",
+            "warns",
+        ] {
+            assert!(
+                FEATURE_GATES.iter().any(|(_, feature)| *feature == key),
+                "no server-side gate for the {key} module"
+            );
+        }
+    }
 
     #[test]
     fn skip_lists_health_oauth_and_platform() {

@@ -167,7 +167,7 @@ interface BattleScopeStats {
           <!-- Card 1: Visible Battles -->
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('battles.visible_battles') }}
                 </p>
@@ -187,7 +187,7 @@ interface BattleScopeStats {
           <!-- Card 2: Total Fame -->
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('battles.total_fame') }}
                 </p>
@@ -207,7 +207,7 @@ interface BattleScopeStats {
           <!-- Card 3: Total Kills -->
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('battles.kills') }}
                 </p>
@@ -228,7 +228,7 @@ interface BattleScopeStats {
           @if (tab() === 'me') {
             <article class="kpi-card">
               <div class="flex items-start justify-between gap-3">
-                <div>
+                <div class="min-w-0">
                   <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                     {{ t('battles.deaths') }}
                   </p>
@@ -247,7 +247,7 @@ interface BattleScopeStats {
           } @else {
             <article class="kpi-card">
               <div class="flex items-start justify-between gap-3">
-                <div>
+                <div class="min-w-0">
                   <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                     Guild K/D
                   </p>
@@ -268,7 +268,7 @@ interface BattleScopeStats {
           <!-- Card 5: Total Players -->
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('battles.players') }}
                 </p>

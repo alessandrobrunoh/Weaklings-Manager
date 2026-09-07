@@ -1034,7 +1034,7 @@ interface BuildOptionGroup {
 
       <!-- Edit Metadata Modal Dialog -->
       @if (editMetaOpen()) {
-        <app-dialog [title]="'Modifica Composizione'" size="md" (closed)="closeEditMeta()">
+        <app-dialog [title]="t('comps.editComp')" size="md" (closed)="closeEditMeta()">
           <form class="grid gap-4" (submit)="saveEdit($event)">
             <div class="grid gap-4 md:grid-cols-2">
               <label>
@@ -1576,6 +1576,11 @@ export class CompDetailPage {
     this.editParentId.set(current.parent_id ? String(current.parent_id) : '');
     this.editDescription.set(current.description ?? '');
     this.editMetaOpen.set(true);
+    // The category and parent selects read `compCategories()` / `compSummaries()`,
+    // and only this call fills them. Without it `editCategoryOptions()` falls back
+    // to the comp's own current category, so the dialog opens with nothing to
+    // switch to and the category can only be cleared, never changed.
+    void this.loadEditOptions();
   }
 
   protected closeEditMeta(): void {
@@ -1862,17 +1867,17 @@ export class CompDetailPage {
     return ROLE_LABELS[role] ?? role;
   }
 
+  /**
+   * Header "Edit" action.
+   *
+   * This used to fill the metadata signals and switch to roster edit mode without
+   * ever showing the metadata form, so the button read as "editing is broken":
+   * name, category and description had no reachable editor, and the header's own
+   * Edit/Clone/Archive buttons hid themselves on the way in. Roster editing has
+   * its own toggle, so this opens the metadata dialog instead.
+   */
   protected enterEdit(): void {
-    const current = this.comp();
-    if (!current) {
-      return;
-    }
-    this.editName.set(current.name);
-    this.editDescription.set(current.description ?? '');
-    this.editCategoryId.set(current.category_id ? String(current.category_id) : '');
-    this.editParentId.set(current.parent_id ? String(current.parent_id) : '');
-    this.mode.set('edit');
-    void this.loadEditOptions();
+    this.openEditMeta();
   }
 
   protected cancelEdit(): void {

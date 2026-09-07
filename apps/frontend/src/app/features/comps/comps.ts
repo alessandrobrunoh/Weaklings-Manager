@@ -183,7 +183,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
         @if (tab() === 'comps') {
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('comps.stat.comps') }}
                 </p>
@@ -202,7 +202,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
 
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('comps.stat.parentComps') }}
                 </p>
@@ -221,7 +221,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
 
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('comps.stat.variantComps') }}
                 </p>
@@ -240,7 +240,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
 
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('comps.stat.compCategories') }}
                 </p>
@@ -259,7 +259,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
         } @else {
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('comps.stat.comps') }}
                 </p>
@@ -278,7 +278,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
 
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('comps.stat.builds') }}
                 </p>
@@ -297,7 +297,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
 
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('comps.stat.buildCategories') }}
                 </p>
@@ -316,7 +316,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
 
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
-              <div>
+              <div class="min-w-0">
                 <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
                   {{ t('comps.stat.compCategories') }}
                 </p>
@@ -520,7 +520,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
 
                   <!-- Comp Metrics & Actions -->
                   <div
-                    class="flex flex-wrap items-center justify-between md:justify-end gap-3 shrink-0"
+                    class="flex min-w-0 flex-wrap items-center justify-between md:justify-end gap-3"
                   >
                     <!-- Capacity & Win Rate -->
                     <div class="flex items-center gap-4 text-xs">
