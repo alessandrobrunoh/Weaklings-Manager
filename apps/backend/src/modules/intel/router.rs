@@ -26,6 +26,7 @@ use crate::modules::intel::report::{
 use crate::modules::intel::service::IntelService;
 use crate::pagination::{PaginatedScoutedComp, PaginationParams};
 use crate::responses::ApiResponse;
+use crate::tenant::CurrentTenantId;
 
 /// Default number of entries returned by the similarity and counter endpoints.
 const DEFAULT_SUGGESTION_LIMIT: usize = 5;
@@ -467,16 +468,17 @@ pub async fn guild_report(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
     Extension(cache): Extension<ReportCache>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Query(params): Query<ReportParams>,
 ) -> Result<Json<ApiResponse<GuildReport>>, AppError> {
     user.require(&perms, Permission::IntelReportView).await?;
     let range = DateRange::resolve(params.from.as_deref(), params.to.as_deref())?;
     let granularity = params.granularity.as_deref().unwrap_or("week");
-    if let Some(cached) = cache.get(range, granularity) {
+    if let Some(cached) = cache.get(&tenant.0, range, granularity) {
         return Ok(Json(ApiResponse::new(cached)));
     }
     let report = build_guild_report(&db, &guild_context(&cfg), range, granularity).await?;
-    cache.put(range, granularity, &report);
+    cache.put(&tenant.0, range, granularity, &report);
     Ok(Json(ApiResponse::new(report)))
 }
 
@@ -506,14 +508,15 @@ pub async fn refresh_guild_report(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
     Extension(cache): Extension<ReportCache>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Query(params): Query<ReportParams>,
 ) -> Result<Json<ApiResponse<GuildReport>>, AppError> {
     user.require(&perms, Permission::IntelEdit).await?;
     let range = DateRange::resolve(params.from.as_deref(), params.to.as_deref())?;
     let granularity = params.granularity.as_deref().unwrap_or("week");
-    cache.invalidate();
+    cache.invalidate(&tenant.0);
     let report = build_guild_report(&db, &guild_context(&cfg), range, granularity).await?;
-    cache.put(range, granularity, &report);
+    cache.put(&tenant.0, range, granularity, &report);
     Ok(Json(ApiResponse::new(report)))
 }
 
@@ -557,6 +560,7 @@ pub async fn leaderboards(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
     Extension(cache): Extension<ReportCache>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Query(params): Query<ReportParams>,
 ) -> Result<Json<ApiResponse<ReportLeaderboards>>, AppError> {
     user.require(&perms, Permission::IntelView).await?;
@@ -570,11 +574,11 @@ pub async fn leaderboards(
     let granularity = params.granularity.as_deref().unwrap_or("week");
     // Shares the report's cache: an officer who already opened the dashboard
     // has paid for this computation, and vice versa.
-    let mut leaderboards = if let Some(cached) = cache.get(range, granularity) {
+    let mut leaderboards = if let Some(cached) = cache.get(&tenant.0, range, granularity) {
         cached.leaderboards
     } else {
         let report = build_guild_report(&db, &guild_context(&cfg), range, granularity).await?;
-        cache.put(range, granularity, &report);
+        cache.put(&tenant.0, range, granularity, &report);
         report.leaderboards
     };
     if !can_see_financials {
