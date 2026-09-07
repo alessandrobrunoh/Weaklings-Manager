@@ -235,7 +235,7 @@ impl AuthService {
         code: &str,
         redirect_uri: &str,
     ) -> Result<DiscordTokenResponse, AppError> {
-        let client = reqwest::Client::new();
+        let client = crate::http_client::shared();
 
         let params = [
             ("client_id", client_id),
@@ -273,7 +273,7 @@ impl AuthService {
     ///
     /// Returns `AppError::Unauthorized` if the profile request fails.
     pub async fn fetch_profile(&self, access_token: &str) -> Result<DiscordUserProfile, AppError> {
-        let client = reqwest::Client::new();
+        let client = crate::http_client::shared();
 
         let response = client
             .get("https://discord.com/api/users/@me")
@@ -308,7 +308,7 @@ impl AuthService {
         &self,
         access_token: &str,
     ) -> Result<Vec<DiscordGuild>, AppError> {
-        let client = reqwest::Client::new();
+        let client = crate::http_client::shared();
         let response = client
             .get("https://discord.com/api/v10/users/@me/guilds")
             .bearer_auth(access_token)
@@ -368,7 +368,7 @@ impl AuthService {
         guild_id: &str,
         bot_token: Option<&str>,
     ) -> Option<Vec<String>> {
-        let client = reqwest::Client::new();
+        let client = crate::http_client::shared();
 
         if let Some(bot) = usable_bot_token(bot_token) {
             let url = format!("https://discord.com/api/v10/guilds/{guild_id}/members/{user_id}");

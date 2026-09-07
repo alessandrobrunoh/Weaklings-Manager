@@ -220,7 +220,7 @@ async fn live_check_confirms_can_manage(
     guild_id: &str,
     discord_id: &str,
 ) -> Result<bool, AppError> {
-    let client = reqwest::Client::new();
+    let client = crate::http_client::shared();
 
     let guild: serde_json::Value = client
         .get(format!("https://discord.com/api/v10/guilds/{guild_id}"))
@@ -306,7 +306,7 @@ fn compute_can_manage(
 async fn fetch_discord_guild_icon(bot_token: Option<&str>, guild_id: &str) -> Option<String> {
     let token = bot_token?;
     let url = format!("https://discord.com/api/v10/guilds/{guild_id}");
-    let response = reqwest::Client::new()
+    let response = crate::http_client::shared()
         .get(url)
         .header("Authorization", format!("Bot {token}"))
         .send()

@@ -732,7 +732,7 @@ async fn fetch_discord_roles(
 ) -> Result<Vec<DiscordRolePayload>, AppError> {
     let token = discord_bot_token(cfg)?;
 
-    let response = reqwest::Client::new()
+    let response = crate::http_client::shared()
         .get(format!(
             "https://discord.com/api/v10/guilds/{guild_id}/roles"
         ))
@@ -762,7 +762,7 @@ async fn fetch_discord_channels(
 ) -> Result<Vec<DiscordChannelPayload>, AppError> {
     let token = discord_bot_token(cfg)?;
 
-    let response = reqwest::Client::new()
+    let response = crate::http_client::shared()
         .get(format!(
             "https://discord.com/api/v10/guilds/{guild_id}/channels"
         ))

@@ -14,6 +14,7 @@ pub(crate) mod tenant;
 
 pub mod config;
 pub(crate) mod errors;
+pub(crate) mod http_client;
 pub(crate) mod pagination;
 pub(crate) mod responses;
 pub(crate) mod serde_helpers;

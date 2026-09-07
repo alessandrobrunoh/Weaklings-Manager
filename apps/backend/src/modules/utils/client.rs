@@ -48,7 +48,7 @@ impl MistralOcrClient {
     #[must_use]
     pub fn new(api_key: String) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: crate::http_client::shared(),
             api_key,
         }
     }
