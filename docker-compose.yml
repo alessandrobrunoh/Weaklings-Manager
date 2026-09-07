@@ -16,7 +16,12 @@ services:
   backend:
     image: ghcr.io/alessandrobrunoh/weaklings-backend:latest
     ports:
-      - "8001:3000"
+      # Host-only, same as the database below: the frontend reaches this
+      # service over the internal `default` network at http://backend:3000
+      # (see API_REWRITE_URL), so publishing on every interface only handed
+      # an unauthenticated path straight to the backend — cookies set with
+      # `Secure` don't stop a plain-HTTP request from reaching it directly.
+      - "127.0.0.1:8001:3000"
     environment:
       - RUST_LOG=${RUST_LOG}
       - BACKEND_PORT=${BACKEND_PORT}
