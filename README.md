@@ -275,7 +275,7 @@ npm run dev   # watch mode, loads ../../.env
 | `ALBIONBB_REQUEST_TIMEOUT_SECS` | no | `60` | AlbionBB request timeout |
 | `ALBIONDATA_REQUEST_TIMEOUT_SECS` | no | `30` | Albion Data Project timeout |
 | `DISCORD_BOT_TOKEN` | no | — | Bot token for server-side Discord calls |
-| `BOT_API_SECRET` | no | — | Enables bot-header auth (`X-Bot-Secret` / `X-Discord-Id`) |
+| `BOT_API_SECRET` | no | — | Enables bot-header auth (`X-Bot-Secret` / `X-Discord-Id`) — a **master key**, not an ordinary API token: a request bearing it with no `X-Discord-Id` runs as an unrestricted super-admin against whichever tenant `X-Guild-Id` names. Generate and store it with the same care as `SESSION_SECRET`. |
 
 The audit-log channel, transaction-spam channel, call-to-arms channel and event-ping role used to
 be set via `DISCORD_AUDIT_LOG_CHANNEL_ID` / `DISCORD_TRANSACTION_SPAM_CHANNEL_ID` /
