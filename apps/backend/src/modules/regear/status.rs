@@ -62,3 +62,46 @@ impl FromStr for RegearStatus {
         }
     }
 }
+
+/// Where a regear death row came from.
+///
+/// Stored in the database as its lowercase string form, same convention as [`RegearStatus`].
+/// Officers and members can tell the two apart in the UI, but the accept/reject workflow never
+/// branches on it — both origins are just `regear_deaths` rows once inserted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RegearSource {
+    /// Discovered by the kill-feed extractor from a battle linked to the event.
+    Extracted,
+    /// Opened by the member themselves, without an extracted death to claim.
+    SelfReported,
+}
+
+impl RegearSource {
+    /// Lowercase stable string persisted in the DB.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Extracted => "extracted",
+            Self::SelfReported => "self_reported",
+        }
+    }
+}
+
+impl fmt::Display for RegearSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for RegearSource {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "extracted" => Ok(Self::Extracted),
+            "self_reported" => Ok(Self::SelfReported),
+            other => Err(format!("unknown regear source: {other}")),
+        }
+    }
+}

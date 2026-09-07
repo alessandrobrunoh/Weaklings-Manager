@@ -23,6 +23,10 @@ pub struct ApplicationView {
     pub channel_id: String,
     pub status: String,
     pub default_role_discord_id: Option<String>,
+    /// Albion character the applicant gave when opening the ticket.
+    pub ingame_name: Option<String>,
+    /// How many times this same ticket has been brought back from the archive.
+    pub reopen_count: i32,
 }
 
 impl From<Model> for ApplicationView {
@@ -34,6 +38,8 @@ impl From<Model> for ApplicationView {
             channel_id: value.channel_id,
             status: value.status,
             default_role_discord_id: None,
+            ingame_name: value.ingame_name,
+            reopen_count: value.reopen_count,
         }
     }
 }
@@ -42,6 +48,8 @@ pub fn router() -> Router {
     Router::new()
         .route("/", post(create_application))
         .route("/active", get(get_active_application))
+        .route("/latest", get(get_latest_application))
+        .route("/{id}/reopen", post(reopen_application))
         .route("/{id}/accept", post(accept_application))
         .route("/{id}/decline", post(decline_application))
         .route("/{id}/close", post(close_application))
@@ -55,6 +63,9 @@ enum CreateApplicationBody {
         channel_id: String,
         #[serde(default)]
         username: Option<String>,
+        /// Albion character the applicant typed into the opening form.
+        #[serde(default)]
+        ingame_name: Option<String>,
     },
 }
 
@@ -78,6 +89,13 @@ impl CreateApplicationBody {
                 .unwrap_or(&actor.discord_id),
         }
     }
+
+    fn ingame_name(&self) -> Option<&str> {
+        match self {
+            Self::Payload { ingame_name, .. } => ingame_name.as_deref(),
+            Self::ChannelId(_) => None,
+        }
+    }
 }
 
 async fn create_application(
@@ -91,8 +109,44 @@ async fn create_application(
         actor.user_id,
         body.username(&actor),
         body.channel_id(),
+        body.ingame_name(),
     )
     .await?;
+    Ok(Json(ApiResponse::new(application.into())))
+}
+
+/// The caller's most recent ticket, in whatever state it ended.
+async fn get_latest_application(
+    actor: BotDiscordUser,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<Option<ApplicationView>>>, AppError> {
+    let application = ApplicationService::latest_for_user(&db, &actor.discord_id)
+        .await?
+        .map(Into::into);
+    Ok(Json(ApiResponse::new(application)))
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ReopenApplicationBody {
+    /// Albion character given in the reopening form, when the applicant retyped it.
+    #[serde(default)]
+    ingame_name: Option<String>,
+}
+
+/// Brings the caller's own archived ticket back to `open`.
+///
+/// Only the applicant reopens their ticket: it happens when they press the
+/// panel button again, and `ApplicationService::reopen` refuses a row that
+/// belongs to anyone else.
+async fn reopen_application(
+    Path(id): Path<i64>,
+    actor: BotDiscordUser,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    body: Option<Json<ReopenApplicationBody>>,
+) -> Result<Json<ApiResponse<ApplicationView>>, AppError> {
+    let body = body.map(|Json(body)| body).unwrap_or_default();
+    let application =
+        ApplicationService::reopen(&db, id, &actor.discord_id, body.ingame_name.as_deref()).await?;
     Ok(Json(ApiResponse::new(application.into())))
 }
 

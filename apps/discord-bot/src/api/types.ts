@@ -410,6 +410,10 @@ export interface ApplicationView {
   channel_id: string;
   status: 'open' | 'accepted' | 'declined' | 'closed';
   default_role_discord_id?: string | null;
+  /** Albion character the applicant gave in the opening form. */
+  ingame_name?: string | null;
+  /** How many times this same ticket came back from the archive. */
+  reopen_count?: number;
 }
 
 export interface GuildSettingsView {

@@ -53,7 +53,7 @@ const FAQ: readonly { readonly q: TranslationKey; readonly a: TranslationKey }[]
       overflow: hidden;
       border-radius: var(--radius-panels);
       padding: clamp(1.75rem, 4vw, 3rem);
-      background: linear-gradient(135deg, #5865f2 0%, #8b31a0 60%, #eb459e 100%);
+      background: var(--gradient-brand);
       color: #ffffff;
     }
     .hero__title {

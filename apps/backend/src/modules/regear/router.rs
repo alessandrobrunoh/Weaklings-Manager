@@ -17,8 +17,9 @@ use crate::responses::ApiResponse;
 
 use super::extractor::ExtractionGuildContext;
 use super::models::{
-    AcceptRegearRequest, DeathFilters, ExtractionReport, RegearBudgetSummary, RegearSettingsView,
-    RejectRegearRequest, UpdateRegearSettingsRequest,
+    AcceptRegearRequest, CreateSelfServiceRegearRequest, DeathFilters, ExtractionReport,
+    RegearBudgetSummary, RegearSettingsView, RejectRegearRequest, SelfServiceEventOption,
+    UpdateRegearSettingsRequest,
 };
 use super::service::RegearService;
 
@@ -86,6 +87,8 @@ pub fn router() -> Router {
         .route("/deaths", get(list_deaths))
         .route("/deaths/{death_id}", get(get_death))
         .route("/deaths/{death_id}/request", post(request_regear))
+        .route("/self-service/events", get(get_self_service_events))
+        .route("/self-service", post(create_self_service_request))
         .route("/requests", get(list_pending_requests))
         .route("/requests/{death_id}/accept", post(accept_request))
         .route("/requests/{death_id}/reject", post(reject_request))
@@ -516,4 +519,86 @@ async fn get_my_summary(
     let service = RegearService::new();
     let summary = service.get_my_summary(&db, user.user_id).await?;
     Ok(Json(ApiResponse::new(summary)))
+}
+
+/// Events the caller may open a self-service regear request for.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` if the caller lacks `regear.request`.
+#[utoipa::path(
+    get,
+    path = "/api/regear/self-service/events",
+    tag = "regear",
+    summary = "List events eligible for a self-service regear request",
+    description = "Returns events the caller participated in that are regear-eligible and for \
+        which they don't already have a pending or approved self-reported request, along with \
+        their assigned build and every build in the event's comp (for the \"swap build\" \
+        picker).",
+    security(("session_cookie" = ["regear.request"])),
+    responses(
+        (status = 200, description = "Eligible events retrieved", body = Vec<SelfServiceEventOption>),
+        (status = 401, description = "Unauthorized", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks regear.request", body = ProblemDetails)
+    )
+)]
+async fn get_self_service_events(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<Vec<SelfServiceEventOption>>>, AppError> {
+    user.require(&perms, Permission::RegearRequest).await?;
+    let service = RegearService::new();
+    let events = service.get_self_service_events(&db, user.user_id).await?;
+    Ok(Json(ApiResponse::new(events)))
+}
+
+/// Opens a member-initiated regear request, without waiting on the kill-feed extractor.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` if the caller lacks `regear.request` or did not participate in the
+/// event. Returns `400 Validation` if the event is not regear-eligible, the build is not part of
+/// the event's comp, or the caller has no requests remaining. Returns `409 Conflict` if the
+/// caller already has an active self-reported request for this event.
+#[utoipa::path(
+    post,
+    path = "/api/regear/self-service",
+    tag = "regear",
+    summary = "Open a self-service regear request",
+    description = "The caller picks an event they participated in and a build from that event's \
+        comp, optionally overriding individual equipment slots. Consumes one request credit \
+        (bonus pool first, then weekly, never refunded on rejection), prices the resulting \
+        loadout via Albion Online Data, and inserts it directly as `pending` — the same officer \
+        queue as extracted deaths.",
+    security(("session_cookie" = ["regear.request"])),
+    request_body(content = CreateSelfServiceRegearRequest, description = "The event, the build being claimed for, and any per-slot overrides."),
+    responses(
+        (status = 200, description = "Request opened as pending", body = crate::modules::regear::models::DeathView),
+        (status = 400, description = "Validation error", body = ProblemDetails),
+        (status = 401, description = "Unauthorized", body = ProblemDetails),
+        (status = 403, description = "Forbidden", body = ProblemDetails),
+        (status = 409, description = "Duplicate self-reported request for this event", body = ProblemDetails)
+    )
+)]
+async fn create_self_service_request(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(albiondata): Extension<AlbionDataService>,
+    Extension(guild_ctx): Extension<RegearGuildContext>,
+    Json(req): Json<CreateSelfServiceRegearRequest>,
+) -> Result<Json<ApiResponse<crate::modules::regear::models::DeathView>>, AppError> {
+    user.require(&perms, Permission::RegearRequest).await?;
+    let service = RegearService::new();
+    let death = service
+        .create_self_service_request(
+            &db,
+            &albiondata,
+            &guild_ctx.to_extraction_context(),
+            user.user_id,
+            &req,
+        )
+        .await?;
+    Ok(Json(ApiResponse::new(death)))
 }

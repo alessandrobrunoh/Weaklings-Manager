@@ -46,7 +46,11 @@ impl RosterNotification {
     /// [`tokio::sync::broadcast::error::RecvError::Lagged`]) and the client
     /// must refetch instead of trusting the incremental stream.
     #[must_use]
-    pub fn resync_required(tenant_id: impl Into<String>, event_id: i64, roster_version: i64) -> Self {
+    pub fn resync_required(
+        tenant_id: impl Into<String>,
+        event_id: i64,
+        roster_version: i64,
+    ) -> Self {
         Self {
             message_type: "resync_required",
             tenant_id: tenant_id.into(),
@@ -137,8 +141,14 @@ mod tests {
 
         let first = sub.recv().await.unwrap();
         let second = sub.recv().await.unwrap();
-        assert_eq!((first.tenant_id.as_str(), first.roster_version), ("guild-a", 2));
-        assert_eq!((second.tenant_id.as_str(), second.roster_version), ("guild-b", 7));
+        assert_eq!(
+            (first.tenant_id.as_str(), first.roster_version),
+            ("guild-a", 2)
+        );
+        assert_eq!(
+            (second.tenant_id.as_str(), second.roster_version),
+            ("guild-b", 7)
+        );
     }
 
     #[test]

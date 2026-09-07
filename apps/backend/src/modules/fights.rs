@@ -27,10 +27,11 @@ use crate::modules::battles::entities::{
 use crate::modules::battles::models::{
     BattleGuildSummary, BattleLossEstimate, BattlePlayer, GuildLossEstimate, PlayerLossEstimate,
 };
-use crate::modules::comps::entities::{build, comp};
-use crate::modules::events::entities::{
-    event, event_battle, event_participation, fight, fight_battle,
+use crate::modules::battles::outcome::{
+    BattleOutcome, FriendlySide, GuildLine, OutcomeVerdict, battle_outcome, combine_segments,
 };
+use crate::modules::comps::entities::{build, comp};
+use crate::modules::events::entities::{event, event_participation, fight, fight_battle};
 use crate::modules::users::entities as user;
 use crate::modules::{
     audit::service::AuditService,
@@ -65,22 +66,20 @@ pub struct FightSegmentSummary {
 pub struct FightOutcomeView {
     /// Deterministic Fight-level outcome derived from persisted segment evidence.
     pub outcome: FightOutcome,
-    /// Number of persisted source records used to establish the outcome.
+    /// Segments that produced a decided outcome. Compare against `segment_count`
+    /// to see how much of the fight the verdict actually rests on.
     pub evidence_count: i64,
-    /// How the outcome was resolved. Values include `unanimous_segment_outcomes`,
-    /// `mixed_segment_outcomes`, and `incomplete_or_conflicting_segment_evidence`.
+    /// How the outcome was resolved: `unanimous_segments`, `mixed_segments`,
+    /// `no_resolved_segments` or `no_segments`. The first two gain a
+    /// `_partial_coverage` suffix when some segments could not be classified.
     pub method: String,
 }
 
 /// A canonical Fight's outcome from the configured guild's perspective.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum FightOutcome {
-    Victory,
-    Defeat,
-    Draw,
-    Unknown,
-}
+///
+/// Kept as a named alias so the OpenAPI schema and every existing import stay
+/// stable while the definition itself lives in one place.
+pub type FightOutcome = BattleOutcome;
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct FightListItem {
@@ -445,8 +444,6 @@ async fn list_fights(
             .map(|model| (model.id, model.title))
             .collect()
     };
-    let event_outcomes_by_segment = load_event_outcomes(&db, &event_ids, &battle_ids).await?;
-
     let items = fights
         .into_iter()
         .map(|model| -> Result<FightListItem, AppError> {
@@ -469,13 +466,7 @@ async fn list_fights(
                 total_players: summary.total_players,
                 total_kills: summary.total_kills,
                 total_fame: summary.total_fame,
-                outcome: resolve_fight_outcome(
-                    fight_segments,
-                    &snapshots_by_battle,
-                    model.event_id,
-                    &event_outcomes_by_segment,
-                    &config,
-                )?,
+                outcome: resolve_fight_outcome(fight_segments, &snapshots_by_battle, &config)?,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -626,130 +617,65 @@ const fn fight_outcome_rank(outcome: FightOutcome) -> u8 {
     }
 }
 
-async fn load_event_outcomes(
-    db: &DatabaseConnection,
-    event_ids: &[i64],
-    battle_ids: &[i64],
-) -> Result<HashMap<(i64, i64), Vec<bool>>, AppError> {
-    if event_ids.is_empty() || battle_ids.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    let rows = event_battle::Entity::find()
-        .filter(event_battle::Column::EventId.is_in(event_ids.to_vec()))
-        .all(db)
-        .await
-        .map_err(AppError::Database)?;
-    let battle_ids = battle_ids.iter().copied().collect::<HashSet<_>>();
-    let mut outcomes = HashMap::<(i64, i64), Vec<bool>>::new();
-    for row in rows {
-        let Ok(battle_id) = row.albionbb_battle_id.parse::<i64>() else {
-            continue;
-        };
-        if battle_ids.contains(&battle_id) {
-            outcomes
-                .entry((row.event_id, battle_id))
-                .or_default()
-                .push(row.is_win);
-        }
-    }
-    Ok(outcomes)
+/// Our side, as configured for this deployment.
+fn friendly_side(config: &Config) -> FriendlySide {
+    FriendlySide::new(
+        &config.albion_guild_id,
+        &config.albion_allied_guild_ids(),
+        &config.albion_allied_guild_names(),
+    )
 }
 
-/// Resolves the canonical Fight outcome without choosing one segment over another.
-/// Each inner vector contains all persisted boolean outcomes for a single segment.
-fn resolve_persisted_segment_outcomes(segment_evidence: &[Vec<bool>]) -> FightOutcomeView {
-    let evidence_count = segment_evidence
-        .iter()
-        .map(|outcomes| i64::try_from(outcomes.len()).unwrap_or(i64::MAX))
-        .sum();
-    if segment_evidence.is_empty() {
-        return FightOutcomeView {
-            outcome: FightOutcome::Unknown,
-            evidence_count,
-            method: "no_segments".to_string(),
-        };
-    }
-
-    let mut resolved_segments = Vec::with_capacity(segment_evidence.len());
-    for outcomes in segment_evidence {
-        let Some(&first) = outcomes.first() else {
-            return FightOutcomeView {
-                outcome: FightOutcome::Unknown,
-                evidence_count,
-                method: "incomplete_or_conflicting_segment_evidence".to_string(),
-            };
-        };
-        if outcomes.iter().any(|outcome| *outcome != first) {
-            return FightOutcomeView {
-                outcome: FightOutcome::Unknown,
-                evidence_count,
-                method: "incomplete_or_conflicting_segment_evidence".to_string(),
-            };
-        }
-        resolved_segments.push(first);
-    }
-
-    let outcome = if resolved_segments.iter().all(|outcome| *outcome) {
-        FightOutcome::Victory
-    } else if resolved_segments.iter().all(|outcome| !*outcome) {
-        FightOutcome::Defeat
-    } else {
-        FightOutcome::Draw
-    };
-    FightOutcomeView {
-        outcome,
-        evidence_count,
-        method: match outcome {
-            FightOutcome::Draw => "mixed_segment_outcomes",
-            FightOutcome::Victory | FightOutcome::Defeat => "unanimous_segment_outcomes",
-            FightOutcome::Unknown => unreachable!("unknown is returned above"),
-        }
-        .to_string(),
-    }
-}
-
+/// Resolves the canonical Fight outcome from its persisted battle segments.
+///
+/// The persisted snapshot is the only evidence. `event_battles.is_win` used to
+/// be mixed in as a second stream, but it was written from the *raw* upstream
+/// payload while `guilds_json` stored the crowned copy — so the two disagreed
+/// on almost every decided battle and the resolver reported "conflicting
+/// evidence" (`Unknown`). Both are now derived from
+/// [`crate::modules::battles::outcome`], so there is nothing left to reconcile.
+///
+/// A segment that has not been hydrated yet simply does not vote; see
+/// [`combine_segments`] for why that no longer poisons the whole fight.
 fn resolve_fight_outcome(
     fight_battles: &[fight_battle::Model],
     snapshots_by_battle: &HashMap<i64, crate::modules::battles::entities::Model>,
-    event_id: Option<i64>,
-    event_outcomes_by_segment: &HashMap<(i64, i64), Vec<bool>>,
     config: &Config,
 ) -> Result<FightOutcomeView, AppError> {
-    let friendly_guild_ids = config
-        .albion_allied_guild_ids()
-        .into_iter()
-        .chain(std::iter::once(config.albion_guild_id.clone()))
-        .collect::<HashSet<_>>();
-    let friendly_guild_names = config
-        .albion_allied_guild_names()
-        .into_iter()
-        .map(|name| name.to_ascii_lowercase())
-        .collect::<HashSet<_>>();
-    let mut segment_evidence = Vec::with_capacity(fight_battles.len());
+    let side = friendly_side(config);
+    let mut verdicts = Vec::with_capacity(fight_battles.len());
 
     for segment in fight_battles {
-        let mut outcomes = Vec::new();
-        if let Some(snapshot) = snapshots_by_battle.get(&segment.battle_id) {
-            let guilds: Vec<BattleGuildSummary> =
-                parse_snapshot(&snapshot.guilds_json, "guild", snapshot.battle_id)?;
-            outcomes.extend(guilds.into_iter().filter_map(|guild| {
-                (friendly_guild_ids.contains(&guild.id)
-                    || friendly_guild_names.contains(&guild.name.to_ascii_lowercase()))
-                .then_some(guild.winner)
-            }));
-        }
-        if let Some(event_id) = event_id {
-            if let Some(event_outcomes) =
-                event_outcomes_by_segment.get(&(event_id, segment.battle_id))
-            {
-                outcomes.extend(event_outcomes.iter().copied());
-            }
-        }
-        segment_evidence.push(outcomes);
+        let Some(snapshot) = snapshots_by_battle.get(&segment.battle_id) else {
+            verdicts.push(OutcomeVerdict {
+                outcome: BattleOutcome::Unknown,
+                method: "segment_not_hydrated",
+                fame_share: 0.0,
+            });
+            continue;
+        };
+        let guilds: Vec<BattleGuildSummary> =
+            parse_snapshot(&snapshot.guilds_json, "guild", snapshot.battle_id)?;
+        let lines = guilds
+            .iter()
+            .map(|guild| GuildLine {
+                id: &guild.id,
+                name: &guild.name,
+                kills: guild.kills,
+                deaths: guild.deaths,
+                kill_fame: guild.kill_fame,
+                winner: guild.winner,
+            })
+            .collect::<Vec<_>>();
+        verdicts.push(battle_outcome(&lines, snapshot.total_fame, &side));
     }
 
-    Ok(resolve_persisted_segment_outcomes(&segment_evidence))
+    let combined = combine_segments(&verdicts);
+    Ok(FightOutcomeView {
+        outcome: combined.outcome,
+        evidence_count: combined.segments_resolved,
+        method: combined.method,
+    })
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -1662,18 +1588,7 @@ async fn get_fight(
         .into_iter()
         .map(|snapshot| (snapshot.battle_id, snapshot))
         .collect::<HashMap<_, _>>();
-    let outcome = resolve_fight_outcome(
-        &fight_battles,
-        &snapshots_by_battle,
-        model.event_id,
-        &load_event_outcomes(
-            &db,
-            &model.event_id.into_iter().collect::<Vec<_>>(),
-            &battle_ids,
-        )
-        .await?,
-        &config,
-    )?;
+    let outcome = resolve_fight_outcome(&fight_battles, &snapshots_by_battle, &config)?;
     let analytics = build_fight_analytics(&fight_battles, &snapshots_by_battle)?;
     let mut observed_friendly_players = observed_friendly_players(&snapshots_by_battle, &config)?;
     let planned_comp = fight_planned_comp(&db, model.event_id).await?;
@@ -2165,6 +2080,7 @@ impl PlayerRollup {
 mod tests {
     use super::*;
     use crate::migration::MigratorTrait;
+    use crate::modules::battles::entities as battle_snapshot;
     use sea_orm::Database;
 
     async fn seed_db() -> DatabaseConnection {
@@ -2725,50 +2641,115 @@ mod tests {
         );
     }
 
+    /// Builds a persisted snapshot where our side takes `our_fame` of `total_fame`.
+    fn snapshot(battle_id: i64, our_fame: i64, total_fame: i64) -> battle_snapshot::Model {
+        let guilds = vec![
+            BattleGuildSummary {
+                id: "friendly".to_string(),
+                name: "Weaklings".to_string(),
+                alliance_name: None,
+                alliance_id: None,
+                players: 20,
+                kills: 5,
+                deaths: 5,
+                kill_fame: our_fame,
+                winner: false,
+                average_item_power: 0.0,
+            },
+            BattleGuildSummary {
+                id: "enemy".to_string(),
+                name: "ARCH".to_string(),
+                alliance_name: None,
+                alliance_id: None,
+                players: 20,
+                kills: 5,
+                deaths: 5,
+                kill_fame: total_fame - our_fame,
+                winner: false,
+                average_item_power: 0.0,
+            },
+        ];
+        battle_snapshot::Model {
+            id: battle_id,
+            battle_id,
+            start_time: timestamp(0),
+            end_time: None,
+            total_players: 40,
+            total_kills: 10,
+            total_fame,
+            guilds_json: serde_json::to_string(&guilds).expect("guilds serialize"),
+            players_json: "[]".to_string(),
+            kills_json: "[]".to_string(),
+            losses_json: serde_json::to_string(&BattleLossEstimate::default())
+                .expect("estimate serializes"),
+            fetched_at: timestamp(0),
+        }
+    }
+
     #[test]
-    fn unanimous_persisted_segment_outcomes_resolve_to_victory() {
-        let outcome = resolve_persisted_segment_outcomes(&[vec![true, true], vec![true]]);
+    fn segments_our_side_wins_resolve_the_fight_to_victory() {
+        let segments = [segment(10, 1), segment(11, 2)];
+        let snapshots = HashMap::from([
+            (10, snapshot(10, 700_000, 1_000_000)),
+            (11, snapshot(11, 800_000, 1_000_000)),
+        ]);
+
+        let outcome =
+            resolve_fight_outcome(&segments, &snapshots, &test_config()).expect("outcome resolves");
 
         assert_eq!(outcome.outcome, FightOutcome::Victory);
-        assert_eq!(outcome.evidence_count, 3);
-        assert_eq!(outcome.method, "unanimous_segment_outcomes");
+        assert_eq!(outcome.method, "unanimous_segments");
+        assert_eq!(outcome.evidence_count, 2);
     }
 
     #[test]
-    fn unanimous_persisted_segment_outcomes_resolve_to_defeat() {
-        let outcome = resolve_persisted_segment_outcomes(&[vec![false], vec![false, false]]);
+    fn segments_that_disagree_resolve_the_fight_to_a_draw() {
+        let segments = [segment(10, 1), segment(11, 2)];
+        let snapshots = HashMap::from([
+            (10, snapshot(10, 700_000, 1_000_000)),
+            (11, snapshot(11, 100_000, 1_000_000)),
+        ]);
 
-        assert_eq!(outcome.outcome, FightOutcome::Defeat);
-        assert_eq!(outcome.evidence_count, 3);
-        assert_eq!(outcome.method, "unanimous_segment_outcomes");
-    }
-
-    #[test]
-    fn mixed_fully_evidenced_segments_resolve_to_draw() {
-        let outcome = resolve_persisted_segment_outcomes(&[vec![true], vec![false]]);
+        let outcome =
+            resolve_fight_outcome(&segments, &snapshots, &test_config()).expect("outcome resolves");
 
         assert_eq!(outcome.outcome, FightOutcome::Draw);
-        assert_eq!(outcome.evidence_count, 2);
-        assert_eq!(outcome.method, "mixed_segment_outcomes");
+        assert_eq!(outcome.method, "mixed_segments");
     }
 
+    /// The regression that motivated the shared rule: an unhydrated segment used
+    /// to make the whole fight `Unknown`.
     #[test]
-    fn missing_or_conflicting_segment_evidence_is_unknown() {
-        let missing = resolve_persisted_segment_outcomes(&[vec![true], vec![]]);
-        let conflicting = resolve_persisted_segment_outcomes(&[vec![true, false]]);
+    fn an_unhydrated_segment_no_longer_poisons_the_fight() {
+        let segments = [segment(10, 1), segment(11, 2)];
+        let snapshots = HashMap::from([(10, snapshot(10, 700_000, 1_000_000))]);
 
-        assert_eq!(missing.outcome, FightOutcome::Unknown);
-        assert_eq!(conflicting.outcome, FightOutcome::Unknown);
-        assert_eq!(missing.method, "incomplete_or_conflicting_segment_evidence");
+        let outcome =
+            resolve_fight_outcome(&segments, &snapshots, &test_config()).expect("outcome resolves");
+
+        assert_eq!(outcome.outcome, FightOutcome::Victory);
+        assert_eq!(outcome.method, "unanimous_segments_partial_coverage");
         assert_eq!(
-            conflicting.method,
-            "incomplete_or_conflicting_segment_evidence"
+            outcome.evidence_count, 1,
+            "the verdict must disclose that it rests on one of two segments"
         );
     }
 
     #[test]
-    fn no_segments_has_no_outcome_evidence() {
-        let outcome = resolve_persisted_segment_outcomes(&[]);
+    fn a_fight_with_no_hydrated_segment_stays_unknown() {
+        let segments = [segment(10, 1)];
+
+        let outcome = resolve_fight_outcome(&segments, &HashMap::new(), &test_config())
+            .expect("outcome resolves");
+
+        assert_eq!(outcome.outcome, FightOutcome::Unknown);
+        assert_eq!(outcome.method, "no_resolved_segments");
+    }
+
+    #[test]
+    fn a_fight_with_no_segments_has_no_outcome_evidence() {
+        let outcome =
+            resolve_fight_outcome(&[], &HashMap::new(), &test_config()).expect("outcome resolves");
 
         assert_eq!(outcome.outcome, FightOutcome::Unknown);
         assert_eq!(outcome.evidence_count, 0);

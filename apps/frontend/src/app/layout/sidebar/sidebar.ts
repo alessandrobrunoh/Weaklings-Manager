@@ -82,7 +82,8 @@ export type { NavItem, NavSection } from '../nav';
       height: 1.5rem;
       flex-shrink: 0;
       border-radius: var(--radius-inputs);
-      background: var(--color-primary);
+      /* The one spot on every page that shows the guild's whole brand ramp. */
+      background: var(--gradient-brand);
       color: var(--color-on-primary);
       font-size: 0.6875rem;
       font-weight: 800;

@@ -178,6 +178,13 @@ export const APP_NAV_SECTIONS: NavSection[] = [
 
 export const ADMIN_PANELS: readonly AdminPanel[] = [
   {
+    path: '/admin/general',
+    icon: 'sparkles',
+    labelKey: 'nav.admin.general',
+    hintKey: 'admin.hub.generalHint',
+    permissions: ['admin.settings.manage'],
+  },
+  {
     path: '/admin/withdrawals',
     icon: 'bank',
     labelKey: 'nav.admin.withdrawals',

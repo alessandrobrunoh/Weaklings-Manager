@@ -26,6 +26,9 @@ pub mod giveaway {
         pub created_at: DateTimeWithTimeZone,
         /// Optional Guild Bank silver credited to the winner.
         pub silver_amount: Option<Decimal>,
+        /// Optional regear request bonus credited to the winner's bonus pool on draw, clamped at
+        /// the tenant's `regear_settings.bonus_request_cap`.
+        pub regear_request_bonus: Option<i32>,
         /// Winner, once drawn.
         pub winner_user_id: Option<i64>,
         /// When the draw ran.

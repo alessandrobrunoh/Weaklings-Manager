@@ -128,6 +128,8 @@ export interface DiscordUserProfile {
   tenant_id?: string | null;
   tenant_name?: string | null;
   features?: string[];
+  /** This tenant's brand colours; absent means the product defaults. */
+  brand?: BrandColors | null;
 }
 
 export interface PlatformTenant {
@@ -200,6 +202,18 @@ export interface RegisterableGuild {
 export interface BotInvite {
   url: string;
   client_id: string;
+}
+
+/**
+ * A tenant's three brand colours, as `#rrggbb`.
+ *
+ * `null` on a colour means the guild never picked one and keeps the product
+ * default, so absent and "reset to default" are the same state.
+ */
+export interface BrandColors {
+  primary?: string | null;
+  secondary?: string | null;
+  tertiary?: string | null;
 }
 
 export interface TenantStatus {
@@ -999,6 +1013,12 @@ export interface BattleSummary {
   total_kills: number;
   total_fame: number;
   guilds: BattleGuildSummary[];
+  /**
+   * Our side's outcome, decided by the backend's single rule. Absent only on
+   * payloads that never passed through a guild-scoped service call — render it,
+   * never recompute it.
+   */
+  outcome?: 'victory' | 'defeat' | 'draw' | 'unknown';
 }
 
 export interface BattlePlayer {
@@ -1694,6 +1714,36 @@ export interface CompDetail extends CompSummary {
   versions?: VersionRef[];
 }
 
+export interface ItemPriceRow {
+  slot: BuildSlot;
+  openalbion_item_id: number;
+  openalbion_item_name: string;
+  unit_price: number | string;
+  city: string;
+}
+
+export interface BuildPriceView {
+  build_id: number;
+  items: ItemPriceRow[];
+  total: number | string;
+  priced_at: string;
+}
+
+export interface CompBuildPriceRow {
+  build_id: number;
+  build_name: string;
+  quantity: number;
+  unit_total: number | string;
+  subtotal: number | string;
+}
+
+export interface CompPriceView {
+  comp_id: number;
+  builds: CompBuildPriceRow[];
+  total: number | string;
+  priced_at: string;
+}
+
 export interface CompFilters {
   category_id?: number;
   q?: string;
@@ -1812,13 +1862,16 @@ export interface RegearBreakdownRow {
   included: boolean;
 }
 
+export type RegearSource = 'extracted' | 'self_reported';
+
 export interface RegearDeathView {
   id: number;
   event_id: number;
   event_title: string;
-  event_battle_id: number;
-  albionbb_battle_id: string;
-  albion_kill_event_id: string;
+  event_battle_id: number | null;
+  albionbb_battle_id: string | null;
+  albion_kill_event_id: string | null;
+  source: RegearSource;
   killed_at: string;
   user_id: number | null;
   player_name: string;
@@ -1848,16 +1901,18 @@ export interface RegearDeathFilters {
 }
 
 export interface RegearSettingsView {
-  max_regears_per_event: number;
-  max_regears_per_month: number;
+  weekly_request_topup_amount: number;
+  weekly_request_cap: number;
+  bonus_request_cap: number;
   enabled_slots_mask: number;
   pricing_location: string;
   pricing_fallback_strategy: 'cheapest_any' | 'strict';
 }
 
 export interface UpdateRegearSettingsRequest {
-  max_regears_per_event?: number;
-  max_regears_per_month?: number;
+  weekly_request_topup_amount?: number;
+  weekly_request_cap?: number;
+  bonus_request_cap?: number;
   enabled_slots_mask?: number;
   pricing_location?: string;
   pricing_fallback_strategy?: 'cheapest_any' | 'strict';
@@ -1874,10 +1929,10 @@ export interface RejectRegearRequest {
 }
 
 export interface RegearBudgetSummary {
-  per_event_used: number;
-  per_event_max: number;
-  per_month_used: number;
-  per_month_max: number;
+  weekly_balance: number;
+  weekly_cap: number;
+  bonus_balance: number;
+  bonus_cap: number;
 }
 
 export interface RegearExtractionReport {
@@ -1885,6 +1940,36 @@ export interface RegearExtractionReport {
   battles_scanned: number;
   deaths_inserted: number;
   deaths_skipped: number;
+}
+
+export interface SelfServiceCompBuildOption {
+  build_id: number;
+  build_name: string;
+  quantity: number;
+}
+
+export interface SelfServiceEventOption {
+  event_id: number;
+  event_title: string;
+  primary_build_id: number | null;
+  primary_build_name: string | null;
+  secondary_build_id: number | null;
+  secondary_build_name: string | null;
+  comp_id: number;
+  comp_builds: SelfServiceCompBuildOption[];
+}
+
+export interface RegearItemOverride {
+  slot: RegearBuildSlot;
+  openalbion_item_id: number;
+  openalbion_item_quality: number;
+  openalbion_item_enchantment: number;
+}
+
+export interface CreateSelfServiceRegearRequest {
+  event_id: number;
+  build_id: number;
+  item_overrides: RegearItemOverride[];
 }
 
 /* ------------------------------ Admin ------------------------------- */
@@ -2508,6 +2593,7 @@ export interface GiveawayView {
   created_by_username: string;
   created_at: string;
   silver_amount?: string | number | null;
+  regear_request_bonus?: number | null;
   winner_user_id?: number | null;
   winner_username?: string | null;
   winner_discord_id?: string | null;
@@ -2538,6 +2624,7 @@ export interface CreateGiveawayRequest {
   description?: string | null;
   ends_at: string;
   silver_amount?: string | null;
+  regear_request_bonus?: number | null;
   prizes: CreateGiveawayPrizeRequest[];
 }
 

@@ -34,11 +34,7 @@ import {
   type SearchDialogOption,
 } from '../../shared/components/search-dialog/search-dialog';
 import { StatusChip } from '../../shared/components/status-chip/status-chip';
-import {
-  participantWeightChip,
-  participantWeightsAreValid,
-  redistributeWeights,
-} from './splits';
+import { participantWeightsAreValid, redistributeWeights } from './splits';
 
 type DetailMode = 'view' | 'edit';
 
@@ -376,13 +372,6 @@ function parsePercentageInput(raw: string): number | null {
                         <h3 class="text-xs font-medium uppercase tracking-wider text-[var(--color-text)]">
                           {{ t('splits.roster_management') }} ({{ editParticipants().length }})
                         </h3>
-                        <span
-                          class="chip font-mono text-xs font-medium"
-                          [class.chip--success]="editWeightsAreValid()"
-                          [class.chip--warning]="!editWeightsAreValid()"
-                        >
-                          {{ editWeightChip() }}%
-                        </span>
                       </div>
 
                       <div class="flex items-center gap-1.5">
@@ -470,7 +459,7 @@ function parsePercentageInput(raw: string): number | null {
                     <button
                       type="submit"
                       class="btn btn--primary btn--sm"
-                      [disabled]="saving() || editTotalWeight() !== 100"
+                      [disabled]="saving() || !editWeightsAreValid()"
                     >
                       {{ saving() ? t('common.loading') : t('common.save') }}
                     </button>
@@ -1046,12 +1035,6 @@ export class SplitDetailPage {
 
   protected editWeightsAreValid(): boolean {
     return participantWeightsAreValid(
-      this.editParticipants().map((participant) => Number(participant.weight)),
-    );
-  }
-
-  protected editWeightChip(): number {
-    return participantWeightChip(
       this.editParticipants().map((participant) => Number(participant.weight)),
     );
   }

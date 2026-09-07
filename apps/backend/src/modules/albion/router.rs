@@ -418,8 +418,7 @@ pub async fn admin_link_user_handler(
         .admin_link_user(&db, user_id, &player.id, &player.name)
         .await?;
 
-    super::discord_nick::sync_guild_nickname(&cfg, &tenant.0, &link.discord_id, &player.name)
-        .await;
+    super::discord_nick::sync_guild_nickname(&cfg, &tenant.0, &link.discord_id, &player.name).await;
 
     Ok(Json(ApiResponse::new(AlbionLinkStatus::from(Some(link)))))
 }

@@ -95,6 +95,8 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     let battles_service = modules::battles::service::BattlesService::new(
         albionbb_service.clone(),
         cfg.albion_guild_id.clone(),
+        &cfg.albion_allied_guild_ids(),
+        &cfg.albion_allied_guild_names(),
         battles_server,
     );
 
@@ -147,6 +149,9 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         .layer(axum::Extension(battles_service))
         .layer(axum::Extension(regear_guild_context))
         .layer(axum::Extension(modules::intel::cache::ReportCache::new()))
+        .layer(axum::Extension(
+            modules::comps::price_cache::PriceCache::new(),
+        ))
         .layer(axum::Extension(
             modules::events::roster_hub::RosterHub::new(),
         ))

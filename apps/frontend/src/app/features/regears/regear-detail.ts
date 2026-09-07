@@ -85,9 +85,13 @@ interface EditableBreakdownRow extends RegearBreakdownRow {
             <div class="p-3 bg-[var(--color-surface-2)] rounded-lg">
               <dt class="text-xs text-[var(--color-text-secondary)] font-semibold uppercase">{{ t('regears.battle') }}</dt>
               <dd class="mt-0.5">
-                <a [routerLink]="['/battles', current.albionbb_battle_id]" class="font-bold text-sm text-[var(--color-primary)] hover:underline">
-                  Battle #{{ current.albionbb_battle_id }}
-                </a>
+                @if (current.albionbb_battle_id) {
+                  <a [routerLink]="['/battles', current.albionbb_battle_id]" class="font-bold text-sm text-[var(--color-primary)] hover:underline">
+                    Battle #{{ current.albionbb_battle_id }}
+                  </a>
+                } @else {
+                  <span class="chip text-xs">{{ t('regears.source.selfReported') }}</span>
+                }
               </dd>
             </div>
             <div class="p-3 bg-[var(--color-surface-2)] rounded-lg">

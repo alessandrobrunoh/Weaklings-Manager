@@ -22,9 +22,9 @@ use axum::{
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
 
 use super::models::{
-    AutoRoleSettingsView, CreateRoleRequest, DiscordChannelView, DiscordRoleView,
-    GuildSettingsView, PermissionMatrix, UpdateAutoRoleRequest, UpdateGuildSettingsRequest,
-    UpdateRolePermissionsRequest, UpdateRoleRequest,
+    AutoRoleSettingsView, BrandColorsView, CreateRoleRequest, DiscordChannelView, DiscordRoleView,
+    GuildSettingsView, PermissionMatrix, UpdateAutoRoleRequest, UpdateBrandColorsRequest,
+    UpdateGuildSettingsRequest, UpdateRolePermissionsRequest, UpdateRoleRequest,
 };
 use super::service::AdminService;
 use crate::modules::auth::entities::{role, role_permission};
@@ -46,6 +46,7 @@ pub fn router() -> Router {
             "/settings",
             get(get_guild_settings).put(update_guild_settings),
         )
+        .route("/branding", get(get_branding).put(update_branding))
         .route("/autorole", get(get_autorole).put(update_autorole))
         .route("/autorole/roles", get(list_discord_roles))
         .route(
@@ -359,6 +360,74 @@ async fn require_discord_catalog(user: &UserContext, perms: &Permissions) -> Res
     Err(AppError::Forbidden(
         "Missing permission to list Discord channels and roles".to_string(),
     ))
+}
+
+/// Read the guild's brand colours.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` if the caller lacks `admin.settings.manage`.
+#[utoipa::path(
+    get,
+    path = "/api/admin/branding",
+    tag = "admin",
+    summary = "Read the guild's brand colours",
+    description = "Returns the three colours the web app themes itself with for this guild. A \
+        `null` colour means the guild never picked one and keeps the product default. Members do \
+        not need this endpoint — their session already carries the colours; it exists so the \
+        settings screen can edit them. Requires `admin.settings.manage`.",
+    security(("session_cookie" = ["admin.settings.manage"])),
+    responses(
+        (status = 200, description = "Colours retrieved", body = BrandColorsView),
+        (status = 401, description = "Unauthorized", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks admin.settings.manage", body = ProblemDetails)
+    )
+)]
+pub async fn get_branding(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+) -> Result<Json<ApiResponse<BrandColorsView>>, AppError> {
+    user.require(&perms, Permission::AdminSettingsManage)
+        .await?;
+    Ok(Json(ApiResponse::new(
+        AdminService::get_brand_colors(&db).await?,
+    )))
+}
+
+/// Change the guild's brand colours.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` if the caller lacks `admin.settings.manage`, or
+/// `400` when a colour is not a hex triplet.
+#[utoipa::path(
+    put,
+    path = "/api/admin/branding",
+    tag = "admin",
+    summary = "Set the guild's brand colours",
+    description = "Accepts `#rgb` or `#rrggbb` and stores the expanded lowercase form. An omitted \
+        colour is left unchanged; `\"\"` clears it back to the product default. The change reaches \
+        other members on their next page load. Requires `admin.settings.manage`.",
+    security(("session_cookie" = ["admin.settings.manage"])),
+    responses(
+        (status = 200, description = "Colours saved", body = BrandColorsView),
+        (status = 400, description = "A colour is not a hex triplet", body = ProblemDetails),
+        (status = 401, description = "Unauthorized", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks admin.settings.manage", body = ProblemDetails)
+    )
+)]
+pub async fn update_branding(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Json(req): Json<UpdateBrandColorsRequest>,
+) -> Result<Json<ApiResponse<BrandColorsView>>, AppError> {
+    user.require(&perms, Permission::AdminSettingsManage)
+        .await?;
+    Ok(Json(ApiResponse::new(
+        AdminService::update_brand_colors(&db, user.user_id, &req).await?,
+    )))
 }
 
 /// Read the guild's Discord integration settings.

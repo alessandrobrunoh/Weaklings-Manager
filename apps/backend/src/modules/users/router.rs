@@ -11,8 +11,8 @@ use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedUserProfile, PaginationParams};
-use crate::tenant::CurrentTenantId;
 use crate::responses::{ApiResponse, ApiResponseUserMetrics, ApiResponseUserProfile};
+use crate::tenant::CurrentTenantId;
 use axum::{
     Extension, Json, Router,
     extract::{Path, Query},

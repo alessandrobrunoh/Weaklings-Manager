@@ -11,6 +11,7 @@ mod m20260908_000002_create_platform_roles;
 mod m20260908_000003_create_feature_catalog;
 mod m20260908_000004_tenant_onboarding;
 mod m20260908_000005_tenant_ranks;
+mod m20260908_000006_default_tenant_rank;
 
 /// Stable id of the seeded `SuperAdmin` platform role.
 pub const SUPERADMIN_ROLE_ID: &str = "01990000-0000-4000-8000-000000000001";
@@ -39,6 +40,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260908_000003_create_feature_catalog::Migration),
             Box::new(m20260908_000004_tenant_onboarding::Migration),
             Box::new(m20260908_000005_tenant_ranks::Migration),
+            Box::new(m20260908_000006_default_tenant_rank::Migration),
         ]
     }
 }
@@ -82,7 +84,7 @@ mod tests {
                 "control migration {name} collides with a tenant migration name"
             );
         }
-        assert_eq!(control.len(), 5);
+        assert_eq!(control.len(), 6);
     }
 
     #[tokio::test]
@@ -212,7 +214,7 @@ mod tests {
             .expect("row")
             .try_get_by_index(0)
             .expect("count");
-        assert_eq!(control_migration_count, 5);
+        assert_eq!(control_migration_count, 6);
         assert!(
             tenant_migration_count > 50,
             "expected the full tenant history, got {tenant_migration_count}"

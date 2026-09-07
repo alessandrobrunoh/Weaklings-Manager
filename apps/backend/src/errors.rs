@@ -237,7 +237,10 @@ mod tests {
             serde_json::from_slice(&bytes).expect("problem+json body parses");
         ProblemDetailsJson {
             status,
-            detail: json["detail"].as_str().expect("detail is a string").to_owned(),
+            detail: json["detail"]
+                .as_str()
+                .expect("detail is a string")
+                .to_owned(),
         }
     }
 

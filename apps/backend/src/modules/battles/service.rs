@@ -31,9 +31,10 @@ use super::entities::{
     ActiveModel as GuildBattleSnapshotActiveModel, Column as GuildBattleSnapshotColumn,
 };
 use super::models::{
-    BattleDetail, BattleFightMetadata, BattleLossEstimate, BattleSummary, GuildLossEstimate,
-    LinkedEvent, PlayerLossEstimate,
+    BattleDetail, BattleFightMetadata, BattleGuildSummary, BattleLossEstimate, BattleSummary,
+    GuildLossEstimate, LinkedEvent, PlayerLossEstimate,
 };
+use super::outcome::{self, BattleOutcome, FriendlySide, GuildLine};
 
 /// Upper bound on how many upstream battle-list pages `/me` will scan before
 /// giving up. Keeps the endpoint from scanning AlbionBB's entire history.
@@ -58,14 +59,24 @@ type BattleCatalogCache = Arc<RwLock<HashMap<i64, (Instant, Vec<BattleSummary>)>
 pub struct BattlesService {
     albionbb: AlbionBbService,
     guild_id: String,
+    /// Our guild plus its allies, used to classify outcomes the same way the
+    /// Fight resolver and the event linker do.
+    side: FriendlySide,
     server: Option<String>,
     catalog_cache: BattleCatalogCache,
 }
 
 impl BattlesService {
     #[must_use]
-    pub fn new(albionbb: AlbionBbService, guild_id: String, server: String) -> Self {
+    pub fn new(
+        albionbb: AlbionBbService,
+        guild_id: String,
+        allied_guild_ids: &[String],
+        allied_guild_names: &[String],
+        server: String,
+    ) -> Self {
         Self {
+            side: FriendlySide::new(&guild_id, allied_guild_ids, allied_guild_names),
             albionbb,
             guild_id,
             server: if server.is_empty() {
@@ -94,15 +105,10 @@ impl BattlesService {
         let min_players = min_players.unwrap_or(10);
         let catalog = self.guild_catalog(min_players).await?;
         let mut page = filter_sort_page_battles(
-            catalog,
-            &self.guild_id,
-            search,
-            outcome,
-            sort,
-            order,
-            pagination,
+            catalog, &self.side, search, outcome, sort, order, pagination,
         )?;
         self.hydrate_page(&mut page.items).await;
+        self.stamp_outcomes(&mut page.items);
         if let Err(error) = attach_fight_metadata(db, &mut page.items).await {
             tracing::warn!(error = %error, "failed to attach canonical Fight metadata to battle list");
         }
@@ -172,6 +178,18 @@ impl BattlesService {
         }
     }
 
+    /// Stamps each summary with the shared outcome verdict.
+    ///
+    /// Runs after hydration, because [`Self::hydrate_page`] replaces each item
+    /// with a freshly converted summary and would otherwise drop the field.
+    fn stamp_outcomes(&self, items: &mut [BattleSummary]) {
+        for item in items {
+            let verdict =
+                outcome::battle_outcome(&guild_lines(&item.guilds), item.total_fame, &self.side);
+            item.outcome = Some(verdict.outcome);
+        }
+    }
+
     /// Fetches full detail for a battle (battle + kills combined), cached
     /// server-side by the underlying AlbionBB service.
     pub async fn get_battle_detail(&self, battle_id: i64) -> Result<BattleDetail, AppError> {
@@ -207,6 +225,14 @@ impl BattlesService {
             .get_battle_kills(self.server.as_deref(), battle_id)
             .await?;
         let mut battle = BattleDetail::from_upstream(&detail, &kills);
+        battle.summary.outcome = Some(
+            outcome::battle_outcome(
+                &guild_lines(&battle.summary.guilds),
+                battle.summary.total_fame,
+                &self.side,
+            )
+            .outcome,
+        );
         let loss_scope = LossEstimateScope::from_battle(&self.guild_id, &detail.summary.guilds);
         battle.estimated_losses = estimate_losses(albiondata, &kills, &loss_scope)
             .await
@@ -285,15 +311,11 @@ impl BattlesService {
             }
         }
 
-        filter_sort_page_battles(
-            matched,
-            &self.guild_id,
-            search,
-            outcome,
-            sort,
-            order,
-            pagination,
-        )
+        let mut page = filter_sort_page_battles(
+            matched, &self.side, search, outcome, sort, order, pagination,
+        )?;
+        self.stamp_outcomes(&mut page.items);
+        Ok(page)
     }
 }
 
@@ -301,17 +323,27 @@ fn battle_deaths(battle: &BattleSummary) -> i64 {
     battle.guilds.iter().map(|guild| guild.deaths).sum()
 }
 
-fn battle_outcome(battle: &BattleSummary, guild_id: &str) -> &'static str {
-    let Some(our) = battle.guilds.iter().find(|guild| guild.id == guild_id) else {
-        return "contested";
-    };
-    if our.winner || (our.kills > our.deaths && our.kill_fame * 20 >= battle.total_fame * 7) {
-        return "victory";
-    }
-    if our.deaths > our.kills && our.kill_fame * 4 < battle.total_fame {
-        return "defeat";
-    }
-    "contested"
+/// Classifies a battle through the shared rule in [`crate::modules::battles::outcome`].
+///
+/// This used to carry its own fame thresholds, which disagreed with both the
+/// Fight resolver and the browser. It now only adapts the summary shape.
+pub(crate) fn battle_outcome(battle: &BattleSummary, side: &FriendlySide) -> BattleOutcome {
+    outcome::battle_outcome(&guild_lines(&battle.guilds), battle.total_fame, side).outcome
+}
+
+/// Borrows a battle's guild rows in the shape the outcome rule expects.
+fn guild_lines(guilds: &[BattleGuildSummary]) -> Vec<GuildLine<'_>> {
+    guilds
+        .iter()
+        .map(|guild| GuildLine {
+            id: &guild.id,
+            name: &guild.name,
+            kills: guild.kills,
+            deaths: guild.deaths,
+            kill_fame: guild.kill_fame,
+            winner: guild.winner,
+        })
+        .collect()
 }
 
 fn battle_matches_search(battle: &BattleSummary, query: &str) -> bool {
@@ -329,9 +361,9 @@ fn battle_matches_search(battle: &BattleSummary, query: &str) -> bool {
 
 fn filter_sort_page_battles(
     mut items: Vec<BattleSummary>,
-    guild_id: &str,
+    side: &FriendlySide,
     search: Option<&str>,
-    outcome: Option<&str>,
+    outcome_filter: Option<&str>,
     sort: Option<&str>,
     order: SortOrder,
     pagination: &PaginationParams,
@@ -340,8 +372,16 @@ fn filter_sort_page_battles(
         let query = query.to_lowercase();
         items.retain(|battle| battle_matches_search(battle, &query));
     }
-    if let Some(wanted) = outcome.map(str::trim).filter(|value| !value.is_empty()) {
-        items.retain(|battle| battle_outcome(battle, guild_id) == wanted);
+    if let Some(raw) = outcome_filter
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let wanted = BattleOutcome::from_query(raw).ok_or_else(|| {
+            AppError::Validation(format!(
+                "Unsupported outcome filter '{raw}'. Use victory, defeat, draw (contested) or unknown."
+            ))
+        })?;
+        items.retain(|battle| battle_outcome(battle, side) == wanted);
     }
 
     let sort_key = resolve_sort_key(
@@ -365,7 +405,9 @@ fn filter_sort_page_battles(
             "deaths" => battle_deaths(left).cmp(&battle_deaths(right)),
             "players" => left.total_players.cmp(&right.total_players),
             "id" => left.battle_id.cmp(&right.battle_id),
-            "outcome" => battle_outcome(left, guild_id).cmp(battle_outcome(right, guild_id)),
+            "outcome" => battle_outcome(left, side)
+                .as_str()
+                .cmp(battle_outcome(right, side).as_str()),
             _ => left.start_time.cmp(&right.start_time),
         };
         match order {
@@ -380,7 +422,12 @@ fn filter_sort_page_battles(
 mod filter_tests {
     use super::{battle_outcome, filter_sort_page_battles};
     use crate::modules::battles::models::{BattleFightMetadata, BattleGuildSummary, BattleSummary};
+    use crate::modules::battles::outcome::{BattleOutcome, FriendlySide};
     use crate::pagination::{PaginationParams, SortOrder};
+
+    fn our_side(guild_id: &str) -> FriendlySide {
+        FriendlySide::new(guild_id, &[], &[])
+    }
 
     fn guild(
         id: &str,
@@ -414,6 +461,7 @@ mod filter_tests {
             total_fame: fame,
             guilds,
             fight: None,
+            outcome: None,
         }
     }
 
@@ -468,7 +516,7 @@ mod filter_tests {
         ];
         let page = filter_sort_page_battles(
             items,
-            ours,
+            &our_side(ours),
             Some("enemy"),
             None,
             Some("fame"),
@@ -481,7 +529,58 @@ mod filter_tests {
         .unwrap();
         assert_eq!(page.total_items, 1);
         assert_eq!(page.items[0].battle_id, 2);
-        assert_eq!(battle_outcome(&page.items[0], ours), "defeat");
+        assert_eq!(
+            battle_outcome(&page.items[0], &our_side(ours)),
+            BattleOutcome::Defeat
+        );
+    }
+
+    /// `contested` was the previous vocabulary for a draw; existing links and
+    /// bookmarks must keep filtering.
+    #[test]
+    fn the_outcome_filter_still_accepts_contested() {
+        let ours = "g1";
+        let items = vec![battle(
+            1,
+            "2026-01-01T00:00:00Z",
+            1_000,
+            vec![
+                guild(ours, "Weaklings", 5, 5, 350, false),
+                guild("g2", "Enemy", 5, 5, 650, false),
+            ],
+        )];
+        let page = filter_sort_page_battles(
+            items,
+            &our_side(ours),
+            None,
+            Some("contested"),
+            None,
+            SortOrder::Desc,
+            &PaginationParams {
+                page: Some(1),
+                limit: Some(10),
+            },
+        )
+        .unwrap();
+        assert_eq!(page.total_items, 1);
+    }
+
+    #[test]
+    fn an_unsupported_outcome_filter_is_rejected() {
+        let error = filter_sort_page_battles(
+            vec![],
+            &our_side("g1"),
+            None,
+            Some("glorious"),
+            None,
+            SortOrder::Desc,
+            &PaginationParams {
+                page: Some(1),
+                limit: Some(10),
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(error, crate::errors::AppError::Validation(_)));
     }
 }
 

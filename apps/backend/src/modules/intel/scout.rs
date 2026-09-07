@@ -34,6 +34,14 @@ use crate::modules::intel::status::IntelScoutCategory;
 /// fields a group, and would otherwise create a scout per lone player.
 const MIN_ENEMY_PLAYERS: usize = 2;
 
+/// Role bucket for an enemy the kill feed never showed us.
+///
+/// Deliberately not a [`crate::modules::comps::status::BuildRole`]: it is the
+/// absence of a role, not a seventh one. `similarity` builds its role vector
+/// from `ROLE_KEYS`, so this key is ignored there, while `CompProfile::size`
+/// still counts the player and keeps the size penalty honest.
+pub const ROLE_UNOBSERVED: &str = "unobserved";
+
 /// One observed enemy player, as persisted in `scouted_comps.players_json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ScoutedPlayer {
@@ -59,9 +67,9 @@ pub struct ScoutDraft {
     pub opponent_guild_id: Option<String>,
     /// Opponent guild name.
     pub opponent_guild_name: String,
-    /// Opponent alliance name. Battle snapshots do not carry alliance data,
-    /// so this is always `None` today; the column exists so officers can fill
-    /// it in by hand without a migration.
+    /// Opponent alliance name, when the payload carried one on either the
+    /// player rows or the guild summary. `None` means the battle genuinely
+    /// showed no alliance, not that we stopped looking.
     pub opponent_alliance_name: Option<String>,
     /// Engagement bracket.
     pub category: IntelScoutCategory,
@@ -208,6 +216,13 @@ pub fn scout_from_snapshot(
             .map(|player| player.guild_id.trim())
             .find(|id| !id.is_empty())
             .map(str::to_string);
+        // AlbionBB carries the alliance on both the player rows and the guild
+        // summary, and both were being thrown away: the column was written as
+        // `None` with a comment saying officers could fill it in by hand, and
+        // no endpoint ever let them. Players first because the guild summary is
+        // the payload more often missing it.
+        let alliance_name =
+            first_alliance_name(&members, &guilds, guild_id.as_deref(), &guild_name);
 
         let mut profile = CompProfile::default();
         let mut roster = Vec::with_capacity(members.len());
@@ -216,27 +231,32 @@ pub fn scout_from_snapshot(
 
         for player in &members {
             let weapon = weapons.get(&player.name).cloned();
-            let (role, confidence) = match weapon.as_deref() {
+            // A player is only classifiable when the kill feed saw them, which
+            // is roughly "they killed or died". Everyone else used to be filed
+            // as DPS — a default that silently inflated the DPS count of every
+            // comp and then flowed into the role histogram, the fingerprint and
+            // the similarity score. They are now counted as [`ROLE_UNOBSERVED`]:
+            // still part of the roster and the size penalty, but contributing
+            // no opinion to the role vector, which is built strictly over
+            // `ROLE_KEYS`.
+            let (role, role_inferred) = match weapon.as_deref() {
                 Some(item) => {
                     weapon_sample += 1;
-                    classifier.classify(item)
+                    let (role, confidence) = classifier.classify(item);
+                    (
+                        role.as_str().to_string(),
+                        confidence == RoleConfidence::Heuristic,
+                    )
                 }
-                // No kill-feed sighting: contribute to the role histogram as a
-                // DPS (the safest default) but never to the weapon histogram,
-                // so partial coverage lowers confidence instead of inventing a
-                // weapon distribution.
-                None => (
-                    crate::modules::comps::status::BuildRole::Dps,
-                    RoleConfidence::Heuristic,
-                ),
+                None => (ROLE_UNOBSERVED.to_string(), false),
             };
-            profile.push_player(role.as_str(), weapon.as_deref());
+            profile.push_player(&role, weapon.as_deref());
             ip_total += player.item_power;
             roster.push(ScoutedPlayer {
                 name: player.name.clone(),
-                role: role.as_str().to_string(),
+                role,
                 weapon,
-                role_inferred: confidence == RoleConfidence::Heuristic,
+                role_inferred,
                 item_power: player.item_power,
             });
         }
@@ -256,7 +276,7 @@ pub fn scout_from_snapshot(
                 (!key.trim().is_empty() && key != guild_name).then(|| key.clone())
             }),
             opponent_guild_name: guild_name,
-            opponent_alliance_name: None,
+            opponent_alliance_name: alliance_name,
             category,
             fingerprint: fingerprint_of(&profile.roles, &profile.weapons),
             profile,
@@ -270,6 +290,38 @@ pub fn scout_from_snapshot(
     }
 
     Ok(drafts)
+}
+
+/// Finds the alliance an enemy guild belonged to at the time of the battle.
+///
+/// Player rows are checked first because the guild summary omits the alliance
+/// more often; the summary is the fallback, matched by id when we have one and
+/// by name otherwise, mirroring how the roster itself was grouped.
+fn first_alliance_name(
+    members: &[&BattlePlayer],
+    guilds: &[BattleGuildSummary],
+    guild_id: Option<&str>,
+    guild_name: &str,
+) -> Option<String> {
+    let from_players = members
+        .iter()
+        .filter_map(|player| player.alliance_name.as_deref())
+        .map(str::trim)
+        .find(|name| !name.is_empty());
+    if let Some(name) = from_players {
+        return Some(name.to_string());
+    }
+
+    guilds
+        .iter()
+        .find(|guild| match guild_id {
+            Some(id) => guild.id == id,
+            None => guild.name.eq_ignore_ascii_case(guild_name),
+        })
+        .and_then(|guild| guild.alliance_name.as_deref())
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
 }
 
 /// Deserializes one of the snapshot's JSON columns, naming the column on failure.
@@ -463,11 +515,92 @@ mod tests {
         assert_eq!(draft.player_count, 3);
         assert_eq!(draft.weapon_sample_size, 1);
         assert!(!draft.has_full_weapon_coverage());
-        // Roles still cover everyone; weapons only the sampled player.
+        // Everyone counts towards the roster size, but only the sampled player
+        // carries a weapon *and* a real role.
         assert_eq!(draft.profile.size(), 3);
         assert_eq!(draft.profile.weapons.values().sum::<i64>(), 1);
         assert_eq!(draft.profile.roles.get("healer"), Some(&1));
-        assert_eq!(draft.profile.roles.get("dps"), Some(&2));
+        assert_eq!(
+            draft.profile.roles.get(ROLE_UNOBSERVED),
+            Some(&2),
+            "players the kill feed never showed must not be filed as DPS"
+        );
+        assert_eq!(draft.profile.roles.get("dps"), None);
+    }
+
+    /// The unobserved bucket is not one of `ROLE_KEYS`, so it must not move the
+    /// role half of the similarity score — otherwise two comps would look alike
+    /// merely because the kill feed covered them equally badly.
+    #[test]
+    fn unobserved_players_do_not_shift_the_role_similarity() {
+        let mut observed_only = CompProfile::default();
+        observed_only.push_player("healer", Some("T8_MAIN_HOLYSTAFF"));
+
+        let mut with_unobserved = observed_only.clone();
+        with_unobserved.push_player(ROLE_UNOBSERVED, None);
+        with_unobserved.push_player(ROLE_UNOBSERVED, None);
+
+        let mut reference = CompProfile::default();
+        reference.push_player("healer", Some("T8_MAIN_HOLYSTAFF"));
+
+        assert_eq!(
+            crate::modules::intel::similarity::similarity(&observed_only, &reference),
+            100
+        );
+        // Only the size penalty separates them now, not a phantom DPS block.
+        assert!(
+            crate::modules::intel::similarity::similarity(&with_unobserved, &reference) < 100,
+            "the roster is still bigger, so the size penalty must still apply"
+        );
+    }
+
+    #[test]
+    fn the_enemy_alliance_is_captured_from_the_player_rows() {
+        let mut enemy = player("EnemyA", "foe-1", "Foe One", 1300.0);
+        enemy["alliance_name"] = json!("BLKS");
+        let snap = snapshot(
+            vec![
+                player("UsA", "our-guild", "Weaklings", 1400.0),
+                enemy,
+                player("EnemyB", "foe-1", "Foe One", 1300.0),
+            ],
+            vec![guild("our-guild", "Weaklings")],
+            vec![],
+        );
+        let drafts = scout_from_snapshot(&snap, &ctx(), &RoleClassifier::default()).unwrap();
+        assert_eq!(drafts[0].opponent_alliance_name.as_deref(), Some("BLKS"));
+    }
+
+    #[test]
+    fn the_enemy_alliance_falls_back_to_the_guild_summary() {
+        let mut enemy_guild = guild("foe-1", "Foe One");
+        enemy_guild["alliance_name"] = json!("BLKS");
+        let snap = snapshot(
+            vec![
+                player("UsA", "our-guild", "Weaklings", 1400.0),
+                player("EnemyA", "foe-1", "Foe One", 1300.0),
+                player("EnemyB", "foe-1", "Foe One", 1300.0),
+            ],
+            vec![guild("our-guild", "Weaklings"), enemy_guild],
+            vec![],
+        );
+        let drafts = scout_from_snapshot(&snap, &ctx(), &RoleClassifier::default()).unwrap();
+        assert_eq!(drafts[0].opponent_alliance_name.as_deref(), Some("BLKS"));
+    }
+
+    #[test]
+    fn an_enemy_with_no_alliance_stays_none() {
+        let snap = snapshot(
+            vec![
+                player("UsA", "our-guild", "Weaklings", 1400.0),
+                player("EnemyA", "foe-1", "Foe One", 1300.0),
+                player("EnemyB", "foe-1", "Foe One", 1300.0),
+            ],
+            vec![guild("our-guild", "Weaklings"), guild("foe-1", "Foe One")],
+            vec![],
+        );
+        let drafts = scout_from_snapshot(&snap, &ctx(), &RoleClassifier::default()).unwrap();
+        assert_eq!(drafts[0].opponent_alliance_name, None);
     }
 
     #[test]

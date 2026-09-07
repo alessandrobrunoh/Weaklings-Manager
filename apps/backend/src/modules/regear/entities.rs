@@ -19,13 +19,16 @@ pub mod regear_death {
         pub id: i64,
         /// The CTA event the death belongs to.
         pub event_id: i64,
-        /// The `event_battles` row the death came from.
-        pub event_battle_id: i64,
-        /// AlbionBB battle id (denormalized for drill-down).
-        pub albionbb_battle_id: String,
-        /// AlbionBB kill-event id (the kill feed entry that recorded this death).
-        pub albion_kill_event_id: String,
-        /// When the death occurred, taken from the kill event.
+        /// The `event_battles` row the death came from. `None` for a self-reported request,
+        /// which has no battle/kill-feed origin.
+        pub event_battle_id: Option<i64>,
+        /// AlbionBB battle id (denormalized for drill-down). `None` for a self-reported request.
+        pub albionbb_battle_id: Option<String>,
+        /// AlbionBB kill-event id (the kill feed entry that recorded this death). `None` for a
+        /// self-reported request.
+        pub albion_kill_event_id: Option<String>,
+        /// When the death occurred, taken from the kill event. For a self-reported request, the
+        /// submission time.
         pub killed_at: DateTimeWithTimeZone,
         /// The Discord-linked user id of the victim, or `None` if unlinked.
         pub user_id: Option<i64>,
@@ -57,6 +60,12 @@ pub mod regear_death {
         pub officer_note: Option<String>,
         /// The bank row created on accept, for audit.
         pub bank_transaction_id: Option<i64>,
+        /// `extracted` (born from the kill-feed extractor) or `self_reported` (member-initiated,
+        /// see [`super::super::status::RegearSource`]).
+        pub source: String,
+        /// The loadout actually priced, when it differs from `loadout_json` because the member
+        /// edited individual slots for a self-reported request. `None` when unedited.
+        pub override_loadout_json: Option<String>,
         /// Extraction time.
         pub created_at: DateTimeWithTimeZone,
         /// Last mutation time.
@@ -79,10 +88,14 @@ pub mod regear_setting {
         /// Always `1` (singleton guard).
         #[sea_orm(primary_key)]
         pub id: i64,
-        /// Max regears a user can request per CTA event.
-        pub max_regears_per_event: i32,
-        /// Max regears approved per user in a rolling 30-day window.
-        pub max_regears_per_month: i32,
+        /// How many requests are added to a user's weekly pool each elapsed week (lazily
+        /// computed — see `regear::credits`).
+        pub weekly_request_topup_amount: i32,
+        /// The weekly pool never accumulates past this cap, even across many unused weeks.
+        pub weekly_request_cap: i32,
+        /// The bonus pool (only ever credited by a giveaway prize) never accumulates past this
+        /// cap, even from a single large credit.
+        pub bonus_request_cap: i32,
         /// Bitmask over `BuildSlot` deciding which slots are reimbursable.
         pub enabled_slots_mask: i32,
         /// Albion city whose market prices are used for estimates.
@@ -101,9 +114,44 @@ pub mod regear_setting {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+/// Per-user regear request-credit balance: a weekly rollover pool plus a giveaway-earned bonus
+/// pool. One row per user, created lazily on first need (see `regear::credits`).
+pub mod regear_request_balance {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
+    #[sea_orm(table_name = "regear_request_balances")]
+    pub struct Model {
+        /// The user this balance belongs to. No explicit FK, matching `regear_deaths.user_id`.
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub user_id: i64,
+        /// Requests available from the weekly pool, as of `weekly_last_topup_at`.
+        pub weekly_balance: i32,
+        /// Anchor timestamp the weekly pool was last advanced from. Advanced lazily by whole
+        /// elapsed weeks on every read/write (see `regear::credits::apply_weekly_topup`).
+        pub weekly_last_topup_at: DateTimeWithTimeZone,
+        /// Requests available from the bonus pool. Only ever credited by a giveaway prize;
+        /// never regenerates on its own.
+        pub bonus_balance: i32,
+        /// Row creation time.
+        pub created_at: DateTimeWithTimeZone,
+        /// Last mutation time.
+        pub updated_at: DateTimeWithTimeZone,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 pub use regear_death::{
     ActiveModel as RegearDeathActiveModel, Column as RegearDeathColumn,
     Entity as RegearDeathEntity, Model as RegearDeathModel,
+};
+pub use regear_request_balance::{
+    ActiveModel as RegearRequestBalanceActiveModel, Column as RegearRequestBalanceColumn,
+    Entity as RegearRequestBalanceEntity, Model as RegearRequestBalanceModel,
 };
 pub use regear_setting::{
     ActiveModel as RegearSettingActiveModel, Column as RegearSettingColumn,

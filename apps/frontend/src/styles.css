@@ -155,15 +155,34 @@ html.dark {
   --color-text-steel: var(--color-ash);
   --color-text-disabled: #6e7387;
 
-  /* Blurple is the only saturated colour in the layout chrome */
-  --color-primary: var(--color-blurple);
-  --color-primary-hover: var(--color-dark-blurple);
-  --color-primary-active: #2b37b8;
-  --color-primary-container: color-mix(in oklab, var(--color-blurple) 18%, transparent);
+  /* Blurple is the only saturated colour in the layout chrome.
+
+     These three are the guild's to change. BrandingService sets --brand-* on
+     <html> from the session's tenant; the theme then decides what to do with
+     them, which is why the override is a separate variable rather than
+     --color-primary itself — an inline --color-primary would win over the
+     light theme's rule and skip its contrast adjustment. Everything below
+     derives from --color-primary, so a guild picking red repaints the product
+     without touching the theme, the surfaces, or the dark/light split. Never
+     hardcode a blurple where a derivation would do, or that spot stays blue on
+     a red server. */
+  --color-primary: var(--brand-primary, var(--color-blurple));
+  --color-secondary: var(--brand-secondary, #8b31a0);
+  --color-tertiary: var(--brand-tertiary, var(--color-fuchsia));
+  --color-primary-hover: color-mix(in oklab, var(--color-primary) 84%, #000);
+  --color-primary-active: color-mix(in oklab, var(--color-primary) 70%, #000);
+  --color-primary-container: color-mix(in oklab, var(--color-primary) 18%, transparent);
   --color-primary-soft: var(--color-primary-container);
-  --color-primary-subtle: color-mix(in oklab, var(--color-blurple) 10%, transparent);
+  --color-primary-subtle: color-mix(in oklab, var(--color-primary) 10%, transparent);
   --color-on-primary: #ffffff;
-  --color-logo-glow: color-mix(in oklab, var(--color-blurple) 26%, transparent);
+  --color-logo-glow: color-mix(in oklab, var(--color-primary) 26%, transparent);
+  /* The brand ramp, used wherever a surface wants all three at once. */
+  --gradient-brand: linear-gradient(
+    135deg,
+    var(--color-primary) 0%,
+    var(--color-secondary) 58%,
+    var(--color-tertiary) 100%
+  );
 
   /* Status colours — Discord's product states */
   --color-success: var(--color-spring-green);
@@ -259,12 +278,17 @@ html.light {
   --color-text-steel: #61657f;
   --color-text-disabled: #8a8fa5;
 
-  --color-primary: #4e5bd8;
-  --color-primary-hover: #3442d9;
-  --color-primary-active: #2b37b8;
-  --color-primary-container: color-mix(in oklab, #5865f2 14%, transparent);
+  /* Light mode darkens the brand hues rather than replacing them, so a guild's
+     colours survive the theme switch instead of snapping back to blurple, and
+     still carry their weight against white surfaces. */
+  --color-primary: color-mix(in oklab, var(--brand-primary, var(--color-blurple)) 88%, #000);
+  --color-secondary: color-mix(in oklab, var(--brand-secondary, #8b31a0) 90%, #000);
+  --color-tertiary: color-mix(in oklab, var(--brand-tertiary, var(--color-fuchsia)) 88%, #000);
+  --color-primary-hover: color-mix(in oklab, var(--color-primary) 82%, #000);
+  --color-primary-active: color-mix(in oklab, var(--color-primary) 68%, #000);
+  --color-primary-container: color-mix(in oklab, var(--color-primary) 14%, transparent);
   --color-primary-soft: var(--color-primary-container);
-  --color-primary-subtle: color-mix(in oklab, #5865f2 8%, transparent);
+  --color-primary-subtle: color-mix(in oklab, var(--color-primary) 8%, transparent);
   --color-on-primary: #ffffff;
 
   --color-success: #1a7f43;
@@ -1121,12 +1145,12 @@ html.light {
     background:
       radial-gradient(
         1100px 620px at 10% -12%,
-        color-mix(in oklab, var(--color-blurple) 55%, transparent),
+        color-mix(in oklab, var(--color-primary) 55%, transparent),
         transparent 62%
       ),
       radial-gradient(
         900px 520px at 94% 112%,
-        color-mix(in oklab, var(--color-fuchsia) 38%, transparent),
+        color-mix(in oklab, var(--color-tertiary) 38%, transparent),
         transparent 58%
       ),
       var(--color-rail);

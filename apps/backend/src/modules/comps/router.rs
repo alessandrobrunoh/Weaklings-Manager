@@ -28,8 +28,11 @@ use super::models::{
     UpdateBuildRequest, UpdateCompBuildQuantityRequest, UpdateCompCategoryRequest,
     UpdateCompRequest, UpsertBuildItemRequest,
 };
+use super::price_cache::PriceCache;
 use super::service::CompService;
+use crate::modules::albiondata::service::AlbionDataService;
 use crate::modules::combat::models::BuildItemPowerParams;
+use crate::tenant::CurrentTenantId;
 
 /// Selects which loadout of a build an item operation targets.
 ///
@@ -133,7 +136,9 @@ pub fn router() -> Router {
         .route("/builds/{id}/performance", get(get_build_performance))
         .route("/builds/{id}/item-power", get(get_build_item_power))
         .route("/builds/{id}/roster-fit", get(get_build_roster_fit))
+        .route("/builds/{id}/price", get(get_build_price))
         .route("/{id}/readiness", get(get_comp_readiness))
+        .route("/{id}/price", get(get_comp_price))
         .route("/builds/{id}/archive", post(archive_build))
         .route("/builds/{id}/unarchive", post(unarchive_build))
         // Comps
@@ -1358,4 +1363,92 @@ async fn get_build_performance(
     let service = crate::modules::events::service::EventService::new();
     let performance = service.get_build_performance(&db, id).await?;
     Ok(Json(ApiResponse::new(performance)))
+}
+
+/// Returns a build's total market price, computed live from Albion Online Data.
+///
+/// Served from a short-lived cache (see `comps::price_cache`) since pricing means a live call to
+/// a third-party market API — a repeat view within the cache window is served without refetching.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` if the caller lacks `comps.builds.view`. Returns `404 Not Found` if
+/// the build does not exist.
+#[utoipa::path(
+    get,
+    path = "/api/comps/builds/{id}/price",
+    tag = "comps",
+    summary = "Get a build's total market price",
+    description = "Prices the build's main-loadout items live from Albion Online Data, using the \
+        guild's configured `pricing_location`/`pricing_fallback_strategy` (the same knobs the \
+        regear admin panel exposes). Served from a short-lived cache.",
+    security(("session_cookie" = ["comps.builds.view"])),
+    params(("id" = i64, Path, description = "Build ID")),
+    responses(
+        (status = 200, description = "Build price computed", body = crate::modules::comps::models::BuildPriceView),
+        (status = 401, description = "Unauthorized", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks comps.builds.view", body = ProblemDetails),
+        (status = 404, description = "Build not found", body = ProblemDetails)
+    )
+)]
+async fn get_build_price(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Path(id): Path<i64>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(albiondata): Extension<AlbionDataService>,
+    Extension(cache): Extension<PriceCache>,
+    Extension(tenant): Extension<CurrentTenantId>,
+) -> Result<Json<ApiResponse<crate::modules::comps::models::BuildPriceView>>, AppError> {
+    user.require(&perms, Permission::CompsBuildsView).await?;
+    let settings = crate::modules::regear::service::load_settings(&db).await?;
+    if let Some(cached) = cache.get_build(&tenant.0, &settings.pricing_location, id) {
+        return Ok(Json(ApiResponse::new(cached)));
+    }
+    let view =
+        crate::modules::comps::pricing::price_build(&db, &albiondata, id, &settings, None).await?;
+    cache.put_build(&tenant.0, &settings.pricing_location, id, &view);
+    Ok(Json(ApiResponse::new(view)))
+}
+
+/// Returns a comp's total market price, computed live from Albion Online Data.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` if the caller lacks `comps.comps.view`. Returns `404 Not Found` if the
+/// comp does not exist.
+#[utoipa::path(
+    get,
+    path = "/api/comps/{id}/price",
+    tag = "comps",
+    summary = "Get a comp's total market price",
+    description = "Prices every build in the comp in one combined Albion Online Data query \
+        (Σ build price × quantity). Served from a short-lived cache.",
+    security(("session_cookie" = ["comps.comps.view"])),
+    params(("id" = i64, Path, description = "Comp ID")),
+    responses(
+        (status = 200, description = "Comp price computed", body = crate::modules::comps::models::CompPriceView),
+        (status = 401, description = "Unauthorized", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks comps.comps.view", body = ProblemDetails),
+        (status = 404, description = "Comp not found", body = ProblemDetails)
+    )
+)]
+async fn get_comp_price(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Path(id): Path<i64>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(albiondata): Extension<AlbionDataService>,
+    Extension(cache): Extension<PriceCache>,
+    Extension(tenant): Extension<CurrentTenantId>,
+) -> Result<Json<ApiResponse<crate::modules::comps::models::CompPriceView>>, AppError> {
+    user.require(&perms, Permission::CompsCompsView).await?;
+    let settings = crate::modules::regear::service::load_settings(&db).await?;
+    if let Some(cached) = cache.get_comp(&tenant.0, &settings.pricing_location, id) {
+        return Ok(Json(ApiResponse::new(cached)));
+    }
+    let view =
+        crate::modules::comps::pricing::price_comp(&db, &albiondata, id, &settings, None).await?;
+    cache.put_comp(&tenant.0, &settings.pricing_location, id, &view);
+    Ok(Json(ApiResponse::new(view)))
 }

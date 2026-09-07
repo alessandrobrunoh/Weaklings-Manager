@@ -50,6 +50,7 @@ import {
   buildApplicationFinalEmbed,
   buildApplicationErrorEmbed,
   buildApplicationResolutionComponents,
+  buildApplicationModal,
   type ApplicationResolutionAction,
 } from "../embeds/application.embed.js";
 import type { ApplicationView, GuildSettingsView } from "../api/types.js";
@@ -119,7 +120,7 @@ async function handleApplicationButton(
   rest: string[],
 ): Promise<void> {
   if (action === 'create') {
-    await createApplicationChannel(interaction, api);
+    await promptForApplication(interaction, api);
     return;
   }
 
@@ -189,59 +190,22 @@ async function handleApplicationButton(
   await interaction.editReply({ embeds: [buildApplicationFinalEmbed(settings, resolutionAction)] });
 }
 
-async function createApplicationChannel(interaction: ButtonInteraction, api: ApiClient): Promise<void> {
-  await interaction.deferReply({ flags: ['Ephemeral'] });
-  const guild = interaction.guild;
-  if (!guild) throw new Error('Applications can only be opened inside a server.');
+/**
+ * Opens the application form.
+ *
+ * Nothing is created here: `showModal` has to be the first response to the
+ * click (a deferred interaction can no longer open a form), so every check and
+ * every write happens once the applicant submits — see `handlers/modal.ts`.
+ * The one thing worth checking first is whether applications are open at all,
+ * since it would be unkind to make someone fill a form that cannot be sent.
+ */
+async function promptForApplication(interaction: ButtonInteraction, api: ApiClient): Promise<void> {
   const settings = await getSettingsService(api.guildId).applicationsSettings();
   if (!settings.discord_applications_open) {
-    await interaction.editReply({ embeds: [buildApplicationClosedEmbed(settings)] });
+    await interaction.reply({ embeds: [buildApplicationClosedEmbed(settings)], flags: ['Ephemeral'] });
     return;
   }
-  const categoryId = settings.discord_applications_category_id;
-  if (!categoryId) {
-    throw new Error('La categoria delle application non è configurata. Aprila da Impostazioni Discord e scegli una categoria.');
-  }
-  const parent = guild.channels.cache.get(categoryId) ?? await guild.channels.fetch(categoryId).catch(() => null);
-  if (!parent || parent.type !== ChannelType.GuildCategory) {
-    throw new Error('La categoria delle application non è valida. Riapri Impostazioni Discord e seleziona una categoria, non un canale.');
-  }
-  const active = await api.get<ApplicationView | null>('api/applications/active', interaction.user.id);
-  if (active) {
-    await interaction.editReply({ embeds: [buildApplicationAlreadyOpenEmbed(settings, active.channel_id)] });
-    return;
-  }
-  const safeName = interaction.user.username.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 80) || interaction.user.id;
-  const manageRoleId = settings.discord_applications_manage_role_id;
-  const manageRole = manageRoleId ? guild.roles.cache.get(manageRoleId) ?? await guild.roles.fetch(manageRoleId).catch(() => null) : null;
-  const channel = await guild.channels.create({
-    name: `ticket-${safeName}`.slice(0, 100),
-    type: ChannelType.GuildText,
-    parent: parent.id,
-    permissionOverwrites: [
-      { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-      { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
-      ...(manageRole ? [{ id: manageRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }] : []),
-      ...(interaction.client.user ? [{ id: interaction.client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels] }] : []),
-    ],
-    reason: `Application opened by ${interaction.user.tag}`,
-  });
-  try {
-    const application = await api.post<ApplicationView>(
-      'api/applications',
-      { channel_id: channel.id, username: interaction.user.username },
-      interaction.user.id,
-    );
-    await channel.send({
-      embeds: [buildApplicationWelcomeEmbed(settings)],
-      components: buildApplicationWelcomeComponents(application.id),
-      allowedMentions: { parse: [] },
-    });
-  } catch (error) {
-    await channel.delete('Application persistence failed').catch(() => undefined);
-    throw error;
-  }
-  await interaction.editReply({ embeds: [createResponseEmbed('success', 'Application created', `La tua application è stata aperta in <#${channel.id}>.`, 'APPLICATIONS')] });
+  await interaction.showModal(buildApplicationModal(settings));
 }
 
 async function finalizeApplicationChannel(
@@ -267,17 +231,22 @@ async function finalizeApplicationChannel(
 
   // Accept/Decline are clicked from an ephemeral manager prompt, so also update
   // the persistent welcome message to prevent stale controls being reused.
+  // Every match, not just the newest: a reopened ticket carries one welcome
+  // message per round, and leaving the older ones live-looking invites clicks
+  // that can only end in an error.
   if ('messages' in channel) {
     const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
-    const welcome = messages?.find((message) => message.components.some((row) =>
+    const welcomes = messages?.filter((message) => message.components.some((row) =>
       row.type === ComponentType.ActionRow && row.components.some((component) =>
         component.customId === `application:manage:${application.id}`,
       ),
     ));
-    await welcome?.edit({
-      embeds: [buildApplicationFinalEmbed(settings, action)],
-      components: terminalComponents,
-    }).catch(() => undefined);
+    for (const welcome of welcomes?.values() ?? []) {
+      await welcome.edit({
+        embeds: [buildApplicationFinalEmbed(settings, action)],
+        components: terminalComponents,
+      }).catch(() => undefined);
+    }
   }
   await channel.send(buildApplicationFinalMessage(settings, action)).catch(() => undefined);
 }

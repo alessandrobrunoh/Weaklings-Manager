@@ -344,15 +344,18 @@ mod tests {
         // implicitly — a member with zero listed roles can still be an admin
         // through a guild-wide @everyone grant.
         let roles = HashMap::from([("guild-1", PERMISSION_ADMINISTRATOR)]);
-        assert!(compute_can_manage(Some("owner"), "member", "guild-1", &roles, &[]));
+        assert!(compute_can_manage(
+            Some("owner"),
+            "member",
+            "guild-1",
+            &roles,
+            &[]
+        ));
     }
 
     #[test]
     fn a_held_role_with_manage_guild_is_sufficient() {
-        let roles = HashMap::from([
-            ("guild-1", 0u64),
-            ("role-officer", PERMISSION_MANAGE_GUILD),
-        ]);
+        let roles = HashMap::from([("guild-1", 0u64), ("role-officer", PERMISSION_MANAGE_GUILD)]);
         assert!(compute_can_manage(
             Some("owner"),
             "member",

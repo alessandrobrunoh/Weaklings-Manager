@@ -414,3 +414,41 @@ pub struct UpdateGuildSettingsRequest {
     #[schema(value_type = Option<String>, example = "20.00")]
     pub default_split_fee: Option<rust_decimal::Decimal>,
 }
+
+/// The guild's three brand colours, as the web app reads them.
+///
+/// Kept apart from [`GuildSettingsView`] even though they share a row: this is
+/// the one slice of guild settings every member's session carries, so it stays
+/// a small payload of its own rather than dragging the Discord configuration
+/// along with it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct BrandColorsView {
+    /// Actions, active states and focus. `None` means "use the product default".
+    pub primary: Option<String>,
+    /// Supporting accent, second stop of the accent gradients.
+    pub secondary: Option<String>,
+    /// Third accent, final stop of the accent gradients.
+    pub tertiary: Option<String>,
+}
+
+impl BrandColorsView {
+    /// True when the guild has picked no colour at all.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.primary.is_none() && self.secondary.is_none() && self.tertiary.is_none()
+    }
+}
+
+/// Request body to change the guild's brand colours.
+///
+/// Follows the same convention as the rest of guild settings: an absent field
+/// is left as-is, and `""` clears the colour back to the product default.
+#[derive(Debug, Clone, Default, Deserialize, ToSchema)]
+pub struct UpdateBrandColorsRequest {
+    /// New primary, as `#rgb` or `#rrggbb`. Omit to leave unchanged; `""` clears.
+    pub primary: Option<String>,
+    /// New secondary. Omit to leave unchanged; `""` clears.
+    pub secondary: Option<String>,
+    /// New tertiary. Omit to leave unchanged; `""` clears.
+    pub tertiary: Option<String>,
+}

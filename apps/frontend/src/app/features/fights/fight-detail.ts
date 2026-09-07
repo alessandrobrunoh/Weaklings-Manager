@@ -28,7 +28,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { ThemeService } from '../../core/services/theme.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
-import { resolveBattleOutcome } from '../battles/battle-outcome';
+import { battleOutcomeLabel, type BattleOutcomeType } from '../battles/battle-outcome';
 import { Avatar } from '../../shared/components/avatar/avatar';
 import { Chart, type ChartTableRow } from '../../shared/components/chart/chart';
 import { chartChrome, chartPalette } from '../../shared/components/chart/chart-theme';
@@ -163,7 +163,8 @@ type PendingFightMutation =
             class="chip font-semibold"
             [class.chip--success]="fightVerdict().type === 'victory'"
             [class.chip--error]="fightVerdict().type === 'defeat'"
-            [class.chip--warning]="fightVerdict().type === 'contested'"
+            [class.chip--warning]="fightVerdict().type === 'draw'"
+            [class.chip--neutral]="fightVerdict().type === 'unknown'"
           >
             {{ fightVerdict().label }}
           </span>
@@ -1520,39 +1521,20 @@ export class FightDetailPage {
     return this.fight()?.estimated_losses?.total_items ?? 0;
   });
 
-  protected readonly fightVerdict = computed<{ label: string; type: 'victory' | 'defeat' | 'contested' }>(() => {
-    const fight = this.fight();
-    if (!fight) return { label: 'Contested', type: 'contested' };
-
-    if (fight.outcome?.outcome) {
-      switch (fight.outcome.outcome) {
-        case 'victory':
-          return { label: this.t('battles.victory'), type: 'victory' };
-        case 'defeat':
-          return { label: this.t('battles.defeat'), type: 'defeat' };
-        case 'draw':
-        case 'unknown':
-        default:
-          break;
-      }
-    }
-
-    if (fight.guilds && fight.guilds.length > 0) {
-      const outcome = resolveBattleOutcome({
-        guilds: fight.guilds,
-        totalFame: this.totalFame(),
-        ourGuildName: this.ourGuildName(),
-      });
-      return {
-        label: this.t(`battles.${outcome}` as TranslationKey),
-        type: outcome,
-      };
-    }
-
-    const kd = fight.kill_death_ratio ?? fight.stats?.kill_death_ratio ?? 1;
-    if (kd >= 1.2) return { label: this.t('battles.victory'), type: 'victory' };
-    if (kd <= 0.8) return { label: this.t('battles.defeat'), type: 'defeat' };
-    return { label: this.t('battles.contested'), type: 'contested' };
+  /**
+   * Renders the verdict the backend resolved. It does not compute one.
+   *
+   * There used to be two fallbacks here — the browser's own alliance-and-fame
+   * heuristic, then a bare K/D threshold — which fired whenever the backend
+   * answered `draw` or `unknown`. Both were silently overriding a deliberate
+   * answer: `unknown` means the evidence does not identify our side, and
+   * guessing from K/D turned "we don't know" into a confident badge.
+   * `modules::battles::outcome` now tolerates partially hydrated fights, so
+   * `unknown` is rare and honest when it happens.
+   */
+  protected readonly fightVerdict = computed<{ label: string; type: BattleOutcomeType }>(() => {
+    const outcome = this.fight()?.outcome?.outcome ?? 'unknown';
+    return { label: this.t(battleOutcomeLabel(outcome)), type: outcome };
   });
 
   // MVPs

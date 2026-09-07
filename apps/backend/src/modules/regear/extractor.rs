@@ -144,9 +144,9 @@ impl<'a> RegearExtractor<'a> {
 
                 let active = RegearDeathActiveModel {
                     event_id: Set(event_id),
-                    event_battle_id: Set(battle.id),
-                    albionbb_battle_id: Set(battle.albionbb_battle_id.clone()),
-                    albion_kill_event_id: Set(kill.event_id.clone()),
+                    event_battle_id: Set(Some(battle.id)),
+                    albionbb_battle_id: Set(Some(battle.albionbb_battle_id.clone())),
+                    albion_kill_event_id: Set(Some(kill.event_id.clone())),
                     killed_at: Set(killed_at),
                     user_id: Set(user_id),
                     player_name: Set(kill.victim_name.clone()),

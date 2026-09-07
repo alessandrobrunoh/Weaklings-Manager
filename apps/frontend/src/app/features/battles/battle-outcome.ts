@@ -1,51 +1,31 @@
-import type { BattleGuildSummary } from '../../core/models/api.models';
-
-export type BattleOutcomeType = 'victory' | 'defeat' | 'contested';
-
-export interface BattleOutcomeInput {
-  readonly guilds: readonly BattleGuildSummary[];
-  readonly totalFame: number;
-  readonly ourGuildName: string;
-}
+import type { TranslationKey } from '../../i18n/en';
 
 /**
- * Single source of truth for "did we win this battle".
+ * The outcome vocabulary the backend serializes.
  *
- * Both the battles list and the battle detail page call this, so the same
- * battle can never read "Victory" in one place and "Contested" in the other
- * — they previously used different guild scopes (a single guild vs. an
- * alliance) and different fame-share thresholds.
- *
- * Aggregates every guild sharing our guild's alliance (or just our guild, if
- * it fought solo) and classifies the outcome from the combined kills/deaths
- * and share of the battle's total fame.
+ * `contested` is not in it: it was the old label for a draw and is still
+ * accepted as a filter value by `GET /api/battles`, but nothing renders it any
+ * more.
  */
-export function resolveBattleOutcome({
-  guilds,
-  totalFame,
-  ourGuildName,
-}: BattleOutcomeInput): BattleOutcomeType {
-  const ourName = ourGuildName.toLowerCase();
-  const ourGuild = guilds.find((g) => g.name.toLowerCase() === ourName);
-  if (!ourGuild) {
-    return 'contested';
-  }
+export type BattleOutcomeType = 'victory' | 'defeat' | 'draw' | 'unknown';
 
-  const ourAllianceName = ourGuild.alliance_name?.trim() || null;
-  const ourGuilds = ourAllianceName
-    ? guilds.filter((g) => (g.alliance_name?.trim() || null) === ourAllianceName)
-    : [ourGuild];
+const OUTCOME_LABELS: Record<BattleOutcomeType, TranslationKey> = {
+  victory: 'battles.victory',
+  defeat: 'battles.defeat',
+  draw: 'battles.draw',
+  unknown: 'battles.unknown',
+};
 
-  const kills = ourGuilds.reduce((sum, g) => sum + g.kills, 0);
-  const deaths = ourGuilds.reduce((sum, g) => sum + g.deaths, 0);
-  const fame = ourGuilds.reduce((sum, g) => sum + g.kill_fame, 0);
-  const isWinner = ourGuilds.some((g) => g.winner) || (totalFame > 0 && fame >= totalFame * 0.45);
-
-  if (isWinner || (kills > deaths && totalFame > 0 && fame >= totalFame * 0.4)) {
-    return 'victory';
-  }
-  if (deaths > kills && totalFame > 0 && fame < totalFame * 0.3) {
-    return 'defeat';
-  }
-  return 'contested';
+/**
+ * Translation key for an outcome the backend already decided.
+ *
+ * This file used to *compute* the outcome, aggregating our alliance against its
+ * own 45%/40%/30% fame thresholds. The backend had two more rules of its own,
+ * so one battle could read "Victory" in the list and "Contested" on its detail
+ * page. The single rule now lives in `modules::battles::outcome` and every
+ * surface renders what it returns — a browser that scores battles by itself is
+ * a third opinion nobody asked for.
+ */
+export function battleOutcomeLabel(outcome: BattleOutcomeType | null | undefined): TranslationKey {
+  return OUTCOME_LABELS[outcome ?? 'unknown'];
 }

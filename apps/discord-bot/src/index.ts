@@ -4,6 +4,7 @@ import { ApiClient } from "./api/client.js";
 import type { AwardMessageRequest, AwardMessageResponse } from "./api/types.js";
 import { commands } from "./commands/index.js";
 import { handleButton } from "./handlers/button.js";
+import { handleModal } from "./handlers/modal.js";
 import { handleSelectMenu } from "./handlers/select.js";
 import { PollerManager } from "./services/poller-manager.js";
 import { assignJoinRole } from "./services/join-role.js";
@@ -101,6 +102,13 @@ async function main(): Promise<void> {
     if (interaction.isStringSelectMenu()) {
       if (!interaction.guildId) return;
       await handleSelectMenu(interaction, api.withGuild(interaction.guildId));
+      return;
+    }
+
+    // Modal submissions (Discord forms opened by a button)
+    if (interaction.isModalSubmit()) {
+      if (!interaction.guildId) return;
+      await handleModal(interaction, api.withGuild(interaction.guildId));
       return;
     }
   });

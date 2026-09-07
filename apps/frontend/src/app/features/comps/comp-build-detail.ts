@@ -21,6 +21,7 @@ import type {
   BuildRole,
   BuildSlot,
   BuildPerformanceView,
+  BuildPriceView,
   BuildSummary,
   ItemPowerView,
   OpenAlbionItem,
@@ -427,6 +428,38 @@ const ITEM_TIERS = [
               }
             </section>
 
+            <!-- Market Price Card -->
+            <section class="card p-5 border border-[var(--color-border)] space-y-4">
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-secondary">
+                  {{ t('comps.price.title') }}
+                </h3>
+                @if (marketPrice(); as price) {
+                  <span class="chip text-xs font-mono">{{ formatSilver(price.total) }}</span>
+                }
+              </div>
+
+              @if (marketPrice(); as price) {
+                @if (price.items.length > 0) {
+                  <div class="space-y-1.5">
+                    @for (item of price.items; track item.openalbion_item_id + item.slot) {
+                      <div class="flex items-center justify-between gap-2 p-2 bg-[var(--color-surface-2)] rounded-[var(--radius-cards)] border border-[var(--color-border)] text-xs">
+                        <div class="min-w-0">
+                          <span class="font-semibold text-[var(--color-text)]">{{ slotLabel(item.slot) }}</span>
+                          <span class="text-[10px] text-secondary block truncate">{{ item.openalbion_item_name }} · {{ item.city }}</span>
+                        </div>
+                        <strong class="font-mono text-[var(--color-text)] shrink-0">{{ formatSilver(item.unit_price) }}</strong>
+                      </div>
+                    }
+                  </div>
+                } @else {
+                  <p class="text-xs text-disabled italic">{{ t('comps.price.unavailable') }}</p>
+                }
+              } @else {
+                <p class="text-xs text-disabled italic">{{ t('comps.price.unavailable') }}</p>
+              }
+            </section>
+
             <!-- Combat Telemetry Card -->
             <section class="card p-5 border border-[var(--color-border)] space-y-4">
               <div class="flex items-center justify-between gap-2">
@@ -770,6 +803,9 @@ export class CompBuildDetailPage {
    * the KPI card and breakdown panel can render nothing rather than a stale number.
    */
   protected readonly itemPowerAtMax = signal<ItemPowerView | null>(null);
+  /** The build's total market price, priced live from Albion Online Data. `null` while loading
+   * or when pricing failed (e.g. the market API is unreachable) — the card degrades quietly. */
+  protected readonly marketPrice = signal<BuildPriceView | null>(null);
   protected readonly comparing = signal(false);
   protected readonly compareWithId = signal('');
   protected readonly compareWith = signal<BuildDetail | null>(null);
@@ -1065,6 +1101,7 @@ export class CompBuildDetailPage {
       }
       this.build.set(updated);
       void this.loadItemPowerAtMax(build.id);
+      void this.loadMarketPrice(build.id);
       this.cancelSlotEdit();
       this.toasts.success('Item saved');
     } catch (error) {
@@ -1364,6 +1401,27 @@ export class CompBuildDetailPage {
     }
   }
 
+  private async loadMarketPrice(buildId: number): Promise<void> {
+    try {
+      const price = await firstValueFrom(
+        this.api.get<BuildPriceView>(`api/comps/builds/${buildId}/price`),
+      );
+      if (buildId !== this.buildId()) return;
+      this.marketPrice.set(price);
+    } catch {
+      if (buildId !== this.buildId()) return;
+      this.marketPrice.set(null);
+    }
+  }
+
+  protected formatSilver(value: number | string): string {
+    const numeric = typeof value === 'string' ? Number(value) : value;
+    if (Number.isNaN(numeric)) {
+      return String(value);
+    }
+    return numeric.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  }
+
   private async loadItemPowerAtMax(buildId: number): Promise<void> {
     try {
       const itemPower = await firstValueFrom(
@@ -1423,6 +1481,7 @@ export class CompBuildDetailPage {
       this.buildCategories.set(categories);
       void this.loadPerformance(buildId);
       void this.loadItemPowerAtMax(buildId);
+      void this.loadMarketPrice(buildId);
     } catch (error) {
       if (buildId !== this.buildId()) return;
       this.loadFailed.set(true);

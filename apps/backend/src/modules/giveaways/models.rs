@@ -18,6 +18,11 @@ pub struct CreateGiveawayRequest {
     /// Optional Guild Bank silver credited to the winner. Omitted or zero means no silver prize.
     #[schema(value_type = Option<String>, example = "2000000")]
     pub silver_amount: Option<Decimal>,
+    /// Optional regear requests credited to the winner's bonus pool. Omitted or zero means no
+    /// regear-request prize. At least one prize, a positive silver amount, or a positive
+    /// `regear_request_bonus` is required.
+    #[schema(example = 5)]
+    pub regear_request_bonus: Option<i32>,
     /// Item prizes. At least one prize or a positive silver amount is required.
     #[serde(default)]
     pub prizes: Vec<CreateGiveawayPrizeRequest>,
@@ -86,6 +91,8 @@ pub struct GiveawayView {
     /// Optional silver prize.
     #[schema(value_type = Option<String>, example = "2000000.00")]
     pub silver_amount: Option<Decimal>,
+    /// Optional regear requests credited to the winner's bonus pool on draw.
+    pub regear_request_bonus: Option<i32>,
     /// Winner user id, once drawn.
     pub winner_user_id: Option<i64>,
     /// Winner display name, once drawn.

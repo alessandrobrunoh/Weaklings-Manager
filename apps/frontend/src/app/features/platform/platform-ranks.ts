@@ -67,15 +67,34 @@ import { PageStack } from '../../shared/components/page-stack/page-stack';
         <ng-template dataTableCell="features" let-row>
           <span class="text-sm">{{ featureSummary(row) }}</span>
         </ng-template>
+        <ng-template dataTableCell="default" let-row>
+          @if (row.is_default) {
+            <span class="chip chip--success">{{ t('platform.ranks.default') }}</span>
+          } @else {
+            <span class="text-sm text-(--color-text-tertiary)">—</span>
+          }
+        </ng-template>
         <ng-template dataTableCell="actions" let-row>
-          <button
-            type="button"
-            class="btn btn--outline btn--sm"
-            [disabled]="busyId() === row.id"
-            (click)="select(row)"
-          >
-            {{ t('platform.ranks.edit') }}
-          </button>
+          <div class="flex items-center justify-end gap-2">
+            @if (!row.is_default) {
+              <button
+                type="button"
+                class="btn btn--outline btn--sm"
+                [disabled]="busyId() === row.id"
+                (click)="makeDefault(row)"
+              >
+                {{ t('platform.ranks.setDefault') }}
+              </button>
+            }
+            <button
+              type="button"
+              class="btn btn--outline btn--sm"
+              [disabled]="busyId() === row.id"
+              (click)="select(row)"
+            >
+              {{ t('platform.ranks.edit') }}
+            </button>
+          </div>
         </ng-template>
       </app-data-table>
 
@@ -148,6 +167,7 @@ export class PlatformRanks {
       label: 'platform.ranks.features',
       accessor: (row) => row.feature_keys.join(', '),
     },
+    { key: 'default', label: 'platform.ranks.default' },
     { key: 'actions', label: 'common.actions', align: 'right' },
   ]);
 
@@ -252,6 +272,24 @@ export class PlatformRanks {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.saving.set(false);
+    }
+  }
+
+  /** Hand this rank to every tenant that registers from now on. */
+  protected async makeDefault(row: TenantRankView): Promise<void> {
+    this.busyId.set(row.id);
+    try {
+      const updated = await firstValueFrom(
+        this.api.patch<TenantRankView>(`api/platform/ranks/${row.id}`, { is_default: true }),
+      );
+      this.ranks.update((list) =>
+        list.map((item) => (item.id === updated.id ? updated : { ...item, is_default: false })),
+      );
+      this.toasts.success(this.t('platform.ranks.defaultSaved'));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.busyId.set(null);
     }
   }
 

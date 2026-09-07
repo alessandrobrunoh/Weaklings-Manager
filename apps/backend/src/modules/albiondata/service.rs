@@ -3,6 +3,8 @@
 //! Keeps validation and normalization outside the router so future consumers can reuse market and
 //! render helpers without going through HTTP extraction types.
 
+use std::collections::HashMap;
+
 use super::client::{AlbionDataApiClient, AlbionDataItemIcon, AlbionDataMarketPrice};
 use crate::errors::AppError;
 
@@ -133,6 +135,42 @@ impl Default for AlbionDataService {
     fn default() -> Self {
         Self::new("europe".to_string(), None)
     }
+}
+
+/// Picks the cheapest positive sell price per item id, preferring `configured_city` over
+/// `fallback` when both carry a price for the same item.
+///
+/// Shared between `regear::pricing` (kill-feed loadout pricing) and `comps::pricing` (build/comp
+/// market pricing) — both need "cheapest listing per item id, city-preferred with cross-city
+/// fallback", so the logic lives here once rather than being duplicated per caller.
+#[must_use]
+pub fn cheapest_price_index(
+    configured_city: &[AlbionDataMarketPrice],
+    fallback: &[AlbionDataMarketPrice],
+) -> HashMap<String, i64> {
+    let mut index = HashMap::new();
+    let insert_cheapest = |prices: &[AlbionDataMarketPrice], index: &mut HashMap<String, i64>| {
+        for price in prices {
+            let candidate = [price.sell_price_min, price.sell_price_max]
+                .into_iter()
+                .filter(|p| *p > 0)
+                .min()
+                .unwrap_or(0);
+            if candidate > 0 {
+                index
+                    .entry(price.item_id.clone())
+                    .and_modify(|existing| {
+                        if candidate < *existing {
+                            *existing = candidate;
+                        }
+                    })
+                    .or_insert(candidate);
+            }
+        }
+    };
+    insert_cheapest(fallback, &mut index);
+    insert_cheapest(configured_city, &mut index);
+    index
 }
 
 fn parse_item_ids(items: &str) -> Result<Vec<String>, AppError> {
