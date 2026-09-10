@@ -162,11 +162,11 @@ const GROUPING_FETCH_LIMIT = 500;
                 Total Members Credit
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                {{ formatCompact(pendingRequestsCount()) }}
+                {{ formatCompact(totalMembersCredit()) }}
               </p>
               <p class="text-xs text-warning mt-1 truncate flex items-center gap-1.5">
                 <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
-                Awaiting officer review
+                {{ pendingRequestsCount() }}
               </p>
             </div>
             <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
@@ -470,6 +470,12 @@ export class AdminWithdrawals {
   protected readonly pendingRequestsCount = computed(() => {
     return this.transactions()
       .filter((t) => t.status === 'requested')
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  });
+
+  protected readonly totalMembersCredit = computed(() => {
+    return this.transactions()
+      .filter((t) => t.status === 'pending' || t.status === 'requested')
       .reduce((sum, t) => sum + Number(t.amount || 0), 0);
   });
 
