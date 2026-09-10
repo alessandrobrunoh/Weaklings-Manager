@@ -159,7 +159,7 @@ const GROUPING_FETCH_LIMIT = 500;
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
               <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase">
-                Pending Requests
+                Total Members Credit
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                 {{ pendingRequestsCount() }}
@@ -468,7 +468,9 @@ export class AdminWithdrawals {
   });
 
   protected readonly pendingRequestsCount = computed(() => {
-    return this.transactions().filter((t) => t.status === 'requested').length;
+    return this.transactions()
+      .filter((t) => t.status === 'requested')
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0);
   });
 
   protected readonly playersAwaitingCount = computed(() => {
