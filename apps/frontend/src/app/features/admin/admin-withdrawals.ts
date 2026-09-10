@@ -164,6 +164,10 @@ const GROUPING_FETCH_LIMIT = 500;
               <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
                 {{ formatCompact(totalMembersCredit()) }}
               </p>
+              <p class="text-xs text-[var(--color-text-secondary)] mt-1 truncate">
+                Silver owed to members
+              </p>
+
             </div>
             <div class="icon-capsule bg-[var(--color-warning-container)] text-warning border border-[var(--color-warning)]">
               <app-icon name="alert" size="1.25rem" />
@@ -453,6 +457,7 @@ export class AdminWithdrawals {
 
   protected readonly transactions = signal<TransactionView[]>([]);
   protected readonly transactionTotal = signal(0);
+  protected readonly allTransactionsTotal = signal(0);
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
   protected readonly statusFilter = signal<TransactionStatus | ''>('requested');
@@ -514,7 +519,7 @@ export class AdminWithdrawals {
     {
       id: '',
       label: this.t('common.all'),
-      count: this.displayedRows().length,
+      count: this.allTransactionsTotal(),
     },
     {
       id: 'withdrawn',
@@ -778,6 +783,19 @@ export class AdminWithdrawals {
       );
       this.transactions.set(data.items);
       this.transactionTotal.set(data.total_items);
+
+      if (!status) {
+        this.allTransactionsTotal.set(data.total_items);
+      } else {
+        const allData = await firstValueFrom(
+          this.api.get<PaginatedData<TransactionView>>('api/bank/transactions', {
+            page: 1,
+            limit: GROUPING_FETCH_LIMIT,
+            global: true,
+          }),
+        );
+        this.allTransactionsTotal.set(allData.total_items);
+      }
     } catch (error) {
       this.loadFailed.set(true);
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
