@@ -3,9 +3,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
-  AlbionGuildMember,
   EventView,
-  MatchedParticipant,
   PaginatedData,
   SplitDetail,
   SplitIsland,
@@ -15,6 +13,7 @@ import type {
   TransactionView,
   UpdateSplitRequest,
   UpdateTransactionRequest,
+  UserProfile,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
@@ -844,7 +843,7 @@ function parsePercentageInput(raw: string): number | null {
     @if (showParticipantSearch()) {
       <app-search-dialog
         [title]="t('splits.add_participant')"
-        [placeholder]="t('splits.search_roster')"
+        [placeholder]="t('splits.search_users')"
         [options]="participantSearchOptions()"
         [loading]="searchingRoster()"
         (filterChange)="onParticipantSearchFilter($event)"
@@ -1194,14 +1193,21 @@ export class SplitDetailPage {
     }
     this.searchingRoster.set(true);
     try {
-      const rosterPage = await firstValueFrom(
-        this.api.get<PaginatedData<AlbionGuildMember>>('api/albion/guild/roster', {
-          q: query,
+      // Search every registered site user, not just guild members — anyone with an account
+      // can be a split participant (`GET /api/users` filters by username substring).
+      const usersPage = await firstValueFrom(
+        this.api.get<PaginatedData<UserProfile>>('api/users', {
+          page: 1,
           limit: 25,
+          username: query,
         }),
       );
       this.participantSearchOptions.set(
-        rosterPage.items.map((member) => ({ id: member.id, title: member.name })),
+        usersPage.items.map((user) => ({
+          id: user.id,
+          title: user.username,
+          chip: user.role,
+        })),
       );
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -1216,26 +1222,17 @@ export class SplitDetailPage {
       return;
     }
     try {
-      const matched = await firstValueFrom(
-        this.api.post<MatchedParticipant[]>('api/splits/match-participants', {
-          names: [opt.title],
-        }),
-      );
-      const hit = matched.at(0);
-      if (!hit) {
-        this.toasts.error(this.t('splits.unlinked_character'));
-        return;
-      }
+      // The user id comes straight from the picker, so no Albion-character matching is needed.
       const detail = await firstValueFrom(
         this.api.post<SplitDetail>(`api/splits/${current.id}/participants`, {
-          user_id: hit.user_id,
+          user_id: Number(opt.id),
           weight: 1,
         }),
       );
       this.split.set(detail);
       this.editParticipants.set(this.normalizeParticipants(detail.participants));
       this.editWeightInputs.set(this.weightInputsFor(detail.participants));
-      this.toasts.success(this.t('splits.added_to_split', { name: hit.matched_name }));
+      this.toasts.success(this.t('splits.added_to_split', { name: opt.title }));
       this.showParticipantSearch.set(false);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

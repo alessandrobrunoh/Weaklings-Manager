@@ -3,7 +3,6 @@ import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
-  AlbionGuildMember,
   CompleteSplitsBatchResult,
   CreateSplitRequest,
   DiscordUserProfile,
@@ -17,6 +16,7 @@ import type {
   SplitKpiSummary,
   SplitStatus,
   SplitSummary,
+  UserProfile,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
@@ -1072,7 +1072,7 @@ function newSplitBag(amount = 0): SplitBagDraft {
     @if (showParticipantSearch()) {
       <app-search-dialog
         [title]="t('splits.add_participant')"
-        [placeholder]="t('splits.search_roster')"
+        [placeholder]="t('splits.search_users')"
         [options]="participantSearchOptions()"
         [loading]="searchingRoster()"
         (filterChange)="onParticipantSearchFilter($event)"
@@ -1619,14 +1619,21 @@ export class Splits {
     }
     this.searchingRoster.set(true);
     try {
-      const rosterPage = await firstValueFrom(
-        this.api.get<PaginatedData<AlbionGuildMember>>('api/albion/guild/roster', {
-          q: query,
+      // Search every registered site user, not just guild members — anyone with an account
+      // can be a split participant (`GET /api/users` filters by username substring).
+      const usersPage = await firstValueFrom(
+        this.api.get<PaginatedData<UserProfile>>('api/users', {
+          page: 1,
           limit: 25,
+          username: query,
         }),
       );
       this.participantSearchOptions.set(
-        rosterPage.items.map((member) => ({ id: member.id, title: member.name })),
+        usersPage.items.map((user) => ({
+          id: user.id,
+          title: user.username,
+          chip: user.role,
+        })),
       );
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -1636,31 +1643,23 @@ export class Splits {
   }
 
   protected async onParticipantSelect(opt: SearchDialogOption): Promise<void> {
-    try {
-      const matched = await firstValueFrom(
-        this.api.post<MatchedParticipant[]>('api/splits/match-participants', {
-          names: [opt.title],
-        }),
-      );
-      const draft = toDraftParticipants(matched).at(0);
-      if (!draft) {
-        this.toasts.error(this.t('splits.unlinked_character'));
-        return;
-      }
-      if (this.participants().some((participant) => participant.user_id === draft.user_id)) {
-        this.toasts.info(this.t('splits.already_in_roster', { name: draft.raw_name }));
-        this.showParticipantSearch.set(false);
-        return;
-      }
-      this.participants.set(
-        this.weightsCustomized()
-          ? [...this.participants(), draft]
-          : redistributeWeights([...this.participants(), draft]),
-      );
+    const draft = {
+      raw_name: opt.title,
+      user_id: Number(opt.id),
+      username: opt.title,
+      weight: 1,
+    };
+    if (this.participants().some((participant) => participant.user_id === draft.user_id)) {
+      this.toasts.info(this.t('splits.already_in_roster', { name: draft.raw_name }));
       this.showParticipantSearch.set(false);
-    } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      return;
     }
+    this.participants.set(
+      this.weightsCustomized()
+        ? [...this.participants(), draft]
+        : redistributeWeights([...this.participants(), draft]),
+    );
+    this.showParticipantSearch.set(false);
   }
 
   protected isSelected(id: number): boolean {

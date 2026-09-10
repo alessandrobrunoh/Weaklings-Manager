@@ -382,6 +382,7 @@ export const es: TranslationDict = {
   'splits.already_in_roster': '{name} ya está en la lista.',
   'splits.added_to_split': '{name} añadido al reparto',
   'splits.search_roster': 'Buscar nombre de jugador de Albion…',
+  'splits.search_users': 'Buscar usuario registrado…',
   'splits.participant_search_hint': 'Busca en la lista de Albion miembros vinculados.',
   'splits.untitled': 'Reparto #{id}',
   'splits.created_by': 'Creado por {name}',

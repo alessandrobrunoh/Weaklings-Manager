@@ -387,6 +387,7 @@ export const en = {
   'splits.already_in_roster': '{name} is already in the roster.',
   'splits.added_to_split': '{name} added to split',
   'splits.search_roster': 'Search Albion player name…',
+  'splits.search_users': 'Search registered user…',
   'splits.participant_search_hint': 'Search the Albion roster to find linked guild members.',
   'splits.untitled': 'Split #{id}',
   'splits.created_by': 'Created by {name}',
