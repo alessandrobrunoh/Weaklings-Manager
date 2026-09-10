@@ -162,7 +162,7 @@ const GROUPING_FETCH_LIMIT = 500;
                 Total Members Credit
               </p>
               <p class="font-mono text-2xl font-bold tracking-tight text-(--color-text) mt-1">
-                {{ pendingRequestsCount() }}
+                {{ formatCompact(pendingRequestsCount()) }}
               </p>
               <p class="text-xs text-warning mt-1 truncate flex items-center gap-1.5">
                 <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] animate-pulse"></span>
