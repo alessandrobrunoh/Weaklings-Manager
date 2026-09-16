@@ -106,6 +106,23 @@ export const routes: Routes = [
         loadComponent: () => import('./features/intel/intel').then((m) => m.Intel),
       },
       {
+        path: 'intel/opponents',
+        canActivate: [permissionGuard('intel.opponents.view')],
+        loadComponent: () => import('./features/intel/opponents').then((m) => m.Opponents),
+      },
+      {
+        path: 'intel/opponents/guilds/:id',
+        canActivate: [permissionGuard('intel.opponents.view')],
+        loadComponent: () =>
+          import('./features/intel/enemy-guild-detail').then((m) => m.EnemyGuildDetailPage),
+      },
+      {
+        path: 'intel/opponents/players/:id',
+        canActivate: [permissionGuard('intel.opponents.view')],
+        loadComponent: () =>
+          import('./features/intel/enemy-player-detail').then((m) => m.EnemyPlayerDetailPage),
+      },
+      {
         path: 'intel/:scoutId',
         loadComponent: () =>
           import('./features/intel/intel-detail').then((m) => m.IntelDetailPage),

@@ -21,7 +21,12 @@ use crate::modules::albionbb::client::{AlbionBbBattlesFilters, AlbionBbKillEvent
 use crate::modules::albionbb::service::AlbionBbService;
 use crate::modules::albiondata::client::AlbionDataMarketPrice;
 use crate::modules::albiondata::service::AlbionDataService;
+use crate::modules::economy;
+use crate::modules::enemies;
 use crate::modules::events::entities::{fight, fight_battle};
+use crate::modules::fight_analytics;
+use crate::modules::fingerprints;
+use crate::modules::intel::roles::RoleClassifier;
 use crate::pagination::{
     PaginatedData, PaginationParams, SortOrder, paginate_vec, resolve_sort_key,
 };
@@ -35,6 +40,7 @@ use super::models::{
     GuildLossEstimate, LinkedEvent, PlayerLossEstimate,
 };
 use super::outcome::{self, BattleOutcome, FriendlySide, GuildLine};
+use super::{evidence, evidence_writer};
 
 /// Upper bound on how many upstream battle-list pages `/me` will scan before
 /// giving up. Keeps the endpoint from scanning AlbionBB's entire history.
@@ -210,6 +216,13 @@ impl BattlesService {
     /// in one batched Albion Data call and then roll losses up by player and guild. If Albion Data
     /// is unavailable, the caller still receives the full battle with an empty estimate instead of
     /// losing the analytics page.
+    ///
+    /// Long by line count rather than by complexity: it is a sequence of independent, best-effort
+    /// telemetry persistence steps (snapshot, evidence, enemy identity, equipment fingerprints)
+    /// after the core fetch, each already documented at its own call site — splitting it into
+    /// helpers would only scatter that step-by-step narrative this function exists to keep
+    /// readable in one place, the same tradeoff `evidence_writer::persist_evidence` makes.
+    #[allow(clippy::too_many_lines)]
     pub async fn get_battle_detail_with_losses(
         &self,
         db: &DatabaseConnection,
@@ -247,6 +260,163 @@ impl BattlesService {
         if let Err(error) = persist_battle_snapshot(db, &battle).await {
             tracing::warn!(battle_id = battle.summary.battle_id, error = %error, "failed to persist guild battle snapshot");
         }
+
+        // Best-effort, additive telemetry: normalizes and persists the same
+        // battle into the queryable evidence tables. Deliberately independent
+        // of the snapshot persistence above — a bug here must never affect
+        // this method's return value.
+        let classifier = match RoleClassifier::load(db).await {
+            Ok(classifier) => classifier,
+            Err(error) => {
+                tracing::warn!(battle_id, error = %error, "failed to load role classifier, falling back to heuristic-only classification");
+                RoleClassifier::default()
+            }
+        };
+        let normalized = evidence::normalize(
+            &battle.summary.guilds,
+            &battle.players,
+            &battle.kills,
+            &self.side,
+            &classifier,
+        );
+        if let Err(error) =
+            evidence_writer::persist_evidence(db, battle.summary.battle_id, &normalized).await
+        {
+            tracing::warn!(battle_id = battle.summary.battle_id, error = %error, "failed to persist normalized battle evidence");
+        }
+
+        // Best-effort, additive telemetry: aggregates the same normalized
+        // evidence into the enemy identity layer (`enemy_guilds`,
+        // `enemy_players`, `enemy_player_battles`). Deliberately independent
+        // of the evidence persistence above — a bug here must never affect
+        // this method's return value.
+        let guild_sources: Vec<enemies::aggregate::GuildStatSource> = normalized
+            .guilds
+            .iter()
+            .map(|guild| enemies::aggregate::GuildStatSource {
+                guild_id: guild.guild_id.clone(),
+                guild_name: guild.guild_name.clone(),
+                alliance_id: guild.alliance_id.clone(),
+                alliance_name: guild.alliance_name.clone(),
+                is_friendly: guild.is_friendly,
+            })
+            .collect();
+        let player_sources: Vec<enemies::aggregate::PlayerStatSource> = normalized
+            .players
+            .iter()
+            .map(|player| enemies::aggregate::PlayerStatSource {
+                player_key: player.player_key.clone(),
+                player_id: player.player_id.clone(),
+                player_name: player.player_name.clone(),
+                identity_source: player.identity_source,
+                guild_id: player.guild_id.clone(),
+                guild_name: player.guild_name.clone(),
+                is_friendly: player.is_friendly,
+                role: player.role.clone(),
+                main_hand_item_id: player.main_hand_item_id.clone(),
+                item_power: player.item_power,
+            })
+            .collect();
+        let kill_sources: Vec<enemies::aggregate::KillSource> = normalized
+            .kills
+            .iter()
+            .map(|kill| enemies::aggregate::KillSource {
+                killer_player_key: kill.killer_player_key.clone(),
+                killer_guild_id: kill.killer_guild_id.clone(),
+                killer_guild_name: kill.killer_guild_name.clone(),
+                victim_player_key: kill.victim_player_key.clone(),
+                victim_guild_id: kill.victim_guild_id.clone(),
+                victim_guild_name: kill.victim_guild_name.clone(),
+            })
+            .collect();
+        let enemy_facts = enemies::aggregate::aggregate_battle(
+            &guild_sources,
+            &player_sources,
+            &kill_sources,
+            &self.side,
+        );
+        match chrono::DateTime::parse_from_rfc3339(&battle.summary.start_time) {
+            Ok(occurred_at) => {
+                if let Err(error) = enemies::writer::persist_enemy_facts(
+                    db,
+                    battle.summary.battle_id,
+                    occurred_at,
+                    &enemy_facts,
+                )
+                .await
+                {
+                    tracing::warn!(battle_id = battle.summary.battle_id, error = %error, "failed to persist enemy identity facts");
+                }
+
+                // Best-effort, additive telemetry: computes and persists
+                // equipment fingerprints (`loadout_fingerprints`,
+                // `battle_loadout_observations`) for this battle's
+                // participants. Deliberately independent of the persistence
+                // steps above — a bug here must never affect this method's
+                // return value.
+                if let Err(error) = fingerprints::writer::persist_battle_fingerprints(
+                    db,
+                    battle.summary.battle_id,
+                    occurred_at,
+                    &classifier,
+                )
+                .await
+                {
+                    tracing::warn!(battle_id = battle.summary.battle_id, error = %error, "failed to persist battle equipment fingerprints");
+                }
+
+                // Best-effort, additive telemetry: prices this battle's
+                // already-persisted victim evidence into a silver-loss
+                // estimate (`battle_loss_estimates`). Deliberately
+                // independent of the persistence steps above — a bug here
+                // must never affect this method's return value.
+                if let Err(error) = economy::writer::persist_battle_loss_estimate(
+                    db,
+                    albiondata,
+                    battle.summary.battle_id,
+                    &self.side,
+                    self.server.as_deref(),
+                )
+                .await
+                {
+                    tracing::warn!(battle_id = battle.summary.battle_id, error = %error, "failed to persist battle loss estimate");
+                }
+
+                // Best-effort, additive telemetry: recomputes the canonical
+                // Fight's aggregated outcome/stats (`fights.outcome`,
+                // `fight_stats`) now that this battle segment's evidence and
+                // loss estimate are persisted. Deliberately independent of
+                // the persistence steps above — a bug here must never affect
+                // this method's return value. A battle that has never been
+                // grouped into a fight is a normal, common state (not every
+                // battle a Weaklings member fought in is part of a tracked
+                // Fight), so that case is silent rather than warned about.
+                match fight_battle::Entity::find()
+                    .filter(fight_battle::Column::BattleId.eq(battle.summary.battle_id))
+                    .one(db)
+                    .await
+                {
+                    Ok(Some(fight_battle_row)) => {
+                        if let Err(error) = fight_analytics::writer::recompute_fight_analytics(
+                            db,
+                            fight_battle_row.fight_id,
+                        )
+                        .await
+                        {
+                            tracing::warn!(battle_id = battle.summary.battle_id, fight_id = fight_battle_row.fight_id, error = %error, "failed to recompute fight analytics");
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        tracing::warn!(battle_id = battle.summary.battle_id, error = %error, "failed to resolve fight for battle, skipping fight analytics recompute");
+                    }
+                }
+            }
+            Err(error) => {
+                tracing::warn!(battle_id = battle.summary.battle_id, error = %error, "failed to parse battle start_time, skipping enemy identity persistence");
+            }
+        }
+
         Ok(battle)
     }
 

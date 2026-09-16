@@ -9,10 +9,13 @@ use axum::{
     routing::{get, post},
 };
 
+use chrono::{DateTime, Utc};
+
 use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::modules::events::service::BattleLinkingContext;
+use crate::modules::intel::auto_scout::{BackfillOutcome, scout_snapshots_before};
 use crate::modules::intel::cache::ReportCache;
 use crate::modules::intel::matchups::{MatchupReport, matchups};
 use crate::modules::intel::models::{
@@ -25,8 +28,11 @@ use crate::modules::intel::report::{
 };
 use crate::modules::intel::service::IntelService;
 use crate::pagination::{PaginatedScoutedComp, PaginationParams};
-use crate::responses::ApiResponse;
+use crate::responses::{ApiResponse, ApiResponseScoutBackfillOutcome};
 use crate::tenant::CurrentTenantId;
+
+/// Default page size for `POST /scouts/backfill` when `limit` is omitted.
+const DEFAULT_BACKFILL_LIMIT: u64 = 200;
 
 /// Default number of entries returned by the similarity and counter endpoints.
 const DEFAULT_SUGGESTION_LIMIT: usize = 5;
@@ -65,6 +71,19 @@ pub struct ScoutBattleQuery {
     pub dry_run: Option<bool>,
 }
 
+/// Query parameters for `POST /scouts/backfill`.
+#[derive(serde::Deserialize, utoipa::IntoParams)]
+pub struct ScoutBackfillQuery {
+    /// Only consider snapshots strictly older than this. Defaults to now.
+    /// Pass the previous response's `oldest_considered_start_time` here to
+    /// keep paging backward through history.
+    pub before: Option<DateTime<Utc>>,
+    /// Maximum snapshots to consider in this page. Defaults to
+    /// [`DEFAULT_BACKFILL_LIMIT`], capped server-side regardless of what is
+    /// requested.
+    pub limit: Option<u64>,
+}
+
 /// Query parameters for the similarity and counter endpoints.
 #[derive(serde::Deserialize, utoipa::IntoParams)]
 pub struct SuggestionQuery {
@@ -96,6 +115,7 @@ pub fn router() -> Router {
     Router::new()
         .route("/scouts", get(list_scouts))
         .route("/scouts/from-battle/{battle_id}", post(scout_battle))
+        .route("/scouts/backfill", post(scout_snapshots_backfill))
         .route(
             "/scouts/{id}",
             get(get_scout).patch(update_scout).delete(delete_scout),
@@ -298,6 +318,52 @@ pub async fn scout_battle(
         )
         .await?;
     Ok(Json(ApiResponse::new(outcomes)))
+}
+
+/// Manually scouts one page of battle snapshots older than `before`.
+///
+/// `scout_recent_snapshots` (the background pass that runs alongside battle
+/// sync) only ever looks at the newest 50 snapshots, so a battle that misses
+/// that window before being scouted is never picked up automatically. This
+/// is the officer-triggered fix: a cursor over history rather than a fixed
+/// window. Call once with no `before` to start from now, then keep calling
+/// again with `before` set to the previous response's
+/// `oldest_considered_start_time` until `considered` comes back `0`, which
+/// means the cursor has reached the end of the snapshot history.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` if the caller lacks `intel.create`.
+#[utoipa::path(
+    post,
+    path = "/api/intel/scouts/backfill",
+    tag = "intel",
+    summary = "Backfill scouting over battle history",
+    description = "Pages backward through `guild_battle_snapshots` by `start_time`, scouting \
+        whichever snapshots in the page are not already linked in `scouted_comp_battles`. \
+        Unlike the automatic pass that only ever looks at the newest 50 snapshots, this lets an \
+        officer walk the full history on demand. Call repeatedly, passing each response's \
+        `oldest_considered_start_time` back as the next call's `before`, until `considered` is \
+        `0`.",
+    security(("session_cookie" = ["intel.create"])),
+    params(ScoutBackfillQuery),
+    responses(
+        (status = 200, description = "One backfill page scouted", body = ApiResponseScoutBackfillOutcome),
+        (status = 403, description = "Forbidden - lacks intel.create", body = ProblemDetails)
+    )
+)]
+pub async fn scout_snapshots_backfill(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Query(query): Query<ScoutBackfillQuery>,
+) -> Result<Json<ApiResponse<BackfillOutcome>>, AppError> {
+    user.require(&perms, Permission::IntelCreate).await?;
+    let before = query.before.unwrap_or_else(Utc::now);
+    let limit = query.limit.unwrap_or(DEFAULT_BACKFILL_LIMIT);
+    let outcome = scout_snapshots_before(&db, &guild_context(&cfg), before, limit).await?;
+    Ok(Json(ApiResponse::new(outcome)))
 }
 
 /// Other scouts ranked by resemblance to this one.

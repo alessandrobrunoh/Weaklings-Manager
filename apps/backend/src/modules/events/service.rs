@@ -37,13 +37,14 @@ use crate::modules::audit::service::AuditService;
 use crate::modules::battles::entities::{
     Column as GuildBattleSnapshotColumn, Entity as GuildBattleSnapshotEntity,
 };
+use crate::modules::battles::evidence_entities::battle_guild_stat;
 use crate::modules::battles::models::{
     BattleGuildSummary, BattleLossEstimate, BattlePlayer, GuildLossEstimate, PlayerLossEstimate,
 };
-use crate::modules::battles::outcome::{BattleOutcome, FriendlySide, GuildLine, battle_outcome};
 use crate::modules::combat::fit::{self, FitStrategy};
 use crate::modules::comps::entities::{build, comp, comp_build};
 use crate::modules::comps::status::{BuildLoadout, BuildRole};
+use crate::modules::fight_analytics::entities::fight_stat;
 use crate::modules::splits::entities::{split, split_participant};
 use crate::modules::splits::service::SplitService;
 use crate::modules::splits::status::SplitStatus;
@@ -297,15 +298,172 @@ async fn load_event_roster_roles(
     Ok(roles)
 }
 
-/// Incremental accumulator for opponent analytics.
+/// Incremental accumulator for opponent analytics, built from the canonical evidence tables
+/// (`battle_guild_stats`, `fights`) rather than the (about-to-be-dropped) `event_battles`
+/// denormalized `opponent_*`/`is_win` columns.
 #[derive(Debug, Clone, Default)]
 struct OpponentRollup {
     guild_id: Option<String>,
     guild_name: String,
     battles: i64,
     wins: i64,
+    losses: i64,
     guild_kill_fame: i64,
     opponent_kill_fame: i64,
+}
+
+/// Resolves "the opponent" for one battle: the non-friendly `battle_guild_stat` row with the
+/// highest `kill_fame`.
+///
+/// This mirrors the old write-side rule in `linked_battle_snapshot`/`apply_canonical_snapshot_metrics`
+/// (`.max_by_key(|guild| guild.kill_fame)`), which documented no explicit tie-break of its own —
+/// it relied on whatever order the upstream API happened to return, which is not a real tie-break
+/// rule. Ties here are broken by ascending `guild_id` instead, so the choice is reproducible.
+fn select_battle_opponent(rows: &[battle_guild_stat::Model]) -> Option<&battle_guild_stat::Model> {
+    rows.iter().filter(|row| !row.is_friendly).max_by(|a, b| {
+        a.kill_fame
+            .cmp(&b.kill_fame)
+            // Reversed so that, on a kill_fame tie, the *smaller* guild_id wins under `max_by`.
+            .then_with(|| b.guild_id.cmp(&a.guild_id))
+    })
+}
+
+/// Resolves each raw `AlbionBB` battle id to its canonical Fight's outcome
+/// (`"victory"|"defeat"|"draw"|"unknown"`), via `fight_battles.battle_id -> fight_id ->
+/// fights.outcome` (`fight_battles.battle_id` is unique table-wide). A battle id with no
+/// `fight_battles` row yet (evidence not linked) resolves to `"unknown"` — the same value an
+/// actually-computed-but-undecided fight would report; both mean "no verdict available" to a
+/// caller.
+async fn outcome_by_battle_id(
+    db: &DatabaseConnection,
+    battle_ids: &[i64],
+) -> Result<HashMap<i64, String>, AppError> {
+    if battle_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let fight_id_by_battle: HashMap<i64, i64> = fight_battle::Entity::find()
+        .filter(fight_battle::Column::BattleId.is_in(battle_ids.to_vec()))
+        .all(db)
+        .await
+        .map_err(AppError::Database)?
+        .into_iter()
+        .map(|row| (row.battle_id, row.fight_id))
+        .collect();
+
+    let fight_ids: Vec<i64> = {
+        let mut ids: Vec<i64> = fight_id_by_battle.values().copied().collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    };
+    let outcome_by_fight: HashMap<i64, String> = if fight_ids.is_empty() {
+        HashMap::new()
+    } else {
+        fight::Entity::find()
+            .filter(fight::Column::Id.is_in(fight_ids))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?
+            .into_iter()
+            .map(|row| (row.id, row.outcome))
+            .collect()
+    };
+
+    Ok(battle_ids
+        .iter()
+        .map(|&battle_id| {
+            let outcome = fight_id_by_battle
+                .get(&battle_id)
+                .and_then(|fight_id| outcome_by_fight.get(fight_id))
+                .cloned()
+                .unwrap_or_else(|| "unknown".to_string());
+            (battle_id, outcome)
+        })
+        .collect())
+}
+
+/// Loads `battle_guild_stat` rows for a set of raw `AlbionBB` battle ids, grouped by battle id.
+async fn battle_guild_stats_by_battle_id(
+    db: &DatabaseConnection,
+    battle_ids: &[i64],
+) -> Result<HashMap<i64, Vec<battle_guild_stat::Model>>, AppError> {
+    if battle_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = battle_guild_stat::Entity::find()
+        .filter(battle_guild_stat::Column::BattleId.is_in(battle_ids.to_vec()))
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+
+    let mut grouped: HashMap<i64, Vec<battle_guild_stat::Model>> = HashMap::new();
+    for row in rows {
+        grouped.entry(row.battle_id).or_default().push(row);
+    }
+    Ok(grouped)
+}
+
+/// Aggregates opponent analytics for a scope of raw `AlbionBB` battle ids (an event's battles, a
+/// comp's battles, ...), replacing `event_battles`' denormalized `opponent_*`/`is_win` columns
+/// with the canonical evidence tables.
+///
+/// A battle with no non-friendly `battle_guild_stat` row (e.g. every guild present is
+/// friendly/allied) or no friendly row at all (evidence not hydrated) contributes nothing to any
+/// rollup — not an error, not a fabricated opponent.
+///
+/// `wins`/`losses` are resolved through the battle's Fight rather than the battle itself: a
+/// `"victory"` fight is a win, `"defeat"` a loss. A `"draw"` or `"unknown"`-outcome fight still
+/// counts toward `battles` (we did fight this guild) but toward neither `wins` nor `losses` —
+/// collapsing "we don't know" into "we lost" would be a real accuracy regression.
+async fn opponent_rollups_for_battles(
+    db: &DatabaseConnection,
+    battle_ids: &[i64],
+) -> Result<Vec<OpponentRollup>, AppError> {
+    if battle_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let stats_by_battle = battle_guild_stats_by_battle_id(db, battle_ids).await?;
+    let outcome_by_battle = outcome_by_battle_id(db, battle_ids).await?;
+
+    let mut rollups: HashMap<String, OpponentRollup> = HashMap::new();
+    for battle_id in battle_ids {
+        let Some(rows) = stats_by_battle.get(battle_id) else {
+            continue;
+        };
+        let Some(friendly) = rows.iter().find(|row| row.is_friendly) else {
+            continue;
+        };
+        let Some(opponent) = select_battle_opponent(rows) else {
+            continue;
+        };
+
+        // `guild_id` can be empty on messy upstream payloads, so fall back to the name to still
+        // group repeat opponents together instead of scattering them under distinct empty-id rows.
+        let key = if opponent.guild_id.is_empty() {
+            format!("name:{}", opponent.guild_name)
+        } else {
+            opponent.guild_id.clone()
+        };
+        let rollup = rollups.entry(key).or_insert_with(|| OpponentRollup {
+            guild_id: (!opponent.guild_id.is_empty()).then(|| opponent.guild_id.clone()),
+            guild_name: opponent.guild_name.clone(),
+            ..Default::default()
+        });
+
+        rollup.battles += 1;
+        rollup.guild_kill_fame += friendly.kill_fame;
+        rollup.opponent_kill_fame += opponent.kill_fame;
+        match outcome_by_battle.get(battle_id).map(String::as_str) {
+            Some("victory") => rollup.wins += 1,
+            Some("defeat") => rollup.losses += 1,
+            _ => {}
+        }
+    }
+
+    Ok(rollups.into_values().collect())
 }
 
 /// Battle-side classification rules for event analytics.
@@ -397,7 +555,7 @@ impl BattleLinkingContext {
         &self.guild_id
     }
 
-    /// Allied guild IDs, in the shape [`FriendlySide`] expects.
+    /// Allied guild IDs, in the shape `battles::outcome::FriendlySide` expects.
     #[must_use]
     pub fn allied_guild_ids(&self) -> Vec<String> {
         self.allied_guild_ids.iter().cloned().collect()
@@ -411,15 +569,16 @@ impl BattleLinkingContext {
 }
 
 /// Compact battle snapshot derived from AlbionBB for event analytics.
+///
+/// Used to carry only the two `event_battles` columns still populated this way
+/// (`guild_players_count`/`battle_total_players`) — kills/deaths/fame, win/loss, and opponent
+/// identity now come from the canonical evidence tables (`battle_guild_stats`, `fights`) at read
+/// time instead of being written here (see `opponent_rollups_for_battles`, `outcome_by_battle_id`,
+/// `to_event_battle_view`).
 #[derive(Debug, Clone)]
 struct LinkedBattleSnapshot {
     guild_players_count: i64,
     battle_total_players: i64,
-    guild_kills: i64,
-    guild_deaths: i64,
-    guild_kill_fame: i64,
-    is_win: bool,
-    opponent: Option<AlbionBbGuild>,
 }
 
 /// Computes a percentage and safely handles empty denominators.
@@ -440,40 +599,22 @@ pub(crate) fn kill_death_ratio(kills: i64, deaths: i64) -> f64 {
     kills as f64 / deaths as f64
 }
 
-/// Ranks the most relevant opponents for the current analytics scope.
-pub(crate) fn build_top_opponents(
-    battle_rows: &[event_battle::Model],
-) -> Vec<OpponentPerformanceView> {
-    let mut rollups: HashMap<String, OpponentRollup> = HashMap::new();
-
-    for battle in battle_rows {
-        let opponent_name = battle
-            .opponent_guild_name
-            .clone()
-            .unwrap_or_else(|| "Unknown opponent".to_string());
-        let key = battle
-            .opponent_guild_id
-            .clone()
-            .unwrap_or_else(|| opponent_name.clone());
-        let rollup = rollups.entry(key).or_insert_with(|| OpponentRollup {
-            guild_id: battle.opponent_guild_id.clone(),
-            guild_name: opponent_name,
-            ..Default::default()
-        });
-        rollup.battles += 1;
-        rollup.wins += i64::from(battle.is_win);
-        rollup.guild_kill_fame += battle.guild_kill_fame;
-        rollup.opponent_kill_fame += battle.opponent_kill_fame.unwrap_or_default();
-    }
+/// Ranks the most relevant opponents for a scope of raw `AlbionBB` battle ids, from the
+/// canonical evidence tables (see [`opponent_rollups_for_battles`]).
+pub(crate) async fn build_top_opponents(
+    db: &DatabaseConnection,
+    battle_ids: &[i64],
+) -> Result<Vec<OpponentPerformanceView>, AppError> {
+    let rollups = opponent_rollups_for_battles(db, battle_ids).await?;
 
     let mut opponents: Vec<OpponentPerformanceView> = rollups
-        .into_values()
+        .into_iter()
         .map(|rollup| OpponentPerformanceView {
             guild_id: rollup.guild_id,
             guild_name: rollup.guild_name,
             battles: rollup.battles,
             wins: rollup.wins,
-            losses: rollup.battles - rollup.wins,
+            losses: rollup.losses,
             guild_kill_fame: rollup.guild_kill_fame,
             opponent_kill_fame: rollup.opponent_kill_fame,
         })
@@ -486,7 +627,7 @@ pub(crate) fn build_top_opponents(
             .then(right.opponent_kill_fame.cmp(&left.opponent_kill_fame))
     });
     opponents.truncate(5);
-    opponents
+    Ok(opponents)
 }
 
 /// Builds the persisted analytics snapshot for a battle summary.
@@ -498,46 +639,10 @@ fn linked_battle_snapshot(
         .guilds
         .iter()
         .find(|guild| context.is_friendly_guild(&guild.id, &guild.name));
-    let opponent = battle
-        .guilds
-        .iter()
-        .filter(|guild| !context.is_friendly_guild(&guild.id, &guild.name))
-        .max_by_key(|guild| guild.kill_fame)
-        .cloned();
-
-    // `is_win` goes through the shared rule rather than the raw upstream flag.
-    // AlbionBB sets `winner` on almost nothing, so reading it directly recorded
-    // a loss for every battle and disagreed with the crowned copy stored in
-    // `guild_battle_snapshots.guilds_json`. A draw or an unresolved battle is
-    // not a win, which is all this boolean column can express; the Fight
-    // resolver keeps the full four-state verdict.
-    let lines = battle
-        .guilds
-        .iter()
-        .map(|guild| GuildLine {
-            id: &guild.id,
-            name: &guild.name,
-            kills: guild.kills,
-            deaths: guild.deaths,
-            kill_fame: guild.kill_fame,
-            winner: guild.winner,
-        })
-        .collect::<Vec<_>>();
-    let side = FriendlySide::new(
-        context.guild_id(),
-        &context.allied_guild_ids(),
-        &context.allied_guild_names(),
-    );
-    let is_win = battle_outcome(&lines, battle.total_fame, &side).outcome == BattleOutcome::Victory;
 
     LinkedBattleSnapshot {
         guild_players_count: guild.map(|guild| guild.players).unwrap_or_default(),
         battle_total_players: battle.total_players,
-        guild_kills: guild.map(|guild| guild.kills).unwrap_or_default(),
-        guild_deaths: guild.map(|guild| guild.deaths).unwrap_or_default(),
-        guild_kill_fame: guild.map(|guild| guild.kill_fame).unwrap_or_default(),
-        is_win,
-        opponent,
     }
 }
 
@@ -558,26 +663,6 @@ fn apply_battle_snapshot(
             ))
         },
     )?));
-    row.guild_kills = Set(snapshot.guild_kills);
-    row.guild_deaths = Set(snapshot.guild_deaths);
-    row.guild_kill_fame = Set(snapshot.guild_kill_fame);
-    row.is_win = Set(snapshot.is_win);
-
-    let opponent = snapshot.opponent.as_ref();
-    row.opponent_guild_id = Set(opponent.map(|guild| guild.id.clone()));
-    row.opponent_guild_name = Set(opponent.map(|guild| guild.name.clone()));
-    row.opponent_players_count = Set(opponent
-        .map(|guild| {
-            i32::try_from(guild.players).map_err(|e| {
-                AppError::Validation(format!(
-                    "Opponent player count does not fit database column: {e}"
-                ))
-            })
-        })
-        .transpose()?);
-    row.opponent_kills = Set(opponent.map(|guild| guild.kills));
-    row.opponent_deaths = Set(opponent.map(|guild| guild.deaths));
-    row.opponent_kill_fame = Set(opponent.map(|guild| guild.kill_fame));
     Ok(())
 }
 
@@ -707,6 +792,34 @@ async fn automatically_group_event_fights(
         return Ok(());
     }
     let fight_ids = fights.iter().map(|fight| fight.id).collect::<Vec<_>>();
+    group_fights_by_adjacent_evidence(db, fight_ids, Some(event_id), context).await
+}
+
+/// Given a set of already-selected fight ids (the caller decides the scope — one Event's
+/// fights, or every orphan fight in a lookback window), loads their segments and snapshots,
+/// builds chronologically sorted evidence across ALL of them combined, and applies
+/// [`score_fight_grouping`] to every chronologically-adjacent pair, mutating
+/// `fight_battles`/`fights` exactly as [`automatically_group_event_fights`] always has.
+///
+/// `evidence_event_id` is stamped onto every [`FightEvidence`] built here — `Some(event_id)`
+/// for the per-event caller (matching that function's historical behavior exactly), `None`
+/// for the orphan-fights caller (those fights have no event by definition, and
+/// `score_fight_grouping`'s hard-reject only fires when both sides have a *different* `Some`
+/// event id — two `None`s contribute zero to `event_score` but are never hard-rejected, so
+/// grouping still succeeds purely on timing + identity overlap + size, which is exactly the
+/// evidence orphan battles actually have).
+#[allow(
+    clippy::too_many_lines,
+    reason = "extracted verbatim from automatically_group_event_fights's historical body \
+        (evidence gathering plus the AutoMerge/NeedsReview/Separate state machine); splitting \
+        it further would separate steps that only make sense read together"
+)]
+async fn group_fights_by_adjacent_evidence(
+    db: &DatabaseConnection,
+    fight_ids: Vec<i64>,
+    evidence_event_id: Option<i64>,
+    context: &BattleLinkingContext,
+) -> Result<(), AppError> {
     let segments = fight_battle::Entity::find()
         .filter(fight_battle::Column::FightId.is_in(fight_ids))
         .all(db)
@@ -741,7 +854,7 @@ async fn automatically_group_event_fights(
         evidence.push((
             segment.battle_id,
             FightEvidence {
-                event_id: Some(event_id),
+                event_id: evidence_event_id,
                 started_at: Some(snapshot.start_time.with_timezone(&Utc)),
                 ended_at: snapshot.end_time.map(|time| time.with_timezone(&Utc)),
                 friendly_guild_ids: guilds
@@ -847,6 +960,49 @@ async fn automatically_group_event_fights(
     Ok(())
 }
 
+/// How far back [`group_orphan_fights`] looks for un-evented fights each pass. Bounded
+/// deliberately: an orphan fight that has already been compared against its chronological
+/// neighbors and found no match will never gain a new neighbor unless a fresh nearby battle
+/// arrives — which, past this window, it won't — so re-scanning old orphans forever would be
+/// pure waste. New orphan segments the sync worker just persisted are exactly what this window
+/// needs to catch.
+const ORPHAN_LOOKBACK: ChronoDuration = ChronoDuration::hours(48);
+
+/// Groups fights that were seeded without an event attached (the sync worker collects battles
+/// nobody has linked to a CTA yet) — otherwise these remain permanent `seeded` singletons even
+/// when they are minutes-apart segments of the same real engagement with full guild/player
+/// overlap. Reuses the exact same deterministic scoring and AutoMerge/NeedsReview/Separate
+/// policy as [`automatically_group_event_fights`] via [`group_fights_by_adjacent_evidence`] —
+/// no new grouping heuristic.
+///
+/// Returns how many fight rows were merged away (removed) by this pass.
+pub async fn group_orphan_fights(
+    db: &DatabaseConnection,
+    context: &BattleLinkingContext,
+    now: DateTime<Utc>,
+) -> Result<usize, AppError> {
+    let fights = fight::Entity::find()
+        .filter(fight::Column::EventId.is_null())
+        .filter(fight::Column::StartedAt.gte(now - ORPHAN_LOOKBACK))
+        .order_by_asc(fight::Column::StartedAt)
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+    if fights.len() < 2 {
+        return Ok(0);
+    }
+    let before = fights.len();
+    let fight_ids = fights.iter().map(|fight| fight.id).collect::<Vec<_>>();
+    group_fights_by_adjacent_evidence(db, fight_ids.clone(), None, context).await?;
+    let after = fight::Entity::find()
+        .filter(fight::Column::Id.is_in(fight_ids))
+        .count(db)
+        .await
+        .map_err(AppError::Database)?;
+    let after = usize::try_from(after).unwrap_or(usize::MAX);
+    Ok(before.saturating_sub(after))
+}
+
 /// Builds stable canonical Fight views while preserving every raw Battle ID for drill-down.
 async fn build_event_fight_views(
     db: &DatabaseConnection,
@@ -941,25 +1097,10 @@ async fn apply_canonical_snapshot_metrics(
             else {
                 return battle;
             };
-            let opponent = guilds
-                .iter()
-                .filter(|guild| !context.is_friendly_guild(&guild.id, &guild.name))
-                .max_by_key(|guild| guild.kill_fame);
 
             battle.guild_players_count = i32::try_from(our_guild.players).unwrap_or(i32::MAX);
             battle.battle_total_players =
                 Some(i32::try_from(snapshot.total_players).unwrap_or(i32::MAX));
-            battle.guild_kills = our_guild.kills;
-            battle.guild_deaths = our_guild.deaths;
-            battle.guild_kill_fame = our_guild.kill_fame;
-            battle.is_win = our_guild.winner;
-            battle.opponent_guild_id = opponent.map(|guild| guild.id.clone());
-            battle.opponent_guild_name = opponent.map(|guild| guild.name.clone());
-            battle.opponent_players_count =
-                opponent.and_then(|guild| i32::try_from(guild.players).ok());
-            battle.opponent_kills = opponent.map(|guild| guild.kills);
-            battle.opponent_deaths = opponent.map(|guild| guild.deaths);
-            battle.opponent_kill_fame = opponent.map(|guild| guild.kill_fame);
             battle
         })
         .collect())
@@ -2362,14 +2503,10 @@ impl EventService {
         ensure_seed_fights_for_event(db, id, &battle_rows).await?;
         automatically_group_event_fights(db, id, context).await?;
         let battle_rows = apply_canonical_snapshot_metrics(db, battle_rows, context).await?;
-        let battle_rows = Self::apply_read_context_to_battles(battle_rows, context);
-        let stats = Self::build_performance_stats(&battle_rows);
+        let stats = Self::build_performance_stats(db, &[id]).await?;
         let estimated_losses = build_event_loss_estimate(db, &battle_rows).await?;
         let fights = build_event_fight_views(db, id).await?;
-        let battles = battle_rows
-            .into_iter()
-            .map(Self::to_event_battle_view)
-            .collect();
+        let battles = Self::to_event_battle_views(db, battle_rows).await?;
 
         let split_rows = split::Entity::find()
             .filter(split::Column::EventId.eq(id))
@@ -2458,7 +2595,7 @@ impl EventService {
         }
 
         let battle_rows = event_battle::Entity::find()
-            .filter(event_battle::Column::EventId.is_in(event_ids))
+            .filter(event_battle::Column::EventId.is_in(event_ids.clone()))
             .all(db)
             .await
             .map_err(AppError::Database)?;
@@ -2472,7 +2609,7 @@ impl EventService {
             comp_id,
             comp_name: comp_model.name,
             events_with_battles,
-            stats: Self::build_performance_stats(&battle_rows),
+            stats: Self::build_performance_stats(db, &event_ids).await?,
         })
     }
 
@@ -2598,14 +2735,31 @@ impl EventService {
             death_fame: 0,
         };
         let mut counted_events: HashSet<i64> = HashSet::new();
-        let outcome_by_battle: HashMap<i64, (i64, bool)> = battles
+        let event_id_by_battle: HashMap<i64, i64> = battles
             .iter()
             .filter_map(|battle| {
                 battle
                     .albionbb_battle_id
                     .parse::<i64>()
                     .ok()
-                    .map(|id| (id, (battle.event_id, battle.is_win)))
+                    .map(|id| (id, battle.event_id))
+            })
+            .collect();
+        let raw_battle_ids: Vec<i64> = event_id_by_battle.keys().copied().collect();
+        let outcome_by_battle_raw = outcome_by_battle_id(db, &raw_battle_ids).await?;
+        // (event_id, win?) per raw battle id. `win?` is `None` for a `"draw"` or
+        // `"unknown"`-outcome fight — excluded from both `wins` and `losses`, not counted as a
+        // loss, since collapsing "we don't know" into "we lost" would be a real accuracy
+        // regression.
+        let outcome_by_battle: HashMap<i64, (i64, Option<bool>)> = event_id_by_battle
+            .into_iter()
+            .map(|(battle_id, event_id)| {
+                let is_win = match outcome_by_battle_raw.get(&battle_id).map(String::as_str) {
+                    Some("victory") => Some(true),
+                    Some("defeat") => Some(false),
+                    _ => None,
+                };
+                (battle_id, (event_id, is_win))
             })
             .collect();
 
@@ -2630,10 +2784,10 @@ impl EventService {
             }
             if let Some((event_id, is_win)) = outcome_by_battle.get(&snapshot.battle_id) {
                 counted_events.insert(*event_id);
-                if *is_win {
-                    stats.wins += 1;
-                } else {
-                    stats.losses += 1;
+                match is_win {
+                    Some(true) => stats.wins += 1,
+                    Some(false) => stats.losses += 1,
+                    None => {}
                 }
             }
         }
@@ -2645,35 +2799,29 @@ impl EventService {
         Ok(view(players_without_an_albion_link, Some(stats)))
     }
 
-    /// Clears friendly guilds from persisted opponent fields before producing analytics.
-    fn apply_read_context_to_battles(
-        battle_rows: Vec<event_battle::Model>,
-        context: Option<&BattleLinkingContext>,
-    ) -> Vec<event_battle::Model> {
-        let Some(context) = context else {
-            return battle_rows;
-        };
+    /// Converts a linked battle row into an API view, resolving win/loss and opponent identity
+    /// from the canonical evidence tables (`fights.outcome`, `battle_guild_stats`) instead of the
+    /// (about-to-be-dropped) `event_battles.is_win`/`opponent_*` columns.
+    ///
+    /// `outcome` is the segment's *Fight*-level outcome, not a per-segment verdict — Fase 0-5
+    /// deliberately resolves win/loss at the Fight level, not per raw `AlbionBB` battle segment,
+    /// so every segment belonging to the same multi-segment Fight honestly reports the same
+    /// outcome here (they are the same real-world engagement). A segment with no linked Fight
+    /// yet reports `"unknown"`.
+    fn to_event_battle_view(
+        battle: event_battle::Model,
+        outcome_by_battle_id: &HashMap<i64, String>,
+        guild_stats_by_battle_id: &HashMap<i64, Vec<battle_guild_stat::Model>>,
+    ) -> EventBattleView {
+        let raw_battle_id = battle.albionbb_battle_id.parse::<i64>().ok();
+        let guild_stats = raw_battle_id.and_then(|id| guild_stats_by_battle_id.get(&id));
+        let friendly = guild_stats.and_then(|rows| rows.iter().find(|row| row.is_friendly));
+        let opponent = guild_stats.and_then(|rows| select_battle_opponent(rows));
+        let outcome = raw_battle_id
+            .and_then(|id| outcome_by_battle_id.get(&id))
+            .cloned()
+            .unwrap_or_else(|| "unknown".to_string());
 
-        battle_rows
-            .into_iter()
-            .map(|mut battle| {
-                let opponent_id = battle.opponent_guild_id.as_deref().unwrap_or_default();
-                let opponent_name = battle.opponent_guild_name.as_deref().unwrap_or_default();
-                if context.is_friendly_guild(opponent_id, opponent_name) {
-                    battle.opponent_guild_id = None;
-                    battle.opponent_guild_name = None;
-                    battle.opponent_players_count = None;
-                    battle.opponent_kills = None;
-                    battle.opponent_deaths = None;
-                    battle.opponent_kill_fame = None;
-                }
-                battle
-            })
-            .collect()
-    }
-
-    /// Converts a linked battle row into an API view.
-    fn to_event_battle_view(battle: event_battle::Model) -> EventBattleView {
         EventBattleView {
             id: battle.id,
             albionbb_battle_id: battle.albionbb_battle_id,
@@ -2681,52 +2829,135 @@ impl EventService {
             guild_players_count: battle.guild_players_count,
             battle_total_players: battle.battle_total_players,
             fetched_at: battle.fetched_at.to_rfc3339(),
-            guild_kills: battle.guild_kills,
-            guild_deaths: battle.guild_deaths,
-            guild_kill_fame: battle.guild_kill_fame,
-            is_win: battle.is_win,
-            opponent_guild_id: battle.opponent_guild_id,
-            opponent_guild_name: battle.opponent_guild_name,
-            opponent_players_count: battle.opponent_players_count,
-            opponent_kills: battle.opponent_kills,
-            opponent_deaths: battle.opponent_deaths,
-            opponent_kill_fame: battle.opponent_kill_fame,
+            guild_kills: friendly.map_or(0, |row| i64::from(row.kills)),
+            guild_deaths: friendly.map_or(0, |row| i64::from(row.deaths)),
+            guild_kill_fame: friendly.map_or(0, |row| row.kill_fame),
+            outcome,
+            opponent_guild_id: opponent
+                .and_then(|row| (!row.guild_id.is_empty()).then(|| row.guild_id.clone())),
+            opponent_guild_name: opponent.map(|row| row.guild_name.clone()),
+            opponent_players_count: opponent.map(|row| row.players),
+            opponent_kills: opponent.map(|row| i64::from(row.kills)),
+            opponent_deaths: opponent.map(|row| i64::from(row.deaths)),
+            opponent_kill_fame: opponent.map(|row| row.kill_fame),
         }
     }
 
-    /// Builds analytics rollups from persisted battle snapshots.
-    pub(crate) fn build_performance_stats(
-        battle_rows: &[event_battle::Model],
-    ) -> BattlePerformanceStats {
-        if battle_rows.is_empty() {
-            return BattlePerformanceStats::default();
+    /// Batches the evidence lookups [`to_event_battle_view`] needs and converts a whole event's
+    /// linked battle rows into API views in one pass.
+    async fn to_event_battle_views(
+        db: &DatabaseConnection,
+        battle_rows: Vec<event_battle::Model>,
+    ) -> Result<Vec<EventBattleView>, AppError> {
+        let battle_ids: Vec<i64> = battle_rows
+            .iter()
+            .filter_map(|battle| battle.albionbb_battle_id.parse::<i64>().ok())
+            .collect();
+        let outcome_by_battle_id = outcome_by_battle_id(db, &battle_ids).await?;
+        let guild_stats_by_battle_id = battle_guild_stats_by_battle_id(db, &battle_ids).await?;
+
+        Ok(battle_rows
+            .into_iter()
+            .map(|battle| {
+                Self::to_event_battle_view(battle, &outcome_by_battle_id, &guild_stats_by_battle_id)
+            })
+            .collect())
+    }
+
+    /// Builds analytics rollups for a scope of events (one event, or every event using a comp)
+    /// from the canonical evidence tables, deduplicated by distinct Fight rather than by raw
+    /// `AlbionBB` battle segment — a multi-segment Fight is one real engagement and must be
+    /// counted once, not once per segment.
+    ///
+    /// `wins`/`losses` come from each distinct fight's `fights.outcome` (`"draw"`/`"unknown"`
+    /// count toward `total_battles` but neither `wins` nor `losses`); kills/deaths/fame/player
+    /// counts come from each fight's `fight_stats` row, contributing zero when that row does not
+    /// exist yet (not an error — `fight_stats` is a best-effort recompute, not a guarantee).
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "player_sum/total_battles are small real-world counts, never near f64's precision limit"
+    )]
+    pub(crate) async fn build_performance_stats(
+        db: &DatabaseConnection,
+        event_ids: &[i64],
+    ) -> Result<BattlePerformanceStats, AppError> {
+        if event_ids.is_empty() {
+            return Ok(BattlePerformanceStats::default());
         }
 
-        let total_battles = battle_rows.len() as i64;
-        let wins = battle_rows.iter().filter(|battle| battle.is_win).count() as i64;
-        let total_kills = battle_rows.iter().map(|battle| battle.guild_kills).sum();
-        let total_deaths = battle_rows.iter().map(|battle| battle.guild_deaths).sum();
-        let total_kill_fame = battle_rows
-            .iter()
-            .map(|battle| battle.guild_kill_fame)
-            .sum();
-        let player_sum: i64 = battle_rows
-            .iter()
-            .map(|battle| i64::from(battle.guild_players_count))
-            .sum();
+        let fights = fight::Entity::find()
+            .filter(fight::Column::EventId.is_in(event_ids.to_vec()))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        if fights.is_empty() {
+            return Ok(BattlePerformanceStats::default());
+        }
 
-        BattlePerformanceStats {
+        let fight_ids: Vec<i64> = fights.iter().map(|fight| fight.id).collect();
+        let stats_by_fight: HashMap<i64, fight_stat::Model> = fight_stat::Entity::find()
+            .filter(fight_stat::Column::FightId.is_in(fight_ids.clone()))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?
+            .into_iter()
+            .map(|row| (row.fight_id, row))
+            .collect();
+
+        let total_battles = i64::try_from(fights.len()).unwrap_or(i64::MAX);
+        let wins = i64::try_from(
+            fights
+                .iter()
+                .filter(|fight| fight.outcome == "victory")
+                .count(),
+        )
+        .unwrap_or(i64::MAX);
+        let losses = i64::try_from(
+            fights
+                .iter()
+                .filter(|fight| fight.outcome == "defeat")
+                .count(),
+        )
+        .unwrap_or(i64::MAX);
+
+        let mut total_kills = 0i64;
+        let mut total_deaths = 0i64;
+        let mut total_kill_fame = 0i64;
+        let mut player_sum = 0i64;
+        for fight in &fights {
+            if let Some(stat) = stats_by_fight.get(&fight.id) {
+                total_kills += stat.friendly_kills;
+                total_deaths += stat.friendly_deaths;
+                total_kill_fame += stat.friendly_kill_fame;
+                player_sum += i64::from(stat.unique_friendly_players);
+            }
+        }
+
+        let battle_ids: Vec<i64> = fight_battle::Entity::find()
+            .filter(fight_battle::Column::FightId.is_in(fight_ids))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?
+            .into_iter()
+            .map(|row| row.battle_id)
+            .collect();
+
+        Ok(BattlePerformanceStats {
             total_battles,
             wins,
-            losses: total_battles - wins,
-            win_rate: ratio_percent(wins, total_battles),
+            losses,
+            // `wins + losses`, not `total_battles`: a `"draw"`/`"unknown"`-outcome fight must
+            // stay out of the rate's denominator, the same convention `intel::report`'s sibling
+            // migration (`compute_comps`) applies — dividing by `total_battles` here would
+            // silently treat every undecided fight as a loss for rate purposes.
+            win_rate: ratio_percent(wins, wins + losses),
             total_kills,
             total_deaths,
             kill_death_ratio: kill_death_ratio(total_kills, total_deaths),
             total_kill_fame,
             average_guild_players: player_sum as f64 / total_battles as f64,
-            top_opponents: build_top_opponents(battle_rows),
-        }
+            top_opponents: build_top_opponents(db, &battle_ids).await?,
+        })
     }
 
     /// Creates a new event.
@@ -4061,6 +4292,10 @@ mod tests {
     }
 
     /// Seeds an event, a battle and the snapshot that battle's per-player rows come from.
+    ///
+    /// Also seeds the canonical `fight`/`fight_battle` mapping the read side relies on for
+    /// win/loss (`fights.outcome`, derived from `is_win`: `"victory"`/`"defeat"`) — `event_battles`
+    /// no longer carries its own `is_win`/kills/deaths/fame columns at all.
     #[allow(clippy::too_many_arguments)]
     async fn insert_battle_with_players(
         db: &DatabaseConnection,
@@ -4075,10 +4310,6 @@ mod tests {
             battle_started_at: Set(ts()),
             guild_players_count: Set(players.len() as i32),
             fetched_at: Set(ts()),
-            guild_kills: Set(players.iter().map(|(_, kills, _)| kills).sum()),
-            guild_deaths: Set(players.iter().map(|(_, _, deaths)| deaths).sum()),
-            guild_kill_fame: Set(0),
-            is_win: Set(is_win),
             ..Default::default()
         }
         .insert(db)
@@ -4123,6 +4354,200 @@ mod tests {
         .insert(db)
         .await
         .expect("failed to insert the battle snapshot");
+
+        let fight = fight::ActiveModel {
+            event_id: Set(Some(event_id)),
+            started_at: Set(ts()),
+            ended_at: Set(None),
+            grouping_method: Set("seeded".to_string()),
+            outcome: Set(if is_win { "victory" } else { "defeat" }.to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert the fight");
+
+        fight_battle::ActiveModel {
+            fight_id: Set(fight.id),
+            battle_id: Set(battle_id),
+            sequence_number: Set(1),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert the fight segment");
+    }
+
+    /// Seeds a `guild_battle_snapshots` row plus a directly-created `fight`/`fight_battle`
+    /// pair, bypassing any `event_battle` row. This is the shape `group_orphan_fights`'s tests
+    /// need: an orphan fight has no event to seed it through `ensure_seed_fights_for_event`, so
+    /// its fixtures must be built by hand. Passing `Some(event_id)` lets the same helper build
+    /// the "already has an event" fixture the cross-pool test needs.
+    ///
+    /// Returns the created fight's id.
+    #[allow(clippy::too_many_arguments)]
+    async fn insert_fight_with_snapshot(
+        db: &DatabaseConnection,
+        event_id: Option<i64>,
+        battle_id: i64,
+        started_at: DateTime<Utc>,
+        ended_at: DateTime<Utc>,
+        friendly_guild_id: &str,
+        opponent_guild_id: Option<&str>,
+        player_ids: &[&str],
+        total_players: i64,
+    ) -> i64 {
+        let mut guilds = vec![BattleGuildSummary {
+            id: friendly_guild_id.to_string(),
+            name: "Weaklings".to_string(),
+            alliance_name: None,
+            alliance_id: None,
+            players: 10,
+            kills: 5,
+            deaths: 1,
+            kill_fame: 1_000_000,
+            winner: true,
+            average_item_power: 1_400.0,
+        }];
+        if let Some(opponent_guild_id) = opponent_guild_id {
+            guilds.push(BattleGuildSummary {
+                id: opponent_guild_id.to_string(),
+                name: "Black Order".to_string(),
+                alliance_name: None,
+                alliance_id: None,
+                players: 10,
+                kills: 1,
+                deaths: 5,
+                kill_fame: 500_000,
+                winner: false,
+                average_item_power: 1_390.0,
+            });
+        }
+        let guilds_json = serde_json::to_string(&guilds).expect("guild snapshot should serialize");
+        let players_json = serde_json::to_string(
+            &player_ids
+                .iter()
+                .map(|id| {
+                    serde_json::json!({
+                        "id": *id,
+                        "name": *id,
+                        "guild_id": friendly_guild_id,
+                        "guild_name": "Weaklings",
+                        "kills": 1,
+                        "deaths": 0,
+                        "kill_fame": 1000,
+                        "death_fame": 0,
+                        "item_power": 1300.0
+                    })
+                })
+                .collect::<Vec<_>>(),
+        )
+        .expect("players should serialize");
+
+        crate::modules::battles::entities::ActiveModel {
+            battle_id: Set(battle_id),
+            start_time: Set(started_at.into()),
+            end_time: Set(Some(ended_at.into())),
+            total_players: Set(total_players),
+            total_kills: Set(0),
+            total_fame: Set(0),
+            guilds_json: Set(guilds_json),
+            players_json: Set(players_json),
+            kills_json: Set("[]".to_string()),
+            losses_json: Set(serde_json::to_string(&BattleLossEstimate::default())
+                .expect("failed to serialize empty loss estimate")),
+            fetched_at: Set(ts()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert the battle snapshot");
+
+        let fight = fight::ActiveModel {
+            event_id: Set(event_id),
+            started_at: Set(started_at.into()),
+            ended_at: Set(Some(ended_at.into())),
+            grouping_method: Set("seeded".to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert the fight");
+
+        fight_battle::ActiveModel {
+            fight_id: Set(fight.id),
+            battle_id: Set(battle_id),
+            sequence_number: Set(1),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert the fight segment");
+
+        fight.id
+    }
+
+    /// Builds an in-memory `battle_guild_stat` row for tests that exercise
+    /// [`select_battle_opponent`]/[`opponent_rollups_for_battles`] directly, without touching the
+    /// database.
+    #[allow(clippy::too_many_arguments)]
+    fn battle_guild_stat_row(
+        battle_id: i64,
+        guild_id: &str,
+        guild_name: &str,
+        is_friendly: bool,
+        kill_fame: i64,
+    ) -> battle_guild_stat::Model {
+        battle_guild_stat::Model {
+            id: 0,
+            battle_id,
+            guild_id: guild_id.to_string(),
+            guild_name: guild_name.to_string(),
+            alliance_id: None,
+            alliance_name: None,
+            is_friendly,
+            players: 10,
+            kills: 5,
+            deaths: 1,
+            kill_fame,
+            avg_item_power: 1_300.0,
+            winner: false,
+            created_at: ts(),
+        }
+    }
+
+    /// Persists a `battle_guild_stat` row for a raw `AlbionBB` battle id.
+    #[allow(clippy::too_many_arguments)]
+    async fn insert_battle_guild_stat(
+        db: &DatabaseConnection,
+        battle_id: i64,
+        guild_id: &str,
+        guild_name: &str,
+        is_friendly: bool,
+        players: i32,
+        kills: i32,
+        deaths: i32,
+        kill_fame: i64,
+    ) {
+        battle_guild_stat::ActiveModel {
+            battle_id: Set(battle_id),
+            guild_id: Set(guild_id.to_string()),
+            guild_name: Set(guild_name.to_string()),
+            alliance_id: Set(None),
+            alliance_name: Set(None),
+            is_friendly: Set(is_friendly),
+            players: Set(players),
+            kills: Set(kills),
+            deaths: Set(deaths),
+            kill_fame: Set(kill_fame),
+            avg_item_power: Set(1_300.0),
+            winner: Set(false),
+            created_at: Set(ts()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert the battle guild stat");
     }
 
     /// A minimal event owned by `creator`, enough to hang sign-ups and battles off.
@@ -5092,6 +5517,276 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn group_orphan_fights_merges_close_overlapping_orphans() {
+        let db = seed_db().await;
+        let now = Utc::now();
+        let context = BattleLinkingContext::new("weaklings-id", &[], &[]);
+
+        let first = insert_fight_with_snapshot(
+            &db,
+            None,
+            900_000_001,
+            now,
+            now + ChronoDuration::minutes(10),
+            "weaklings-id",
+            Some("opponent-id"),
+            &["player-a", "player-b"],
+            20,
+        )
+        .await;
+        let second = insert_fight_with_snapshot(
+            &db,
+            None,
+            900_000_002,
+            now + ChronoDuration::minutes(8),
+            now + ChronoDuration::minutes(18),
+            "weaklings-id",
+            Some("opponent-id"),
+            &["player-a", "player-b"],
+            20,
+        )
+        .await;
+
+        let merged = group_orphan_fights(&db, &context, now + ChronoDuration::hours(1))
+            .await
+            .expect("grouping pass should succeed");
+        assert_eq!(merged, 1);
+
+        let remaining = fight::Entity::find()
+            .filter(fight::Column::EventId.is_null())
+            .filter(fight::Column::Id.is_in(vec![first, second]))
+            .all(&db)
+            .await
+            .expect("fight query should succeed");
+        assert_eq!(
+            remaining.len(),
+            1,
+            "the two orphan segments must collapse onto one surviving fight"
+        );
+        assert_eq!(remaining[0].grouping_method, "automatic");
+        assert!(!remaining[0].needs_review);
+    }
+
+    #[tokio::test]
+    async fn group_orphan_fights_leaves_a_wide_gap_separate() {
+        let db = seed_db().await;
+        let now = Utc::now();
+        let context = BattleLinkingContext::new("weaklings-id", &[], &[]);
+
+        insert_fight_with_snapshot(
+            &db,
+            None,
+            900_000_010,
+            now,
+            now + ChronoDuration::minutes(10),
+            "weaklings-id",
+            Some("opponent-id"),
+            &["player-a"],
+            20,
+        )
+        .await;
+        insert_fight_with_snapshot(
+            &db,
+            None,
+            900_000_011,
+            now + ChronoDuration::minutes(31),
+            now + ChronoDuration::minutes(41),
+            "weaklings-id",
+            Some("opponent-id"),
+            &["player-a"],
+            20,
+        )
+        .await;
+
+        let merged = group_orphan_fights(&db, &context, now + ChronoDuration::hours(1))
+            .await
+            .expect("grouping pass should succeed");
+        assert_eq!(merged, 0);
+
+        let remaining = fight::Entity::find()
+            .filter(fight::Column::EventId.is_null())
+            .all(&db)
+            .await
+            .expect("fight query should succeed");
+        assert_eq!(
+            remaining.len(),
+            2,
+            "a gap beyond MAX_FIGHT_GAP must not merge"
+        );
+    }
+
+    #[tokio::test]
+    async fn group_orphan_fights_marks_partial_overlap_as_needing_review() {
+        let db = seed_db().await;
+        let now = Utc::now();
+        let context = BattleLinkingContext::new("weaklings-id", &[], &[]);
+
+        let first = insert_fight_with_snapshot(
+            &db,
+            None,
+            900_000_020,
+            now,
+            now + ChronoDuration::minutes(10),
+            "weaklings-id",
+            None,
+            &["player-a", "player-b"],
+            0,
+        )
+        .await;
+        let second = insert_fight_with_snapshot(
+            &db,
+            None,
+            900_000_021,
+            now + ChronoDuration::minutes(12),
+            now + ChronoDuration::minutes(22),
+            "weaklings-id",
+            None,
+            &["player-a", "player-b"],
+            0,
+        )
+        .await;
+
+        let merged = group_orphan_fights(&db, &context, now + ChronoDuration::hours(1))
+            .await
+            .expect("grouping pass should succeed");
+        assert_eq!(merged, 0, "ambiguous evidence must not auto-merge");
+
+        let fights = fight::Entity::find()
+            .filter(fight::Column::Id.is_in(vec![first, second]))
+            .all(&db)
+            .await
+            .expect("fight query should succeed");
+        assert_eq!(
+            fights.len(),
+            2,
+            "ambiguous candidates must remain separate rows"
+        );
+        assert!(
+            fights.iter().all(|fight| fight.needs_review),
+            "both sides of a NeedsReview pair must be flagged"
+        );
+    }
+
+    #[tokio::test]
+    async fn group_orphan_fights_excludes_fights_older_than_the_lookback() {
+        let db = seed_db().await;
+        let now = Utc::now();
+        let context = BattleLinkingContext::new("weaklings-id", &[], &[]);
+        let window_edge = now - ORPHAN_LOOKBACK;
+
+        let old = insert_fight_with_snapshot(
+            &db,
+            None,
+            900_000_030,
+            window_edge - ChronoDuration::minutes(5),
+            window_edge + ChronoDuration::minutes(5),
+            "weaklings-id",
+            Some("opponent-id"),
+            &["player-a", "player-b"],
+            20,
+        )
+        .await;
+        let recent = insert_fight_with_snapshot(
+            &db,
+            None,
+            900_000_031,
+            window_edge + ChronoDuration::minutes(2),
+            window_edge + ChronoDuration::minutes(12),
+            "weaklings-id",
+            Some("opponent-id"),
+            &["player-a", "player-b"],
+            20,
+        )
+        .await;
+
+        let merged = group_orphan_fights(&db, &context, now)
+            .await
+            .expect("grouping pass should succeed");
+        assert_eq!(
+            merged, 0,
+            "the only fight inside the lookback window has nothing to pair with"
+        );
+
+        let old_fight = fight::Entity::find_by_id(old)
+            .one(&db)
+            .await
+            .expect("fight query should succeed")
+            .expect("the excluded fight must remain untouched");
+        assert_eq!(old_fight.grouping_method, "seeded");
+        assert!(!old_fight.needs_review);
+
+        let still_present = fight::Entity::find()
+            .filter(fight::Column::Id.is_in(vec![old, recent]))
+            .count(&db)
+            .await
+            .expect("fight query should succeed");
+        assert_eq!(
+            still_present, 2,
+            "the fight outside the lookback window must not be merged away, even though it \
+             would have scored AutoMerge against the in-window fight if it had been considered"
+        );
+    }
+
+    #[tokio::test]
+    async fn group_orphan_fights_never_merges_across_the_event_boundary() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let event_id = insert_event(&db, "Has an event", author).await;
+        let now = Utc::now();
+        let context = BattleLinkingContext::new("weaklings-id", &[], &[]);
+
+        let evented = insert_fight_with_snapshot(
+            &db,
+            Some(event_id),
+            900_000_040,
+            now,
+            now + ChronoDuration::minutes(10),
+            "weaklings-id",
+            Some("opponent-id"),
+            &["player-a", "player-b"],
+            20,
+        )
+        .await;
+        let orphan = insert_fight_with_snapshot(
+            &db,
+            None,
+            900_000_041,
+            now + ChronoDuration::minutes(8),
+            now + ChronoDuration::minutes(18),
+            "weaklings-id",
+            Some("opponent-id"),
+            &["player-a", "player-b"],
+            20,
+        )
+        .await;
+
+        let merged = group_orphan_fights(&db, &context, now + ChronoDuration::hours(1))
+            .await
+            .expect("grouping pass should succeed");
+        assert_eq!(
+            merged, 0,
+            "an orphan pass must never merge an orphan with an event-scoped fight, even when \
+             it would otherwise score AutoMerge"
+        );
+
+        let evented_fight = fight::Entity::find_by_id(evented)
+            .one(&db)
+            .await
+            .expect("fight query should succeed")
+            .expect("the evented fight must survive untouched");
+        assert_eq!(evented_fight.event_id, Some(event_id));
+        assert_eq!(evented_fight.grouping_method, "seeded");
+
+        let orphan_fight = fight::Entity::find_by_id(orphan)
+            .one(&db)
+            .await
+            .expect("fight query should succeed")
+            .expect("the orphan fight must survive untouched");
+        assert_eq!(orphan_fight.event_id, None);
+        assert_eq!(orphan_fight.grouping_method, "seeded");
+    }
+
+    #[tokio::test]
     async fn event_detail_rejects_a_battle_already_owned_by_another_event() {
         let db = seed_db().await;
         let author = insert_user(&db, "admin", "admin@example.com").await;
@@ -5110,10 +5805,6 @@ mod tests {
             battle_started_at: Set(ts()),
             guild_players_count: Set(1),
             fetched_at: Set(ts()),
-            guild_kills: Set(1),
-            guild_deaths: Set(0),
-            guild_kill_fame: Set(0),
-            is_win: Set(true),
             ..Default::default()
         }
         .insert(&db)
@@ -5138,11 +5829,22 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "fixture setup for the zeroed-link-vs-hydrated-evidence scenario across event_battles, \
+            guild_battle_snapshots, fights, fight_stats and battle_guild_stats; splitting it up would \
+            separate steps that only make sense read together"
+    )]
     async fn event_detail_prefers_hydrated_snapshot_metrics_over_zeroed_link_summary() {
         let db = seed_db().await;
         let author = insert_user(&db, "admin", "admin@example.com").await;
         let event_id = insert_event(&db, "Hydrated event", author).await;
         let battle_id = 425_654_503;
+        // The initial link summary is wrong on purpose (zeroed kills, `is_win: false`), the same
+        // way a fresh link from AlbionBB's compact list payload used to be before the detail
+        // endpoint hydrated it. `build_performance_stats` now reads `fights`/`fight_stats`
+        // instead, so those — not `event_battles` — are what must carry the corrected, hydrated
+        // numbers below.
         insert_battle_with_players(&db, event_id, battle_id, false, &[("Alice", 0, 0)]).await;
 
         let snapshot = GuildBattleSnapshotEntity::find()
@@ -5184,6 +5886,91 @@ mod tests {
             .update(&db)
             .await
             .expect("snapshot update should succeed");
+
+        // The canonical Fight/`fight_stats` evidence disagrees with the zeroed, `is_win: false`
+        // link summary above — this is the "hydrated overrides zeroed" scenario, now expressed
+        // through the tables `build_performance_stats` actually reads.
+        let fight_id = fight_battle::Entity::find()
+            .filter(fight_battle::Column::BattleId.eq(battle_id))
+            .one(&db)
+            .await
+            .expect("fight segment query should succeed")
+            .expect("insert_battle_with_players should have seeded a fight segment")
+            .fight_id;
+        let fight_row = fight::Entity::find_by_id(fight_id)
+            .one(&db)
+            .await
+            .expect("fight query should succeed")
+            .expect("fight should exist");
+        let mut fight_active: fight::ActiveModel = fight_row.into();
+        fight_active.outcome = Set("victory".to_string());
+        fight_active
+            .update(&db)
+            .await
+            .expect("fight outcome update should succeed");
+
+        fight_stat::ActiveModel {
+            fight_id: Set(fight_id),
+            segment_count: Set(1),
+            unique_friendly_players: Set(14),
+            unique_enemy_players: Set(18),
+            friendly_kills: Set(11),
+            friendly_deaths: Set(7),
+            friendly_kill_fame: Set(2_700_000),
+            enemy_kills: Set(7),
+            enemy_deaths: Set(11),
+            enemy_kill_fame: Set(1_500_000),
+            avg_friendly_item_power: Set(1_400.0),
+            avg_enemy_item_power: Set(1_390.0),
+            friendly_estimated_loss: Set(0),
+            enemy_estimated_loss: Set(0),
+            computed_at: Set(ts()),
+            created_at: Set(ts()),
+            updated_at: Set(ts()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert the fight stat");
+
+        battle_guild_stat::ActiveModel {
+            battle_id: Set(battle_id),
+            guild_id: Set("configured-guild-id".to_string()),
+            guild_name: Set("Weaklings".to_string()),
+            alliance_id: Set(None),
+            alliance_name: Set(None),
+            is_friendly: Set(true),
+            players: Set(14),
+            kills: Set(11),
+            deaths: Set(7),
+            kill_fame: Set(2_700_000),
+            avg_item_power: Set(1_400.0),
+            winner: Set(true),
+            created_at: Set(ts()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert the friendly battle guild stat");
+        battle_guild_stat::ActiveModel {
+            battle_id: Set(battle_id),
+            guild_id: Set("enemy-id".to_string()),
+            guild_name: Set("Black Order".to_string()),
+            alliance_id: Set(None),
+            alliance_name: Set(None),
+            is_friendly: Set(false),
+            players: Set(18),
+            kills: Set(7),
+            deaths: Set(11),
+            kill_fame: Set(1_500_000),
+            avg_item_power: Set(1_390.0),
+            winner: Set(false),
+            created_at: Set(ts()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert the enemy battle guild stat");
 
         let context = BattleLinkingContext::new("configured-guild-id", &[], &[]);
         let detail = EventService::new()
@@ -5240,10 +6027,6 @@ mod tests {
         let snapshot = linked_battle_snapshot(&battle, &context);
 
         assert_eq!(snapshot.guild_players_count, 14);
-        assert_eq!(snapshot.guild_kills, 11);
-        assert_eq!(snapshot.guild_deaths, 7);
-        assert_eq!(snapshot.guild_kill_fame, 2_700_000);
-        assert!(snapshot.is_win);
     }
 
     #[tokio::test]
@@ -6516,6 +7299,251 @@ mod tests {
             AppError::Validation(message) => assert!(message.contains("fame")),
             other => panic!("expected validation, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn select_battle_opponent_picks_highest_kill_fame_breaking_ties_by_guild_id() {
+        let rows = vec![
+            battle_guild_stat_row(1, "guild-b", "Guild B", false, 1_000_000),
+            battle_guild_stat_row(1, "guild-a", "Guild A", false, 1_000_000),
+            battle_guild_stat_row(1, "guild-c", "Guild C", false, 500_000),
+            battle_guild_stat_row(1, "friendly-id", "Weaklings", true, 5_000_000),
+        ];
+
+        let opponent = select_battle_opponent(&rows).expect("an opponent should be found");
+
+        assert_eq!(
+            opponent.guild_id, "guild-a",
+            "the highest kill_fame wins; a tie is broken by ascending guild_id, not iteration order"
+        );
+    }
+
+    #[test]
+    fn select_battle_opponent_returns_none_when_every_guild_is_friendly() {
+        let rows = vec![
+            battle_guild_stat_row(1, "weaklings-id", "Weaklings", true, 1_000_000),
+            battle_guild_stat_row(1, "ally-id", "Ally Guild", true, 500_000),
+        ];
+
+        assert!(
+            select_battle_opponent(&rows).is_none(),
+            "an all-friendly/allied battle must not fabricate an opponent"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_top_opponents_skips_battles_where_every_guild_is_friendly() {
+        let db = seed_db().await;
+        insert_battle_guild_stat(
+            &db,
+            7001,
+            "weaklings-id",
+            "Weaklings",
+            true,
+            10,
+            5,
+            1,
+            1_000_000,
+        )
+        .await;
+        insert_battle_guild_stat(&db, 7001, "ally-id", "Ally Guild", true, 8, 3, 0, 500_000).await;
+
+        let opponents = build_top_opponents(&db, &[7001])
+            .await
+            .expect("build_top_opponents should succeed");
+
+        assert!(
+            opponents.is_empty(),
+            "a battle where every guild present is friendly/allied must not fabricate an opponent"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_top_opponents_picks_the_highest_kill_fame_enemy_guild() {
+        let db = seed_db().await;
+        insert_battle_guild_stat(
+            &db,
+            7002,
+            "weaklings-id",
+            "Weaklings",
+            true,
+            10,
+            9,
+            3,
+            2_000_000,
+        )
+        .await;
+        insert_battle_guild_stat(
+            &db,
+            7002,
+            "minor-id",
+            "Minor Threat",
+            false,
+            4,
+            1,
+            5,
+            100_000,
+        )
+        .await;
+        insert_battle_guild_stat(
+            &db,
+            7002,
+            "main-id",
+            "Black Order",
+            false,
+            12,
+            3,
+            9,
+            1_500_000,
+        )
+        .await;
+
+        let opponents = build_top_opponents(&db, &[7002])
+            .await
+            .expect("build_top_opponents should succeed");
+
+        assert_eq!(opponents.len(), 1);
+        assert_eq!(opponents[0].guild_id, Some("main-id".to_string()));
+        assert_eq!(opponents[0].guild_name, "Black Order");
+        assert_eq!(opponents[0].battles, 1);
+        assert_eq!(opponents[0].guild_kill_fame, 2_000_000);
+        assert_eq!(opponents[0].opponent_kill_fame, 1_500_000);
+    }
+
+    #[tokio::test]
+    async fn to_event_battle_views_reports_the_same_fight_level_outcome_for_every_segment() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let event_id = insert_event(&db, "Long engagement", author).await;
+
+        // Two raw AlbionBB battle segments, deliberately linked to ONE canonical Fight (the
+        // shape a real multi-segment engagement takes after grouping) rather than one Fight
+        // each.
+        let first_battle = event_battle::ActiveModel {
+            event_id: Set(event_id),
+            albionbb_battle_id: Set("9001".to_string()),
+            battle_started_at: Set(ts()),
+            guild_players_count: Set(10),
+            fetched_at: Set(ts()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert the first segment");
+        let second_battle = event_battle::ActiveModel {
+            event_id: Set(event_id),
+            albionbb_battle_id: Set("9002".to_string()),
+            battle_started_at: Set(ts()),
+            guild_players_count: Set(10),
+            fetched_at: Set(ts()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert the second segment");
+
+        let fight = fight::ActiveModel {
+            event_id: Set(Some(event_id)),
+            started_at: Set(ts()),
+            ended_at: Set(None),
+            grouping_method: Set("automatic".to_string()),
+            outcome: Set("victory".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert the fight");
+        for (index, battle_id) in [9001_i64, 9002_i64].into_iter().enumerate() {
+            fight_battle::ActiveModel {
+                fight_id: Set(fight.id),
+                battle_id: Set(battle_id),
+                sequence_number: Set(i32::try_from(index).unwrap_or(i32::MAX) + 1),
+                ..Default::default()
+            }
+            .insert(&db)
+            .await
+            .expect("failed to insert the fight segment");
+        }
+
+        let views = EventService::to_event_battle_views(&db, vec![first_battle, second_battle])
+            .await
+            .expect("views should build");
+
+        assert_eq!(views.len(), 2);
+        assert!(
+            views.iter().all(|view| view.outcome == "victory"),
+            "every segment of the same multi-segment Fight must report that Fight's outcome, \
+                not a per-segment one — they are the same engagement"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_performance_stats_counts_a_multi_segment_fight_once() {
+        let db = seed_db().await;
+        let author = insert_user(&db, "admin", "admin@example.com").await;
+        let event_id = insert_event(&db, "Long engagement", author).await;
+
+        let fight = fight::ActiveModel {
+            event_id: Set(Some(event_id)),
+            started_at: Set(ts()),
+            ended_at: Set(None),
+            grouping_method: Set("automatic".to_string()),
+            outcome: Set("victory".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert the fight");
+        for (index, battle_id) in [8001_i64, 8002_i64].into_iter().enumerate() {
+            fight_battle::ActiveModel {
+                fight_id: Set(fight.id),
+                battle_id: Set(battle_id),
+                sequence_number: Set(i32::try_from(index).unwrap_or(i32::MAX) + 1),
+                ..Default::default()
+            }
+            .insert(&db)
+            .await
+            .expect("failed to insert the fight segment");
+        }
+
+        fight_stat::ActiveModel {
+            fight_id: Set(fight.id),
+            segment_count: Set(2),
+            unique_friendly_players: Set(12),
+            unique_enemy_players: Set(15),
+            friendly_kills: Set(9),
+            friendly_deaths: Set(2),
+            friendly_kill_fame: Set(3_000_000),
+            enemy_kills: Set(2),
+            enemy_deaths: Set(9),
+            enemy_kill_fame: Set(800_000),
+            avg_friendly_item_power: Set(1_400.0),
+            avg_enemy_item_power: Set(1_350.0),
+            friendly_estimated_loss: Set(0),
+            enemy_estimated_loss: Set(0),
+            computed_at: Set(ts()),
+            created_at: Set(ts()),
+            updated_at: Set(ts()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert the fight stat");
+
+        let stats = EventService::build_performance_stats(&db, &[event_id])
+            .await
+            .expect("build_performance_stats should succeed");
+
+        // One Fight split into two AlbionBB battle segments by upstream: it must be counted
+        // once, not once per segment — the same bug shape `intel::report::compute_comps`'s
+        // sibling migration fixes.
+        assert_eq!(stats.total_battles, 1);
+        assert_eq!(stats.wins, 1);
+        assert_eq!(stats.losses, 0);
+        assert_eq!(stats.total_kills, 9);
+        assert_eq!(stats.total_deaths, 2);
+        assert_eq!(stats.total_kill_fame, 3_000_000);
+        assert!((stats.average_guild_players - 12.0).abs() < f64::EPSILON);
     }
 }
 

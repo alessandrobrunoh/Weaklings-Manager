@@ -111,6 +111,14 @@ mod m20260907_000004_reopenable_applications;
 mod m20260908_000001_regear_request_credits;
 mod m20260908_000002_regear_self_service_source;
 mod m20260908_000003_add_giveaway_regear_bonus;
+mod m20260908_000004_create_battle_evidence_tables;
+mod m20260908_000005_create_enemy_identity_tables;
+mod m20260908_000006_seed_enemy_intel_permission;
+mod m20260908_000007_create_fingerprint_tables;
+mod m20260908_000008_create_battle_loss_estimates;
+mod m20260908_000009_create_fight_stats;
+mod m20260908_000010_create_attention_findings;
+mod m20260909_000001_drop_event_battles_analytics_columns;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -226,6 +234,14 @@ impl MigratorTrait for Migrator {
             Box::new(m20260908_000001_regear_request_credits::Migration),
             Box::new(m20260908_000002_regear_self_service_source::Migration),
             Box::new(m20260908_000003_add_giveaway_regear_bonus::Migration),
+            Box::new(m20260908_000004_create_battle_evidence_tables::Migration),
+            Box::new(m20260908_000005_create_enemy_identity_tables::Migration),
+            Box::new(m20260908_000006_seed_enemy_intel_permission::Migration),
+            Box::new(m20260908_000007_create_fingerprint_tables::Migration),
+            Box::new(m20260908_000008_create_battle_loss_estimates::Migration),
+            Box::new(m20260908_000009_create_fight_stats::Migration),
+            Box::new(m20260908_000010_create_attention_findings::Migration),
+            Box::new(m20260909_000001_drop_event_battles_analytics_columns::Migration),
         ]
     }
 }

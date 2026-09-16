@@ -31,7 +31,10 @@ use crate::modules::battles::outcome::{
     BattleOutcome, FriendlySide, GuildLine, OutcomeVerdict, battle_outcome, combine_segments,
 };
 use crate::modules::comps::entities::{build, comp};
-use crate::modules::events::entities::{event, event_participation, fight, fight_battle};
+use crate::modules::events::entities::{
+    event, event_battle, event_participation, fight, fight_backfill_issue, fight_battle,
+};
+use crate::modules::fight_analytics;
 use crate::modules::users::entities as user;
 use crate::modules::{
     audit::service::AuditService,
@@ -40,7 +43,7 @@ use crate::modules::{
 use crate::pagination::{
     PaginatedData, PaginationParams, SortOrder, paginate_vec, resolve_sort_key,
 };
-use crate::responses::ApiResponse;
+use crate::responses::{ApiResponse, ApiResponseFightBackfillIssueList};
 use serde_json::{Value, json};
 
 /// Persisted summary metadata for one ordered battle segment of a fight.
@@ -313,6 +316,23 @@ pub struct FightParticipantCoverage {
     pub total_segments: i64,
 }
 
+/// One row from `fight_backfill_issues`: an `event_battles` row the original
+/// migration's one-time backfill could not cleanly convert into a seeded
+/// Fight. Write-only until now — this is its first read path.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct FightBackfillIssueView {
+    pub event_battle_id: i64,
+    pub albionbb_battle_id: String,
+    pub reason: String,
+    /// RFC 3339.
+    pub created_at: String,
+    /// The event this `event_battles` row belonged to, when the row still
+    /// exists (the FK is `ON DELETE CASCADE`, so this is always `Some` in
+    /// practice — `None` only if `event_battles` were ever deleted through
+    /// a path that somehow bypassed the FK, which should not happen).
+    pub event_id: Option<i64>,
+}
+
 pub fn router() -> Router {
     Router::new()
         .route("/", get(list_fights))
@@ -320,7 +340,84 @@ pub fn router() -> Router {
         .route("/{id}/move-battle", post(move_battle))
         .route("/{id}/split", post(split_fight))
         .route("/trends", get(get_fight_trends))
+        .route("/backfill-issues", get(get_fight_backfill_issues))
         .route("/{id}", get(get_fight))
+}
+
+/// Lists every recorded backfill issue: an `event_battles` row the
+/// migration's one-time backfill could not cleanly convert into a seeded
+/// Fight, kept for officer reconciliation rather than silently discarded.
+/// Diagnostic drill-down of the same resource as `GET /api/fights`, so it
+/// is gated on the same `fights.view` permission rather than a separate
+/// tier.
+///
+/// # Errors
+///
+/// Returns `403 Forbidden` if the caller lacks `fights.view`.
+#[utoipa::path(
+    get,
+    path = "/api/fights/backfill-issues",
+    tag = "fights",
+    summary = "List fight backfill issues",
+    description = "Rows from `fight_backfill_issues`, an `event_battles` row the original \
+        migration's one-time backfill could not cleanly convert into a seeded Fight (an \
+        unparseable AlbionBB battle ID, or a battle already assigned to another event). \
+        Write-only until now; this is its first read path. Ordered newest first.",
+    security(("session_cookie" = ["fights.view"])),
+    responses(
+        (status = 200, description = "Backfill issues retrieved", body = ApiResponseFightBackfillIssueList),
+        (status = 401, description = "Unauthorized", body = crate::errors::ProblemDetails),
+        (status = 403, description = "Forbidden - lacks fights.view", body = crate::errors::ProblemDetails)
+    )
+)]
+pub async fn get_fight_backfill_issues(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<DatabaseConnection>,
+) -> Result<Json<ApiResponse<Vec<FightBackfillIssueView>>>, AppError> {
+    user.require(&perms, Permission::FightsView).await?;
+    let issues = list_fight_backfill_issues(&db).await?;
+    Ok(Json(ApiResponse::new(issues)))
+}
+
+/// Reads every recorded backfill issue, newest first, with the owning
+/// event's id when the source `event_battles` row still exists.
+async fn list_fight_backfill_issues(
+    db: &DatabaseConnection,
+) -> Result<Vec<FightBackfillIssueView>, AppError> {
+    let issues = fight_backfill_issue::Entity::find()
+        .order_by_desc(fight_backfill_issue::Column::CreatedAt)
+        .all(db)
+        .await
+        .map_err(AppError::Database)?;
+    let event_battle_ids = issues
+        .iter()
+        .map(|issue| issue.event_battle_id)
+        .collect::<Vec<_>>();
+    let event_ids_by_event_battle = if event_battle_ids.is_empty() {
+        HashMap::new()
+    } else {
+        event_battle::Entity::find()
+            .filter(event_battle::Column::Id.is_in(event_battle_ids))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?
+            .into_iter()
+            .map(|row| (row.id, row.event_id))
+            .collect::<HashMap<_, _>>()
+    };
+    Ok(issues
+        .into_iter()
+        .map(|issue| FightBackfillIssueView {
+            event_id: event_ids_by_event_battle
+                .get(&issue.event_battle_id)
+                .copied(),
+            event_battle_id: issue.event_battle_id,
+            albionbb_battle_id: issue.albionbb_battle_id,
+            reason: issue.reason,
+            created_at: issue.created_at.to_rfc3339(),
+        })
+        .collect())
 }
 
 /// Query parameters for browsing persisted canonical fights.
@@ -386,10 +483,11 @@ async fn list_fights(
     let pagination = query.pagination();
     // Outcome and combat values are derived from every Fight's persisted segments, so pagination
     // must happen after hydration, filtering, and sorting rather than on the raw `fights` rows.
-    let fights = fight::Entity::find()
-        .all(&db)
-        .await
-        .map_err(AppError::Database)?;
+    let mut find = fight::Entity::find();
+    if let Some(needs_review) = query.needs_review {
+        find = find.filter(fight::Column::NeedsReview.eq(needs_review));
+    }
+    let fights = find.all(&db).await.map_err(AppError::Database)?;
     let fight_ids = fights.iter().map(|model| model.id).collect::<Vec<_>>();
     let segments = if fight_ids.is_empty() {
         Vec::new()
@@ -788,6 +886,15 @@ async fn merge_fights(
     )
     .await;
 
+    // Best-effort, additive telemetry: recomputes the surviving fight's
+    // aggregated outcome/stats now that its segments have changed. A bug
+    // here must never affect this mutation's already-committed result.
+    if let Err(error) =
+        fight_analytics::writer::recompute_fight_analytics(&db, request.target_fight_id).await
+    {
+        tracing::warn!(fight_id = request.target_fight_id, error = %error, "failed to recompute fight analytics after merge");
+    }
+
     Ok(Json(ApiResponse::new(FightMutationResult {
         fight_id: request.target_fight_id,
         deleted_fight_ids,
@@ -896,6 +1003,22 @@ async fn move_battle(
     )
     .await;
 
+    // Best-effort, additive telemetry: recomputes the target fight (and the
+    // source fight, when it survived the move) now that their segments have
+    // changed. A bug here must never affect this mutation's already-committed
+    // result.
+    let mut affected_fight_ids = vec![request.target_fight_id];
+    if !deleted_fight_ids.contains(&source_fight_id) {
+        affected_fight_ids.push(source_fight_id);
+    }
+    for affected_fight_id in affected_fight_ids {
+        if let Err(error) =
+            fight_analytics::writer::recompute_fight_analytics(&db, affected_fight_id).await
+        {
+            tracing::warn!(fight_id = affected_fight_id, error = %error, "failed to recompute fight analytics after battle move");
+        }
+    }
+
     Ok(Json(ApiResponse::new(FightMutationResult {
         fight_id: request.target_fight_id,
         deleted_fight_ids,
@@ -991,6 +1114,17 @@ async fn split_fight(
         }),
     )
     .await;
+
+    // Best-effort, additive telemetry: recomputes both the original fight
+    // and the newly created one now that their segments have changed. A bug
+    // here must never affect this mutation's already-committed result.
+    for affected_fight_id in [source_fight_id, new_fight.id] {
+        if let Err(error) =
+            fight_analytics::writer::recompute_fight_analytics(&db, affected_fight_id).await
+        {
+            tracing::warn!(fight_id = affected_fight_id, error = %error, "failed to recompute fight analytics after split");
+        }
+    }
 
     Ok(Json(ApiResponse::new(FightMutationResult {
         fight_id: new_fight.id,
@@ -2081,6 +2215,7 @@ mod tests {
     use super::*;
     use crate::migration::MigratorTrait;
     use crate::modules::battles::entities as battle_snapshot;
+    use crate::modules::comps::entities::comp_category;
     use sea_orm::Database;
 
     async fn seed_db() -> DatabaseConnection {
@@ -2250,6 +2385,10 @@ mod tests {
             needs_review: true,
             created_at: now,
             updated_at: now,
+            outcome: "unknown".to_string(),
+            outcome_method: None,
+            analytics_computed_at: None,
+            analytics_stale: true,
         }
     }
 
@@ -2401,6 +2540,137 @@ mod tests {
                 .map(|segment| (segment.battle_id, segment.sequence_number))
                 .collect::<Vec<_>>(),
             [(200, 1), (100, 2)]
+        );
+    }
+
+    /// Best-effort wiring check: `merge_fights`, `split_fight` and
+    /// `move_battle` each trigger `fight_analytics::writer::recompute_fight_analytics`
+    /// for every fight id they affect, after their own transaction commits.
+    /// Reuses the same fixtures as `manual_mutations_persist_resequenced_segments_and_metadata`
+    /// rather than building new ones — this test does not re-cover any of
+    /// that test's own resequencing/metadata assertions.
+    #[tokio::test]
+    async fn manual_mutations_trigger_best_effort_fight_analytics_recompute() {
+        use crate::modules::fight_analytics::entities::fight_stat;
+
+        let db = seed_db().await;
+        let earlier = timestamp(-2);
+        let later = timestamp(-1);
+        let target = insert_fight(&db, later).await;
+        let source = insert_fight(&db, earlier).await;
+        insert_snapshot(
+            &db,
+            100,
+            later,
+            None,
+            10,
+            1,
+            100,
+            Vec::new(),
+            Vec::new(),
+            BattleLossEstimate::default(),
+        )
+        .await;
+        insert_snapshot(
+            &db,
+            200,
+            earlier,
+            None,
+            20,
+            2,
+            200,
+            Vec::new(),
+            Vec::new(),
+            BattleLossEstimate::default(),
+        )
+        .await;
+        insert_segment(&db, target.id, 100, 1).await;
+        insert_segment(&db, source.id, 200, 1).await;
+
+        // `merge_fights`: only the surviving target fight is recomputed.
+        let Json(merged) = merge_fights(
+            test_admin(),
+            Extension(Permissions::new_empty()),
+            Extension(db.clone()),
+            Json(MergeFightsRequest {
+                target_fight_id: target.id,
+                fight_ids: vec![target.id, source.id],
+            }),
+        )
+        .await
+        .expect("merge fights");
+
+        let merged_fight = fight::Entity::find_by_id(merged.data.fight_id)
+            .one(&db)
+            .await
+            .expect("query merged fight")
+            .expect("merged fight exists");
+        assert!(
+            merged_fight.analytics_computed_at.is_some(),
+            "merge_fights must trigger a recompute for the surviving fight"
+        );
+        assert!(!merged_fight.analytics_stale);
+        let merged_stats = fight_stat::Entity::find()
+            .filter(fight_stat::Column::FightId.eq(merged.data.fight_id))
+            .one(&db)
+            .await
+            .expect("query fight_stats")
+            .expect("fight_stats row was computed for the merged fight");
+        assert_eq!(merged_stats.segment_count, 2);
+
+        // `split_fight`: both the original and the newly created fight are
+        // recomputed.
+        let Json(split) = split_fight(
+            test_admin(),
+            Extension(Permissions::new_empty()),
+            Extension(db.clone()),
+            Path(target.id),
+            Json(SplitFightRequest {
+                battle_ids: vec![100],
+            }),
+        )
+        .await
+        .expect("split merged fight");
+
+        let original_stats = fight_stat::Entity::find()
+            .filter(fight_stat::Column::FightId.eq(target.id))
+            .one(&db)
+            .await
+            .expect("query fight_stats")
+            .expect("fight_stats row was recomputed for the original fight");
+        assert_eq!(original_stats.segment_count, 1);
+        let new_stats = fight_stat::Entity::find()
+            .filter(fight_stat::Column::FightId.eq(split.data.fight_id))
+            .one(&db)
+            .await
+            .expect("query fight_stats")
+            .expect("fight_stats row was computed for the newly created fight");
+        assert_eq!(new_stats.segment_count, 1);
+
+        // `move_battle`: both the source and target fights are recomputed.
+        let Json(moved) = move_battle(
+            test_admin(),
+            Extension(Permissions::new_empty()),
+            Extension(db.clone()),
+            Path(split.data.fight_id),
+            Json(MoveBattleRequest {
+                battle_id: 100,
+                target_fight_id: target.id,
+            }),
+        )
+        .await
+        .expect("move split segment back");
+        assert_eq!(moved.data.deleted_fight_ids, [split.data.fight_id]);
+
+        let final_stats = fight_stat::Entity::find()
+            .filter(fight_stat::Column::FightId.eq(target.id))
+            .one(&db)
+            .await
+            .expect("query fight_stats")
+            .expect("fight_stats row was recomputed for the target fight after the move");
+        assert_eq!(
+            final_stats.segment_count, 2,
+            "move_battle's single remaining source segment rejoins the target fight"
         );
     }
 
@@ -2754,6 +3024,192 @@ mod tests {
         assert_eq!(outcome.outcome, FightOutcome::Unknown);
         assert_eq!(outcome.evidence_count, 0);
         assert_eq!(outcome.method, "no_segments");
+    }
+
+    /// Minimal fixture chain (comp category -> comp -> event) mirroring
+    /// `economy::service`'s own test helper, so a backfill issue's owning
+    /// event can be exercised end to end without depending on the events
+    /// module's own test helpers.
+    async fn insert_event_for_backfill(db: &DatabaseConnection, title: &str) -> i64 {
+        let user_id = user::ActiveModel {
+            username: Set(format!("creator-{title}")),
+            email: Set(format!("{title}@example.com")),
+            role: Set("member".to_string()),
+            discord_id: Set(Some(format!("discord-{title}"))),
+            created_at: Set(timestamp(0)),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert user")
+        .id;
+
+        let comp_category_id = comp_category::ActiveModel {
+            name: Set("Comp Category".to_string()),
+            slug: Set(format!("comp-category-{title}")),
+            description: Set(None),
+            created_at: Set(timestamp(0)),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert comp category")
+        .id;
+
+        let comp_id = comp::ActiveModel {
+            name: Set(format!("Comp {title}")),
+            description: Set(None),
+            category_id: Set(comp_category_id),
+            version: Set(1),
+            created_by: Set(user_id),
+            created_at: Set(timestamp(0)),
+            updated_at: Set(timestamp(0)),
+            parent_id: Set(None),
+            archived_at: Set(None),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert comp")
+        .id;
+
+        event::ActiveModel {
+            title: Set(title.to_string()),
+            description: Set(None),
+            call_to_arms: Set(false),
+            regear: Set(true),
+            comp_id: Set(comp_id),
+            player_cap: Set(None),
+            created_by: Set(user_id),
+            event_date_utc: Set(timestamp(0)),
+            mass_time_utc: Set(None),
+            start_time_utc: Set(None),
+            created_at: Set(timestamp(0)),
+            updated_at: Set(timestamp(0)),
+            status: Set("completed".to_string()),
+            started_at: Set(None),
+            stopped_at: Set(None),
+            auto_stop_deadline: Set(None),
+            link_status: Set("idle".to_string()),
+            link_attempts: Set(0),
+            link_last_error: Set(None),
+            link_battles_completed_at: Set(None),
+            discord_voice_channel_id: Set(None),
+            roster_version: Set(0),
+            archived_at: Set(None),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert event")
+        .id
+    }
+
+    async fn insert_event_battle_for_backfill(
+        db: &DatabaseConnection,
+        event_id: i64,
+        albionbb_battle_id: &str,
+    ) -> i64 {
+        event_battle::ActiveModel {
+            event_id: Set(event_id),
+            albionbb_battle_id: Set(albionbb_battle_id.to_string()),
+            battle_started_at: Set(timestamp(0)),
+            guild_players_count: Set(10),
+            battle_total_players: Set(None),
+            fetched_at: Set(timestamp(0)),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert event battle")
+        .id
+    }
+
+    #[tokio::test]
+    async fn backfill_issues_read_path_returns_empty_when_none_recorded() {
+        let db = seed_db().await;
+
+        let issues = list_fight_backfill_issues(&db)
+            .await
+            .expect("list backfill issues");
+
+        assert!(issues.is_empty());
+    }
+
+    #[tokio::test]
+    async fn backfill_issues_read_path_returns_seeded_row_with_event_id() {
+        let db = seed_db().await;
+        let event_id = insert_event_for_backfill(&db, "Backfill Event").await;
+        let event_battle_id = insert_event_battle_for_backfill(&db, event_id, "not-a-number").await;
+        fight_backfill_issue::ActiveModel {
+            event_battle_id: Set(event_battle_id),
+            albionbb_battle_id: Set("not-a-number".to_string()),
+            reason: Set("invalid AlbionBB battle ID".to_string()),
+            created_at: Set(timestamp(0)),
+        }
+        .insert(&db)
+        .await
+        .expect("insert backfill issue");
+
+        let issues = list_fight_backfill_issues(&db)
+            .await
+            .expect("list backfill issues");
+
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].event_battle_id, event_battle_id);
+        assert_eq!(issues[0].albionbb_battle_id, "not-a-number");
+        assert_eq!(issues[0].reason, "invalid AlbionBB battle ID");
+        assert_eq!(issues[0].event_id, Some(event_id));
+    }
+
+    // No direct HTTP-layer permission test idiom exists for `fights.rs` (no
+    // `tower::ServiceExt::oneshot` usage anywhere in `modules/`, matching the
+    // rationale already documented in `attention::router`'s own test module),
+    // so `403` gating for `GET /api/fights/backfill-issues` is not separately
+    // asserted here; `user.require` is exercised the same way every other
+    // handler in this file already relies on it.
+
+    #[tokio::test]
+    async fn list_fights_pushes_the_needs_review_filter_down_to_sql() {
+        let db = seed_db().await;
+        let reviewed = insert_fight(&db, timestamp(0)).await;
+        let reviewed_id = reviewed.id;
+        let mut active: fight::ActiveModel = reviewed.into();
+        active.needs_review = Set(false);
+        active.update(&db).await.expect("clear needs_review");
+        insert_fight(&db, timestamp(1)).await; // needs_review defaults to true
+        insert_fight(&db, timestamp(2)).await; // needs_review defaults to true
+
+        let Json(response) = list_fights(
+            test_admin(),
+            Extension(Permissions::new_empty()),
+            Extension(db.clone()),
+            Extension(test_config()),
+            Query(FightListQuery {
+                page: None,
+                limit: None,
+                search: None,
+                event_id: None,
+                needs_review: Some(true),
+                min_players: None,
+                outcome: None,
+                sort: None,
+                order: None,
+            }),
+        )
+        .await
+        .expect("list fights");
+
+        assert_eq!(response.data.total_items, 2);
+        assert!(response.data.items.iter().all(|item| item.needs_review));
+        assert!(
+            response
+                .data
+                .items
+                .iter()
+                .all(|item| item.id != reviewed_id),
+            "the fight already cleared of review must not come back"
+        );
     }
 }
 

@@ -370,6 +370,23 @@ pub mod fight {
         pub needs_review: bool,
         pub created_at: DateTimeWithTimeZone,
         pub updated_at: DateTimeWithTimeZone,
+        /// Serialized `battles::outcome::BattleOutcome` vocabulary
+        /// (`"victory"`/`"defeat"`/`"draw"`/`"unknown"`), persisted by
+        /// `fight_analytics`'s recompute path. Defaults to `"unknown"` for
+        /// every fight never computed via that path.
+        pub outcome: String,
+        /// The reason string `battles::outcome::combine_segments` produced
+        /// for `outcome`. `None` when `outcome` has never been computed via
+        /// `fight_analytics`.
+        pub outcome_method: Option<String>,
+        /// When `fight_analytics` last (re)computed this fight's
+        /// outcome/stats. `None` means never.
+        pub analytics_computed_at: Option<DateTimeWithTimeZone>,
+        /// Whether this fight's analytics need a recompute. Starts `true`
+        /// for every fight, flips to `false` on a successful recompute, and
+        /// back to `true` on any evidence/grouping change that could
+        /// invalidate the numbers.
+        pub analytics_stale: bool,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]
@@ -467,26 +484,6 @@ pub mod event_battle {
         pub battle_total_players: Option<i32>,
         /// The timestamp when this battle was fetched.
         pub fetched_at: DateTimeWithTimeZone,
-        /// Kills scored by the configured guild.
-        pub guild_kills: i64,
-        /// Deaths suffered by the configured guild.
-        pub guild_deaths: i64,
-        /// Kill fame scored by the configured guild.
-        pub guild_kill_fame: i64,
-        /// Whether the configured guild won this battle.
-        pub is_win: bool,
-        /// Main opponent guild ID by kill fame, if known.
-        pub opponent_guild_id: Option<String>,
-        /// Main opponent guild name by kill fame, if known.
-        pub opponent_guild_name: Option<String>,
-        /// Main opponent player count, if known.
-        pub opponent_players_count: Option<i32>,
-        /// Main opponent kills, if known.
-        pub opponent_kills: Option<i64>,
-        /// Main opponent deaths, if known.
-        pub opponent_deaths: Option<i64>,
-        /// Main opponent kill fame, if known.
-        pub opponent_kill_fame: Option<i64>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]
@@ -508,6 +505,51 @@ pub mod event_battle {
     impl Related<super::event::Entity> for Entity {
         fn to() -> RelationDef {
             Relation::Event.def()
+        }
+    }
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+pub mod fight_backfill_issue {
+    use sea_orm::entity::prelude::*;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
+    #[sea_orm(table_name = "fight_backfill_issues")]
+    pub struct Model {
+        /// The `event_battles` row this issue was raised for. There is no
+        /// surrogate key: at most one issue is ever recorded per source row.
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub event_battle_id: i64,
+        /// The Albion Battle Builder battle ID the backfill could not use.
+        pub albionbb_battle_id: String,
+        /// Why the backfill skipped this row, e.g. an unparseable battle ID
+        /// or a battle already assigned to another event.
+        pub reason: String,
+        /// The timestamp when the issue was recorded.
+        pub created_at: DateTimeWithTimeZone,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter)]
+    pub enum Relation {
+        EventBattle,
+    }
+
+    impl RelationTrait for Relation {
+        fn def(&self) -> RelationDef {
+            match self {
+                Self::EventBattle => Entity::belongs_to(super::event_battle::Entity)
+                    .from(Column::EventBattleId)
+                    .to(super::event_battle::Column::Id)
+                    .into(),
+            }
+        }
+    }
+
+    impl Related<super::event_battle::Entity> for Entity {
+        fn to() -> RelationDef {
+            Relation::EventBattle.def()
         }
     }
 

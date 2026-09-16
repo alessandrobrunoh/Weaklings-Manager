@@ -268,10 +268,20 @@ const FEATURE_GATES: &[(&str, &str)] = &[
     ("/api/battles", "battles"),
     // Fights are the drill-down of a battle and have no module of their own.
     ("/api/fights", "battles"),
+    // Economy views are a drill-down of battle/fight evidence and have no module of their own.
+    ("/api/economy", "battles"),
+    // Fight analytics are another drill-down of battle/fight evidence with no module of their own.
+    ("/api/fight-analytics", "battles"),
     ("/api/comps", "comps"),
     ("/api/events", "events"),
     ("/api/giveaways", "giveaways"),
     ("/api/intel", "intel"),
+    // Enemy guild/player dossiers are a drill-down of intel and have no module of their own.
+    ("/api/enemies", "intel"),
+    // Equipment fingerprints are another drill-down of intel with no module of their own.
+    ("/api/fingerprints", "intel"),
+    // Attention findings are another drill-down of intel with no module of their own.
+    ("/api/attention", "intel"),
     ("/api/regear", "regears"),
     ("/api/siphoned", "siphoned"),
     ("/api/warns", "warns"),

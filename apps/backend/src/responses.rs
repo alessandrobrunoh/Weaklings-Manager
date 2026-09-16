@@ -271,12 +271,13 @@ pub struct ApiResponseRosterSuggestions {
 
 /// `OpenAPI` schema wrapper for a comp readiness response.
 #[derive(Debug, Serialize, ToSchema)]
-pub struct ApiResponseCompReadiness {
+pub struct ApiResponseCompReadinessView {
     /// Indicates the outcome of the request, always "success".
     #[schema(example = "success")]
     pub status: String,
-    /// The readiness roll-up.
-    pub data: crate::modules::combat::readiness::CompReadiness,
+    /// The readiness roll-up, plus its comparison against observed battle evidence when
+    /// available.
+    pub data: crate::modules::combat::models::CompReadinessView,
 }
 
 /// `OpenAPI` schema wrapper for the combat dataset response.
@@ -787,4 +788,154 @@ pub struct ApiResponseBroadcastResult {
     pub status: String,
     /// Fan-out result.
     pub data: crate::modules::notifications::models::BroadcastResult,
+}
+
+/// `OpenAPI` schema wrapper for a paginated enemy guild list.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponsePaginatedEnemyGuilds {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Enemy guild page.
+    pub data: crate::pagination::PaginatedEnemyGuildSummary,
+}
+
+/// `OpenAPI` schema wrapper for one enemy guild dossier.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseEnemyGuildDossier {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Enemy guild dossier.
+    pub data: crate::modules::enemies::models::EnemyGuildDossier,
+}
+
+/// `OpenAPI` schema wrapper for a paginated enemy player list.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponsePaginatedEnemyPlayers {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Enemy player page.
+    pub data: crate::pagination::PaginatedEnemyPlayerSummary,
+}
+
+/// `OpenAPI` schema wrapper for one enemy player dossier.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseEnemyPlayerDossier {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Enemy player dossier.
+    pub data: crate::modules::enemies::models::EnemyPlayerDossier,
+}
+
+/// `OpenAPI` schema wrapper for a paginated fingerprint list.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponsePaginatedFingerprints {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Fingerprint page.
+    pub data: crate::pagination::PaginatedFingerprintSummary,
+}
+
+/// `OpenAPI` schema wrapper for one fingerprint's detail.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseFingerprintDetail {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Fingerprint detail.
+    pub data: crate::modules::fingerprints::models::FingerprintDetail,
+}
+
+/// `OpenAPI` schema wrapper for one build's observed usage.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseBuildObservationSummary {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Build observation summary.
+    pub data: crate::modules::fingerprints::models::BuildObservationSummary,
+}
+
+/// `OpenAPI` schema wrapper for a meta ranking.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseMetaEntries {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Meta entries, most-observed first.
+    pub data: Vec<crate::modules::fingerprints::models::MetaEntry>,
+}
+
+/// `OpenAPI` schema wrapper for one battle's economy view.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseBattleEconomy {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Battle economy view.
+    pub data: crate::modules::economy::models::BattleEconomyView,
+}
+
+/// `OpenAPI` schema wrapper for one fight's economy view.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseFightEconomy {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Fight economy view.
+    pub data: crate::modules::economy::models::FightEconomyView,
+}
+
+/// `OpenAPI` schema wrapper for one event's economy view.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseEventEconomy {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Event economy view.
+    pub data: crate::modules::economy::models::EventEconomyView,
+}
+
+/// `OpenAPI` schema wrapper for one fight's analytics view.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseFightAnalytics {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Fight analytics view.
+    pub data: crate::modules::fight_analytics::service::FightAnalyticsView,
+}
+
+/// `OpenAPI` schema wrapper for the fight backfill issue list.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseFightBackfillIssueList {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Recorded fight backfill issues, newest first.
+    pub data: Vec<crate::modules::fights::FightBackfillIssueView>,
+}
+
+/// `OpenAPI` schema wrapper for one page of a manual scouting backfill.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseScoutBackfillOutcome {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// The backfill page outcome.
+    pub data: crate::modules::intel::auto_scout::BackfillOutcome,
+}
+
+/// `OpenAPI` schema wrapper for the current attention findings list.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseAttentionFindingList {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Currently-held attention findings.
+    pub data: Vec<crate::modules::attention::service::AttentionFindingView>,
 }
