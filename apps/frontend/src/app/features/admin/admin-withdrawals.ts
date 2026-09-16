@@ -35,6 +35,8 @@ export interface WithdrawalQueueRow {
   count: number;
   created_at: string;
   transactions: TransactionView[];
+  guild_tenant_id?: string | null;
+  guild_name?: string | null;
 }
 
 function emptyPageChange(): DataTablePageChange {
@@ -283,6 +285,10 @@ const GROUPING_FETCH_LIMIT = 500;
           </span>
         </ng-template>
 
+        <ng-template dataTableCell="guild" let-row>
+          <span class="text-xs text-[var(--color-text)] whitespace-nowrap">{{ row.guild_name || '—' }}</span>
+        </ng-template>
+
         <ng-template dataTableCell="created_at" let-row>
           <span class="text-xs text-[var(--color-text-secondary)]">
             {{ formatDate(row.created_at) }}
@@ -507,7 +513,8 @@ export class AdminWithdrawals {
     return row.transactions.every((t) => this.selectedTxIds().has(t.id));
   });
 
-  protected readonly trackRow = (row: WithdrawalQueueRow): unknown => `${row.to_user_id}-${row.status}-${row.id}`;
+  protected readonly trackRow = (row: WithdrawalQueueRow): unknown =>
+    `${row.guild_tenant_id ?? ''}-${row.to_user_id}-${row.status}-${row.id}`;
 
   protected readonly withdrawalTabs = computed<DataTableTab[]>(() => [
     {
@@ -570,6 +577,16 @@ export class AdminWithdrawals {
 
   protected readonly columns = computed<readonly DataTableColumn<WithdrawalQueueRow>[]>(() => [
     { key: 'to_username', label: 'common.player', sortable: true, searchable: true, accessor: (row) => row.to_username },
+    ...(this.transactions().some((tx) => !!tx.guild_tenant_id)
+      ? [
+          {
+            key: 'guild',
+            label: 'bank.guild',
+            sortable: true,
+            accessor: (row: WithdrawalQueueRow) => row.guild_name ?? '',
+          } satisfies DataTableColumn<WithdrawalQueueRow>,
+        ]
+      : []),
     {
       key: 'status',
       label: 'common.status',
@@ -590,11 +607,12 @@ export class AdminWithdrawals {
   protected readonly displayedRows = computed<WithdrawalQueueRow[]>(() => {
     const raw = this.transactions();
     const result: WithdrawalQueueRow[] = [];
-    const requestedByPlayer = new Map<number, WithdrawalQueueRow>();
+    const requestedByPlayer = new Map<string, WithdrawalQueueRow>();
 
     for (const tx of raw) {
       if (tx.status === 'requested') {
-        const existing = requestedByPlayer.get(tx.to_user_id);
+        const groupKey = `${tx.guild_tenant_id ?? ''}:${tx.to_user_id}`;
+        const existing = requestedByPlayer.get(groupKey);
         if (existing) {
           existing.amount += Number(tx.amount || 0);
           existing.count += 1;
@@ -612,8 +630,10 @@ export class AdminWithdrawals {
             count: 1,
             created_at: tx.created_at,
             transactions: [tx],
+            guild_tenant_id: tx.guild_tenant_id,
+            guild_name: tx.guild_name,
           };
-          requestedByPlayer.set(tx.to_user_id, row);
+          requestedByPlayer.set(groupKey, row);
           result.push(row);
         }
       } else {
@@ -626,6 +646,8 @@ export class AdminWithdrawals {
           count: 1,
           created_at: tx.created_at,
           transactions: [tx],
+          guild_tenant_id: tx.guild_tenant_id,
+          guild_name: tx.guild_name,
         });
       }
     }
@@ -727,31 +749,41 @@ export class AdminWithdrawals {
   protected async acceptSelectedTxs(): Promise<void> {
     const ids = Array.from(this.selectedTxIds());
     if (ids.length === 0) return;
+    const guildTenantId = this.reviewingPlayer()?.guild_tenant_id ?? undefined;
     this.closePlayerReview();
     await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept', {
       transaction_ids: ids,
+      guild_tenant_id: guildTenantId,
     });
   }
 
   protected async rejectSelectedTxs(): Promise<void> {
     const ids = Array.from(this.selectedTxIds());
     if (ids.length === 0) return;
+    const guildTenantId = this.reviewingPlayer()?.guild_tenant_id ?? undefined;
     this.closePlayerReview();
     await this.mutate('api/bank/transactions/withdraw/reject', 'bank.withdraw.reject', {
       transaction_ids: ids,
+      guild_tenant_id: guildTenantId,
     });
   }
 
   protected async acceptSingle(id: number): Promise<void> {
     await this.mutate('api/bank/transactions/withdraw/accept', 'bank.withdraw.accept', {
       transaction_ids: [id],
+      guild_tenant_id: this.guildTenantIdForTx(id),
     });
   }
 
   protected async rejectSingle(id: number): Promise<void> {
     await this.mutate('api/bank/transactions/withdraw/reject', 'bank.withdraw.reject', {
       transaction_ids: [id],
+      guild_tenant_id: this.guildTenantIdForTx(id),
     });
+  }
+
+  private guildTenantIdForTx(id: number): string | undefined {
+    return this.transactions().find((tx) => tx.id === id)?.guild_tenant_id ?? undefined;
   }
 
   protected async loadTransactions(): Promise<void> {

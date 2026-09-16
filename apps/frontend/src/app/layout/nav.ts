@@ -95,7 +95,11 @@ export function filterNavSections(
         if (item.hiddenForAlliance && tenantKind === 'alliance') {
           return false;
         }
-        if (item.featureKey && !hasFeature(item.featureKey)) {
+        if (
+          item.featureKey &&
+          !hasFeature(item.featureKey) &&
+          !(tenantKind === 'alliance' && item.featureKey === 'bank')
+        ) {
           return false;
         }
         if (!item.permissions?.length) {

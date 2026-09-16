@@ -203,6 +203,11 @@ export const es: TranslationDict = {
 
   'bank.title': 'Banco de la Hermandad',
   'bank.subtitle': 'Tu libro mayor y solicitudes de retiro.',
+  'bank.alliance.title': 'Banco de la alianza',
+  'bank.alliance.subtitle': 'Libro mayor en vivo de los gremios miembros, emparejado por Discord.',
+  'bank.alliance.breakdown': 'Saldo por gremio',
+  'bank.guild': 'Gremio',
+  'bank.withdraw.chooseGuild': 'Elige de qué libro mayor de gremio retirar',
   'bank.balance.pending': 'Pendiente',
   'bank.balance.requested': 'Solicitado',
   'bank.balance.payouts': 'Pagos',

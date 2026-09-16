@@ -178,6 +178,7 @@ impl BankService {
             pending_count: pending.len() as u64,
             requested_total,
             requested_count: requested.len() as u64,
+            guilds: Vec::new(),
         })
     }
 
@@ -1258,6 +1259,7 @@ mod tests {
                 &WithdrawRequest {
                     transaction_ids: Some(vec![withdrawal_tx, second_withdrawal_tx]),
                     all: None,
+                    guild_tenant_id: None,
                 },
             )
             .await
@@ -1272,6 +1274,7 @@ mod tests {
                     user_id: None,
                     transaction_ids: Some(vec![withdrawal_tx]),
                     all: None,
+                    guild_tenant_id: None,
                 },
             )
             .await
@@ -1283,6 +1286,7 @@ mod tests {
                 &WithdrawRequest {
                     transaction_ids: Some(vec![withdrawal_tx]),
                     all: None,
+                    guild_tenant_id: None,
                 },
             )
             .await
@@ -1295,6 +1299,7 @@ mod tests {
                     user_id: None,
                     transaction_ids: Some(vec![withdrawal_tx]),
                     all: None,
+                    guild_tenant_id: None,
                 },
             )
             .await
@@ -1355,6 +1360,7 @@ mod tests {
                 &WithdrawRequest {
                     transaction_ids: Some(vec![tx_id]),
                     all: None,
+                    guild_tenant_id: None,
                 },
             )
             .await;
@@ -1378,6 +1384,7 @@ mod tests {
                 &WithdrawRequest {
                     transaction_ids: None,
                     all: Some(true),
+                    guild_tenant_id: None,
                 },
             )
             .await
@@ -1411,6 +1418,7 @@ mod tests {
                     user_id: None,
                     transaction_ids: Some(vec![tx_id]),
                     all: None,
+                    guild_tenant_id: None,
                 },
             )
             .await
@@ -1451,6 +1459,7 @@ mod tests {
                     user_id: None,
                     transaction_ids: Some(vec![tx_id]),
                     all: None,
+                    guild_tenant_id: None,
                 },
             )
             .await;
@@ -1486,6 +1495,7 @@ mod tests {
                 &WithdrawRequest {
                     transaction_ids: Some(vec![tx_id]),
                     all: None,
+                    guild_tenant_id: None,
                 },
             )
             .await
@@ -1499,6 +1509,7 @@ mod tests {
                     user_id: None,
                     transaction_ids: Some(vec![tx_id]),
                     all: None,
+                    guild_tenant_id: None,
                 },
             )
             .await
@@ -1516,6 +1527,7 @@ mod tests {
                     user_id: None,
                     transaction_ids: Some(vec![tx_id]),
                     all: None,
+                    guild_tenant_id: None,
                 },
             )
             .await;
@@ -1529,6 +1541,7 @@ mod tests {
                 &WithdrawRequest {
                     transaction_ids: Some(vec![tx_id]),
                     all: None,
+                    guild_tenant_id: None,
                 },
             )
             .await
@@ -1542,6 +1555,7 @@ mod tests {
                     user_id: None,
                     transaction_ids: Some(vec![tx_id]),
                     all: None,
+                    guild_tenant_id: None,
                 },
             )
             .await
@@ -1689,6 +1703,7 @@ mod tests {
                     split_id: None,
                     to_guild_bank: None,
                     from_user_id: None,
+                    guild_tenant_id: None,
                 },
                 alice,
             )
@@ -1712,6 +1727,7 @@ mod tests {
                     split_id: None,
                     to_guild_bank: None,
                     from_user_id: None,
+                    guild_tenant_id: None,
                 },
                 admin,
             )
@@ -1739,6 +1755,7 @@ mod tests {
                     split_id: Some(split_id),
                     to_guild_bank: None,
                     from_user_id: None,
+                    guild_tenant_id: None,
                 },
                 admin,
             )
@@ -1770,6 +1787,7 @@ mod tests {
                     r#type: None,
                     split_id: None,
                     to_guild_bank: None,
+                    guild_tenant_id: None,
                 },
                 admin,
             )
@@ -1808,6 +1826,7 @@ mod tests {
                     r#type: None,
                     split_id: Some(None),
                     to_guild_bank: None,
+                    guild_tenant_id: None,
                 },
                 admin,
             )
@@ -1836,6 +1855,7 @@ mod tests {
                     r#type: None,
                     split_id: None,
                     to_guild_bank: None,
+                    guild_tenant_id: None,
                 },
                 alice,
             )
@@ -1861,6 +1881,7 @@ mod tests {
                     r#type: None,
                     split_id: None,
                     to_guild_bank: None,
+                    guild_tenant_id: None,
                 },
                 alice,
             )

@@ -4,6 +4,7 @@ import { firstValueFrom } from 'rxjs';
 
 import type {
   BalanceSummary,
+  GuildBalanceBreakdown,
   PaginatedData,
   TransactionStatus,
   TransactionView,
@@ -109,7 +110,10 @@ function emptyPageChange(): DataTablePageChange {
     }
   `,
   template: `
-    <app-page-header [title]="t('bank.title')" [subtitle]="t('bank.subtitle')">
+    <app-page-header
+      [title]="t(isAlliance() ? 'bank.alliance.title' : 'bank.title')"
+      [subtitle]="t(isAlliance() ? 'bank.alliance.subtitle' : 'bank.subtitle')"
+    >
       <button
         type="button"
         class="btn btn--outline btn--sm"
@@ -138,7 +142,7 @@ function emptyPageChange(): DataTablePageChange {
         type="button"
         class="btn btn--primary btn--sm"
         [disabled]="(balance()?.pending_total ?? 0) <= 0"
-        (click)="confirmWithdrawalOpen.set(true)"
+        (click)="openWithdrawal()"
         [appTooltip]="t('bank.requestTooltip')"
         tooltipPosition="bottom"
       >
@@ -231,6 +235,25 @@ function emptyPageChange(): DataTablePageChange {
         </article>
       </section>
 
+      @if (isAlliance() && (balance()?.guilds?.length ?? 0) > 0) {
+        <section class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4" [attr.aria-label]="t('bank.alliance.breakdown')">
+          <p class="text-[0.6875rem] font-medium tracking-wider text-[var(--color-text-secondary)] uppercase mb-3">
+            {{ t('bank.alliance.breakdown') }}
+          </p>
+          <ul class="grid gap-2 sm:grid-cols-2">
+            @for (guild of balance()?.guilds ?? []; track guild.guild_tenant_id) {
+              <li class="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-1)] px-3 py-2">
+                <span class="text-sm font-medium text-[var(--color-text)] truncate">{{ guild.guild_name }}</span>
+                <span class="font-mono text-xs text-[var(--color-text-secondary)] whitespace-nowrap">
+                  {{ formatCompact(guild.pending_total) }}
+                  · {{ t('bank.creditsAvailable', { count: guild.pending_count }) }}
+                </span>
+              </li>
+            }
+          </ul>
+        </section>
+      }
+
       <app-data-table
         [columns]="transactionColumns()"
         [rows]="transactions()"
@@ -251,6 +274,10 @@ function emptyPageChange(): DataTablePageChange {
         (tabChange)="onTabSelect($event)"
         (pageChange)="onTableChange($event)"
       >
+        <ng-template dataTableCell="guild" let-row>
+          <span class="text-sm text-[var(--color-text)] whitespace-nowrap">{{ row.guild_name || '—' }}</span>
+        </ng-template>
+
         <ng-template dataTableCell="transaction" let-row>
           <div class="min-w-[200px]">
             <span class="text-sm font-semibold text-[var(--color-text)]">
@@ -364,6 +391,25 @@ function emptyPageChange(): DataTablePageChange {
         (closed)="confirmWithdrawalOpen.set(false)"
       >
         <div class="space-y-4">
+          @if (isAlliance() && pendingGuilds().length > 1) {
+            <label class="block space-y-1.5">
+              <span class="text-xs uppercase tracking-wider text-[var(--color-text-secondary)] font-semibold">
+                {{ t('bank.withdraw.chooseGuild') }}
+              </span>
+              <select
+                class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
+                [value]="withdrawGuildId()"
+                (change)="onWithdrawGuildChange($event)"
+              >
+                @for (guild of pendingGuilds(); track guild.guild_tenant_id) {
+                  <option [value]="guild.guild_tenant_id">
+                    {{ guild.guild_name }} — {{ formatAmount(guild.pending_total) }}
+                  </option>
+                }
+              </select>
+            </label>
+          }
+
           <!-- Balance Summary Banner -->
           <div class="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-1)] p-4 flex items-center justify-between">
             <div>
@@ -438,7 +484,13 @@ export class Bank {
   protected readonly confirmWithdrawalOpen = signal(false);
   protected readonly withdrawing = signal(false);
 
-  protected readonly trackRow = (row: TransactionView): number => row.id;
+  protected readonly isAlliance = computed(() => this.auth.profile()?.tenant_kind === 'alliance');
+  protected readonly pendingGuilds = computed<GuildBalanceBreakdown[]>(() =>
+    (this.balance()?.guilds ?? []).filter((guild) => Number(guild.pending_total) > 0),
+  );
+  protected readonly withdrawGuildId = signal('');
+  protected readonly trackRow = (row: TransactionView): string =>
+    `${row.guild_tenant_id ?? ''}:${row.id}`;
 
   private readonly tableQuery = signal<DataTablePageChange>(emptyPageChange());
 
@@ -449,6 +501,16 @@ export class Bank {
       sortable: false,
       accessor: (row) => row.id,
     },
+    ...(this.isAlliance()
+      ? [
+          {
+            key: 'guild',
+            label: 'bank.guild',
+            sortable: true,
+            accessor: (row: TransactionView) => row.guild_name ?? '',
+          } satisfies DataTableColumn<TransactionView>,
+        ]
+      : []),
     {
       key: 'created_at',
       label: 'common.date',
@@ -544,6 +606,18 @@ export class Bank {
     return this.auth.hasPermission('bank.withdraw.accept');
   }
 
+  protected onWithdrawGuildChange(event: Event): void {
+    this.withdrawGuildId.set((event.target as HTMLSelectElement).value);
+  }
+
+  protected openWithdrawal(): void {
+    const pending = this.pendingGuilds();
+    if (!this.withdrawGuildId() && pending[0]) {
+      this.withdrawGuildId.set(pending[0].guild_tenant_id);
+    }
+    this.confirmWithdrawalOpen.set(true);
+  }
+
   protected setStatusFilter(status: TransactionStatus | ''): void {
     this.statusFilter.set(status);
     const query = this.tableQuery();
@@ -566,10 +640,21 @@ export class Bank {
     if (this.withdrawing()) {
       return;
     }
+    const pending = this.pendingGuilds();
+    const guildTenantId =
+      this.withdrawGuildId() || (pending.length === 1 ? pending[0]?.guild_tenant_id : '');
+    if (this.isAlliance() && pending.length > 1 && !guildTenantId) {
+      this.toasts.error(this.t('bank.withdraw.chooseGuild'));
+      return;
+    }
     this.withdrawing.set(true);
     this.confirmWithdrawalOpen.set(false);
     try {
-      await this.mutate('api/bank/transactions/withdraw', 'bank.withdraw.request', { all: true });
+      const body: WithdrawRequest = { all: true };
+      if (this.isAlliance() && guildTenantId) {
+        body.guild_tenant_id = guildTenantId;
+      }
+      await this.mutate('api/bank/transactions/withdraw', 'bank.withdraw.request', body);
     } finally {
       this.withdrawing.set(false);
     }

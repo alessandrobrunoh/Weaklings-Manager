@@ -108,6 +108,21 @@ describe('filterNavSections', () => {
     },
   );
 
+  it('keeps bank visible on an alliance tenant even without the bank feature',
+    () => {
+      const visible = filterNavSections(
+        APP_NAV_SECTIONS,
+        () => true,
+        false,
+        () => false,
+        'alliance',
+      );
+      const paths = visible.flatMap((section) => section.items.map((item) => item.path));
+      expect(paths).toContain('/bank');
+      expect(paths).not.toContain('/warns');
+    },
+  );
+
   it('hides guild-only admin panels on an alliance tenant',
     () => {
       const visible = filterNavSections(

@@ -3,6 +3,7 @@
 //! Provides the routes, services, and schemas for the Guild Bank ledger: balances,
 //! transaction listing, and withdrawals.
 
+pub mod alliance;
 pub mod entities;
 pub mod models;
 pub mod router;

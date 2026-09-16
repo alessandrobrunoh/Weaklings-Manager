@@ -203,6 +203,11 @@ export const it: TranslationDict = {
 
   'bank.title': 'Banca della Gilda',
   'bank.subtitle': 'Il tuo registro e le richieste di prelievo.',
+  'bank.alliance.title': 'Banca dell\'alleanza',
+  'bank.alliance.subtitle': 'Registro live delle gilde membro, abbinato tramite Discord.',
+  'bank.alliance.breakdown': 'Saldo per gilda',
+  'bank.guild': 'Gilda',
+  'bank.withdraw.chooseGuild': 'Scegli da quale registro di gilda prelevare',
   'bank.balance.pending': 'In attesa',
   'bank.balance.requested': 'Richiesto',
   'bank.balance.payouts': 'Pagamenti',

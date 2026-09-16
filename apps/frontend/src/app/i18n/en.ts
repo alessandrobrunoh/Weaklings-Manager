@@ -213,6 +213,11 @@ export const en = {
   // Bank
   'bank.title': 'Guild Bank',
   'bank.subtitle': 'Your ledger and withdrawal requests.',
+  'bank.alliance.title': 'Alliance Bank',
+  'bank.alliance.subtitle': 'Live ledger across member guilds, matched by Discord.',
+  'bank.alliance.breakdown': 'Balance by guild',
+  'bank.guild': 'Guild',
+  'bank.withdraw.chooseGuild': 'Choose which guild ledger to withdraw from',
   'bank.balance.pending': 'Pending',
   'bank.balance.requested': 'Requested',
   'bank.balance.payouts': 'Payouts',

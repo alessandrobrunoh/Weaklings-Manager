@@ -342,6 +342,8 @@ export interface TransactionView {
   created_at: string;
   requested_at: string | null;
   withdrawn_at: string | null;
+  guild_tenant_id?: string | null;
+  guild_name?: string | null;
 }
 
 export interface CreateTransactionRequest {
@@ -352,6 +354,7 @@ export interface CreateTransactionRequest {
   split_id?: number;
   to_guild_bank?: boolean;
   from_user_id?: number;
+  guild_tenant_id?: string;
 }
 
 export interface UpdateTransactionRequest {
@@ -364,6 +367,16 @@ export interface UpdateTransactionRequest {
   /** `null` explicitly unlinks the transaction from any split. */
   split_id?: number | null;
   to_guild_bank?: boolean;
+  guild_tenant_id?: string;
+}
+
+export interface GuildBalanceBreakdown {
+  guild_tenant_id: string;
+  guild_name: string;
+  pending_total: number | string;
+  pending_count: number;
+  requested_total: number | string;
+  requested_count: number;
 }
 
 export interface BalanceSummary {
@@ -372,6 +385,7 @@ export interface BalanceSummary {
   pending_count: number;
   requested_total: number;
   requested_count: number;
+  guilds?: GuildBalanceBreakdown[];
 }
 
 export interface GuildBankSummary {
@@ -406,6 +420,7 @@ export interface BankAnalyticsSummary {
 export interface WithdrawRequest {
   transaction_ids?: number[];
   all?: boolean;
+  guild_tenant_id?: string;
 }
 
 export type AcceptWithdrawalRequest = WithdrawRequest;

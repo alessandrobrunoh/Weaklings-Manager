@@ -599,7 +599,8 @@ pub async fn resolve_tenant(
     );
     let features = TenantFeatures(ctx.features.clone());
     if let Some(feature) = required_feature(&path) {
-        if !features.contains(feature) {
+        let alliance_bank = feature == "bank" && ctx.kind == "alliance";
+        if !features.contains(feature) && !alliance_bank {
             return Err(AppError::Forbidden(format!(
                 "the {feature} module is not enabled for this guild"
             )));
