@@ -5,8 +5,8 @@
 //! self-service Discord <-> Albion player link feature.
 
 use super::client::{
-    AlbionAlliance, AlbionApiClient, AlbionGuild, AlbionGuildMember, AlbionPlayer, AlbionRegion,
-    AlbionSearchResult,
+    AlbionAlliance, AlbionApiClient, AlbionGuild, AlbionGuildMember, AlbionPlayer,
+    AlbionPlayerSummary, AlbionRegion, AlbionSearchResult,
 };
 use super::entities::albion_link;
 use crate::errors::AppError;
@@ -92,6 +92,34 @@ impl AlbionService {
 
     pub async fn get_alliance(&self, id: &str) -> Result<AlbionAlliance, AppError> {
         self.client.get_alliance(id).await
+    }
+}
+
+/// Picks the unique search hit whose name equals `ign` (trimmed, case-insensitive).
+///
+/// Empty input is validation; zero hits is not-found; two or more exact hits is validation
+/// so `/register` never guesses.
+pub fn pick_exact_player<'a>(
+    players: &'a [AlbionPlayerSummary],
+    ign: &str,
+) -> Result<&'a AlbionPlayerSummary, AppError> {
+    let needle = ign.trim();
+    if needle.is_empty() {
+        return Err(AppError::Validation("ign is required".to_owned()));
+    }
+    let key = needle.to_lowercase();
+    let matches: Vec<&AlbionPlayerSummary> = players
+        .iter()
+        .filter(|player| player.name.to_lowercase() == key)
+        .collect();
+    match matches.as_slice() {
+        [] => Err(AppError::NotFound(format!(
+            "No Albion player named {needle:?}"
+        ))),
+        [player] => Ok(*player),
+        _ => Err(AppError::Validation(format!(
+            "ign {needle:?} matches more than one player"
+        ))),
     }
 }
 
@@ -435,5 +463,44 @@ mod tests {
 
         let result = service.delete_link(&db, "discord_a").await;
         assert!(matches!(result, Err(AppError::NotFound(_))));
+    }
+
+    fn summary(id: &str, name: &str) -> AlbionPlayerSummary {
+        AlbionPlayerSummary {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            guild_id: None,
+            guild_name: None,
+            kill_fame: None,
+            death_fame: None,
+        }
+    }
+
+    #[test]
+    fn pick_exact_player_requires_ign() {
+        let err = pick_exact_player(&[], "  ").expect_err("blank");
+        assert!(matches!(err, AppError::Validation(msg) if msg == "ign is required"));
+    }
+
+    #[test]
+    fn pick_exact_player_unique_case_insensitive_hit() {
+        let players = [summary("1", "Kay"), summary("2", "Kaylen")];
+        let hit = pick_exact_player(&players, " kay ").expect("unique");
+        assert_eq!(hit.id, "1");
+        assert_eq!(hit.name, "Kay");
+    }
+
+    #[test]
+    fn pick_exact_player_zero_hits_is_not_found() {
+        let players = [summary("1", "Kaylen")];
+        let err = pick_exact_player(&players, "Kay").expect_err("missing");
+        assert!(matches!(err, AppError::NotFound(_)));
+    }
+
+    #[test]
+    fn pick_exact_player_ambiguous_exact_hits() {
+        let players = [summary("1", "Kay"), summary("2", "kay")];
+        let err = pick_exact_player(&players, "Kay").expect_err("ambiguous");
+        assert!(matches!(err, AppError::Validation(msg) if msg.contains("more than one")));
     }
 }

@@ -24,6 +24,7 @@ import * as balanceRequest from './balance-request.js';
 import * as battles from './battles.js';
 import * as users from './users.js';
 import * as link from './link.js';
+import * as register from './register.js';
 import * as player from './player.js';
 import * as me from './me.js';
 import * as eventRoster from './event-roster.js';
@@ -53,6 +54,7 @@ export const commands = new Map<string, BotCommand>([
   ['battles', battles],
   ['users', users],
   ['link', link],
+  ['register', register],
   ['player', player],
   ['me', me],
   ['event-roster', eventRoster],

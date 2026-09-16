@@ -139,6 +139,7 @@ export interface PlatformTenant {
   slug: string;
   schema_name: string;
   status: string;
+  kind?: string;
   owner_discord_id: string | null;
   created_at: string | null;
   suspended_at: string | null;
@@ -222,16 +223,32 @@ export interface TenantStatus {
   registered: boolean;
   status?: string | null;
   name?: string | null;
+  kind?: string | null;
   register_url?: string | null;
 }
 
 export interface RegisterTenantRequest {
   id: string;
   name: string;
-  albion_guild_id: string;
-  albion_api_region: string;
+  kind?: 'guild' | 'alliance';
+  albion_guild_id?: string;
+  albion_api_region?: string;
   albion_allied_guild_ids?: string;
   albion_allied_guild_names?: string;
+  member_guild_ids?: string[];
+}
+
+export interface AttachableGuild {
+  id: string;
+  name: string;
+}
+
+export interface AllianceMember {
+  guild_tenant_id: string;
+  name: string;
+  status: 'pending' | 'active';
+  invited_by?: string | null;
+  accepted_at?: string | null;
 }
 
 export function discordGuildIconUrl(

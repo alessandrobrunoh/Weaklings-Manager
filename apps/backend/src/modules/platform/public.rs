@@ -21,7 +21,9 @@ use crate::modules::auth::service::{
 use crate::responses::ApiResponse;
 use crate::tenant::{ControlDb, TenantRegistry};
 
-use super::models::{RegisterTenantRequest, TenantStatusView};
+use super::models::{
+    AllianceMemberView, AttachableGuildView, RegisterTenantRequest, TenantStatusView,
+};
 use super::service::PlatformService;
 
 /// Public tenant onboarding router (no tenant `search_path`).
@@ -30,6 +32,17 @@ pub fn router() -> Router {
         .route("/{id}/status", get(tenant_status))
         .route("/register", post(register_tenant))
         .route("/albion-search", get(albion_search))
+        .route("/attachable-guilds", get(attachable_guilds))
+}
+
+/// Alliance membership routes (control-plane, no tenant `search_path`).
+pub fn alliance_router() -> Router {
+    Router::new()
+        .route("/{id}/members", get(list_alliance_members))
+        .route(
+            "/{alliance_id}/members/{guild_id}/accept",
+            post(accept_alliance_member),
+        )
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,6 +87,82 @@ pub async fn albion_search(
     let region = AlbionRegion::from_env_str(query.region.as_deref().unwrap_or("europe"));
     let service = AlbionService::new(region, String::new());
     Ok(Json(ApiResponse::new(service.search(q).await?)))
+}
+
+/// Guild tenants the caller can attach while registering an alliance.
+#[utoipa::path(
+    get,
+    path = "/api/tenants/attachable-guilds",
+    tag = "platform",
+    responses(
+        (status = 200, description = "Attachable guild tenants"),
+        (status = 401, description = "No session", body = ProblemDetails)
+    )
+)]
+pub async fn attachable_guilds(
+    session: SessionUser,
+    headers: HeaderMap,
+    Extension(key): Extension<Key>,
+    Extension(control): Extension<ControlDb>,
+) -> Result<Json<ApiResponse<Vec<AttachableGuildView>>>, AppError> {
+    let managed = managed_guild_ids_from_cookie(&headers, key);
+    Ok(Json(ApiResponse::new(
+        PlatformService::list_attachable_guilds(&control.0, &session.profile.id, &managed).await?,
+    )))
+}
+
+/// Guilds invited into an alliance, with pending/active status.
+#[utoipa::path(
+    get,
+    path = "/api/alliances/{id}/members",
+    tag = "platform",
+    params(("id" = String, Path, description = "Alliance tenant id")),
+    responses(
+        (status = 200, description = "Alliance memberships"),
+        (status = 401, description = "No session", body = ProblemDetails),
+        (status = 404, description = "Not an alliance", body = ProblemDetails)
+    )
+)]
+pub async fn list_alliance_members(
+    _session: SessionUser,
+    Extension(control): Extension<ControlDb>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<Vec<AllianceMemberView>>>, AppError> {
+    Ok(Json(ApiResponse::new(
+        PlatformService::list_alliance_members(&control.0, &id).await?,
+    )))
+}
+
+/// Guild owner accepts a pending alliance invite.
+#[utoipa::path(
+    post,
+    path = "/api/alliances/{alliance_id}/members/{guild_id}/accept",
+    tag = "platform",
+    params(
+        ("alliance_id" = String, Path, description = "Alliance tenant id"),
+        ("guild_id" = String, Path, description = "Guild tenant id")
+    ),
+    responses(
+        (status = 200, description = "Membership accepted"),
+        (status = 401, description = "No session", body = ProblemDetails),
+        (status = 403, description = "Caller is not the guild owner", body = ProblemDetails),
+        (status = 404, description = "Invite not found", body = ProblemDetails)
+    )
+)]
+pub async fn accept_alliance_member(
+    session: SessionUser,
+    Extension(control): Extension<ControlDb>,
+    Path((alliance_id, guild_id)): Path<(String, String)>,
+) -> Result<Json<ApiResponse<AllianceMemberView>>, AppError> {
+    Ok(Json(ApiResponse::new(
+        PlatformService::accept_alliance_membership(
+            &control.0,
+            &alliance_id,
+            &guild_id,
+            &session.profile.id,
+        )
+        .await?,
+    )))
 }
 
 /// First-time tenant registration. The caller becomes the tenant SuperAdmin (`owner_discord_id`).
@@ -123,6 +212,7 @@ pub async fn register_tenant(
         registered: true,
         status: Some(view.status),
         name: Some(view.name),
+        kind: Some(view.kind),
         register_url: None,
     })))
 }
@@ -195,14 +285,22 @@ async fn assert_can_manage_guild(
 }
 
 fn cookie_confirms_can_manage(headers: &HeaderMap, key: Key, guild_id: &str) -> bool {
+    managed_guild_ids_from_cookie(headers, key)
+        .iter()
+        .any(|id| id == guild_id)
+}
+
+fn managed_guild_ids_from_cookie(headers: &HeaderMap, key: Key) -> Vec<String> {
     let jar = PrivateCookieJar::from_headers(headers, key);
     let stored: Vec<RegisterableGuild> = jar
         .get("registerable_guilds")
         .and_then(|cookie| serde_json::from_str(cookie.value()).ok())
         .unwrap_or_default();
     stored
-        .iter()
-        .any(|guild| guild.id == guild_id && guild.can_manage)
+        .into_iter()
+        .filter(|guild| guild.can_manage)
+        .map(|guild| guild.id)
+        .collect()
 }
 
 /// Live cross-reference of `GET /guilds/{id}` (owner id, every role's

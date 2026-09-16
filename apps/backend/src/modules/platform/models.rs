@@ -15,6 +15,9 @@ pub struct TenantView {
     pub schema_name: String,
     /// `provisioning`, `active`, or `suspended`.
     pub status: String,
+    /// `guild` or `alliance`. Existing tenants are guilds.
+    #[serde(default = "default_tenant_kind")]
+    pub kind: String,
     /// Optional owner Discord id.
     pub owner_discord_id: Option<String>,
     /// RFC3339 created timestamp, if present.
@@ -44,6 +47,10 @@ pub struct TenantView {
     pub rank_name: Option<String>,
 }
 
+fn default_tenant_kind() -> String {
+    "guild".to_owned()
+}
+
 /// Body for `POST /api/platform/tenants`.
 #[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct CreateTenantRequest {
@@ -68,14 +75,46 @@ pub struct RegisterTenantRequest {
     pub id: String,
     /// Display name for the tenant.
     pub name: String,
-    /// Albion Online guild id to pull roster/battles from.
+    /// `guild` or `alliance`. Omitted means guild.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// Albion Online guild id to pull roster/battles from. Required for `kind=guild`; omit for alliance.
+    #[serde(default)]
     pub albion_guild_id: String,
-    /// Albion gameinfo region: `europe`, `americas`, or `asia`.
+    /// Albion gameinfo region: `europe`, `americas`, or `asia`. Required for `kind=guild`.
+    #[serde(default)]
     pub albion_api_region: String,
     /// Optional comma-separated allied Albion guild ids.
     pub albion_allied_guild_ids: Option<String>,
     /// Optional comma-separated allied Albion guild names.
     pub albion_allied_guild_names: Option<String>,
+    /// Guild tenant ids to invite when registering an alliance.
+    #[serde(default)]
+    pub member_guild_ids: Vec<String>,
+}
+
+/// A guild tenant the caller may attach to an alliance they are registering.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
+pub struct AttachableGuildView {
+    /// Tenant / Discord guild id.
+    pub id: String,
+    /// Display name.
+    pub name: String,
+}
+
+/// One guild membership row on an alliance tenant.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
+pub struct AllianceMemberView {
+    /// Member guild tenant id.
+    pub guild_tenant_id: String,
+    /// Guild display name.
+    pub name: String,
+    /// `pending` or `active`.
+    pub status: String,
+    /// Discord id of whoever invited the guild.
+    pub invited_by: Option<String>,
+    /// RFC3339 accept timestamp, if accepted.
+    pub accepted_at: Option<String>,
 }
 
 /// Public status of a Discord guild against the tenant registry.
@@ -89,6 +128,8 @@ pub struct TenantStatusView {
     pub status: Option<String>,
     /// Tenant display name when registered.
     pub name: Option<String>,
+    /// `guild` or `alliance` when registered.
+    pub kind: Option<String>,
     /// Absolute URL of the onboarding wizard when not registered.
     pub register_url: Option<String>,
 }

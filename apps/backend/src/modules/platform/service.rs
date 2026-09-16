@@ -8,16 +8,16 @@ use crate::postgres::{tenant_schema_name, tenant_slug};
 use crate::tenant::TenantRegistry;
 
 use super::models::{
-    AssignAdminRequest, CreateRankRequest, CreateTenantRequest, FeatureCatalogItem,
-    PatchRankRequest, PatchTenantRequest, PlatformAdminView, PutRankFeaturesRequest,
-    PutTenantFeaturesRequest, RegisterTenantRequest, TenantFeatureFlag, TenantFeaturesView,
-    TenantRankView, TenantStatusView, TenantView,
+    AllianceMemberView, AssignAdminRequest, AttachableGuildView, CreateRankRequest,
+    CreateTenantRequest, FeatureCatalogItem, PatchRankRequest, PatchTenantRequest,
+    PlatformAdminView, PutRankFeaturesRequest, PutTenantFeaturesRequest, RegisterTenantRequest,
+    TenantFeatureFlag, TenantFeaturesView, TenantRankView, TenantStatusView, TenantView,
 };
 
 const TENANT_SELECT: &str = "SELECT t.id, t.name, t.slug, t.schema_name, t.status, t.owner_discord_id, \
      t.created_at::text, t.suspended_at::text, t.albion_guild_id, t.albion_api_region, \
      t.discord_icon_hash, t.albion_allied_guild_ids, t.albion_allied_guild_names, \
-     t.rank_id::text, r.name \
+     t.rank_id::text, r.name, t.kind \
      FROM tenants t LEFT JOIN tenant_ranks r ON r.id = t.rank_id";
 
 /// Control-plane operations.
@@ -54,6 +54,16 @@ impl PlatformService {
         body: CreateTenantRequest,
         actor: &str,
     ) -> Result<TenantView, AppError> {
+        Self::create_tenant_of_kind(control, registry, body, actor, "guild").await
+    }
+
+    async fn create_tenant_of_kind(
+        control: &DatabaseConnection,
+        registry: &TenantRegistry,
+        body: CreateTenantRequest,
+        actor: &str,
+        kind: &str,
+    ) -> Result<TenantView, AppError> {
         let id = body.id.trim();
         if id.is_empty() {
             return Err(AppError::Validation("tenant id is required".to_owned()));
@@ -81,14 +91,15 @@ impl PlatformService {
         control
             .execute(Statement::from_sql_and_values(
                 control.get_database_backend(),
-                "INSERT INTO tenants (id, slug, name, schema_name, status, owner_discord_id) \
-                 VALUES ($1, $2, $3, $4, 'provisioning', $5)",
+                "INSERT INTO tenants (id, slug, name, schema_name, status, owner_discord_id, kind) \
+                 VALUES ($1, $2, $3, $4, 'provisioning', $5, $6)",
                 [
                     id.into(),
                     slug.clone().into(),
                     name.into(),
                     schema_name.clone().into(),
                     actor.into(),
+                    kind.into(),
                 ],
             ))
             .await
@@ -150,6 +161,7 @@ impl PlatformService {
                 registered: true,
                 status: Some(row.status),
                 name: Some(row.name),
+                kind: Some(row.kind),
                 register_url: None,
             }),
             None => {
@@ -159,6 +171,7 @@ impl PlatformService {
                     registered: false,
                     status: None,
                     name: None,
+                    kind: None,
                     register_url: Some(format!("{base}/register-tenant?guild={tenant_id}")),
                 })
             }
@@ -178,6 +191,10 @@ impl PlatformService {
         actor: &str,
         icon_hash: Option<&str>,
     ) -> Result<TenantView, AppError> {
+        let kind = parse_tenant_kind(body.kind.as_deref())?;
+        if kind == "alliance" {
+            return Self::register_alliance_tenant(control, registry, body, actor, icon_hash).await;
+        }
         let region = normalize_region(&body.albion_api_region)?;
         let albion_guild_id = body.albion_guild_id.trim();
         if albion_guild_id.is_empty() {
@@ -185,7 +202,7 @@ impl PlatformService {
                 "albion guild id is required".to_owned(),
             ));
         }
-        let created = Self::create_tenant(
+        let created = Self::create_tenant_of_kind(
             control,
             registry,
             CreateTenantRequest {
@@ -196,6 +213,7 @@ impl PlatformService {
                 albion_api_region: Some(region.clone()),
             },
             actor,
+            "guild",
         )
         .await?;
         Self::update_albion_settings(
@@ -212,6 +230,232 @@ impl PlatformService {
         Self::get_tenant(control, &created.id)
             .await?
             .ok_or_else(|| AppError::Internal("tenant vanished after register".to_owned()))
+    }
+
+    async fn register_alliance_tenant(
+        control: &DatabaseConnection,
+        registry: &TenantRegistry,
+        body: RegisterTenantRequest,
+        actor: &str,
+        icon_hash: Option<&str>,
+    ) -> Result<TenantView, AppError> {
+        let members = Self::resolve_alliance_members(control, &body.member_guild_ids).await?;
+        let created = Self::create_tenant_of_kind(
+            control,
+            registry,
+            CreateTenantRequest {
+                id: body.id.clone(),
+                name: body.name.clone(),
+                slug: None,
+                albion_guild_id: None,
+                albion_api_region: None,
+            },
+            actor,
+            "alliance",
+        )
+        .await?;
+        Self::insert_alliance_memberships(control, &created.id, actor, &members).await?;
+        if icon_hash.is_some() {
+            Self::update_albion_settings(control, &created.id, None, None, None, None, icon_hash)
+                .await?;
+        }
+        Self::record_membership(control, actor, &created.id).await?;
+        Self::get_tenant(control, &created.id)
+            .await?
+            .ok_or_else(|| AppError::Internal("tenant vanished after register".to_owned()))
+    }
+
+    async fn resolve_alliance_members(
+        control: &DatabaseConnection,
+        member_guild_ids: &[String],
+    ) -> Result<Vec<TenantView>, AppError> {
+        let mut seen = std::collections::HashSet::new();
+        let mut members = Vec::new();
+        for raw in member_guild_ids {
+            let id = raw.trim();
+            if id.is_empty() || !seen.insert(id.to_owned()) {
+                continue;
+            }
+            let Some(tenant) = Self::get_tenant(control, id).await? else {
+                return Err(AppError::Validation("alliance_member_invalid".to_owned()));
+            };
+            if tenant.kind != "guild" || tenant.status != "active" {
+                return Err(AppError::Validation("alliance_member_invalid".to_owned()));
+            }
+            if Self::guild_has_alliance_membership(control, &tenant.id).await? {
+                return Err(AppError::Conflict(
+                    "alliance_member_already_joined".to_owned(),
+                ));
+            }
+            members.push(tenant);
+        }
+        if members.is_empty() {
+            return Err(AppError::Validation("alliance_requires_guilds".to_owned()));
+        }
+        Ok(members)
+    }
+
+    async fn guild_has_alliance_membership(
+        control: &DatabaseConnection,
+        guild_tenant_id: &str,
+    ) -> Result<bool, AppError> {
+        let row = control
+            .query_one(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "SELECT 1 FROM alliance_memberships WHERE guild_tenant_id = $1",
+                [guild_tenant_id.into()],
+            ))
+            .await?;
+        Ok(row.is_some())
+    }
+
+    async fn insert_alliance_memberships(
+        control: &DatabaseConnection,
+        alliance_tenant_id: &str,
+        actor: &str,
+        members: &[TenantView],
+    ) -> Result<(), AppError> {
+        let txn = control.begin().await?;
+        for member in members {
+            let status = if member.owner_discord_id.as_deref() == Some(actor) {
+                "active"
+            } else {
+                "pending"
+            };
+            txn.execute(Statement::from_sql_and_values(
+                txn.get_database_backend(),
+                "INSERT INTO alliance_memberships \
+                 (alliance_tenant_id, guild_tenant_id, status, invited_by, accepted_at) \
+                 VALUES ($1, $2, $3, $4, CASE WHEN $3 = 'active' THEN now() ELSE NULL END)",
+                [
+                    alliance_tenant_id.into(),
+                    member.id.clone().into(),
+                    status.into(),
+                    actor.into(),
+                ],
+            ))
+            .await
+            .map_err(map_membership_unique)?;
+        }
+        txn.commit().await?;
+        Ok(())
+    }
+
+    /// Guild tenants the caller can attach to a new alliance.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails.
+    pub async fn list_attachable_guilds(
+        control: &DatabaseConnection,
+        actor: &str,
+        managed_ids: &[String],
+    ) -> Result<Vec<AttachableGuildView>, AppError> {
+        let rows = control
+            .query_all(Statement::from_string(
+                control.get_database_backend(),
+                "SELECT t.id, t.name, t.owner_discord_id FROM tenants t \
+                 WHERE t.kind = 'guild' AND t.status = 'active' \
+                 AND NOT EXISTS (\
+                     SELECT 1 FROM alliance_memberships m \
+                     WHERE m.guild_tenant_id = t.id\
+                 ) \
+                 ORDER BY t.name",
+            ))
+            .await?;
+        let managed: std::collections::HashSet<&str> =
+            managed_ids.iter().map(String::as_str).collect();
+        let mut out = Vec::new();
+        for row in rows {
+            let id: String = row.try_get_by_index(0)?;
+            let name: String = row.try_get_by_index(1)?;
+            let owner: Option<String> = row.try_get_by_index(2).ok();
+            if owner.as_deref() == Some(actor) || managed.contains(id.as_str()) {
+                out.push(AttachableGuildView { id, name });
+            }
+        }
+        Ok(out)
+    }
+
+    /// Memberships of an alliance tenant.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AppError::NotFound`] when the tenant is missing or not an alliance.
+    pub async fn list_alliance_members(
+        control: &DatabaseConnection,
+        alliance_id: &str,
+    ) -> Result<Vec<AllianceMemberView>, AppError> {
+        let Some(tenant) = Self::get_tenant(control, alliance_id).await? else {
+            return Err(AppError::NotFound(format!(
+                "tenant {alliance_id} not found"
+            )));
+        };
+        if tenant.kind != "alliance" {
+            return Err(AppError::NotFound(format!(
+                "tenant {alliance_id} is not an alliance"
+            )));
+        }
+        let rows = control
+            .query_all(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "SELECT m.guild_tenant_id, t.name, m.status, m.invited_by, m.accepted_at::text \
+                 FROM alliance_memberships m \
+                 JOIN tenants t ON t.id = m.guild_tenant_id \
+                 WHERE m.alliance_tenant_id = $1 \
+                 ORDER BY t.name",
+                [alliance_id.into()],
+            ))
+            .await?;
+        let mut out = Vec::with_capacity(rows.len());
+        for row in rows {
+            out.push(AllianceMemberView {
+                guild_tenant_id: row.try_get_by_index(0)?,
+                name: row.try_get_by_index(1)?,
+                status: row.try_get_by_index(2)?,
+                invited_by: row.try_get_by_index(3).ok(),
+                accepted_at: row.try_get_by_index(4).ok(),
+            });
+        }
+        Ok(out)
+    }
+
+    /// Owner of `guild_id` accepts a pending invite into `alliance_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns not-found, forbidden, or a database error.
+    pub async fn accept_alliance_membership(
+        control: &DatabaseConnection,
+        alliance_id: &str,
+        guild_id: &str,
+        actor: &str,
+    ) -> Result<AllianceMemberView, AppError> {
+        let Some(guild) = Self::get_tenant(control, guild_id).await? else {
+            return Err(AppError::NotFound(format!("tenant {guild_id} not found")));
+        };
+        if guild.owner_discord_id.as_deref() != Some(actor) {
+            return Err(AppError::Forbidden(
+                "only the guild owner can accept an alliance invite".to_owned(),
+            ));
+        }
+        let updated = control
+            .execute(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "UPDATE alliance_memberships \
+                 SET status = 'active', accepted_at = COALESCE(accepted_at, now()) \
+                 WHERE alliance_tenant_id = $1 AND guild_tenant_id = $2",
+                [alliance_id.into(), guild_id.into()],
+            ))
+            .await?;
+        if updated.rows_affected() == 0 {
+            return Err(AppError::NotFound("alliance invite not found".to_owned()));
+        }
+        Self::list_alliance_members(control, alliance_id)
+            .await?
+            .into_iter()
+            .find(|row| row.guild_tenant_id == guild_id)
+            .ok_or_else(|| AppError::Internal("membership vanished after accept".to_owned()))
     }
 
     /// Record that `discord_id` may enter `tenant_id`.
@@ -1041,7 +1285,28 @@ fn row_to_view(row: &sea_orm::QueryResult) -> Result<TenantView, DbErr> {
         albion_allied_guild_names: row.try_get_by_index(12).ok(),
         rank_id: row.try_get_by_index(13).ok(),
         rank_name: row.try_get_by_index(14).ok(),
+        kind: row
+            .try_get_by_index(15)
+            .ok()
+            .filter(|kind: &String| !kind.is_empty())
+            .unwrap_or_else(|| "guild".to_owned()),
     })
+}
+
+/// `guild` when omitted/blank; `alliance` must be spelled that way (any case).
+fn parse_tenant_kind(raw: Option<&str>) -> Result<&'static str, AppError> {
+    let value = raw
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("guild")
+        .to_ascii_lowercase();
+    match value.as_str() {
+        "guild" => Ok("guild"),
+        "alliance" => Ok("alliance"),
+        other => Err(AppError::Validation(format!(
+            "tenant kind must be guild or alliance, not {other}"
+        ))),
+    }
 }
 
 fn normalize_region(raw: &str) -> Result<String, AppError> {
@@ -1335,10 +1600,12 @@ mod tests {
             RegisterTenantRequest {
                 id: id.clone(),
                 name: "New Guild".into(),
+                kind: None,
                 albion_guild_id: "alb-1".into(),
                 albion_api_region: "europe".into(),
                 albion_allied_guild_ids: None,
                 albion_allied_guild_names: None,
+                member_guild_ids: vec![],
             },
             "registrar-9",
             None,
@@ -1346,6 +1613,7 @@ mod tests {
         .await
         .expect("register");
         assert_eq!(created.rank_name.as_deref(), Some("Free"));
+        assert_eq!(created.kind, "guild");
 
         let flags = PlatformService::get_features(&control, &id)
             .await
@@ -1454,10 +1722,12 @@ mod tests {
             RegisterTenantRequest {
                 id: id.clone(),
                 name: "New Guild".into(),
+                kind: Some("guild".into()),
                 albion_guild_id: "alb-1".into(),
                 albion_api_region: "europe".into(),
                 albion_allied_guild_ids: None,
                 albion_allied_guild_names: None,
+                member_guild_ids: vec![],
             },
             "registrar-9",
             None,
@@ -1465,6 +1735,7 @@ mod tests {
         .await
         .expect("register");
 
+        assert_eq!(created.kind, "guild");
         assert_eq!(created.owner_discord_id.as_deref(), Some("registrar-9"));
         let admins = PlatformService::list_admins(&control)
             .await
@@ -1484,12 +1755,385 @@ mod tests {
             .expect("drop tenant schema");
         drop_schema(&admin, &schema).await.expect("drop");
     }
+
+    #[test]
+    fn tenant_kind_defaults_to_guild() {
+        assert_eq!(parse_tenant_kind(None).expect("none"), "guild");
+        assert_eq!(parse_tenant_kind(Some("")).expect("empty"), "guild");
+        assert_eq!(parse_tenant_kind(Some(" Guild ")).expect("padded"), "guild");
+    }
+
+    #[test]
+    fn tenant_kind_accepts_alliance() {
+        assert_eq!(
+            parse_tenant_kind(Some("ALLIANCE")).expect("alliance"),
+            "alliance"
+        );
+    }
+
+    #[test]
+    fn tenant_kind_rejects_unknown_values() {
+        let err = parse_tenant_kind(Some("clan")).expect_err("unknown");
+        match err {
+            AppError::Validation(msg) => {
+                assert!(msg.contains("guild or alliance"), "{msg}");
+                assert!(msg.contains("clan"), "{msg}");
+            }
+            other => panic!("expected validation, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn register_alliance_without_member_guilds_creates_nothing() {
+        let Some((url, admin)) = try_admin_db().await else {
+            return;
+        };
+        let schema = unique_schema("it_alk");
+        ensure_schema(&admin, &schema).await.expect("schema");
+        let control = connect_with_search_path(&url, &schema)
+            .await
+            .expect("connect");
+        Migrator::up(&control, None).await.expect("migrate");
+
+        let registry = TenantRegistry::new(url, control.clone());
+        let id = unique_schema("gid");
+        let err = PlatformService::register_tenant(
+            &control,
+            &registry,
+            RegisterTenantRequest {
+                id: id.clone(),
+                name: "Alliance Hub".into(),
+                kind: Some("alliance".into()),
+                albion_guild_id: String::new(),
+                albion_api_region: "europe".into(),
+                albion_allied_guild_ids: None,
+                albion_allied_guild_names: None,
+                member_guild_ids: vec![],
+            },
+            "registrar-9",
+            None,
+        )
+        .await
+        .expect_err("alliance needs guilds");
+        match err {
+            AppError::Validation(msg) => assert_eq!(msg, "alliance_requires_guilds"),
+            other => panic!("expected validation, got {other:?}"),
+        }
+        assert!(
+            PlatformService::get_tenant(&control, &id)
+                .await
+                .expect("lookup")
+                .is_none(),
+            "failed alliance register must not leave a tenant row"
+        );
+
+        drop_schema(&admin, &schema).await.expect("drop");
+    }
+
+    fn guild_register(id: &str, name: &str) -> RegisterTenantRequest {
+        RegisterTenantRequest {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            kind: Some("guild".into()),
+            albion_guild_id: "alb-1".into(),
+            albion_api_region: "europe".into(),
+            albion_allied_guild_ids: None,
+            albion_allied_guild_names: None,
+            member_guild_ids: vec![],
+        }
+    }
+
+    fn alliance_register(id: &str, members: Vec<String>) -> RegisterTenantRequest {
+        RegisterTenantRequest {
+            id: id.to_owned(),
+            name: "Alliance Hub".into(),
+            kind: Some("alliance".into()),
+            albion_guild_id: String::new(),
+            albion_api_region: String::new(),
+            albion_allied_guild_ids: None,
+            albion_allied_guild_names: None,
+            member_guild_ids: members,
+        }
+    }
+
+    #[tokio::test]
+    async fn register_alliance_with_unknown_guild_creates_nothing() {
+        let Some((url, admin)) = try_admin_db().await else {
+            return;
+        };
+        let schema = unique_schema("it_alunk");
+        ensure_schema(&admin, &schema).await.expect("schema");
+        let control = connect_with_search_path(&url, &schema)
+            .await
+            .expect("connect");
+        Migrator::up(&control, None).await.expect("migrate");
+
+        let registry = TenantRegistry::new(url, control.clone());
+        let id = unique_schema("aid");
+        let err = PlatformService::register_tenant(
+            &control,
+            &registry,
+            alliance_register(&id, vec!["missing-guild".into()]),
+            "officer-1",
+            None,
+        )
+        .await
+        .expect_err("unknown member");
+        match err {
+            AppError::Validation(msg) => assert_eq!(msg, "alliance_member_invalid"),
+            other => panic!("expected validation, got {other:?}"),
+        }
+        assert!(
+            PlatformService::get_tenant(&control, &id)
+                .await
+                .expect("lookup")
+                .is_none(),
+            "failed alliance register must not leave a tenant row"
+        );
+
+        drop_schema(&admin, &schema).await.expect("drop");
+    }
+
+    #[tokio::test]
+    async fn register_alliance_with_guild_already_in_another_alliance_conflicts() {
+        let Some((url, admin)) = try_admin_db().await else {
+            return;
+        };
+        let schema = unique_schema("it_al409");
+        ensure_schema(&admin, &schema).await.expect("schema");
+        let control = connect_with_search_path(&url, &schema)
+            .await
+            .expect("connect");
+        Migrator::up(&control, None).await.expect("migrate");
+
+        let registry = TenantRegistry::new(url.clone(), control.clone());
+        let guild_id = unique_schema("gid");
+        let first_alliance = unique_schema("a1");
+        let second_alliance = unique_schema("a2");
+        let guild = PlatformService::register_tenant(
+            &control,
+            &registry,
+            guild_register(&guild_id, "Member Guild"),
+            "officer-1",
+            None,
+        )
+        .await
+        .expect("guild");
+        let first = PlatformService::register_tenant(
+            &control,
+            &registry,
+            alliance_register(&first_alliance, vec![guild_id.clone()]),
+            "officer-1",
+            None,
+        )
+        .await
+        .expect("first alliance");
+
+        let err = PlatformService::register_tenant(
+            &control,
+            &registry,
+            alliance_register(&second_alliance, vec![guild_id.clone()]),
+            "officer-1",
+            None,
+        )
+        .await
+        .expect_err("already joined");
+        match err {
+            AppError::Conflict(msg) => assert_eq!(msg, "alliance_member_already_joined"),
+            other => panic!("expected conflict, got {other:?}"),
+        }
+        assert!(
+            PlatformService::get_tenant(&control, &second_alliance)
+                .await
+                .expect("lookup")
+                .is_none(),
+            "failed alliance register must not leave a tenant row"
+        );
+
+        drop_schema(&admin, &guild.schema_name)
+            .await
+            .expect("drop guild");
+        drop_schema(&admin, &first.schema_name)
+            .await
+            .expect("drop first");
+        drop_schema(&admin, &schema).await.expect("drop");
+    }
+
+    #[tokio::test]
+    async fn register_alliance_activates_membership_when_actor_owns_the_guild() {
+        let Some((url, admin)) = try_admin_db().await else {
+            return;
+        };
+        let schema = unique_schema("it_alown");
+        ensure_schema(&admin, &schema).await.expect("schema");
+        let control = connect_with_search_path(&url, &schema)
+            .await
+            .expect("connect");
+        Migrator::up(&control, None).await.expect("migrate");
+
+        let registry = TenantRegistry::new(url, control.clone());
+        let guild_id = unique_schema("gid");
+        let alliance_id = unique_schema("aid");
+        let guild = PlatformService::register_tenant(
+            &control,
+            &registry,
+            guild_register(&guild_id, "Owned Guild"),
+            "officer-1",
+            None,
+        )
+        .await
+        .expect("guild");
+        let alliance = PlatformService::register_tenant(
+            &control,
+            &registry,
+            alliance_register(&alliance_id, vec![guild_id.clone()]),
+            "officer-1",
+            None,
+        )
+        .await
+        .expect("alliance");
+
+        assert_eq!(alliance.kind, "alliance");
+        assert!(
+            alliance.albion_guild_id.is_none() || alliance.albion_guild_id.as_deref() == Some("")
+        );
+        let members = PlatformService::list_alliance_members(&control, &alliance_id)
+            .await
+            .expect("members");
+        assert_eq!(members.len(), 1);
+        assert_eq!(members[0].guild_tenant_id, guild_id);
+        assert_eq!(members[0].status, "active");
+        assert_eq!(members[0].invited_by.as_deref(), Some("officer-1"));
+        assert!(members[0].accepted_at.is_some());
+
+        drop_schema(&admin, &guild.schema_name)
+            .await
+            .expect("drop guild");
+        drop_schema(&admin, &alliance.schema_name)
+            .await
+            .expect("drop alliance");
+        drop_schema(&admin, &schema).await.expect("drop");
+    }
+
+    #[tokio::test]
+    async fn register_alliance_leaves_membership_pending_when_actor_does_not_own_the_guild() {
+        let Some((url, admin)) = try_admin_db().await else {
+            return;
+        };
+        let schema = unique_schema("it_alpend");
+        ensure_schema(&admin, &schema).await.expect("schema");
+        let control = connect_with_search_path(&url, &schema)
+            .await
+            .expect("connect");
+        Migrator::up(&control, None).await.expect("migrate");
+
+        let registry = TenantRegistry::new(url, control.clone());
+        let guild_id = unique_schema("gid");
+        let alliance_id = unique_schema("aid");
+        let guild = PlatformService::register_tenant(
+            &control,
+            &registry,
+            guild_register(&guild_id, "Other Guild"),
+            "guild-owner",
+            None,
+        )
+        .await
+        .expect("guild");
+        let alliance = PlatformService::register_tenant(
+            &control,
+            &registry,
+            alliance_register(&alliance_id, vec![guild_id.clone()]),
+            "alliance-officer",
+            None,
+        )
+        .await
+        .expect("alliance");
+
+        let members = PlatformService::list_alliance_members(&control, &alliance_id)
+            .await
+            .expect("members");
+        assert_eq!(members[0].status, "pending");
+        assert!(members[0].accepted_at.is_none());
+
+        let accepted = PlatformService::accept_alliance_membership(
+            &control,
+            &alliance_id,
+            &guild_id,
+            "guild-owner",
+        )
+        .await
+        .expect("accept");
+        assert_eq!(accepted.status, "active");
+        assert!(accepted.accepted_at.is_some());
+
+        drop_schema(&admin, &guild.schema_name)
+            .await
+            .expect("drop guild");
+        drop_schema(&admin, &alliance.schema_name)
+            .await
+            .expect("drop alliance");
+        drop_schema(&admin, &schema).await.expect("drop");
+    }
+
+    #[tokio::test]
+    async fn tenant_status_exposes_kind_for_registered_guilds() {
+        let Some((url, admin)) = try_admin_db().await else {
+            return;
+        };
+        let schema = unique_schema("it_stk");
+        ensure_schema(&admin, &schema).await.expect("schema");
+        let control = connect_with_search_path(&url, &schema)
+            .await
+            .expect("connect");
+        Migrator::up(&control, None).await.expect("migrate");
+
+        let registry = TenantRegistry::new(url, control.clone());
+        let id = unique_schema("gid");
+        let created = PlatformService::register_tenant(
+            &control,
+            &registry,
+            RegisterTenantRequest {
+                id: id.clone(),
+                name: "Kinded Guild".into(),
+                kind: None,
+                albion_guild_id: "alb-1".into(),
+                albion_api_region: "europe".into(),
+                albion_allied_guild_ids: None,
+                albion_allied_guild_names: None,
+                member_guild_ids: vec![],
+            },
+            "registrar-9",
+            None,
+        )
+        .await
+        .expect("register");
+
+        let status = PlatformService::tenant_status(&control, &id, "https://app.example")
+            .await
+            .expect("status");
+        assert_eq!(status.kind.as_deref(), Some("guild"));
+        assert!(status.registered);
+
+        drop_schema(&admin, &created.schema_name)
+            .await
+            .expect("drop tenant schema");
+        drop_schema(&admin, &schema).await.expect("drop");
+    }
 }
 
 fn map_unique(err: DbErr) -> AppError {
     match err.sql_err() {
         Some(sea_orm::SqlErr::UniqueConstraintViolation(_)) => {
             AppError::Conflict("tenant id or slug already exists".to_owned())
+        }
+        _ => AppError::Database(err),
+    }
+}
+
+fn map_membership_unique(err: DbErr) -> AppError {
+    match err.sql_err() {
+        Some(sea_orm::SqlErr::UniqueConstraintViolation(_)) => {
+            AppError::Conflict("alliance_member_already_joined".to_owned())
         }
         _ => AppError::Database(err),
     }

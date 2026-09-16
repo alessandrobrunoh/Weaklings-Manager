@@ -4,7 +4,7 @@
 //! API passthroughs, and the self-service Discord <-> Albion player link.
 
 use super::client::{AlbionGuild, AlbionPlayer, AlbionRegion, AlbionSearchResult};
-use super::service::{AlbionLinkService, AlbionLinkStatus, AlbionService};
+use super::service::{AlbionLinkService, AlbionLinkStatus, AlbionService, pick_exact_player};
 use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
@@ -29,6 +29,7 @@ pub fn router() -> Router {
         .route("/guilds/{id}", get(get_guild))
         .route("/link/me", get(get_link_status))
         .route("/link", post(link_player).delete(unlink_player))
+        .route("/register", post(register_by_ign))
         .route(
             "/link/users/{user_id}",
             get(get_user_link_status)
@@ -287,6 +288,59 @@ pub async fn link_player(
 
     // The tenant id is the Discord guild id, so these side effects land in the
     // server the caller actually linked from.
+    super::discord_nick::sync_guild_nickname(&cfg, &tenant.0, &user.id, &player.name).await;
+    if super::discord_guild_role::belongs_to_configured_guild(
+        player.guild_id.as_deref(),
+        &cfg.albion_guild_id,
+    ) {
+        super::discord_guild_role::assign_guild_role(&db, &cfg, &tenant.0, &user.id).await;
+    }
+
+    Ok(Json(ApiResponse::new(AlbionLinkStatus::from(Some(link)))))
+}
+
+/// Body for `POST /api/albion/register`.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct RegisterByIgnRequest {
+    /// In-game name to resolve via Albion search. Must match exactly one player.
+    pub ign: String,
+}
+
+/// Links the caller by Albion in-game name (unique exact match).
+#[utoipa::path(
+    post,
+    path = "/api/albion/register",
+    tag = "albion",
+    summary = "Self-link by Albion IGN",
+    description = "Searches Albion for `ign`, requires a unique exact name match, then performs the \
+        same 1:1 link as `POST /api/albion/link`. Zero hits are 404; two or more exact hits are 400. \
+        Guild-role assignment follows the same rule as `/link`.",
+    security(("session_cookie" = [])),
+    request_body(content = RegisterByIgnRequest),
+    responses(
+        (status = 200, description = "Player linked successfully", body = ApiResponseAlbionLinkStatus),
+        (status = 400, description = "Empty or ambiguous IGN", body = ProblemDetails),
+        (status = 404, description = "No player with that exact name", body = ProblemDetails),
+        (status = 409, description = "Already linked", body = ProblemDetails)
+    )
+)]
+pub async fn register_by_ign(
+    user: UserContext,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Json(body): Json<RegisterByIgnRequest>,
+) -> Result<Json<ApiResponse<AlbionLinkStatus>>, AppError> {
+    let service = build_service(&cfg);
+    let search = service.search(&body.ign).await?;
+    let summary = pick_exact_player(&search.players, &body.ign)?;
+    let player = service.get_player(&summary.id).await?;
+
+    let link_service = AlbionLinkService::new();
+    let link = link_service
+        .create_link(&db, &user.id, &player.id, &player.name)
+        .await?;
+
     super::discord_nick::sync_guild_nickname(&cfg, &tenant.0, &user.id, &player.name).await;
     if super::discord_guild_role::belongs_to_configured_guild(
         player.guild_id.as_deref(),

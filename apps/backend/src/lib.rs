@@ -110,6 +110,14 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         &cfg.albion_allied_guild_names(),
     );
     for ctx in &tenant_contexts {
+        if !tenant::starts_sync_workers(&ctx.kind) {
+            tracing::info!(
+                tenant_id = %ctx.tenant_id,
+                kind = %ctx.kind,
+                "skipping battle/event workers for alliance tenant"
+            );
+            continue;
+        }
         tracing::info!(tenant_id = %ctx.tenant_id, "starting per-tenant workers");
         event_sessions::spawn(
             ctx.db.clone(),
@@ -145,7 +153,8 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     let api = Router::new()
         .merge(modules::router())
         .nest("/platform", modules::platform::router())
-        .nest("/tenants", modules::platform::public_router());
+        .nest("/tenants", modules::platform::public_router())
+        .nest("/alliances", modules::platform::alliance_router());
 
     // The browser only ever talks to the frontend's own origin — it proxies
     // `/api` server-to-server, which CORS never governs — so the one origin
