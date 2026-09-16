@@ -438,8 +438,8 @@ export const en = {
   'events.start': 'Start',
   'events.stop': 'Stop',
   'events.cancel': 'Cancel',
-  'events.uncancel': 'Restore',
-  'events.uncancelSuccess': 'Event restored to scheduled',
+  'events.uncancel': 'Reopen',
+  'events.uncancelSuccess': 'Event reopened as scheduled',
   'events.participate': 'Join',
   'events.viewAndJoin': 'View & join',
   'events.leave': 'Leave',
@@ -510,7 +510,7 @@ export const en = {
   'events.detail.confirm_delete':
     'Archive this event? It stays in the database with its date and title. Linked loot splits are archived too.',
   'events.detail.confirm_uncancel':
-    'Restore this event to scheduled? You will be able to start or edit it again.',
+    'Reopen this event as scheduled? You will be able to start or edit it again.',
   'events.archive': 'Archive',
   'events.unarchive': 'Unarchive',
   'events.archived': 'Archived',

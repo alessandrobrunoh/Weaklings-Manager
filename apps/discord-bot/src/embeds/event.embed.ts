@@ -407,6 +407,7 @@ export function buildEventThreadActionRows(
 ): ActionRowBuilder<ButtonBuilder>[] {
   const isScheduled = event.status === "scheduled";
   const isLive = event.status === "live";
+  const isCancelled = event.status === "cancelled";
   const buttons = [
     new ButtonBuilder()
       .setCustomId(`event:join:${event.id}`)
@@ -438,12 +439,18 @@ export function buildEventThreadActionRows(
       .setEmoji("⏹️")
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(!isLive),
-    new ButtonBuilder()
-      .setCustomId(`event:cancel:${event.id}`)
-      .setLabel("Cancel")
-      .setEmoji("❌")
-      .setStyle(ButtonStyle.Danger)
-      .setDisabled(!(isScheduled || isLive)),
+    isCancelled
+      ? new ButtonBuilder()
+          .setCustomId(`event:uncancel:${event.id}`)
+          .setLabel("Reopen")
+          .setEmoji("♻️")
+          .setStyle(ButtonStyle.Primary)
+      : new ButtonBuilder()
+          .setCustomId(`event:cancel:${event.id}`)
+          .setLabel("Cancel")
+          .setEmoji("❌")
+          .setStyle(ButtonStyle.Danger)
+          .setDisabled(!(isScheduled || isLive)),
   ];
 
   // Discord allows at most five buttons in one action row.

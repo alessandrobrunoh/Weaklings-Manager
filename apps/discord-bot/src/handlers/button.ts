@@ -38,6 +38,7 @@ import {
   closeEventAnnouncementThread,
   resolveEventReminderThread,
 } from "../services/event-announcement-thread.js";
+import { unlockAndUnarchiveThread } from "../services/discord-thread.js";
 import { getSettingsService } from "../services/settings.js";
 import {
   buildApplicationAlreadyOpenEmbed,
@@ -526,14 +527,57 @@ async function handleEventButton(
       embeds: [buildEventEmbed(event)],
       components: buildEventThreadActionRows(event),
     });
-    const closed = await getPoller(api.guildId)?.closeEventThread(eventId);
+    const poller = getPoller(api.guildId);
+    const closed = await poller?.closeEventThread(eventId, { keepMapping: true });
     if (!closed && interaction.channel?.isThread()) {
       await closeEventAnnouncementThread(interaction.channel, eventId, "Cancel button");
+    }
+    if (interaction.channel?.isThread()) {
+      poller?.rememberEventThread(
+        eventId,
+        interaction.channel.id,
+        interaction.message.id,
+        `${event.roster_version ?? 0}:${event.status}`,
+      );
     }
     const successEmbed = createResponseEmbed(
       "warning",
       "Event Cancelled",
-      `Event **#${eventId}** has been cancelled and its discussion thread was closed.`,
+      `Event **#${eventId}** has been cancelled. Use **Reopen** if you need it back.`,
+      "GUILD EVENT",
+    );
+    await interaction.editReply({ embeds: [successEmbed] });
+    return;
+  }
+
+  if (action === "uncancel") {
+    const [eventIdStr] = rest;
+    const eventId = Number(eventIdStr);
+    await interaction.deferReply({ flags: ["Ephemeral"] });
+    if (!Number.isSafeInteger(eventId) || eventId <= 0) throw new Error("Invalid event ID.");
+    const event = await api.post<EventDetailView>(
+      `api/events/${eventId}/uncancel`,
+      {},
+      interaction.user.id,
+    );
+    const thread = interaction.channel?.isThread() ? interaction.channel : null;
+    if (thread) {
+      await unlockAndUnarchiveThread(thread, `Event #${eventId} reopened`);
+      getPoller(api.guildId)?.rememberEventThread(
+        eventId,
+        thread.id,
+        interaction.message.id,
+        `${event.roster_version ?? 0}:${event.status}`,
+      );
+    }
+    await interaction.message.edit({
+      embeds: [buildEventEmbed(event)],
+      components: buildEventThreadActionRows(event),
+    });
+    const successEmbed = createResponseEmbed(
+      "success",
+      "Event Reopened",
+      `Event **#${eventId}** is scheduled again. Join, ping, and start are available.`,
       "GUILD EVENT",
     );
     await interaction.editReply({ embeds: [successEmbed] });

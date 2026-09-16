@@ -148,6 +148,7 @@ describe('Events', () => {
     expect(text).toContain('Cancelled');
     expect(text).toContain('Stopped');
     expect(text).toContain('Open');
+    expect(text).toContain('Reopen');
     expect(text).toContain('Join');
     expect(text).toContain('Archive');
   });
