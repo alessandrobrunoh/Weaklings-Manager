@@ -6,6 +6,9 @@
 //! `/me` endpoint filtered by the calling user's linked Albion character.
 
 pub mod entities;
+pub mod evidence;
+pub mod evidence_entities;
+pub mod evidence_writer;
 pub mod models;
 pub mod outcome;
 pub mod router;

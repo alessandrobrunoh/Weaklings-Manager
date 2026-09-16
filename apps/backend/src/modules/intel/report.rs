@@ -40,8 +40,9 @@ use crate::modules::battles::models::{
     BattleGuildSummary, BattleKillEvent, BattleLossEstimate, BattlePlayer,
 };
 use crate::modules::comps::entities::{build, comp, comp_build};
-use crate::modules::events::entities::{event, event_battle, event_participation};
+use crate::modules::events::entities::{event, event_battle, event_participation, fight};
 use crate::modules::events::service::{BattleLinkingContext, kill_death_ratio, ratio_percent};
+use crate::modules::fight_analytics::entities::fight_stat;
 use crate::modules::intel::entities::{scouted_comp, scouted_comp_battle};
 use crate::modules::intel::matchups::{MatchupRow, best_counter, matchups};
 use crate::modules::intel::roles::{RoleClassifier, normalize_item_id};
@@ -426,6 +427,13 @@ struct RawData {
     snapshots: Vec<snapshot::Model>,
     events: Vec<event::Model>,
     event_battles: Vec<event_battle::Model>,
+    /// Canonical Fights belonging to `events` above (via `fights.event_id`).
+    /// One row per distinct engagement, regardless of how many
+    /// `event_battles`/segment rows it spans — see `compute_comps`.
+    fights: Vec<fight::Model>,
+    /// Analytics rollups for `fights` above, keyed by `fight_id` (unique).
+    /// A Fight never (re)computed by `fight_analytics` has no row here.
+    fight_stats: Vec<fight_stat::Model>,
     participations: Vec<event_participation::Model>,
     transactions: Vec<transaction::Model>,
     regears: Vec<regear::regear_death::Model>,
@@ -591,6 +599,28 @@ async fn load(db: &DatabaseConnection, range: DateRange) -> Result<RawData, AppE
             .await?
     };
 
+    // Canonical Fights are scoped to the same events as `participations`
+    // above, not by their own timestamp column — an event already falls
+    // inside `range` by its own date, and every Fight of that event belongs
+    // with it regardless of exactly when its segments started.
+    let fights = if event_ids.is_empty() {
+        Vec::new()
+    } else {
+        fight::Entity::find()
+            .filter(fight::Column::EventId.is_in(event_ids.clone()))
+            .all(db)
+            .await?
+    };
+    let fight_ids: Vec<i64> = fights.iter().map(|row| row.id).collect();
+    let fight_stats = if fight_ids.is_empty() {
+        Vec::new()
+    } else {
+        fight_stat::Entity::find()
+            .filter(fight_stat::Column::FightId.is_in(fight_ids))
+            .all(db)
+            .await?
+    };
+
     let splits = split::Entity::find()
         .filter(split::Column::CreatedAt.between(range.from, range.to))
         .all(db)
@@ -614,6 +644,8 @@ async fn load(db: &DatabaseConnection, range: DateRange) -> Result<RawData, AppE
             .filter(event_battle::Column::BattleStartedAt.between(range.from, range.to))
             .all(db)
             .await?,
+        fights,
+        fight_stats,
         events,
         participations,
         transactions: transaction::Entity::find()
@@ -1196,6 +1228,7 @@ fn compute_members(
     rows
 }
 
+#[allow(clippy::too_many_lines)]
 fn compute_comps(raw: &RawData, matchup_rows: &[MatchupRow]) -> Vec<CompRow> {
     let mut seats: HashMap<i64, i64> = HashMap::new();
     for row in &raw.comp_builds {
@@ -1212,11 +1245,23 @@ fn compute_comps(raw: &RawData, matchup_rows: &[MatchupRow]) -> Vec<CompRow> {
             *a.entry(p.event_id).or_insert(0) += 1;
             a
         });
-    let battles_by_event: HashMap<i64, Vec<&event_battle::Model>> =
-        raw.event_battles.iter().fold(HashMap::new(), |mut a, b| {
-            a.entry(b.event_id).or_default().push(b);
+    // Each Fight belongs to at most one event (`fights.event_id`), so
+    // grouping by event id here can never split or duplicate a Fight across
+    // groups, and every fight in `raw.fights` is already a single distinct
+    // row. This is what makes the counting below correct per canonical
+    // Fight rather than per raw `event_battles` segment — a real engagement
+    // AlbionBB splits into several segments used to double-count it here
+    // before Fights existed, the same class of bug `matchups.rs`'s doc
+    // comment describes fixing there.
+    let fights_by_event: HashMap<i64, Vec<&fight::Model>> =
+        raw.fights.iter().fold(HashMap::new(), |mut a, f| {
+            if let Some(event_id) = f.event_id {
+                a.entry(event_id).or_default().push(f);
+            }
             a
         });
+    let stats_by_fight: HashMap<i64, &fight_stat::Model> =
+        raw.fight_stats.iter().map(|s| (s.fight_id, s)).collect();
 
     let mut rows: Vec<CompRow> = raw
         .comps
@@ -1230,14 +1275,46 @@ fn compute_comps(raw: &RawData, matchup_rows: &[MatchupRow]) -> Vec<CompRow> {
                 .sum();
             let capacity = comp_seats * event_ids.len() as i64;
 
-            let battles: Vec<&event_battle::Model> = event_ids
+            let comp_fights: Vec<&fight::Model> = event_ids
                 .iter()
-                .filter_map(|id| battles_by_event.get(id))
+                .filter_map(|id| fights_by_event.get(id))
                 .flatten()
                 .copied()
                 .collect();
-            let wins = battles.iter().filter(|b| b.is_win).count() as i64;
-            let total = battles.len() as i64;
+            // A fight whose outcome is still `"unknown"` (never recomputed
+            // by `fight_analytics`) is exactly as uninformative as a battle
+            // with no association at all in `matchups.rs` — excluded from
+            // both wins and losses and from the win_rate denominator, but
+            // it still counts toward `fights` (sample size): the engagement
+            // itself is real, only its outcome isn't known yet.
+            let wins = i64::try_from(
+                comp_fights
+                    .iter()
+                    .filter(|f| f.outcome == "victory")
+                    .count(),
+            )
+            .unwrap_or(i64::MAX);
+            let losses = i64::try_from(
+                comp_fights
+                    .iter()
+                    .filter(|f| f.outcome == "defeat" || f.outcome == "draw")
+                    .count(),
+            )
+            .unwrap_or(i64::MAX);
+            let total = i64::try_from(comp_fights.len()).unwrap_or(i64::MAX);
+            // A fight never (re)computed by `fight_analytics` has no
+            // `fight_stat` row yet; its kills/deaths contribution is 0, not
+            // skipped — its win/loss from `fights.outcome` still counts.
+            let kills: i64 = comp_fights
+                .iter()
+                .filter_map(|f| stats_by_fight.get(&f.id))
+                .map(|s| s.friendly_kills)
+                .sum();
+            let deaths: i64 = comp_fights
+                .iter()
+                .filter_map(|f| stats_by_fight.get(&f.id))
+                .map(|s| s.friendly_deaths)
+                .sum();
 
             CompRow {
                 comp_id: c.id,
@@ -1246,10 +1323,10 @@ fn compute_comps(raw: &RawData, matchup_rows: &[MatchupRow]) -> Vec<CompRow> {
                 events: event_ids.len() as i64,
                 fights: total,
                 wins,
-                losses: total - wins,
-                win_rate: ratio_percent(wins, total),
-                kills: battles.iter().map(|b| b.guild_kills).sum(),
-                deaths: battles.iter().map(|b| b.guild_deaths).sum(),
+                losses,
+                win_rate: ratio_percent(wins, wins + losses),
+                kills,
+                deaths,
                 fill_rate: ratio_percent(signed, capacity),
             }
         })
@@ -1831,6 +1908,8 @@ mod tests {
             snapshots: Vec::new(),
             events: Vec::new(),
             event_battles: Vec::new(),
+            fights: Vec::new(),
+            fight_stats: Vec::new(),
             participations: Vec::new(),
             transactions: Vec::new(),
             regears: Vec::new(),
@@ -2243,5 +2322,259 @@ mod tests {
         assert_eq!(week.wins, 2);
         assert_eq!(week.losses, 1);
         assert!((week.win_rate - ratio_percent(2, 3)).abs() < f64::EPSILON);
+    }
+
+    /// `compute_comps` real-DB coverage: fights are the canonical unit, not
+    /// raw `event_battles`/battle segments. These seed through `load` itself
+    /// (not a hand-built `RawData`) so the new `fights`/`fight_stats`
+    /// queries in `load` are exercised too, not just `compute_comps`'s
+    /// in-memory folding.
+    mod compute_comps_tests {
+        use sea_orm::{ActiveModelTrait, ActiveValue::Set, Database};
+
+        use super::*;
+        use crate::migration::MigratorTrait;
+        use crate::modules::comps::entities::comp_category;
+        use crate::modules::events::entities::fight_battle;
+
+        async fn seed_db() -> DatabaseConnection {
+            let db = Database::connect("sqlite::memory:").await.expect("connect");
+            crate::migration::Migrator::up(&db, None)
+                .await
+                .expect("migrate");
+            db
+        }
+
+        fn report_range() -> DateRange {
+            DateRange {
+                from: ts("2026-08-01T00:00:00Z"),
+                to: ts("2026-08-20T00:00:00Z"),
+            }
+        }
+
+        async fn insert_test_user(db: &DatabaseConnection) -> i64 {
+            user::ActiveModel {
+                username: Set("tester".to_string()),
+                email: Set(format!("tester-{}@example.com", uuid::Uuid::new_v4())),
+                role: Set("User".to_string()),
+                created_at: Set(ts("2026-08-01T00:00:00Z")),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .expect("insert user")
+            .id
+        }
+
+        async fn insert_test_comp(db: &DatabaseConnection, name: &str) -> i64 {
+            let created_by = insert_test_user(db).await;
+            let category_id = comp_category::ActiveModel {
+                name: Set("Category".to_string()),
+                slug: Set(format!("category-{}", uuid::Uuid::new_v4())),
+                created_at: Set(ts("2026-08-01T00:00:00Z")),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .expect("insert comp category")
+            .id;
+            comp::ActiveModel {
+                name: Set(name.to_string()),
+                category_id: Set(category_id),
+                version: Set(1),
+                created_by: Set(created_by),
+                created_at: Set(ts("2026-08-01T00:00:00Z")),
+                updated_at: Set(ts("2026-08-01T00:00:00Z")),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .expect("insert comp")
+            .id
+        }
+
+        async fn insert_test_event(db: &DatabaseConnection, comp_id: i64) -> i64 {
+            let created_by = insert_test_user(db).await;
+            event::ActiveModel {
+                title: Set("Test Event".to_string()),
+                comp_id: Set(comp_id),
+                created_by: Set(created_by),
+                event_date_utc: Set(ts("2026-08-10T00:00:00Z")),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .expect("insert event")
+            .id
+        }
+
+        /// A raw `event_battles` segment, only to document the pre-Fight
+        /// data shape a test is guarding against — `compute_comps` no
+        /// longer reads this table at all.
+        async fn insert_test_event_battle(db: &DatabaseConnection, event_id: i64, battle_id: i64) {
+            event_battle::ActiveModel {
+                event_id: Set(event_id),
+                albionbb_battle_id: Set(battle_id.to_string()),
+                battle_started_at: Set(ts("2026-08-10T00:00:00Z")),
+                guild_players_count: Set(0),
+                fetched_at: Set(ts("2026-08-10T00:00:00Z")),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .expect("insert event battle");
+        }
+
+        async fn insert_test_fight(db: &DatabaseConnection, event_id: i64, outcome: &str) -> i64 {
+            fight::ActiveModel {
+                event_id: Set(Some(event_id)),
+                started_at: Set(ts("2026-08-10T00:00:00Z")),
+                outcome: Set(outcome.to_string()),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .expect("insert fight")
+            .id
+        }
+
+        async fn link_test_fight_battle(
+            db: &DatabaseConnection,
+            fight_id: i64,
+            battle_id: i64,
+            sequence_number: i32,
+        ) {
+            fight_battle::ActiveModel {
+                fight_id: Set(fight_id),
+                battle_id: Set(battle_id),
+                sequence_number: Set(sequence_number),
+                created_at: Set(ts("2026-08-10T00:00:00Z")),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .expect("insert fight battle");
+        }
+
+        async fn insert_test_fight_stat(
+            db: &DatabaseConnection,
+            fight_id: i64,
+            friendly_kills: i64,
+            friendly_deaths: i64,
+        ) {
+            fight_stat::ActiveModel {
+                fight_id: Set(fight_id),
+                segment_count: Set(1),
+                unique_friendly_players: Set(0),
+                unique_enemy_players: Set(0),
+                friendly_kills: Set(friendly_kills),
+                friendly_deaths: Set(friendly_deaths),
+                friendly_kill_fame: Set(0),
+                enemy_kills: Set(0),
+                enemy_deaths: Set(0),
+                enemy_kill_fame: Set(0),
+                avg_friendly_item_power: Set(0.0),
+                avg_enemy_item_power: Set(0.0),
+                friendly_estimated_loss: Set(0),
+                enemy_estimated_loss: Set(0),
+                computed_at: Set(ts("2026-08-10T00:00:00Z")),
+                created_at: Set(ts("2026-08-10T00:00:00Z")),
+                updated_at: Set(ts("2026-08-10T00:00:00Z")),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .expect("insert fight stat");
+        }
+
+        fn comp_row(rows: &[CompRow], comp_id: i64) -> &CompRow {
+            rows.iter()
+                .find(|r| r.comp_id == comp_id)
+                .expect("comp row present")
+        }
+
+        /// The double-count fix: one event's engagement is ONE Fight split
+        /// into TWO `event_battles`/`fight_battles` segments. The old
+        /// implementation summed per raw `event_battles` row (2 segments ->
+        /// wins counted twice, kills/deaths summed twice); the new one must
+        /// count the underlying Fight exactly once.
+        #[tokio::test]
+        async fn compute_comps_counts_one_fight_once_despite_two_segments() {
+            let db = seed_db().await;
+            let comp_id = insert_test_comp(&db, "Comp A").await;
+            let event_id = insert_test_event(&db, comp_id).await;
+            insert_test_event_battle(&db, event_id, 100).await;
+            insert_test_event_battle(&db, event_id, 101).await;
+            let fight_id = insert_test_fight(&db, event_id, "victory").await;
+            link_test_fight_battle(&db, fight_id, 100, 1).await;
+            link_test_fight_battle(&db, fight_id, 101, 2).await;
+            insert_test_fight_stat(&db, fight_id, 10, 3).await;
+
+            let raw = load(&db, report_range()).await.expect("load");
+            let rows = compute_comps(&raw, &[]);
+
+            let row = comp_row(&rows, comp_id);
+            assert_eq!(row.fights, 1, "one Fight, not two segments");
+            assert_eq!(row.wins, 1);
+            assert_eq!(row.losses, 0);
+            assert!((row.win_rate - 100.0).abs() < f64::EPSILON);
+            assert_eq!(row.kills, 10, "not double-counted across segments");
+            assert_eq!(row.deaths, 3);
+        }
+
+        /// A Fight whose outcome is still `"unknown"` (never recomputed by
+        /// `fight_analytics`) counts toward the sample size (`fights`) but
+        /// is excluded from wins, losses, and the `win_rate` denominator.
+        #[tokio::test]
+        async fn compute_comps_excludes_unknown_outcome_from_win_rate_but_counts_the_fight() {
+            let db = seed_db().await;
+            let comp_id = insert_test_comp(&db, "Comp B").await;
+            let event_id = insert_test_event(&db, comp_id).await;
+
+            let won_fight = insert_test_fight(&db, event_id, "victory").await;
+            insert_test_fight_stat(&db, won_fight, 4, 1).await;
+
+            // Never recomputed: no fight_stat row at all for this one.
+            insert_test_fight(&db, event_id, "unknown").await;
+
+            let raw = load(&db, report_range()).await.expect("load");
+            let rows = compute_comps(&raw, &[]);
+
+            let row = comp_row(&rows, comp_id);
+            assert_eq!(row.fights, 2, "both fights count toward sample size");
+            assert_eq!(row.wins, 1);
+            assert_eq!(row.losses, 0);
+            assert!(
+                (row.win_rate - 100.0).abs() < f64::EPSILON,
+                "unknown outcome excluded from the win_rate denominator"
+            );
+            assert_eq!(row.kills, 4, "the never-recomputed fight contributes 0");
+            assert_eq!(row.deaths, 1);
+        }
+
+        /// `"defeat"` and `"draw"` are both losses; kills/deaths still fold
+        /// in from each fight's `fight_stat` row.
+        #[tokio::test]
+        async fn compute_comps_counts_defeat_and_draw_as_losses() {
+            let db = seed_db().await;
+            let comp_id = insert_test_comp(&db, "Comp C").await;
+            let event_id = insert_test_event(&db, comp_id).await;
+
+            let defeat = insert_test_fight(&db, event_id, "defeat").await;
+            insert_test_fight_stat(&db, defeat, 2, 5).await;
+            let draw = insert_test_fight(&db, event_id, "draw").await;
+            insert_test_fight_stat(&db, draw, 3, 3).await;
+
+            let raw = load(&db, report_range()).await.expect("load");
+            let rows = compute_comps(&raw, &[]);
+
+            let row = comp_row(&rows, comp_id);
+            assert_eq!(row.fights, 2);
+            assert_eq!(row.wins, 0);
+            assert_eq!(row.losses, 2);
+            assert!((row.win_rate - 0.0).abs() < f64::EPSILON);
+            assert_eq!(row.kills, 5);
+            assert_eq!(row.deaths, 8);
+        }
     }
 }

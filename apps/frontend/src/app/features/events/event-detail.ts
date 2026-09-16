@@ -106,6 +106,24 @@ function isEventDetailTab(value: string): value is EventDetailTab {
   return value === 'roster' || value === 'overview' || value === 'battles' || value === 'splits';
 }
 
+/**
+ * Sort order for a battle segment's outcome column: best to worst. `unknown` (no linked Fight
+ * yet) sorts between `draw` and `defeat` — it isn't a loss, but it isn't a confirmed result
+ * either.
+ */
+function outcomeSortRank(outcome: EventBattleSummary['outcome']): number {
+  switch (outcome) {
+    case 'victory':
+      return 3;
+    case 'draw':
+      return 2;
+    case 'unknown':
+      return 1;
+    case 'defeat':
+      return 0;
+  }
+}
+
 function formatDateInput(date: Date): string {
   const pad = (value: number): string => String(value).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -1545,10 +1563,10 @@ interface AddEventMemberRequest {
                         <div class="flex items-center gap-2.5 flex-wrap">
                           <span
                             class="chip font-mono text-xs font-bold"
-                            [class.chip--success]="battle.is_win"
-                            [class.chip--error]="!battle.is_win"
+                            [class.chip--success]="battle.outcome === 'victory'"
+                            [class.chip--error]="battle.outcome === 'defeat'"
                           >
-                            {{ battle.is_win ? 'VITTORIA' : 'SCONFITTA' }}
+                            {{ battleOutcomeChipLabel(battle.outcome) }}
                           </span>
                           <a
                             class="font-mono text-xs text-[var(--color-primary)] font-bold hover:underline"
@@ -3460,11 +3478,11 @@ export class EventDetailPage {
       comparator: (a, b) => a.battle_started_at.localeCompare(b.battle_started_at),
     },
     {
-      key: 'is_win',
+      key: 'outcome',
       label: 'common.status',
       sortable: true,
-      accessor: (battle) => (battle.is_win ? 'win' : 'loss'),
-      comparator: (a, b) => Number(a.is_win) - Number(b.is_win),
+      accessor: (battle) => battle.outcome,
+      comparator: (a, b) => outcomeSortRank(a.outcome) - outcomeSortRank(b.outcome),
     },
     {
       key: 'guild_players_count',
@@ -4994,6 +5012,19 @@ export class EventDetailPage {
     return new Date(value).toLocaleString();
   }
 
+  protected battleOutcomeChipLabel(outcome: EventBattleSummary['outcome']): string {
+    switch (outcome) {
+      case 'victory':
+        return 'VITTORIA';
+      case 'defeat':
+        return 'SCONFITTA';
+      case 'draw':
+        return 'PAREGGIO';
+      case 'unknown':
+        return 'SCONOSCIUTO';
+    }
+  }
+
   protected fightMetrics(fight: EventFight, battles: readonly EventBattleSummary[]): FightKpis {
     const linkedBattles = battles.filter((battle) =>
       fight.battle_ids.includes(battle.albionbb_battle_id),
@@ -5002,18 +5033,13 @@ export class EventDetailPage {
       .map((battle) => battle.battle_total_players)
       .filter((players): players is number => players !== null);
     const hasLinkedBattles = linkedBattles.length > 0;
-    const outcomes = linkedBattles.map((battle) => battle.is_win);
+    // Every segment of the same Fight reports the same outcome (Fase 0-5 resolves it at the
+    // Fight level, not per raw battle segment), so the first linked segment's value is enough —
+    // no need to reconcile several booleans any more.
+    const fallbackOutcome = linkedBattles[0]?.outcome ?? 'unknown';
 
     return {
-      outcome:
-        fight.outcome?.outcome ??
-        (outcomes.length === 0
-          ? 'unknown'
-          : outcomes.every(Boolean)
-            ? 'victory'
-            : outcomes.every((outcome) => !outcome)
-              ? 'defeat'
-              : 'draw'),
+      outcome: fight.outcome?.outcome ?? fallbackOutcome,
       segments: fight.segment_count ?? fight.battle_ids.length,
       players:
         fight.total_players ??

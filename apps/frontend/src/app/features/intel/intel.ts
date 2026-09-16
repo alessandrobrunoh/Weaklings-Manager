@@ -4,6 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 import { IntelService } from '../../core/services/intel.service';
 import type { ScoutListParams } from '../../core/services/intel.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -222,6 +223,27 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
         @switch (tab()) {
           @case ('overview') {
+            @if (canViewOpponents()) {
+              <a
+                class="card flex items-center justify-between gap-3 p-4 no-underline transition-colors hover:opacity-90"
+                routerLink="/intel/opponents"
+              >
+                <div class="flex items-center gap-3">
+                  <div class="icon-capsule bg-[var(--color-primary-container)] text-[var(--color-primary)] border border-[var(--color-primary)]">
+                    <app-icon name="shield" size="1.25rem" />
+                  </div>
+                  <div>
+                    <p class="font-medium" style="color: var(--color-text)">
+                      {{ t('intel.opponents.overviewCard.title') }}
+                    </p>
+                    <p class="text-xs" style="color: var(--color-text-secondary)">
+                      {{ t('intel.opponents.overviewCard.hint') }}
+                    </p>
+                  </div>
+                </div>
+                <app-icon name="chevron-right" size="1rem" style="color: var(--color-text-tertiary)" />
+              </a>
+            }
             @if (report(); as r) {
               <!-- Performance Cards + Notable Battles -->
               <div class="grid gap-4 lg:grid-cols-2">
@@ -890,10 +912,13 @@ import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 })
 export class Intel {
   private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
   private readonly intel = inject(IntelService);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
+
+  protected readonly canViewOpponents = computed(() => this.auth.hasPermission('intel.opponents.view'));
 
   protected readonly SCOUT_PAGE_LIMIT = SCOUT_PAGE_LIMIT;
   protected readonly libraryEmptyLabel: TranslationKey = 'intel.empty';

@@ -20,9 +20,9 @@ use super::fit;
 use super::ip::{self, EquippedItem, SpecLevels};
 use super::models::{
     BlockingNode, BuildRosterFitView, CalibrationOutlier, CalibrationView, CombatDatasetView,
-    CreateScenarioRequest, ItemPowerRequest, ItemPowerView, LoadoutItemRequest,
-    MemberItemPowerView, RunDetail, RunSummary, ScenarioDefinition, ScenarioDetail,
-    ScenarioSummary, ScenarioVersionRef, SpecSource, UpdateScenarioRequest,
+    CompReadinessView, CreateScenarioRequest, ItemPowerRequest, ItemPowerView, LoadoutItemRequest,
+    MemberItemPowerView, ReadinessObservation, RunDetail, RunSummary, ScenarioDefinition,
+    ScenarioDetail, ScenarioSummary, ScenarioVersionRef, SpecSource, UpdateScenarioRequest,
 };
 use crate::errors::AppError;
 use crate::modules::comps::entities::build_item::{
@@ -206,21 +206,37 @@ impl CombatService {
         })
     }
 
-    /// Whether this composition could actually be fielded tonight, and where it is weakest.
+    /// Whether this composition could actually be fielded tonight, and where it is weakest —
+    /// plus, when `event_id` is given and that event has been analyzed, how that prediction
+    /// compares against what the roster that actually fought turned out to have.
     ///
     /// The candidate pool is the participants of `event_id` when given, otherwise every user with
     /// any recorded specialization — the difference between "can we field this for the mass at
-    /// 21:00" and "who in the guild could ever fly this comp at all".
+    /// 21:00" and "who in the guild could ever fly this comp at all". `predicted` is this
+    /// prediction, computed the same way regardless of `event_id`.
+    ///
+    /// `observed` is `None` unless `event_id` is given AND that event's fights have a computed
+    /// `fight_stats` rollup — before an event, or before `fight_analytics` has processed its
+    /// fights, there is simply nothing yet to compare the prediction against. When it is
+    /// `Some`, it reports the average `avg_friendly_item_power` `fight_analytics` actually
+    /// recorded across that event's fights, and the signed delta against `predicted`'s
+    /// `avg_item_power_now`.
     ///
     /// # Errors
     ///
     /// Returns [`AppError::NotFound`] when the comp, or the given event, does not exist.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "a sequential pipeline building seats/candidates, scoring readiness, then \
+            layering the observed comparison on top; splitting it further would separate steps \
+            that only make sense read together"
+    )]
     pub async fn comp_readiness(
         &self,
         db: &DatabaseConnection,
         comp_id: i64,
         event_id: Option<i64>,
-    ) -> Result<super::readiness::CompReadiness, AppError> {
+    ) -> Result<CompReadinessView, AppError> {
         use crate::modules::events::entities::event_participation;
         use crate::modules::events::service::EventService;
 
@@ -293,9 +309,31 @@ impl CombatService {
             .collect();
 
         let mut readiness = super::readiness::evaluate(&seats, &members);
+        Self::fill_readiness_names(db, &build_names, &mut readiness).await?;
 
-        // Only the handful of seats actually shown need a resolved name, not every candidate in
-        // the pool — `readiness::evaluate` already capped `weakest_seats` for this reason.
+        let observed = match event_id {
+            Some(event_id) => {
+                Self::readiness_observation(db, event_id, readiness.avg_item_power_now).await?
+            }
+            None => None,
+        };
+
+        Ok(CompReadinessView {
+            predicted: readiness,
+            observed,
+        })
+    }
+
+    /// Fills in the build/username display fields `readiness::evaluate` leaves blank, since that
+    /// function is pure and has no database access of its own.
+    ///
+    /// Only the handful of seats actually shown need a resolved name, not every candidate in the
+    /// pool — `readiness::evaluate` already capped `weakest_seats` for this reason.
+    async fn fill_readiness_names(
+        db: &DatabaseConnection,
+        build_names: &HashMap<i64, String>,
+        readiness: &mut super::readiness::CompReadiness,
+    ) -> Result<(), AppError> {
         let mut usernames: HashMap<i64, String> = HashMap::new();
         for user_id in readiness
             .weakest_seats
@@ -324,7 +362,56 @@ impl CombatService {
                 .cloned()
                 .unwrap_or_default();
         }
-        Ok(readiness)
+        Ok(())
+    }
+
+    /// Compares an event's actually-recorded Item Power against `comp_readiness`'s pre-event
+    /// prediction for it.
+    ///
+    /// `None` when the event has no fights yet, or those fights have no computed `fight_stats`
+    /// rollup yet — not an error, a real "nothing to compare yet" state.
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "fight_count is a small real-world per-event fight count, never near f64's precision limit"
+    )]
+    async fn readiness_observation(
+        db: &DatabaseConnection,
+        event_id: i64,
+        predicted_avg_item_power_now: f64,
+    ) -> Result<Option<ReadinessObservation>, AppError> {
+        use crate::modules::events::entities::fight;
+        use crate::modules::fight_analytics::entities::fight_stat;
+
+        let fight_ids: Vec<i64> = fight::Entity::find()
+            .filter(fight::Column::EventId.eq(event_id))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?
+            .into_iter()
+            .map(|row| row.id)
+            .collect();
+        if fight_ids.is_empty() {
+            return Ok(None);
+        }
+
+        let stats = fight_stat::Entity::find()
+            .filter(fight_stat::Column::FightId.is_in(fight_ids))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?;
+        if stats.is_empty() {
+            return Ok(None);
+        }
+
+        let fight_count = stats.len();
+        let avg_item_power =
+            stats.iter().map(|s| s.avg_friendly_item_power).sum::<f64>() / fight_count as f64;
+
+        Ok(Some(ReadinessObservation {
+            fight_count: i64::try_from(fight_count).unwrap_or(i64::MAX),
+            avg_item_power,
+            item_power_delta: avg_item_power - predicted_avg_item_power_now,
+        }))
     }
 
     /// Reads one loadout of a build into the calculator's item shape.
@@ -1300,6 +1387,7 @@ mod service_tests {
 
 #[cfg(test)]
 mod comp_readiness_tests {
+    use chrono::Utc;
     use sea_orm::{ActiveModelTrait, Database, DatabaseConnection, Set};
     use sea_orm_migration::MigratorTrait;
 
@@ -1307,6 +1395,8 @@ mod comp_readiness_tests {
     use crate::modules::comps::entities::{
         build, build_category, build_item, comp, comp_build, comp_category,
     };
+    use crate::modules::events::entities::{event, fight};
+    use crate::modules::fight_analytics::entities::fight_stat;
     use crate::modules::users::entities::ActiveModel as UserActiveModel;
     use crate::modules::users::specializations;
 
@@ -1400,15 +1490,103 @@ mod comp_readiness_tests {
         (comp.id, built.id)
     }
 
+    /// A minimal event whose `comp_id` is whatever comp is passed in — the event's own comp
+    /// linkage is irrelevant to `comp_readiness`, which takes its comp id as a separate argument.
+    async fn seed_event(db: &DatabaseConnection, comp_id: i64, created_by: i64) -> i64 {
+        let now = Utc::now();
+        event::ActiveModel {
+            title: Set("readiness-event".to_string()),
+            description: Set(None),
+            call_to_arms: Set(false),
+            regear: Set(false),
+            comp_id: Set(comp_id),
+            player_cap: Set(None),
+            created_by: Set(created_by),
+            event_date_utc: Set(now.into()),
+            mass_time_utc: Set(None),
+            start_time_utc: Set(None),
+            created_at: Set(now.into()),
+            updated_at: Set(now.into()),
+            status: Set("completed".to_string()),
+            started_at: Set(None),
+            stopped_at: Set(None),
+            auto_stop_deadline: Set(None),
+            link_status: Set("idle".to_string()),
+            link_attempts: Set(0),
+            link_last_error: Set(None),
+            link_battles_completed_at: Set(None),
+            discord_voice_channel_id: Set(None),
+            roster_version: Set(0),
+            archived_at: Set(None),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert event")
+        .id
+    }
+
+    async fn seed_fight(db: &DatabaseConnection, event_id: Option<i64>) -> i64 {
+        let now = Utc::now();
+        fight::ActiveModel {
+            event_id: Set(event_id),
+            started_at: Set(now.into()),
+            ended_at: Set(None),
+            grouping_method: Set("automatic".to_string()),
+            grouping_confidence: Set(1.0),
+            grouping_version: Set("v1".to_string()),
+            needs_review: Set(false),
+            created_at: Set(now.into()),
+            updated_at: Set(now.into()),
+            outcome: Set("unknown".to_string()),
+            outcome_method: Set(None),
+            analytics_computed_at: Set(None),
+            analytics_stale: Set(true),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert fight")
+        .id
+    }
+
+    async fn seed_fight_stat(db: &DatabaseConnection, fight_id: i64, avg_friendly_item_power: f64) {
+        let now = Utc::now();
+        fight_stat::ActiveModel {
+            fight_id: Set(fight_id),
+            segment_count: Set(1),
+            unique_friendly_players: Set(1),
+            unique_enemy_players: Set(1),
+            friendly_kills: Set(0),
+            friendly_deaths: Set(0),
+            friendly_kill_fame: Set(0),
+            enemy_kills: Set(0),
+            enemy_deaths: Set(0),
+            enemy_kill_fame: Set(0),
+            avg_friendly_item_power: Set(avg_friendly_item_power),
+            avg_enemy_item_power: Set(0.0),
+            friendly_estimated_loss: Set(0),
+            enemy_estimated_loss: Set(0),
+            computed_at: Set(now.into()),
+            created_at: Set(now.into()),
+            updated_at: Set(now.into()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("failed to insert fight_stat");
+    }
+
     #[tokio::test]
     async fn an_untrained_guild_leaves_every_seat_uncovered() {
         let db = seed_db().await;
         let (comp_id, build_id) = seed_polehammer_comp(&db).await;
 
-        let readiness = CombatService::new()
+        let view = CombatService::new()
             .comp_readiness(&db, comp_id, None)
             .await
             .expect("readiness should compute with no candidates");
+        let readiness = view.predicted;
 
         assert_eq!(readiness.seat_count, 1);
         assert_eq!(
@@ -1418,6 +1596,10 @@ mod comp_readiness_tests {
         assert_eq!(readiness.weakest_seats[0].build_name, "readiness-build");
         assert!((readiness.avg_item_power_now - 0.0).abs() < f64::EPSILON);
         assert!(readiness.avg_item_power_at_max > 0.0);
+        assert!(
+            view.observed.is_none(),
+            "no event_id was requested, so there is nothing to compare against"
+        );
     }
 
     #[tokio::test]
@@ -1445,10 +1627,11 @@ mod comp_readiness_tests {
         .await
         .expect("failed to insert specialization");
 
-        let readiness = CombatService::new()
+        let view = CombatService::new()
             .comp_readiness(&db, comp_id, None)
             .await
             .expect("readiness should compute");
+        let readiness = view.predicted;
 
         assert!(readiness.uncovered_seats.is_empty());
         assert_eq!(
@@ -1461,6 +1644,7 @@ mod comp_readiness_tests {
         );
         assert_eq!(readiness.bench_coverage[0].build_name, "readiness-build");
         assert_eq!(readiness.bench_coverage[0].qualified_members, 1);
+        assert!(view.observed.is_none());
     }
 
     #[tokio::test]
@@ -1471,6 +1655,86 @@ mod comp_readiness_tests {
             .await
             .expect_err("a nonexistent comp should not compute readiness");
         assert!(matches!(error, crate::errors::AppError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn an_event_with_no_fights_yet_has_nothing_to_observe() {
+        let db = seed_db().await;
+        let (comp_id, _) = seed_polehammer_comp(&db).await;
+        let owner = UserActiveModel {
+            username: Set("owner2".to_string()),
+            email: Set("owner2@example.com".to_string()),
+            role: Set("Admin".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert second owner");
+        let event_id = seed_event(&db, comp_id, owner.id).await;
+
+        let without_event = CombatService::new()
+            .comp_readiness(&db, comp_id, None)
+            .await
+            .expect("readiness should compute with no event");
+        let view = CombatService::new()
+            .comp_readiness(&db, comp_id, Some(event_id))
+            .await
+            .expect("readiness should compute with an event that has no fights");
+
+        assert!(view.observed.is_none());
+        assert!(
+            (view.predicted.avg_item_power_now - without_event.predicted.avg_item_power_now).abs()
+                < f64::EPSILON
+        );
+        assert_eq!(
+            view.predicted.seat_count,
+            without_event.predicted.seat_count
+        );
+    }
+
+    #[tokio::test]
+    async fn observed_item_power_is_averaged_across_the_events_fights_and_the_delta_is_signed() {
+        let db = seed_db().await;
+        let (comp_id, _) = seed_polehammer_comp(&db).await;
+        let owner = UserActiveModel {
+            username: Set("owner3".to_string()),
+            email: Set("owner3@example.com".to_string()),
+            role: Set("Admin".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("failed to insert third owner");
+        let event_id = seed_event(&db, comp_id, owner.id).await;
+
+        let fight_a = seed_fight(&db, Some(event_id)).await;
+        seed_fight_stat(&db, fight_a, 1300.0).await;
+        let fight_b = seed_fight(&db, Some(event_id)).await;
+        seed_fight_stat(&db, fight_b, 1400.0).await;
+
+        // A decoy fight/fight_stat under a different event must never be pulled into the average.
+        let other_event_id = seed_event(&db, comp_id, owner.id).await;
+        let decoy_fight = seed_fight(&db, Some(other_event_id)).await;
+        seed_fight_stat(&db, decoy_fight, 1_000_000.0).await;
+
+        let view = CombatService::new()
+            .comp_readiness(&db, comp_id, Some(event_id))
+            .await
+            .expect("readiness should compute with an analyzed event");
+
+        let observed = view
+            .observed
+            .expect("two analyzed fights should produce an observation");
+        assert_eq!(observed.fight_count, 2);
+        assert!((observed.avg_item_power - 1350.0).abs() < f64::EPSILON);
+        assert!(
+            (observed.item_power_delta - (1350.0 - view.predicted.avg_item_power_now)).abs()
+                < f64::EPSILON
+        );
+        // With an untrained candidate pool, `avg_item_power_now` is 0.0, so observed IP is
+        // entirely positive delta.
+        assert!((view.predicted.avg_item_power_now - 0.0).abs() < f64::EPSILON);
+        assert!((observed.item_power_delta - 1350.0).abs() < f64::EPSILON);
     }
 }
 

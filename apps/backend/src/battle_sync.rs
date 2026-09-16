@@ -99,5 +99,16 @@ async fn run_cycle(
         Err(e) => tracing::warn!(error = %e, "battle-sync: intel scouting pass failed"),
     }
 
+    // Third phase: group any fights the sync worker seeded without an event attached.
+    // Same best-effort, logged-not-propagated style as scouting above — a failed grouping
+    // pass must not be able to stall snapshot persistence or scouting on the next tick.
+    match crate::modules::events::service::group_orphan_fights(db, guild_ctx, chrono::Utc::now())
+        .await
+    {
+        Ok(0) => {}
+        Ok(count) => tracing::info!(fights_merged = count, "battle-sync: grouped orphan fights"),
+        Err(e) => tracing::warn!(error = %e, "battle-sync: orphan fight grouping pass failed"),
+    }
+
     Ok(())
 }

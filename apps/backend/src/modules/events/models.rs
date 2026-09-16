@@ -33,11 +33,12 @@ pub struct EventFilters {
 /// Aggregated performance metrics for an event or composition.
 #[derive(Debug, Serialize, Clone, Default, ToSchema)]
 pub struct BattlePerformanceStats {
-    /// Total battles linked to the analytical scope.
+    /// Total battles (distinct Fights) linked to the analytical scope.
     pub total_battles: i64,
-    /// Battles won by the configured guild.
+    /// Battles won by the configured guild (Fight outcome `"victory"`).
     pub wins: i64,
-    /// Battles lost or not marked as won by AlbionBB.
+    /// Battles lost by the configured guild (Fight outcome `"defeat"`). A `"draw"` or
+    /// `"unknown"`-outcome fight counts toward `total_battles` but neither `wins` nor `losses`.
     pub losses: i64,
     /// Win percentage in the `0..=100` range.
     pub win_rate: f64,
@@ -62,11 +63,13 @@ pub struct OpponentPerformanceView {
     pub guild_id: Option<String>,
     /// Human-readable guild name when available.
     pub guild_name: String,
-    /// Number of linked battles against this opponent.
+    /// Number of linked battles against this opponent. Includes battles whose Fight outcome is
+    /// `"draw"` or `"unknown"` — we did fight this guild, even when neither `wins` nor `losses`
+    /// can honestly claim the result.
     pub battles: i64,
-    /// Wins against this opponent.
+    /// Wins against this opponent (Fight outcome `"victory"`).
     pub wins: i64,
-    /// Losses against this opponent.
+    /// Losses against this opponent (Fight outcome `"defeat"`).
     pub losses: i64,
     /// Kill fame scored by our guild in these matchups.
     pub guild_kill_fame: i64,
@@ -298,8 +301,16 @@ pub struct EventBattleView {
     pub guild_deaths: i64,
     /// Kill fame scored by the configured guild.
     pub guild_kill_fame: i64,
-    /// Whether the configured guild won this battle.
-    pub is_win: bool,
+    /// This battle segment's canonical Fight outcome: `"victory"`, `"defeat"`, `"draw"`, or
+    /// `"unknown"` when the segment has no linked Fight yet.
+    ///
+    /// This is a **Fight-level** verdict, not a per-segment one: `AlbionBB` can split one real
+    /// engagement into several battle segments, and every segment belonging to the same
+    /// multi-segment Fight reports the same value here on purpose — they are the same
+    /// engagement. Previously this field was `is_win: bool`; that type could not honestly
+    /// represent `"draw"`/`"unknown"` (every non-win silently read as a loss), which is why it
+    /// changed shape instead of just swapping its source column.
+    pub outcome: String,
     /// Main opponent guild ID by kill fame, if known.
     pub opponent_guild_id: Option<String>,
     /// Main opponent guild name by kill fame, if known.

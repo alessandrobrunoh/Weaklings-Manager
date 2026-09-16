@@ -99,6 +99,7 @@ export type PermissionKey =
   | 'intel.edit'
   | 'intel.delete'
   | 'intel.report.view'
+  | 'intel.opponents.view'
   | 'regear.view'
   | 'regear.request'
   | 'regear.adjudicate'
@@ -942,7 +943,13 @@ export interface EventBattleSummary {
   guild_kills: number;
   guild_deaths: number;
   guild_kill_fame: number;
-  is_win: boolean;
+  /**
+   * This segment's canonical Fight outcome ('victory' | 'defeat' | 'draw' | 'unknown').
+   * Every segment of the same multi-segment Fight reports the same value — Fase 0-5 resolves
+   * outcome at the Fight level, not per raw battle segment. 'unknown' means the segment has no
+   * linked Fight yet, not that we lost.
+   */
+  outcome: 'victory' | 'defeat' | 'draw' | 'unknown';
   opponent_guild_id: string | null;
   opponent_guild_name: string | null;
   opponent_players_count: number | null;
@@ -2096,6 +2103,180 @@ export interface UpdateScoutRequest {
   notes?: string;
   category?: IntelScoutCategory;
   is_archived?: boolean;
+}
+
+/* ------------------------- Enemies (opponent dossiers) ------------------------- */
+
+/** Battle-derived tallies shared by both the guild and player list/detail views. */
+export interface EnemyRollup {
+  /** Distinct `enemy_player_battles.battle_id` values. */
+  battles_fought: number;
+  /** Sum of `our_kills_on_them` across those battles. */
+  our_kills: number;
+  /** Sum of `their_kills_on_us` across those battles. */
+  their_kills: number;
+}
+
+/** One row of `GET /api/enemies/guilds`. */
+export interface EnemyGuildSummary extends EnemyRollup {
+  id: number;
+  /** Opaque identity key (`"id:<albion guild id>"` or `"name:<lowercased name>"`). */
+  guild_key: string;
+  /** Latest known display name. */
+  name: string;
+  /** Alliance display name the guild currently belongs to, when known. */
+  current_alliance_name: string | null;
+  /** RFC 3339. When this guild was first observed. */
+  first_seen_at: string;
+  /** RFC 3339. When this guild was most recently observed. */
+  last_seen_at: string;
+  /** Officer-set flag marking this guild for closer attention. */
+  is_watchlisted: boolean;
+}
+
+/** One historical value ever observed for an {@link EnemyAliasGroup}. */
+export interface EnemyAliasValue {
+  /** The observed value itself (a name or an alliance name). */
+  value: string;
+  /** RFC 3339. When this value was first observed. */
+  first_seen_at: string;
+  /** RFC 3339. When this value was most recently observed. */
+  last_seen_at: string;
+}
+
+/** Every distinct value ever observed for one alias `kind` (`"name"` or `"alliance"`). */
+export interface EnemyAliasGroup {
+  /** `"name"` or `"alliance"`. */
+  kind: string;
+  /** Every distinct value observed for this kind, oldest first. */
+  values: EnemyAliasValue[];
+}
+
+/**
+ * One roster entry in an {@link EnemyGuildDossier}: an enemy player currently
+ * believed to belong to this guild, plus their most recently observed build.
+ */
+export interface EnemyGuildRosterPlayer {
+  id: number;
+  /** Opaque identity key. */
+  player_key: string;
+  /** Latest known display name. */
+  name: string;
+  /** Combat role from this player's most recent battle row, when known. */
+  role: string | null;
+  /** Main-hand item type id from this player's most recent battle row. */
+  main_hand_item_id: string | null;
+  /** Item power from this player's most recent battle row. */
+  item_power: number | null;
+  /** RFC 3339. When this player was first observed. */
+  first_seen_at: string;
+  /** RFC 3339. When this player was most recently observed. */
+  last_seen_at: string;
+}
+
+/** One bucket of a weapon histogram: how many battle-participations used a given weapon. */
+export interface WeaponHistogramEntry {
+  /** Raw upstream item type id of the main-hand weapon. */
+  main_hand_item_id: string;
+  /** Number of battle rows observed with this weapon. */
+  count: number;
+}
+
+/** Full dossier for `GET /api/enemies/guilds/{id}`. */
+export interface EnemyGuildDossier extends EnemyRollup {
+  id: number;
+  /** Opaque identity key. */
+  guild_key: string;
+  /** Raw Albion guild id, when present. */
+  albion_guild_id: string | null;
+  /** Latest known display name. */
+  name: string;
+  /** Alliance id the guild currently belongs to, when known. */
+  current_alliance_id: string | null;
+  /** Alliance display name the guild currently belongs to, when known. */
+  current_alliance_name: string | null;
+  /** RFC 3339. When this guild was first observed. */
+  first_seen_at: string;
+  /** RFC 3339. When this guild was most recently observed. */
+  last_seen_at: string;
+  /** Officer-set flag marking this guild for closer attention. */
+  is_watchlisted: boolean;
+  /** Free-form officer notes. */
+  notes: string | null;
+  /** Name/alliance history, grouped by kind. */
+  aliases: EnemyAliasGroup[];
+  /** Enemy players currently believed to belong to this guild. */
+  roster: EnemyGuildRosterPlayer[];
+  /** Main-hand weapon usage across every battle row of every roster player, most-used first. */
+  weapon_histogram: WeaponHistogramEntry[];
+}
+
+/** One row of `GET /api/enemies/players`. */
+export interface EnemyPlayerSummary extends EnemyRollup {
+  id: number;
+  /** Opaque identity key. */
+  player_key: string;
+  /** Latest known display name. */
+  name: string;
+  /** The enemy guild this player is currently believed to belong to, when known. */
+  current_enemy_guild_id: number | null;
+  /** That guild's latest known display name, when known. */
+  current_enemy_guild_name: string | null;
+  /** Combat role from this player's most recent battle row. */
+  role: string | null;
+  /** Main-hand item type id from this player's most recent battle row. */
+  main_hand_item_id: string | null;
+  /** Item power from this player's most recent battle row. */
+  item_power: number | null;
+  /** RFC 3339. When this player was first observed. */
+  first_seen_at: string;
+  /** RFC 3339. When this player was most recently observed. */
+  last_seen_at: string;
+}
+
+/** One battle-by-battle history row in an {@link EnemyPlayerDossier}. */
+export interface EnemyPlayerBattleEntry {
+  /** Canonical AlbionBB battle id. */
+  battle_id: number;
+  /** RFC 3339. The battle's own time. */
+  occurred_at: string;
+  /** Assigned combat role, when classified. */
+  role: string | null;
+  /** Raw upstream item type id of the player's main-hand weapon, when observed. */
+  main_hand_item_id: string | null;
+  /** This player's item power, as observed in this battle. */
+  item_power: number;
+  /** Kills we landed on this player within this one battle. */
+  our_kills_on_them: number;
+  /** Kills this player landed on us within this one battle. */
+  their_kills_on_us: number;
+}
+
+/** Full dossier for `GET /api/enemies/players/{id}`. */
+export interface EnemyPlayerDossier extends EnemyRollup {
+  id: number;
+  /** Opaque identity key. */
+  player_key: string;
+  /** Raw Albion player id, when present. */
+  albion_player_id: string | null;
+  /** Latest known display name. */
+  name: string;
+  /** How `player_key` was derived: `"player_id"` or `"name_only"`. */
+  identity_source: string;
+  /** The enemy guild this player is currently believed to belong to, when known. */
+  current_enemy_guild_id: number | null;
+  /** That guild's latest known display name, when known. */
+  current_enemy_guild_name: string | null;
+  /** RFC 3339. When this player was first observed. */
+  first_seen_at: string;
+  /** RFC 3339. When this player was most recently observed. */
+  last_seen_at: string;
+  /** Officer-set flag marking this player for closer attention. */
+  is_watchlisted: boolean;
+  /** Free-form officer notes. */
+  notes: string | null;
+  /** Full battle-by-battle history, newest first. */
+  battles: EnemyPlayerBattleEntry[];
 }
 
 /* --------------------------- Intel report --------------------------- */

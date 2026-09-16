@@ -7,14 +7,19 @@ pub mod albion;
 pub mod albionbb;
 pub mod albiondata;
 pub mod applications;
+pub mod attention;
 pub mod audit;
 pub mod auth;
 pub mod bank;
 pub mod battles;
 pub mod combat;
 pub mod comps;
+pub mod economy;
+pub mod enemies;
 pub mod events;
+pub mod fight_analytics;
 pub mod fights;
+pub mod fingerprints;
 pub mod giveaways;
 pub mod health;
 pub mod intel;
@@ -47,6 +52,11 @@ pub fn router() -> Router {
         .nest("/applications", applications::router())
         .nest("/albiondata", albiondata::router())
         .nest("/battles", battles::router())
+        .nest("/attention", attention::router())
+        .nest("/enemies", enemies::router())
+        .nest("/fingerprints", fingerprints::router())
+        .nest("/economy", economy::router())
+        .nest("/fight-analytics", fight_analytics::router())
         .nest("/openalbion", openalbion::router())
         .nest("/combat", combat::router())
         .nest("/comps", comps::router())

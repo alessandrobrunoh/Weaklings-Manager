@@ -1223,11 +1223,15 @@ pub struct CompReadinessParams {
                    and rolls the result up to comp level: average Item Power now vs. at the \
                    ceiling, the weakest seats, per-build bench depth, and which seats nobody can \
                    currently fill. Pass `event_id` to score against that event's sign-ups instead \
-                   of every specialised member in the guild.",
+                   of every specialised member in the guild. When `event_id` is given and that \
+                   event's fights have a computed analytics rollup, the response also carries \
+                   `observed`: the average Item Power the roster that actually fought turned out \
+                   to have, and its delta against the prediction. `observed` is `None` — not an \
+                   error — when no `event_id` was given, or that event has no analyzed fights yet.",
     security(("session_cookie" = [])),
     params(("id" = i64, Path, description = "Comp ID"), CompReadinessParams),
     responses(
-        (status = 200, description = "Readiness roll-up", body = crate::responses::ApiResponseCompReadiness),
+        (status = 200, description = "Readiness roll-up", body = crate::responses::ApiResponseCompReadinessView),
         (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
         (status = 403, description = "Missing combat.readiness.view", body = ProblemDetails),
         (status = 404, description = "Comp not found", body = ProblemDetails)
@@ -1239,7 +1243,7 @@ async fn get_comp_readiness(
     Path(id): Path<i64>,
     Query(params): Query<CompReadinessParams>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
-) -> Result<Json<ApiResponse<crate::modules::combat::readiness::CompReadiness>>, AppError> {
+) -> Result<Json<ApiResponse<crate::modules::combat::models::CompReadinessView>>, AppError> {
     user.require(&perms, Permission::CombatReadinessView)
         .await?;
     let readiness = crate::modules::combat::service::CombatService::new()

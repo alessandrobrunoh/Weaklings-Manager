@@ -249,6 +249,11 @@ pub enum Permission {
     /// View the full guild report aggregate (silver flows, attendance, leaderboards). Officer+.
     #[strum(serialize = "intel.report.view")]
     IntelReportView,
+    /// View enemy guild/player dossiers built from battle evidence (identity, aliases, rollups,
+    /// roster, weapon histograms). An extension of existing intel visibility, not a new tier —
+    /// seeded to the same roles as `intel.report.view`.
+    #[strum(serialize = "intel.opponents.view")]
+    IntelOpponentsView,
     /// View and edit the guild's Discord integration settings (channel/role IDs), moved off
     /// deployment env vars so an admin can change them without a redeploy. Admin-only.
     #[strum(serialize = "admin.settings.manage")]

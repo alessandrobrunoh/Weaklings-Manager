@@ -327,3 +327,37 @@ pub struct CalibrationView {
     /// gap or a bad match.
     pub outliers: Vec<CalibrationOutlier>,
 }
+
+/// `CombatService::comp_readiness`'s response. `predicted` is
+/// [`super::readiness::evaluate`]'s pure output, unchanged. `observed` is the first real
+/// "previsto vs osservato" connection between the combat simulator family and actual battle
+/// evidence: when `event_id` was requested and that event has fights with a computed
+/// `fight_stats` rollup, this is what Item Power the roster that actually fought turned out to
+/// have, versus what the pre-event roster prediction said it would be.
+///
+/// This is an Item Power comparison only — `combat::sim` has no calibrated damage scaling and
+/// produces no probability, so nothing here claims to predict or validate win rate or survival.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct CompReadinessView {
+    #[serde(flatten)]
+    pub predicted: super::readiness::CompReadiness,
+    /// `None` when no `event_id` was requested, or the event has no fights with a computed
+    /// `fight_stats` rollup yet — not an error, a real "nothing to compare yet" state.
+    pub observed: Option<ReadinessObservation>,
+}
+
+/// What Item Power the roster that actually fought an event turned out to have, versus what
+/// [`super::readiness::evaluate`] predicted for it beforehand.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct ReadinessObservation {
+    /// Distinct fights this event has a `fight_stats` rollup for.
+    pub fight_count: i64,
+    /// Simple average of `fight_stats.avg_friendly_item_power` across those fights — one fight,
+    /// one vote, unweighted by player count, matching the same per-fight-averaging convention
+    /// `attention::rules::evaluate_ip_deficit` already uses for exactly this kind of cross-fight
+    /// IP averaging.
+    pub avg_item_power: f64,
+    /// `avg_item_power - predicted.avg_item_power_now`. Positive means the roster that actually
+    /// fought brought more Item Power than the pre-event prediction; negative means less.
+    pub item_power_delta: f64,
+}
