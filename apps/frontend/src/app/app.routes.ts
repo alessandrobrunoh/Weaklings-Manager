@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 
 import {
   authGuard,
+  guildOnlyGuard,
   permissionGuard,
   permissionGuardTo,
   platformGuard,
@@ -30,6 +31,7 @@ export const routes: Routes = [
       },
       {
         path: 'season',
+        canActivate: [guildOnlyGuard],
         loadComponent: () =>
           import('./features/leaderboards/leaderboards').then((m) => m.SeasonOverview),
       },
@@ -99,10 +101,12 @@ export const routes: Routes = [
       },
       {
         path: 'battles',
+        canActivate: [guildOnlyGuard],
         loadComponent: () => import('./features/battles/battles').then((m) => m.Battles),
       },
       {
         path: 'intel',
+        canActivate: [guildOnlyGuard],
         loadComponent: () => import('./features/intel/intel').then((m) => m.Intel),
       },
       {
@@ -147,7 +151,7 @@ export const routes: Routes = [
       },
       {
         path: 'tests',
-        canActivate: [permissionGuard('combat.tests.view')],
+        canActivate: [guildOnlyGuard, permissionGuard('combat.tests.view')],
         loadComponent: () => import('./features/tests/tests').then((m) => m.Tests),
       },
       {
@@ -157,11 +161,12 @@ export const routes: Routes = [
       },
       {
         path: 'siphoned',
-        canActivate: [permissionGuard('siphoned.view')],
+        canActivate: [guildOnlyGuard, permissionGuard('siphoned.view')],
         loadComponent: () => import('./features/siphoned/siphoned').then((m) => m.Siphoned),
       },
       {
         path: 'regears',
+        canActivate: [guildOnlyGuard],
         loadComponent: () => import('./features/regears/regears').then((m) => m.Regears),
       },
       {
@@ -185,7 +190,7 @@ export const routes: Routes = [
       },
       {
         path: 'warns',
-        canActivate: [permissionGuard('warns.view')],
+        canActivate: [guildOnlyGuard, permissionGuard('warns.view')],
         loadComponent: () => import('./features/warns/warns').then((m) => m.Warns),
       },
       {
@@ -245,31 +250,31 @@ export const routes: Routes = [
           },
           {
             path: 'applications',
-            canActivate: [permissionGuardTo('/admin', 'admin.settings.manage')],
+            canActivate: [guildOnlyGuard, permissionGuardTo('/admin', 'admin.settings.manage')],
             loadComponent: () =>
               import('./features/admin/admin-applications').then((m) => m.AdminApplications),
           },
           {
             path: 'progression',
-            canActivate: [permissionGuardTo('/admin', 'progression.settings.manage')],
+            canActivate: [guildOnlyGuard, permissionGuardTo('/admin', 'progression.settings.manage')],
             loadComponent: () =>
               import('./features/admin/admin-progression').then((m) => m.AdminProgression),
           },
           {
             path: 'regears',
-            canActivate: [permissionGuardTo('/admin', 'regear.settings.manage')],
+            canActivate: [guildOnlyGuard, permissionGuardTo('/admin', 'regear.settings.manage')],
             loadComponent: () =>
               import('./features/admin/admin-regears').then((m) => m.AdminRegears),
           },
           {
             path: 'islands',
-            canActivate: [permissionGuardTo('/admin', 'splits.islands.manage')],
+            canActivate: [guildOnlyGuard, permissionGuardTo('/admin', 'splits.islands.manage')],
             loadComponent: () =>
               import('./features/admin/admin-islands').then((m) => m.AdminIslands),
           },
           {
             path: 'giveaways',
-            canActivate: [permissionGuardTo('/admin', 'giveaways.view')],
+            canActivate: [guildOnlyGuard, permissionGuardTo('/admin', 'giveaways.view')],
             loadComponent: () =>
               import('./features/admin/admin-giveaways').then((m) => m.AdminGiveaways),
           },

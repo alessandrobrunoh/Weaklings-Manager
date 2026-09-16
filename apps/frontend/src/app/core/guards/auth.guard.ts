@@ -100,6 +100,16 @@ export const permissionGuardTo =
 export const permissionGuard = (...keys: string[]): CanActivateFn =>
   permissionGuardTo('/dashboard', ...keys);
 
+/** Alliance tenants do not run guild-only modules. */
+export const guildOnlyGuard: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+  if (auth.profile()?.tenant_kind === 'alliance') {
+    return router.createUrlTree(['/dashboard']);
+  }
+  return true;
+};
+
 /**
  * Control-plane guard. Use with `authGuard`. Missing platform role
  * sends the user to `/dashboard`.

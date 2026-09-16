@@ -1911,10 +1911,7 @@ export class AdminFinance {
   /* ----------------------------- Formatting ---------------------------- */
 
   private getLocale(): string {
-    const lang = this.translate.language();
-    if (lang === 'it') return 'it-IT';
-    if (lang === 'es') return 'es-ES';
-    return 'en-US';
+    return this.translate.locale();
   }
 
   protected formatAmount(value: number | string | null | undefined): string {

@@ -7,7 +7,7 @@ use axum::{
     Extension, Json, Router,
     extract::{Path, Query},
     http::StatusCode,
-    routing::{delete, get, patch, post},
+    routing::{get, patch, post},
 };
 
 use crate::errors::{AppError, ProblemDetails};
@@ -17,7 +17,9 @@ use crate::responses::{
     ApiResponse, ApiResponseBalanceSummary, ApiResponseBankAnalyticsSummary,
     ApiResponseGuildBankSummary, ApiResponseTransactionView, ApiResponseTransactionViewList,
 };
+use crate::tenant::{ControlDb, CurrentTenantId, TenantRegistry};
 
+use super::alliance::{self, AllianceCaller};
 use super::models::{
     AcceptWithdrawalRequest, CreateTransactionRequest, RejectWithdrawalRequest, TransactionFilters,
     TransactionView, UpdateTransactionRequest, WithdrawRequest,
@@ -58,6 +60,11 @@ impl ListTransactionsQuery {
             limit: self.limit,
         }
     }
+}
+
+#[derive(serde::Deserialize)]
+struct DeleteTransactionQuery {
+    guild_tenant_id: Option<String>,
 }
 
 /// Creates the router for the bank module.
@@ -126,8 +133,26 @@ async fn get_balance(
     user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(perms): Extension<Permissions>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(control): Extension<ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Query(query): Query<BalanceQuery>,
 ) -> Result<Json<ApiResponse<super::models::BalanceSummary>>, AppError> {
+    if alliance::tenant_is_alliance(&registry, &tenant.0).await? {
+        if query.user_id.is_some_and(|id| id != user.user_id) {
+            user.require(&perms, Permission::BankViewOthers).await?;
+        }
+        let balance = alliance::get_balance(
+            &control.0,
+            &registry,
+            &tenant.0,
+            &db,
+            &AllianceCaller::from_user(&user),
+            query.user_id,
+        )
+        .await?;
+        return Ok(Json(ApiResponse::new(balance)));
+    }
     let target = resolve_target_user(&user, &perms, query.user_id).await?;
     let service = BankService::new();
     let balance = service.get_balance(&db, target).await?;
@@ -153,7 +178,14 @@ async fn get_balance(
 async fn get_guild_summary(
     _user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(control): Extension<ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<Json<ApiResponse<super::models::GuildBankSummary>>, AppError> {
+    if alliance::tenant_is_alliance(&registry, &tenant.0).await? {
+        let summary = alliance::get_guild_summary(&control.0, &registry, &tenant.0).await?;
+        return Ok(Json(ApiResponse::new(summary)));
+    }
     let service = BankService::new();
     let summary = service.get_guild_summary(&db).await?;
     Ok(Json(ApiResponse::new(summary)))
@@ -176,8 +208,21 @@ pub async fn get_admin_summary(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(control): Extension<ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<Json<ApiResponse<super::models::BankAnalyticsSummary>>, AppError> {
     user.require(&perms, Permission::BankViewOthers).await?;
+    if alliance::tenant_is_alliance(&registry, &tenant.0).await? {
+        let summary = alliance::get_admin_summary(
+            &control.0,
+            &registry,
+            &tenant.0,
+            &AllianceCaller::from_user(&user),
+        )
+        .await?;
+        return Ok(Json(ApiResponse::new(summary)));
+    }
     let summary = BankService::new().get_analytics_summary(&db).await?;
     Ok(Json(ApiResponse::new(summary)))
 }
@@ -215,10 +260,13 @@ async fn list_transactions(
     user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(perms): Extension<Permissions>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(control): Extension<ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Query(query): Query<ListTransactionsQuery>,
 ) -> Result<Json<ApiResponse<PaginatedTransactionView>>, AppError> {
     let lists_across_users = query.global.unwrap_or(false) || query.filters.split_id.is_some();
-    let target = if lists_across_users {
+    if lists_across_users {
         // Officers reviewing the withdrawal queue only hold `bank.withdraw.accept`,
         // not the admin-only `bank.view_others` — either is enough to list every
         // member's transactions. A `split_id` filter needs the same check: it spans
@@ -236,6 +284,29 @@ async fn list_transactions(
                 Permission::BankWithdrawAccept.as_str()
             )));
         }
+    } else if query.user_id.is_some_and(|id| id != user.user_id) {
+        user.require(&perms, Permission::BankViewOthers).await?;
+    }
+
+    if alliance::tenant_is_alliance(&registry, &tenant.0).await? {
+        let paginated = alliance::list_transactions(
+            &control.0,
+            &registry,
+            &tenant.0,
+            &db,
+            &AllianceCaller::from_user(&user),
+            query.user_id,
+            lists_across_users,
+            &query.pagination(),
+            &query.filters,
+        )
+        .await?;
+        return Ok(Json(ApiResponse::new(PaginatedTransactionView::from(
+            paginated,
+        ))));
+    }
+
+    let target = if lists_across_users {
         None
     } else {
         Some(resolve_target_user(&user, &perms, query.user_id).await?)
@@ -286,8 +357,22 @@ async fn list_transactions(
 async fn withdraw(
     user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(control): Extension<ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Json(req): Json<WithdrawRequest>,
 ) -> Result<Json<ApiResponse<Vec<TransactionView>>>, AppError> {
+    if alliance::tenant_is_alliance(&registry, &tenant.0).await? {
+        let requested = alliance::request_withdrawal(
+            &control.0,
+            &registry,
+            &tenant.0,
+            &AllianceCaller::from_user(&user),
+            &req,
+        )
+        .await?;
+        return Ok(Json(ApiResponse::new(requested)));
+    }
     let service = BankService::new();
     let requested = service.request_withdrawal(&db, user.user_id, &req).await?;
     Ok(Json(ApiResponse::new(requested)))
@@ -327,8 +412,22 @@ async fn accept_withdrawal(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(control): Extension<ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Json(req): Json<AcceptWithdrawalRequest>,
 ) -> Result<Json<ApiResponse<Vec<TransactionView>>>, AppError> {
+    if alliance::tenant_is_alliance(&registry, &tenant.0).await? {
+        let accepted = alliance::accept_withdrawal(
+            &control.0,
+            &registry,
+            &tenant.0,
+            &AllianceCaller::from_user(&user),
+            &req,
+        )
+        .await?;
+        return Ok(Json(ApiResponse::new(accepted)));
+    }
     user.require(&perms, Permission::BankWithdrawAccept).await?;
     let service = BankService::new();
     let accepted = service.accept_withdrawal(&db, user.user_id, &req).await?;
@@ -366,8 +465,22 @@ async fn reject_withdrawal(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(control): Extension<ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Json(req): Json<RejectWithdrawalRequest>,
 ) -> Result<Json<ApiResponse<Vec<TransactionView>>>, AppError> {
+    if alliance::tenant_is_alliance(&registry, &tenant.0).await? {
+        let rejected = alliance::reject_withdrawal(
+            &control.0,
+            &registry,
+            &tenant.0,
+            &AllianceCaller::from_user(&user),
+            &req,
+        )
+        .await?;
+        return Ok(Json(ApiResponse::new(rejected)));
+    }
     user.require(&perms, Permission::BankWithdrawAccept).await?;
     let service = BankService::new();
     let rejected = service.reject_withdrawal(&db, user.user_id, &req).await?;
@@ -407,8 +520,22 @@ async fn create_transaction(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(control): Extension<ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Json(req): Json<CreateTransactionRequest>,
 ) -> Result<Json<ApiResponse<TransactionView>>, AppError> {
+    if alliance::tenant_is_alliance(&registry, &tenant.0).await? {
+        let created = alliance::create_transaction(
+            &control.0,
+            &registry,
+            &tenant.0,
+            &AllianceCaller::from_user(&user),
+            &req,
+        )
+        .await?;
+        return Ok(Json(ApiResponse::new(created)));
+    }
     user.require(&perms, Permission::BankTransactionsCreate)
         .await?;
     let service = BankService::new();
@@ -447,8 +574,23 @@ async fn update_transaction(
     Extension(perms): Extension<Permissions>,
     Path(id): Path<i64>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(control): Extension<ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
     Json(req): Json<UpdateTransactionRequest>,
 ) -> Result<Json<ApiResponse<TransactionView>>, AppError> {
+    if alliance::tenant_is_alliance(&registry, &tenant.0).await? {
+        let updated = alliance::update_transaction(
+            &control.0,
+            &registry,
+            &tenant.0,
+            &AllianceCaller::from_user(&user),
+            id,
+            &req,
+        )
+        .await?;
+        return Ok(Json(ApiResponse::new(updated)));
+    }
     user.require(&perms, Permission::BankTransactionsEdit)
         .await?;
     let service = BankService::new();
@@ -484,8 +626,24 @@ async fn delete_transaction(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Path(id): Path<i64>,
+    Query(query): Query<DeleteTransactionQuery>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(control): Extension<ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
 ) -> Result<StatusCode, AppError> {
+    if alliance::tenant_is_alliance(&registry, &tenant.0).await? {
+        alliance::delete_transaction(
+            &control.0,
+            &registry,
+            &tenant.0,
+            &AllianceCaller::from_user(&user),
+            id,
+            query.guild_tenant_id.as_deref(),
+        )
+        .await?;
+        return Ok(StatusCode::NO_CONTENT);
+    }
     user.require(&perms, Permission::BankTransactionsDelete)
         .await?;
     let service = BankService::new();

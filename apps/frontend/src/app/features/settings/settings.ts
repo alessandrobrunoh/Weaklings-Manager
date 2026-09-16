@@ -183,7 +183,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
                     type="button"
                     class="btn btn--primary btn--sm text-xs py-1 px-2.5 flex items-center gap-1"
                     (click)="openLinkDialog()"
-                    [appTooltip]="'Cerca e collega il tuo personaggio Albion'"
+                    [appTooltip]="t('settings.albion.linkTooltip')"
                     tooltipPosition="top"
                   >
                     <app-icon name="plus" size="0.75rem" />
@@ -284,7 +284,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
             <!-- Attendance -->
             <article class="card p-5">
               <h2 class="text-sm uppercase tracking-wider font-semibold mb-3" style="color: var(--color-text-secondary)">
-                Presenza Eventi
+                {{ t('settings.presence.title') }}
               </h2>
               @if (userMetrics(); as m) {
                 <div class="flex items-baseline justify-between mb-2">
@@ -546,7 +546,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
               <div class="flex items-center gap-2 mb-4">
                 <app-icon name="users" size="1.25rem" style="color: var(--color-primary)" />
                 <h2 class="text-base font-semibold" style="color: var(--color-text)">
-                  Lingua interfaccia
+                  {{ t('language.label') }}
                 </h2>
               </div>
               <div class="grid gap-3">
@@ -581,7 +581,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
       <app-dialog title="Collega il tuo Personaggio Albion" (closed)="closeLinkDialog()">
         <div class="grid gap-3">
           <p id="albion-link-search-hint" class="text-xs" style="color: var(--color-text-secondary)">
-            Cerca il tuo nome giocatore in tutto Albion Online. Anche i giocatori esterni alla gilda possono collegarsi.
+            {{ t('settings.albion.searchHint') }}
           </p>
 
           <form class="flex gap-2" (submit)="searchPlayers($event)">
@@ -591,7 +591,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
               name="albion-player-search"
               type="search"
               class="input min-w-0 flex-1"
-              placeholder="Cerca nome giocatore..."
+              [placeholder]="t('settings.albion.searchPlaceholder')"
               [value]="playerSearch()"
               (input)="onPlayerSearchInput($event)"
               aria-describedby="albion-link-search-hint"
@@ -630,7 +630,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
                 </button>
               } @empty {
                 <p class="text-sm text-center py-4" style="color: var(--color-text-secondary)">
-                  Nessun giocatore trovato con questo nome.
+                  {{ t('settings.albion.noPlayers') }}
                 </p>
               }
             </div>
@@ -661,7 +661,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
             (click)="confirmUnlink()"
             [disabled]="savingLink()"
           >
-            Conferma Scollegamento
+            {{ t('settings.albion.unlinkConfirmTitle') }}
           </button>
         </div>
       </app-dialog>
@@ -999,7 +999,7 @@ export class Settings {
       this.playerSearchDone.set(true);
     } catch (error) {
       this.playerSearchResults.set([]);
-      this.toasts.error(error instanceof Error ? error.message : 'Impossibile cercare giocatori Albion');
+      this.toasts.error(error instanceof Error ? error.message : this.t('settings.albion.searchFailed'));
     } finally {
       this.playerSearchLoading.set(false);
     }

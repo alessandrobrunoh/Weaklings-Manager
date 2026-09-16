@@ -5,7 +5,7 @@ import { map } from 'rxjs/operators';
 
 import { AuthService } from '../../core/services/auth.service';
 import { ThemeService } from '../../core/services/theme.service';
-import { TranslateService } from '../../core/services/translate.service';
+import { TranslateService, type Language } from '../../core/services/translate.service';
 import { ToastService } from '../../core/services/toast.service';
 import type { TranslationKey } from '../../i18n/en';
 import { Icon } from '../../shared/components/icon/icon';
@@ -107,7 +107,7 @@ export class Login {
   }
 
   protected onLanguageChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value as 'en' | 'it' | 'es';
+    const value = (event.target as HTMLSelectElement).value as Language;
     this.translate.use(value);
     this.toasts.info(this.translate.languageLabels[value]);
   }

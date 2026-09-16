@@ -189,19 +189,21 @@ async fn username_of(db: &DatabaseConnection, user_id: i64) -> Result<String, Ap
     crate::modules::users::display_name::resolve_by_id(db, user_id).await
 }
 
-/// Every build sharing one `(name, category)` identity, oldest version first.
+/// Every build sharing one `(created_by, name, category)` identity, oldest version first.
 ///
-/// The group *is* the identity pair — there is no separate group id — so the lookup uses the same
+/// The group *is* that triple — there is no separate group id — so the lookup uses the same
 /// trimmed, case-insensitive comparison as the uniqueness check, and a row whose name differs only
-/// in case still belongs to its group.
+/// in case still belongs to its group. Another creator's homonym is a different group.
 async fn build_version_group(
     db: &DatabaseConnection,
     name: &str,
     category_id: i64,
+    created_by: i64,
 ) -> Result<Vec<build::Model>, AppError> {
     let key = identity_key(name);
     let mut group: Vec<build::Model> = build::Entity::find()
         .filter(BuildColumn::CategoryId.eq(category_id))
+        .filter(BuildColumn::CreatedBy.eq(created_by))
         .all(db)
         .await?
         .into_iter()
@@ -218,10 +220,12 @@ async fn comp_version_group(
     db: &DatabaseConnection,
     name: &str,
     category_id: i64,
+    created_by: i64,
 ) -> Result<Vec<comp::Model>, AppError> {
     let key = identity_key(name);
     let mut group: Vec<comp::Model> = comp::Entity::find()
         .filter(CompColumn::CategoryId.eq(category_id))
+        .filter(CompColumn::CreatedBy.eq(created_by))
         .all(db)
         .await?
         .into_iter()
@@ -472,13 +476,14 @@ impl CompService {
 
         const ATTEMPTS: u8 = 5;
         for attempt in 1..=ATTEMPTS {
-            let next_version = comp_version_group(db, &source.name, source.category_id)
-                .await?
-                .iter()
-                .map(|sibling| sibling.version)
-                .max()
-                .unwrap_or(0)
-                + 1;
+            let next_version =
+                comp_version_group(db, &source.name, source.category_id, source.created_by)
+                    .await?
+                    .iter()
+                    .map(|sibling| sibling.version)
+                    .max()
+                    .unwrap_or(0)
+                    + 1;
 
             match self
                 .insert_comp_version(db, &source, creator_id, next_version)
@@ -639,7 +644,7 @@ impl CompService {
             );
         }
 
-        let versions = build_version_group(db, &build.name, build.category_id)
+        let versions = build_version_group(db, &build.name, build.category_id, build.created_by)
             .await?
             .iter()
             .map(|sibling| BuildVersionRef {
@@ -779,21 +784,25 @@ impl CompService {
             limit,
         ))
     }
-    /// Refuses a build identity — the `(name, category)` pair — that another build already holds.
+    /// Refuses a build identity — the `(created_by, name, category)` triple — that this creator
+    /// already holds.
     ///
     /// `exclude_id` keeps a build from conflicting with itself when it is being renamed in place.
-    /// Versions of the same build deliberately share the pair, so they are not a conflict here;
-    /// the `(name, category_id, version)` index is what keeps two rows from claiming one version.
+    /// Versions of the same build deliberately share the triple, so they are not a conflict here;
+    /// the `(created_by, name, category_id, version)` index is what keeps two rows from claiming
+    /// one version. Another creator's homonym is allowed.
     async fn ensure_build_identity_free(
         &self,
         db: &DatabaseConnection,
         name: &str,
         category_id: i64,
+        created_by: i64,
         exclude_id: Option<i64>,
     ) -> Result<(), AppError> {
         let key = identity_key(name);
         let siblings = build::Entity::find()
             .filter(BuildColumn::CategoryId.eq(category_id))
+            .filter(BuildColumn::CreatedBy.eq(created_by))
             .all(db)
             .await?;
 
@@ -820,7 +829,7 @@ impl CompService {
         category_id: i64,
     ) -> Result<(), AppError> {
         let moving: std::collections::HashSet<i64> =
-            build_version_group(db, &build.name, build.category_id)
+            build_version_group(db, &build.name, build.category_id, build.created_by)
                 .await?
                 .iter()
                 .map(|sibling| sibling.id)
@@ -828,6 +837,7 @@ impl CompService {
         let key = identity_key(name);
         let taken = build::Entity::find()
             .filter(BuildColumn::CategoryId.eq(category_id))
+            .filter(BuildColumn::CreatedBy.eq(build.created_by))
             .all(db)
             .await?
             .into_iter()
@@ -852,7 +862,7 @@ impl CompService {
         category_id: i64,
     ) -> Result<(), AppError> {
         let moving: std::collections::HashSet<i64> =
-            comp_version_group(db, &comp.name, comp.category_id)
+            comp_version_group(db, &comp.name, comp.category_id, comp.created_by)
                 .await?
                 .iter()
                 .map(|sibling| sibling.id)
@@ -860,6 +870,7 @@ impl CompService {
         let key = identity_key(name);
         let taken = comp::Entity::find()
             .filter(CompColumn::CategoryId.eq(category_id))
+            .filter(CompColumn::CreatedBy.eq(comp.created_by))
             .all(db)
             .await?
             .into_iter()
@@ -883,11 +894,13 @@ impl CompService {
         db: &DatabaseConnection,
         name: &str,
         category_id: i64,
+        created_by: i64,
         exclude_id: Option<i64>,
     ) -> Result<(), AppError> {
         let key = identity_key(name);
         let siblings = comp::Entity::find()
             .filter(CompColumn::CategoryId.eq(category_id))
+            .filter(CompColumn::CreatedBy.eq(created_by))
             .all(db)
             .await?;
 
@@ -922,7 +935,7 @@ impl CompService {
             )));
         }
 
-        self.ensure_build_identity_free(db, &req.name, req.category_id, None)
+        self.ensure_build_identity_free(db, &req.name, req.category_id, creator_id, None)
             .await?;
 
         let txn = db.begin().await?;
@@ -1050,7 +1063,8 @@ impl CompService {
                 .await?;
         }
 
-        let group = build_version_group(db, &build.name, build.category_id).await?;
+        let group =
+            build_version_group(db, &build.name, build.category_id, build.created_by).await?;
         let txn = db.begin().await?;
 
         // Name and category are the group's identity, so a rename moves every version at once —
@@ -1105,13 +1119,14 @@ impl CompService {
 
         const ATTEMPTS: u8 = 5;
         for attempt in 1..=ATTEMPTS {
-            let next_version = build_version_group(db, &source.name, source.category_id)
-                .await?
-                .iter()
-                .map(|sibling| sibling.version)
-                .max()
-                .unwrap_or(0)
-                + 1;
+            let next_version =
+                build_version_group(db, &source.name, source.category_id, source.created_by)
+                    .await?
+                    .iter()
+                    .map(|sibling| sibling.version)
+                    .max()
+                    .unwrap_or(0)
+                    + 1;
 
             match self
                 .insert_build_version(db, &source, creator_id, next_version)
@@ -1495,7 +1510,7 @@ impl CompService {
             });
         }
 
-        let versions = comp_version_group(db, &comp.name, comp.category_id)
+        let versions = comp_version_group(db, &comp.name, comp.category_id, comp.created_by)
             .await?
             .iter()
             .map(|sibling| BuildVersionRef {
@@ -1616,7 +1631,7 @@ impl CompService {
         if builds.iter().any(|build| build.quantity < 1) {
             return Err(AppError::Validation("quantity must be >= 1".to_string()));
         }
-        self.ensure_comp_identity_free(db, &name, category_id, None)
+        self.ensure_comp_identity_free(db, &name, category_id, creator_id, None)
             .await?;
 
         let mut snapshot = BTreeMap::<i64, i32>::new();
@@ -1742,7 +1757,8 @@ impl CompService {
                 .await?;
 
             // Name and category identify the group, so every version moves together.
-            let group = comp_version_group(db, &comp.name, comp.category_id).await?;
+            let group =
+                comp_version_group(db, &comp.name, comp.category_id, comp.created_by).await?;
             let txn = db.begin().await?;
             for sibling in &group {
                 let mut moving: comp::ActiveModel = sibling.clone().into();
@@ -4656,5 +4672,229 @@ mod tests {
             AppError::Validation(message) => assert!(message.contains("fame")),
             other => panic!("expected validation, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn two_creators_can_keep_the_same_active_build_name() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let bob = insert_user(&db, "bob", "bob@example.com").await;
+        let tank = insert_build_category(&db, "Tank").await;
+        let service = CompService::new();
+
+        let alices = service
+            .create_build(&db, alice, build_request("Heavy Mace", tank))
+            .await
+            .expect("alice's Heavy Mace should be created");
+        let bobs = service
+            .create_build(&db, bob, build_request("Heavy Mace", tank))
+            .await
+            .expect("bob's Heavy Mace should be created alongside alice's");
+
+        assert_eq!(alices.summary.version, 1);
+        assert_eq!(bobs.summary.version, 1);
+        assert_eq!(alices.summary.archived_at, None);
+        assert_eq!(bobs.summary.archived_at, None);
+        assert_ne!(alices.summary.id, bobs.summary.id);
+
+        let still_alices = service
+            .get_build(&db, alices.summary.id)
+            .await
+            .expect("alice's build must remain");
+        assert_eq!(still_alices.summary.archived_at, None);
+        assert_eq!(still_alices.summary.name, "Heavy Mace");
+    }
+
+    #[tokio::test]
+    async fn the_same_creator_still_cannot_duplicate_a_build_identity() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let tank = insert_build_category(&db, "Tank").await;
+        let service = CompService::new();
+
+        service
+            .create_build(&db, alice, build_request("Heavy Mace", tank))
+            .await
+            .expect("first Heavy Mace should be created");
+
+        expect_conflict(
+            service
+                .create_build(&db, alice, build_request("Heavy Mace", tank))
+                .await
+                .unwrap_err(),
+        );
+    }
+
+    #[tokio::test]
+    async fn renaming_a_group_onto_another_creators_name_is_allowed() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let bob = insert_user(&db, "bob", "bob@example.com").await;
+        let tank = insert_build_category(&db, "Tank").await;
+        let service = CompService::new();
+
+        let alices = service
+            .create_build(&db, alice, build_request("Light Mace", tank))
+            .await
+            .unwrap();
+        service
+            .create_build_version(&db, alices.summary.id, alice)
+            .await
+            .unwrap();
+        service
+            .create_build(&db, bob, build_request("Heavy Mace", tank))
+            .await
+            .unwrap();
+
+        let renamed = service
+            .update_build(
+                &db,
+                alices.summary.id,
+                UpdateBuildRequest {
+                    name: Some("Heavy Mace".to_string()),
+                    description: None,
+                    role: None,
+                    category_id: None,
+                },
+            )
+            .await
+            .expect("alice may reuse bob's name; identity is per creator");
+
+        assert_eq!(renamed.summary.name, "Heavy Mace");
+        let v2 = renamed
+            .versions
+            .iter()
+            .find(|version| version.version == 2)
+            .expect("alice's version 2 must move with the group");
+        let moved_v2 = service.get_build(&db, v2.id).await.unwrap();
+        assert_eq!(moved_v2.summary.name, "Heavy Mace");
+        assert_eq!(moved_v2.summary.archived_at, None);
+    }
+
+    #[tokio::test]
+    async fn renaming_a_group_onto_the_same_creators_other_identity_is_refused() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let tank = insert_build_category(&db, "Tank").await;
+        let service = CompService::new();
+
+        service
+            .create_build(&db, alice, build_request("Heavy Mace", tank))
+            .await
+            .unwrap();
+        let other = service
+            .create_build(&db, alice, build_request("Light Mace", tank))
+            .await
+            .unwrap();
+
+        expect_conflict(
+            service
+                .update_build(
+                    &db,
+                    other.summary.id,
+                    UpdateBuildRequest {
+                        name: Some("Heavy Mace".to_string()),
+                        description: None,
+                        role: None,
+                        category_id: None,
+                    },
+                )
+                .await
+                .unwrap_err(),
+        );
+
+        let unchanged = service.get_build(&db, other.summary.id).await.unwrap();
+        assert_eq!(unchanged.summary.name, "Light Mace");
+    }
+
+    #[tokio::test]
+    async fn versioning_one_creators_build_does_not_move_anothers() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let bob = insert_user(&db, "bob", "bob@example.com").await;
+        let tank = insert_build_category(&db, "Tank").await;
+        let service = CompService::new();
+
+        let alices = service
+            .create_build(&db, alice, build_request("Heavy Mace", tank))
+            .await
+            .unwrap();
+        let bobs = service
+            .create_build(&db, bob, build_request("Heavy Mace", tank))
+            .await
+            .unwrap();
+
+        let alices_v2 = service
+            .create_build_version(&db, alices.summary.id, alice)
+            .await
+            .unwrap();
+
+        assert_eq!(alices_v2.summary.version, 2);
+        assert_eq!(alices_v2.versions.len(), 2);
+
+        let bobs_detail = service.get_build(&db, bobs.summary.id).await.unwrap();
+        assert_eq!(bobs_detail.summary.version, 1);
+        assert_eq!(
+            bobs_detail.versions.len(),
+            1,
+            "bob's Heavy Mace is its own identity; alice's new version must not join it"
+        );
+        assert_eq!(bobs_detail.summary.archived_at, None);
+    }
+
+    #[tokio::test]
+    async fn two_creators_can_keep_the_same_active_comp_name() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let bob = insert_user(&db, "bob", "bob@example.com").await;
+        let zvz = insert_comp_category(&db, "ZvZ").await;
+        let service = CompService::new();
+
+        let alices = service
+            .create_comp(&db, alice, comp_request("Standard", zvz))
+            .await
+            .expect("alice's Standard should be created");
+        let bobs = service
+            .create_comp(&db, bob, comp_request("Standard", zvz))
+            .await
+            .expect("bob's Standard should be created alongside alice's");
+
+        assert_eq!(alices.summary.version, 1);
+        assert_eq!(bobs.summary.version, 1);
+        assert_eq!(alices.summary.archived_at, None);
+        assert_eq!(bobs.summary.archived_at, None);
+    }
+
+    #[tokio::test]
+    async fn renaming_a_comp_group_onto_another_creators_name_is_allowed() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let bob = insert_user(&db, "bob", "bob@example.com").await;
+        let zvz = insert_comp_category(&db, "ZvZ").await;
+        let service = CompService::new();
+
+        let alices = service
+            .create_comp(&db, alice, comp_request("Bomb", zvz))
+            .await
+            .unwrap();
+        service
+            .create_comp(&db, bob, comp_request("Standard", zvz))
+            .await
+            .unwrap();
+
+        let renamed = service
+            .update_comp(
+                &db,
+                alices.summary.id,
+                UpdateCompRequest {
+                    name: Some("Standard".to_string()),
+                    description: None,
+                    category_id: None,
+                    parent_id: None,
+                },
+            )
+            .await
+            .expect("alice may reuse bob's composition name");
+        assert_eq!(renamed.summary.name, "Standard");
     }
 }

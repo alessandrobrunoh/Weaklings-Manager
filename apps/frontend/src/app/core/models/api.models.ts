@@ -128,6 +128,8 @@ export interface DiscordUserProfile {
   permissions: string[];
   tenant_id?: string | null;
   tenant_name?: string | null;
+  /** `guild` or `alliance` for the scoped tenant. */
+  tenant_kind?: string | null;
   features?: string[];
   /** This tenant's brand colours; absent means the product defaults. */
   brand?: BrandColors | null;
@@ -139,6 +141,7 @@ export interface PlatformTenant {
   slug: string;
   schema_name: string;
   status: string;
+  kind?: string;
   owner_discord_id: string | null;
   created_at: string | null;
   suspended_at: string | null;
@@ -222,16 +225,32 @@ export interface TenantStatus {
   registered: boolean;
   status?: string | null;
   name?: string | null;
+  kind?: string | null;
   register_url?: string | null;
 }
 
 export interface RegisterTenantRequest {
   id: string;
   name: string;
-  albion_guild_id: string;
-  albion_api_region: string;
+  kind?: 'guild' | 'alliance';
+  albion_guild_id?: string;
+  albion_api_region?: string;
   albion_allied_guild_ids?: string;
   albion_allied_guild_names?: string;
+  member_guild_ids?: string[];
+}
+
+export interface AttachableGuild {
+  id: string;
+  name: string;
+}
+
+export interface AllianceMember {
+  guild_tenant_id: string;
+  name: string;
+  status: 'pending' | 'active';
+  invited_by?: string | null;
+  accepted_at?: string | null;
 }
 
 export function discordGuildIconUrl(
@@ -323,6 +342,8 @@ export interface TransactionView {
   created_at: string;
   requested_at: string | null;
   withdrawn_at: string | null;
+  guild_tenant_id?: string | null;
+  guild_name?: string | null;
 }
 
 export interface CreateTransactionRequest {
@@ -333,6 +354,7 @@ export interface CreateTransactionRequest {
   split_id?: number;
   to_guild_bank?: boolean;
   from_user_id?: number;
+  guild_tenant_id?: string;
 }
 
 export interface UpdateTransactionRequest {
@@ -345,6 +367,16 @@ export interface UpdateTransactionRequest {
   /** `null` explicitly unlinks the transaction from any split. */
   split_id?: number | null;
   to_guild_bank?: boolean;
+  guild_tenant_id?: string;
+}
+
+export interface GuildBalanceBreakdown {
+  guild_tenant_id: string;
+  guild_name: string;
+  pending_total: number | string;
+  pending_count: number;
+  requested_total: number | string;
+  requested_count: number;
 }
 
 export interface BalanceSummary {
@@ -353,6 +385,7 @@ export interface BalanceSummary {
   pending_count: number;
   requested_total: number;
   requested_count: number;
+  guilds?: GuildBalanceBreakdown[];
 }
 
 export interface GuildBankSummary {
@@ -387,6 +420,7 @@ export interface BankAnalyticsSummary {
 export interface WithdrawRequest {
   transaction_ids?: number[];
   all?: boolean;
+  guild_tenant_id?: string;
 }
 
 export type AcceptWithdrawalRequest = WithdrawRequest;
@@ -2699,6 +2733,7 @@ export interface GuildSettingsView {
   discord_transaction_spam_channel_id: string | null;
   discord_event_role_id?: string | null;
   discord_auto_role_id: string | null;
+  discord_alliance_role_id?: string | null;
   default_role_discord_id?: string | null;
   discord_splits_forum_channel_id: string | null;
   discord_split_pending_tag_id: string | null;

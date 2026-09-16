@@ -86,6 +86,9 @@ pub struct DiscordUserProfile {
     #[schema(example = "Weaklings")]
     #[serde(default)]
     pub tenant_name: Option<String>,
+    /// `guild` or `alliance` for the scoped tenant.
+    #[serde(default)]
+    pub tenant_kind: Option<String>,
     /// Optional modules currently enabled for this tenant (`rank ∩ flags`).
     #[serde(default)]
     pub features: Vec<String>,

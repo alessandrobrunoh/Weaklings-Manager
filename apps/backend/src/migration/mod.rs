@@ -119,6 +119,9 @@ mod m20260908_000008_create_battle_loss_estimates;
 mod m20260908_000009_create_fight_stats;
 mod m20260908_000010_create_attention_findings;
 mod m20260909_000001_drop_event_battles_analytics_columns;
+mod m20260910_000001_scope_build_comp_identity_to_creator;
+mod m20260916_000001_add_discord_alliance_role;
+mod m20260916_000002_seed_alliance_share_permission;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -242,6 +245,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260908_000009_create_fight_stats::Migration),
             Box::new(m20260908_000010_create_attention_findings::Migration),
             Box::new(m20260909_000001_drop_event_battles_analytics_columns::Migration),
+            Box::new(m20260910_000001_scope_build_comp_identity_to_creator::Migration),
+            Box::new(m20260916_000001_add_discord_alliance_role::Migration),
+            Box::new(m20260916_000002_seed_alliance_share_permission::Migration),
         ]
     }
 }

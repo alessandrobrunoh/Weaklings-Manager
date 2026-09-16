@@ -47,6 +47,10 @@ pub struct ControlDb(pub DatabaseConnection);
 #[derive(Clone)]
 pub struct CurrentTenantId(pub String);
 
+/// `guild` or `alliance` for the resolved tenant.
+#[derive(Clone)]
+pub struct CurrentTenantKind(pub String);
+
 /// Feature flags enabled for the current tenant.
 #[derive(Clone, Debug, Default)]
 pub struct TenantFeatures(pub HashSet<String>);
@@ -71,6 +75,15 @@ pub struct TenantContext {
     pub permissions: Permissions,
     /// Enabled feature keys from the control-plane.
     pub features: HashSet<String>,
+    /// `guild` or `alliance`. Alliance tenants do not run battle/event workers.
+    pub kind: String,
+}
+
+/// Battle-sync and event-session workers poll an Albion guild. Alliance tenants
+/// have none, so they must not start.
+#[must_use]
+pub fn starts_sync_workers(kind: &str) -> bool {
+    kind != "alliance"
 }
 
 /// The background workers every tenant needs (`event_sessions`, `battle_sync`),
@@ -93,7 +106,15 @@ pub struct TenantWorkers {
 }
 
 impl TenantWorkers {
-    fn spawn_for(&self, db: DatabaseConnection, tenant_id: &str) {
+    fn spawn_for(&self, db: DatabaseConnection, tenant_id: &str, kind: &str) {
+        if !starts_sync_workers(kind) {
+            tracing::info!(
+                tenant_id,
+                kind,
+                "skipping battle/event workers for alliance tenant"
+            );
+            return;
+        }
         let guild_context = BattleLinkingContext::new(
             &self.cfg.albion_guild_id,
             &self.cfg.albion_allied_guild_ids(),
@@ -221,10 +242,11 @@ impl TenantRegistry {
             .map_err(AppError::Database)?;
         let ctx = self.open_context(tenant_id, schema_name).await?;
         self.inner.insert(tenant_id.to_owned(), ctx.clone());
+        let kind = lookup_tenant_kind(&self.control_db, tenant_id).await;
         match self.workers.get() {
             Some(workers) => {
-                tracing::info!(tenant_id, "starting workers for a newly provisioned tenant");
-                workers.spawn_for(ctx.db.clone(), tenant_id);
+                tracing::info!(tenant_id, kind = %kind, "starting workers for a newly provisioned tenant");
+                workers.spawn_for(ctx.db.clone(), tenant_id, &kind);
             }
             // Should not happen outside of tests: `run_server` calls
             // `set_workers` before the router can accept a request that
@@ -281,14 +303,33 @@ impl TenantRegistry {
         let permissions = Permissions::new_empty();
         permissions.reload(&db).await.map_err(AppError::Database)?;
         let features = load_features(&self.control_db, tenant_id).await?;
+        let kind = lookup_tenant_kind(&self.control_db, tenant_id).await;
         Ok(Arc::new(TenantContext {
             tenant_id: tenant_id.to_owned(),
             schema_name: schema_name.to_owned(),
             db,
             permissions,
             features,
+            kind,
         }))
     }
+}
+
+async fn lookup_tenant_kind(control_db: &DatabaseConnection, tenant_id: &str) -> String {
+    let Ok(Some(row)) = control_db
+        .query_one(Statement::from_sql_and_values(
+            control_db.get_database_backend(),
+            "SELECT kind FROM tenants WHERE id = $1",
+            [tenant_id.into()],
+        ))
+        .await
+    else {
+        return "guild".to_owned();
+    };
+    row.try_get_by_index::<String>(0)
+        .ok()
+        .filter(|kind| !kind.is_empty())
+        .unwrap_or_else(|| "guild".to_owned())
 }
 
 async fn load_features(
@@ -325,6 +366,7 @@ pub fn skip_tenant_resolution(path: &str) -> bool {
         || path == "/api/auth/select-tenant"
         || path.starts_with("/api/platform")
         || path.starts_with("/api/tenants")
+        || path.starts_with("/api/alliances")
         || path == "/api/auth/tenants"
         || path == "/api/auth/switch-tenant"
         || path == "/api/auth/registerable-guilds"
@@ -557,7 +599,8 @@ pub async fn resolve_tenant(
     );
     let features = TenantFeatures(ctx.features.clone());
     if let Some(feature) = required_feature(&path) {
-        if !features.contains(feature) {
+        let alliance_bank = feature == "bank" && ctx.kind == "alliance";
+        if !features.contains(feature) && !alliance_bank {
             return Err(AppError::Forbidden(format!(
                 "the {feature} module is not enabled for this guild"
             )));
@@ -571,6 +614,7 @@ pub async fn resolve_tenant(
     parts
         .extensions
         .insert(CurrentTenantId(ctx.tenant_id.clone()));
+    parts.extensions.insert(CurrentTenantKind(ctx.kind.clone()));
     Ok(next.run(Request::from_parts(parts, body)).await)
 }
 
@@ -654,6 +698,12 @@ mod tests {
     }
 
     #[test]
+    fn alliance_kind_does_not_start_sync_workers() {
+        assert!(starts_sync_workers("guild"));
+        assert!(!starts_sync_workers("alliance"));
+    }
+
+    #[test]
     fn skip_lists_health_oauth_and_platform() {
         assert!(skip_tenant_resolution("/api/health"));
         assert!(skip_tenant_resolution("/api/health/"));
@@ -663,6 +713,7 @@ mod tests {
         assert!(skip_tenant_resolution("/api/auth/select-tenant"));
         assert!(skip_tenant_resolution("/api/platform/admins/reload"));
         assert!(skip_tenant_resolution("/api/tenants/123/status"));
+        assert!(skip_tenant_resolution("/api/alliances/123/members"));
         assert!(skip_tenant_resolution("/api/auth/tenants"));
         assert!(skip_tenant_resolution("/api/auth/switch-tenant"));
         assert!(skip_tenant_resolution("/api/auth/registerable-guilds"));

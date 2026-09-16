@@ -627,6 +627,7 @@ export class AdminTransactions {
         type: this.editType().trim() || undefined,
         split_id: this.editSplitId() ? Number(this.editSplitId()) : null,
         to_guild_bank: this.editToGuildBank(),
+        guild_tenant_id: target.guild_tenant_id ?? undefined,
       };
       await firstValueFrom(
         this.api.patch<TransactionView>(`api/bank/transactions/${target.id}`, payload),
@@ -653,7 +654,10 @@ export class AdminTransactions {
     }
     this.deletingId.set(target.id);
     try {
-      await firstValueFrom(this.api.delete(`api/bank/transactions/${target.id}`));
+      const path = target.guild_tenant_id
+        ? `api/bank/transactions/${target.id}?guild_tenant_id=${encodeURIComponent(target.guild_tenant_id)}`
+        : `api/bank/transactions/${target.id}`;
+      await firstValueFrom(this.api.delete(path));
       await this.load();
       this.toasts.success(this.t('admin.transactions.deleted'));
     } catch (error) {
@@ -722,8 +726,7 @@ export class AdminTransactions {
 
   protected formatAmount(value: number | string | null | undefined): string {
     const numeric = Number(value ?? 0);
-    const lang =
-      this.translate.language() === 'it' ? 'it-IT' : this.translate.language() === 'es' ? 'es-ES' : 'en-US';
+    const lang = this.translate.locale();
     return new Intl.NumberFormat(lang, { maximumFractionDigits: 0 }).format(
       Number.isFinite(numeric) ? numeric : 0,
     );

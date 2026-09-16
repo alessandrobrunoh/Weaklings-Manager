@@ -23,8 +23,7 @@ pub fn router() -> Router {
 /// Anything else still reaches this handler — a browser file input always
 /// sets a content type, but nothing stops a raw HTTP client from lying about
 /// one or omitting it — so it is checked rather than assumed.
-const ALLOWED_IMAGE_MIME_TYPES: &[&str] =
-    &["image/png", "image/jpeg", "image/webp", "image/gif"];
+const ALLOWED_IMAGE_MIME_TYPES: &[&str] = &["image/png", "image/jpeg", "image/webp", "image/gif"];
 
 fn build_service(cfg: &Config) -> OcrService {
     OcrService::new(cfg.mistral_api_key.clone())
@@ -143,7 +142,9 @@ mod tests {
             )
             .body(Body::from(body))
             .expect("valid request");
-        Multipart::from_request(request, &()).await.expect("valid multipart body")
+        Multipart::from_request(request, &())
+            .await
+            .expect("valid multipart body")
     }
 
     #[tokio::test]

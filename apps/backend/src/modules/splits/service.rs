@@ -5,7 +5,7 @@
 //! the split into `"completed"` (generates Guild Bank transactions), `"not_completed"`, or
 //! `"lost"`. Request/response types live in `models.rs`; the status enum lives in `status.rs`.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 use sea_orm::prelude::Decimal;
@@ -20,7 +20,7 @@ use crate::modules::albion::entities::albion_link::Entity as AlbionLinkEntity;
 use crate::modules::bank::entities::ActiveModel as TransactionActiveModel;
 use crate::modules::bank::service::TYPE_SPLIT_CREDIT;
 use crate::modules::bank::status::TransactionStatus;
-use crate::modules::events::entities::event::Entity as EventEntity;
+use crate::modules::events::entities::event::{Column as EventColumn, Entity as EventEntity};
 use crate::modules::events::entities::event_participation::{
     Column as EventParticipationColumn, Entity as EventParticipationEntity,
 };
@@ -226,21 +226,7 @@ where
 }
 
 /// Resolves the event title for a linked split summary.
-async fn event_title(
-    db: &DatabaseConnection,
-    event_id: Option<i64>,
-) -> Result<Option<String>, AppError> {
-    let Some(event_id) = event_id else {
-        return Ok(None);
-    };
-
-    let title = EventEntity::find_by_id(event_id)
-        .one(db)
-        .await?
-        .map(|event| event.title);
-    Ok(title)
-}
-
+#[derive(Clone, Default)]
 struct SplitLocation {
     island_id: Option<i64>,
     island_name: Option<String>,
@@ -249,37 +235,102 @@ struct SplitLocation {
     island_tab_name: Option<String>,
 }
 
-async fn split_location(
+fn empty_location(island_tab_id: Option<i64>) -> SplitLocation {
+    SplitLocation {
+        island_id: None,
+        island_name: None,
+        island_city: None,
+        island_tab_id,
+        island_tab_name: None,
+    }
+}
+
+async fn event_titles_by_id(
     db: &DatabaseConnection,
-    island_tab_id: Option<i64>,
-) -> Result<SplitLocation, AppError> {
-    let Some(tab_id) = island_tab_id else {
-        return Ok(SplitLocation {
-            island_id: None,
-            island_name: None,
-            island_city: None,
-            island_tab_id: None,
-            island_tab_name: None,
-        });
-    };
+    event_ids: Vec<i64>,
+) -> Result<HashMap<i64, String>, AppError> {
+    if event_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    Ok(EventEntity::find()
+        .filter(EventColumn::Id.is_in(event_ids))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|event| (event.id, event.title))
+        .collect())
+}
 
-    let Some(tab) = TabEntity::find_by_id(tab_id).one(db).await? else {
-        return Ok(SplitLocation {
-            island_id: None,
-            island_name: None,
-            island_city: None,
-            island_tab_id: Some(tab_id),
-            island_tab_name: None,
-        });
+async fn split_locations_by_tab_id(
+    db: &DatabaseConnection,
+    tab_ids: Vec<i64>,
+) -> Result<HashMap<i64, SplitLocation>, AppError> {
+    if tab_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let tabs = TabEntity::find()
+        .filter(TabColumn::Id.is_in(tab_ids))
+        .all(db)
+        .await?;
+    let island_ids = tabs.iter().map(|tab| tab.island_id).collect::<HashSet<_>>();
+    let islands = if island_ids.is_empty() {
+        HashMap::new()
+    } else {
+        IslandEntity::find()
+            .filter(IslandColumn::Id.is_in(island_ids.into_iter().collect::<Vec<_>>()))
+            .all(db)
+            .await?
+            .into_iter()
+            .map(|island| (island.id, island))
+            .collect::<HashMap<_, _>>()
     };
+    Ok(tabs
+        .into_iter()
+        .map(|tab| {
+            let island = islands.get(&tab.island_id);
+            (
+                tab.id,
+                SplitLocation {
+                    island_id: Some(tab.island_id),
+                    island_name: island.map(|island| island.name.clone()),
+                    island_city: island.map(|island| island.city.clone()),
+                    island_tab_id: Some(tab.id),
+                    island_tab_name: Some(tab.name),
+                },
+            )
+        })
+        .collect())
+}
 
-    let island = IslandEntity::find_by_id(tab.island_id).one(db).await?;
-    Ok(SplitLocation {
-        island_id: Some(tab.island_id),
-        island_name: island.as_ref().map(|island| island.name.clone()),
-        island_city: island.as_ref().map(|island| island.city.clone()),
-        island_tab_id: Some(tab.id),
-        island_tab_name: Some(tab.name),
+fn assemble_summary(
+    split: SplitModel,
+    created_by_username: String,
+    participant_count: u64,
+    event_title: Option<String>,
+    location: SplitLocation,
+) -> Result<SplitSummary, AppError> {
+    Ok(SplitSummary {
+        id: split.id,
+        created_by_username,
+        status: parse_status(&split)?,
+        estimated_market_value: split.estimated_market_value,
+        fee: split.fee,
+        repair_value: split.repair_value,
+        bags_value: split.bags_value,
+        net_value: split.net_value,
+        note: split.note,
+        event_id: split.event_id,
+        event_title,
+        island_id: location.island_id,
+        island_name: location.island_name,
+        island_city: location.island_city,
+        island_tab_id: location.island_tab_id,
+        island_tab_name: location.island_tab_name,
+        created_at: split.created_at.to_rfc3339(),
+        finalized_at: split.finalized_at.map(|dt| dt.to_rfc3339()),
+        participant_count,
+        updated_at: split.updated_at.to_rfc3339(),
+        archived_at: split.archived_at.map(|dt| dt.to_rfc3339()),
     })
 }
 
@@ -397,39 +448,79 @@ impl SplitService {
         db: &DatabaseConnection,
         split: SplitModel,
     ) -> Result<SplitSummary, AppError> {
-        let status = parse_status(&split)?;
-        let created_by_username =
-            crate::modules::users::display_name::resolve_by_id(db, split.created_by).await?;
-        let participant_count = ParticipantEntity::find()
-            .filter(ParticipantColumn::SplitId.eq(split.id))
-            .count(db)
-            .await?;
-        let linked_event_title = event_title(db, split.event_id).await?;
-        let location = split_location(db, split.island_tab_id).await?;
+        self.to_summaries(db, vec![split])
+            .await?
+            .pop()
+            .ok_or_else(|| AppError::Internal("split summary vanished".into()))
+    }
 
-        Ok(SplitSummary {
-            id: split.id,
-            created_by_username,
-            status,
-            estimated_market_value: split.estimated_market_value,
-            fee: split.fee,
-            repair_value: split.repair_value,
-            bags_value: split.bags_value,
-            net_value: split.net_value,
-            note: split.note,
-            event_id: split.event_id,
-            event_title: linked_event_title,
-            island_id: location.island_id,
-            island_name: location.island_name,
-            island_city: location.island_city,
-            island_tab_id: location.island_tab_id,
-            island_tab_name: location.island_tab_name,
-            created_at: split.created_at.to_rfc3339(),
-            finalized_at: split.finalized_at.map(|dt| dt.to_rfc3339()),
-            participant_count,
-            updated_at: split.updated_at.to_rfc3339(),
-            archived_at: split.archived_at.map(|dt| dt.to_rfc3339()),
-        })
+    /// Hydrates list-row summaries with a constant number of queries.
+    pub(crate) async fn to_summaries(
+        &self,
+        db: &DatabaseConnection,
+        splits: Vec<SplitModel>,
+    ) -> Result<Vec<SplitSummary>, AppError> {
+        if splits.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let creator_ids = splits
+            .iter()
+            .map(|split| split.created_by)
+            .collect::<Vec<_>>();
+        let names = crate::modules::users::display_name::resolve_by_ids(db, &creator_ids).await?;
+
+        let split_ids = splits.iter().map(|split| split.id).collect::<Vec<_>>();
+        let mut participant_counts = HashMap::<i64, u64>::new();
+        for split_id in ParticipantEntity::find()
+            .filter(ParticipantColumn::SplitId.is_in(split_ids))
+            .select_only()
+            .column(ParticipantColumn::SplitId)
+            .into_tuple::<i64>()
+            .all(db)
+            .await?
+        {
+            *participant_counts.entry(split_id).or_insert(0) += 1;
+        }
+
+        let event_titles = event_titles_by_id(
+            db,
+            splits.iter().filter_map(|split| split.event_id).collect(),
+        )
+        .await?;
+        let locations = split_locations_by_tab_id(
+            db,
+            splits
+                .iter()
+                .filter_map(|split| split.island_tab_id)
+                .collect(),
+        )
+        .await?;
+
+        splits
+            .into_iter()
+            .map(|split| {
+                let created_by_username = names
+                    .get(&split.created_by)
+                    .cloned()
+                    .unwrap_or_else(|| "Unknown".to_string());
+                let participant_count = participant_counts.get(&split.id).copied().unwrap_or(0);
+                let event_title = split
+                    .event_id
+                    .and_then(|event_id| event_titles.get(&event_id).cloned());
+                let location = split
+                    .island_tab_id
+                    .and_then(|tab_id| locations.get(&tab_id).cloned())
+                    .unwrap_or_else(|| empty_location(split.island_tab_id));
+                assemble_summary(
+                    split,
+                    created_by_username,
+                    participant_count,
+                    event_title,
+                    location,
+                )
+            })
+            .collect()
     }
 
     async fn to_detail(
@@ -1209,10 +1300,7 @@ impl SplitService {
         let total_pages = paginator.num_pages().await?;
         let models = paginator.fetch_page(page).await?;
 
-        let mut items = Vec::with_capacity(models.len());
-        for model in models {
-            items.push(self.to_summary(db, model).await?);
-        }
+        let items = self.to_summaries(db, models).await?;
 
         Ok(PaginatedData::new(
             items,

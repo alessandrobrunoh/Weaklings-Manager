@@ -49,6 +49,12 @@ pub struct TransactionView {
     pub requested_at: Option<String>,
     /// The timestamp when the withdrawal was accepted/paid, if it has been.
     pub withdrawn_at: Option<String>,
+    /// Source guild tenant when this row is served from an alliance aggregate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guild_tenant_id: Option<String>,
+    /// Display name of that source guild.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guild_name: Option<String>,
 }
 
 impl TransactionView {
@@ -83,7 +89,19 @@ impl TransactionView {
             created_at: model.created_at.to_rfc3339(),
             requested_at: model.requested_at.map(|dt| dt.to_rfc3339()),
             withdrawn_at: model.withdrawn_at.map(|dt| dt.to_rfc3339()),
+            guild_tenant_id: None,
+            guild_name: None,
         }
+    }
+
+    pub(super) fn with_guild(
+        mut self,
+        tenant_id: impl Into<String>,
+        name: impl Into<String>,
+    ) -> Self {
+        self.guild_tenant_id = Some(tenant_id.into());
+        self.guild_name = Some(name.into());
+        self
     }
 }
 
@@ -104,6 +122,26 @@ pub struct BalanceSummary {
     pub requested_total: Decimal,
     /// The number of requested transactions contributing to `requested_total`.
     #[schema(example = 1)]
+    pub requested_count: u64,
+    /// Per-guild totals when this summary is an alliance aggregate.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub guilds: Vec<GuildBalanceBreakdown>,
+}
+
+/// One member guild's contribution to an alliance [`BalanceSummary`].
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct GuildBalanceBreakdown {
+    /// Discord tenant id of the member guild.
+    pub guild_tenant_id: String,
+    /// Display name of the member guild.
+    pub guild_name: String,
+    /// Requestable (pending + rejected) total in this guild.
+    #[schema(value_type = String, example = "80.00")]
+    pub pending_total: Decimal,
+    pub pending_count: u64,
+    /// Requested-but-unpaid total in this guild.
+    #[schema(value_type = String, example = "20.00")]
+    pub requested_total: Decimal,
     pub requested_count: u64,
 }
 
@@ -210,6 +248,9 @@ pub struct CreateTransactionRequest {
     /// The user recorded as having paid this out, if any. Defaults to unset (Guild Bank).
     #[schema(example = 1)]
     pub from_user_id: Option<i64>,
+    /// Member guild whose ledger to write when the current tenant is an alliance.
+    #[serde(default)]
+    pub guild_tenant_id: Option<String>,
 }
 
 /// Request body to update an existing bank transaction. Every field is optional and only
@@ -237,6 +278,9 @@ pub struct UpdateTransactionRequest {
     pub split_id: Option<Option<i64>>,
     /// Whether the destination is the virtual Guild Bank.
     pub to_guild_bank: Option<bool>,
+    /// Member guild whose ledger to mutate when the current tenant is an alliance.
+    #[serde(default)]
+    pub guild_tenant_id: Option<String>,
 }
 
 /// Request body to request withdrawal of one, several, or all of the caller's requestable
@@ -252,6 +296,11 @@ pub struct WithdrawRequest {
     /// instead of listing `transaction_ids` individually.
     #[schema(example = true)]
     pub all: Option<bool>,
+    /// Member guild whose ledger to mutate when the current tenant is an alliance.
+    ///
+    /// Omit to default to the unique member guild that currently has rows for this Discord user.
+    #[serde(default)]
+    pub guild_tenant_id: Option<String>,
 }
 
 /// Request body for an officer to accept (and pay out) requested withdrawals.
@@ -272,6 +321,9 @@ pub struct AcceptWithdrawalRequest {
     /// list that member's transaction ids by hand.
     #[schema(example = 7)]
     pub user_id: Option<i64>,
+    /// Member guild whose ledger to mutate when the current tenant is an alliance.
+    #[serde(default)]
+    pub guild_tenant_id: Option<String>,
 }
 
 /// Request body for an officer to reject requested withdrawals.
@@ -292,4 +344,7 @@ pub struct RejectWithdrawalRequest {
     /// list that member's transaction ids by hand.
     #[schema(example = 7)]
     pub user_id: Option<i64>,
+    /// Member guild whose ledger to mutate when the current tenant is an alliance.
+    #[serde(default)]
+    pub guild_tenant_id: Option<String>,
 }

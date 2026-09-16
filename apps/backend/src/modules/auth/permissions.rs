@@ -300,6 +300,9 @@ pub enum Permission {
     /// Cancel an open giveaway or draw a winner now. Officer+.
     #[strum(serialize = "giveaways.manage")]
     GiveawaysManage,
+    /// Publish a guild artifact snapshot into the alliance tenant. Officer+.
+    #[strum(serialize = "alliance.share")]
+    AllianceShare,
 }
 
 impl Permission {

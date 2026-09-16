@@ -6,6 +6,7 @@ pub mod admin;
 pub mod albion;
 pub mod albionbb;
 pub mod albiondata;
+pub mod alliance_share;
 pub mod applications;
 pub mod attention;
 pub mod audit;
@@ -65,6 +66,7 @@ pub fn router() -> Router {
         .nest("/giveaways", giveaways::router())
         .nest("/siphoned", siphoned::router())
         .nest("/regear", regear::router())
+        .nest("/alliance", alliance_share::router())
         .nest("/admin", admin::router())
         .nest("/utils", utils::router())
         .nest("/audit", audit::router())

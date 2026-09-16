@@ -86,6 +86,61 @@ describe('filterNavSections', () => {
       '/platform',
     );
   });
+
+  it('hides guild-only items on an alliance tenant',
+    () => {
+      const visible = filterNavSections(
+        APP_NAV_SECTIONS,
+        () => true,
+        false,
+        () => true,
+        'alliance',
+      );
+      const paths = visible.flatMap((section) => section.items.map((item) => item.path));
+      expect(paths).toContain('/dashboard');
+      expect(paths).toContain('/users');
+      expect(paths).toContain('/admin');
+      expect(paths).toContain('/bank');
+      expect(paths).not.toContain('/warns');
+      expect(paths).not.toContain('/regears');
+      expect(paths).not.toContain('/battles');
+      expect(paths).not.toContain('/intel');
+    },
+  );
+
+  it('keeps bank visible on an alliance tenant even without the bank feature',
+    () => {
+      const visible = filterNavSections(
+        APP_NAV_SECTIONS,
+        () => true,
+        false,
+        () => false,
+        'alliance',
+      );
+      const paths = visible.flatMap((section) => section.items.map((item) => item.path));
+      expect(paths).toContain('/bank');
+      expect(paths).not.toContain('/warns');
+    },
+  );
+
+  it('hides guild-only admin panels on an alliance tenant',
+    () => {
+      const visible = filterNavSections(
+        ADMIN_NAV_SECTIONS,
+        () => true,
+        false,
+        () => true,
+        'alliance',
+      );
+      const paths = visible.flatMap((section) => section.items.map((item) => item.path));
+      expect(paths).toContain('/admin/discord');
+      expect(paths).toContain('/admin/roles');
+      expect(paths).toContain('/users');
+      expect(paths).not.toContain('/admin/applications');
+      expect(paths).not.toContain('/admin/regears');
+      expect(paths).not.toContain('/admin/giveaways');
+    },
+  );
 });
 
 describe('isPlatformUrl', () => {

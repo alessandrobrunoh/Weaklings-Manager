@@ -250,6 +250,19 @@ pub struct EventView {
     pub archived_at: Option<String>,
 }
 
+/// Cheap fingerprint the Discord poller uses to skip full event-detail hydration.
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct EventRevision {
+    /// Event id.
+    pub id: i64,
+    /// Monotonic roster revision.
+    pub roster_version: i64,
+    /// Session status.
+    pub status: String,
+    /// When this event was archived. `None` means it is listed as active.
+    pub archived_at: Option<String>,
+}
+
 /// Details of a participant in an event.
 #[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct EventParticipantView {

@@ -114,8 +114,8 @@ type PendingFightMutation =
       <app-loading [label]="t('common.loading')" />
     } @else if (loadFailed() || !fight()) {
       <app-error-state
-        message="Impossibile caricare i dati di questo scontro."
-        retryLabel="Riprova"
+        [message]="t('fights.loadFailed')"
+        [retryLabel]="t('common.retry')"
         (retry)="load()"
       />
     } @else if (fight(); as detail) {

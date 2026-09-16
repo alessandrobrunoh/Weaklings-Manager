@@ -7,5 +7,6 @@ pub(crate) mod router;
 pub(crate) mod service;
 
 pub use extractor::PlatformAdmin;
+pub use public::alliance_router;
 pub use public::router as public_router;
 pub use router::router;

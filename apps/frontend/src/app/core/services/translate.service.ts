@@ -4,6 +4,7 @@ import { en, type TranslationDict, type TranslationKey } from '../../i18n/en';
 import { es } from '../../i18n/es';
 import { fr } from '../../i18n/fr';
 import { it } from '../../i18n/it';
+import { uk } from '../../i18n/uk';
 
 /**
  * Runtime-swappable translation service backed by signal state.
@@ -17,13 +18,22 @@ import { it } from '../../i18n/it';
  * The user's choice is persisted in `localStorage` (`alm.lang`) and mirrored
  * onto `<html lang>` for accessibility / screen readers.
  */
-export type Language = 'en' | 'it' | 'es' | 'fr';
+export type Language = 'en' | 'it' | 'es' | 'fr' | 'uk';
 
 const STORAGE_KEY = 'alm.lang';
 
-const DICTIONARIES: Record<Language, TranslationDict> = { en, it, es, fr };
+const DICTIONARIES: Record<Language, TranslationDict> = { en, it, es, fr, uk };
 
-const SUPPORTED: ReadonlyArray<Language> = ['en', 'it', 'es', 'fr'];
+const SUPPORTED: ReadonlyArray<Language> = ['en', 'it', 'es', 'fr', 'uk'];
+
+/** BCP 47 locale tag used for dates/numbers for each UI language. */
+const LOCALES: Record<Language, string> = {
+  en: 'en-US',
+  it: 'it-IT',
+  es: 'es-ES',
+  fr: 'fr-FR',
+  uk: 'uk-UA',
+};
 
 function detectInitialLanguage(): Language {
   if (typeof localStorage !== 'undefined') {
@@ -60,7 +70,13 @@ export class TranslateService {
     it: 'Italiano',
     es: 'Español',
     fr: 'Français',
+    uk: 'Українська',
   };
+
+  /** Locale tag for `Intl` / `toLocale*` formatting. */
+  locale(): string {
+    return LOCALES[this._language()];
+  }
 
   constructor() {
     if (typeof document !== 'undefined') {

@@ -602,7 +602,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
           <input
             type="search"
             class="input w-full"
-            placeholder="Cerca nome giocatore nel roster..."
+            [placeholder]="t('users.link.searchPlaceholder')"
             [value]="rosterSearch()"
             (input)="onRosterSearchInput($event)"
             autofocus
@@ -610,7 +610,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
 
           @if (rosterLoading()) {
             <div class="p-6 flex justify-center">
-              <app-loading label="Caricamento roster di gilda..." />
+              <app-loading [label]="t('users.link.loadingRoster')" />
             </div>
           } @else {
             <div class="max-h-64 overflow-y-auto grid gap-1.5 pr-1">

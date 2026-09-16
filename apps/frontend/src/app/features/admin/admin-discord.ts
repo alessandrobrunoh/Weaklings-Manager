@@ -323,6 +323,35 @@ const SPLIT_TAG_FIELDS = [
           </section>
         }
 
+        @if (canManageDiscordSettings()) {
+          <section class="card p-5">
+            <fieldset>
+              <legend class="eyebrow mb-1">{{ t('admin.allianceRole.title') }}</legend>
+              <p class="mb-4 max-w-2xl text-xs" style="color: var(--color-text-secondary)">
+                {{ t(isAlliance() ? 'admin.allianceRole.hintAlliance' : 'admin.allianceRole.hintGuild') }}
+              </p>
+              <label>
+                <span class="label">{{ t('admin.allianceRole.role') }}</span>
+                <app-searchable-select
+                  class="mt-1 block"
+                  [options]="roleOptions(allianceRoleDraft())"
+                  [value]="allianceRoleDraft()"
+                  [emptyLabel]="t('admin.allianceRole.disabled')"
+                  [searchPlaceholder]="t('common.search')"
+                  [noMatchesLabel]="t('picker.noMatches')"
+                  [emptyOptionsLabel]="t('picker.empty')"
+                  [loading]="catalogLoading()"
+                  [ariaLabel]="t('admin.allianceRole.role')"
+                  (valueChange)="allianceRoleDraft.set($event)"
+                />
+                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                  {{ t('admin.allianceRole.roleHint') }}
+                </span>
+              </label>
+            </fieldset>
+          </section>
+        }
+
         @if (canManageAutoRole()) {
           <section class="card p-5">
             <fieldset>
@@ -384,6 +413,10 @@ export class AdminDiscord {
   protected readonly discordRoles = signal<DiscordRoleView[]>([]);
   protected readonly discordChannels = signal<DiscordChannelView[]>([]);
   protected readonly autoRoleDraft = signal('');
+  protected readonly allianceRoleDraft = signal('');
+  protected readonly isAlliance = computed(
+    () => this.auth.profile()?.tenant_kind === 'alliance',
+  );
   protected readonly pageLoading = computed(
     () =>
       (this.canManageDiscordSettings() && this.guildSettingsLoading()) ||
@@ -473,6 +506,7 @@ export class AdminDiscord {
     try {
       const settings = await firstValueFrom(this.api.get<GuildSettingsView>('api/admin/settings'));
       this.guildSettingsDraft.set(toDraft(settings));
+      this.allianceRoleDraft.set(settings.discord_alliance_role_id ?? '');
       if (this.autoRoleLoading() && settings.discord_auto_role_id) {
         this.autoRoleDraft.set(settings.discord_auto_role_id);
       }
@@ -528,6 +562,7 @@ export class AdminDiscord {
       discord_split_lost_tag_id: draft.discord_split_lost_tag_id.trim(),
       discord_event_voice_category_id: draft.discord_event_voice_category_id.trim(),
       default_split_fee: Number(draft.default_split_fee),
+      discord_alliance_role_id: this.allianceRoleDraft(),
       ...(this.canManageAutoRole()
         ? { discord_auto_role_id: this.autoRoleDraft() }
         : {}),

@@ -33,9 +33,19 @@ pub struct DiscoveryQuery {
     pub limit: Option<u64>,
 }
 
+/// Cursor row for incremental Discord forum sync. The poller fetches full detail
+/// per id via `GET /api/splits/{id}/discord-sync`; hydrating `SplitDetail` here
+/// would redo that work for every page.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SplitDiscoveryItem {
+    pub id: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SplitDiscovery {
-    pub items: Vec<SplitDetail>,
+    pub items: Vec<SplitDiscoveryItem>,
     pub next_updated_at: Option<String>,
     pub next_id: Option<i64>,
     pub has_more: bool,
@@ -127,11 +137,14 @@ async fn discover(
     let next_cursor = rows
         .last()
         .map(|split| (split.updated_at.to_rfc3339(), split.id));
-    let service = SplitService::new();
-    let mut items = Vec::with_capacity(rows.len());
-    for split in rows {
-        items.push(service.get_split(&db, split.id).await?);
-    }
+    let items = rows
+        .into_iter()
+        .map(|split| SplitDiscoveryItem {
+            id: split.id,
+            created_at: split.created_at.to_rfc3339(),
+            updated_at: split.updated_at.to_rfc3339(),
+        })
+        .collect();
     Ok(Json(ApiResponse::new(SplitDiscovery {
         items,
         next_updated_at: next_cursor

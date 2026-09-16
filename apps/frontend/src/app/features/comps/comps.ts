@@ -7,6 +7,7 @@ import {
   validateBuildDraft,
   validateBuildName,
 } from '../../shared/validation/build-validation';
+import { groupBuildsByCreator } from './group-by-creator';
 
 import type {
   BuildCategoryView,
@@ -475,6 +476,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
                         <span class="font-bold text-base text-[var(--color-text)]">{{
                           item.comp.name
                         }}</span>
+                        <span class="chip text-xs">{{ item.comp.created_by_username }}</span>
                         <span
                           class="px-2 py-0.5 rounded-full text-xs font-semibold bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] border border-[var(--color-border)]"
                         >
@@ -628,7 +630,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
         }
         <app-data-table
           [columns]="buildColumns()"
-          [rows]="builds()"
+          [rows]="buildsGrouped()"
           [loading]="loading()"
           [error]="loadFailed()"
           [serverMode]="true"
@@ -641,6 +643,9 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
           (pageChange)="onBuildsPageChange($event)"
           (rowClick)="openBuild($event)"
         >
+          <ng-template dataTableCell="creator" let-row>
+            <span class="text-sm">{{ row.created_by_username }}</span>
+          </ng-template>
           <ng-template dataTableCell="name" let-row>
             <span class="flex items-center gap-2">
               <span class="font-bold text-sm">{{ row.name }}</span>
@@ -1027,6 +1032,9 @@ export class Comps {
   private compsLoadedPage = 1;
   protected readonly builds = signal<BuildSummary[]>([]);
   protected readonly buildsTotal = signal(0);
+  protected readonly buildsGrouped = computed(() =>
+    groupBuildsByCreator(this.builds()).flatMap((group) => group.items),
+  );
   protected readonly buildCategories = signal<BuildCategoryView[]>([]);
   protected readonly compCategories = signal<CompCategoryView[]>([]);
   protected readonly buildOptions = signal<BuildSummary[]>([]);
@@ -1258,6 +1266,13 @@ export class Comps {
   ]);
 
   protected readonly buildColumns = computed<readonly DataTableColumn<BuildSummary>[]>(() => [
+    {
+      key: 'creator',
+      label: 'comps.createdBy',
+      sortable: true,
+      searchable: true,
+      accessor: (row) => row.created_by_username,
+    },
     {
       key: 'name',
       label: 'common.name',

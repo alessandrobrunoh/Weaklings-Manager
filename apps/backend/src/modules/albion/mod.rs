@@ -4,6 +4,7 @@
 //! browsing for the operator's configured guild, and self-service Discord <-> Albion
 //! player account linking.
 
+pub mod alliance_fanout;
 pub mod client;
 pub mod discord_guild_role;
 pub mod discord_nick;
