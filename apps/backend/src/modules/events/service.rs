@@ -287,7 +287,87 @@ fn event_view_from_parts(
             .link_battles_completed_at
             .map(|time| time.to_rfc3339()),
         archived_at: model.archived_at.map(|time| time.to_rfc3339()),
+        ping_alliance: model.ping_alliance,
+        alliance_discord_message_id: model.alliance_discord_message_id,
+        alliance_discord_channel_id: None,
+        alliance_discord_role_ids: Vec::new(),
+        origin_guild_id: None,
     }
+}
+
+/// Alliance Discord channel and roles resolved from the alliance tenant's guild settings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlliancePingTargets {
+    /// Guild tenant that owns the event.
+    pub origin_guild_id: String,
+    /// Alliance Discord events channel snowflake.
+    pub channel_id: Option<String>,
+    /// Alliance Discord event-ping role snowflakes.
+    pub role_ids: Vec<String>,
+}
+
+/// Copies alliance Discord routing onto an event that opted into `ping_alliance`.
+pub fn apply_alliance_ping_targets(view: &mut EventView, targets: &AlliancePingTargets) {
+    if !view.ping_alliance {
+        view.alliance_discord_channel_id = None;
+        view.alliance_discord_role_ids = Vec::new();
+        view.origin_guild_id = None;
+        return;
+    }
+    view.origin_guild_id = Some(targets.origin_guild_id.clone());
+    view.alliance_discord_channel_id = targets.channel_id.clone();
+    view.alliance_discord_role_ids = targets.role_ids.clone();
+}
+
+/// Loads alliance events-channel and event-role settings for a guild tenant.
+///
+/// # Errors
+///
+/// Returns a database error when the control plane query fails.
+pub async fn load_alliance_ping_targets(
+    control: &DatabaseConnection,
+    registry: &crate::tenant::TenantRegistry,
+    origin_guild_id: &str,
+) -> Result<AlliancePingTargets, AppError> {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    let mut targets = AlliancePingTargets {
+        origin_guild_id: origin_guild_id.to_string(),
+        channel_id: None,
+        role_ids: Vec::new(),
+    };
+    let row = control
+        .query_one(Statement::from_sql_and_values(
+            control.get_database_backend(),
+            "SELECT m.alliance_tenant_id \
+             FROM alliance_memberships m \
+             WHERE m.guild_tenant_id = $1 AND m.status = 'active'",
+            [origin_guild_id.into()],
+        ))
+        .await?;
+    let Some(row) = row else {
+        return Ok(targets);
+    };
+    let alliance_id: String = row.try_get_by_index(0)?;
+    let alliance = match registry.get_or_load(&alliance_id).await {
+        Ok(ctx) => ctx,
+        Err(error) => {
+            tracing::warn!(alliance_id, error = %error, "could not load alliance tenant for event ping");
+            return Ok(targets);
+        }
+    };
+    match crate::modules::admin::service::AdminService::get_guild_settings(&alliance.db).await {
+        Ok(settings) => {
+            targets.channel_id = settings.discord_events_channel_id;
+            if let Some(role_id) = settings.discord_event_role_id.filter(|id| !id.is_empty()) {
+                targets.role_ids = vec![role_id];
+            }
+        }
+        Err(error) => {
+            tracing::warn!(alliance_id, error = %error, "could not load alliance guild settings for event ping");
+        }
+    }
+    Ok(targets)
 }
 
 async fn load_event_roster_roles(
@@ -3099,6 +3179,7 @@ impl EventService {
             event_date_utc: Set(start.into()),
             mass_time_utc: Set(Some(mass.into())),
             start_time_utc: Set(Some(start.into())),
+            ping_alliance: Set(req.ping_alliance),
             ..Default::default()
         }
         .insert(db)
@@ -3185,6 +3266,17 @@ impl EventService {
         }
         if let Some(regear) = req.regear {
             active.regear = Set(regear);
+        }
+        if let Some(ping_alliance) = req.ping_alliance {
+            active.ping_alliance = Set(ping_alliance);
+        }
+        if let Some(message_id) = req.alliance_discord_message_id {
+            let trimmed = message_id.trim();
+            active.alliance_discord_message_id = Set(if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            });
         }
         if let Some(comp_id) = req.comp_id {
             // Validate comp exists
@@ -6623,6 +6715,7 @@ mod tests {
                     ],
                     create_split: false,
                     island_tab_id: None,
+                    ping_alliance: false,
                 },
             )
             .await
@@ -6641,6 +6734,126 @@ mod tests {
                 "333333333333333333".to_string(),
             ]
         );
+        assert!(!event.ping_alliance);
+        assert_eq!(event.alliance_discord_message_id, None);
+        assert_eq!(event.alliance_discord_channel_id, None);
+        assert!(event.alliance_discord_role_ids.is_empty());
+        assert_eq!(event.origin_guild_id, None);
+    }
+
+    #[tokio::test]
+    async fn create_event_persists_ping_alliance() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let cat = create_comp_category(&db, "ZvZ").await;
+        let comp_id = create_comp(&db, "Main Comp", cat, None, vec![]).await;
+
+        let event = EventService::new()
+            .create_event(
+                &db,
+                admin,
+                CreateEventRequest {
+                    title: "Alliance ping".to_string(),
+                    description: None,
+                    call_to_arms: false,
+                    regear: false,
+                    comp_id,
+                    player_cap: None,
+                    event_date_utc: Some("2026-07-20T20:00:00Z".to_string()),
+                    mass_time_utc: None,
+                    start_time_utc: None,
+                    discord_role_ids: vec![],
+                    create_split: false,
+                    island_tab_id: None,
+                    ping_alliance: true,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(event.ping_alliance);
+        assert_eq!(event.alliance_discord_channel_id, None);
+        assert_eq!(event.origin_guild_id, None);
+
+        let updated = EventService::new()
+            .update_event(
+                &db,
+                event.id,
+                UpdateEventRequest {
+                    ping_alliance: Some(false),
+                    alliance_discord_message_id: Some("123456789012345678".to_string()),
+                    title: None,
+                    description: None,
+                    call_to_arms: None,
+                    regear: None,
+                    comp_id: None,
+                    event_date_utc: None,
+                    mass_time_utc: None,
+                    start_time_utc: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(!updated.ping_alliance);
+        assert_eq!(
+            updated.alliance_discord_message_id.as_deref(),
+            Some("123456789012345678")
+        );
+    }
+
+    #[test]
+    fn alliance_ping_targets_fill_only_when_flag_is_on() {
+        let targets = AlliancePingTargets {
+            origin_guild_id: "guild-1".to_string(),
+            channel_id: Some("channel-ally".to_string()),
+            role_ids: vec!["role-ally".to_string()],
+        };
+        let mut off = event_view_from_parts(
+            event::Model {
+                id: 1,
+                title: "Off".to_string(),
+                description: None,
+                call_to_arms: false,
+                regear: false,
+                comp_id: 1,
+                player_cap: None,
+                created_by: 1,
+                event_date_utc: ts(),
+                mass_time_utc: None,
+                start_time_utc: None,
+                created_at: ts(),
+                updated_at: ts(),
+                status: "scheduled".to_string(),
+                started_at: None,
+                stopped_at: None,
+                auto_stop_deadline: None,
+                link_status: "pending".to_string(),
+                link_attempts: 0,
+                link_last_error: None,
+                link_battles_completed_at: None,
+                discord_voice_channel_id: None,
+                roster_version: 0,
+                archived_at: None,
+                ping_alliance: false,
+                alliance_discord_message_id: None,
+            },
+            "comp".to_string(),
+            "admin".to_string(),
+            vec![],
+        );
+        apply_alliance_ping_targets(&mut off, &targets);
+        assert_eq!(off.alliance_discord_channel_id, None);
+        assert!(off.alliance_discord_role_ids.is_empty());
+        assert_eq!(off.origin_guild_id, None);
+
+        let mut on = off.clone();
+        on.ping_alliance = true;
+        apply_alliance_ping_targets(&mut on, &targets);
+        assert_eq!(on.origin_guild_id.as_deref(), Some("guild-1"));
+        assert_eq!(
+            on.alliance_discord_channel_id.as_deref(),
+            Some("channel-ally")
+        );
+        assert_eq!(on.alliance_discord_role_ids, vec!["role-ally".to_string()]);
     }
 
     #[test]
@@ -6775,6 +6988,7 @@ mod tests {
                     discord_role_ids: vec!["111111111111111111".to_string()],
                     create_split: false,
                     island_tab_id: None,
+                    ping_alliance: false,
                 },
             )
             .await
@@ -6816,6 +7030,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    ping_alliance: false,
                 },
             )
             .await
@@ -6901,6 +7116,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    ping_alliance: false,
                 },
             )
             .await
@@ -6944,6 +7160,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: true,
                     island_tab_id: None,
+                    ping_alliance: false,
                 },
             )
             .await
@@ -6986,6 +7203,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: true,
                     island_tab_id: Some(tab_id),
+                    ping_alliance: false,
                 },
             )
             .await
@@ -7056,6 +7274,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    ping_alliance: false,
                 },
             )
             .await
@@ -7147,6 +7366,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    ping_alliance: false,
                 },
             )
             .await
@@ -7258,6 +7478,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    ping_alliance: false,
                 },
             )
             .await
@@ -7310,6 +7531,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    ping_alliance: false,
                 },
             )
             .await
@@ -7362,6 +7584,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    ping_alliance: false,
                 },
             )
             .await
@@ -7383,6 +7606,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    ping_alliance: false,
                 },
             )
             .await
@@ -7477,6 +7701,7 @@ mod tests {
                     discord_role_ids: vec![],
                     create_split: false,
                     island_tab_id: None,
+                    ping_alliance: false,
                 },
             )
             .await

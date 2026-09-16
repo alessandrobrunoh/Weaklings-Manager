@@ -15,7 +15,15 @@ import type {
   UpdateTransactionRequest,
   UserProfile,
 } from '../../core/models/api.models';
-import { ApiService } from '../../core/services/api.service';
+import { ApiError, ApiService } from '../../core/services/api.service';
+
+interface AllianceShareStatus {
+  shared: boolean;
+  share?: {
+    published_id: number;
+    shared_at: string;
+  };
+}
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
@@ -107,6 +115,32 @@ function parsePercentageInput(raw: string): number | null {
             <app-icon name="chevron-left" size="0.875rem" />
             {{ t('splits.detail.back') }}
           </a>
+          @if (!isAllianceTenant() && shareStatus()?.shared) {
+            <span class="chip text-xs">{{ t('splits.sharedWithAlliance') }}</span>
+          }
+          @if (isReadOnly()) {
+            <span class="chip text-xs">{{ t('splits.readOnlyAlliance') }}</span>
+          }
+          @if (canShare()) {
+            <button
+              type="button"
+              class="btn btn--outline btn--sm"
+              (click)="shareWithAlliance()"
+              [disabled]="saving()"
+            >
+              {{ t('splits.shareWithAlliance') }}
+            </button>
+            @if (shareStatus()?.shared) {
+              <button
+                type="button"
+                class="btn btn--ghost btn--sm"
+                (click)="unshareWithAlliance()"
+                [disabled]="saving()"
+              >
+                {{ t('splits.unshareWithAlliance') }}
+              </button>
+            }
+          }
           @if (canEdit()) {
             <button type="button" class="btn btn--ghost btn--sm" (click)="toggleMode()">
               {{ mode() === 'edit' ? t('common.close') : t('common.edit') }}
@@ -950,8 +984,22 @@ export class SplitDetailPage {
     }
   }
 
-  protected readonly canAct = computed(() => this.auth.hasPermission('splits.edit'));
-  protected readonly canDelete = computed(() => this.auth.hasPermission('splits.delete'));
+  protected readonly isAllianceTenant = computed(
+    () => this.auth.profile()?.tenant_kind === 'alliance',
+  );
+  protected readonly isReadOnly = computed(
+    () => this.isAllianceTenant() || Boolean(this.split()?.origin_read_only),
+  );
+  protected readonly canShare = computed(
+    () => !this.isAllianceTenant() && this.auth.hasPermission('alliance.share'),
+  );
+  protected readonly shareStatus = signal<AllianceShareStatus | null>(null);
+  protected readonly canAct = computed(
+    () => this.auth.hasPermission('splits.edit') && !this.isReadOnly(),
+  );
+  protected readonly canDelete = computed(
+    () => this.auth.hasPermission('splits.delete') && !this.isReadOnly(),
+  );
   protected readonly canEdit = computed(
     () =>
       this.canAct() &&
@@ -959,10 +1007,12 @@ export class SplitDetailPage {
       ['pending', 'awaiting_event'].includes(this.split()?.status ?? ''),
   );
   protected readonly canViewSplitTransactions = computed(
-    () => this.auth.hasPermission('bank.view_others') || this.auth.hasPermission('bank.withdraw.accept'),
+    () =>
+      !this.isReadOnly() &&
+      (this.auth.hasPermission('bank.view_others') || this.auth.hasPermission('bank.withdraw.accept')),
   );
-  protected readonly canEditTransactions = computed(() =>
-    this.auth.hasPermission('bank.transactions.edit'),
+  protected readonly canEditTransactions = computed(
+    () => this.auth.hasPermission('bank.transactions.edit') && !this.isReadOnly(),
   );
   protected readonly editFee = computed(() => parsePercentageInput(this.editFeeInput()) ?? DEFAULT_SPLIT_FEE);
   protected readonly editNetPreview = computed(() =>
@@ -1423,6 +1473,74 @@ export class SplitDetailPage {
     this.editWeightInputs.set(this.weightInputsFor(detail.participants));
   }
 
+
+  protected async shareWithAlliance(): Promise<void> {
+    const current = this.split();
+    if (!current) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      await firstValueFrom(
+        this.api.post<AllianceShareStatus['share']>('api/alliance/shares', {
+          type: 'split',
+          id: current.id,
+        }),
+      );
+      this.toasts.success(this.t('splits.shareSuccess'));
+      await this.loadShareStatus(current.id);
+    } catch (error) {
+      this.toasts.error(this.shareErrorMessage(error));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async unshareWithAlliance(): Promise<void> {
+    const current = this.split();
+    if (!current) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      await firstValueFrom(this.api.delete(`api/alliance/shares/split/${current.id}`));
+      this.toasts.success(this.t('splits.unshareSuccess'));
+      this.shareStatus.set({ shared: false });
+    } catch (error) {
+      this.toasts.error(this.shareErrorMessage(error));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  private shareErrorMessage(error: unknown): string {
+    if (error instanceof ApiError && error.status === 409) {
+      return this.t('splits.shareNoAlliance');
+    }
+    return error instanceof Error ? error.message : this.t('common.error');
+  }
+
+  private async loadShareStatus(splitId: number): Promise<void> {
+    if (this.isAllianceTenant()) {
+      this.shareStatus.set(null);
+      return;
+    }
+    try {
+      const status = await firstValueFrom(
+        this.api.get<AllianceShareStatus>(`api/alliance/shares/split/${splitId}`),
+      );
+      if (this.split()?.id !== splitId) {
+        return;
+      }
+      this.shareStatus.set(status);
+    } catch {
+      if (this.split()?.id !== splitId) {
+        return;
+      }
+      this.shareStatus.set({ shared: false });
+    }
+  }
+
   private async load(id: number): Promise<void> {
     this.loading.set(true);
     this.loadFailed.set(false);
@@ -1432,6 +1550,7 @@ export class SplitDetailPage {
       if (detail.status !== 'pending') {
         this.mode.set('view');
       }
+      await this.loadShareStatus(id);
     } catch (error) {
       this.loadFailed.set(true);
       this.split.set(null);

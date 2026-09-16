@@ -23,7 +23,7 @@ use crate::responses::{
     ApiResponse, ApiResponseEventDetail, ApiResponseEventList, ApiResponseEventRevisionList,
     ApiResponseEventRosterRoleList, ApiResponseEventView,
 };
-use crate::tenant::CurrentTenantId;
+use crate::tenant::{ControlDb, CurrentTenantId, TenantRegistry};
 
 use sea_orm::EntityTrait;
 use std::collections::HashSet;
@@ -36,11 +36,69 @@ use super::models::{
     SetParticipantRequest, SwapRosterSeatsRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
 use super::roster_hub::{RosterHub, RosterNotification};
-use super::service::{BattleLinkingContext, EventService};
+use super::service::{
+    BattleLinkingContext, EventService, apply_alliance_ping_targets, load_alliance_ping_targets,
+};
 use crate::modules::admin::models::DiscordRoleView;
 use crate::modules::admin::service::AdminService;
 use crate::modules::albionbb::client::normalize_server;
 use crate::modules::albionbb::service::AlbionBbService;
+
+async fn hydrate_event_view(
+    mut view: EventView,
+    control: &ControlDb,
+    registry: &TenantRegistry,
+    origin_guild_id: &str,
+) -> EventView {
+    if !view.ping_alliance {
+        return view;
+    }
+    match load_alliance_ping_targets(&control.0, registry, origin_guild_id).await {
+        Ok(targets) => apply_alliance_ping_targets(&mut view, &targets),
+        Err(error) => {
+            tracing::warn!(error = %error, "could not resolve alliance Discord targets");
+            view.origin_guild_id = Some(origin_guild_id.to_string());
+        }
+    }
+    view
+}
+
+async fn hydrate_event_detail(
+    mut detail: EventDetailView,
+    control: &ControlDb,
+    registry: &TenantRegistry,
+    origin_guild_id: &str,
+) -> EventDetailView {
+    detail.event = hydrate_event_view(detail.event, control, registry, origin_guild_id).await;
+    detail
+}
+
+async fn hydrate_event_list(
+    mut page: PaginatedData<EventView>,
+    control: &ControlDb,
+    registry: &TenantRegistry,
+    origin_guild_id: &str,
+) -> PaginatedData<EventView> {
+    if !page.items.iter().any(|event| event.ping_alliance) {
+        return page;
+    }
+    match load_alliance_ping_targets(&control.0, registry, origin_guild_id).await {
+        Ok(targets) => {
+            for event in &mut page.items {
+                apply_alliance_ping_targets(event, &targets);
+            }
+        }
+        Err(error) => {
+            tracing::warn!(error = %error, "could not resolve alliance Discord targets");
+            for event in &mut page.items {
+                if event.ping_alliance {
+                    event.origin_guild_id = Some(origin_guild_id.to_string());
+                }
+            }
+        }
+    }
+    page
+}
 
 /// Returns the compiled router containing all event endpoints.
 pub fn router() -> Router {
@@ -127,13 +185,18 @@ async fn list_events(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Query(pagination): Query<PaginationParams>,
     Query(filters): Query<EventFilters>,
 ) -> Result<Json<ApiResponse<PaginatedData<EventView>>>, AppError> {
     user.require(&perms, Permission::EventsView).await?;
     let service = EventService::new();
     let events = service.list_events(&db, pagination, filters).await?;
-    Ok(Json(ApiResponse::new(events)))
+    Ok(Json(ApiResponse::new(
+        hydrate_event_list(events, &control, &registry, &tenant_id).await,
+    )))
 }
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -217,6 +280,9 @@ async fn get_event(
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     user.require(&perms, Permission::EventsView).await?;
@@ -229,7 +295,9 @@ async fn get_event(
     let event = service
         .get_event_detail_with_context(&db, id, &context)
         .await?;
-    Ok(Json(ApiResponse::new(event)))
+    Ok(Json(ApiResponse::new(
+        hydrate_event_detail(event, &control, &registry, &tenant_id).await,
+    )))
 }
 
 /// Returns the next concrete signup choices for the authenticated member.
@@ -652,6 +720,8 @@ async fn create_event(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
     Extension(tenant): Extension<CurrentTenantId>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
     Json(req): Json<CreateEventRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     user.require(&perms, Permission::EventsCreate).await?;
@@ -675,7 +745,9 @@ async fn create_event(
 
     let service = EventService::new();
     let event = service.create_event(&db, user.user_id, req).await?;
-    Ok(Json(ApiResponse::new(event)))
+    Ok(Json(ApiResponse::new(
+        hydrate_event_view(event, &control, &registry, &tenant.0).await,
+    )))
 }
 
 /// Lists selectable Discord roles for users who can create events.
@@ -731,13 +803,18 @@ async fn update_event(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
+    Extension(CurrentTenantId(tenant_id)): Extension<CurrentTenantId>,
     Path(id): Path<i64>,
     Json(req): Json<UpdateEventRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     user.require(&perms, Permission::EventsEdit).await?;
     let service = EventService::new();
     let event = service.update_event(&db, id, req).await?;
-    Ok(Json(ApiResponse::new(event)))
+    Ok(Json(ApiResponse::new(
+        hydrate_event_view(event, &control, &registry, &tenant_id).await,
+    )))
 }
 
 /// Deletes an event.

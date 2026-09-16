@@ -13,7 +13,13 @@ import type {
   GiveawayView,
   GiveawayDetailView,
 } from "../api/types.js";
-import { buildEventAnnouncementMessage } from "../embeds/event.embed.js";
+import {
+  buildAllianceLifecycleMessage,
+  buildEventAnnouncementMessage,
+  shouldPingAllianceDiscord,
+  withAlliancePingRoles,
+  type AllianceLifecycleKind,
+} from "../embeds/event.embed.js";
 import {
   buildGiveawayAnnouncementMessage,
   buildGiveawayEmbed,
@@ -535,6 +541,7 @@ export class Poller {
             `${eventDetail.roster_version ?? 0}:${eventDetail.status}`;
         }
 
+        await this.postAllianceAnnouncement(eventDetail);
         this.state.lastEventId = event.id;
         this.save();
         console.log(
@@ -628,6 +635,15 @@ export class Poller {
           continue;
         }
         if (!terminalStatuses.has(event.status)) continue;
+
+        if (event.status === "cancelled") {
+          try {
+            const detail = await this.eventApi().get<EventDetailView>(`api/events/${eventId}`);
+            await this.postAllianceLifecycle(detail, "cancel");
+          } catch (error) {
+            console.warn(`[Poller] Could not ping alliance Discord for cancelled event #${eventId}:`, error);
+          }
+        }
 
         if (threadId) await this.closeEventThread(event.id);
       } catch (error) {
@@ -724,7 +740,8 @@ export class Poller {
           if (Number.isFinite(massAt) && now >= massAt && !this.state.massedEvents.includes(event.id)) {
             try {
               const thread = await this.getEventThread(event.id);
-              await massDiscordEvent(this.client, this.api, "", event.id, thread ?? undefined);
+              const massed = await massDiscordEvent(this.client, this.api, "", event.id, thread ?? undefined);
+              await this.postAllianceLifecycle(massed.event, "mass");
               this.state.massedEvents.push(event.id);
               this.save();
             } catch (error) {
@@ -735,7 +752,8 @@ export class Poller {
           if (Number.isFinite(startAt) && now >= startAt) {
             try {
               const thread = await this.getEventThread(event.id);
-              await startDiscordEvent(this.client, this.api, "", event.id, thread ?? undefined);
+              const started = await startDiscordEvent(this.client, this.api, "", event.id, thread ?? undefined);
+              await this.postAllianceLifecycle(started.event, "start");
               this.save();
             } catch (error) {
               console.warn(`[Poller] Could not start event #${event.id}:`, error);
@@ -1017,6 +1035,53 @@ export class Poller {
         }
         console.warn(`[Poller] Could not update giveaway #${giveawayId}:`, error);
       }
+    }
+  }
+
+  private eventApi(event?: { origin_guild_id?: string | null }): ApiClient {
+    const origin = event?.origin_guild_id?.trim();
+    if (origin && origin !== this.api.guildId) {
+      return this.api.withGuild(origin);
+    }
+    return this.api;
+  }
+
+  private async postAllianceAnnouncement(event: EventView): Promise<void> {
+    if (!shouldPingAllianceDiscord(event)) return;
+    const channel = await this.getTextChannel(event.alliance_discord_channel_id ?? null);
+    if (!channel) {
+      console.warn(
+        `[Poller] Cannot announce event #${event.id} on alliance Discord: channel missing`,
+      );
+      return;
+    }
+    try {
+      const message = await channel.send(
+        buildEventAnnouncementMessage(withAlliancePingRoles(event)),
+      );
+      await this.eventApi(event).patch(`api/events/${event.id}`, {
+        alliance_discord_message_id: message.id,
+      });
+      console.log(`[Poller] Announced event #${event.id} on alliance Discord`);
+    } catch (error) {
+      console.warn(`[Poller] Could not announce event #${event.id} on alliance Discord:`, error);
+    }
+  }
+
+  private async postAllianceLifecycle(
+    event: EventView,
+    kind: AllianceLifecycleKind,
+  ): Promise<void> {
+    if (!shouldPingAllianceDiscord(event)) return;
+    const channel = await this.getTextChannel(event.alliance_discord_channel_id ?? null);
+    if (!channel) return;
+    try {
+      await channel.send(buildAllianceLifecycleMessage(event, kind));
+    } catch (error) {
+      console.warn(
+        `[Poller] Could not post alliance ${kind} notice for event #${event.id}:`,
+        error,
+      );
     }
   }
 

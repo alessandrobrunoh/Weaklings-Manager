@@ -72,6 +72,7 @@ describe('Events', () => {
 
   const mockAuthService = {
     hasPermission: vi.fn().mockReturnValue(true),
+    profile: () => ({ tenant_kind: 'guild' }),
   };
 
   const mockToastService = {
@@ -155,5 +156,73 @@ describe('Events', () => {
     const text = fixture.nativeElement.textContent;
     expect(text).toContain('Showing 1 to 10 of 17 events');
     expect(text).toContain('10 per page');
+  });
+
+  it('hides the alliance Discord ping checkbox when the guild is not in an alliance', async () => {
+    mockApiService.get.mockImplementation((path: string) => {
+      if (path === 'api/events') {
+        return of({
+          items: mockEvents,
+          total_items: 17,
+          total_pages: 2,
+          current_page: 1,
+          limit: 10,
+        });
+      }
+      if (path === 'api/alliances/me') {
+        return of({ kind: 'guild', alliance_id: null, alliance_name: null, membership_status: null, members: [] });
+      }
+      if (path === 'api/comps') {
+        return of({ items: [], total_items: 0, total_pages: 0, current_page: 1, limit: 100 });
+      }
+      if (path === 'api/splits/islands') {
+        return of([]);
+      }
+      if (path === 'api/events/discord-roles') {
+        return of([]);
+      }
+      return of([]);
+    });
+    await (component as any).loadCreateOptions();
+    expect((component as any).allianceId()).toBeNull();
+    expect((component as any).canPingAlliance()).toBe(false);
+    expect((component as any).draftPingAlliance()).toBe(false);
+  });
+
+  it('shows the alliance Discord ping checkbox off by default for a guild in an alliance', async () => {
+    mockApiService.get.mockImplementation((path: string) => {
+      if (path === 'api/events') {
+        return of({
+          items: mockEvents,
+          total_items: 17,
+          total_pages: 2,
+          current_page: 1,
+          limit: 10,
+        });
+      }
+      if (path === 'api/alliances/me') {
+        return of({
+          kind: 'guild',
+          alliance_id: 'alliance-1',
+          alliance_name: 'Allies',
+          membership_status: 'active',
+          members: [],
+        });
+      }
+      if (path === 'api/comps') {
+        return of({ items: [], total_items: 0, total_pages: 0, current_page: 1, limit: 100 });
+      }
+      if (path === 'api/splits/islands') {
+        return of([]);
+      }
+      if (path === 'api/events/discord-roles') {
+        return of([]);
+      }
+      return of([]);
+    });
+    await (component as any).loadCreateOptions();
+    expect((component as any).allianceId()).toBe('alliance-1');
+    expect((component as any).canPingAlliance()).toBe(true);
+    expect((component as any).draftPingAlliance()).toBe(false);
   });
 });

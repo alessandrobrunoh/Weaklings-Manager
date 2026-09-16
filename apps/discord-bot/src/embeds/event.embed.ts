@@ -53,6 +53,41 @@ export function buildEventAnnouncementMessage(event: EventView): EventAnnounceme
   };
 }
 
+/** True when the guild event should also be posted on the alliance events channel. */
+export function shouldPingAllianceDiscord(event: EventView): boolean {
+  return Boolean(event.ping_alliance && event.alliance_discord_channel_id);
+}
+
+/** Copies alliance ping roles onto the shared announcement/lifecycle payload. */
+export function withAlliancePingRoles(event: EventView): EventView {
+  return {
+    ...event,
+    discord_role_ids: [...new Set(event.alliance_discord_role_ids ?? [])],
+  };
+}
+
+export type AllianceLifecycleKind = "mass" | "start" | "cancel";
+
+/** Alliance-channel follow-up that pings alliance roles, never guild roster users. */
+export function buildAllianceLifecycleMessage(
+  event: EventView,
+  kind: AllianceLifecycleKind,
+): EventReminderMessage {
+  const roleIds = [...new Set(event.alliance_discord_role_ids ?? [])];
+  const mentions = roleIds.map((roleId) => `<@&${roleId}>`).join(" ");
+  const prefix = mentions ? `${mentions} ` : "";
+  const body =
+    kind === "mass"
+      ? `**${event.title}** mass is starting.`
+      : kind === "start"
+        ? `**${event.title}** is live.`
+        : `**${event.title}** has been cancelled.`;
+  return {
+    content: `🔔 ${prefix}${body}`,
+    allowedMentions: roleIds.length > 0 ? { parse: [], roles: roleIds } : { parse: [] },
+  };
+}
+
 export interface EventStartMessage {
   content: string;
   allowedMentions: { parse: []; users: string[] };

@@ -58,6 +58,10 @@ pub mod event {
         pub roster_version: i64,
         /// When this event was archived. `None` means it is listed as active.
         pub archived_at: Option<DateTimeWithTimeZone>,
+        /// When true, Discord announcements also post on the alliance events channel.
+        pub ping_alliance: bool,
+        /// Alliance Discord announcement message id, when this event pinged alliance Discord.
+        pub alliance_discord_message_id: Option<String>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]

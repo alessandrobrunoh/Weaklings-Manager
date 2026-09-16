@@ -39,6 +39,7 @@ import type {
   ParticipateEventRequest,
   RosterSuggestions,
   SplitSummary,
+  AllianceContext,
   UpdateEventBattlesRequest,
   UpdateEventRequest,
   UserProfile,
@@ -1944,6 +1945,17 @@ interface AddEventMemberRequest {
               />
               <span class="text-xs font-semibold">{{ t('events.regear') }}</span>
             </label>
+            @if (canPingAlliance()) {
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  class="checkbox"
+                  type="checkbox"
+                  [checked]="draftPingAlliance()"
+                  (change)="onPingAllianceChange($event)"
+                />
+                <span class="text-xs font-semibold">{{ t('events.pingAlliance') }}</span>
+              </label>
+            }
           </div>
 
           <div class="flex justify-end gap-2 pt-3 border-t border-[var(--color-border)]">
@@ -2923,6 +2935,11 @@ export class EventDetailPage {
   protected readonly draftCompId = signal('');
   protected readonly draftCallToArms = signal(false);
   protected readonly draftRegear = signal(false);
+  protected readonly draftPingAlliance = signal(false);
+  protected readonly allianceId = signal<string | null>(null);
+  protected readonly canPingAlliance = computed(
+    () => this.auth.profile()?.tenant_kind === 'guild' && Boolean(this.allianceId()),
+  );
   protected readonly draftEventDate = signal('');
   protected readonly draftMassTime = signal('19:30');
   protected readonly draftStartTime = signal('20:00');
@@ -3632,6 +3649,7 @@ export class EventDetailPage {
         this.tab.set('roster');
         this.pendingConfirm.set(null);
         void this.load();
+        void this.loadAllianceContext();
       }
     });
 
@@ -4740,6 +4758,7 @@ export class EventDetailPage {
       this.draftStartTime.set(formatTimeInput(start));
       this.draftCallToArms.set(detail.call_to_arms);
       this.draftRegear.set(detail.regear);
+      this.draftPingAlliance.set(Boolean(detail.ping_alliance));
     }
     this.showEditForm.update((v) => !v);
   }
@@ -4780,6 +4799,19 @@ export class EventDetailPage {
     this.draftRegear.set((event.target as HTMLInputElement).checked);
   }
 
+  protected onPingAllianceChange(event: Event): void {
+    this.draftPingAlliance.set((event.target as HTMLInputElement).checked);
+  }
+
+  private async loadAllianceContext(): Promise<void> {
+    try {
+      const context = await firstValueFrom(this.api.get<AllianceContext>('api/alliances/me'));
+      this.allianceId.set(context?.alliance_id ?? null);
+    } catch {
+      this.allianceId.set(null);
+    }
+  }
+
   protected async onUpdateSubmit(submit: SubmitEvent): Promise<void> {
     submit.preventDefault();
     const detail = this.event();
@@ -4807,6 +4839,9 @@ export class EventDetailPage {
     request.description = description || undefined;
     request.call_to_arms = this.draftCallToArms();
     request.regear = this.draftRegear();
+    if (this.canPingAlliance()) {
+      request.ping_alliance = this.draftPingAlliance();
+    }
     const compId = Number(this.draftCompId());
     if (compId > 0) {
       request.comp_id = compId;

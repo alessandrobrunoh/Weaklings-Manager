@@ -1,4 +1,4 @@
-import { provideZonelessChangeDetection } from '@angular/core';
+import { provideZonelessChangeDetection, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
@@ -135,13 +135,15 @@ describe('Splits Component', () => {
     delete: vi.fn().mockReturnValue(of({})),
   };
 
+  const profile = signal({
+    id: '123',
+    user_id: 123,
+    username: 'Galvdon',
+    tenant_kind: 'guild' as string,
+    permissions: ['splits.create', 'splits.edit', 'splits.delete', 'splits.islands.manage'],
+  });
   const mockAuthService = {
-    profile: vi.fn().mockReturnValue({
-      id: '123',
-      user_id: 123,
-      username: 'Galvdon',
-      permissions: ['splits.create', 'splits.edit', 'splits.delete', 'splits.islands.manage'],
-    }),
+    profile,
     hasPermission: vi.fn().mockReturnValue(true),
   };
 
@@ -172,6 +174,13 @@ describe('Splits Component', () => {
   });
 
   afterEach(() => {
+    profile.set({
+      id: '123',
+      user_id: 123,
+      username: 'Galvdon',
+      tenant_kind: 'guild',
+      permissions: ['splits.create', 'splits.edit', 'splits.delete', 'splits.islands.manage'],
+    });
     fixture.destroy();
   });
 
@@ -199,6 +208,21 @@ describe('Splits Component', () => {
     const text = fixture.nativeElement.textContent;
     expect(text).toContain('Select all pending');
     expect(text).toContain('Complete selected');
+  });
+
+  it('hides create and batch actions on an alliance tenant', () => {
+    profile.set({
+      id: '123',
+      user_id: 123,
+      username: 'Galvdon',
+      tenant_kind: 'alliance',
+      permissions: ['splits.create', 'splits.edit', 'splits.delete', 'splits.islands.manage'],
+    });
+    fixture.detectChanges();
+    const text = fixture.nativeElement.textContent;
+    expect(text).not.toContain('New split');
+    expect(text).not.toContain('Select all pending');
+    expect(text).not.toContain('Complete selected');
   });
 
   it('requests pending splits when the Pending tab is clicked', async () => {

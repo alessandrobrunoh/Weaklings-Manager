@@ -2090,6 +2090,8 @@ mod tests {
             link_last_error: None,
             link_battles_completed_at: None,
             archived_at: None,
+            ping_alliance: false,
+            alliance_discord_message_id: None,
         });
         raw.participations.push(event_participation::Model {
             id: 1,
@@ -2134,6 +2136,7 @@ mod tests {
             updated_at: ts("2026-08-01T00:00:00Z"),
             finalized_at: Some(ts("2026-08-19T00:00:00Z")),
             archived_at: None,
+            origin_read_only: false,
         });
         // Pending split: ignored regardless of date.
         raw.splits.push(split::Model {
@@ -2152,6 +2155,7 @@ mod tests {
             updated_at: ts("2026-08-19T00:00:00Z"),
             finalized_at: None,
             archived_at: None,
+            origin_read_only: false,
         });
         // Withdrawn transaction: counted.
         raw.transactions.push(transaction::Model {

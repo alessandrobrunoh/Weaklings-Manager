@@ -3,12 +3,16 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-/// Artifact kinds this endpoint accepts. Only `build` is implemented in this slice.
+/// Artifact kinds this endpoint accepts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ArtifactType {
     /// A guild build snapshot.
     Build,
+    /// A guild composition snapshot, including auto-published referenced builds.
+    Comp,
+    /// A guild loot-split snapshot (read-only in the alliance tenant).
+    Split,
 }
 
 impl ArtifactType {
@@ -17,6 +21,8 @@ impl ArtifactType {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Build => "build",
+            Self::Comp => "comp",
+            Self::Split => "split",
         }
     }
 }
@@ -24,7 +30,7 @@ impl ArtifactType {
 /// `POST /api/alliance/shares` body.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateAllianceShareRequest {
-    /// Artifact kind. Only `build` is accepted in this slice.
+    /// Artifact kind (`build`, `comp`, or `split`).
     #[serde(rename = "type")]
     pub artifact_type: ArtifactType,
     /// Source id in the caller's guild tenant schema.
@@ -40,7 +46,7 @@ pub struct AllianceShareView {
     pub alliance_tenant_id: String,
     /// Guild tenant the artifact was published from.
     pub source_tenant_id: String,
-    /// Artifact kind (`build`).
+    /// Artifact kind (`build`, `comp`, or `split`).
     #[serde(rename = "type")]
     pub artifact_type: String,
     /// Id in the source (guild) schema.

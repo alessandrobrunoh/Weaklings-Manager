@@ -279,3 +279,100 @@ describe('CompDetailPage readiness tab', () => {
     expect(text).toContain('1500');
   });
 });
+
+describe('CompDetailPage alliance share', () => {
+  const apiGet = vi.fn();
+  const apiPost = vi.fn();
+  const apiDelete = vi.fn();
+  const toasts = { error: vi.fn(), success: vi.fn() };
+  let permissions: string[];
+  let tenantKind: string | undefined;
+
+  beforeEach(async () => {
+    permissions = ['alliance.share'];
+    tenantKind = 'guild';
+    apiGet.mockReset();
+    apiPost.mockReset();
+    apiDelete.mockReset();
+    toasts.error.mockReset();
+    toasts.success.mockReset();
+    apiPost.mockReturnValue(of({ published_id: 99, shared_at: '2026-09-01T00:00:00Z' }));
+    apiDelete.mockReturnValue(of(null));
+    apiGet.mockImplementation((path: string) => {
+      if (path === `api/comps/${comp.id}`) return of(comp);
+      if (path === `api/comps/${comp.id}/performance`) return of(null);
+      if (path === `api/alliance/shares/comp/${comp.id}`) {
+        return of({ shared: true, share: { published_id: 99, shared_at: '2026-09-01T00:00:00Z' } });
+      }
+      if (path.startsWith('api/comps/builds/')) return of({ ...tank, items: [] });
+      return of({ items: [] });
+    });
+
+    await TestBed.configureTestingModule({
+      imports: [CompDetailPage],
+      providers: [
+        provideZonelessChangeDetection(),
+        {
+          provide: ApiService,
+          useValue: { get: apiGet, post: apiPost, patch: vi.fn(), delete: apiDelete },
+        },
+        {
+          provide: AuthService,
+          useValue: {
+            hasPermission: (perm: string) => permissions.includes(perm),
+            profile: () => ({ user_id: 1, tenant_kind: tenantKind }),
+          },
+        },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: { paramMap: convertToParamMap({ compId: '1' }) },
+            paramMap: of(convertToParamMap({ compId: '1' })),
+          },
+        },
+        { provide: Router, useValue: { navigate: () => Promise.resolve(true) } },
+        { provide: ToastService, useValue: toasts },
+        TranslateService,
+        { provide: AlbionAbilitiesService, useValue: { load: () => Promise.resolve({}) } },
+      ],
+    }).compileComponents();
+  });
+
+  it('shows the shared badge and posts type=comp from a guild officer', async () => {
+    const fixture = TestBed.createComponent(CompDetailPage);
+    await settleComp(fixture);
+
+    expect(apiGet).toHaveBeenCalledWith(`api/alliance/shares/comp/${comp.id}`);
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Shared with alliance');
+    expect(text).toContain('Share with alliance');
+
+    const page = fixture.componentInstance as unknown as {
+      shareWithAlliance: () => Promise<void>;
+    };
+    await page.shareWithAlliance();
+    expect(apiPost).toHaveBeenCalledWith('api/alliance/shares', { type: 'comp', id: comp.id });
+    expect(toasts.success).toHaveBeenCalled();
+  });
+
+  it('unshares the composition without touching build endpoints', async () => {
+    const fixture = TestBed.createComponent(CompDetailPage);
+    await settleComp(fixture);
+
+    const page = fixture.componentInstance as unknown as {
+      unshareWithAlliance: () => Promise<void>;
+    };
+    await page.unshareWithAlliance();
+    expect(apiDelete).toHaveBeenCalledWith(`api/alliance/shares/comp/${comp.id}`);
+    expect(apiDelete).not.toHaveBeenCalledWith(expect.stringContaining('/shares/build/'));
+  });
+
+  it('hides share actions on an alliance tenant', async () => {
+    tenantKind = 'alliance';
+    const fixture = TestBed.createComponent(CompDetailPage);
+    await settleComp(fixture);
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).not.toContain('Share with alliance');
+    expect(apiGet).not.toHaveBeenCalledWith(`api/alliance/shares/comp/${comp.id}`);
+  });
+});
