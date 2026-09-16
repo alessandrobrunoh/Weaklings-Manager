@@ -253,6 +253,15 @@ export interface AllianceMember {
   accepted_at?: string | null;
 }
 
+/** Alliance settings context for the current tenant. */
+export interface AllianceContext {
+  kind: 'guild' | 'alliance' | string;
+  alliance_id: string | null;
+  alliance_name: string | null;
+  membership_status: 'pending' | 'active' | string | null;
+  members: AllianceMember[];
+}
+
 export function discordGuildIconUrl(
   guildId: string,
   iconHash?: string | null,
@@ -468,6 +477,7 @@ export interface SplitSummary {
   created_at: string;
   finalized_at: string | null;
   archived_at?: string | null;
+  origin_read_only?: boolean;
 }
 
 export interface SplitDetail extends SplitSummary {
@@ -592,6 +602,11 @@ export interface EventView {
   link_last_error: string | null;
   link_battles_completed_at: string | null;
   archived_at?: string | null;
+  ping_alliance?: boolean;
+  alliance_discord_message_id?: string | null;
+  alliance_discord_channel_id?: string | null;
+  alliance_discord_role_ids?: string[];
+  origin_guild_id?: string | null;
 }
 
 export interface BattlePerformanceStats {
@@ -1008,6 +1023,7 @@ export interface CreateEventRequest {
   /** Also create an empty loot split already linked to this event. */
   create_split?: boolean;
   island_tab_id?: number;
+  ping_alliance?: boolean;
 }
 
 export interface UpdateEventRequest {
@@ -1019,6 +1035,8 @@ export interface UpdateEventRequest {
   mass_time_utc?: string;
   start_time_utc?: string;
   comp_id?: number;
+  ping_alliance?: boolean;
+  alliance_discord_message_id?: string | null;
 }
 
 export interface UpdateEventBattlesRequest {

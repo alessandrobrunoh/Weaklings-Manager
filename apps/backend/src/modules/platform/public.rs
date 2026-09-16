@@ -22,7 +22,8 @@ use crate::responses::ApiResponse;
 use crate::tenant::{ControlDb, TenantRegistry};
 
 use super::models::{
-    AllianceMemberView, AttachableGuildView, RegisterTenantRequest, TenantStatusView,
+    AllianceContextView, AllianceMemberView, AttachableGuildView, RegisterTenantRequest,
+    TenantStatusView,
 };
 use super::service::PlatformService;
 
@@ -38,6 +39,7 @@ pub fn router() -> Router {
 /// Alliance membership routes (control-plane, no tenant `search_path`).
 pub fn alliance_router() -> Router {
     Router::new()
+        .route("/me", get(my_alliance_context))
         .route("/{id}/members", get(list_alliance_members))
         .route(
             "/{alliance_id}/members/{guild_id}/accept",
@@ -108,6 +110,32 @@ pub async fn attachable_guilds(
     let managed = managed_guild_ids_from_cookie(&headers, key);
     Ok(Json(ApiResponse::new(
         PlatformService::list_attachable_guilds(&control.0, &session.profile.id, &managed).await?,
+    )))
+}
+
+/// Alliance membership and names for the session's current tenant.
+#[utoipa::path(
+    get,
+    path = "/api/alliances/me",
+    tag = "platform",
+    responses(
+        (status = 200, description = "Alliance context"),
+        (status = 401, description = "No session", body = ProblemDetails),
+        (status = 404, description = "No tenant on the session", body = ProblemDetails)
+    )
+)]
+pub async fn my_alliance_context(
+    session: SessionUser,
+    Extension(control): Extension<ControlDb>,
+) -> Result<Json<ApiResponse<AllianceContextView>>, AppError> {
+    let tenant_id = session
+        .profile
+        .tenant_id
+        .as_deref()
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| AppError::NotFound("no tenant on this session".to_owned()))?;
+    Ok(Json(ApiResponse::new(
+        PlatformService::alliance_context_for_tenant(&control.0, tenant_id).await?,
     )))
 }
 

@@ -331,6 +331,7 @@ fn assemble_summary(
         participant_count,
         updated_at: split.updated_at.to_rfc3339(),
         archived_at: split.archived_at.map(|dt| dt.to_rfc3339()),
+        origin_read_only: split.origin_read_only,
     })
 }
 
@@ -434,13 +435,50 @@ async fn load_island_view(
 }
 
 /// Service for executing business logic operations related to loot splits.
-pub struct SplitService;
+pub struct SplitService {
+    tenant_kind: String,
+}
+
+const SHARED_SPLIT_READ_ONLY: &str = "shared alliance splits are read-only";
 
 impl SplitService {
-    /// Creates a new instance of the `SplitService`.
+    /// Creates a guild-tenant service (mutations allowed on owned splits).
     #[must_use]
     pub fn new() -> Self {
-        Self
+        Self::for_tenant("guild")
+    }
+
+    /// Bind the service to a tenant kind (`guild` or `alliance`).
+    #[must_use]
+    pub fn for_tenant(kind: impl Into<String>) -> Self {
+        Self {
+            tenant_kind: kind.into(),
+        }
+    }
+
+    fn deny_mutation(&self, split: &SplitModel) -> Result<(), AppError> {
+        if split.origin_read_only || self.tenant_kind == "alliance" {
+            return Err(AppError::Forbidden(SHARED_SPLIT_READ_ONLY.to_owned()));
+        }
+        Ok(())
+    }
+
+    /// Reject complete/withdraw-style mutations on a published copy or alliance tenant.
+    ///
+    /// # Errors
+    ///
+    /// * [`AppError::NotFound`] if the split does not exist.
+    /// * [`AppError::Forbidden`] when `origin_read_only` is set or the tenant is an alliance.
+    pub async fn assert_mutable(
+        &self,
+        db: &DatabaseConnection,
+        split_id: i64,
+    ) -> Result<(), AppError> {
+        let split = SplitEntity::find_by_id(split_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
+        self.deny_mutation(&split)
     }
 
     pub(crate) async fn to_summary(
@@ -627,6 +665,9 @@ impl SplitService {
         creator_id: i64,
         req: CreateSplitRequest,
     ) -> Result<SplitDetail, AppError> {
+        if self.tenant_kind == "alliance" {
+            return Err(AppError::Forbidden(SHARED_SPLIT_READ_ONLY.to_owned()));
+        }
         validate_event_link(db, req.event_id).await?;
 
         // When no participants are provided but an event is linked, the split's roster is
@@ -747,6 +788,7 @@ impl SplitService {
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
+        self.deny_mutation(&split)?;
         if split.archived_at.is_some() {
             return Err(AppError::Conflict(format!("split {split_id} is archived")));
         }
@@ -841,6 +883,7 @@ impl SplitService {
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
+        self.deny_mutation(&split)?;
         let status = parse_status(&split)?;
         if split.archived_at.is_some() {
             return Err(AppError::Conflict(format!("split {split_id} is archived")));
@@ -1087,6 +1130,7 @@ impl SplitService {
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
+        self.deny_mutation(&split)?;
         let mut active: SplitActiveModel = split.into();
         active.archived_at = Set(Some(chrono::Utc::now().into()));
         active.updated_at = Set(chrono::Utc::now().into());
@@ -1108,6 +1152,7 @@ impl SplitService {
             .one(db)
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Split {split_id} not found")))?;
+        self.deny_mutation(&split)?;
         let mut active: SplitActiveModel = split.into();
         active.archived_at = Set(None);
         active.updated_at = Set(chrono::Utc::now().into());
@@ -3448,5 +3493,146 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(completed.summary.status, SplitStatus::Completed);
+    }
+
+    async fn mark_origin_read_only(db: &DatabaseConnection, split_id: i64) {
+        let split = SplitEntity::find_by_id(split_id)
+            .one(db)
+            .await
+            .unwrap()
+            .expect("split");
+        let mut active: SplitActiveModel = split.into();
+        active.origin_read_only = Set(true);
+        active.update(db).await.expect("mark read-only");
+    }
+
+    fn bags_update(amounts: Vec<&str>) -> UpdateSplitRequest {
+        UpdateSplitRequest {
+            estimated_market_value: None,
+            fee: None,
+            repair_value: None,
+            bags_value: None,
+            bags: Some(
+                amounts
+                    .into_iter()
+                    .map(|amount| amount.parse().unwrap())
+                    .collect(),
+            ),
+            note: None,
+            event_id: None,
+            island_tab_id: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn origin_read_only_split_cannot_be_completed_or_have_bags_edited() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let tab_id = seed_tab(&db).await;
+        let service = SplitService::new();
+        let created = service
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request(
+                        "100.00",
+                        "0.00",
+                        "10.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: Decimal::ONE,
+                        }],
+                    ),
+                    tab_id,
+                ),
+            )
+            .await
+            .unwrap();
+        mark_origin_read_only(&db, created.summary.id).await;
+
+        let complete_err = service
+            .complete_split(&db, created.summary.id, admin)
+            .await
+            .expect_err("complete forbidden");
+        match complete_err {
+            AppError::Forbidden(msg) => assert!(msg.contains("read-only")),
+            other => panic!("expected forbidden, got {other:?}"),
+        }
+
+        let bags_err = service
+            .update_split(&db, created.summary.id, bags_update(vec!["50.00"]))
+            .await
+            .expect_err("bags forbidden");
+        match bags_err {
+            AppError::Forbidden(msg) => assert!(msg.contains("read-only")),
+            other => panic!("expected forbidden, got {other:?}"),
+        }
+
+        let detail = service.get_split(&db, created.summary.id).await.unwrap();
+        assert!(detail.summary.origin_read_only);
+        assert_eq!(detail.summary.status, SplitStatus::Pending);
+    }
+
+    #[tokio::test]
+    async fn alliance_tenant_cannot_mutate_a_split_even_without_the_flag() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let tab_id = seed_tab(&db).await;
+        let created = SplitService::new()
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request(
+                        "100.00",
+                        "0.00",
+                        "0.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: Decimal::ONE,
+                        }],
+                    ),
+                    tab_id,
+                ),
+            )
+            .await
+            .unwrap();
+        let alliance = SplitService::for_tenant("alliance");
+        let err = alliance
+            .complete_split(&db, created.summary.id, admin)
+            .await
+            .expect_err("alliance complete");
+        match err {
+            AppError::Forbidden(msg) => assert!(msg.contains("read-only")),
+            other => panic!("expected forbidden, got {other:?}"),
+        }
+        let create_err = alliance
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request(
+                        "10.00",
+                        "0.00",
+                        "0.00",
+                        vec![UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: Decimal::ONE,
+                        }],
+                    ),
+                    tab_id,
+                ),
+            )
+            .await
+            .expect_err("alliance create");
+        match create_err {
+            AppError::Forbidden(_) => {}
+            other => panic!("expected forbidden, got {other:?}"),
+        }
+        let readable = alliance.get_split(&db, created.summary.id).await.unwrap();
+        assert_eq!(readable.summary.status, SplitStatus::Pending);
     }
 }

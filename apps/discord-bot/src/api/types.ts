@@ -263,6 +263,11 @@ export interface EventView {
   auto_stop_deadline: string | null;
   discord_voice_channel_id: string | null;
   link_status: string;
+  ping_alliance?: boolean;
+  alliance_discord_message_id?: string | null;
+  alliance_discord_channel_id?: string | null;
+  alliance_discord_role_ids?: string[];
+  origin_guild_id?: string | null;
 }
 
 export interface EventParticipant {

@@ -11,7 +11,8 @@ import { assignJoinRole } from "./services/join-role.js";
 import { initSettingsService, getSettingsService } from "./services/settings.js";
 import { initMessageXpGate, getMessageXpGate } from "./services/message-xp-gate.js";
 import { registerCommands } from "./services/registry.js";
-import { isRegisteredTenant, requireRegisteredTenant } from "./services/tenant-gate.js";
+import { executeSlashCommand } from "./services/command-gate.js";
+import { isRegisteredTenant } from "./services/tenant-gate.js";
 import { createResponseEmbed } from "./embeds/theme.js";
 
 const THREAD_AUTOCREATE_BUILD_MARKER = "event-thread-signup-message-2026-08-16";
@@ -69,11 +70,7 @@ async function main(): Promise<void> {
       }
 
       try {
-        const guildApi = await requireRegisteredTenant(interaction, api);
-        if (!guildApi) {
-          return;
-        }
-        await command.execute(interaction, guildApi);
+        await executeSlashCommand(interaction, api, command);
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "An unexpected error occurred.";

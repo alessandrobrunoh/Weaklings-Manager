@@ -1210,11 +1210,20 @@ export class Splits {
     const id = Number(this.draftIslandId());
     return this.islands().find((island) => island.id === id)?.tabs ?? [];
   });
-  protected readonly canAct = computed(() => this.auth.hasPermission('splits.edit'));
-  protected readonly canDelete = computed(() => this.auth.hasPermission('splits.delete'));
-  protected readonly canCreate = computed(() => this.auth.hasPermission('splits.create'));
-  protected readonly canManageIslands = computed(() =>
-    this.auth.hasPermission('splits.islands.manage'),
+  protected readonly isAllianceTenant = computed(
+    () => this.auth.profile()?.tenant_kind === 'alliance',
+  );
+  protected readonly canAct = computed(
+    () => this.auth.hasPermission('splits.edit') && !this.isAllianceTenant(),
+  );
+  protected readonly canDelete = computed(
+    () => this.auth.hasPermission('splits.delete') && !this.isAllianceTenant(),
+  );
+  protected readonly canCreate = computed(
+    () => this.auth.hasPermission('splits.create') && !this.isAllianceTenant(),
+  );
+  protected readonly canManageIslands = computed(
+    () => this.auth.hasPermission('splits.islands.manage') && !this.isAllianceTenant(),
   );
 
   protected readonly hasActiveFilters = computed(

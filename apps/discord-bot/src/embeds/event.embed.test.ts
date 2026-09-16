@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { EventDetailView, EventView } from "../api/types.js";
 import {
+  buildAllianceLifecycleMessage,
   buildEventAnnouncementMessage,
   buildEventEmbed,
   buildEventMassMessage,
   buildEventReminderMessage,
   buildEventStartMessage,
   buildEventThreadActionRows,
+  shouldPingAllianceDiscord,
+  withAlliancePingRoles,
 } from "./event.embed.js";
 
 function event(overrides: Partial<EventView> = {}): EventView {
@@ -245,4 +248,42 @@ test("parent announcement without roles disables generic mentions", () => {
   assert.deepEqual(message.allowedMentions, { parse: [] });
   assert.equal("embeds" in message, false);
   assert.equal("components" in message, false);
+});
+
+test("alliance ping is off unless the flag and channel are both set", () => {
+  assert.equal(shouldPingAllianceDiscord(event()), false);
+  assert.equal(
+    shouldPingAllianceDiscord(event({ ping_alliance: true, alliance_discord_channel_id: null })),
+    false,
+  );
+  assert.equal(
+    shouldPingAllianceDiscord(
+      event({ ping_alliance: true, alliance_discord_channel_id: "ally-events" }),
+    ),
+    true,
+  );
+});
+
+test("alliance announcement pings alliance roles instead of guild roles", () => {
+  const message = buildEventAnnouncementMessage(
+    withAlliancePingRoles(
+      event({
+        discord_role_ids: ["111111111111111111"],
+        alliance_discord_role_ids: ["999999999999999999"],
+      }),
+    ),
+  );
+  assert.match(message.content, /<@&999999999999999999>/);
+  assert.doesNotMatch(message.content, /<@&111111111111111111>/);
+  assert.deepEqual(message.allowedMentions, { parse: [], roles: ["999999999999999999"] });
+});
+
+test("alliance lifecycle notices ping alliance roles and stay text-only", () => {
+  const message = buildAllianceLifecycleMessage(
+    event({ alliance_discord_role_ids: ["999999999999999999"] }),
+    "cancel",
+  );
+  assert.match(message.content, /cancelled/);
+  assert.match(message.content, /<@&999999999999999999>/);
+  assert.deepEqual(message.allowedMentions, { parse: [], roles: ["999999999999999999"] });
 });

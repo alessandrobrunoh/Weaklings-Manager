@@ -38,6 +38,8 @@ pub mod split {
         pub updated_at: DateTimeWithTimeZone,
         /// When this split was archived. `None` means it is listed as active.
         pub archived_at: Option<DateTimeWithTimeZone>,
+        /// True when this row is a published alliance snapshot and must not be mutated.
+        pub origin_read_only: bool,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter)]

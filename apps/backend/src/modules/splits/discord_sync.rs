@@ -124,8 +124,11 @@ async fn discover(
     Query(q): Query<DiscoveryQuery>,
 ) -> Result<Json<ApiResponse<SplitDiscovery>>, AppError> {
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
-    let query =
-        apply_discovery_cursor(SplitEntity::find(), q.updated_after.as_deref(), q.after_id)?;
+    let query = apply_discovery_cursor(
+        SplitEntity::find().filter(SplitColumn::OriginReadOnly.eq(false)),
+        q.updated_after.as_deref(),
+        q.after_id,
+    )?;
     let mut rows = query
         .order_by_asc(SplitColumn::UpdatedAt)
         .order_by_asc(SplitColumn::Id)

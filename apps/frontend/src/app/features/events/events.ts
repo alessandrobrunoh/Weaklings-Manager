@@ -3,6 +3,7 @@ import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type {
+  AllianceContext,
   CompSummary,
   CreateEventRequest,
   DiscordRoleView,
@@ -647,6 +648,22 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
               />
               <span>{{ t('events.regear') }}</span>
             </label>
+            @if (canPingAlliance()) {
+              <label class="flex items-start gap-2 sm:col-span-2">
+                <input
+                  class="checkbox mt-0.5"
+                  type="checkbox"
+                  [checked]="draftPingAlliance()"
+                  (change)="onPingAllianceChange($event)"
+                />
+                <span>
+                  {{ t('events.pingAlliance') }}
+                  <span class="mt-0.5 block text-xs" style="color: var(--color-text-secondary)">
+                    {{ t('events.pingAllianceHint') }}
+                  </span>
+                </span>
+              </label>
+            }
           </div>
 
           <label class="flex items-start gap-2">
@@ -795,6 +812,11 @@ export class Events {
   protected readonly minEventDate = defaultEventDate();
   protected readonly draftCallToArms = signal(false);
   protected readonly draftRegear = signal(false);
+  protected readonly draftPingAlliance = signal(false);
+  protected readonly allianceId = signal<string | null>(null);
+  protected readonly canPingAlliance = computed(
+    () => this.auth.profile()?.tenant_kind === 'guild' && Boolean(this.allianceId()),
+  );
   protected readonly discordRoles = signal<DiscordRoleView[]>([]);
   protected readonly draftDiscordRoleIds = signal<string[]>([]);
   protected readonly roleError = signal<string | null>(null);
@@ -1040,6 +1062,10 @@ export class Events {
     this.draftRegear.set((event.target as HTMLInputElement).checked);
   }
 
+  protected onPingAllianceChange(event: Event): void {
+    this.draftPingAlliance.set((event.target as HTMLInputElement).checked);
+  }
+
   protected eventRoleOptions() {
     return roleSelectOptionsMany(this.discordRoles(), this.draftDiscordRoleIds());
   }
@@ -1101,6 +1127,7 @@ export class Events {
       start_time_utc: startAt.toISOString(),
       call_to_arms: this.draftCallToArms(),
       regear: this.draftRegear(),
+      ping_alliance: this.canPingAlliance() && this.draftPingAlliance(),
       discord_role_ids: this.draftDiscordRoleIds(),
       create_split: this.draftCreateSplit(),
       island_tab_id: this.draftCreateSplit() ? Number(this.draftTabId()) : undefined,
@@ -1161,6 +1188,7 @@ export class Events {
     this.draftStartTime.set(defaultStartTime());
     this.draftCallToArms.set(false);
     this.draftRegear.set(false);
+    this.draftPingAlliance.set(false);
     this.draftDiscordRoleIds.set([]);
     this.roleError.set(null);
     this.draftCreateSplit.set(false);
@@ -1172,12 +1200,14 @@ export class Events {
   private async loadCreateOptions(): Promise<void> {
     this.compsLoading.set(true);
     try {
-      const [comps, islands] = await Promise.all([
+      const [comps, islands, alliance] = await Promise.all([
         firstValueFrom(this.api.get<PaginatedData<CompSummary>>('api/comps', { page: 1, limit: 100 })),
         firstValueFrom(this.api.get<SplitIsland[]>('api/splits/islands')),
+        firstValueFrom(this.api.get<AllianceContext>('api/alliances/me')).catch(() => null),
       ]);
       this.comps.set(comps.items);
       this.islands.set(islands);
+      this.allianceId.set(alliance?.alliance_id ?? null);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     }

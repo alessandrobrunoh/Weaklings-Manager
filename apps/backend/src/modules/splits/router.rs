@@ -13,6 +13,7 @@ use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::modules::bank::service::BankService;
 use crate::pagination::{PaginatedSplitSummary, PaginationParams};
 use crate::responses::{ApiResponse, ApiResponseMatchedParticipantList, ApiResponseSplitDetail};
+use crate::tenant::CurrentTenantKind;
 
 use super::models::{
     CompleteSplitsBatchRequest, CompleteSplitsBatchResult, CreateIslandRequest,
@@ -21,6 +22,10 @@ use super::models::{
     UpdateIslandTabRequest, UpdateSplitRequest, UpsertParticipantRequest,
 };
 use super::service::SplitService;
+
+fn split_service(kind: &CurrentTenantKind) -> SplitService {
+    SplitService::for_tenant(&kind.0)
+}
 
 /// Router query parameters for listing splits, combining pagination and filtering.
 ///
@@ -141,11 +146,13 @@ async fn create_split(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(kind): Extension<CurrentTenantKind>,
     Json(req): Json<CreateSplitRequest>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     user.require(&perms, Permission::SplitsCreate).await?;
-    let service = SplitService::new();
-    let split = service.create_split(&db, user.user_id, req).await?;
+    let split = split_service(&kind)
+        .create_split(&db, user.user_id, req)
+        .await?;
     Ok(Json(ApiResponse::new(split)))
 }
 
@@ -253,12 +260,12 @@ async fn update_split(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(kind): Extension<CurrentTenantKind>,
     Path(id): Path<i64>,
     Json(req): Json<UpdateSplitRequest>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     user.require(&perms, Permission::SplitsEdit).await?;
-    let service = SplitService::new();
-    let split = service.update_split(&db, id, req).await?;
+    let split = split_service(&kind).update_split(&db, id, req).await?;
     Ok(Json(ApiResponse::new(split)))
 }
 
@@ -283,11 +290,11 @@ async fn delete_split(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(kind): Extension<CurrentTenantKind>,
     Path(id): Path<i64>,
 ) -> Result<axum::response::Response, AppError> {
     user.require(&perms, Permission::SplitsDelete).await?;
-    let service = SplitService::new();
-    service.delete_split(&db, id).await?;
+    split_service(&kind).delete_split(&db, id).await?;
     Ok(axum::response::Response::builder()
         .status(axum::http::StatusCode::NO_CONTENT)
         .body(axum::body::Body::empty())
@@ -312,10 +319,11 @@ async fn archive_split(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(kind): Extension<CurrentTenantKind>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     user.require(&perms, Permission::SplitsDelete).await?;
-    let split = SplitService::new().archive_split(&db, id).await?;
+    let split = split_service(&kind).archive_split(&db, id).await?;
     Ok(Json(ApiResponse::new(split)))
 }
 
@@ -337,10 +345,11 @@ async fn unarchive_split(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(kind): Extension<CurrentTenantKind>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     user.require(&perms, Permission::SplitsDelete).await?;
-    let split = SplitService::new().unarchive_split(&db, id).await?;
+    let split = split_service(&kind).unarchive_split(&db, id).await?;
     Ok(Json(ApiResponse::new(split)))
 }
 
@@ -377,12 +386,14 @@ async fn add_or_update_participant(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(kind): Extension<CurrentTenantKind>,
     Path(id): Path<i64>,
     Json(req): Json<UpsertParticipantRequest>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     user.require(&perms, Permission::SplitsEdit).await?;
-    let service = SplitService::new();
-    let split = service.add_or_update_participant(&db, id, req).await?;
+    let split = split_service(&kind)
+        .add_or_update_participant(&db, id, req)
+        .await?;
     Ok(Json(ApiResponse::new(split)))
 }
 
@@ -418,11 +429,13 @@ async fn remove_participant(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(kind): Extension<CurrentTenantKind>,
     Path((id, user_id)): Path<(i64, i64)>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     user.require(&perms, Permission::SplitsEdit).await?;
-    let service = SplitService::new();
-    let split = service.remove_participant(&db, id, user_id).await?;
+    let split = split_service(&kind)
+        .remove_participant(&db, id, user_id)
+        .await?;
     Ok(Json(ApiResponse::new(split)))
 }
 
@@ -462,11 +475,13 @@ async fn complete_split(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(kind): Extension<CurrentTenantKind>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     user.require(&perms, Permission::SplitsEdit).await?;
-    let service = SplitService::new();
-    let split = service.complete_split(&db, id, user.user_id).await?;
+    let split = split_service(&kind)
+        .complete_split(&db, id, user.user_id)
+        .await?;
     Ok(Json(ApiResponse::new(split)))
 }
 
@@ -489,8 +504,10 @@ async fn complete_split(
 pub async fn donate_split_share(
     user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(kind): Extension<CurrentTenantKind>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
+    split_service(&kind).assert_mutable(&db, id).await?;
     BankService::new()
         .donate_split_share(&db, id, user.user_id)
         .await?;
@@ -529,11 +546,11 @@ async fn not_completed_split(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(kind): Extension<CurrentTenantKind>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     user.require(&perms, Permission::SplitsEdit).await?;
-    let service = SplitService::new();
-    let split = service.mark_not_completed(&db, id).await?;
+    let split = split_service(&kind).mark_not_completed(&db, id).await?;
     Ok(Json(ApiResponse::new(split)))
 }
 
@@ -568,11 +585,11 @@ async fn lost_split(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(kind): Extension<CurrentTenantKind>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<SplitDetail>>, AppError> {
     user.require(&perms, Permission::SplitsEdit).await?;
-    let service = SplitService::new();
-    let split = service.mark_lost(&db, id).await?;
+    let split = split_service(&kind).mark_lost(&db, id).await?;
     Ok(Json(ApiResponse::new(split)))
 }
 
@@ -638,10 +655,11 @@ pub async fn complete_splits_batch(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(kind): Extension<CurrentTenantKind>,
     Json(body): Json<CompleteSplitsBatchRequest>,
 ) -> Result<Json<ApiResponse<CompleteSplitsBatchResult>>, AppError> {
     user.require(&perms, Permission::SplitsEdit).await?;
-    let result = SplitService::new()
+    let result = split_service(&kind)
         .complete_splits_batch(&db, &body.split_ids, user.user_id)
         .await?;
     Ok(Json(ApiResponse::new(result)))

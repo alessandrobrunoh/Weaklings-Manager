@@ -39,6 +39,7 @@ import type {
   ParticipateEventRequest,
   RosterSuggestions,
   SplitSummary,
+  AllianceContext,
   UpdateEventBattlesRequest,
   UpdateEventRequest,
   UserProfile,
@@ -98,6 +99,7 @@ type PendingConfirm =
   | { kind: 'archive' }
   | { kind: 'stop'; eventId: number }
   | { kind: 'cancel'; eventId: number }
+  | { kind: 'uncancel'; eventId: number }
   | { kind: 'unlink-split'; splitId: number }
   | { kind: 'clear-all' }
   | { kind: 'remove-participant'; userId: number; username: string; slotKey?: string };
@@ -232,6 +234,18 @@ interface AddEventMemberRequest {
           >
             <app-icon name="close" size="0.875rem" />
             {{ t('events.cancel') }}
+          </button>
+        }
+        @if (canEdit() && detail.status === 'cancelled' && !detail.archived_at) {
+          <button
+            type="button"
+            class="btn btn--primary btn--sm"
+            (click)="requestUncancel(detail.id)"
+            [appTooltip]="t('events.uncancel')"
+            tooltipPosition="bottom"
+          >
+            <app-icon name="refresh" size="0.875rem" />
+            {{ t('events.uncancel') }}
           </button>
         }
         @if (canEdit() && detail.status === 'live' && !detail.archived_at) {
@@ -1931,6 +1945,17 @@ interface AddEventMemberRequest {
               />
               <span class="text-xs font-semibold">{{ t('events.regear') }}</span>
             </label>
+            @if (canPingAlliance()) {
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  class="checkbox"
+                  type="checkbox"
+                  [checked]="draftPingAlliance()"
+                  (change)="onPingAllianceChange($event)"
+                />
+                <span class="text-xs font-semibold">{{ t('events.pingAlliance') }}</span>
+              </label>
+            }
           </div>
 
           <div class="flex justify-end gap-2 pt-3 border-t border-[var(--color-border)]">
@@ -2447,8 +2472,8 @@ interface AddEventMemberRequest {
           <button
             type="button"
             class="btn btn--sm"
-            [class.btn--danger]="confirm.kind !== 'archive'"
-            [class.btn--tonal]="confirm.kind === 'archive'"
+            [class.btn--danger]="confirm.kind !== 'archive' && confirm.kind !== 'uncancel'"
+            [class.btn--tonal]="confirm.kind === 'archive' || confirm.kind === 'uncancel'"
             (click)="runConfirm()"
           >
             {{ confirmActionLabel(confirm) }}
@@ -2910,6 +2935,11 @@ export class EventDetailPage {
   protected readonly draftCompId = signal('');
   protected readonly draftCallToArms = signal(false);
   protected readonly draftRegear = signal(false);
+  protected readonly draftPingAlliance = signal(false);
+  protected readonly allianceId = signal<string | null>(null);
+  protected readonly canPingAlliance = computed(
+    () => this.auth.profile()?.tenant_kind === 'guild' && Boolean(this.allianceId()),
+  );
   protected readonly draftEventDate = signal('');
   protected readonly draftMassTime = signal('19:30');
   protected readonly draftStartTime = signal('20:00');
@@ -3619,6 +3649,7 @@ export class EventDetailPage {
         this.tab.set('roster');
         this.pendingConfirm.set(null);
         void this.load();
+        void this.loadAllianceContext();
       }
     });
 
@@ -4626,6 +4657,10 @@ export class EventDetailPage {
     this.pendingConfirm.set({ kind: 'cancel', eventId });
   }
 
+  protected requestUncancel(eventId: number): void {
+    this.pendingConfirm.set({ kind: 'uncancel', eventId });
+  }
+
   protected cancelConfirm(): void {
     this.pendingConfirm.set(null);
   }
@@ -4638,6 +4673,8 @@ export class EventDetailPage {
         return this.t('events.stop');
       case 'cancel':
         return this.t('events.cancel');
+      case 'uncancel':
+        return this.t('events.uncancel');
       case 'unlink-split':
         return this.t('events.detail.unlink_split');
       case 'clear-all':
@@ -4651,6 +4688,8 @@ export class EventDetailPage {
     switch (confirm.kind) {
       case 'archive':
         return this.t('events.detail.confirm_delete');
+      case 'uncancel':
+        return this.t('events.detail.confirm_uncancel');
       case 'clear-all':
         return this.t('events.detail.clear_all_confirm');
       case 'remove-participant':
@@ -4663,6 +4702,9 @@ export class EventDetailPage {
   protected confirmActionLabel(confirm: PendingConfirm): string {
     if (confirm.kind === 'archive') {
       return this.t('events.archive');
+    }
+    if (confirm.kind === 'uncancel') {
+      return this.t('events.uncancel');
     }
     return confirm.kind === 'remove-participant' || confirm.kind === 'clear-all'
       ? this.t('common.delete')
@@ -4683,6 +4725,13 @@ export class EventDetailPage {
       case 'cancel':
         await this.mutate(`api/events/${confirm.eventId}/cancel`, 'POST', {});
         break;
+      case 'uncancel': {
+        const restored = await this.mutate(`api/events/${confirm.eventId}/uncancel`, 'POST', {});
+        if (restored) {
+          this.toasts.success(this.t('events.uncancelSuccess'));
+        }
+        break;
+      }
       case 'unlink-split':
         await this.performUnlinkSplit(confirm.splitId);
         break;
@@ -4709,6 +4758,7 @@ export class EventDetailPage {
       this.draftStartTime.set(formatTimeInput(start));
       this.draftCallToArms.set(detail.call_to_arms);
       this.draftRegear.set(detail.regear);
+      this.draftPingAlliance.set(Boolean(detail.ping_alliance));
     }
     this.showEditForm.update((v) => !v);
   }
@@ -4749,6 +4799,19 @@ export class EventDetailPage {
     this.draftRegear.set((event.target as HTMLInputElement).checked);
   }
 
+  protected onPingAllianceChange(event: Event): void {
+    this.draftPingAlliance.set((event.target as HTMLInputElement).checked);
+  }
+
+  private async loadAllianceContext(): Promise<void> {
+    try {
+      const context = await firstValueFrom(this.api.get<AllianceContext>('api/alliances/me'));
+      this.allianceId.set(context?.alliance_id ?? null);
+    } catch {
+      this.allianceId.set(null);
+    }
+  }
+
   protected async onUpdateSubmit(submit: SubmitEvent): Promise<void> {
     submit.preventDefault();
     const detail = this.event();
@@ -4776,6 +4839,9 @@ export class EventDetailPage {
     request.description = description || undefined;
     request.call_to_arms = this.draftCallToArms();
     request.regear = this.draftRegear();
+    if (this.canPingAlliance()) {
+      request.ping_alliance = this.draftPingAlliance();
+    }
     const compId = Number(this.draftCompId());
     if (compId > 0) {
       request.comp_id = compId;
@@ -5381,7 +5447,7 @@ export class EventDetailPage {
     }
   }
 
-  private async mutate(path: string, method: 'POST' | 'DELETE', body: unknown): Promise<void> {
+  private async mutate(path: string, method: 'POST' | 'DELETE', body: unknown): Promise<boolean> {
     try {
       if (method === 'POST') {
         await firstValueFrom(this.api.post<EventDetailView>(path, body));
@@ -5389,8 +5455,10 @@ export class EventDetailPage {
         await firstValueFrom(this.api.delete<EventDetailView>(path));
       }
       await this.load();
+      return true;
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      return false;
     }
   }
 }

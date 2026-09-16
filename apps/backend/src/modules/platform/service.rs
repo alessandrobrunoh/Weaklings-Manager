@@ -8,10 +8,11 @@ use crate::postgres::{tenant_schema_name, tenant_slug};
 use crate::tenant::TenantRegistry;
 
 use super::models::{
-    AllianceMemberView, AssignAdminRequest, AttachableGuildView, CreateRankRequest,
-    CreateTenantRequest, FeatureCatalogItem, PatchRankRequest, PatchTenantRequest,
-    PlatformAdminView, PutRankFeaturesRequest, PutTenantFeaturesRequest, RegisterTenantRequest,
-    TenantFeatureFlag, TenantFeaturesView, TenantRankView, TenantStatusView, TenantView,
+    AllianceContextView, AllianceMemberView, AssignAdminRequest, AttachableGuildView,
+    CreateRankRequest, CreateTenantRequest, FeatureCatalogItem, PatchRankRequest,
+    PatchTenantRequest, PlatformAdminView, PutRankFeaturesRequest, PutTenantFeaturesRequest,
+    RegisterTenantRequest, TenantFeatureFlag, TenantFeaturesView, TenantRankView, TenantStatusView,
+    TenantView,
 };
 
 const TENANT_SELECT: &str = "SELECT t.id, t.name, t.slug, t.schema_name, t.status, t.owner_discord_id, \
@@ -418,6 +419,59 @@ impl PlatformService {
             });
         }
         Ok(out)
+    }
+
+    /// Alliance settings context for the session's current tenant.
+    ///
+    /// # Errors
+    ///
+    /// Returns not-found when `tenant_id` is unknown.
+    pub async fn alliance_context_for_tenant(
+        control: &DatabaseConnection,
+        tenant_id: &str,
+    ) -> Result<AllianceContextView, AppError> {
+        let Some(tenant) = Self::get_tenant(control, tenant_id).await? else {
+            return Err(AppError::NotFound(format!("tenant {tenant_id} not found")));
+        };
+        if tenant.kind == "alliance" {
+            return Ok(AllianceContextView {
+                kind: tenant.kind,
+                alliance_id: Some(tenant.id.clone()),
+                alliance_name: Some(tenant.name),
+                membership_status: None,
+                members: Self::list_alliance_members(control, &tenant.id).await?,
+            });
+        }
+        let row = control
+            .query_one(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "SELECT m.alliance_tenant_id, a.name, m.status \
+                 FROM alliance_memberships m \
+                 JOIN tenants a ON a.id = m.alliance_tenant_id \
+                 WHERE m.guild_tenant_id = $1",
+                [tenant_id.into()],
+            ))
+            .await?;
+        let Some(row) = row else {
+            return Ok(AllianceContextView {
+                kind: tenant.kind,
+                alliance_id: None,
+                alliance_name: None,
+                membership_status: None,
+                members: Vec::new(),
+            });
+        };
+        let alliance_id: String = row.try_get_by_index(0)?;
+        let alliance_name: String = row.try_get_by_index(1)?;
+        let membership_status: String = row.try_get_by_index(2)?;
+        let members = Self::list_alliance_members(control, &alliance_id).await?;
+        Ok(AllianceContextView {
+            kind: tenant.kind,
+            alliance_id: Some(alliance_id),
+            alliance_name: Some(alliance_name),
+            membership_status: Some(membership_status),
+            members,
+        })
     }
 
     /// Owner of `guild_id` accepts a pending invite into `alliance_id`.

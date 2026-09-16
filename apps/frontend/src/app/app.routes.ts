@@ -249,6 +249,12 @@ export const routes: Routes = [
             loadComponent: () => import('./features/admin/admin-discord').then((m) => m.AdminDiscord),
           },
           {
+            path: 'alliance',
+            canActivate: [permissionGuardTo('/admin', 'admin.settings.manage', 'autorole.manage')],
+            loadComponent: () =>
+              import('./features/admin/admin-alliance').then((m) => m.AdminAlliance),
+          },
+          {
             path: 'applications',
             canActivate: [guildOnlyGuard, permissionGuardTo('/admin', 'admin.settings.manage')],
             loadComponent: () =>

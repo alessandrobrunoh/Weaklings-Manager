@@ -25,6 +25,8 @@ export interface TenantStatus {
   registered: boolean;
   status?: string | null;
   name?: string | null;
+  /** `guild` or `alliance` when registered (`GET /api/tenants/{id}/status`). */
+  kind?: string | null;
   register_url?: string | null;
 }
 

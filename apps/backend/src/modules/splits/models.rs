@@ -109,6 +109,8 @@ pub struct SplitSummary {
     pub updated_at: String,
     /// When this split was archived. `None` means it is listed as active.
     pub archived_at: Option<String>,
+    /// True when this split is a published alliance snapshot (view-only).
+    pub origin_read_only: bool,
 }
 
 /// A split's full detail, including participants.

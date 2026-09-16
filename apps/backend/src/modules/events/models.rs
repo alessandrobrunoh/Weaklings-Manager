@@ -248,6 +248,17 @@ pub struct EventView {
     pub link_battles_completed_at: Option<String>,
     /// When this event was archived. `None` means it is listed as active.
     pub archived_at: Option<String>,
+    /// When true, Discord announcements also post on the alliance events channel.
+    pub ping_alliance: bool,
+    /// Alliance Discord announcement message id, if posted.
+    pub alliance_discord_message_id: Option<String>,
+    /// Alliance Discord events channel, filled when `ping_alliance` is true.
+    pub alliance_discord_channel_id: Option<String>,
+    /// Alliance Discord roles to ping, filled from the alliance tenant settings.
+    #[serde(default)]
+    pub alliance_discord_role_ids: Vec<String>,
+    /// Origin guild tenant id for API calls triggered from alliance Discord.
+    pub origin_guild_id: Option<String>,
 }
 
 /// Cheap fingerprint the Discord poller uses to skip full event-detail hydration.
@@ -573,6 +584,9 @@ pub struct CreateEventRequest {
     /// Island tab for the correlated split. Required when `create_split` is true.
     #[schema(example = 10)]
     pub island_tab_id: Option<i64>,
+    /// Also ping the alliance Discord events channel (guild events only; default off).
+    #[serde(default)]
+    pub ping_alliance: bool,
 }
 
 /// Discord voice channel created by the bot for a live event.
@@ -606,6 +620,10 @@ pub struct UpdateEventRequest {
     pub mass_time_utc: Option<String>,
     /// The new automatic start date/time (UTC, RFC3339).
     pub start_time_utc: Option<String>,
+    /// Also ping the alliance Discord events channel.
+    pub ping_alliance: Option<bool>,
+    /// Alliance Discord announcement message id written by the bot after posting.
+    pub alliance_discord_message_id: Option<String>,
 }
 
 /// Request body to participate in an event or update participation builds.
