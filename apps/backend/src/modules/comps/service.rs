@@ -476,13 +476,14 @@ impl CompService {
 
         const ATTEMPTS: u8 = 5;
         for attempt in 1..=ATTEMPTS {
-            let next_version = comp_version_group(db, &source.name, source.category_id, source.created_by)
-                .await?
-                .iter()
-                .map(|sibling| sibling.version)
-                .max()
-                .unwrap_or(0)
-                + 1;
+            let next_version =
+                comp_version_group(db, &source.name, source.category_id, source.created_by)
+                    .await?
+                    .iter()
+                    .map(|sibling| sibling.version)
+                    .max()
+                    .unwrap_or(0)
+                    + 1;
 
             match self
                 .insert_comp_version(db, &source, creator_id, next_version)
@@ -1062,7 +1063,8 @@ impl CompService {
                 .await?;
         }
 
-        let group = build_version_group(db, &build.name, build.category_id, build.created_by).await?;
+        let group =
+            build_version_group(db, &build.name, build.category_id, build.created_by).await?;
         let txn = db.begin().await?;
 
         // Name and category are the group's identity, so a rename moves every version at once —
@@ -1117,13 +1119,14 @@ impl CompService {
 
         const ATTEMPTS: u8 = 5;
         for attempt in 1..=ATTEMPTS {
-            let next_version = build_version_group(db, &source.name, source.category_id, source.created_by)
-                .await?
-                .iter()
-                .map(|sibling| sibling.version)
-                .max()
-                .unwrap_or(0)
-                + 1;
+            let next_version =
+                build_version_group(db, &source.name, source.category_id, source.created_by)
+                    .await?
+                    .iter()
+                    .map(|sibling| sibling.version)
+                    .max()
+                    .unwrap_or(0)
+                    + 1;
 
             match self
                 .insert_build_version(db, &source, creator_id, next_version)
@@ -1754,7 +1757,8 @@ impl CompService {
                 .await?;
 
             // Name and category identify the group, so every version moves together.
-            let group = comp_version_group(db, &comp.name, comp.category_id, comp.created_by).await?;
+            let group =
+                comp_version_group(db, &comp.name, comp.category_id, comp.created_by).await?;
             let txn = db.begin().await?;
             for sibling in &group {
                 let mut moving: comp::ActiveModel = sibling.clone().into();

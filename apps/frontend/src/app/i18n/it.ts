@@ -771,6 +771,12 @@ export const it: TranslationDict = {
   'comps.archived': 'Archiviata',
   'comps.showArchived': 'Mostra archiviate',
   'comps.createdBy': 'Creata da',
+  'comps.shareWithAlliance': "Condividi con l'alleanza",
+  'comps.sharedWithAlliance': "Condivisa con l'alleanza",
+  'comps.shareSuccess': "Build condivisa con l'alleanza",
+  'comps.unshareWithAlliance': 'Rimuovi dalla alleanza',
+  'comps.unshareSuccess': "Build rimossa dall'alleanza",
+  'comps.shareNoAlliance': "Questa gilda non è in un'alleanza",
   'comps.archiveConfirm':
     'Verrà nascosta da ogni selezione finché non la riattivi. Tutto ciò che la usa già — un evento, una comp — continuerà a funzionare.',
   'comps.archiveSuccess': 'Archiviata',

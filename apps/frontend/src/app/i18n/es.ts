@@ -771,6 +771,12 @@ export const es: TranslationDict = {
   'comps.archived': 'Archivada',
   'comps.showArchived': 'Mostrar archivadas',
   'comps.createdBy': 'Creada por',
+  'comps.shareWithAlliance': 'Compartir con la alianza',
+  'comps.sharedWithAlliance': 'Compartida con la alianza',
+  'comps.shareSuccess': 'Build compartida con la alianza',
+  'comps.unshareWithAlliance': 'Dejar de compartir',
+  'comps.unshareSuccess': 'Build eliminada de la alianza',
+  'comps.shareNoAlliance': 'Este gremio no pertenece a una alianza',
   'comps.archiveConfirm':
     'Se ocultará de todas las selecciones hasta que la desarchives. Todo lo que ya la usa — un evento, una comp — seguirá funcionando.',
   'comps.archiveSuccess': 'Archivada',

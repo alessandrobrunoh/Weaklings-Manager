@@ -12,6 +12,19 @@ function emptyPage() {
   return { items: [], total_items: 0, total_pages: 0, current_page: 1, limit: 50 };
 }
 
+function eventRevision(
+  id: number,
+  status: string,
+  extras: { roster_version?: number; archived_at?: string | null } = {},
+) {
+  return {
+    id,
+    status,
+    roster_version: extras.roster_version ?? 0,
+    archived_at: extras.archived_at ?? null,
+  };
+}
+
 function mockThread(initial: { archived?: boolean } = {}): ThreadChannel {
   const state = {
     archived: initial.archived ?? false,
@@ -68,10 +81,7 @@ test("poller drops deleted-event thread mappings and closes auto-archived thread
       get: async (path: string) => {
         apiGets.push(path);
         if (path === "api/events" || path === "api/battles" || path === "api/giveaways") return emptyPage();
-        if (path === "api/events/32") return { id: 32, status: "stopped" };
-        if (path.startsWith("api/events/")) {
-          throw new ApiError(404, `Event ${path.split("/")[2]} not found`);
-        }
+        if (path === "api/events/revisions") return [eventRevision(32, "stopped")];
         throw new Error(`unexpected GET ${path}`);
       },
     } as unknown as ApiClient;
@@ -103,8 +113,9 @@ test("poller drops deleted-event thread mappings and closes auto-archived thread
       readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
     ) as { eventThreadIds: Record<string, string> };
     assert.deepEqual(saved.eventThreadIds, {});
-    assert.equal(apiGets.includes("api/events/28"), true);
-    assert.equal(apiGets.includes("api/events/32"), true);
+    assert.equal(apiGets.includes("api/events/revisions"), true);
+    assert.equal(apiGets.includes("api/events/28"), false);
+    assert.equal(apiGets.includes("api/events/32"), false);
 
     apiGets.length = 0;
     await poller.pollNow();
@@ -152,8 +163,8 @@ test("poller deletes the Discord announcement when an event is archived", async 
       guildId: "100000000000000001",
       get: async (path: string) => {
         if (path === "api/events" || path === "api/battles" || path === "api/giveaways") return emptyPage();
-        if (path === "api/events/28") {
-          return { id: 28, status: "scheduled", archived_at: "2026-09-05T12:00:00Z" };
+        if (path === "api/events/revisions") {
+          return [eventRevision(28, "scheduled", { archived_at: "2026-09-05T12:00:00Z" })];
         }
         throw new Error(`unexpected GET ${path}`);
       },
@@ -266,6 +277,9 @@ test("new events announce text-only in the parent channel and put signup control
       get: async (path: string) => {
         if (path === "api/events") {
           return { items: [event], total_items: 1, total_pages: 1, current_page: 1, limit: 50 };
+        }
+        if (path === "api/events/revisions") {
+          return [eventRevision(41, event.status, { roster_version: 0 })];
         }
         if (path === "api/events/41") return eventDetail;
         if (path === "api/battles" || path === "api/giveaways") return emptyPage();
@@ -406,6 +420,9 @@ test("poller rewrites the event signup card when the website roster changes", as
         if (path === "api/events" || path === "api/battles" || path === "api/giveaways") {
           return emptyPage();
         }
+        if (path === "api/events/revisions") {
+          return [eventRevision(41, "scheduled", { roster_version: 4 })];
+        }
         if (path === "api/events/41") return eventDetail;
         if (path === "api/splits/9/discord-sync") {
           splitGets.push(path);
@@ -449,6 +466,61 @@ test("poller rewrites the event signup card when the website roster changes", as
   }
 });
 
+test("poller skips full event detail when the roster fingerprint is unchanged", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeFileSync(
+      join(directory, "poller-state-100000000000000001.json"),
+      JSON.stringify({
+        lastEventId: 41,
+        lastBattleId: 0,
+        pinged1hEvents: [],
+        eventThreadIds: { "41": "thread-41" },
+        eventSignupMessageIds: { "41": "signup-41" },
+        eventSignupRevisions: { "41": "4:scheduled" },
+        splitUpdatedAt: null,
+        splitAfterId: null,
+        massedEvents: [],
+        emptyLiveChecks: {},
+      }),
+      "utf-8",
+    );
+
+    const apiGets: string[] = [];
+    const api = {
+      guildId: "100000000000000001",
+      get: async (path: string) => {
+        apiGets.push(path);
+        if (path === "api/events" || path === "api/battles" || path === "api/giveaways") {
+          return emptyPage();
+        }
+        if (path === "api/events/revisions") {
+          return [eventRevision(41, "scheduled", { roster_version: 4 })];
+        }
+        throw new Error(`unexpected GET ${path}`);
+      },
+    } as unknown as ApiClient;
+
+    const settings = {
+      applicationsSettings: async () => ({ discord_applications_open: true }),
+      splitsForumChannelId: async () => null,
+      eventsChannelId: async () => null,
+      callToArmsChannelId: async () => null,
+      battlesChannelId: async () => null,
+      giveawaysChannelId: async () => null,
+      giveawaysRoleId: async () => null,
+    } as unknown as SettingsService;
+
+    const poller = new Poller({ channels: { fetch: async () => null } } as unknown as Client, api, settings, 60_000, directory);
+    await poller.pollNow();
+
+    assert.equal(apiGets.includes("api/events/revisions"), true);
+    assert.equal(apiGets.includes("api/events/41"), false);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("each guild keeps its own checkpoint file", async () => {
   const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
   try {
@@ -464,9 +536,7 @@ test("each guild keeps its own checkpoint file", async () => {
         if (path === "api/events" || path === "api/battles" || path === "api/giveaways") {
           return emptyPage();
         }
-        if (path.startsWith("api/events/")) {
-          throw new ApiError(404, `Event ${path.split("/")[2]} not found`);
-        }
+        if (path === "api/events/revisions") return [];
         throw new Error(`unexpected GET ${path}`);
       },
     } as unknown as ApiClient;
@@ -602,6 +672,7 @@ function backlogHarness(sent: string[]) {
       if (path === "api/events") return page(events);
       if (path === "api/battles") return page(battles);
       if (path === "api/giveaways") return page(giveaways);
+      if (path === "api/events/revisions") return [];
       if (path === "api/splits/discord-sync") return { items: [], has_more: false };
       const eventMatch = /^api\/events\/(\d+)$/.exec(path);
       if (eventMatch) {

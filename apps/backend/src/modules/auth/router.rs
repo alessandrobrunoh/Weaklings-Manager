@@ -178,7 +178,9 @@ pub async fn discord_callback(
     // no cookie at all — either way `cookie_state` ends up `None` and the
     // state check below rejects the callback.
     let pending_jar = PrivateCookieJar::from_headers(&headers, key.clone());
-    let cookie_state = pending_jar.get("oauth_state").map(|c| c.value().to_string());
+    let cookie_state = pending_jar
+        .get("oauth_state")
+        .map(|c| c.value().to_string());
     let next_path = pending_jar
         .get("oauth_next")
         .map(|c| c.value().to_string())

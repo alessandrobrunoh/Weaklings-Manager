@@ -19,7 +19,7 @@ use super::models::{
     AddEventMemberRequest, AssignRosterSeatRequest, BattlePerformanceStats, BuildBattleStats,
     BuildPerformanceView, CompPerformanceView, CreateEventRequest, CreateEventRosterRoleRequest,
     EventBattleView, EventCompBuildView, EventDetailView, EventFightView, EventParticipantView,
-    EventRosterRoleView, EventRosterSeatView, EventRosterView, EventSignupBuildView,
+    EventRevision, EventRosterRoleView, EventRosterSeatView, EventRosterView, EventSignupBuildView,
     EventSignupOptionsView, EventSplitStats, EventView, OpponentPerformanceView,
     ParticipateEventRequest, RosterVersionRequest, SwapRosterSeatsRequest,
     UpdateEventBattlesRequest, UpdateEventRequest,
@@ -247,19 +247,47 @@ fn normalize_discord_role_ids(role_ids: Vec<String>) -> Result<Vec<String>, AppE
     Ok(normalized)
 }
 
-async fn load_event_discord_role_ids(
-    db: &DatabaseConnection,
-    event_id: i64,
-) -> Result<Vec<String>, AppError> {
-    Ok(event_discord_role::Entity::find()
-        .filter(event_discord_role::Column::EventId.eq(event_id))
-        .order_by_asc(event_discord_role::Column::SortOrder)
-        .all(db)
-        .await
-        .map_err(AppError::Database)?
-        .into_iter()
-        .map(|role| role.discord_role_id)
-        .collect())
+fn event_view_from_parts(
+    model: event::Model,
+    comp_name: String,
+    created_by_username: String,
+    discord_role_ids: Vec<String>,
+) -> EventView {
+    let start_time_utc = model.start_time_utc.unwrap_or(model.event_date_utc);
+    let mass_time_utc = model
+        .mass_time_utc
+        .unwrap_or(start_time_utc - ChronoDuration::minutes(30));
+    EventView {
+        id: model.id,
+        title: model.title,
+        description: model.description,
+        call_to_arms: model.call_to_arms,
+        discord_role_ids,
+        regear: model.regear,
+        discord_voice_channel_id: model.discord_voice_channel_id,
+        comp_id: model.comp_id,
+        comp_name,
+        player_cap: model.player_cap,
+        created_by: model.created_by,
+        created_by_username,
+        event_date_utc: start_time_utc.to_rfc3339(),
+        mass_time_utc: mass_time_utc.to_rfc3339(),
+        start_time_utc: start_time_utc.to_rfc3339(),
+        created_at: model.created_at.to_rfc3339(),
+        updated_at: model.updated_at.to_rfc3339(),
+        roster_version: model.roster_version,
+        status: model.status,
+        started_at: model.started_at.map(|time| time.to_rfc3339()),
+        stopped_at: model.stopped_at.map(|time| time.to_rfc3339()),
+        auto_stop_deadline: model.auto_stop_deadline.map(|time| time.to_rfc3339()),
+        link_status: model.link_status,
+        link_attempts: model.link_attempts,
+        link_last_error: model.link_last_error,
+        link_battles_completed_at: model
+            .link_battles_completed_at
+            .map(|time| time.to_rfc3339()),
+        archived_at: model.archived_at.map(|time| time.to_rfc3339()),
+    }
 }
 
 async fn load_event_roster_roles(
@@ -2178,49 +2206,101 @@ impl EventService {
         db: &DatabaseConnection,
         model: event::Model,
     ) -> Result<EventView, AppError> {
-        let comp = comp::Entity::find_by_id(model.comp_id)
-            .one(db)
+        self.to_event_views(db, vec![model])
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(|| AppError::Internal("event view vanished".into()))
+    }
+
+    /// Hydrates event list rows with a constant number of queries.
+    async fn to_event_views(
+        &self,
+        db: &DatabaseConnection,
+        models: Vec<event::Model>,
+    ) -> Result<Vec<EventView>, AppError> {
+        if models.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let comp_ids = models
+            .iter()
+            .map(|model| model.comp_id)
+            .collect::<HashSet<_>>();
+        let comps = comp::Entity::find()
+            .filter(comp::Column::Id.is_in(comp_ids.into_iter().collect::<Vec<_>>()))
+            .all(db)
             .await
             .map_err(AppError::Database)?
-            .ok_or_else(|| AppError::NotFound(format!("Comp {} not found", model.comp_id)))?;
+            .into_iter()
+            .map(|comp| (comp.id, comp.name))
+            .collect::<HashMap<_, _>>();
 
-        let created_by_username =
-            crate::modules::users::display_name::resolve_by_id(db, model.created_by).await?;
-        let discord_role_ids = load_event_discord_role_ids(db, model.id).await?;
-        let start_time_utc = model.start_time_utc.unwrap_or(model.event_date_utc);
-        let mass_time_utc = model
-            .mass_time_utc
-            .unwrap_or(start_time_utc - ChronoDuration::minutes(30));
+        let creator_ids = models
+            .iter()
+            .map(|model| model.created_by)
+            .collect::<Vec<_>>();
+        let names = crate::modules::users::display_name::resolve_by_ids(db, &creator_ids).await?;
 
-        Ok(EventView {
-            id: model.id,
-            title: model.title,
-            description: model.description,
-            call_to_arms: model.call_to_arms,
-            discord_role_ids,
-            regear: model.regear,
-            discord_voice_channel_id: model.discord_voice_channel_id,
-            comp_id: model.comp_id,
-            comp_name: comp.name,
-            player_cap: model.player_cap,
-            created_by: model.created_by,
-            created_by_username,
-            event_date_utc: start_time_utc.to_rfc3339(),
-            mass_time_utc: mass_time_utc.to_rfc3339(),
-            start_time_utc: start_time_utc.to_rfc3339(),
-            created_at: model.created_at.to_rfc3339(),
-            updated_at: model.updated_at.to_rfc3339(),
-            roster_version: model.roster_version,
-            status: model.status,
-            started_at: model.started_at.map(|t| t.to_rfc3339()),
-            stopped_at: model.stopped_at.map(|t| t.to_rfc3339()),
-            auto_stop_deadline: model.auto_stop_deadline.map(|t| t.to_rfc3339()),
-            link_status: model.link_status,
-            link_attempts: model.link_attempts,
-            link_last_error: model.link_last_error,
-            link_battles_completed_at: model.link_battles_completed_at.map(|t| t.to_rfc3339()),
-            archived_at: model.archived_at.map(|t| t.to_rfc3339()),
-        })
+        let event_ids = models.iter().map(|model| model.id).collect::<Vec<_>>();
+        let mut roles_by_event = HashMap::<i64, Vec<String>>::new();
+        for role in event_discord_role::Entity::find()
+            .filter(event_discord_role::Column::EventId.is_in(event_ids))
+            .order_by_asc(event_discord_role::Column::EventId)
+            .order_by_asc(event_discord_role::Column::SortOrder)
+            .all(db)
+            .await
+            .map_err(AppError::Database)?
+        {
+            roles_by_event
+                .entry(role.event_id)
+                .or_default()
+                .push(role.discord_role_id);
+        }
+
+        models
+            .into_iter()
+            .map(|model| {
+                let comp_name = comps.get(&model.comp_id).cloned().ok_or_else(|| {
+                    AppError::NotFound(format!("Comp {} not found", model.comp_id))
+                })?;
+                let created_by_username = names
+                    .get(&model.created_by)
+                    .cloned()
+                    .unwrap_or_else(|| "Unknown".to_string());
+                let discord_role_ids = roles_by_event.remove(&model.id).unwrap_or_default();
+                Ok(event_view_from_parts(
+                    model,
+                    comp_name,
+                    created_by_username,
+                    discord_role_ids,
+                ))
+            })
+            .collect()
+    }
+
+    /// Status/roster fingerprints for the given ids. Missing ids are omitted.
+    pub async fn list_event_revisions(
+        &self,
+        db: &DatabaseConnection,
+        ids: &[i64],
+    ) -> Result<Vec<EventRevision>, AppError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        Ok(event::Entity::find()
+            .filter(event::Column::Id.is_in(ids.to_vec()))
+            .all(db)
+            .await
+            .map_err(AppError::Database)?
+            .into_iter()
+            .map(|model| EventRevision {
+                id: model.id,
+                roster_version: model.roster_version,
+                status: model.status,
+                archived_at: model.archived_at.map(|time| time.to_rfc3339()),
+            })
+            .collect())
     }
 
     /// Lists paginated events.
@@ -2303,11 +2383,7 @@ impl EventService {
             .fetch_page(page)
             .await
             .map_err(AppError::Database)?;
-
-        let mut items = Vec::new();
-        for m in models {
-            items.push(self.to_event_view(db, m).await?);
-        }
+        let items = self.to_event_views(db, models).await?;
 
         Ok(PaginatedData::new(
             items,
@@ -2524,11 +2600,7 @@ impl EventService {
                 .map_err(AppError::Database)? as i64
         };
         let split_stats = build_split_stats(&split_rows, participant_entries);
-        let split_service = SplitService::new();
-        let mut splits = Vec::with_capacity(split_rows.len());
-        for split in split_rows {
-            splits.push(split_service.to_summary(db, split).await?);
-        }
+        let splits = SplitService::new().to_summaries(db, split_rows).await?;
 
         // `active_comp_builds` and `build_name` were already fetched above,
         // for the same comp — this used to re-run the same query and then
@@ -7299,6 +7371,46 @@ mod tests {
             AppError::Validation(message) => assert!(message.contains("fame")),
             other => panic!("expected validation, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn list_event_revisions_omits_missing_ids() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let cat = create_comp_category(&db, "ZvZ").await;
+        let comp_id = create_comp(&db, "Main Comp", cat, None, vec![]).await;
+        let service = EventService::new();
+        let created = service
+            .create_event(
+                &db,
+                admin,
+                CreateEventRequest {
+                    title: "Fingerprint".to_string(),
+                    description: None,
+                    call_to_arms: false,
+                    regear: false,
+                    comp_id,
+                    player_cap: None,
+                    event_date_utc: Some("2026-07-21T20:00:00Z".to_string()),
+                    mass_time_utc: None,
+                    start_time_utc: None,
+                    discord_role_ids: vec![],
+                    create_split: false,
+                    island_tab_id: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        let revisions = service
+            .list_event_revisions(&db, &[created.id, created.id + 999])
+            .await
+            .unwrap();
+        assert_eq!(revisions.len(), 1);
+        assert_eq!(revisions[0].id, created.id);
+        assert_eq!(revisions[0].status, created.status);
+        assert_eq!(revisions[0].roster_version, created.roster_version);
+        assert_eq!(revisions[0].archived_at, None);
     }
 
     #[test]

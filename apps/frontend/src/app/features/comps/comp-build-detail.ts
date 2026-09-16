@@ -53,7 +53,7 @@ import { VersionSwitcher } from '../../shared/components/version-switcher/versio
 import { VersionDiffList } from '../../shared/components/version-diff-list/version-diff-list';
 import { abilityNameLookup, diffBuildVersions } from './version-diff';
 import type { VersionDiffEntry } from './version-diff';
-import { ApiService } from '../../core/services/api.service';
+import { ApiError, ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
@@ -83,6 +83,14 @@ const SLOT_LABELS: Record<BuildSlot, string> = {
   food: 'Food',
   mount: 'Mount',
 };
+
+interface AllianceShareStatus {
+  shared: boolean;
+  share?: {
+    published_id: number;
+    shared_at: string;
+  };
+}
 
 const ROLE_LABELS: Record<BuildRole, string> = {
   healer: 'Healer',
@@ -188,6 +196,29 @@ const ITEM_TIERS = [
             >
               Info Build
             </button>
+          }
+          @if (isGuildTenant() && shareStatus()?.shared) {
+            <span class="chip text-xs">{{ t('comps.sharedWithAlliance') }}</span>
+          }
+          @if (canShare()) {
+            <button
+              type="button"
+              class="btn btn--outline"
+              (click)="shareWithAlliance()"
+              [disabled]="saving()"
+            >
+              {{ t('comps.shareWithAlliance') }}
+            </button>
+            @if (shareStatus()?.shared) {
+              <button
+                type="button"
+                class="btn btn--ghost"
+                (click)="unshareWithAlliance()"
+                [disabled]="saving()"
+              >
+                {{ t('comps.unshareWithAlliance') }}
+              </button>
+            }
           }
           @if (canDelete() && mode() === 'view') {
             @if (current.archived_at) {
@@ -794,6 +825,13 @@ export class CompBuildDetailPage {
 
   protected readonly canManage = computed(() => this.auth.hasPermission('comps.builds.edit'));
   protected readonly canDelete = computed(() => this.auth.hasPermission('comps.builds.delete'));
+  protected readonly isGuildTenant = computed(
+    () => this.auth.profile()?.tenant_kind !== 'alliance',
+  );
+  protected readonly canShare = computed(
+    () => this.isGuildTenant() && this.auth.hasPermission('alliance.share'),
+  );
+  protected readonly shareStatus = signal<AllianceShareStatus | null>(null);
   /** The bundled ability catalog, loaded once and keyed by tier-stripped base identifier. */
   protected readonly abilityCatalog = signal<Record<string, OpenAlbionItemAbilities>>({});
   protected readonly performance = signal<BuildPerformanceView | null>(null);
@@ -1461,6 +1499,73 @@ export class CompBuildDetailPage {
     }
   }
 
+  protected async shareWithAlliance(): Promise<void> {
+    const build = this.build();
+    if (!build) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      await firstValueFrom(
+        this.api.post<AllianceShareStatus['share']>('api/alliance/shares', {
+          type: 'build',
+          id: build.id,
+        }),
+      );
+      this.toasts.success(this.t('comps.shareSuccess'));
+      await this.loadShareStatus(build.id);
+    } catch (error) {
+      this.toasts.error(this.shareErrorMessage(error));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async unshareWithAlliance(): Promise<void> {
+    const build = this.build();
+    if (!build) {
+      return;
+    }
+    this.saving.set(true);
+    try {
+      await firstValueFrom(this.api.delete(`api/alliance/shares/build/${build.id}`));
+      this.toasts.success(this.t('comps.unshareSuccess'));
+      this.shareStatus.set({ shared: false });
+    } catch (error) {
+      this.toasts.error(this.shareErrorMessage(error));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  private shareErrorMessage(error: unknown): string {
+    if (error instanceof ApiError && error.status === 409) {
+      return this.t('comps.shareNoAlliance');
+    }
+    return error instanceof Error ? error.message : this.t('common.error');
+  }
+
+  private async loadShareStatus(buildId: number): Promise<void> {
+    if (!this.isGuildTenant()) {
+      this.shareStatus.set(null);
+      return;
+    }
+    try {
+      const status = await firstValueFrom(
+        this.api.get<AllianceShareStatus>(`api/alliance/shares/build/${buildId}`),
+      );
+      if (buildId !== this.buildId()) {
+        return;
+      }
+      this.shareStatus.set(status);
+    } catch {
+      if (buildId !== this.buildId()) {
+        return;
+      }
+      this.shareStatus.set({ shared: false });
+    }
+  }
+
   protected async load(buildId: number): Promise<void> {
     if (!Number.isFinite(buildId) || buildId <= 0) {
       this.loading.set(false);
@@ -1482,6 +1587,7 @@ export class CompBuildDetailPage {
       void this.loadPerformance(buildId);
       void this.loadItemPowerAtMax(buildId);
       void this.loadMarketPrice(buildId);
+      void this.loadShareStatus(buildId);
     } catch (error) {
       if (buildId !== this.buildId()) return;
       this.loadFailed.set(true);

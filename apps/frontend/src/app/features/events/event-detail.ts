@@ -251,7 +251,7 @@ interface AddEventMemberRequest {
             type="button"
             class="btn btn--outline btn--sm"
             (click)="toggleEditForm()"
-            [appTooltip]="'Modifica dettagli evento'"
+            [appTooltip]="t('events.editTooltip')"
             tooltipPosition="bottom"
           >
             <app-icon name="settings" size="0.875rem" />
@@ -516,7 +516,7 @@ interface AddEventMemberRequest {
                           <input
                             class="input input--sm text-xs py-1"
                             type="search"
-                            placeholder="Cerca panchina..."
+                            [placeholder]="t('events.roster.searchBench')"
                             [value]="benchSearch()"
                             (input)="onBenchSearchInput($event)"
                           />
@@ -686,7 +686,7 @@ interface AddEventMemberRequest {
                               [appTooltip]="'Calcola la migliore assegnazione per Item Power, senza applicarla'"
                             >
                               <app-icon name="zap" size="0.75rem" />
-                              {{ rosterSuggestionsLoading() ? 'Calcolo…' : 'Suggerisci assegnazione' }}
+                              {{ rosterSuggestionsLoading() ? t('events.roster.calculating') : t('events.roster.suggest') }}
                             </button>
                           }
                         }
@@ -1200,7 +1200,7 @@ interface AddEventMemberRequest {
                       </div>
                     } @else {
                       <div class="py-12 text-center text-xs text-[var(--color-text-secondary)]">
-                        Nessun ruolo selezionato.
+                        {{ t('events.roster.noRoleSelected') }}
                       </div>
                     }
                   </aside>
@@ -1208,17 +1208,17 @@ interface AddEventMemberRequest {
               </div>
             } @else if (rosterSnapshotState() === 'loading') {
               <section class="card p-6 text-center">
-                <app-loading [label]="'Caricamento del roster in corso...'" />
+                <app-loading [label]="t('events.roster.loading')" />
               </section>
             } @else if (rosterSnapshotState() === 'error') {
               <section class="card p-6 border-[var(--color-error)] text-center space-y-2">
                 <app-icon name="alert" size="2rem" color="var(--color-danger)" />
-                <h2 class="text-sm font-bold text-[var(--color-text)]">Roster non disponibile</h2>
+                <h2 class="text-sm font-bold text-[var(--color-text)]">{{ t('events.roster.unavailable') }}</h2>
                 <p class="text-xs text-[var(--color-text-secondary)]">
                   {{ rosterSnapshotError() }}
                 </p>
                 <button type="button" class="btn btn--outline btn--sm mt-2" (click)="load()">
-                  Riprova
+                  {{ t('common.retry') }}
                 </button>
               </section>
             }
@@ -4091,7 +4091,7 @@ export class EventDetailPage {
       if (error instanceof ApiError && error.status === 409) {
         this.cancelRosterCommandMode();
         await this.loadRosterSnapshot(true);
-        this.toasts.error('Il roster è stato aggiornato da un altro ufficiale. Riprova.');
+        this.toasts.error(this.t('events.roster.stale'));
         return;
       }
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
@@ -5241,7 +5241,7 @@ export class EventDetailPage {
       this.rosterSnapshot.set(null);
       this.rosterSnapshotState.set('error');
       this.rosterSnapshotError.set(
-        error instanceof Error ? error.message : 'Impossibile caricare il roster.',
+        error instanceof Error ? error.message : this.t('events.roster.loadFailed'),
       );
       this.rosterAnnouncement.set('');
     }

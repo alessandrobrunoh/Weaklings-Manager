@@ -101,7 +101,10 @@ impl std::fmt::Debug for Config {
         f.debug_struct("Config")
             .field("backend_port", &self.backend_port)
             .field("database_url", &"<redacted>")
-            .field("control_database_url", &redact_option(&self.control_database_url))
+            .field(
+                "control_database_url",
+                &redact_option(&self.control_database_url),
+            )
             .field("discord_client_id", &self.discord_client_id)
             .field("discord_client_secret", &"<redacted>")
             .field("discord_redirect_uri", &self.discord_redirect_uri)

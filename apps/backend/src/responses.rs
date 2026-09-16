@@ -430,6 +430,16 @@ pub struct ApiResponseEventList {
     pub data: crate::pagination::PaginatedEventSummary,
 }
 
+/// `OpenAPI` schema wrapper for event revision fingerprints.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ApiResponseEventRevisionList {
+    /// Indicates the outcome of the request, always "success".
+    #[schema(example = "success")]
+    pub status: String,
+    /// Status/roster fingerprints for the requested event ids.
+    pub data: Vec<crate::modules::events::models::EventRevision>,
+}
+
 /// `OpenAPI` schema wrapper for `EventView` response.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponseEventView {

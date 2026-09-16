@@ -722,8 +722,7 @@ export class AdminTransactions {
 
   protected formatAmount(value: number | string | null | undefined): string {
     const numeric = Number(value ?? 0);
-    const lang =
-      this.translate.language() === 'it' ? 'it-IT' : this.translate.language() === 'es' ? 'es-ES' : 'en-US';
+    const lang = this.translate.locale();
     return new Intl.NumberFormat(lang, { maximumFractionDigits: 0 }).format(
       Number.isFinite(numeric) ? numeric : 0,
     );

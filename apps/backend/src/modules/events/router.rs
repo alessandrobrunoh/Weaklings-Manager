@@ -17,9 +17,11 @@ use crate::errors::ProblemDetails;
 use crate::modules::audit::service::AuditService;
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedData, PaginationParams};
+use serde::Deserialize;
+
 use crate::responses::{
-    ApiResponse, ApiResponseEventDetail, ApiResponseEventList, ApiResponseEventRosterRoleList,
-    ApiResponseEventView,
+    ApiResponse, ApiResponseEventDetail, ApiResponseEventList, ApiResponseEventRevisionList,
+    ApiResponseEventRosterRoleList, ApiResponseEventView,
 };
 use crate::tenant::CurrentTenantId;
 
@@ -28,10 +30,10 @@ use std::collections::HashSet;
 
 use super::models::{
     AddEventMemberRequest, AssignRosterSeatRequest, CreateEventRequest,
-    CreateEventRosterRoleRequest, EventDetailView, EventFilters, EventRosterRoleView,
-    EventRosterView, EventSignupOptionsView, EventView, ParticipateEventRequest,
-    RosterVersionRequest, SetEventVoiceChannelRequest, SetParticipantRequest,
-    SwapRosterSeatsRequest, UpdateEventBattlesRequest, UpdateEventRequest,
+    CreateEventRosterRoleRequest, EventDetailView, EventFilters, EventRevision,
+    EventRosterRoleView, EventRosterView, EventSignupOptionsView, EventView,
+    ParticipateEventRequest, RosterVersionRequest, SetEventVoiceChannelRequest,
+    SetParticipantRequest, SwapRosterSeatsRequest, UpdateEventBattlesRequest, UpdateEventRequest,
 };
 use super::roster_hub::{RosterHub, RosterNotification};
 use super::service::{BattleLinkingContext, EventService};
@@ -44,6 +46,7 @@ use crate::modules::albionbb::service::AlbionBbService;
 pub fn router() -> Router {
     Router::new()
         .route("/", get(list_events).post(create_event))
+        .route("/revisions", get(list_event_revisions))
         .route(
             "/{id}",
             get(get_event).patch(update_event).delete(delete_event),
@@ -130,6 +133,62 @@ async fn list_events(
     let service = EventService::new();
     let events = service.list_events(&db, pagination, filters).await?;
     Ok(Json(ApiResponse::new(events)))
+}
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+struct EventRevisionsQuery {
+    /// Comma-separated event ids.
+    ids: String,
+}
+
+fn parse_event_revision_ids(raw: &str) -> Result<Vec<i64>, AppError> {
+    let mut ids = Vec::new();
+    for part in raw.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let id = part.parse::<i64>().map_err(|_| {
+            AppError::Validation(format!("invalid event id in revisions query: {part}"))
+        })?;
+        if id > 0 {
+            ids.push(id);
+        }
+    }
+    ids.sort_unstable();
+    ids.dedup();
+    ids.truncate(200);
+    Ok(ids)
+}
+
+/// Returns status/roster fingerprints for a set of events.
+///
+/// The Discord poller uses this to skip full `GET /events/{id}` hydration when
+/// nothing changed.
+#[utoipa::path(
+    get,
+    path = "/api/events/revisions",
+    tag = "events",
+    summary = "Fingerprint event roster/status",
+    description = "Returns `roster_version`, `status`, and `archived_at` for the given event ids. Missing ids are omitted. Requires `events.view`.",
+    security(("session_cookie" = [])),
+    params(EventRevisionsQuery),
+    responses(
+        (status = 200, description = "Event revisions retrieved successfully", body = ApiResponseEventRevisionList),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.view permission", body = ProblemDetails)
+    )
+)]
+async fn list_event_revisions(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Query(query): Query<EventRevisionsQuery>,
+) -> Result<Json<ApiResponse<Vec<EventRevision>>>, AppError> {
+    user.require(&perms, Permission::EventsView).await?;
+    let ids = parse_event_revision_ids(&query.ids)?;
+    let revisions = EventService::new().list_event_revisions(&db, &ids).await?;
+    Ok(Json(ApiResponse::new(revisions)))
 }
 
 /// Gets a detailed event.
@@ -1322,4 +1381,21 @@ async fn replace_event_battles(
         .replace_event_battles(&db, &albionbb, &context, Some(&server), id, req)
         .await?;
     Ok(Json(ApiResponse::new(detail)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_event_revision_ids;
+    use crate::errors::AppError;
+
+    #[test]
+    fn parse_event_revision_ids_dedupes_and_drops_junk() {
+        let ids = parse_event_revision_ids(" 3, 1,1, 2 ").unwrap();
+        assert_eq!(ids, vec![1, 2, 3]);
+        assert!(parse_event_revision_ids("").unwrap().is_empty());
+        assert!(matches!(
+            parse_event_revision_ids("1,nope"),
+            Err(AppError::Validation(_))
+        ));
+    }
 }

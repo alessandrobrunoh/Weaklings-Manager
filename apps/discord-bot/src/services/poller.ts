@@ -6,6 +6,7 @@ import type {
   PaginatedData,
   EventView,
   EventDetailView,
+  EventRevision,
   BattleSummary,
   SplitDiscoveryBatch,
   SplitDiscordSync,
@@ -304,10 +305,11 @@ export class Poller {
       // Event announcements must complete before checking reminders so a newly
       // created event already has its discussion thread recorded.
       await this.checkNewEvents();
-      await this.checkEventRosterSync();
+      const revisions = await this.loadEventRevisions();
+      await this.checkClosedEvents(revisions);
+      await this.checkEventRosterSync(revisions);
       await this.checkNewGiveaways();
       await this.checkGiveawayResults();
-      await this.checkClosedEvents();
       await this.checkEventLifecycle();
       await Promise.allSettled([
         this.checkNewBattles(),
@@ -584,21 +586,34 @@ export class Poller {
     }
   }
 
+  /**
+   * One cheap fingerprint query for every known event thread.
+   * `null` means the request failed and callers must not treat missing ids as deleted.
+   */
+  private async loadEventRevisions(): Promise<Map<string, EventRevision> | null> {
+    const ids = Object.keys(this.state.eventThreadIds);
+    if (ids.length === 0) return new Map();
+    try {
+      const items = await this.api.get<EventRevision[]>("api/events/revisions", undefined, {
+        ids: ids.join(","),
+      });
+      return new Map((items ?? []).map((item) => [String(item.id), item]));
+    } catch (error) {
+      console.warn("[Poller] Could not load event revisions:", error);
+      return null;
+    }
+  }
+
   /** Closes persisted event discussion threads when the backend event reaches a terminal status. */
-  private async checkClosedEvents(): Promise<void> {
+  private async checkClosedEvents(
+    revisions: Map<string, EventRevision> | null,
+  ): Promise<void> {
+    if (!revisions) return;
     const terminalStatuses = new Set(["stopped", "auto_stopped", "cancelled"]);
     for (const [eventId, threadId] of Object.entries(this.state.eventThreadIds)) {
       try {
-        const event = await this.api.get<EventView>(`api/events/${eventId}`);
-        if (event.archived_at) {
-          if (threadId) await this.deleteEventThread(event.id);
-          continue;
-        }
-        if (!terminalStatuses.has(event.status)) continue;
-
-        if (threadId) await this.closeEventThread(event.id);
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) {
+        const event = revisions.get(eventId);
+        if (!event) {
           // The backend record is gone (deleted event). Close leftover Discord
           // state once, then drop the mapping so the next poll does not 404 forever.
           console.warn(
@@ -608,6 +623,14 @@ export class Poller {
           this.forgetEventThread(eventId);
           continue;
         }
+        if (event.archived_at) {
+          if (threadId) await this.deleteEventThread(event.id);
+          continue;
+        }
+        if (!terminalStatuses.has(event.status)) continue;
+
+        if (threadId) await this.closeEventThread(event.id);
+      } catch (error) {
         // Keep the mapping so a temporary Discord/API failure is retried on the next poll.
         console.warn(`[Poller] Could not close event thread for #${eventId}:`, error);
       }
@@ -627,7 +650,10 @@ export class Poller {
    * Rewrites each known event signup card when the website roster or status changes,
    * and refreshes any loot-split Forum post linked to that event.
    */
-  private async checkEventRosterSync(): Promise<void> {
+  private async checkEventRosterSync(
+    revisions: Map<string, EventRevision> | null,
+  ): Promise<void> {
+    if (!revisions) return;
     const eventIds = Object.keys(this.state.eventThreadIds);
     if (eventIds.length === 0) return;
 
@@ -642,10 +668,12 @@ export class Poller {
     }
 
     for (const eventId of eventIds) {
+      const fingerprint = revisions.get(eventId);
+      if (!fingerprint) continue;
+      const revision = `${fingerprint.roster_version}:${fingerprint.status}`;
+      if (this.state.eventSignupRevisions[eventId] === revision) continue;
       try {
         const detail = await this.api.get<EventDetailView>(`api/events/${eventId}`);
-        const revision = `${detail.roster_version ?? 0}:${detail.status}`;
-        if (this.state.eventSignupRevisions[eventId] === revision) continue;
 
         const thread = await this.getEventThread(Number(eventId));
         if (!thread) continue;

@@ -182,11 +182,24 @@ export interface SplitDetail {
   participants: SplitParticipant[];
 }
 
+export interface SplitDiscoveryItem {
+  id: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SplitDiscoveryBatch {
-  items: SplitDetail[];
+  items: SplitDiscoveryItem[];
   next_updated_at: string | null;
   next_id: number | null;
   has_more: boolean;
+}
+
+export interface EventRevision {
+  id: number;
+  roster_version: number;
+  status: string;
+  archived_at: string | null;
 }
 
 export interface SplitAuditLog {

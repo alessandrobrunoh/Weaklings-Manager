@@ -780,6 +780,12 @@ export const en = {
   'comps.archived': 'Archived',
   'comps.showArchived': 'Show archived',
   'comps.createdBy': 'Created by',
+  'comps.shareWithAlliance': 'Share with alliance',
+  'comps.sharedWithAlliance': 'Shared with alliance',
+  'comps.shareSuccess': 'Build shared with the alliance',
+  'comps.unshareWithAlliance': 'Unshare',
+  'comps.unshareSuccess': 'Build removed from the alliance',
+  'comps.shareNoAlliance': 'This guild is not in an alliance',
   'comps.archiveConfirm':
     'It will be hidden from every picker until you unarchive it. Anything already using it — an event, a comp — keeps working.',
   'comps.archiveSuccess': 'Archived',

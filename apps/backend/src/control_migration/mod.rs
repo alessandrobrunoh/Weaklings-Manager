@@ -14,6 +14,7 @@ mod m20260908_000005_tenant_ranks;
 mod m20260908_000006_default_tenant_rank;
 mod m20260908_000007_tenant_kind;
 mod m20260908_000008_alliance_memberships;
+mod m20260908_000009_alliance_shares;
 
 /// Stable id of the seeded `SuperAdmin` platform role.
 pub const SUPERADMIN_ROLE_ID: &str = "01990000-0000-4000-8000-000000000001";
@@ -45,6 +46,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260908_000006_default_tenant_rank::Migration),
             Box::new(m20260908_000007_tenant_kind::Migration),
             Box::new(m20260908_000008_alliance_memberships::Migration),
+            Box::new(m20260908_000009_alliance_shares::Migration),
         ]
     }
 }
@@ -88,7 +90,7 @@ mod tests {
                 "control migration {name} collides with a tenant migration name"
             );
         }
-        assert_eq!(control.len(), 8);
+        assert_eq!(control.len(), 9);
     }
 
     #[tokio::test]
@@ -135,6 +137,7 @@ mod tests {
             "tenant_ranks",
             "tenant_rank_features",
             "alliance_memberships",
+            "alliance_shares",
             "seaql_migrations",
         ] {
             assert!(
@@ -153,6 +156,7 @@ mod tests {
             "tenant_ranks",
             "tenant_rank_features",
             "alliance_memberships",
+            "alliance_shares",
         ] {
             assert!(
                 !tenant_tables.iter().any(|t| t == control_only),
@@ -220,7 +224,7 @@ mod tests {
             .expect("row")
             .try_get_by_index(0)
             .expect("count");
-        assert_eq!(control_migration_count, 8);
+        assert_eq!(control_migration_count, 9);
         assert!(
             tenant_migration_count > 50,
             "expected the full tenant history, got {tenant_migration_count}"

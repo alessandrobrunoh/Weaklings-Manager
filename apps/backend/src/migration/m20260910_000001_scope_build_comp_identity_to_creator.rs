@@ -60,7 +60,9 @@ async fn assert_no_duplicate_identities_for_the_same_creator(
         let version: i32 = row.try_get_by_index(4)?;
         let key = (created_by, name.trim().to_lowercase(), category_id, version);
         if let Some(first) = seen.get(&key) {
-            clashes.push(format!("#{first} and #{id} both named {name:?} by user {created_by}"));
+            clashes.push(format!(
+                "#{first} and #{id} both named {name:?} by user {created_by}"
+            ));
         } else {
             seen.insert(key, id);
         }
