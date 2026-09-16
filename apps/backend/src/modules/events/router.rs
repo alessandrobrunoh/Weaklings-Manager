@@ -88,6 +88,7 @@ pub fn router() -> Router {
         )
         .route("/{id}/start", post(start_event))
         .route("/{id}/cancel", post(cancel_event))
+        .route("/{id}/uncancel", post(uncancel_event))
         .route("/{id}/stop", post(stop_event))
         .route(
             "/{id}/battles",
@@ -1264,6 +1265,37 @@ async fn cancel_event(
     user.require(&perms, Permission::EventsEdit).await?;
     Ok(Json(ApiResponse::new(
         EventService::new().cancel_event(&db, id).await?,
+    )))
+}
+
+/// Restores a cancelled event (status -> scheduled).
+///
+/// Requires `events.edit` permission. Use this to undo a mistaken cancellation.
+#[utoipa::path(
+    post,
+    path = "/api/events/{id}/uncancel",
+    tag = "events",
+    summary = "Restore cancelled event",
+    description = "Restores a cancelled event to scheduled so it can be started or edited again.",
+    security(("session_cookie" = [])),
+    params(("id" = i64, Path, description = "Event ID")),
+    responses(
+        (status = 200, description = "Event restored", body = ApiResponseEventView),
+        (status = 401, description = "Unauthorized - no active session", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks events.edit permission", body = ProblemDetails),
+        (status = 404, description = "Event not found", body = ProblemDetails),
+        (status = 409, description = "Event is not cancelled", body = ProblemDetails)
+    )
+)]
+async fn uncancel_event(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<EventView>>, AppError> {
+    user.require(&perms, Permission::EventsEdit).await?;
+    Ok(Json(ApiResponse::new(
+        EventService::new().uncancel_event(&db, id).await?,
     )))
 }
 

@@ -253,6 +253,15 @@ export interface AllianceMember {
   accepted_at?: string | null;
 }
 
+/** Alliance settings context for the current tenant. */
+export interface AllianceContext {
+  kind: 'guild' | 'alliance' | string;
+  alliance_id: string | null;
+  alliance_name: string | null;
+  membership_status: 'pending' | 'active' | string | null;
+  members: AllianceMember[];
+}
+
 export function discordGuildIconUrl(
   guildId: string,
   iconHash?: string | null,

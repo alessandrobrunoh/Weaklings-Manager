@@ -3471,6 +3471,44 @@ impl EventService {
         self.to_event_view(db, updated).await
     }
 
+    /// Restores a cancelled event to `scheduled` so officers can undo a mistaken cancel.
+    ///
+    /// Session timestamps and linker progress are cleared, matching a newly created event.
+    /// Completed sessions (`stopped`/`auto_stopped`) stay terminal.
+    pub async fn uncancel_event(
+        &self,
+        db: &DatabaseConnection,
+        id: i64,
+    ) -> Result<EventView, AppError> {
+        let model = event::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .map_err(AppError::Database)?
+            .ok_or_else(|| AppError::NotFound(format!("Event {id} not found")))?;
+        reject_if_event_archived(&model)?;
+
+        if model.status != "cancelled" {
+            return Err(AppError::Conflict(format!(
+                "Event {id} cannot be restored (status={})",
+                model.status
+            )));
+        }
+
+        let now: DateTime<Utc> = Utc::now();
+        let mut active: event::ActiveModel = model.into();
+        active.status = Set("scheduled".to_string());
+        active.started_at = Set(None);
+        active.stopped_at = Set(None);
+        active.auto_stop_deadline = Set(None);
+        active.link_status = Set("pending".to_string());
+        active.link_attempts = Set(0);
+        active.link_last_error = Set(None);
+        active.link_battles_completed_at = Set(None);
+        active.updated_at = Set(now.into());
+        let updated = active.update(db).await.map_err(AppError::Database)?;
+        self.to_event_view(db, updated).await
+    }
+
     /// Marks an event session as live, recording `started_at = now` and computing the
     /// `auto_stop_deadline = now + MAX_SESSION_DURATION` (3 hours).
     ///
@@ -6635,6 +6673,48 @@ mod tests {
         service.start_event(&db, completed_id).await.unwrap();
         service.stop_event(&db, completed_id, false).await.unwrap();
         assert!(service.cancel_event(&db, completed_id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn uncancel_event_restores_scheduled_and_rejects_other_statuses() {
+        let db = seed_db().await;
+        let creator = insert_user(&db, "admin", "admin@example.com").await;
+        let service = EventService::new();
+        let event_id = insert_event(&db, "Mistaken cancel", creator).await;
+
+        service.cancel_event(&db, event_id).await.unwrap();
+        let restored = service.uncancel_event(&db, event_id).await.unwrap();
+        assert_eq!(restored.status, "scheduled");
+        assert_eq!(restored.started_at, None);
+        assert_eq!(restored.stopped_at, None);
+        assert_eq!(restored.link_status, "pending");
+
+        let started = service.start_event(&db, event_id).await.unwrap();
+        assert_eq!(started.status, "live");
+
+        assert!(service.uncancel_event(&db, event_id).await.is_err());
+        service.stop_event(&db, event_id, false).await.unwrap();
+        assert!(service.uncancel_event(&db, event_id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn uncancel_event_clears_a_live_session_that_was_cancelled() {
+        let db = seed_db().await;
+        let creator = insert_user(&db, "admin", "admin@example.com").await;
+        let service = EventService::new();
+        let event_id = insert_event(&db, "Live then cancelled", creator).await;
+
+        service.start_event(&db, event_id).await.unwrap();
+        service.cancel_event(&db, event_id).await.unwrap();
+        let restored = service.uncancel_event(&db, event_id).await.unwrap();
+        assert_eq!(restored.status, "scheduled");
+        assert_eq!(restored.started_at, None);
+        assert_eq!(restored.stopped_at, None);
+        assert_eq!(restored.link_status, "pending");
+        assert_eq!(
+            service.start_event(&db, event_id).await.unwrap().status,
+            "live"
+        );
     }
 
     #[test]

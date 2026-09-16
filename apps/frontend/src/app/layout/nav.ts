@@ -267,6 +267,13 @@ export const ADMIN_PANELS: readonly AdminPanel[] = [
     permissions: ['admin.settings.manage', 'autorole.manage'],
   },
   {
+    path: '/admin/alliance',
+    icon: 'users',
+    labelKey: 'nav.admin.alliance',
+    hintKey: 'admin.hub.allianceHint',
+    permissions: ['admin.settings.manage', 'autorole.manage'],
+  },
+  {
     path: '/admin/features',
     icon: 'sparkles',
     labelKey: 'nav.admin.features',

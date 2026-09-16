@@ -117,6 +117,21 @@ pub struct AllianceMemberView {
     pub accepted_at: Option<String>,
 }
 
+/// Alliance settings context for the session tenant.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
+pub struct AllianceContextView {
+    /// `guild` or `alliance`.
+    pub kind: String,
+    /// Alliance tenant id when this server is in (or is) an alliance.
+    pub alliance_id: Option<String>,
+    /// Alliance display name.
+    pub alliance_name: Option<String>,
+    /// This guild's membership status (`pending` / `active`) when `kind=guild`.
+    pub membership_status: Option<String>,
+    /// Member guilds of the alliance, empty when none.
+    pub members: Vec<AllianceMemberView>,
+}
+
 /// Public status of a Discord guild against the tenant registry.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct TenantStatusView {
