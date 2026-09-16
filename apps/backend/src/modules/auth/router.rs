@@ -669,6 +669,7 @@ async fn finalize_session(
     let ctx = registry.get_or_load(&tenant.id).await?;
     profile.tenant_id = Some(tenant.id.clone());
     profile.tenant_name = Some(tenant.name.clone());
+    profile.tenant_kind = Some(ctx.kind.clone());
     profile.is_superadmin = admins.contains(&profile.id);
     profile.is_platform_admin = profile.is_superadmin;
     if profile.is_superadmin {
@@ -797,6 +798,7 @@ pub async fn get_me(
     if let Some(tenant_id) = profile.tenant_id.as_deref().filter(|id| !id.is_empty()) {
         match registry.get_or_load(tenant_id).await {
             Ok(ctx) => {
+                profile.tenant_kind = Some(ctx.kind.clone());
                 let mut keys: Vec<_> = ctx.features.iter().cloned().collect();
                 keys.sort();
                 profile.features = keys;
@@ -807,6 +809,7 @@ pub async fn get_me(
             Err(_) => {
                 profile.tenant_id = None;
                 profile.tenant_name = None;
+                profile.tenant_kind = None;
                 profile.permissions.clear();
                 profile.features.clear();
                 profile.brand = None;

@@ -128,6 +128,8 @@ export interface DiscordUserProfile {
   permissions: string[];
   tenant_id?: string | null;
   tenant_name?: string | null;
+  /** `guild` or `alliance` for the scoped tenant. */
+  tenant_kind?: string | null;
   features?: string[];
   /** This tenant's brand colours; absent means the product defaults. */
   brand?: BrandColors | null;
@@ -2716,6 +2718,7 @@ export interface GuildSettingsView {
   discord_transaction_spam_channel_id: string | null;
   discord_event_role_id?: string | null;
   discord_auto_role_id: string | null;
+  discord_alliance_role_id?: string | null;
   default_role_discord_id?: string | null;
   discord_splits_forum_channel_id: string | null;
   discord_split_pending_tag_id: string | null;

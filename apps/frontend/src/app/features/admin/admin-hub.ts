@@ -455,6 +455,9 @@ export class AdminHub {
 
   protected readonly visiblePanels = computed(() =>
     ADMIN_PANELS.filter((panel) => {
+      if (panel.hiddenForAlliance && this.auth.profile()?.tenant_kind === 'alliance') {
+        return false;
+      }
       if (!panel.permissions?.length) {
         return true;
       }
@@ -557,10 +560,7 @@ export class AdminHub {
   }
 
   private getLocale(): string {
-    const lang = this.translate.language();
-    if (lang === 'it') return 'it-IT';
-    if (lang === 'es') return 'es-ES';
-    return 'en-US';
+    return this.translate.locale();
   }
 
   protected formatCount(value: number | null | undefined): string {

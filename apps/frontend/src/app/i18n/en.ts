@@ -2365,6 +2365,33 @@ export const en = {
   'addServer.faq.q3': 'Who can see my guild data?',
   'addServer.faq.a3':
     'Only members of that Discord server, and only what their roles allow. Data is stored per server and never crosses over.',
+
+  // Hardcoded-UI cleanup
+  'events.roster.loading': 'Loading roster…',
+  'events.roster.unavailable': 'Roster unavailable',
+  'events.roster.stale': 'The roster was updated by another officer. Please try again.',
+  'events.roster.loadFailed': 'Could not load the roster.',
+  'events.roster.noRoleSelected': 'No role selected.',
+  'events.roster.suggest': 'Suggest assignment',
+  'events.roster.calculating': 'Calculating…',
+  'events.roster.searchBench': 'Search bench…',
+  'events.editTooltip': 'Edit event details',
+  'fights.loadFailed': 'Could not load this fight.',
+  'users.link.searchPlaceholder': 'Search player name in roster…',
+  'users.link.loadingRoster': 'Loading guild roster…',
+  'settings.albion.searchHint': 'Search your player name across Albion Online. Players outside the guild can link too.',
+  'settings.albion.searchPlaceholder': 'Search player name…',
+  'settings.albion.noPlayers': 'No players found with that name.',
+  'settings.albion.unlinkConfirmTitle': 'Confirm unlink',
+  'settings.albion.linkTooltip': 'Search and link your Albion character',
+  'settings.albion.searchFailed': 'Could not search Albion players',
+  'settings.presence.title': 'Event attendance',
+  'admin.allianceRole.title': 'Alliance role',
+  'admin.allianceRole.hintAlliance': 'Members of invited guilds receive this Discord role while the alliance membership is active.',
+  'admin.allianceRole.hintGuild': 'When this guild joins an alliance, members can receive the alliance Discord role configured here.',
+  'admin.allianceRole.role': 'Discord role',
+  'admin.allianceRole.disabled': 'No role',
+  'admin.allianceRole.roleHint': 'Leave empty to disable automatic alliance role assignment.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

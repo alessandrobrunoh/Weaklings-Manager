@@ -40,6 +40,7 @@ const settings: GuildSettingsView = {
   discord_transaction_spam_channel_id: null,
   discord_event_role_id: 'role-event',
   discord_auto_role_id: 'role-member',
+  discord_alliance_role_id: null,
   discord_splits_forum_channel_id: null,
   discord_split_pending_tag_id: null,
   discord_split_completed_tag_id: null,
@@ -120,6 +121,7 @@ describe('AdminDiscord', () => {
           provide: AuthService,
           useValue: {
             hasPermission: () => true,
+            profile: () => ({ tenant_kind: 'guild' }),
           },
         },
         {
@@ -146,6 +148,8 @@ describe('AdminDiscord', () => {
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Member');
     expect(text).toContain('#events');
+    expect(text).toContain('admin.allianceRole.title');
+    expect(text).toContain('admin.allianceRole.hintGuild');
     expect(text).not.toContain('admin.discord.applicationPanelChannel');
     expect(text).not.toContain('admin.discord.applicationsOpen');
   });
@@ -168,6 +172,7 @@ describe('AdminDiscord', () => {
     expect(settingsBody).toBeTruthy();
     expect(Object.keys(settingsBody ?? {}).some((key) => key.includes('applications'))).toBe(false);
     expect(settingsBody).toHaveProperty('discord_auto_role_id', 'role-member');
+    expect(settingsBody).toHaveProperty('discord_alliance_role_id', '');
 
     expect(api.put).toHaveBeenCalledWith('api/admin/autorole', {
       discord_auto_role_id: 'role-member',

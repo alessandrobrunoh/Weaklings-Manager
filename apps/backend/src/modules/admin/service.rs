@@ -128,6 +128,9 @@ impl AdminService {
         if let Some(value) = &req.discord_auto_role_id {
             active.discord_auto_role_id = Set(normalize_discord_snowflake(value)?);
         }
+        if let Some(value) = &req.discord_alliance_role_id {
+            active.discord_alliance_role_id = Set(normalize_discord_snowflake(value)?);
+        }
         if let Some(value) = &req.discord_splits_forum_channel_id {
             active.discord_splits_forum_channel_id = Set(normalize(value));
         }
@@ -313,6 +316,7 @@ impl AdminService {
                 "discord_transaction_spam_channel_id": req.discord_transaction_spam_channel_id,
                 "discord_event_role_id": req.discord_event_role_id,
                 "discord_auto_role_id": req.discord_auto_role_id,
+                "discord_alliance_role_id": req.discord_alliance_role_id,
                 "discord_splits_forum_channel_id": req.discord_splits_forum_channel_id,
                 "discord_split_pending_tag_id": req.discord_split_pending_tag_id,
                 "discord_split_completed_tag_id": req.discord_split_completed_tag_id,
@@ -1252,6 +1256,45 @@ mod tests {
         .await
         .expect_err("invalid snowflake must be rejected");
         assert!(matches!(error, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn guild_settings_round_trip_discord_alliance_role_id() {
+        let db = seed_db().await;
+        let saved = AdminService::update_guild_settings(
+            &db,
+            1,
+            &UpdateGuildSettingsRequest {
+                discord_alliance_role_id: Some(" 123456789012345678 ".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("save alliance role");
+        assert_eq!(
+            saved.discord_alliance_role_id.as_deref(),
+            Some("123456789012345678")
+        );
+        assert_eq!(
+            AdminService::get_guild_settings(&db)
+                .await
+                .expect("load alliance role")
+                .discord_alliance_role_id
+                .as_deref(),
+            Some("123456789012345678")
+        );
+
+        let cleared = AdminService::update_guild_settings(
+            &db,
+            1,
+            &UpdateGuildSettingsRequest {
+                discord_alliance_role_id: Some("   ".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("clear alliance role");
+        assert_eq!(cleared.discord_alliance_role_id, None);
     }
 
     #[tokio::test]

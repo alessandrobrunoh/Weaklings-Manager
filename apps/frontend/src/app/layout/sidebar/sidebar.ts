@@ -254,6 +254,7 @@ export class Sidebar {
       (permission) => this.auth.hasPermission(permission),
       this.auth.profile()?.is_platform_admin === true,
       (key) => this.auth.profile()?.features?.includes(key) === true,
+      this.auth.profile()?.tenant_kind,
     ),
   );
 

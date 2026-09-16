@@ -28,6 +28,8 @@ pub struct Model {
     pub discord_event_role_id: Option<String>,
     /// Role assigned automatically to human members joining the Discord guild.
     pub discord_auto_role_id: Option<String>,
+    /// Role given to alliance members on this Discord (guild or alliance tenant).
+    pub discord_alliance_role_id: Option<String>,
     /// Forum Channel where the bot creates one thread per loot split.
     pub discord_splits_forum_channel_id: Option<String>,
     /// Forum tag applied to pending split posts.
