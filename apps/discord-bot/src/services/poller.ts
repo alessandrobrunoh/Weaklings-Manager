@@ -554,8 +554,11 @@ export class Poller {
   }
 
   /** Closes a known event discussion thread immediately after a Discord stop command. */
-  async closeEventThread(eventId: number): Promise<boolean> {
-    return this.finishEventThread(eventId, closeEventAnnouncementThread, "close");
+  async closeEventThread(
+    eventId: number,
+    options: { keepMapping?: boolean } = {},
+  ): Promise<boolean> {
+    return this.finishEventThread(eventId, closeEventAnnouncementThread, "close", options);
   }
 
   /** Deletes the parent announcement when an event is archived from the website. */
@@ -563,10 +566,34 @@ export class Poller {
     return this.finishEventThread(eventId, deleteEventAnnouncement, "delete");
   }
 
+  /**
+   * Remembers a discussion thread so a cancelled event can be reopened later.
+   *
+   * Discord cancel used to drop the mapping as soon as the thread closed, which
+   * made website restore a no-op on Discord: the poller no longer knew which
+   * thread to unarchive.
+   */
+  rememberEventThread(
+    eventId: number,
+    threadId: string,
+    signupMessageId?: string | null,
+    revision?: string | null,
+  ): void {
+    this.state.eventThreadIds[String(eventId)] = threadId;
+    if (signupMessageId) {
+      this.state.eventSignupMessageIds[String(eventId)] = signupMessageId;
+    }
+    if (revision) {
+      this.state.eventSignupRevisions[String(eventId)] = revision;
+    }
+    this.save();
+  }
+
   private async finishEventThread(
     eventId: number,
     finish: typeof closeEventAnnouncementThread,
     action: "close" | "delete",
+    options: { keepMapping?: boolean } = {},
   ): Promise<boolean> {
     const threadId = this.state.eventThreadIds[String(eventId)];
     if (!threadId) return false;
@@ -578,7 +605,7 @@ export class Poller {
         return true;
       }
       const done = await finish(channel, eventId, "Poller");
-      if (done) this.forgetEventThread(eventId);
+      if (done && !options.keepMapping) this.forgetEventThread(eventId);
       return done;
     } catch (error) {
       if (isUnknownDiscordChannel(error)) {
@@ -634,16 +661,11 @@ export class Poller {
           if (threadId) await this.deleteEventThread(event.id);
           continue;
         }
-        if (!terminalStatuses.has(event.status)) continue;
-
         if (event.status === "cancelled") {
-          try {
-            const detail = await this.eventApi().get<EventDetailView>(`api/events/${eventId}`);
-            await this.postAllianceLifecycle(detail, "cancel");
-          } catch (error) {
-            console.warn(`[Poller] Could not ping alliance Discord for cancelled event #${eventId}:`, error);
-          }
+          await this.closeCancelledEvent(event, threadId);
+          continue;
         }
+        if (!terminalStatuses.has(event.status)) continue;
 
         if (threadId) await this.closeEventThread(event.id);
       } catch (error) {
@@ -651,6 +673,49 @@ export class Poller {
         console.warn(`[Poller] Could not close event thread for #${eventId}:`, error);
       }
     }
+  }
+
+  /**
+   * Locks a cancelled event thread without forgetting it, so restore can reopen it.
+   *
+   * An already-archived thread means Discord cancel already closed it; skip the
+   * alliance ping so a kept mapping does not re-announce cancellation every poll.
+   */
+  private async closeCancelledEvent(event: EventRevision, threadId: string | undefined): Promise<void> {
+    const eventId = event.id;
+    const thread = threadId ? await this.getEventThread(eventId) : null;
+    if (!thread) {
+      this.forgetEventThread(eventId);
+      return;
+    }
+    if (thread.archived) {
+      // Discord cancel already closed it. Stamp cancelled so a later restore is a
+      // revision change and roster sync will unarchive the thread.
+      this.state.eventSignupRevisions[String(eventId)] =
+        `${event.roster_version}:${event.status}`;
+      this.save();
+      return;
+    }
+
+    try {
+      const detail = await this.eventApi().get<EventDetailView>(`api/events/${eventId}`);
+      await this.postAllianceLifecycle(detail, "cancel");
+      const messageId = await refreshEventSignupCard(
+        thread,
+        detail,
+        "Poller",
+        this.state.eventSignupMessageIds[String(eventId)],
+      );
+      if (messageId) {
+        this.state.eventSignupMessageIds[String(eventId)] = messageId;
+        this.state.eventSignupRevisions[String(eventId)] =
+          `${detail.roster_version ?? 0}:${detail.status}`;
+        this.save();
+      }
+    } catch (error) {
+      console.warn(`[Poller] Could not ping alliance Discord for cancelled event #${eventId}:`, error);
+    }
+    await this.closeEventThread(eventId, { keepMapping: true });
   }
 
   private forgetEventThread(eventId: number | string): void {
@@ -686,6 +751,15 @@ export class Poller {
     for (const eventId of eventIds) {
       const fingerprint = revisions.get(eventId);
       if (!fingerprint) continue;
+      // Cancelled/stopped threads stay locked history. Refreshing them would
+      // unarchive the card on every roster bump; restore is the only reopen path.
+      if (
+        fingerprint.status === "stopped"
+        || fingerprint.status === "auto_stopped"
+        || fingerprint.status === "cancelled"
+      ) {
+        continue;
+      }
       const revision = `${fingerprint.roster_version}:${fingerprint.status}`;
       if (this.state.eventSignupRevisions[eventId] === revision) continue;
       try {

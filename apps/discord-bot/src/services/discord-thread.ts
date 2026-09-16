@@ -63,6 +63,46 @@ export async function withUnarchivedThread<T>(
   }
 }
 
+/**
+ * Brings a locked, archived event thread back to an open discussion.
+ *
+ * Cancel/stop lock the thread so history stays read-only. Reopening a cancelled
+ * event has to undo both flags or members still cannot use signup controls.
+ */
+export async function unlockAndUnarchiveThread(
+  thread: ThreadChannel,
+  reason: string,
+): Promise<ThreadChannel> {
+  const active = await unarchiveThread(thread, reason);
+  const unlock = async (target: ThreadChannel): Promise<ThreadChannel> => {
+    if (!target.locked) return target;
+    return target.setLocked(false, reason);
+  };
+  try {
+    return await unlock(active);
+  } catch (error) {
+    if (!isInvalidActionOnArchivedThread(error)) throw error;
+    const recovered = await thread.setArchived(false, reason);
+    return unlock(recovered);
+  }
+}
+
+/** Runs `action` on a thread that is active and unlocked, retrying once on 50083. */
+export async function withReopenedThread<T>(
+  thread: ThreadChannel,
+  reason: string,
+  action: (active: ThreadChannel) => Promise<T>,
+): Promise<T> {
+  const active = await unlockAndUnarchiveThread(thread, reason);
+  try {
+    return await action(active);
+  } catch (error) {
+    if (!isInvalidActionOnArchivedThread(error)) throw error;
+    const recovered = await unlockAndUnarchiveThread(thread, reason);
+    return action(recovered);
+  }
+}
+
 /** Unarchives if needed, locks, then archives so the thread stays read-only history. */
 export async function lockAndArchiveThread(
   thread: ThreadChannel,

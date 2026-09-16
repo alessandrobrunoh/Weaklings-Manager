@@ -433,6 +433,17 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
                         </button>
                       }
 
+                      @if (canEdit() && event.status === 'cancelled' && !event.archived_at) {
+                        <button
+                          type="button"
+                          class="px-3 py-1 text-xs font-semibold text-[var(--color-text)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] rounded-md transition-all cursor-pointer"
+                          [disabled]="reopening()"
+                          (click)="requestUncancel(event)"
+                        >
+                          {{ t('events.uncancel') }}
+                        </button>
+                      }
+
                       @if (canDelete()) {
                         @if (event.archived_at) {
                           <button
@@ -747,6 +758,25 @@ const SORT_COLUMNS: Readonly<Record<string, string>> = {
         </div>
       </app-dialog>
     }
+
+    @if (pendingUncancel()) {
+      <app-dialog [title]="t('events.uncancel')" size="sm" (closed)="cancelUncancel()">
+        <p>{{ t('events.detail.confirm_uncancel') }}</p>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="cancelUncancel()">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn--primary"
+            [disabled]="reopening()"
+            (click)="confirmUncancel()"
+          >
+            {{ t('events.uncancel') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
   `,
 })
 export class Events {
@@ -831,7 +861,9 @@ export class Events {
   protected readonly compError = signal<string | null>(null);
 
   protected readonly pendingArchive = signal<EventView | null>(null);
+  protected readonly pendingUncancel = signal<EventView | null>(null);
   protected readonly archiving = signal(false);
+  protected readonly reopening = signal(false);
   protected readonly showArchived = signal(false);
 
   protected readonly trackById = (event: EventView): number => event.id;
@@ -845,6 +877,11 @@ export class Events {
   /** True when the current user can archive or restore an event. */
   protected canDelete(): boolean {
     return this.auth.hasPermission('events.delete');
+  }
+
+  /** True when the current user can cancel or reopen an event. */
+  protected canEdit(): boolean {
+    return this.auth.hasPermission('events.edit');
   }
 
   protected toggleShowArchived(): void {
@@ -909,6 +946,33 @@ export class Events {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.archiving.set(false);
+    }
+  }
+
+  protected requestUncancel(event: EventView): void {
+    this.pendingUncancel.set(event);
+  }
+
+  protected cancelUncancel(): void {
+    this.pendingUncancel.set(null);
+  }
+
+  protected async confirmUncancel(): Promise<void> {
+    const target = this.pendingUncancel();
+    if (!target) {
+      return;
+    }
+    this.reopening.set(true);
+    try {
+      await firstValueFrom(this.api.post(`api/events/${target.id}/uncancel`, {}));
+      this.pendingUncancel.set(null);
+      this.toasts.success(this.t('events.uncancelSuccess'));
+      await this.load();
+      void this.loadStats();
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.reopening.set(false);
     }
   }
 

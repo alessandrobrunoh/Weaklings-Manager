@@ -147,7 +147,23 @@ test("thread action rows expose six state-aware event controls within Discord li
   assert.ok(stopped.every((component) => component.disabled));
 
   const cancelled = buildEventThreadActionRows(event({ status: "cancelled" })).flatMap((row) => row.toJSON().components);
-  assert.ok(cancelled.every((component) => component.disabled));
+  assert.deepEqual(
+    cancelled.map((component) =>
+      "custom_id" in component ? component.custom_id : undefined,
+    ),
+    [
+      "event:join:42",
+      "event:leave:42",
+      "event:ping:42",
+      "event:start:42",
+      "event:stop:42",
+      "event:uncancel:42",
+    ],
+  );
+  assert.deepEqual(
+    cancelled.map((component) => component.disabled ?? false),
+    [true, true, true, true, true, false],
+  );
 });
 
 test("event embed renders distinct Mass and Start timestamps", () => {

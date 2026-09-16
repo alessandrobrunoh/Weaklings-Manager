@@ -6,6 +6,7 @@ import {
   isInvalidActionOnArchivedThread,
   isUnknownDiscordChannel,
   lockAndArchiveThread,
+  unlockAndUnarchiveThread,
   withUnarchivedThread,
 } from "./discord-thread.js";
 
@@ -81,6 +82,17 @@ test("lockAndArchiveThread retries lock after Discord reports a stale archived t
   assert.equal(state.lockCalls, 2);
   assert.equal(state.locked, true);
   assert.equal(state.archived, true);
+});
+
+test("unlockAndUnarchiveThread restores a locked archived event thread", async () => {
+  const { thread, state } = mockThread({ archived: true, locked: true });
+
+  await unlockAndUnarchiveThread(thread, "Event #32 reopened");
+
+  assert.deepEqual(state.archiveCalls, [false]);
+  assert.equal(state.lockCalls, 1);
+  assert.equal(state.locked, false);
+  assert.equal(state.archived, false);
 });
 
 test("withUnarchivedThread unarchives then runs the action", async () => {

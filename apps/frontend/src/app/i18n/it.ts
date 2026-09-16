@@ -432,8 +432,8 @@ export const it: TranslationDict = {
   'events.start': 'Avvia',
   'events.stop': 'Ferma',
   'events.cancel': 'Annulla',
-  'events.uncancel': 'Ripristina',
-  'events.uncancelSuccess': 'Evento ripristinato come programmato',
+  'events.uncancel': 'Riapri',
+  'events.uncancelSuccess': 'Evento riaperto come programmato',
   'events.participate': 'Partecipa',
   'events.viewAndJoin': 'Vedi e partecipa',
   'events.leave': 'Lascia',
@@ -504,7 +504,7 @@ export const it: TranslationDict = {
   'events.detail.confirm_delete':
     'Archiviare questo evento? Resta nel database con data e titolo. Anche gli split loot collegati vengono archiviati.',
   'events.detail.confirm_uncancel':
-    'Ripristinare questo evento come programmato? Potrai di nuovo avviarlo o modificarlo.',
+    'Riaprire questo evento come programmato? Potrai di nuovo avviarlo o modificarlo.',
   'events.archive': 'Archivia',
   'events.unarchive': 'Riattiva',
   'events.archived': 'Archiviato',

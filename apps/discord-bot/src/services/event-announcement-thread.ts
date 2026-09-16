@@ -7,7 +7,7 @@ import {
 import {
   isUnknownDiscordChannel,
   lockAndArchiveThread,
-  withUnarchivedThread,
+  withReopenedThread,
 } from "./discord-thread.js";
 
 export type EventAnnouncementThread = Awaited<
@@ -202,7 +202,7 @@ export async function refreshEventSignupCard(
   messageId?: string | null,
 ): Promise<string | null> {
   try {
-    return await withUnarchivedThread(
+    return await withReopenedThread(
       thread,
       `Refresh event #${event.id} signup card (${sourceLabel})`,
       async (active) => {

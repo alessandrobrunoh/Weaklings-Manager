@@ -25,10 +25,10 @@ function eventRevision(
   };
 }
 
-function mockThread(initial: { archived?: boolean } = {}): ThreadChannel {
+function mockThread(initial: { archived?: boolean; locked?: boolean } = {}): ThreadChannel {
   const state = {
     archived: initial.archived ?? false,
-    locked: false,
+    locked: initial.locked ?? false,
   };
   const thread = {
     id: "thread",
@@ -197,6 +197,143 @@ test("poller deletes the Discord announcement when an event is archived", async 
     ) as { eventThreadIds: Record<string, string> };
     assert.deepEqual(saved.eventThreadIds, {});
     assert.deepEqual(deleted, ["starter"]);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("poller keeps a cancelled event thread mapping so it can be reopened", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeFileSync(
+      join(directory, "poller-state-100000000000000001.json"),
+      JSON.stringify({
+        lastEventId: 40,
+        lastBattleId: 0,
+        pinged1hEvents: [],
+        eventThreadIds: { "28": "thread-28" },
+        splitUpdatedAt: null,
+        splitAfterId: null,
+        massedEvents: [],
+        emptyLiveChecks: {},
+      }),
+      "utf-8",
+    );
+
+    const apiGets: string[] = [];
+    const api = {
+      guildId: "100000000000000001",
+      get: async (path: string) => {
+        apiGets.push(path);
+        if (path === "api/events" || path === "api/battles" || path === "api/giveaways") return emptyPage();
+        if (path === "api/events/revisions") return [eventRevision(28, "cancelled")];
+        throw new Error(`unexpected GET ${path}`);
+      },
+    } as unknown as ApiClient;
+
+    const settings = {
+      applicationsSettings: async () => ({ discord_applications_open: true }),
+      splitsForumChannelId: async () => null,
+      eventsChannelId: async () => null,
+      callToArmsChannelId: async () => null,
+      battlesChannelId: async () => null,
+      giveawaysChannelId: async () => null,
+      giveawaysRoleId: async () => null,
+    } as unknown as SettingsService;
+
+    const client = {
+      channels: {
+        fetch: async (id: string) => {
+          if (id === "thread-28") return mockThread({ archived: true, locked: true });
+          throw Object.assign(new Error("Unknown Channel"), { code: 10003 });
+        },
+      },
+    } as unknown as Client;
+
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    await poller.pollNow();
+
+    const saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
+    ) as { eventThreadIds: Record<string, string>; eventSignupRevisions: Record<string, string> };
+    assert.deepEqual(saved.eventThreadIds, { "28": "thread-28" });
+    assert.equal(saved.eventSignupRevisions["28"], "0:cancelled");
+    assert.equal(apiGets.includes("api/events/28"), false);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("poller reopens a cancelled event thread when status returns to scheduled", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "poller-state-"));
+  try {
+    writeFileSync(
+      join(directory, "poller-state-100000000000000001.json"),
+      JSON.stringify({
+        lastEventId: 40,
+        lastBattleId: 0,
+        pinged1hEvents: [],
+        eventThreadIds: { "28": "thread-28" },
+        eventSignupMessageIds: { "28": "signup-28" },
+        eventSignupRevisions: { "28": "0:cancelled" },
+        splitUpdatedAt: null,
+        splitAfterId: null,
+        massedEvents: [],
+        emptyLiveChecks: {},
+      }),
+      "utf-8",
+    );
+
+    const thread = mockThread({ archived: true, locked: true });
+    const api = {
+      guildId: "100000000000000001",
+      get: async (path: string) => {
+        if (path === "api/events" || path === "api/battles" || path === "api/giveaways") return emptyPage();
+        if (path === "api/events/revisions") return [eventRevision(28, "scheduled")];
+        if (path === "api/events/28") {
+          return {
+            id: 28,
+            title: "Reopened mass",
+            status: "scheduled",
+            roster_version: 0,
+            participants: [],
+            event_date_utc: "2026-09-01T20:00:00Z",
+            created_by_username: "Officer",
+            comp_name: "Main",
+          };
+        }
+        throw new Error(`unexpected GET ${path}`);
+      },
+    } as unknown as ApiClient;
+
+    const settings = {
+      applicationsSettings: async () => ({ discord_applications_open: true }),
+      splitsForumChannelId: async () => null,
+      eventsChannelId: async () => null,
+      callToArmsChannelId: async () => null,
+      battlesChannelId: async () => null,
+      giveawaysChannelId: async () => null,
+      giveawaysRoleId: async () => null,
+    } as unknown as SettingsService;
+
+    const client = {
+      channels: {
+        fetch: async (id: string) => {
+          if (id === "thread-28") return thread;
+          throw Object.assign(new Error("Unknown Channel"), { code: 10003 });
+        },
+      },
+    } as unknown as Client;
+
+    const poller = new Poller(client, api, settings, 60_000, directory);
+    await poller.pollNow();
+
+    assert.equal(thread.archived, false);
+    assert.equal(thread.locked, false);
+    const saved = JSON.parse(
+      readFileSync(join(directory, "poller-state-100000000000000001.json"), "utf-8"),
+    ) as { eventThreadIds: Record<string, string> };
+    assert.deepEqual(saved.eventThreadIds, { "28": "thread-28" });
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
