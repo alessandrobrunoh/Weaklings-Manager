@@ -47,6 +47,10 @@ pub struct ControlDb(pub DatabaseConnection);
 #[derive(Clone)]
 pub struct CurrentTenantId(pub String);
 
+/// `guild` or `alliance` for the resolved tenant.
+#[derive(Clone)]
+pub struct CurrentTenantKind(pub String);
+
 /// Feature flags enabled for the current tenant.
 #[derive(Clone, Debug, Default)]
 pub struct TenantFeatures(pub HashSet<String>);
@@ -609,6 +613,7 @@ pub async fn resolve_tenant(
     parts
         .extensions
         .insert(CurrentTenantId(ctx.tenant_id.clone()));
+    parts.extensions.insert(CurrentTenantKind(ctx.kind.clone()));
     Ok(next.run(Request::from_parts(parts, body)).await)
 }
 

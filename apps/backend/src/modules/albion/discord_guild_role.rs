@@ -27,15 +27,26 @@ pub async fn assign_guild_role(
     guild_id: &str,
     discord_user_id: &str,
 ) {
-    let Some(role_id) = configured_role_id(db).await else {
+    let Some(role_id) = configured_base_role_id(db).await else {
         return;
     };
+    assign_discord_role(cfg, guild_id, discord_user_id, &role_id).await;
+}
+
+/// Assigns `role_id` on `guild_id` (best-effort, never fails the caller).
+pub async fn assign_discord_role(
+    cfg: &Config,
+    guild_id: &str,
+    discord_user_id: &str,
+    role_id: &str,
+) {
     let Some(token) = usable_bot_token(cfg.discord_bot_token.as_deref()) else {
-        tracing::debug!("skipping Discord guild-role assignment: bot token is not configured");
+        tracing::debug!("skipping Discord role assignment: bot token is not configured");
         return;
     };
     let guild_id = guild_id.trim();
-    if guild_id.is_empty() || discord_user_id.trim().is_empty() {
+    let role_id = role_id.trim();
+    if guild_id.is_empty() || discord_user_id.trim().is_empty() || role_id.is_empty() {
         return;
     }
 
@@ -90,15 +101,26 @@ pub async fn revoke_guild_role(
     guild_id: &str,
     discord_user_id: &str,
 ) {
-    let Some(role_id) = configured_role_id(db).await else {
+    let Some(role_id) = configured_base_role_id(db).await else {
         return;
     };
+    revoke_discord_role(cfg, guild_id, discord_user_id, &role_id).await;
+}
+
+/// Revokes `role_id` on `guild_id` (best-effort).
+pub async fn revoke_discord_role(
+    cfg: &Config,
+    guild_id: &str,
+    discord_user_id: &str,
+    role_id: &str,
+) {
     let Some(token) = usable_bot_token(cfg.discord_bot_token.as_deref()) else {
-        tracing::debug!("skipping Discord guild-role revocation: bot token is not configured");
+        tracing::debug!("skipping Discord role revocation: bot token is not configured");
         return;
     };
     let guild_id = guild_id.trim();
-    if guild_id.is_empty() || discord_user_id.trim().is_empty() {
+    let role_id = role_id.trim();
+    if guild_id.is_empty() || discord_user_id.trim().is_empty() || role_id.is_empty() {
         return;
     }
 
@@ -148,7 +170,7 @@ fn discord_client() -> reqwest::Client {
     crate::http_client::shared()
 }
 
-async fn configured_role_id(db: &DatabaseConnection) -> Option<String> {
+async fn configured_base_role_id(db: &DatabaseConnection) -> Option<String> {
     if let Ok(settings) = AdminService::get_guild_settings(db).await {
         if let Some(role_id) = settings.discord_applications_accepted_role_id {
             if !role_id.trim().is_empty() {
@@ -162,6 +184,14 @@ async fn configured_role_id(db: &DatabaseConnection) -> Option<String> {
         }
     }
     None
+}
+
+/// Alliance-member role configured on this tenant's Discord, if any.
+pub async fn configured_alliance_role_id(db: &DatabaseConnection) -> Option<String> {
+    let settings = AdminService::get_guild_settings(db).await.ok()?;
+    settings
+        .discord_alliance_role_id
+        .filter(|role_id| !role_id.trim().is_empty())
 }
 
 fn usable_bot_token(bot_token: Option<&str>) -> Option<&str> {

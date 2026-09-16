@@ -12,7 +12,7 @@ use crate::pagination::{PaginatedAlbionGuildMember, PaginationParams};
 use crate::responses::{
     ApiResponse, ApiResponseAlbionLinkStatus, ApiResponsePaginatedAlbionGuildMembers,
 };
-use crate::tenant::CurrentTenantId;
+use crate::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind, TenantRegistry};
 use axum::{
     Extension, Json, Router,
     extract::{Path, Query},
@@ -275,26 +275,50 @@ pub async fn link_player(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
     Extension(tenant): Extension<CurrentTenantId>,
+    Extension(kind): Extension<CurrentTenantKind>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
     Json(body): Json<LinkPlayerRequest>,
 ) -> Result<Json<ApiResponse<AlbionLinkStatus>>, AppError> {
     let player = build_service(&cfg)
         .get_player(&body.albion_player_id)
         .await?;
 
+    super::alliance_fanout::assert_register_allowed(
+        &control.0,
+        &tenant.0,
+        &kind.0,
+        player.guild_id.as_deref(),
+    )
+    .await?;
+
     let link_service = AlbionLinkService::new();
     let link = link_service
         .create_link(&db, &user.id, &player.id, &player.name)
         .await?;
 
-    // The tenant id is the Discord guild id, so these side effects land in the
-    // server the caller actually linked from.
     super::discord_nick::sync_guild_nickname(&cfg, &tenant.0, &user.id, &player.name).await;
-    if super::discord_guild_role::belongs_to_configured_guild(
-        player.guild_id.as_deref(),
-        &cfg.albion_guild_id,
-    ) {
+    if kind.0 != "alliance"
+        && super::discord_guild_role::belongs_to_configured_guild(
+            player.guild_id.as_deref(),
+            &cfg.albion_guild_id,
+        )
+    {
         super::discord_guild_role::assign_guild_role(&db, &cfg, &tenant.0, &user.id).await;
     }
+
+    super::alliance_fanout::after_successful_link(
+        &control.0,
+        &registry,
+        &cfg,
+        &user,
+        &tenant.0,
+        &kind.0,
+        &player.id,
+        &player.name,
+        player.guild_id.as_deref(),
+    )
+    .await;
 
     Ok(Json(ApiResponse::new(AlbionLinkStatus::from(Some(link)))))
 }
@@ -329,6 +353,9 @@ pub async fn register_by_ign(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
     Extension(tenant): Extension<CurrentTenantId>,
+    Extension(kind): Extension<CurrentTenantKind>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
     Json(body): Json<RegisterByIgnRequest>,
 ) -> Result<Json<ApiResponse<AlbionLinkStatus>>, AppError> {
     let service = build_service(&cfg);
@@ -336,18 +363,41 @@ pub async fn register_by_ign(
     let summary = pick_exact_player(&search.players, &body.ign)?;
     let player = service.get_player(&summary.id).await?;
 
+    super::alliance_fanout::assert_register_allowed(
+        &control.0,
+        &tenant.0,
+        &kind.0,
+        player.guild_id.as_deref(),
+    )
+    .await?;
+
     let link_service = AlbionLinkService::new();
     let link = link_service
         .create_link(&db, &user.id, &player.id, &player.name)
         .await?;
 
     super::discord_nick::sync_guild_nickname(&cfg, &tenant.0, &user.id, &player.name).await;
-    if super::discord_guild_role::belongs_to_configured_guild(
-        player.guild_id.as_deref(),
-        &cfg.albion_guild_id,
-    ) {
+    if kind.0 != "alliance"
+        && super::discord_guild_role::belongs_to_configured_guild(
+            player.guild_id.as_deref(),
+            &cfg.albion_guild_id,
+        )
+    {
         super::discord_guild_role::assign_guild_role(&db, &cfg, &tenant.0, &user.id).await;
     }
+
+    super::alliance_fanout::after_successful_link(
+        &control.0,
+        &registry,
+        &cfg,
+        &user,
+        &tenant.0,
+        &kind.0,
+        &player.id,
+        &player.name,
+        player.guild_id.as_deref(),
+    )
+    .await;
 
     Ok(Json(ApiResponse::new(AlbionLinkStatus::from(Some(link)))))
 }
@@ -378,10 +428,20 @@ pub async fn unlink_player(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(cfg): Extension<Config>,
     Extension(tenant): Extension<CurrentTenantId>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
     let link_service = AlbionLinkService::new();
     link_service.delete_link(&db, &user.id).await?;
     super::discord_guild_role::revoke_guild_role(&db, &cfg, &tenant.0, &user.id).await;
+    super::alliance_fanout::after_successful_unlink(
+        &control.0,
+        &registry,
+        &cfg,
+        &user.id,
+        &tenant.0,
+    )
+    .await;
     Ok(Json(ApiResponse::new(())))
 }
 
