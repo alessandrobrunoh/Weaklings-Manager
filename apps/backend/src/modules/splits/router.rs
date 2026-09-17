@@ -245,7 +245,7 @@ async fn get_split(
     path = "/api/splits/{id}",
     tag = "splits",
     summary = "Edit a pending split's values and note (Officer/Admin only)",
-    description = "Updates note, estimated_market_value, fee, repair_value, and bags_value while the split is still pending. Fee must be between 0 and 100 percent. Once completed/not_completed/lost, values are immutable.",
+    description = "Updates note, estimated_market_value, fee, repair_value, bags_value, and optionally the roster. Pending splits stay mutable as before. Completed splits can be amended: existing bank credits are never edited; new signed split_credit rows are posted so net shares match the new roster. not_completed/lost remain immutable.",
     security(("session_cookie" = ["splits.manage"])),
     params(("id" = i64, Path, description = "The split id")),
     request_body(content = UpdateSplitRequest, description = "Mutable split fields to update."),

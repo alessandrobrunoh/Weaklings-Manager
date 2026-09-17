@@ -47,15 +47,24 @@ import { roleSelectOptions } from '../../shared/discord/discord-options';
           }
         </section>
 
+        <form class="grid gap-4" (submit)="save($event)">
         @if (context()?.members?.length) {
           <section class="card p-5">
             <h2 class="eyebrow mb-3">{{ t('admin.alliance.members') }}</h2>
+            @if (isAlliance()) {
+              <p class="mb-4 max-w-2xl text-xs" style="color: var(--color-text-secondary)">
+                {{ t('admin.alliance.memberRolesHint') }}
+              </p>
+            }
             <table class="w-full text-sm">
               <caption class="sr-only">{{ t('admin.alliance.members') }}</caption>
               <thead>
                 <tr class="text-left text-xs" style="color: var(--color-text-secondary)">
                   <th scope="col" class="py-1 font-medium">{{ t('common.name') }}</th>
                   <th scope="col" class="py-1 font-medium">{{ t('common.status') }}</th>
+                  @if (isAlliance()) {
+                    <th scope="col" class="py-1 font-medium">{{ t('admin.alliance.memberRole') }}</th>
+                  }
                 </tr>
               </thead>
               <tbody>
@@ -65,6 +74,22 @@ import { roleSelectOptions } from '../../shared/discord/discord-options';
                     <td class="py-2">
                       <span class="chip text-xs">{{ member.status }}</span>
                     </td>
+                    @if (isAlliance()) {
+                      <td class="py-2 min-w-56">
+                        <app-searchable-select
+                          class="block"
+                          [options]="roleOptions(memberRoleDraft(member.guild_tenant_id))"
+                          [value]="memberRoleDraft(member.guild_tenant_id)"
+                          [emptyLabel]="t('admin.allianceRole.disabled')"
+                          [searchPlaceholder]="t('common.search')"
+                          [noMatchesLabel]="t('picker.noMatches')"
+                          [emptyOptionsLabel]="t('picker.empty')"
+                          [loading]="catalogLoading()"
+                          [ariaLabel]="t('admin.alliance.memberRole') + ' ' + member.name"
+                          (valueChange)="setMemberRole(member.guild_tenant_id, $event)"
+                        />
+                      </td>
+                    }
                   </tr>
                 }
               </tbody>
@@ -72,33 +97,34 @@ import { roleSelectOptions } from '../../shared/discord/discord-options';
           </section>
         }
 
-        <form class="grid gap-4" (submit)="save($event)">
-          <section class="card p-5">
-            <fieldset>
-              <legend class="eyebrow mb-1">{{ t('admin.allianceRole.title') }}</legend>
-              <p class="mb-4 max-w-2xl text-xs" style="color: var(--color-text-secondary)">
-                {{ allianceRoleHint() }}
-              </p>
-              <label>
-                <span class="label">{{ t('admin.allianceRole.role') }}</span>
-                <app-searchable-select
-                  class="mt-1 block"
-                  [options]="roleOptions(allianceRoleDraft())"
-                  [value]="allianceRoleDraft()"
-                  [emptyLabel]="t('admin.allianceRole.disabled')"
-                  [searchPlaceholder]="t('common.search')"
-                  [noMatchesLabel]="t('picker.noMatches')"
-                  [emptyOptionsLabel]="t('picker.empty')"
-                  [loading]="catalogLoading()"
-                  [ariaLabel]="t('admin.allianceRole.role')"
-                  (valueChange)="allianceRoleDraft.set($event)"
-                />
-                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
-                  {{ t('admin.allianceRole.roleHint') }}
-                </span>
-              </label>
-            </fieldset>
-          </section>
+          @if (!isAlliance()) {
+            <section class="card p-5">
+              <fieldset>
+                <legend class="eyebrow mb-1">{{ t('admin.allianceRole.title') }}</legend>
+                <p class="mb-4 max-w-2xl text-xs" style="color: var(--color-text-secondary)">
+                  {{ allianceRoleHint() }}
+                </p>
+                <label>
+                  <span class="label">{{ t('admin.allianceRole.role') }}</span>
+                  <app-searchable-select
+                    class="mt-1 block"
+                    [options]="roleOptions(allianceRoleDraft())"
+                    [value]="allianceRoleDraft()"
+                    [emptyLabel]="t('admin.allianceRole.disabled')"
+                    [searchPlaceholder]="t('common.search')"
+                    [noMatchesLabel]="t('picker.noMatches')"
+                    [emptyOptionsLabel]="t('picker.empty')"
+                    [loading]="catalogLoading()"
+                    [ariaLabel]="t('admin.allianceRole.role')"
+                    (valueChange)="allianceRoleDraft.set($event)"
+                  />
+                  <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
+                    {{ t('admin.allianceRole.roleHint') }}
+                  </span>
+                </label>
+              </fieldset>
+            </section>
+          }
 
           @if (isAlliance()) {
             <section class="card p-5">
@@ -150,6 +176,7 @@ export class AdminAlliance {
   protected readonly roles = signal<DiscordRoleView[]>([]);
   protected readonly allianceRoleDraft = signal('');
   protected readonly eventRoleDraft = signal('');
+  protected readonly memberRoleDrafts = signal<Record<string, string>>({});
 
   protected readonly isAlliance = computed(() => this.context()?.kind === 'alliance');
   protected readonly canAccept = computed(
@@ -170,6 +197,14 @@ export class AdminAlliance {
 
   protected roleOptions(selectedId: string) {
     return roleSelectOptions(this.roles(), selectedId);
+  }
+
+  protected memberRoleDraft(guildTenantId: string): string {
+    return this.memberRoleDrafts()[guildTenantId] ?? '';
+  }
+
+  protected setMemberRole(guildTenantId: string, roleId: string): void {
+    this.memberRoleDrafts.update((drafts) => ({ ...drafts, [guildTenantId]: roleId }));
   }
 
   protected statusCopy(): string {
@@ -203,6 +238,11 @@ export class AdminAlliance {
       this.context.set(context);
       this.allianceRoleDraft.set(settings.discord_alliance_role_id ?? '');
       this.eventRoleDraft.set(settings.discord_event_role_id ?? '');
+      this.memberRoleDrafts.set(
+        Object.fromEntries(
+          context.members.map((member) => [member.guild_tenant_id, member.discord_role_id ?? '']),
+        ),
+      );
       this.roles.set(roles);
     } catch {
       this.loadFailed.set(true);
@@ -235,17 +275,30 @@ export class AdminAlliance {
     event.preventDefault();
     this.saving.set(true);
     try {
-      const body: UpdateGuildSettingsRequest = {
-        discord_alliance_role_id: this.allianceRoleDraft(),
-      };
+      const ctx = this.context();
+      const body: UpdateGuildSettingsRequest = {};
       if (this.isAlliance()) {
         body.discord_event_role_id = this.eventRoleDraft();
+      } else {
+        body.discord_alliance_role_id = this.allianceRoleDraft();
       }
       const updated = await firstValueFrom(
         this.api.put<GuildSettingsView>('api/admin/settings', body),
       );
       this.allianceRoleDraft.set(updated.discord_alliance_role_id ?? '');
       this.eventRoleDraft.set(updated.discord_event_role_id ?? '');
+      if (this.isAlliance() && ctx?.alliance_id) {
+        const drafts = this.memberRoleDrafts();
+        await Promise.all(
+          ctx.members.map((member) =>
+            firstValueFrom(
+              this.api.patch(`api/alliances/${ctx.alliance_id}/members/${member.guild_tenant_id}`, {
+                discord_role_id: drafts[member.guild_tenant_id] ?? '',
+              }),
+            ),
+          ),
+        );
+      }
       this.toasts.success(this.t('admin.discord.saved'));
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));

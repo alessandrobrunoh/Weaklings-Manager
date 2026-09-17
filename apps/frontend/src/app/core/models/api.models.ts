@@ -251,6 +251,8 @@ export interface AllianceMember {
   status: 'pending' | 'active';
   invited_by?: string | null;
   accepted_at?: string | null;
+  /** Discord role on the alliance hub for this guild's members. */
+  discord_role_id?: string | null;
 }
 
 /** Alliance settings context for the current tenant. */
@@ -516,6 +518,7 @@ export interface UpdateSplitRequest {
   bags?: number[];
   event_id?: number | null;
   island_tab_id?: number;
+  participants?: Array<{ user_id: number; weight: number }>;
 }
 
 export interface UpsertParticipantRequest {

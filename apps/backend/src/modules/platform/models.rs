@@ -115,6 +115,16 @@ pub struct AllianceMemberView {
     pub invited_by: Option<String>,
     /// RFC3339 accept timestamp, if accepted.
     pub accepted_at: Option<String>,
+    /// Discord role on the **alliance** hub assigned to members of this guild.
+    #[serde(default)]
+    pub discord_role_id: Option<String>,
+}
+
+/// Body for `PATCH /api/alliances/{alliance_id}/members/{guild_id}`.
+#[derive(Debug, Clone, Default, Deserialize, utoipa::ToSchema)]
+pub struct PatchAllianceMemberRequest {
+    /// Discord role snowflake on the alliance hub, or empty to clear.
+    pub discord_role_id: Option<String>,
 }
 
 /// Alliance settings context for the session tenant.

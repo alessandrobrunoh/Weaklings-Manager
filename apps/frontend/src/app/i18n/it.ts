@@ -301,6 +301,7 @@ export const it: TranslationDict = {
   'splits.edit': 'Modifica split',
   'splits.edit_subtitle':
     'Modifica parametri di split, evento collegato e ripartizione partecipanti.',
+  'splits.amendHint': 'Salvare uno split già chiuso crea nuove transazioni per la differenza. I crediti vecchi non si modificano né si cancellano.',
   'splits.participants': 'Partecipanti',
   'splits.net_value': 'Valore netto',
   'splits.estimated': 'Valore di mercato stimato',
@@ -1397,6 +1398,8 @@ export const it: TranslationDict = {
   'admin.alliance.accepted': 'Invito all’alleanza accettato.',
   'admin.alliance.eventRole': 'Ruolo ping eventi',
   'admin.alliance.eventRoleHint': 'Pingato su questo Discord alleanza quando una gilda membro annuncia un evento qui.',
+  'admin.alliance.memberRole': 'Ruolo Discord',
+  'admin.alliance.memberRolesHint': 'Solo su questo Discord alleanza: ogni gilda membro può avere un ruolo diverso. I player ricevono il ruolo della propria gilda al register.',
   'admin.hub.applicationsHint':
     'Apri o chiudi le candidature Discord, i canali e i testi del bot.',
   'admin.hub.progressionHint': 'Curva dei livelli, tassi di XP e stagioni.',
@@ -2434,7 +2437,7 @@ export const it: TranslationDict = {
   'settings.albion.searchFailed': 'Impossibile cercare giocatori Albion',
   'settings.presence.title': 'Presenza Eventi',
   'admin.allianceRole.title': 'Ruolo alleanza',
-  'admin.allianceRole.hintAlliance': 'I membri delle gilde invitate ricevono questo ruolo Discord mentre l’adesione all’alleanza è attiva.',
+  'admin.allianceRole.hintAlliance': 'Sul Discord di una gilda questo ruolo va ai membri dell’alleanza. Sul Discord alleanza assegna invece un ruolo per ogni gilda membro.',
   'admin.allianceRole.hintGuild': 'Quando questa gilda entra in un’alleanza, i membri possono ricevere il ruolo Discord alleanza configurato qui.',
   'admin.allianceRole.role': 'Ruolo Discord',
   'admin.allianceRole.disabled': 'Nessun ruolo',

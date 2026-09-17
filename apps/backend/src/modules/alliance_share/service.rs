@@ -2305,6 +2305,7 @@ fn split_share_req(id: i64) -> CreateAllianceShareRequest {
                     note: None,
                     event_id: None,
                     island_tab_id: None,
+                    participants: None,
                 },
             )
             .await
