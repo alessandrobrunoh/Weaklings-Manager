@@ -1396,6 +1396,8 @@ export const es: TranslationDict = {
   'admin.alliance.accepted': 'Invitación de alianza aceptada.',
   'admin.alliance.eventRole': 'Rol de ping de evento',
   'admin.alliance.eventRoleHint': 'Se menciona en este Discord de alianza cuando una guild anuncia un evento aquí.',
+  'admin.alliance.memberRole': 'Rol de Discord',
+  'admin.alliance.memberRolesHint': 'En este Discord de alianza, cada guild miembro puede tener su propio rol. Los jugadores reciben el rol de su guild al registrarse.',
   'admin.hub.applicationsHint':
     'Abre o cierra las candidaturas de Discord, canales y textos del bot.',
   'admin.hub.progressionHint': 'Curva de niveles, tasas de XP y temporadas.',
@@ -2429,7 +2431,7 @@ export const es: TranslationDict = {
   'settings.albion.searchFailed': 'No se pudieron buscar jugadores de Albion',
   'settings.presence.title': 'Asistencia a eventos',
   'admin.allianceRole.title': 'Rol de alianza',
-  'admin.allianceRole.hintAlliance': 'Los miembros de los gremios invitados reciben este rol de Discord mientras la membresía de la alianza esté activa.',
+  'admin.allianceRole.hintAlliance': 'En el Discord de una guild este rol se da a los miembros de la alianza. En el Discord de alianza, asigna un rol por guild miembro.',
   'admin.allianceRole.hintGuild': 'Cuando este gremio se une a una alianza, los miembros pueden recibir el rol de Discord de alianza configurado aquí.',
   'admin.allianceRole.role': 'Rol de Discord',
   'admin.allianceRole.disabled': 'Sin rol',

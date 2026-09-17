@@ -400,7 +400,7 @@ impl PlatformService {
         let rows = control
             .query_all(Statement::from_sql_and_values(
                 control.get_database_backend(),
-                "SELECT m.guild_tenant_id, t.name, m.status, m.invited_by, m.accepted_at::text \
+                "SELECT m.guild_tenant_id, t.name, m.status, m.invited_by, m.accepted_at::text, m.discord_role_id \
                  FROM alliance_memberships m \
                  JOIN tenants t ON t.id = m.guild_tenant_id \
                  WHERE m.alliance_tenant_id = $1 \
@@ -416,6 +416,10 @@ impl PlatformService {
                 status: row.try_get_by_index(2)?,
                 invited_by: row.try_get_by_index(3).ok(),
                 accepted_at: row.try_get_by_index(4).ok(),
+                discord_role_id: row
+                    .try_get_by_index(5)
+                    .ok()
+                    .filter(|id: &String| !id.is_empty()),
             });
         }
         Ok(out)
@@ -510,6 +514,49 @@ impl PlatformService {
             .into_iter()
             .find(|row| row.guild_tenant_id == guild_id)
             .ok_or_else(|| AppError::Internal("membership vanished after accept".to_owned()))
+    }
+
+    /// Sets the alliance-hub Discord role for one member guild.
+    ///
+    /// # Errors
+    ///
+    /// Returns not-found when the alliance or membership is missing, or validation
+    /// when `discord_role_id` is not a Discord snowflake.
+    pub async fn set_alliance_member_discord_role(
+        control: &DatabaseConnection,
+        alliance_id: &str,
+        guild_id: &str,
+        discord_role_id: Option<&str>,
+    ) -> Result<AllianceMemberView, AppError> {
+        let Some(tenant) = Self::get_tenant(control, alliance_id).await? else {
+            return Err(AppError::NotFound(format!(
+                "tenant {alliance_id} not found"
+            )));
+        };
+        if tenant.kind != "alliance" {
+            return Err(AppError::NotFound(format!(
+                "tenant {alliance_id} is not an alliance"
+            )));
+        }
+        let role = normalize_optional_discord_snowflake(discord_role_id.unwrap_or(""))?;
+        let updated = control
+            .execute(Statement::from_sql_and_values(
+                control.get_database_backend(),
+                "UPDATE alliance_memberships SET discord_role_id = $3 \
+                 WHERE alliance_tenant_id = $1 AND guild_tenant_id = $2",
+                [alliance_id.into(), guild_id.into(), role.clone().into()],
+            ))
+            .await?;
+        if updated.rows_affected() == 0 {
+            return Err(AppError::NotFound(
+                "alliance membership not found".to_owned(),
+            ));
+        }
+        Self::list_alliance_members(control, alliance_id)
+            .await?
+            .into_iter()
+            .find(|row| row.guild_tenant_id == guild_id)
+            .ok_or_else(|| AppError::Internal("membership vanished after role update".to_owned()))
     }
 
     /// Record that `discord_id` may enter `tenant_id`.
@@ -1374,6 +1421,21 @@ fn normalize_region(raw: &str) -> Result<String, AppError> {
     }
 }
 
+fn normalize_optional_discord_snowflake(value: &str) -> Result<Option<String>, AppError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if !trimmed.chars().all(|character| character.is_ascii_digit())
+        || !(17..=20).contains(&trimmed.len())
+    {
+        return Err(AppError::Validation(
+            "discord_role_id must be a Discord snowflake (17-20 digits)".to_owned(),
+        ));
+    }
+    Ok(Some(trimmed.to_owned()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2119,6 +2181,85 @@ mod tests {
         .expect("accept");
         assert_eq!(accepted.status, "active");
         assert!(accepted.accepted_at.is_some());
+
+        drop_schema(&admin, &guild.schema_name)
+            .await
+            .expect("drop guild");
+        drop_schema(&admin, &alliance.schema_name)
+            .await
+            .expect("drop alliance");
+        drop_schema(&admin, &schema).await.expect("drop");
+    }
+
+    #[test]
+    fn alliance_member_discord_role_snowflake_is_optional_and_strict() {
+        assert_eq!(normalize_optional_discord_snowflake("  ").unwrap(), None);
+        assert_eq!(
+            normalize_optional_discord_snowflake("123456789012345678")
+                .unwrap()
+                .as_deref(),
+            Some("123456789012345678")
+        );
+        assert!(normalize_optional_discord_snowflake("not-a-role").is_err());
+        assert!(normalize_optional_discord_snowflake("123").is_err());
+    }
+
+    #[tokio::test]
+    async fn set_alliance_member_discord_role_round_trips_and_clears() {
+        let Some((url, admin)) = try_admin_db().await else {
+            return;
+        };
+        let schema = unique_schema("it_alrole");
+        ensure_schema(&admin, &schema).await.expect("schema");
+        let control = connect_with_search_path(&url, &schema)
+            .await
+            .expect("connect");
+        Migrator::up(&control, None).await.expect("migrate");
+
+        let registry = TenantRegistry::new(url, control.clone());
+        let guild_id = unique_schema("gid");
+        let alliance_id = unique_schema("aid");
+        let guild = PlatformService::register_tenant(
+            &control,
+            &registry,
+            guild_register(&guild_id, "Role Guild"),
+            "officer-1",
+            None,
+        )
+        .await
+        .expect("guild");
+        let alliance = PlatformService::register_tenant(
+            &control,
+            &registry,
+            alliance_register(&alliance_id, vec![guild_id.clone()]),
+            "officer-1",
+            None,
+        )
+        .await
+        .expect("alliance");
+
+        let assigned = PlatformService::set_alliance_member_discord_role(
+            &control,
+            &alliance_id,
+            &guild_id,
+            Some(" 123456789012345678 "),
+        )
+        .await
+        .expect("assign");
+        assert_eq!(
+            assigned.discord_role_id.as_deref(),
+            Some("123456789012345678")
+        );
+
+        let cleared = PlatformService::set_alliance_member_discord_role(
+            &control,
+            &alliance_id,
+            &guild_id,
+            Some(""),
+        )
+        .await
+        .expect("clear");
+        assert_eq!(cleared.discord_role_id, None);
 
         drop_schema(&admin, &guild.schema_name)
             .await

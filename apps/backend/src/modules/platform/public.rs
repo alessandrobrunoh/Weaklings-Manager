@@ -6,7 +6,7 @@ use axum::{
     Extension, Json, Router,
     extract::{Path, Query},
     http::HeaderMap,
-    routing::{get, post},
+    routing::{get, patch, post},
 };
 use axum_extra::extract::cookie::{Key, PrivateCookieJar};
 use serde::Deserialize;
@@ -18,12 +18,13 @@ use crate::modules::albion::service::AlbionService;
 use crate::modules::auth::service::{
     DiscordUserProfile, PERMISSION_ADMINISTRATOR, PERMISSION_MANAGE_GUILD, RegisterableGuild,
 };
+use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::responses::ApiResponse;
-use crate::tenant::{ControlDb, TenantRegistry};
+use crate::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind, TenantRegistry};
 
 use super::models::{
-    AllianceContextView, AllianceMemberView, AttachableGuildView, RegisterTenantRequest,
-    TenantStatusView,
+    AllianceContextView, AllianceMemberView, AttachableGuildView, PatchAllianceMemberRequest,
+    RegisterTenantRequest, TenantStatusView,
 };
 use super::service::PlatformService;
 
@@ -41,6 +42,10 @@ pub fn alliance_router() -> Router {
     Router::new()
         .route("/me", get(my_alliance_context))
         .route("/{id}/members", get(list_alliance_members))
+        .route(
+            "/{alliance_id}/members/{guild_id}",
+            patch(patch_alliance_member),
+        )
         .route(
             "/{alliance_id}/members/{guild_id}/accept",
             post(accept_alliance_member),
@@ -188,6 +193,51 @@ pub async fn accept_alliance_member(
             &alliance_id,
             &guild_id,
             &session.profile.id,
+        )
+        .await?,
+    )))
+}
+
+/// Alliance admin sets the hub Discord role for one member guild.
+#[utoipa::path(
+    patch,
+    path = "/api/alliances/{alliance_id}/members/{guild_id}",
+    tag = "platform",
+    params(
+        ("alliance_id" = String, Path, description = "Alliance tenant id"),
+        ("guild_id" = String, Path, description = "Guild tenant id")
+    ),
+    request_body(content = PatchAllianceMemberRequest),
+    responses(
+        (status = 200, description = "Membership updated"),
+        (status = 400, description = "Invalid Discord role id", body = ProblemDetails),
+        (status = 401, description = "No session", body = ProblemDetails),
+        (status = 403, description = "Lacks admin.settings.manage or not the alliance session", body = ProblemDetails),
+        (status = 404, description = "Membership not found", body = ProblemDetails)
+    )
+)]
+pub async fn patch_alliance_member(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(control): Extension<ControlDb>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Extension(kind): Extension<CurrentTenantKind>,
+    Path((alliance_id, guild_id)): Path<(String, String)>,
+    Json(body): Json<PatchAllianceMemberRequest>,
+) -> Result<Json<ApiResponse<AllianceMemberView>>, AppError> {
+    user.require(&perms, Permission::AdminSettingsManage)
+        .await?;
+    if kind.0 != "alliance" || tenant.0 != alliance_id {
+        return Err(AppError::Forbidden(
+            "per-guild alliance roles can only be set from the alliance Discord".to_owned(),
+        ));
+    }
+    Ok(Json(ApiResponse::new(
+        PlatformService::set_alliance_member_discord_role(
+            &control.0,
+            &alliance_id,
+            &guild_id,
+            body.discord_role_id.as_deref(),
         )
         .await?,
     )))

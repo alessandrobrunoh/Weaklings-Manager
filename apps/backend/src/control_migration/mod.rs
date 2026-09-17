@@ -15,8 +15,9 @@ mod m20260908_000006_default_tenant_rank;
 mod m20260908_000007_tenant_kind;
 mod m20260908_000008_alliance_memberships;
 mod m20260908_000009_alliance_shares;
-mod m20260917_000001_alliance_shares_comp;
 mod m20260908_000010_alliance_share_split;
+mod m20260917_000001_alliance_shares_comp;
+mod m20260918_000001_alliance_membership_discord_role;
 
 /// Stable id of the seeded `SuperAdmin` platform role.
 pub const SUPERADMIN_ROLE_ID: &str = "01990000-0000-4000-8000-000000000001";
@@ -51,6 +52,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260908_000009_alliance_shares::Migration),
             Box::new(m20260917_000001_alliance_shares_comp::Migration),
             Box::new(m20260908_000010_alliance_share_split::Migration),
+            Box::new(m20260918_000001_alliance_membership_discord_role::Migration),
         ]
     }
 }
@@ -94,7 +96,7 @@ mod tests {
                 "control migration {name} collides with a tenant migration name"
             );
         }
-        assert_eq!(control.len(), 11);
+        assert_eq!(control.len(), 12);
     }
 
     #[tokio::test]
@@ -228,7 +230,7 @@ mod tests {
             .expect("row")
             .try_get_by_index(0)
             .expect("count");
-        assert_eq!(control_migration_count, 11);
+        assert_eq!(control_migration_count, 12);
         assert!(
             tenant_migration_count > 50,
             "expected the full tenant history, got {tenant_migration_count}"

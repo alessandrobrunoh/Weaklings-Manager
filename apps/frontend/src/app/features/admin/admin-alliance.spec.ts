@@ -27,7 +27,12 @@ const context: AllianceContext = {
 
 describe('AdminAlliance', () => {
   let fixture: ComponentFixture<AdminAlliance>;
-  let api: { get: ReturnType<typeof vi.fn>; put: ReturnType<typeof vi.fn>; post: ReturnType<typeof vi.fn> };
+  let api: {
+    get: ReturnType<typeof vi.fn>;
+    put: ReturnType<typeof vi.fn>;
+    post: ReturnType<typeof vi.fn>;
+    patch: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(async () => {
     api = {
@@ -45,6 +50,7 @@ describe('AdminAlliance', () => {
       }),
       put: vi.fn().mockReturnValue(of(settings)),
       post: vi.fn().mockReturnValue(of({})),
+      patch: vi.fn().mockReturnValue(of({})),
     };
 
     await TestBed.configureTestingModule({
@@ -86,5 +92,55 @@ describe('AdminAlliance', () => {
       'api/admin/settings',
       expect.objectContaining({ discord_alliance_role_id: 'role-ally' }),
     );
+    expect(api.patch).not.toHaveBeenCalled();
+  });
+
+  it('on an alliance hub saves a Discord role per member guild', async () => {
+    const allianceContext: AllianceContext = {
+      kind: 'alliance',
+      alliance_id: 'ally-1',
+      alliance_name: 'Big WeakPie',
+      membership_status: null,
+      members: [
+        {
+          guild_tenant_id: 'g1',
+          name: 'Weaklings',
+          status: 'active',
+          discord_role_id: 'role-ally',
+        },
+      ],
+    };
+    api.get.mockImplementation((path: string) => {
+      if (path === 'api/alliances/me') {
+        return of(allianceContext);
+      }
+      if (path === 'api/admin/settings') {
+        return of(settings);
+      }
+      if (path.includes('roles')) {
+        return of(roles);
+      }
+      return of(null);
+    });
+    fixture.destroy();
+    fixture = TestBed.createComponent(AdminAlliance);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Weaklings');
+    expect(text).toContain('admin.alliance.memberRolesHint');
+    expect(text).not.toContain('admin.allianceRole.title');
+
+    const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await fixture.whenStable();
+    expect(api.put).toHaveBeenCalledWith(
+      'api/admin/settings',
+      expect.objectContaining({ discord_event_role_id: '' }),
+    );
+    expect(api.patch).toHaveBeenCalledWith('api/alliances/ally-1/members/g1', {
+      discord_role_id: 'role-ally',
+    });
   });
 });

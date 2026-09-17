@@ -208,7 +208,9 @@ pub async fn get_guild(
         search below\"). Always returns `200` — check the `linked` boolean in the response, not the \
         HTTP status; there is no `404` for \"not linked\". When `linked` is `true`, \
         `albion_player_id`/`albion_player_name`/`linked_at` are populated; when `false`, all three \
-        are omitted from the JSON entirely (not sent as `null`).",
+        are omitted from the JSON entirely (not sent as `null`). On an alliance tenant, a link \
+        already present on a member guild is copied into the alliance schema so the user is not \
+        asked to link again.",
     security(("session_cookie" = [])),
     responses(
         (status = 200, description = "Link status retrieved successfully (check the linked field)", body = ApiResponseAlbionLinkStatus),
@@ -218,11 +220,16 @@ pub async fn get_guild(
 pub async fn get_link_status(
     user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Extension(kind): Extension<CurrentTenantKind>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
 ) -> Result<Json<ApiResponse<AlbionLinkStatus>>, AppError> {
-    let link_service = AlbionLinkService::new();
-    let link = link_service
-        .get_link_for_discord_user(&db, &user.id)
-        .await?;
+    let link = super::alliance_fanout::adopt_existing_member_link(
+        &control.0, &registry, &cfg, &user, &tenant.0, &kind.0, &db,
+    )
+    .await?;
     Ok(Json(ApiResponse::new(AlbionLinkStatus::from(link))))
 }
 
@@ -435,11 +442,7 @@ pub async fn unlink_player(
     link_service.delete_link(&db, &user.id).await?;
     super::discord_guild_role::revoke_guild_role(&db, &cfg, &tenant.0, &user.id).await;
     super::alliance_fanout::after_successful_unlink(
-        &control.0,
-        &registry,
-        &cfg,
-        &user.id,
-        &tenant.0,
+        &control.0, &registry, &cfg, &user.id, &tenant.0,
     )
     .await;
     Ok(Json(ApiResponse::new(())))
