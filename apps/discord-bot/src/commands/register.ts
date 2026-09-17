@@ -19,7 +19,28 @@ export async function execute(
   const ign = interaction.options.getString('ign', true);
 
   try {
-    const result = await api.post<AlbionLinkStatus>('api/albion/register', { ign }, interaction.user.id);
+    // Checking status first makes /register safe to repeat and lets an
+    // alliance member adopt the link created on their home guild. In that
+    // case there is no reason to resolve an IGN (Albion names are not
+    // globally unique, so the search may be ambiguous).
+    let existing: AlbionLinkStatus | undefined;
+    try {
+      existing = await api.get<AlbionLinkStatus>(
+        'api/albion/link/me',
+        interaction.user.id,
+      );
+    } catch {
+      // Keep the original register path available if the status check is
+      // temporarily unavailable.
+    }
+    const result =
+      existing?.linked === true
+        ? existing
+        : await api.post<AlbionLinkStatus>(
+            'api/albion/register',
+            { ign },
+            interaction.user.id,
+          );
 
     const embed = createBaseEmbed({
       category: 'ACCOUNT REGISTER',

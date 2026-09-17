@@ -1,7 +1,11 @@
 import { Client, GatewayIntentBits, Events } from "discord.js";
 import { config } from "./config.js";
 import { ApiClient } from "./api/client.js";
-import type { AwardMessageRequest, AwardMessageResponse } from "./api/types.js";
+import type {
+  AlbionLinkStatus,
+  AwardMessageRequest,
+  AwardMessageResponse,
+} from "./api/types.js";
 import { commands } from "./commands/index.js";
 import { handleButton } from "./handlers/button.js";
 import { handleModal } from "./handlers/modal.js";
@@ -12,7 +16,7 @@ import { initSettingsService, getSettingsService } from "./services/settings.js"
 import { initMessageXpGate, getMessageXpGate } from "./services/message-xp-gate.js";
 import { registerCommands } from "./services/registry.js";
 import { executeSlashCommand } from "./services/command-gate.js";
-import { isRegisteredTenant } from "./services/tenant-gate.js";
+import { fetchTenantStatus, isRegisteredTenant } from "./services/tenant-gate.js";
 import { createResponseEmbed } from "./embeds/theme.js";
 
 const THREAD_AUTOCREATE_BUILD_MARKER = "event-thread-signup-message-2026-08-16";
@@ -133,16 +137,30 @@ async function main(): Promise<void> {
 
   client.on(Events.GuildMemberAdd, (member) => {
     const guildId = member.guild.id;
-    void isRegisteredTenant(api, guildId)
-      .then((registered) =>
-        registered
-          ? getSettingsService(guildId)
-              .get()
-              .then((guildSettings) => assignJoinRole(member, guildSettings))
-          : undefined,
-      )
+    void (async () => {
+      const status = await fetchTenantStatus(api, guildId);
+      if (!status.registered) return;
+
+      await assignJoinRole(member, await getSettingsService(guildId).get());
+
+      // Alliance members are normally linked on their home guild first. The
+      // backend's link-status endpoint adopts that link into the alliance
+      // tenant and assigns the configured alliance/member role. This avoids
+      // asking users to identify themselves by IGN (which is not globally
+      // unique in Albion).
+      if (status.kind === "alliance") {
+        const link = await api
+          .withGuild(guildId)
+          .get<AlbionLinkStatus>("api/albion/link/me", member.id);
+        if (link.linked) {
+          console.log(
+            `[Bot] Synced existing Albion link for ${member.user.tag} in alliance ${guildId}`,
+          );
+        }
+      }
+    })()
       .catch((err: unknown) => {
-        console.error("[Bot] Base guild role assignment failed:", err);
+        console.error("[Bot] Member join sync failed:", err);
       });
   });
 
