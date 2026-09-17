@@ -308,6 +308,7 @@ export const en = {
   'splits.new': 'New split',
   'splits.edit': 'Edit split',
   'splits.edit_subtitle': 'Modify split parameters, linked event, and participant distribution.',
+  'splits.amendHint': 'Saving a completed split posts new bank transactions for the difference. Existing credits are never edited or deleted.',
   'splits.participants': 'Participants',
   'splits.net_value': 'Net value',
   'splits.estimated': 'Estimated market value',

@@ -283,6 +283,7 @@ export const fr: TranslationDict = {
   'splits.new': 'Nouvelle division',
   'splits.edit': 'Modifier la division',
   'splits.edit_subtitle': 'Modifier les paramètres du split, l\'événement lié et la répartition des participants.',
+  'splits.amendHint': 'Enregistrer un split déjà clos crée de nouvelles transactions pour la différence. Les crédits existants ne sont jamais modifiés ni supprimés.',
   'splits.participants': 'Participants',
   'splits.net_value': 'Valeur nette',
   'splits.estimated': 'Valeur marchande estimée',

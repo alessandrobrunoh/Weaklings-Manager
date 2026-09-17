@@ -325,6 +325,7 @@ impl BankService {
             .filter(Column::ToUserId.eq(user_id))
             .filter(Column::Type.eq(TYPE_SPLIT_CREDIT))
             .filter(requestable_status_condition())
+            .filter(Column::Amount.gt(Decimal::ZERO))
             .all(&txn)
             .await?;
 
@@ -503,6 +504,7 @@ impl BankService {
             TransactionEntity::find()
                 .filter(Column::ToUserId.eq(user_id))
                 .filter(requestable_status_condition())
+                .filter(Column::Amount.gt(Decimal::ZERO))
                 .all(db)
                 .await?
                 .into_iter()
@@ -529,12 +531,29 @@ impl BankService {
             .filter(Column::Id.is_in(ids.clone()))
             .filter(Column::ToUserId.eq(user_id))
             .filter(requestable_status_condition())
+            .filter(Column::Amount.gt(Decimal::ZERO))
             .all(&txn)
             .await?;
 
         if targets.len() != ids.len() {
             return Err(AppError::Validation(
                 "one or more transactions are not yours or are not requestable".to_string(),
+            ));
+        }
+
+        let pending_total = TransactionEntity::find()
+            .filter(Column::ToUserId.eq(user_id))
+            .filter(requestable_status_condition())
+            .all(&txn)
+            .await?
+            .iter()
+            .fold(Decimal::ZERO, |acc, tx| acc + tx.amount);
+        let selected_sum = targets
+            .iter()
+            .fold(Decimal::ZERO, |acc, tx| acc + tx.amount);
+        if selected_sum > pending_total {
+            return Err(AppError::Validation(
+                "cannot request more than the net requestable balance".to_string(),
             ));
         }
 

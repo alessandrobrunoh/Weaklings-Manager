@@ -302,6 +302,7 @@ export const es: TranslationDict = {
   'splits.edit': 'Editar reparto',
   'splits.edit_subtitle':
     'Modifica los parámetros del reparto, el evento vinculado y la distribución de participantes.',
+  'splits.amendHint': 'Guardar un reparto cerrado crea transacciones nuevas por la diferencia. Los créditos antiguos no se editan ni se borran.',
   'splits.participants': 'Participantes',
   'splits.net_value': 'Valor neto',
   'splits.estimated': 'Valor de mercado estimado',

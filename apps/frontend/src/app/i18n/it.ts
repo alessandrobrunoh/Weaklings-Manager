@@ -301,6 +301,7 @@ export const it: TranslationDict = {
   'splits.edit': 'Modifica split',
   'splits.edit_subtitle':
     'Modifica parametri di split, evento collegato e ripartizione partecipanti.',
+  'splits.amendHint': 'Salvare uno split già chiuso crea nuove transazioni per la differenza. I crediti vecchi non si modificano né si cancellano.',
   'splits.participants': 'Partecipanti',
   'splits.net_value': 'Valore netto',
   'splits.estimated': 'Valore di mercato stimato',

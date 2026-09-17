@@ -238,6 +238,11 @@ function parsePercentageInput(raw: string): number | null {
                       />
                     </label>
 
+                    @if (isCompletedSplit()) {
+                      <p class="text-xs" style="color: var(--color-text-secondary)">
+                        {{ t('splits.amendHint') }}
+                      </p>
+                    }
                     <div>
                       <span class="label font-medium text-xs">{{ t('splits.event_linked') }}</span>
                       <div class="flex items-center gap-2">
@@ -246,22 +251,24 @@ function parsePercentageInput(raw: string): number | null {
                         >
                           <span class="truncate">{{ editEventTitle() || t('splits.no_event') }}</span>
                         </div>
-                        <button
-                          type="button"
-                          class="btn btn--outline btn--sm text-xs whitespace-nowrap"
-                          (click)="showEventSearch.set(true)"
-                        >
-                          {{ t('splits.link_event') }}
-                        </button>
-                        @if (editEventId()) {
+                        @if (!isCompletedSplit()) {
                           <button
                             type="button"
-                            class="btn btn--danger btn--sm whitespace-nowrap"
-                            [attr.aria-label]="t('splits.unlink_event')"
-                            (click)="unlinkEditEvent()"
+                            class="btn btn--outline btn--sm text-xs whitespace-nowrap"
+                            (click)="showEventSearch.set(true)"
                           >
-                            <app-icon name="close" size="0.875rem" />
+                            {{ t('splits.link_event') }}
                           </button>
+                          @if (editEventId()) {
+                            <button
+                              type="button"
+                              class="btn btn--danger btn--sm whitespace-nowrap"
+                              [attr.aria-label]="t('splits.unlink_event')"
+                              (click)="unlinkEditEvent()"
+                            >
+                              <app-icon name="close" size="0.875rem" />
+                            </button>
+                          }
                         }
                       </div>
                     </div>
@@ -1000,11 +1007,12 @@ export class SplitDetailPage {
   protected readonly canDelete = computed(
     () => this.auth.hasPermission('splits.delete') && !this.isReadOnly(),
   );
+  protected readonly isCompletedSplit = computed(() => this.split()?.status === 'completed');
   protected readonly canEdit = computed(
     () =>
       this.canAct() &&
       !this.split()?.archived_at &&
-      ['pending', 'awaiting_event'].includes(this.split()?.status ?? ''),
+      ['pending', 'awaiting_event', 'completed'].includes(this.split()?.status ?? ''),
   );
   protected readonly canViewSplitTransactions = computed(
     () =>
@@ -1271,11 +1279,30 @@ export class SplitDetailPage {
     if (!current) {
       return;
     }
+    const userId = Number(opt.id);
+    if (this.editParticipants().some((participant) => participant.user_id === userId)) {
+      this.showParticipantSearch.set(false);
+      return;
+    }
+    if (this.isCompletedSplit()) {
+      const added: SplitParticipant = {
+        user_id: userId,
+        username: opt.title,
+        weight: 1,
+        share_amount: null,
+      };
+      const next = [...this.editParticipants(), added];
+      this.editParticipants.set(this.normalizeParticipants(next));
+      this.editWeightInputs.set(this.weightInputsFor(next));
+      this.toasts.success(this.t('splits.added_to_split', { name: opt.title }));
+      this.showParticipantSearch.set(false);
+      return;
+    }
     try {
       // The user id comes straight from the picker, so no Albion-character matching is needed.
       const detail = await firstValueFrom(
         this.api.post<SplitDetail>(`api/splits/${current.id}/participants`, {
-          user_id: Number(opt.id),
+          user_id: userId,
           weight: 1,
         }),
       );
@@ -1292,6 +1319,17 @@ export class SplitDetailPage {
   protected async removeEditParticipant(userId: number): Promise<void> {
     const current = this.split();
     if (!current) {
+      return;
+    }
+    if (this.isCompletedSplit()) {
+      this.editParticipants.update((list) =>
+        list.filter((participant) => participant.user_id !== userId),
+      );
+      this.editWeightInputs.update((inputs) => {
+        const next = { ...inputs };
+        delete next[userId];
+        return next;
+      });
       return;
     }
     try {
@@ -1357,19 +1395,27 @@ export class SplitDetailPage {
           .filter((amount) => amount > 0),
         island_tab_id: this.editTabId() ? Number(this.editTabId()) : undefined,
       };
-      if (this.editEventId() !== (current.event_id ?? null)) {
+      if (!this.isCompletedSplit() && this.editEventId() !== (current.event_id ?? null)) {
         request.event_id = this.editEventId();
+      }
+      if (this.isCompletedSplit()) {
+        request.participants = weights.map(({ participant, weight }) => ({
+          user_id: participant.user_id,
+          weight,
+        }));
       }
       let detail = await firstValueFrom(
         this.api.patch<SplitDetail>(`api/splits/${current.id}`, request),
       );
-      for (const { participant, weight } of weights) {
-        detail = await firstValueFrom(
-          this.api.post<SplitDetail>(`api/splits/${current.id}/participants`, {
-            user_id: participant.user_id,
-            weight,
-          }),
-        );
+      if (!this.isCompletedSplit()) {
+        for (const { participant, weight } of weights) {
+          detail = await firstValueFrom(
+            this.api.post<SplitDetail>(`api/splits/${current.id}/participants`, {
+              user_id: participant.user_id,
+              weight,
+            }),
+          );
+        }
       }
       this.split.set(detail);
       this.mode.set('view');

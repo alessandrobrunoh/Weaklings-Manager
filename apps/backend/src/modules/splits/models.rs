@@ -221,6 +221,10 @@ pub struct UpdateSplitRequest {
     /// Move a pending split to another catalog tab. Cannot be cleared.
     #[schema(example = 10)]
     pub island_tab_id: Option<i64>,
+    /// Replace the roster in one shot. Used when amending a completed split so
+    /// credits are reconciled once. Omit to leave participants unchanged.
+    #[serde(default)]
+    pub participants: Option<Vec<UpsertParticipantRequest>>,
 }
 
 /// Request body to add or update a participant's weight in a pending split.

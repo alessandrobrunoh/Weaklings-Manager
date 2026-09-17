@@ -17,7 +17,9 @@ use sea_orm::{
 use crate::errors::AppError;
 use crate::modules::admin::entities::Entity as GuildSettingsEntity;
 use crate::modules::albion::entities::albion_link::Entity as AlbionLinkEntity;
-use crate::modules::bank::entities::ActiveModel as TransactionActiveModel;
+use crate::modules::bank::entities::{
+    ActiveModel as TransactionActiveModel, Column as TransactionColumn, Entity as TransactionEntity,
+};
 use crate::modules::bank::service::TYPE_SPLIT_CREDIT;
 use crate::modules::bank::status::TransactionStatus;
 use crate::modules::events::entities::event::{Column as EventColumn, Entity as EventEntity};
@@ -60,6 +62,17 @@ use super::status::SplitStatus;
 fn parse_status(split: &SplitModel) -> Result<SplitStatus, AppError> {
     SplitStatus::from_str(&split.status)
         .map_err(|_| AppError::Internal(format!("Unknown split status: {}", split.status)))
+}
+
+fn merge_credit_status(left: TransactionStatus, right: TransactionStatus) -> TransactionStatus {
+    use TransactionStatus::{Pending, Requested};
+    if matches!(left, Pending) || matches!(right, Pending) {
+        Pending
+    } else if matches!(left, Requested) || matches!(right, Requested) {
+        Requested
+    } else {
+        left
+    }
 }
 
 fn sum_bags(amounts: &[Decimal]) -> Decimal {
@@ -124,6 +137,116 @@ async fn replace_bags<C: ConnectionTrait>(
         }
         .insert(db)
         .await?;
+    }
+    Ok(())
+}
+
+async fn replace_split_participants<C: ConnectionTrait>(
+    db: &C,
+    split_id: i64,
+    participants: &[UpsertParticipantRequest],
+) -> Result<(), AppError> {
+    ParticipantEntity::delete_many()
+        .filter(ParticipantColumn::SplitId.eq(split_id))
+        .exec(db)
+        .await?;
+    for participant in participants {
+        ParticipantActiveModel {
+            split_id: Set(split_id),
+            user_id: Set(participant.user_id),
+            weight: Set(participant.weight),
+            ..Default::default()
+        }
+        .insert(db)
+        .await?;
+    }
+    Ok(())
+}
+
+async fn insert_split_credit<C: ConnectionTrait>(
+    db: &C,
+    split_id: i64,
+    user_id: i64,
+    amount: Decimal,
+) -> Result<(), AppError> {
+    TransactionActiveModel {
+        from_user_id: Set(None),
+        to_user_id: Set(user_id),
+        amount: Set(amount),
+        status: Set(TransactionStatus::Pending.to_string()),
+        r#type: Set(TYPE_SPLIT_CREDIT.to_string()),
+        split_id: Set(Some(split_id)),
+        ..Default::default()
+    }
+    .insert(db)
+    .await?;
+    Ok(())
+}
+
+/// Append-only: post signed split_credit rows so net credits match the current roster.
+async fn reconcile_completed_split_credits<C: ConnectionTrait>(
+    db: &C,
+    split_id: i64,
+    _officer_user_id: i64,
+) -> Result<(), AppError> {
+    let split = SplitEntity::find_by_id(split_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| AppError::Internal("completed split disappeared".to_string()))?;
+    let participants = ParticipantEntity::find()
+        .filter(ParticipantColumn::SplitId.eq(split_id))
+        .all(db)
+        .await?;
+    if participants.is_empty() {
+        return Err(AppError::Validation(
+            "cannot amend a completed split with no participants".to_string(),
+        ));
+    }
+    let net_value = calculate_net_value(
+        split.estimated_market_value,
+        split.fee,
+        split.repair_value,
+        split.bags_value,
+    );
+    if net_value <= Decimal::ZERO {
+        return Err(AppError::Validation(
+            "split net value must be positive to amend".to_string(),
+        ));
+    }
+    let mut active: SplitActiveModel = split.into();
+    active.net_value = Set(Some(net_value));
+    active.updated_at = Set(chrono::Utc::now().into());
+    active.update(db).await?;
+
+    let weights: Vec<(i64, Decimal)> = participants
+        .iter()
+        .map(|participant| (participant.user_id, participant.weight))
+        .collect();
+    let targets = participant_shares(net_value, &weights);
+    let mut posted: HashMap<i64, Decimal> = HashMap::new();
+    let transactions = TransactionEntity::find()
+        .filter(TransactionColumn::SplitId.eq(split_id))
+        .all(db)
+        .await?;
+    for transaction in &transactions {
+        *posted
+            .entry(transaction.to_user_id)
+            .or_insert(Decimal::ZERO) += transaction.amount;
+    }
+    let mut users: HashSet<i64> = posted.keys().copied().collect();
+    users.extend(targets.iter().map(|(user_id, _)| *user_id));
+    let target_by_user: HashMap<i64, Decimal> = targets.into_iter().collect();
+    for user_id in users {
+        let target = target_by_user
+            .get(&user_id)
+            .copied()
+            .unwrap_or(Decimal::ZERO);
+        let already = posted.get(&user_id).copied().unwrap_or(Decimal::ZERO);
+        let delta = (target - already).round_dp(2);
+        if delta == Decimal::ZERO {
+            continue;
+        }
+        insert_split_credit(db, split_id, user_id, delta).await?;
     }
     Ok(())
 }
@@ -208,6 +331,60 @@ fn calculate_net_value(
 ) -> Decimal {
     let value_before_fee = estimated_market_value - repair_value + bags_value;
     (value_before_fee - (value_before_fee * fee / Decimal::from(100))).round_dp(2)
+}
+
+/// Weight-proportional shares; the last participant receives the rounding remainder.
+fn participant_shares(net_value: Decimal, weights: &[(i64, Decimal)]) -> Vec<(i64, Decimal)> {
+    if weights.is_empty() {
+        return Vec::new();
+    }
+    let total_weight: Decimal = weights.iter().map(|(_, weight)| *weight).sum();
+    if total_weight <= Decimal::ZERO {
+        return weights
+            .iter()
+            .map(|(user_id, _)| (*user_id, Decimal::ZERO))
+            .collect();
+    }
+    let mut running_total = Decimal::ZERO;
+    let last_index = weights.len() - 1;
+    weights
+        .iter()
+        .enumerate()
+        .map(|(index, (user_id, weight))| {
+            let share = if index == last_index {
+                net_value - running_total
+            } else {
+                let share = (net_value * *weight / total_weight).round_dp(2);
+                running_total += share;
+                share
+            };
+            (*user_id, share)
+        })
+        .collect()
+}
+
+fn validate_participant_list(participants: &[UpsertParticipantRequest]) -> Result<(), AppError> {
+    if participants.is_empty() {
+        return Err(AppError::Validation(
+            "a split must keep at least one participant".to_string(),
+        ));
+    }
+    if participants
+        .iter()
+        .any(|participant| participant.weight <= Decimal::ZERO)
+    {
+        return Err(AppError::Validation("weight must be positive".to_string()));
+    }
+    let mut seen = HashSet::with_capacity(participants.len());
+    if !participants
+        .iter()
+        .all(|participant| seen.insert(participant.user_id))
+    {
+        return Err(AppError::Validation(
+            "participants must not contain duplicate user ids".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 /// Resolves the user ids of every player signed up to `event_id`.
@@ -585,16 +762,15 @@ impl SplitService {
         let net_value = split.net_value;
         let is_completed = parse_status(&split)? == SplitStatus::Completed;
 
-        // Once completed, the authoritative share amounts are whatever was actually written to
-        // the transactions table at completion time (which applies remainder-correction so the
-        // sum is exact) — read those back rather than recomputing, to avoid the two diverging.
+        // Once completed, the authoritative share is the net of every ledger row for this split
+        // (original credits plus later amendment deltas). Status prefers still-open rows.
         let generated_credits: std::collections::HashMap<i64, (Decimal, TransactionStatus)> =
             if is_completed {
-                let transactions = crate::modules::bank::entities::Entity::find()
-                    .filter(crate::modules::bank::entities::Column::SplitId.eq(split.id))
+                let transactions = TransactionEntity::find()
+                    .filter(TransactionColumn::SplitId.eq(split.id))
                     .all(db)
                     .await?;
-                let mut credits = std::collections::HashMap::with_capacity(transactions.len());
+                let mut credits = std::collections::HashMap::new();
                 for transaction in transactions {
                     let status =
                         TransactionStatus::from_str(&transaction.status).map_err(|_| {
@@ -603,7 +779,13 @@ impl SplitService {
                                 transaction.status
                             ))
                         })?;
-                    credits.insert(transaction.to_user_id, (transaction.amount, status));
+                    credits
+                        .entry(transaction.to_user_id)
+                        .and_modify(|(amount, existing_status)| {
+                            *amount += transaction.amount;
+                            *existing_status = merge_credit_status(*existing_status, status);
+                        })
+                        .or_insert((transaction.amount, status));
                 }
                 credits
             } else {
@@ -878,6 +1060,7 @@ impl SplitService {
         db: &DatabaseConnection,
         split_id: i64,
         action: &str,
+        allow_completed: bool,
     ) -> Result<SplitModel, AppError> {
         let split = SplitEntity::find_by_id(split_id)
             .one(db)
@@ -888,7 +1071,9 @@ impl SplitService {
         if split.archived_at.is_some() {
             return Err(AppError::Conflict(format!("split {split_id} is archived")));
         }
-        if !matches!(status, SplitStatus::Pending | SplitStatus::AwaitingEvent) {
+        let editable = matches!(status, SplitStatus::Pending | SplitStatus::AwaitingEvent)
+            || (allow_completed && status == SplitStatus::Completed);
+        if !editable {
             return Err(AppError::Validation(format!(
                 "cannot {action} a split that is not editable"
             )));
@@ -914,9 +1099,18 @@ impl SplitService {
         split_id: i64,
         req: UpdateSplitRequest,
     ) -> Result<SplitDetail, AppError> {
-        let split = self.load_editable(db, split_id, "update").await?;
+        let split = self.load_editable(db, split_id, "update", true).await?;
         let previous_event_id = split.event_id;
-        let mut active: SplitActiveModel = split.into();
+        let completed = parse_status(&split)? == SplitStatus::Completed;
+        if completed && req.event_id.is_some() {
+            return Err(AppError::Validation(
+                "cannot change the linked event on a completed split".to_string(),
+            ));
+        }
+        if let Some(participants) = &req.participants {
+            validate_participant_list(participants)?;
+        }
+        let mut active: SplitActiveModel = split.clone().into();
 
         active.updated_at = Set(chrono::Utc::now().into());
 
@@ -976,6 +1170,10 @@ impl SplitService {
             replace_bags(&txn, split_id, amounts).await?;
         }
 
+        if let Some(participants) = &req.participants {
+            replace_split_participants(&txn, split_id, participants).await?;
+        }
+
         if let Some(event_id_opt) = linked_event_id {
             active.event_id = Set(event_id_opt);
         }
@@ -994,6 +1192,14 @@ impl SplitService {
             linked.status = Set(status_for_event(&event_status).to_string());
             linked.updated_at = Set(chrono::Utc::now().into());
             updated = linked.update(&txn).await?;
+        }
+
+        if completed {
+            reconcile_completed_split_credits(&txn, split_id, split.created_by).await?;
+            updated = SplitEntity::find_by_id(split_id)
+                .one(&txn)
+                .await?
+                .ok_or_else(|| AppError::Internal("amended split disappeared".to_string()))?;
         }
 
         txn.commit().await?;
@@ -1657,22 +1863,24 @@ impl SplitService {
         split_id: i64,
         req: UpsertParticipantRequest,
     ) -> Result<SplitDetail, AppError> {
-        let split = self.load_editable(db, split_id, "modify").await?;
+        let split = self.load_editable(db, split_id, "modify", true).await?;
+        let completed = parse_status(&split)? == SplitStatus::Completed;
 
         if req.weight <= Decimal::ZERO {
             return Err(AppError::Validation("weight must be positive".to_string()));
         }
 
+        let txn = db.begin().await?;
         let existing = ParticipantEntity::find()
             .filter(ParticipantColumn::SplitId.eq(split_id))
             .filter(ParticipantColumn::UserId.eq(req.user_id))
-            .one(db)
+            .one(&txn)
             .await?;
 
         if let Some(existing) = existing {
             let mut active: ParticipantActiveModel = existing.into();
             active.weight = Set(req.weight);
-            active.update(db).await?;
+            active.update(&txn).await?;
         } else {
             let active = ParticipantActiveModel {
                 split_id: Set(split_id),
@@ -1680,13 +1888,17 @@ impl SplitService {
                 weight: Set(req.weight),
                 ..Default::default()
             };
-            active.insert(db).await?;
+            active.insert(&txn).await?;
         }
 
         let mut split_active: SplitActiveModel = split.into();
         split_active.updated_at = Set(chrono::Utc::now().into());
-        let split = split_active.update(db).await?;
-        self.to_detail(db, split).await
+        let split = split_active.update(&txn).await?;
+        if completed {
+            reconcile_completed_split_credits(&txn, split_id, split.created_by).await?;
+        }
+        txn.commit().await?;
+        self.get_split(db, split_id).await
     }
 
     /// Removes a participant from a pending split.
@@ -1701,18 +1913,35 @@ impl SplitService {
         split_id: i64,
         user_id: i64,
     ) -> Result<SplitDetail, AppError> {
-        let split = self.load_editable(db, split_id, "modify").await?;
+        let split = self.load_editable(db, split_id, "modify", true).await?;
+        let completed = parse_status(&split)? == SplitStatus::Completed;
+        if completed {
+            let remaining = ParticipantEntity::find()
+                .filter(ParticipantColumn::SplitId.eq(split_id))
+                .count(db)
+                .await?;
+            if remaining <= 1 {
+                return Err(AppError::Validation(
+                    "cannot amend a completed split with no participants".to_string(),
+                ));
+            }
+        }
 
+        let txn = db.begin().await?;
         ParticipantEntity::delete_many()
             .filter(ParticipantColumn::SplitId.eq(split_id))
             .filter(ParticipantColumn::UserId.eq(user_id))
-            .exec(db)
+            .exec(&txn)
             .await?;
 
         let mut split_active: SplitActiveModel = split.into();
         split_active.updated_at = Set(chrono::Utc::now().into());
-        let split = split_active.update(db).await?;
-        self.to_detail(db, split).await
+        let split = split_active.update(&txn).await?;
+        if completed {
+            reconcile_completed_split_credits(&txn, split_id, split.created_by).await?;
+        }
+        txn.commit().await?;
+        self.get_split(db, split_id).await
     }
 
     /// Completes a pending split: computes the net value and atomically generates one Guild Bank
@@ -1774,7 +2003,7 @@ impl SplitService {
         split_id: i64,
         officer_user_id: i64,
     ) -> Result<SplitDetail, AppError> {
-        let split = self.load_editable(db, split_id, "complete").await?;
+        let split = self.load_editable(db, split_id, "complete", false).await?;
 
         if let Some(event_id) = split.event_id {
             let event = EventEntity::find_by_id(event_id)
@@ -1811,7 +2040,11 @@ impl SplitService {
             ));
         }
 
-        let total_weight: Decimal = participants.iter().map(|p| p.weight).sum();
+        let weights: Vec<(i64, Decimal)> = participants
+            .iter()
+            .map(|participant| (participant.user_id, participant.weight))
+            .collect();
+        let shares = participant_shares(net_value, &weights);
 
         let txn = db.begin().await?;
 
@@ -1841,27 +2074,18 @@ impl SplitService {
             )));
         }
 
-        let mut running_total = Decimal::ZERO;
-        let last_index = participants.len() - 1;
-        for (i, participant) in participants.iter().enumerate() {
-            let share = if i == last_index {
-                net_value - running_total
-            } else {
-                let s = (net_value * participant.weight / total_weight).round_dp(2);
-                running_total += s;
-                s
-            };
-
-            let active = TransactionActiveModel {
+        for (user_id, share) in shares {
+            let inserted_tx = TransactionActiveModel {
                 from_user_id: Set(None),
-                to_user_id: Set(participant.user_id),
+                to_user_id: Set(user_id),
                 amount: Set(share),
                 status: Set(TransactionStatus::Pending.to_string()),
                 r#type: Set(TYPE_SPLIT_CREDIT.to_string()),
                 split_id: Set(Some(split_id)),
                 ..Default::default()
-            };
-            let inserted_tx = active.insert(&txn).await?;
+            }
+            .insert(&txn)
+            .await?;
             let _ = crate::modules::audit::service::AuditService::log(
                 db,
                 "TRANSACTION_CREATED",
@@ -1872,7 +2096,7 @@ impl SplitService {
                     "split_id": split_id,
                     "amount": share,
                     "type": TYPE_SPLIT_CREDIT,
-                    "target_user_id": participant.user_id
+                    "target_user_id": user_id
                 })),
             )
             .await;
@@ -2199,6 +2423,7 @@ mod tests {
                     note: None,
                     event_id: None,
                     island_tab_id: None,
+                    participants: None,
                 },
             )
             .await
@@ -2219,6 +2444,7 @@ mod tests {
                     note: None,
                     event_id: None,
                     island_tab_id: None,
+                    participants: None,
                 },
             )
             .await
@@ -2392,6 +2618,7 @@ mod tests {
                     note: None,
                     event_id: None,
                     island_tab_id: None,
+                    participants: None,
                 },
             )
             .await
@@ -2492,6 +2719,184 @@ mod tests {
             .unwrap();
         let second = service.complete_split(&db, split.summary.id, admin).await;
         assert!(second.is_err());
+    }
+
+    #[test]
+    fn participant_shares_give_remainder_to_the_last_person() {
+        let shares = participant_shares(
+            "100.00".parse().unwrap(),
+            &[(1, Decimal::ONE), (2, Decimal::ONE), (3, Decimal::ONE)],
+        );
+        assert_eq!(
+            shares,
+            vec![
+                (1, "33.33".parse().unwrap()),
+                (2, "33.33".parse().unwrap()),
+                (3, "33.34".parse().unwrap()),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn amending_a_completed_split_posts_deltas_and_keeps_original_credits() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let bob = insert_user(&db, "bob", "bob@example.com").await;
+        let carol = insert_user(&db, "carol", "carol@example.com").await;
+        let tab_id = seed_tab(&db).await;
+        let service = SplitService::new();
+        let split = service
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request(
+                        "100.00",
+                        "0.00",
+                        "0.00",
+                        vec![alice, bob]
+                            .into_iter()
+                            .map(|user_id| UpsertParticipantRequest {
+                                user_id,
+                                weight: Decimal::ONE,
+                            })
+                            .collect(),
+                    ),
+                    tab_id,
+                ),
+            )
+            .await
+            .unwrap();
+        service
+            .complete_split(&db, split.summary.id, admin)
+            .await
+            .unwrap();
+        let original = TransactionEntity::find()
+            .filter(TransactionColumn::SplitId.eq(split.summary.id))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(original.len(), 2);
+        let original_ids: HashSet<i64> = original.iter().map(|tx| tx.id).collect();
+
+        let updated = service
+            .update_split(
+                &db,
+                split.summary.id,
+                UpdateSplitRequest {
+                    estimated_market_value: None,
+                    fee: None,
+                    repair_value: None,
+                    bags_value: None,
+                    bags: None,
+                    note: None,
+                    event_id: None,
+                    island_tab_id: None,
+                    participants: Some(vec![
+                        UpsertParticipantRequest {
+                            user_id: alice,
+                            weight: Decimal::ONE,
+                        },
+                        UpsertParticipantRequest {
+                            user_id: bob,
+                            weight: Decimal::ONE,
+                        },
+                        UpsertParticipantRequest {
+                            user_id: carol,
+                            weight: Decimal::ONE,
+                        },
+                    ]),
+                },
+            )
+            .await
+            .unwrap();
+
+        let credits = TransactionEntity::find()
+            .filter(TransactionColumn::SplitId.eq(split.summary.id))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(credits.len(), 5);
+        assert!(
+            original_ids
+                .iter()
+                .all(|id| credits.iter().any(|tx| tx.id == *id))
+        );
+        assert!(original.iter().all(|tx| {
+            credits
+                .iter()
+                .find(|row| row.id == tx.id)
+                .is_some_and(|row| row.amount == tx.amount && row.status == tx.status)
+        }));
+
+        let mut net: HashMap<i64, Decimal> = HashMap::new();
+        for tx in &credits {
+            *net.entry(tx.to_user_id).or_insert(Decimal::ZERO) += tx.amount;
+        }
+        assert_eq!(net.get(&alice).copied().unwrap(), "33.33".parse().unwrap());
+        assert_eq!(net.get(&bob).copied().unwrap(), "33.33".parse().unwrap());
+        assert_eq!(net.get(&carol).copied().unwrap(), "33.34".parse().unwrap());
+        assert_eq!(updated.participants.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn removing_a_completed_split_participant_posts_a_clawback() {
+        let db = seed_db().await;
+        let admin = insert_user(&db, "admin", "admin@example.com").await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let bob = insert_user(&db, "bob", "bob@example.com").await;
+        let tab_id = seed_tab(&db).await;
+        let service = SplitService::new();
+        let split = service
+            .create_split(
+                &db,
+                admin,
+                located(
+                    request(
+                        "100.00",
+                        "0.00",
+                        "0.00",
+                        vec![alice, bob]
+                            .into_iter()
+                            .map(|user_id| UpsertParticipantRequest {
+                                user_id,
+                                weight: Decimal::ONE,
+                            })
+                            .collect(),
+                    ),
+                    tab_id,
+                ),
+            )
+            .await
+            .unwrap();
+        service
+            .complete_split(&db, split.summary.id, admin)
+            .await
+            .unwrap();
+
+        service
+            .remove_participant(&db, split.summary.id, bob)
+            .await
+            .unwrap();
+
+        let credits = TransactionEntity::find()
+            .filter(TransactionColumn::SplitId.eq(split.summary.id))
+            .all(&db)
+            .await
+            .unwrap();
+        let mut net: HashMap<i64, Decimal> = HashMap::new();
+        for tx in &credits {
+            *net.entry(tx.to_user_id).or_insert(Decimal::ZERO) += tx.amount;
+        }
+        assert_eq!(net.get(&alice).copied().unwrap(), "100.00".parse().unwrap());
+        assert_eq!(net.get(&bob).copied().unwrap(), Decimal::ZERO);
+        assert!(
+            credits
+                .iter()
+                .any(|tx| tx.to_user_id == bob && tx.amount < Decimal::ZERO)
+        );
+        assert_eq!(credits.len(), 4);
     }
 
     #[tokio::test]
@@ -3133,6 +3538,7 @@ mod tests {
                     note: None,
                     event_id: None,
                     island_tab_id: Some(island.tabs[1].id),
+                    participants: None,
                 },
             )
             .await
@@ -3142,7 +3548,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_completed_split_rejects_relocation() {
+    async fn update_completed_split_allows_relocation_without_new_credits() {
         let db = seed_db().await;
         let admin = insert_user(&db, "admin", "admin@example.com").await;
         let alice = insert_user(&db, "alice", "alice@example.com").await;
@@ -3181,7 +3587,7 @@ mod tests {
             .complete_split(&db, split.summary.id, admin)
             .await
             .unwrap();
-        let err = service
+        let updated = service
             .update_split(
                 &db,
                 split.summary.id,
@@ -3194,11 +3600,19 @@ mod tests {
                     note: None,
                     event_id: None,
                     island_tab_id: Some(island.tabs[1].id),
+                    participants: None,
                 },
             )
             .await
-            .unwrap_err();
-        assert!(matches!(err, AppError::Validation(_)));
+            .unwrap();
+        assert_eq!(updated.summary.island_tab_id, Some(island.tabs[1].id));
+        let credits = TransactionEntity::find()
+            .filter(TransactionColumn::SplitId.eq(split.summary.id))
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(credits.len(), 1);
+        assert_eq!(credits[0].amount, "50.00".parse::<Decimal>().unwrap());
     }
 
     #[tokio::test]
@@ -3331,6 +3745,7 @@ mod tests {
                     note: None,
                     event_id: Some(Some(event.id)),
                     island_tab_id: None,
+                    participants: None,
                 },
             )
             .await
@@ -3521,6 +3936,7 @@ mod tests {
             note: None,
             event_id: None,
             island_tab_id: None,
+            participants: None,
         }
     }
 
