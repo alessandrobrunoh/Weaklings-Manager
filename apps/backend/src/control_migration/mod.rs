@@ -18,6 +18,7 @@ mod m20260908_000009_alliance_shares;
 mod m20260908_000010_alliance_share_split;
 mod m20260917_000001_alliance_shares_comp;
 mod m20260918_000001_alliance_membership_discord_role;
+mod m20260918_000001_event_sync_links;
 
 /// Stable id of the seeded `SuperAdmin` platform role.
 pub const SUPERADMIN_ROLE_ID: &str = "01990000-0000-4000-8000-000000000001";
@@ -53,6 +54,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260917_000001_alliance_shares_comp::Migration),
             Box::new(m20260908_000010_alliance_share_split::Migration),
             Box::new(m20260918_000001_alliance_membership_discord_role::Migration),
+            Box::new(m20260918_000001_event_sync_links::Migration),
         ]
     }
 }
@@ -96,7 +98,7 @@ mod tests {
                 "control migration {name} collides with a tenant migration name"
             );
         }
-        assert_eq!(control.len(), 12);
+        assert_eq!(control.len(), 13);
     }
 
     #[tokio::test]
@@ -144,6 +146,7 @@ mod tests {
             "tenant_rank_features",
             "alliance_memberships",
             "alliance_shares",
+            "event_sync_links",
             "seaql_migrations",
         ] {
             assert!(
@@ -163,6 +166,7 @@ mod tests {
             "tenant_rank_features",
             "alliance_memberships",
             "alliance_shares",
+            "event_sync_links",
         ] {
             assert!(
                 !tenant_tables.iter().any(|t| t == control_only),

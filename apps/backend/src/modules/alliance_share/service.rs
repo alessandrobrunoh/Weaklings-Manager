@@ -2192,7 +2192,7 @@ mod tests {
             .expect("drop alliance");
         drop_schema(&admin, &schema).await.expect("drop");
     }
-fn split_share_req(id: i64) -> CreateAllianceShareRequest {
+    fn split_share_req(id: i64) -> CreateAllianceShareRequest {
         CreateAllianceShareRequest {
             artifact_type: ArtifactType::Split,
             id,

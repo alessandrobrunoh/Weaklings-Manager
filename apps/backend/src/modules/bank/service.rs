@@ -63,6 +63,34 @@ fn requestable_transaction_condition() -> Condition {
         .add(Column::Amount.gt(Decimal::ZERO))
 }
 
+/// Settled split clawbacks: already confirmed, still reduce what the member can withdraw.
+fn confirmed_clawback_condition() -> Condition {
+    Condition::all()
+        .add(Column::Status.eq(TransactionStatus::Withdrawn.to_string()))
+        .add(Column::Amount.lt(Decimal::ZERO))
+        .add(Column::Type.eq(TYPE_SPLIT_CREDIT))
+}
+
+async fn net_requestable_total(
+    db: &impl ConnectionTrait,
+    user_id: i64,
+) -> Result<Decimal, AppError> {
+    let positives = TransactionEntity::find()
+        .filter(Column::ToUserId.eq(user_id))
+        .filter(requestable_transaction_condition())
+        .all(db)
+        .await?;
+    let clawbacks = TransactionEntity::find()
+        .filter(Column::ToUserId.eq(user_id))
+        .filter(confirmed_clawback_condition())
+        .all(db)
+        .await?;
+    Ok(positives
+        .iter()
+        .chain(clawbacks.iter())
+        .fold(Decimal::ZERO, |acc, tx| acc + tx.amount))
+}
+
 async fn touch_linked_splits<C>(db: &C, transactions: &[Model]) -> Result<(), AppError>
 where
     C: ConnectionTrait,
@@ -148,7 +176,8 @@ impl BankService {
     /// Computes the derived balance for a user: what's requestable and what's requested.
     ///
     /// Rejected withdrawals are included in the requestable side because they must be explicitly
-    /// requested again before an officer can accept them.
+    /// requested again before an officer can accept them. Confirmed split clawbacks (negative
+    /// withdrawn credits) reduce `pending_total` immediately so they cannot be cashed out.
     ///
     /// # Errors
     ///
@@ -163,6 +192,11 @@ impl BankService {
             .filter(requestable_transaction_condition())
             .all(db)
             .await?;
+        let clawbacks = TransactionEntity::find()
+            .filter(Column::ToUserId.eq(user_id))
+            .filter(confirmed_clawback_condition())
+            .all(db)
+            .await?;
         let requested = TransactionEntity::find()
             .filter(Column::ToUserId.eq(user_id))
             .filter(Column::Status.eq(TransactionStatus::Requested.to_string()))
@@ -171,6 +205,7 @@ impl BankService {
 
         let pending_total = pending
             .iter()
+            .chain(clawbacks.iter())
             .fold(Decimal::ZERO, |acc, tx| acc + tx.amount);
         let requested_total = requested
             .iter()
@@ -337,6 +372,12 @@ impl BankService {
                 "no requestable split share is available for this user".to_string(),
             ));
         };
+        let net = net_requestable_total(&txn, user_id).await?;
+        if candidate.amount > net {
+            return Err(AppError::Conflict(
+                "no requestable split share is available for this user".to_string(),
+            ));
+        }
 
         let updated = TransactionEntity::update_many()
             .filter(Column::Id.eq(candidate.id))
@@ -542,13 +583,7 @@ impl BankService {
             ));
         }
 
-        let pending_total = TransactionEntity::find()
-            .filter(Column::ToUserId.eq(user_id))
-            .filter(requestable_transaction_condition())
-            .all(&txn)
-            .await?
-            .iter()
-            .fold(Decimal::ZERO, |acc, tx| acc + tx.amount);
+        let pending_total = net_requestable_total(&txn, user_id).await?;
         let selected_sum = targets
             .iter()
             .fold(Decimal::ZERO, |acc, tx| acc + tx.amount);

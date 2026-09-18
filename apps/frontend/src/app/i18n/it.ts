@@ -415,8 +415,9 @@ export const it: TranslationDict = {
   'events.subtitle': 'Pianifica e gestisci le attività della gilda.',
   'events.call_to_arms': 'Chiamata alle armi',
   'events.regear': 'Regear',
-  'events.pingAlliance': 'Pinga anche il Discord alleanza',
-  'events.pingAllianceHint': 'Pubblica l\'annuncio e i ping di mass/start/cancel sul canale eventi dell\'alleanza.',
+  'events.pingAlliance': 'Sincronizza anche con il server dell\'alleanza',
+  'events.pingAllianceHint':
+    'Crea un evento collegato sul server dell\'alleanza, sincronizzando iscrizioni e aggiornamenti, e pubblica l\'annuncio.',
   'events.new': 'Nuovo evento',
   'events.create.comp_required': 'La composizione è obbligatoria.',
   'events.create.playerCap': 'Cap giocatori',

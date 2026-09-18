@@ -169,13 +169,23 @@ async fn insert_split_credit<C: ConnectionTrait>(
     user_id: i64,
     amount: Decimal,
 ) -> Result<(), AppError> {
+    let now = chrono::Utc::now().into();
+    let (status, withdrawn_at) = if amount < Decimal::ZERO {
+        // Clawbacks are settled immediately so they hit the member's balance
+        // and never appear as withdrawable credits.
+        (TransactionStatus::Withdrawn, Some(now))
+    } else {
+        (TransactionStatus::Pending, None)
+    };
     TransactionActiveModel {
         from_user_id: Set(None),
         to_user_id: Set(user_id),
         amount: Set(amount),
-        status: Set(TransactionStatus::Pending.to_string()),
+        status: Set(status.to_string()),
         r#type: Set(TYPE_SPLIT_CREDIT.to_string()),
         split_id: Set(Some(split_id)),
+        withdrawn_at: Set(withdrawn_at),
+        updated_at: Set(now),
         ..Default::default()
     }
     .insert(db)
@@ -2909,11 +2919,18 @@ mod tests {
         assert_eq!(net.get(&alice).copied().unwrap(), "100.00".parse().unwrap());
         assert_eq!(net.get(&bob).copied().unwrap(), Decimal::ZERO);
         assert!(
-            credits
-                .iter()
-                .any(|tx| tx.to_user_id == bob && tx.amount < Decimal::ZERO)
+            credits.iter().any(|tx| {
+                tx.to_user_id == bob
+                    && tx.amount < Decimal::ZERO
+                    && tx.status == TransactionStatus::Withdrawn.to_string()
+            })
         );
         assert_eq!(credits.len(), 4);
+        let bank = crate::modules::bank::service::BankService::new();
+        let bob_balance = bank.get_balance(&db, bob).await.unwrap();
+        assert_eq!(bob_balance.pending_total, Decimal::ZERO);
+        let alice_balance = bank.get_balance(&db, alice).await.unwrap();
+        assert_eq!(alice_balance.pending_total, "100.00".parse().unwrap());
     }
 
     #[tokio::test]
