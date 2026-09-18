@@ -342,6 +342,12 @@ pub struct SplitIslandView {
     pub name: String,
     /// Albion city that hosts the island.
     pub city: SplitIslandCity,
+    /// Tenant id of the member guild that owns this island when viewed from an alliance.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_guild_tenant_id: Option<String>,
+    /// Display name of the member guild that owns this island when viewed from an alliance.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_guild_name: Option<String>,
     /// Named tabs available on this island.
     pub tabs: Vec<SplitIslandTabView>,
 }

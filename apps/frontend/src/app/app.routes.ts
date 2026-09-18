@@ -274,7 +274,7 @@ export const routes: Routes = [
           },
           {
             path: 'islands',
-            canActivate: [guildOnlyGuard, permissionGuardTo('/admin', 'splits.islands.manage')],
+            canActivate: [permissionGuardTo('/admin', 'splits.islands.manage')],
             loadComponent: () =>
               import('./features/admin/admin-islands').then((m) => m.AdminIslands),
           },

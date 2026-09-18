@@ -1296,7 +1296,14 @@ export const en = {
   'admin.withdrawals.title': 'Withdrawal requests',
   'admin.islands.title': 'Island catalog',
   'admin.islands.hint': 'Cities, islands, and loot tabs used when locating splits.',
+  'admin.islands.allianceHint':
+    'Islands and loot tabs synced from member guilds. Edit them in the source guild.',
   'admin.islands.empty': 'Add an island before anyone can locate a split.',
+  'admin.islands.allianceEmpty': 'No islands have been synced from member guilds yet.',
+  'admin.islands.sourceGuild': 'Source guild',
+  'admin.islands.unknownGuild': 'Unknown guild',
+  'admin.islands.readonlyHint':
+    'This catalog is synced from member guilds and cannot be edited here.',
   'admin.islands.create': 'Add island',
   'admin.islands.created': 'Island added.',
   'admin.islands.edit': 'Edit island',
@@ -1317,7 +1324,10 @@ export const en = {
   'admin.islands.detail.notFound': 'This island was not found.',
   'admin.islands.detail.overview': 'Island details',
   'admin.islands.detail.tabsTitle': 'Manage chest tabs',
+  'admin.islands.detail.tabsTitleReadonly': 'Chest tabs',
   'admin.islands.detail.tabsHint': 'Chests available for storing loot splits on this island.',
+  'admin.islands.detail.tabsHintReadonly':
+    'Chests available for storing loot splits on this island. Changes are made in the source guild.',
   'admin.islands.detail.tabName': 'Tab name',
   'admin.islands.detail.sortOrder': 'Sort order',
   'admin.islands.detail.moveUp': 'Move up',

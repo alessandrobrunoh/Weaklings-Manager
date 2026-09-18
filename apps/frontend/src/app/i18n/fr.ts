@@ -1221,7 +1221,14 @@ export const fr: TranslationDict = {
   'admin.withdrawals.title': 'Demandes de retrait',
   'admin.islands.title': 'Catalogue des îles',
   'admin.islands.hint': 'Villes, îles et onglets de butin utilisés pour localiser les splits.',
+  'admin.islands.allianceHint':
+    'Îles et onglets de butin synchronisés depuis les guildes membres. Modifiez-les dans la guilde source.',
   'admin.islands.empty': 'Ajoutez une île avant que quiconque puisse localiser un split.',
+  'admin.islands.allianceEmpty': 'Aucune île n’a encore été synchronisée depuis les guildes membres.',
+  'admin.islands.sourceGuild': 'Guilde source',
+  'admin.islands.unknownGuild': 'Guilde inconnue',
+  'admin.islands.readonlyHint':
+    'Ce catalogue est synchronisé depuis les guildes membres et ne peut pas être modifié ici.',
   'admin.islands.create': 'Ajouter une île',
   'admin.islands.created': 'Île ajoutée.',
   'admin.islands.edit': 'Modifier l\'île',
@@ -1242,7 +1249,10 @@ export const fr: TranslationDict = {
   'admin.islands.detail.notFound': 'Cette île n\'a pas été trouvée.',
   'admin.islands.detail.overview': 'Détails de l\'île',
   'admin.islands.detail.tabsTitle': 'Gérer les onglets de coffre',
+  'admin.islands.detail.tabsTitleReadonly': 'Onglets de coffre',
   'admin.islands.detail.tabsHint': 'Coffres disponibles pour stocker les partages de butin sur cette île.',
+  'admin.islands.detail.tabsHintReadonly':
+    'Coffres disponibles pour stocker les partages de butin sur cette île. Les modifications se font dans la guilde source.',
   'admin.islands.detail.tabName': 'Nom de l\'onglet',
   'admin.islands.detail.sortOrder': 'Ordre de tri',
   'admin.islands.detail.moveUp': 'Déplacer vers le haut',

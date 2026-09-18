@@ -1508,7 +1508,14 @@ export const es: TranslationDict = {
   'admin.withdrawals.title': 'Solicitudes de retiro',
   'admin.islands.title': 'Catálogo de islas',
   'admin.islands.hint': 'Ciudades, islas y pestañas de loot usadas al localizar splits.',
+  'admin.islands.allianceHint':
+    'Islas y pestañas de loot sincronizadas desde los gremios miembros. Edítalas en el gremio de origen.',
   'admin.islands.empty': 'Añade una isla antes de que alguien pueda localizar un split.',
+  'admin.islands.allianceEmpty': 'Todavía no se han sincronizado islas desde los gremios miembros.',
+  'admin.islands.sourceGuild': 'Gremio de origen',
+  'admin.islands.unknownGuild': 'Gremio desconocido',
+  'admin.islands.readonlyHint':
+    'Este catálogo se sincroniza desde los gremios miembros y no se puede editar aquí.',
   'admin.islands.create': 'Añadir isla',
   'admin.islands.created': 'Isla añadida.',
   'admin.islands.edit': 'Editar isla',
@@ -1529,8 +1536,11 @@ export const es: TranslationDict = {
   'admin.islands.detail.notFound': 'No se encontró esta isla.',
   'admin.islands.detail.overview': 'Detalles de la isla',
   'admin.islands.detail.tabsTitle': 'Gestionar pestañas de cofres',
+  'admin.islands.detail.tabsTitleReadonly': 'Pestañas de cofres',
   'admin.islands.detail.tabsHint':
     'Cofres disponibles para almacenar botines de splits en esta isla.',
+  'admin.islands.detail.tabsHintReadonly':
+    'Cofres disponibles para almacenar botines de splits en esta isla. Los cambios se hacen en el gremio de origen.',
   'admin.islands.detail.tabName': 'Nombre de pestaña',
   'admin.islands.detail.sortOrder': 'Orden',
   'admin.islands.detail.moveUp': 'Mover arriba',

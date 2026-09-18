@@ -1218,7 +1218,14 @@ export const uk: TranslationDict = {
   'admin.withdrawals.title': 'Запити на виведення',
   'admin.islands.title': 'Каталог островів',
   'admin.islands.hint': 'Міста, острови та вкладки луту, що використовуються при пошуку Split.',
+  'admin.islands.allianceHint':
+    'Острови та вкладки луту, синхронізовані з гільдій-учасниць. Редагуйте їх у гільдії-джерелі.',
   'admin.islands.empty': 'Додайте острів, перш ніж хтось зможе знайти Split.',
+  'admin.islands.allianceEmpty': 'Ще не синхронізовано островів із гільдій-учасниць.',
+  'admin.islands.sourceGuild': 'Гільдія-джерело',
+  'admin.islands.unknownGuild': 'Невідома гільдія',
+  'admin.islands.readonlyHint':
+    'Цей каталог синхронізується з гільдій-учасниць і тут його не можна змінювати.',
   'admin.islands.create': 'Додати острів',
   'admin.islands.created': 'Острів додано.',
   'admin.islands.edit': 'Редагувати острів',
@@ -1239,7 +1246,10 @@ export const uk: TranslationDict = {
   'admin.islands.detail.notFound': 'Острів не знайдено.',
   'admin.islands.detail.overview': 'Деталі острова',
   'admin.islands.detail.tabsTitle': 'Керування вкладками скриньок',
+  'admin.islands.detail.tabsTitleReadonly': 'Вкладки скриньок',
   'admin.islands.detail.tabsHint': 'Скрині, доступні для зберігання часток здобичі на цьому острові.',
+  'admin.islands.detail.tabsHintReadonly':
+    'Скрині, доступні для зберігання часток здобичі на цьому острові. Зміни роблять у гільдії-джерелі.',
   'admin.islands.detail.tabName': 'Назва вкладки',
   'admin.islands.detail.sortOrder': 'Порядок сортування',
   'admin.islands.detail.moveUp': 'Перемістити вгору',
