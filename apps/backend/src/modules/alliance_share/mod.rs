@@ -9,3 +9,4 @@ pub mod router;
 mod service;
 
 pub use router::router;
+pub use service::{AllianceShareService, ShareActor, ShareParams};

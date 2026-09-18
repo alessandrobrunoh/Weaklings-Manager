@@ -505,6 +505,14 @@ export class Poller {
       ]);
 
       for (const event of announceable) {
+        // Fetch the detail before resolving the guild channel so an alliance
+        // announcement does not depend on the originating guild having its
+        // own event channel configured. The alliance channel is a separate
+        // delivery target and should still receive the event when the guild
+        // announcement cannot be sent.
+        const eventDetail = await this.api.get<EventDetailView>(`api/events/${event.id}`);
+        await this.postAllianceAnnouncement(eventDetail);
+
         const channelId = event.call_to_arms ? callToArmsChannelId : eventsChannelId;
         if (!channelId) {
           console.warn(
@@ -517,11 +525,6 @@ export class Poller {
           return;
         }
 
-        // The list endpoint only contains event metadata. Fetch the detail snapshot before
-        // creating any Discord resources so the signup card includes every comp seat and the
-        // current roster, including empty slots. A failed detail fetch is retried safely on the
-        // next poll without leaving a partial announcement behind.
-        const eventDetail = await this.api.get<EventDetailView>(`api/events/${event.id}`);
         // Parent channel: ping + thread starter only. Roster and action buttons go in the thread.
         const announcementMessage = await channel.send(
           buildEventAnnouncementMessage(eventDetail),
@@ -541,7 +544,6 @@ export class Poller {
             `${eventDetail.roster_version ?? 0}:${eventDetail.status}`;
         }
 
-        await this.postAllianceAnnouncement(eventDetail);
         this.state.lastEventId = event.id;
         this.save();
         console.log(
@@ -1122,6 +1124,11 @@ export class Poller {
 
   private async postAllianceAnnouncement(event: EventView): Promise<void> {
     if (!shouldPingAllianceDiscord(event)) return;
+    // The originating guild announcement may fail after the alliance post
+    // succeeds (for example, when its channel is not configured). The event
+    // is retried on the next poll, so use the persisted message id as the
+    // idempotency key and do not duplicate the alliance announcement.
+    if (event.alliance_discord_message_id) return;
     const channel = await this.getTextChannel(event.alliance_discord_channel_id ?? null);
     if (!channel) {
       console.warn(

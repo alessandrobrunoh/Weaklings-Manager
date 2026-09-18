@@ -39,10 +39,12 @@ use super::roster_hub::{RosterHub, RosterNotification};
 use super::service::{
     BattleLinkingContext, EventService, apply_alliance_ping_targets, load_alliance_ping_targets,
 };
+use super::sync::{create_mirror, sync_participation};
 use crate::modules::admin::models::DiscordRoleView;
 use crate::modules::admin::service::AdminService;
 use crate::modules::albionbb::client::normalize_server;
 use crate::modules::albionbb::service::AlbionBbService;
+use crate::modules::alliance_share::ShareActor;
 
 async fn hydrate_event_view(
     mut view: EventView,
@@ -743,8 +745,17 @@ async fn create_event(
         }
     }
 
+    let create_mirror_requested = req.ping_alliance;
     let service = EventService::new();
     let event = service.create_event(&db, user.user_id, req).await?;
+    if create_mirror_requested {
+        let actor = ShareActor {
+            discord_id: user.id.clone(),
+            username: user.username.clone(),
+            email: user.email.clone(),
+        };
+        create_mirror(&control.0, &registry, &db, &tenant.0, &event, &actor).await?;
+    }
     Ok(Json(ApiResponse::new(
         hydrate_event_view(event, &control, &registry, &tenant.0).await,
     )))
@@ -927,13 +938,29 @@ async fn participate(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
     Path(id): Path<i64>,
     Json(req): Json<ParticipateEventRequest>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     let service = EventService::new();
+    let request_for_sync = req.clone();
     let (detail, version) = service
         .participate_with_roster_version(&db, id, user.user_id, req)
         .await?;
+    sync_participation(
+        &control.0,
+        &registry,
+        &tenant.0,
+        id,
+        &ShareActor {
+            discord_id: user.id.clone(),
+            username: user.username.clone(),
+            email: user.email.clone(),
+        },
+        Some(request_for_sync),
+    )
+    .await?;
     hub.publish(&tenant.0, id, version, "participation_changed", Vec::new());
     Ok(Json(ApiResponse::new(detail)))
 }
@@ -962,10 +989,25 @@ async fn cancel_participation(
     Extension(db): Extension<sea_orm::DatabaseConnection>,
     Extension(hub): Extension<RosterHub>,
     Extension(tenant): Extension<CurrentTenantId>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<EventDetailView>>, AppError> {
     let service = EventService::new();
     let (detail, version, seat_key) = service.cancel_participation(&db, id, user.user_id).await?;
+    sync_participation(
+        &control.0,
+        &registry,
+        &tenant.0,
+        id,
+        &ShareActor {
+            discord_id: user.id.clone(),
+            username: user.username.clone(),
+            email: user.email.clone(),
+        },
+        None,
+    )
+    .await?;
     tracing::info!(
         event_id = id,
         roster_version = version,

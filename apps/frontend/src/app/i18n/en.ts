@@ -422,8 +422,9 @@ export const en = {
   'events.subtitle': 'Schedule and run guild activities.',
   'events.call_to_arms': 'Call to arms',
   'events.regear': 'Regear',
-  'events.pingAlliance': 'Also ping the alliance Discord',
-  'events.pingAllianceHint': 'Posts the announcement and mass/start/cancel notices on the alliance events channel.',
+  'events.pingAlliance': 'Also sync with the alliance server',
+  'events.pingAllianceHint':
+    'Creates a linked event on the alliance server, synchronizes signups and updates, and posts the announcement.',
   'events.new': 'New event',
   'events.create.comp_required': 'Composition is required.',
   'events.create.playerCap': 'Player cap',
