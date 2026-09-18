@@ -52,6 +52,10 @@ pub struct Model {
     pub discord_applications_manage_role_id: Option<String>,
     /// Optional role assigned when an application is accepted.
     pub discord_applications_accepted_role_id: Option<String>,
+    /// Discord role assigned alongside the standard role when an application is accepted as a Trial.
+    pub trial_role_id: Option<String>,
+    /// How many days a trial lasts by default; per-trial ends_at can still be moved by a manager.
+    pub trial_duration_days: Option<i32>,
     /// Channel where application open/closed announcements are published.
     pub discord_applications_status_channel_id: Option<String>,
     /// Whether new applications are currently accepted.

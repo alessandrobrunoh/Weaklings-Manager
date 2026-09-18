@@ -35,7 +35,7 @@ const DEFAULT_COPY = {
   resultMessage: 'Application {status}.',
 } as const;
 
-export type ApplicationResolutionAction = 'accept' | 'decline' | 'close';
+export type ApplicationResolutionAction = 'accept' | 'accept_trial' | 'decline' | 'close';
 
 /** Resolves optional copy fields so old guild settings remain usable. */
 export function applicationCopy(settings: GuildSettingsView) {
@@ -205,15 +205,20 @@ export function buildApplicationFinalEmbed(
   const copy = applicationCopy(settings);
   const messages: Record<ApplicationResolutionAction, string> = {
     accept: copy.acceptMessage,
+    accept_trial: copy.acceptMessage,
     decline: copy.declineMessage,
     close: copy.closeMessage,
   };
-  const status = action === 'accept' ? 'accettata' : action === 'decline' ? 'rifiutata' : 'chiusa';
+  const status =
+    action === 'accept_trial' ? 'accettata come trial'
+    : action === 'accept' ? 'accettata'
+    : action === 'decline' ? 'rifiutata'
+    : 'chiusa';
   return createBaseEmbed({
     category: 'APPLICATIONS',
-    title: action === 'accept' ? copy.acceptTitle : action === 'decline' ? copy.declineTitle : copy.closeTitle,
+    title: action === 'decline' ? copy.declineTitle : action === 'close' ? copy.closeTitle : copy.acceptTitle,
     description: `${formatCopy(messages[action], { status })}\n\n${formatCopy(copy.resultMessage, { status })}`,
-    color: action === 'accept' ? BOT_COLORS.SUCCESS : action === 'decline' ? BOT_COLORS.DANGER : BOT_COLORS.WARNING,
+    color: action === 'decline' ? BOT_COLORS.DANGER : action === 'close' ? BOT_COLORS.WARNING : BOT_COLORS.SUCCESS,
   }).toJSON();
 }
 
@@ -258,6 +263,7 @@ export function buildApplicationResolutionComponents(
   if (action === 'close') return buildApplicationWelcomeComponents(applicationId, true);
   return [new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(`application:accept:${applicationId}`).setLabel('Accept').setEmoji('✅').setStyle(ButtonStyle.Success).setDisabled(true),
+    new ButtonBuilder().setCustomId(`application:accept_trial:${applicationId}`).setLabel('Accept as Trial').setEmoji('🧪').setStyle(ButtonStyle.Success).setDisabled(true),
     new ButtonBuilder().setCustomId(`application:decline:${applicationId}`).setLabel('Decline').setEmoji('❌').setStyle(ButtonStyle.Danger).setDisabled(true),
   )];
 }

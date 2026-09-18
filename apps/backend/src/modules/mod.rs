@@ -31,6 +31,7 @@ pub mod progression;
 pub mod regear;
 pub mod siphoned;
 pub mod splits;
+pub mod trials;
 pub mod users;
 pub mod utils;
 pub mod vods;

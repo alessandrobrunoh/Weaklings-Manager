@@ -9,6 +9,7 @@ use serde::Serialize;
 use crate::errors::AppError;
 use crate::modules::auth::entities::role;
 use crate::modules::auth::{BotDiscordUser, Permission, Permissions, UserContext};
+use crate::modules::trials::service::TrialService;
 use crate::responses::ApiResponse;
 use serde::Deserialize;
 
@@ -23,6 +24,10 @@ pub struct ApplicationView {
     pub channel_id: String,
     pub status: String,
     pub default_role_discord_id: Option<String>,
+    /// Discord role to add on top when the member was accepted as a Trial.
+    pub trial_role_discord_id: Option<String>,
+    /// When the trial is due; present only for a trial accept.
+    pub trial_ends_at: Option<sea_orm::prelude::DateTimeWithTimeZone>,
     /// Albion character the applicant gave when opening the ticket.
     pub ingame_name: Option<String>,
     /// How many times this same ticket has been brought back from the archive.
@@ -38,6 +43,8 @@ impl From<Model> for ApplicationView {
             channel_id: value.channel_id,
             status: value.status,
             default_role_discord_id: None,
+            trial_role_discord_id: None,
+            trial_ends_at: None,
             ingame_name: value.ingame_name,
             reopen_count: value.reopen_count,
         }
@@ -163,13 +170,30 @@ async fn get_active_application(
     Ok(Json(ApiResponse::new(application)))
 }
 
+/// Body of the accept endpoint. Clients that send no body get the plain member accept.
+#[derive(Debug, Default, Deserialize)]
+struct AcceptApplicationBody {
+    /// Accept as a Trial: standard role plus the configured trial role for the configured duration.
+    #[serde(default)]
+    as_trial: bool,
+}
+
 async fn accept_application(
     Path(id): Path<i64>,
     user: UserContext,
     Extension(perms): Extension<Permissions>,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    body: Option<Json<AcceptApplicationBody>>,
 ) -> Result<Json<ApiResponse<ApplicationView>>, AppError> {
     user.require(&perms, Permission::ApplicationsManage).await?;
+    let as_trial = body.map(|Json(body)| body.as_trial).unwrap_or(false);
+    // Validate the trial configuration *before* resolving, so a misconfigured guild gets a
+    // clean 409 and the application stays open instead of half-accepting the applicant.
+    let trial_configured = if as_trial {
+        Some(TrialService::trial_config(&db).await?)
+    } else {
+        None
+    };
     let settings = crate::modules::admin::service::AdminService::get_guild_settings(&db)
         .await
         .ok();
@@ -183,8 +207,16 @@ async fn accept_application(
         .and_then(|item| item.discord_role_id);
     let assigned_role = accepted_application_role.or(default_role_discord_id);
     let application = ApplicationService::resolve(&db, id, &user.id, "accepted").await?;
+    let trial = match trial_configured {
+        Some(_) => Some(TrialService::start_from_accept(&db, &application, &user.id).await?),
+        None => None,
+    };
     let mut view: ApplicationView = application.into();
     view.default_role_discord_id = assigned_role;
+    if let (Some(config), Some(trial)) = (trial_configured.as_ref(), trial) {
+        view.trial_role_discord_id = Some(config.role_id.clone());
+        view.trial_ends_at = Some(trial.ends_at);
+    }
     Ok(Json(ApiResponse::new(view)))
 }
 

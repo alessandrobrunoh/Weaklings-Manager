@@ -11,6 +11,7 @@ import {
   buildApplicationPanelEmbed,
   buildApplicationStatusAnnouncement,
   buildApplicationWelcomeComponents,
+  buildApplicationResolutionComponents,
 } from './application.embed.js';
 
 const settings: GuildSettingsView = {
@@ -96,4 +97,19 @@ test('closed application panel disables creation', () => {
     buildApplicationPanelComponents({ ...settings, discord_applications_open: false })[0].components[0].data.disabled,
     true,
   );
+});
+
+test('accept-as-trial final response keeps the accept copy and stable terminal custom IDs', () => {
+  const final = buildApplicationFinalEmbed(settings, 'accept_trial');
+  assert.equal(final.title, 'Application accettata');
+  assert.match(final.description ?? '', /Candidatura accettata/);
+  assert.match(final.description ?? '', /accettata come trial/);
+
+  const components = buildApplicationResolutionComponents(42, 'accept_trial')[0].components;
+  assert.deepEqual(components.map((component) => ('custom_id' in component.data ? component.data.custom_id : undefined)), [
+    'application:accept:42',
+    'application:accept_trial:42',
+    'application:decline:42',
+  ]);
+  assert.ok(components.every((component) => component.data.disabled === true));
 });

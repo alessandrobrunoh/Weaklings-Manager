@@ -428,6 +428,10 @@ export interface ApplicationView {
   channel_id: string;
   status: 'open' | 'accepted' | 'declined' | 'closed';
   default_role_discord_id?: string | null;
+  /** Discord role to add on top when the member was accepted as a Trial. */
+  trial_role_discord_id?: string | null;
+  /** When the trial is due; present only for a trial accept. */
+  trial_ends_at?: string | null;
   /** Albion character the applicant gave in the opening form. */
   ingame_name?: string | null;
   /** How many times this same ticket came back from the archive. */

@@ -144,6 +144,10 @@ pub struct GuildSettingsView {
     pub discord_applications_manage_role_id: Option<String>,
     /// Optional role assigned when an application is accepted.
     pub discord_applications_accepted_role_id: Option<String>,
+    /// Discord role added on top when an application is accepted as a Trial.
+    pub trial_role_id: Option<String>,
+    /// Default trial length in days; a manager can still move a single trial's deadline.
+    pub trial_duration_days: Option<i32>,
     /// Channel for application open/closed announcements.
     pub discord_applications_status_channel_id: Option<String>,
     /// Whether new applications are accepted.
@@ -223,6 +227,8 @@ impl GuildSettingsView {
                 .discord_applications_archive_category_id,
             discord_applications_manage_role_id: model.discord_applications_manage_role_id,
             discord_applications_accepted_role_id: model.discord_applications_accepted_role_id,
+            trial_role_id: model.trial_role_id,
+            trial_duration_days: model.trial_duration_days,
             discord_applications_status_channel_id: model.discord_applications_status_channel_id,
             discord_applications_open: model.discord_applications_open,
             discord_applications_panel_title: model.discord_applications_panel_title,

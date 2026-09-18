@@ -150,6 +150,7 @@ async function handleApplicationButton(
       embeds: [buildApplicationManageEmbed(settings)],
       components: [new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setCustomId(`application:accept:${applicationId}`).setLabel('Accept').setEmoji('✅').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`application:accept_trial:${applicationId}`).setLabel('Accept as Trial').setEmoji('🧪').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId(`application:decline:${applicationId}`).setLabel('Decline').setEmoji('❌').setStyle(ButtonStyle.Danger),
       )],
       flags: ['Ephemeral'],
@@ -173,18 +174,25 @@ async function handleApplicationButton(
   }
 
   await interaction.deferReply({ flags: ['Ephemeral'] });
-  if (action !== 'accept' && action !== 'decline' && action !== 'close') {
+  if (action !== 'accept' && action !== 'accept_trial' && action !== 'decline' && action !== 'close') {
     throw new Error('Unknown application action.');
   }
   const resolutionAction: ApplicationResolutionAction = action;
-  const resolved = await api.post<ApplicationView>(`api/applications/${applicationId}/${resolutionAction}`, {}, interaction.user.id);
-  if (action === 'accept' && interaction.guild) {
+  const resolved = await api.post<ApplicationView>(
+    `api/applications/${applicationId}/${resolutionAction === 'accept_trial' ? 'accept' : resolutionAction}`,
+    resolutionAction === 'accept_trial' ? { as_trial: true } : {},
+    interaction.user.id,
+  );
+  if ((action === 'accept' || action === 'accept_trial') && interaction.guild) {
     const applicant = await interaction.guild.members.fetch(resolved.user_discord_id);
     if (settings.discord_auto_role_id) {
       await applicant.roles.remove(settings.discord_auto_role_id, 'Application accepted');
     }
     if (resolved.default_role_discord_id) {
       await applicant.roles.add(resolved.default_role_discord_id, 'Application accepted');
+    }
+    if (resolved.trial_role_discord_id) {
+      await applicant.roles.add(resolved.trial_role_discord_id, 'Application accepted as trial');
     }
   }
   await finalizeApplicationChannel(interaction, settings, resolved, resolutionAction);

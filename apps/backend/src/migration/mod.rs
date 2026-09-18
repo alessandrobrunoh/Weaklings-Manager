@@ -124,6 +124,7 @@ mod m20260916_000001_add_discord_alliance_role;
 mod m20260916_000002_seed_alliance_share_permission;
 mod m20260916_000003_add_event_alliance_ping;
 mod m20260917_000001_add_split_origin_read_only;
+mod m20260918_000001_create_trials;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -252,6 +253,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260916_000002_seed_alliance_share_permission::Migration),
             Box::new(m20260916_000003_add_event_alliance_ping::Migration),
             Box::new(m20260917_000001_add_split_origin_read_only::Migration),
+            Box::new(m20260918_000001_create_trials::Migration),
         ]
     }
 }
