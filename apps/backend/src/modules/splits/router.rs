@@ -11,9 +11,10 @@ use axum::{
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::modules::bank::service::BankService;
+use crate::modules::platform::service::PlatformService;
 use crate::pagination::{PaginatedSplitSummary, PaginationParams};
 use crate::responses::{ApiResponse, ApiResponseMatchedParticipantList, ApiResponseSplitDetail};
-use crate::tenant::CurrentTenantKind;
+use crate::tenant::{ControlDb, CurrentTenantId, CurrentTenantKind, TenantRegistry};
 
 use super::models::{
     CompleteSplitsBatchRequest, CompleteSplitsBatchResult, CreateIslandRequest,
@@ -680,8 +681,43 @@ pub async fn complete_splits_batch(
 async fn list_islands(
     _user: UserContext,
     Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(kind): Extension<CurrentTenantKind>,
+    Extension(tenant_id): Extension<CurrentTenantId>,
+    Extension(control): Extension<ControlDb>,
+    Extension(registry): Extension<TenantRegistry>,
 ) -> Result<Json<ApiResponse<Vec<SplitIslandView>>>, AppError> {
-    let islands = SplitService::new().list_islands(&db).await?;
+    let islands = if kind.0 == "alliance" {
+        let members = PlatformService::list_alliance_members(&control.0, &tenant_id.0).await?;
+        let mut aggregated = Vec::new();
+        for member in members.into_iter().filter(|m| m.status == "active") {
+            let Ok(ctx) = registry.get_or_load(&member.guild_tenant_id).await else {
+                tracing::warn!(
+                    guild_tenant_id = %member.guild_tenant_id,
+                    "skipping island catalog for unloadable alliance member guild"
+                );
+                continue;
+            };
+            match SplitService::new().list_islands(&ctx.db).await {
+                Ok(islands) => {
+                    for mut island in islands {
+                        island.source_guild_tenant_id = Some(member.guild_tenant_id.clone());
+                        island.source_guild_name = Some(member.name.clone());
+                        aggregated.push(island);
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        guild_tenant_id = %member.guild_tenant_id,
+                        error = %error,
+                        "skipping alliance member guild whose island catalog could not be read"
+                    );
+                }
+            }
+        }
+        aggregated
+    } else {
+        SplitService::new().list_islands(&db).await?
+    };
     Ok(Json(ApiResponse::new(islands)))
 }
 

@@ -589,6 +589,8 @@ fn to_island_view(island: IslandModel, tabs: Vec<TabModel>) -> SplitIslandView {
         id: island.id,
         name: island.name,
         city,
+        source_guild_tenant_id: None,
+        source_guild_name: None,
         tabs: tabs
             .into_iter()
             .map(|tab| SplitIslandTabView {
@@ -1583,6 +1585,15 @@ impl SplitService {
         Ok(views)
     }
 
+    fn ensure_island_catalog_mutable(&self) -> Result<(), AppError> {
+        if self.tenant_kind == "alliance" {
+            return Err(AppError::Forbidden(
+                "alliance island catalogs are synchronized from member guilds".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Creates an island together with at least one named tab.
     ///
     /// # Errors
@@ -1593,6 +1604,7 @@ impl SplitService {
         db: &DatabaseConnection,
         req: CreateIslandRequest,
     ) -> Result<SplitIslandView, AppError> {
+        self.ensure_island_catalog_mutable()?;
         let name = trim_required_name(&req.name, "name")?;
         let city = parse_city(&req.city)?;
         let mut tab_names = Vec::new();
@@ -1655,6 +1667,7 @@ impl SplitService {
         island_id: i64,
         req: UpdateIslandRequest,
     ) -> Result<SplitIslandView, AppError> {
+        self.ensure_island_catalog_mutable()?;
         let island = IslandEntity::find_by_id(island_id)
             .one(db)
             .await?
@@ -1702,6 +1715,7 @@ impl SplitService {
         db: &DatabaseConnection,
         island_id: i64,
     ) -> Result<(), AppError> {
+        self.ensure_island_catalog_mutable()?;
         let island = IslandEntity::find_by_id(island_id)
             .one(db)
             .await?
@@ -1732,6 +1746,7 @@ impl SplitService {
         island_id: i64,
         req: CreateIslandTabRequest,
     ) -> Result<SplitIslandView, AppError> {
+        self.ensure_island_catalog_mutable()?;
         let island = IslandEntity::find_by_id(island_id)
             .one(db)
             .await?
@@ -1779,6 +1794,7 @@ impl SplitService {
         tab_id: i64,
         req: UpdateIslandTabRequest,
     ) -> Result<SplitIslandView, AppError> {
+        self.ensure_island_catalog_mutable()?;
         let island = IslandEntity::find_by_id(island_id)
             .one(db)
             .await?
@@ -1820,6 +1836,7 @@ impl SplitService {
         island_id: i64,
         tab_id: i64,
     ) -> Result<SplitIslandView, AppError> {
+        self.ensure_island_catalog_mutable()?;
         let island = IslandEntity::find_by_id(island_id)
             .one(db)
             .await?

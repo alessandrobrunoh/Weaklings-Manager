@@ -136,8 +136,24 @@ describe('filterNavSections', () => {
       expect(paths).toContain('/admin/discord');
       expect(paths).toContain('/admin/roles');
       expect(paths).toContain('/users');
+      expect(paths).toContain('/admin/islands');
       expect(paths).not.toContain('/admin/applications');
       expect(paths).not.toContain('/admin/regears');
+      expect(paths).not.toContain('/admin/giveaways');
+    },
+  );
+
+  it('keeps the island catalog visible on an alliance tenant even without splits.paid',
+    () => {
+      const visible = filterNavSections(
+        ADMIN_NAV_SECTIONS,
+        () => true,
+        false,
+        () => false,
+        'alliance',
+      );
+      const paths = visible.flatMap((section) => section.items.map((item) => item.path));
+      expect(paths).toContain('/admin/islands');
       expect(paths).not.toContain('/admin/giveaways');
     },
   );

@@ -1509,7 +1509,14 @@ export const it: TranslationDict = {
   'admin.withdrawals.title': 'Richieste di prelievo',
   'admin.islands.title': 'Catalogo isole',
   'admin.islands.hint': 'Città, isole e tab loot usati per localizzare gli split.',
+  'admin.islands.allianceHint':
+    'Isole e tab loot sincronizzati dalle gilde membro. Modificali nella gilda di origine.',
   'admin.islands.empty': "Aggiungi un'isola prima che qualcuno possa localizzare uno split.",
+  'admin.islands.allianceEmpty': 'Nessuna isola è ancora stata sincronizzata dalle gilde membro.',
+  'admin.islands.sourceGuild': 'Gilda di origine',
+  'admin.islands.unknownGuild': 'Gilda sconosciuta',
+  'admin.islands.readonlyHint':
+    'Questo catalogo è sincronizzato dalle gilde membro e non può essere modificato qui.',
   'admin.islands.create': 'Aggiungi isola',
   'admin.islands.created': 'Isola aggiunta.',
   'admin.islands.edit': 'Modifica isola',
@@ -1530,8 +1537,11 @@ export const it: TranslationDict = {
   'admin.islands.detail.notFound': 'Questa isola non è stata trovata.',
   'admin.islands.detail.overview': 'Dettagli isola',
   'admin.islands.detail.tabsTitle': 'Gestione tab casse',
+  'admin.islands.detail.tabsTitleReadonly': 'Tab casse',
   'admin.islands.detail.tabsHint':
     'Casse disponibili per depositare i bottini degli split su quest isola.',
+  'admin.islands.detail.tabsHintReadonly':
+    'Casse disponibili per depositare i bottini degli split su quest isola. Le modifiche si fanno nella gilda di origine.',
   'admin.islands.detail.tabName': 'Nome tab',
   'admin.islands.detail.sortOrder': 'Ordinamento',
   'admin.islands.detail.moveUp': 'Sposta su',

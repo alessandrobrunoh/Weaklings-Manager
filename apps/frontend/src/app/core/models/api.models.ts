@@ -550,6 +550,10 @@ export interface SplitIsland {
   name: string;
   city: SplitIslandCity;
   tabs: SplitIslandTab[];
+  /** Tenant id of the member guild this catalog row was synced from. */
+  source_guild_tenant_id?: string | null;
+  /** Display name of the member guild this catalog row was synced from. */
+  source_guild_name?: string | null;
 }
 
 export interface CreateIslandRequest {

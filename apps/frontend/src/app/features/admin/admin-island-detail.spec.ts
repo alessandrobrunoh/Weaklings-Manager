@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SplitIsland } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import { AdminIslandDetail } from './admin-island-detail';
@@ -35,6 +36,77 @@ function stubDialogApi(): void {
   };
 }
 
+async function configureDetail(
+  island: SplitIsland,
+  tenantKind: 'guild' | 'alliance' = 'guild',
+): Promise<{
+  fixture: ComponentFixture<AdminIslandDetail>;
+  api: {
+    get: ReturnType<typeof vi.fn>;
+    post: ReturnType<typeof vi.fn>;
+    patch: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
+  };
+  toasts: {
+    success: ReturnType<typeof vi.fn>;
+    error: ReturnType<typeof vi.fn>;
+  };
+  router: Router;
+}> {
+  stubDialogApi();
+
+  const api = {
+    get: vi.fn().mockReturnValue(of([island])),
+    post: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+  };
+
+  const toasts = {
+    success: vi.fn(),
+    error: vi.fn(),
+  };
+
+  await TestBed.configureTestingModule({
+    imports: [AdminIslandDetail],
+    providers: [
+      provideZonelessChangeDetection(),
+      provideRouter([]),
+      { provide: ApiService, useValue: api },
+      { provide: ToastService, useValue: toasts },
+      {
+        provide: TranslateService,
+        useValue: {
+          t: (key: string) => key,
+        },
+      },
+      {
+        provide: AuthService,
+        useValue: { profile: () => ({ tenant_kind: tenantKind }) },
+      },
+      {
+        provide: ActivatedRoute,
+        useValue: {
+          paramMap: of(convertToParamMap({ islandId: String(island.id) })),
+          snapshot: {
+            paramMap: convertToParamMap({ islandId: String(island.id) }),
+          },
+        },
+      },
+    ],
+  }).compileComponents();
+
+  const router = TestBed.inject(Router);
+  vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+  const fixture = TestBed.createComponent(AdminIslandDetail);
+  await fixture.whenStable();
+  fixture.detectChanges();
+  await fixture.whenStable();
+  fixture.detectChanges();
+  return { fixture, api, toasts, router };
+}
+
 describe('AdminIslandDetail', () => {
   let fixture: ComponentFixture<AdminIslandDetail>;
   let api: {
@@ -50,53 +122,7 @@ describe('AdminIslandDetail', () => {
   let router: Router;
 
   beforeEach(async () => {
-    stubDialogApi();
-
-    api = {
-      get: vi.fn().mockReturnValue(of([mockIsland])),
-      post: vi.fn(),
-      patch: vi.fn(),
-      delete: vi.fn(),
-    };
-
-    toasts = {
-      success: vi.fn(),
-      error: vi.fn(),
-    };
-
-    await TestBed.configureTestingModule({
-      imports: [AdminIslandDetail],
-      providers: [
-        provideZonelessChangeDetection(),
-        provideRouter([]),
-        { provide: ApiService, useValue: api },
-        { provide: ToastService, useValue: toasts },
-        {
-          provide: TranslateService,
-          useValue: {
-            t: (key: string) => key,
-          },
-        },
-        {
-          provide: ActivatedRoute,
-          useValue: {
-            paramMap: of(convertToParamMap({ islandId: '42' })),
-            snapshot: {
-              paramMap: convertToParamMap({ islandId: '42' }),
-            },
-          },
-        },
-      ],
-    }).compileComponents();
-
-    router = TestBed.inject(Router);
-    vi.spyOn(router, 'navigate').mockResolvedValue(true);
-
-    fixture = TestBed.createComponent(AdminIslandDetail);
-    await fixture.whenStable();
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
+    ({ fixture, api, toasts, router } = await configureDetail(mockIsland, 'guild'));
   });
 
   afterEach(() => {
@@ -201,5 +227,45 @@ describe('AdminIslandDetail', () => {
     expect(api.delete).toHaveBeenCalledWith('api/splits/islands/42');
     expect(toasts.success).toHaveBeenCalledWith('admin.islands.deleted');
     expect(router.navigate).toHaveBeenCalledWith(['/admin/islands']);
+  });
+
+  it('hides mutations and shows the source guild for an alliance tenant', async () => {
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    const sourced: SplitIsland = {
+      ...mockIsland,
+      source_guild_tenant_id: 'g-alpha',
+      source_guild_name: 'Alpha',
+    };
+    const alliance = await configureDetail(sourced, 'alliance');
+    fixture = alliance.fixture;
+    api = alliance.api;
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    expect(compiled.textContent).toContain('Guild Island Prime');
+    expect(compiled.textContent).toContain('Alpha');
+    expect(compiled.textContent).toContain('admin.islands.readonlyHint');
+    expect(compiled.textContent).toContain('Loot Chest 1');
+    expect(compiled.textContent).not.toContain('admin.islands.save');
+    expect(compiled.textContent).not.toContain('admin.islands.addTab');
+    expect(compiled.textContent).not.toContain('common.edit');
+    expect(compiled.textContent).not.toContain('common.delete');
+    expect(compiled.querySelector('form')).toBeNull();
+
+    await fixture.componentInstance['onSaveIsland'](new SubmitEvent('submit'));
+    await fixture.componentInstance['onAddTabSubmit'](new SubmitEvent('submit'));
+    await fixture.componentInstance['confirmDeleteIsland']();
+    expect(api.patch).not.toHaveBeenCalled();
+    expect(api.post).not.toHaveBeenCalled();
+    expect(api.delete).not.toHaveBeenCalled();
+  });
+
+  it('falls back when source guild fields are missing on an alliance island', async () => {
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    const alliance = await configureDetail(mockIsland, 'alliance');
+    fixture = alliance.fixture;
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.textContent).toContain('admin.islands.unknownGuild');
   });
 });

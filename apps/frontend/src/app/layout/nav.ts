@@ -98,7 +98,10 @@ export function filterNavSections(
         if (
           item.featureKey &&
           !hasFeature(item.featureKey) &&
-          !(tenantKind === 'alliance' && item.featureKey === 'bank')
+          !(
+            tenantKind === 'alliance' &&
+            (item.featureKey === 'bank' || item.featureKey === 'splits.paid')
+          )
         ) {
           return false;
         }
@@ -314,7 +317,6 @@ export const ADMIN_PANELS: readonly AdminPanel[] = [
     hintKey: 'admin.hub.islandsHint',
     permissions: ['splits.islands.manage'],
     featureKey: 'splits.paid',
-    hiddenForAlliance: true,
   },
   {
     path: '/admin/giveaways',

@@ -11,6 +11,7 @@ import type {
   UpdateIslandTabRequest,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
@@ -57,14 +58,22 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
       @if (island(); as detail) {
         <app-page-header
           [title]="detail.name"
-          [subtitle]="cityLabel(detail.city) + ' · ' + detail.tabs.length + ' ' + t('admin.islands.tabs').toLowerCase()"
+          [subtitle]="detailSubtitle(detail)"
         >
-          <button type="button" class="btn btn--danger" (click)="deleteIslandOpen.set(true)">
-            {{ t('common.delete') }}
-          </button>
+          @if (canMutateCatalog()) {
+            <button type="button" class="btn btn--danger" (click)="deleteIslandOpen.set(true)">
+              {{ t('common.delete') }}
+            </button>
+          }
         </app-page-header>
 
         <app-page-stack>
+          @if (!canMutateCatalog()) {
+            <p class="text-sm" style="color: var(--color-text-secondary)">
+              {{ t('admin.islands.readonlyHint') }}
+            </p>
+          }
+
           <!-- Edit Island Details Card -->
           <section class="card p-5">
             <header class="mb-4">
@@ -73,43 +82,60 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
               </h2>
             </header>
 
-            <form class="grid gap-4" (submit)="onSaveIsland($event)">
-              <div class="grid gap-4 sm:grid-cols-2">
-                <label class="block">
-                  <span class="label font-medium">{{ t('admin.islands.location') }}</span>
-                  <select
-                    class="select"
-                    [value]="editCity()"
-                    (change)="onEditCityChange($event)"
+            @if (canMutateCatalog()) {
+              <form class="grid gap-4" (submit)="onSaveIsland($event)">
+                <div class="grid gap-4 sm:grid-cols-2">
+                  <label class="block">
+                    <span class="label font-medium">{{ t('admin.islands.location') }}</span>
+                    <select
+                      class="select"
+                      [value]="editCity()"
+                      (change)="onEditCityChange($event)"
+                    >
+                      @for (city of islandCities; track city) {
+                        <option [value]="city">{{ cityLabel(city) }}</option>
+                      }
+                    </select>
+                  </label>
+
+                  <label class="block">
+                    <span class="label font-medium">{{ t('admin.islands.island') }}</span>
+                    <input
+                      class="input"
+                      type="text"
+                      required
+                      [value]="editName()"
+                      (input)="onEditNameChange($event)"
+                    />
+                  </label>
+                </div>
+
+                <div class="flex justify-end">
+                  <button
+                    type="submit"
+                    class="btn btn--primary"
+                    [disabled]="saving() || !isIslandChanged()"
                   >
-                    @for (city of islandCities; track city) {
-                      <option [value]="city">{{ cityLabel(city) }}</option>
-                    }
-                  </select>
-                </label>
-
-                <label class="block">
-                  <span class="label font-medium">{{ t('admin.islands.island') }}</span>
-                  <input
-                    class="input"
-                    type="text"
-                    required
-                    [value]="editName()"
-                    (input)="onEditNameChange($event)"
-                  />
-                </label>
-              </div>
-
-              <div class="flex justify-end">
-                <button
-                  type="submit"
-                  class="btn btn--primary"
-                  [disabled]="saving() || !isIslandChanged()"
-                >
-                  {{ saving() ? t('common.loading') : t('admin.islands.save') }}
-                </button>
-              </div>
-            </form>
+                    {{ saving() ? t('common.loading') : t('admin.islands.save') }}
+                  </button>
+                </div>
+              </form>
+            } @else {
+              <dl class="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <dt class="label font-medium">{{ t('admin.islands.location') }}</dt>
+                  <dd>{{ cityLabel(detail.city) }}</dd>
+                </div>
+                <div>
+                  <dt class="label font-medium">{{ t('admin.islands.island') }}</dt>
+                  <dd>{{ detail.name }}</dd>
+                </div>
+                <div>
+                  <dt class="label font-medium">{{ t('admin.islands.sourceGuild') }}</dt>
+                  <dd>{{ sourceGuildLabel(detail) }}</dd>
+                </div>
+              </dl>
+            }
           </section>
 
           <!-- Manage Chest Tabs Section -->
@@ -117,15 +143,17 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
             <header class="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 class="text-base font-semibold" style="color: var(--color-text)">
-                  {{ t('admin.islands.detail.tabsTitle') }} ({{ sortedTabs().length }})
+                  {{ t(canMutateCatalog() ? 'admin.islands.detail.tabsTitle' : 'admin.islands.detail.tabsTitleReadonly') }} ({{ sortedTabs().length }})
                 </h2>
                 <p class="text-xs" style="color: var(--color-text-secondary)">
-                  {{ t('admin.islands.detail.tabsHint') }}
+                  {{ t(canMutateCatalog() ? 'admin.islands.detail.tabsHint' : 'admin.islands.detail.tabsHintReadonly') }}
                 </p>
               </div>
-              <button type="button" class="btn btn--primary btn--sm" (click)="openAddTab()">
-                + {{ t('admin.islands.addTab') }}
-              </button>
+              @if (canMutateCatalog()) {
+                <button type="button" class="btn btn--primary btn--sm" (click)="openAddTab()">
+                  + {{ t('admin.islands.addTab') }}
+                </button>
+              }
             </header>
 
             @if (sortedTabs().length === 0) {
@@ -151,43 +179,45 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
                       </div>
                     </div>
 
-                    <div class="flex flex-wrap items-center gap-1.5">
-                      <button
-                        type="button"
-                        class="btn btn--ghost btn--sm"
-                        [disabled]="isFirst || reordering()"
-                        (click)="moveTab(idx, -1)"
-                        [title]="t('admin.islands.detail.moveUp')"
-                        [attr.aria-label]="t('admin.islands.detail.moveUp')"
-                      >
-                        ↑ {{ t('admin.islands.detail.moveUp') }}
-                      </button>
-                      <button
-                        type="button"
-                        class="btn btn--ghost btn--sm"
-                        [disabled]="isLast || reordering()"
-                        (click)="moveTab(idx, 1)"
-                        [title]="t('admin.islands.detail.moveDown')"
-                        [attr.aria-label]="t('admin.islands.detail.moveDown')"
-                      >
-                        ↓ {{ t('admin.islands.detail.moveDown') }}
-                      </button>
-                      <button
-                        type="button"
-                        class="btn btn--outline btn--sm"
-                        (click)="openEditTab(tab)"
-                      >
-                        {{ t('common.edit') }}
-                      </button>
-                      <button
-                        type="button"
-                        class="btn btn--danger btn--sm"
-                        [disabled]="detail.tabs.length <= 1"
-                        (click)="askDeleteTab(tab)"
-                      >
-                        {{ t('common.delete') }}
-                      </button>
-                    </div>
+                    @if (canMutateCatalog()) {
+                      <div class="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          class="btn btn--ghost btn--sm"
+                          [disabled]="isFirst || reordering()"
+                          (click)="moveTab(idx, -1)"
+                          [title]="t('admin.islands.detail.moveUp')"
+                          [attr.aria-label]="t('admin.islands.detail.moveUp')"
+                        >
+                          ↑ {{ t('admin.islands.detail.moveUp') }}
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn--ghost btn--sm"
+                          [disabled]="isLast || reordering()"
+                          (click)="moveTab(idx, 1)"
+                          [title]="t('admin.islands.detail.moveDown')"
+                          [attr.aria-label]="t('admin.islands.detail.moveDown')"
+                        >
+                          ↓ {{ t('admin.islands.detail.moveDown') }}
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn--outline btn--sm"
+                          (click)="openEditTab(tab)"
+                        >
+                          {{ t('common.edit') }}
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn--danger btn--sm"
+                          [disabled]="detail.tabs.length <= 1"
+                          (click)="askDeleteTab(tab)"
+                        >
+                          {{ t('common.delete') }}
+                        </button>
+                      </div>
+                    }
                   </article>
                 }
               </div>
@@ -323,10 +353,15 @@ const ISLAND_CITIES: readonly SplitIslandCity[] = [
 })
 export class AdminIslandDetail {
   private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
+
+  protected readonly canMutateCatalog = computed(
+    () => this.auth.profile()?.tenant_kind !== 'alliance',
+  );
 
   protected readonly islandCities = ISLAND_CITIES;
 
@@ -406,6 +441,29 @@ export class AdminIslandDetail {
     return this.t(`splits.city.${city}` as TranslationKey);
   }
 
+  protected sourceGuildLabel(island: SplitIsland): string {
+    const name = island.source_guild_name?.trim();
+    if (name) {
+      return name;
+    }
+    const tenantId = island.source_guild_tenant_id?.trim();
+    if (tenantId) {
+      return tenantId;
+    }
+    return this.t('admin.islands.unknownGuild');
+  }
+
+  protected detailSubtitle(island: SplitIsland): string {
+    const parts = [
+      this.cityLabel(island.city),
+      `${island.tabs.length} ${this.t('admin.islands.tabs').toLowerCase()}`,
+    ];
+    if (!this.canMutateCatalog()) {
+      parts.push(this.sourceGuildLabel(island));
+    }
+    return parts.join(' · ');
+  }
+
   protected onEditCityChange(event: Event): void {
     this.editCity.set((event.target as HTMLSelectElement).value as SplitIslandCity);
   }
@@ -416,6 +474,9 @@ export class AdminIslandDetail {
 
   protected async onSaveIsland(event: SubmitEvent): Promise<void> {
     event.preventDefault();
+    if (!this.canMutateCatalog()) {
+      return;
+    }
     const current = this.island();
     if (!current) {
       return;
@@ -445,12 +506,18 @@ export class AdminIslandDetail {
   }
 
   protected openAddTab(): void {
+    if (!this.canMutateCatalog()) {
+      return;
+    }
     this.newTabName.set('');
     this.addTabOpen.set(true);
   }
 
   protected async onAddTabSubmit(event: SubmitEvent): Promise<void> {
     event.preventDefault();
+    if (!this.canMutateCatalog()) {
+      return;
+    }
     const current = this.island();
     if (!current) {
       return;
@@ -479,6 +546,9 @@ export class AdminIslandDetail {
   }
 
   protected openEditTab(tab: SplitIslandTab): void {
+    if (!this.canMutateCatalog()) {
+      return;
+    }
     this.editingTab.set(tab);
     this.editTabName.set(tab.name);
     this.editTabSortOrder.set(tab.sort_order);
@@ -486,6 +556,9 @@ export class AdminIslandDetail {
 
   protected async onEditTabSubmit(event: SubmitEvent): Promise<void> {
     event.preventDefault();
+    if (!this.canMutateCatalog()) {
+      return;
+    }
     const current = this.island();
     const tab = this.editingTab();
     if (!current || !tab) {
@@ -515,10 +588,16 @@ export class AdminIslandDetail {
   }
 
   protected askDeleteTab(tab: SplitIslandTab): void {
+    if (!this.canMutateCatalog()) {
+      return;
+    }
     this.deletingTab.set(tab);
   }
 
   protected async confirmDeleteTab(): Promise<void> {
+    if (!this.canMutateCatalog()) {
+      return;
+    }
     const current = this.island();
     const tab = this.deletingTab();
     if (!current || !tab) {
@@ -545,6 +624,9 @@ export class AdminIslandDetail {
   }
 
   protected async moveTab(index: number, direction: -1 | 1): Promise<void> {
+    if (!this.canMutateCatalog()) {
+      return;
+    }
     const current = this.island();
     if (!current) {
       return;
@@ -586,6 +668,9 @@ export class AdminIslandDetail {
   }
 
   protected async confirmDeleteIsland(): Promise<void> {
+    if (!this.canMutateCatalog()) {
+      return;
+    }
     const current = this.island();
     if (!current) {
       return;
