@@ -44,19 +44,23 @@ fn parse_status(model: &Model) -> Result<TransactionStatus, AppError> {
         .map_err(|_| AppError::Internal(format!("Unknown transaction status: {}", model.status)))
 }
 
-/// Shared predicate for balances and withdrawal requests.
+/// Shared predicate for positive balances and withdrawal requests.
 ///
 /// A rejected withdrawal should behave like available balance, but keeping this predicate in one
 /// place prevents the acceptance path from accidentally treating rejected rows as payable.
 ///
 /// # Example
 /// ```rust,ignore
-/// let query = TransactionEntity::find().filter(requestable_status_condition());
+/// let query = TransactionEntity::find().filter(requestable_transaction_condition());
 /// ```
-fn requestable_status_condition() -> Condition {
-    Condition::any()
-        .add(Column::Status.eq(TransactionStatus::Pending.to_string()))
-        .add(Column::Status.eq(TransactionStatus::Rejected.to_string()))
+fn requestable_transaction_condition() -> Condition {
+    Condition::all()
+        .add(
+            Condition::any()
+                .add(Column::Status.eq(TransactionStatus::Pending.to_string()))
+                .add(Column::Status.eq(TransactionStatus::Rejected.to_string())),
+        )
+        .add(Column::Amount.gt(Decimal::ZERO))
 }
 
 async fn touch_linked_splits<C>(db: &C, transactions: &[Model]) -> Result<(), AppError>
@@ -156,7 +160,7 @@ impl BankService {
     ) -> Result<BalanceSummary, AppError> {
         let pending = TransactionEntity::find()
             .filter(Column::ToUserId.eq(user_id))
-            .filter(requestable_status_condition())
+            .filter(requestable_transaction_condition())
             .all(db)
             .await?;
         let requested = TransactionEntity::find()
@@ -324,8 +328,7 @@ impl BankService {
             .filter(Column::SplitId.eq(split_id))
             .filter(Column::ToUserId.eq(user_id))
             .filter(Column::Type.eq(TYPE_SPLIT_CREDIT))
-            .filter(requestable_status_condition())
-            .filter(Column::Amount.gt(Decimal::ZERO))
+            .filter(requestable_transaction_condition())
             .all(&txn)
             .await?;
 
@@ -337,7 +340,7 @@ impl BankService {
 
         let updated = TransactionEntity::update_many()
             .filter(Column::Id.eq(candidate.id))
-            .filter(requestable_status_condition())
+            .filter(requestable_transaction_condition())
             .set(ActiveModel {
                 from_user_id: Set(Some(user_id)),
                 to_guild_bank: Set(true),
@@ -503,8 +506,7 @@ impl BankService {
         let ids: Vec<i64> = if req.all.unwrap_or(false) {
             TransactionEntity::find()
                 .filter(Column::ToUserId.eq(user_id))
-                .filter(requestable_status_condition())
-                .filter(Column::Amount.gt(Decimal::ZERO))
+                .filter(requestable_transaction_condition())
                 .all(db)
                 .await?
                 .into_iter()
@@ -530,8 +532,7 @@ impl BankService {
         let targets = TransactionEntity::find()
             .filter(Column::Id.is_in(ids.clone()))
             .filter(Column::ToUserId.eq(user_id))
-            .filter(requestable_status_condition())
-            .filter(Column::Amount.gt(Decimal::ZERO))
+            .filter(requestable_transaction_condition())
             .all(&txn)
             .await?;
 
@@ -543,7 +544,7 @@ impl BankService {
 
         let pending_total = TransactionEntity::find()
             .filter(Column::ToUserId.eq(user_id))
-            .filter(requestable_status_condition())
+            .filter(requestable_transaction_condition())
             .all(&txn)
             .await?
             .iter()
@@ -565,7 +566,7 @@ impl BankService {
             // A losing request is skipped rather than silently re-requesting a stale row.
             let update = TransactionEntity::update_many()
                 .filter(Column::Id.eq(model.id))
-                .filter(requestable_status_condition())
+                .filter(requestable_transaction_condition())
                 .set(ActiveModel {
                     status: Set(TransactionStatus::Requested.to_string()),
                     requested_at: Set(Some(now)),
@@ -1353,6 +1354,9 @@ mod tests {
         insert_transaction(&db, user_id, "5.25", TransactionStatus::Pending).await;
         insert_transaction(&db, user_id, "20.00", TransactionStatus::Requested).await;
         insert_transaction(&db, user_id, "7.50", TransactionStatus::Rejected).await;
+        // Legacy ledgers can contain a negative adjustment; it must not make the
+        // requestable credit total disagree with the rows that can be withdrawn.
+        insert_transaction(&db, user_id, "-2.00", TransactionStatus::Pending).await;
         insert_transaction(&db, user_id, "99.00", TransactionStatus::Withdrawn).await;
 
         let service = BankService::new();
