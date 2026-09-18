@@ -98,6 +98,14 @@ async function submitApplication(
       'La categoria delle application non è valida. Riapri Impostazioni Discord e seleziona una categoria, non un canale.',
     );
   }
+  // A deleted/renamed management role can remain in settings after the guild
+  // was reconfigured. Discord rejects the whole channel-create request when a
+  // permission overwrite references such a role, so only include it when the
+  // role still exists.
+  const configuredManageRoleId = settings.discord_applications_manage_role_id;
+  const manageRole = configuredManageRoleId
+    ? await guild.roles.fetch(configuredManageRoleId).catch(() => null)
+    : null;
 
   const active = await api.get<ApplicationView | null>(
     'api/applications/active',
@@ -145,7 +153,7 @@ async function submitApplication(
       permissionOverwrites: ticketOverwrites(
         guild,
         interaction.user.id,
-        settings.discord_applications_manage_role_id ?? null,
+        manageRole?.id ?? null,
         botId,
       ),
       reason: `Application opened by ${interaction.user.tag}`,
