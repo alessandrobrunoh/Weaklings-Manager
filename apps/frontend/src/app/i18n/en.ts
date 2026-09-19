@@ -1352,6 +1352,7 @@ export const en = {
   'admin.transactions.deleted': 'Transaction deleted.',
   'admin.transactions.save': 'Save changes',
   'admin.transactions.fields.to': 'Recipient',
+  'admin.transactions.fields.amountHint': 'Positive: Guild Bank pays the person. Negative: person pays back the Guild Bank.',
   'admin.transactions.fields.from': 'Payer',
   'admin.transactions.fields.pick': 'Pick',
   'admin.transactions.fields.pickUser': 'Pick a member',
@@ -1451,6 +1452,7 @@ export const en = {
   'validation.required': 'This field is required.',
   'validation.min': 'Must be at least {min}.',
   'validation.positive': 'Must be a positive number.',
+  'validation.nonZero': 'Amount must be different from zero. Use a negative amount for a payment into the Guild Bank.',
 
   // Season Overview
   'season.title': 'Season Overview',

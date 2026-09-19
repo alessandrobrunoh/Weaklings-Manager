@@ -1245,6 +1245,7 @@ export const it: TranslationDict = {
   'validation.required': 'Questo campo è obbligatorio.',
   'validation.min': 'Deve essere almeno {min}.',
   'validation.positive': 'Deve essere un numero positivo.',
+  'validation.nonZero': 'L’importo deve essere diverso da zero. Usa un importo negativo per un versamento alla Guild Bank.',
 
   // Season Overview
   'season.title': 'Panoramica Stagione',
@@ -1567,6 +1568,7 @@ export const it: TranslationDict = {
   'admin.transactions.deleted': 'Transazione eliminata.',
   'admin.transactions.save': 'Salva modifiche',
   'admin.transactions.fields.to': 'Destinatario',
+  'admin.transactions.fields.amountHint': 'Positivo: la Guild Bank paga la persona. Negativo: la persona versa alla Guild Bank.',
   'admin.transactions.fields.from': 'Pagatore',
   'admin.transactions.fields.pick': 'Scegli',
   'admin.transactions.fields.pickUser': 'Scegli un membro',

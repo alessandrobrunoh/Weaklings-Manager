@@ -359,6 +359,7 @@ export interface TransactionView {
 
 export interface CreateTransactionRequest {
   to_user_id: number;
+  /** Positive credits the recipient; negative is normalized as a Guild Bank donation. */
   amount: number;
   status?: TransactionStatus;
   type?: string;
@@ -372,6 +373,7 @@ export interface UpdateTransactionRequest {
   to_user_id?: number;
   /** `null` explicitly clears the payer back to the virtual Guild Bank. */
   from_user_id?: number | null;
+  /** Positive credits the recipient; negative is normalized as a Guild Bank donation. */
   amount?: number;
   status?: TransactionStatus;
   type?: string;

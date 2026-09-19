@@ -232,7 +232,8 @@ pub struct CreateTransactionRequest {
     /// The user who is owed / receives the amount.
     #[schema(example = 7)]
     pub to_user_id: i64,
-    /// The transaction amount. Must be positive.
+    /// Signed input amount. Positive values credit the recipient; negative values
+    /// are normalized as a donation back to the Guild Bank.
     #[schema(value_type = String, example = "42.50")]
     pub amount: Decimal,
     /// The lifecycle status to create the row in. Defaults to `pending`.
@@ -264,7 +265,8 @@ pub struct UpdateTransactionRequest {
     /// field leaves the current payer unchanged.
     #[serde(default, deserialize_with = "crate::serde_helpers::double_option")]
     pub from_user_id: Option<Option<i64>>,
-    /// The new amount. Must be positive.
+    /// Signed input amount. Positive values credit the recipient; negative values
+    /// normalize the row as a donation back to the Guild Bank.
     #[schema(value_type = Option<String>, example = "42.50")]
     pub amount: Option<Decimal>,
     /// The new lifecycle status.

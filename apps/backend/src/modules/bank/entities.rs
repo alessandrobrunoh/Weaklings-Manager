@@ -16,7 +16,7 @@ pub struct Model {
     pub to_user_id: i64,
     /// Whether the destination is the virtual Guild Bank instead of the historical recipient.
     pub to_guild_bank: bool,
-    /// The amount of the transaction, always positive; direction is encoded by from/to.
+    /// The stored amount, always positive; direction is encoded by from/to and destination.
     pub amount: Decimal,
     /// The lifecycle status of the transaction: `"pending"`, `"requested"`, `"rejected"`, `"withdrawn"`, or `"donated"`.
     pub status: String,

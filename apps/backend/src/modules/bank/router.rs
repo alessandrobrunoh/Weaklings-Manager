@@ -495,7 +495,8 @@ async fn reject_withdrawal(
 /// # Errors
 ///
 /// * Returns `AppError::Forbidden` if the caller lacks `bank.transactions.create`.
-/// * Returns `AppError::Validation` if `amount` is not positive.
+/// * Returns `AppError::Validation` if `amount` is zero. Negative values are
+///   accepted as shorthand for a donation back to the Guild Bank.
 /// * Returns `AppError::NotFound` if `to_user_id`, `from_user_id`, or `split_id` don't exist.
 #[utoipa::path(
     post,
@@ -511,7 +512,7 @@ async fn reject_withdrawal(
     request_body(content = CreateTransactionRequest, description = "The transaction to create."),
     responses(
         (status = 200, description = "The created transaction", body = ApiResponseTransactionView),
-        (status = 400, description = "Validation error - amount must be positive", body = ProblemDetails),
+        (status = 400, description = "Validation error - amount must be non-zero", body = ProblemDetails),
         (status = 403, description = "Forbidden - requires bank.transactions.create", body = ProblemDetails),
         (status = 404, description = "Not found - to_user_id, from_user_id, or split_id doesn't exist", body = ProblemDetails)
     )
@@ -548,7 +549,7 @@ async fn create_transaction(
 /// # Errors
 ///
 /// * Returns `AppError::Forbidden` if the caller lacks `bank.transactions.edit`.
-/// * Returns `AppError::Validation` if a provided `amount` is not positive.
+/// * Returns `AppError::Validation` if a provided `amount` is zero.
 /// * Returns `AppError::NotFound` if the transaction, or a newly-referenced
 ///   `to_user_id`/`from_user_id`/`split_id`, don't exist.
 #[utoipa::path(
@@ -564,7 +565,7 @@ async fn create_transaction(
     request_body(content = UpdateTransactionRequest, description = "The fields to change."),
     responses(
         (status = 200, description = "The updated transaction", body = ApiResponseTransactionView),
-        (status = 400, description = "Validation error - amount must be positive", body = ProblemDetails),
+        (status = 400, description = "Validation error - amount must be non-zero", body = ProblemDetails),
         (status = 403, description = "Forbidden - requires bank.transactions.edit", body = ProblemDetails),
         (status = 404, description = "Not found - the transaction, or a newly-referenced id, doesn't exist", body = ProblemDetails)
     )

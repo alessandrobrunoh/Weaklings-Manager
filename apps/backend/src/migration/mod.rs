@@ -125,6 +125,7 @@ mod m20260916_000002_seed_alliance_share_permission;
 mod m20260916_000003_add_event_alliance_ping;
 mod m20260917_000001_add_split_origin_read_only;
 mod m20260918_000001_create_trials;
+mod m20260918_000002_enforce_positive_transaction_amount;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -254,6 +255,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260916_000003_add_event_alliance_ping::Migration),
             Box::new(m20260917_000001_add_split_origin_read_only::Migration),
             Box::new(m20260918_000001_create_trials::Migration),
+            Box::new(m20260918_000002_enforce_positive_transaction_amount::Migration),
         ]
     }
 }

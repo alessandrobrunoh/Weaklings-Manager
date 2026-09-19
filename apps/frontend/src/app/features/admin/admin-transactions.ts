@@ -169,12 +169,13 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
             <input
               class="input"
               type="number"
-              min="0.01"
+              min="-999999999"
               step="0.01"
               required
               [value]="newAmount() ?? ''"
               (input)="onNewAmount($event)"
             />
+            <span class="text-xs text-secondary">{{ t('admin.transactions.fields.amountHint') }}</span>
           </label>
 
           <div class="grid gap-4 sm:grid-cols-2">
@@ -262,7 +263,7 @@ type RosterTarget = 'create-to' | 'create-from' | 'edit-to' | 'edit-from';
             <input
               class="input"
               type="number"
-              min="0.01"
+              min="-999999999"
               step="0.01"
               required
               [value]="editAmount() ?? ''"
@@ -540,8 +541,8 @@ export class AdminTransactions {
       this.toasts.error(this.t('admin.transactions.fields.pickUser'));
       return;
     }
-    if (!amount || amount <= 0) {
-      this.toasts.error(this.t('validation.positive'));
+    if (amount === null || amount === 0) {
+      this.toasts.error(this.t('validation.nonZero'));
       return;
     }
     this.catalogSaving.set(true);
@@ -613,8 +614,8 @@ export class AdminTransactions {
     if (!target || !toUserId) {
       return;
     }
-    if (!amount || amount <= 0) {
-      this.toasts.error(this.t('validation.positive'));
+    if (amount === null || amount === 0) {
+      this.toasts.error(this.t('validation.nonZero'));
       return;
     }
     this.editSaving.set(true);

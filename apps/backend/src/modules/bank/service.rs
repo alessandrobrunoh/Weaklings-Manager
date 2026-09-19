@@ -906,7 +906,8 @@ impl BankService {
     ///
     /// # Errors
     ///
-    /// * Returns `AppError::Validation` if `amount` is not positive.
+    /// * Returns `AppError::Validation` if `amount` is zero. Negative input is
+    ///   normalized as a donation to the Guild Bank.
     /// * Returns `AppError::NotFound` if `to_user_id`, `from_user_id`, or `split_id` don't exist.
     /// * Returns `AppError::Database` if the query fails.
     pub async fn create_transaction(
@@ -915,9 +916,10 @@ impl BankService {
         req: &CreateTransactionRequest,
         actor_user_id: i64,
     ) -> Result<TransactionView, AppError> {
-        if req.amount <= Decimal::ZERO {
-            return Err(AppError::Validation("amount must be positive".to_string()));
+        if req.amount == Decimal::ZERO {
+            return Err(AppError::Validation("amount must be non-zero".to_string()));
         }
+        let debit = req.amount < Decimal::ZERO;
         if UserEntity::find_by_id(req.to_user_id)
             .one(db)
             .await?
@@ -943,13 +945,22 @@ impl BankService {
             }
         }
 
-        let status = req.status.unwrap_or(TransactionStatus::Pending);
+        let status = if debit {
+            TransactionStatus::Donated
+        } else {
+            req.status.unwrap_or(TransactionStatus::Pending)
+        };
+        let from_user_id = if debit {
+            Some(req.from_user_id.unwrap_or(req.to_user_id))
+        } else {
+            req.from_user_id
+        };
         let now = chrono::Utc::now().into();
         let active = ActiveModel {
-            from_user_id: Set(req.from_user_id),
+            from_user_id: Set(from_user_id),
             to_user_id: Set(req.to_user_id),
-            to_guild_bank: Set(req.to_guild_bank.unwrap_or(false)),
-            amount: Set(req.amount),
+            to_guild_bank: Set(debit || req.to_guild_bank.unwrap_or(false)),
+            amount: Set(req.amount.abs()),
             status: Set(status.to_string()),
             r#type: Set(req
                 .r#type
@@ -998,7 +1009,8 @@ impl BankService {
     ///
     /// * Returns `AppError::NotFound` if the transaction, or a newly-referenced
     ///   `to_user_id`/`from_user_id`/`split_id`, don't exist.
-    /// * Returns `AppError::Validation` if a provided `amount` is not positive.
+    /// * Returns `AppError::Validation` if a provided `amount` is zero. Negative
+    ///   input is normalized as a donation to the Guild Bank.
     /// * Returns `AppError::Database` if the query fails.
     pub async fn update_transaction(
         &self,
@@ -1012,10 +1024,9 @@ impl BankService {
             .await?
             .ok_or_else(|| AppError::NotFound(format!("Transaction {id} not found")))?;
 
-        if let Some(amount) = req.amount {
-            if amount <= Decimal::ZERO {
-                return Err(AppError::Validation("amount must be positive".to_string()));
-            }
+        let debit = req.amount.is_some_and(|amount| amount < Decimal::ZERO);
+        if req.amount == Some(Decimal::ZERO) {
+            return Err(AppError::Validation("amount must be non-zero".to_string()));
         }
         if let Some(to_user_id) = req.to_user_id {
             if UserEntity::find_by_id(to_user_id).one(db).await?.is_none() {
@@ -1038,6 +1049,7 @@ impl BankService {
         }
 
         let old_split_id = existing.split_id;
+        let existing_to_user_id = existing.to_user_id;
         let before = serde_json::json!({
             "amount": existing.amount,
             "status": existing.status,
@@ -1052,7 +1064,7 @@ impl BankService {
             active.from_user_id = Set(from_user_id);
         }
         if let Some(amount) = req.amount {
-            active.amount = Set(amount);
+            active.amount = Set(amount.abs());
         }
         if let Some(status) = req.status {
             active.status = Set(status.to_string());
@@ -1065,6 +1077,13 @@ impl BankService {
         }
         if let Some(to_guild_bank) = req.to_guild_bank {
             active.to_guild_bank = Set(to_guild_bank);
+        }
+        if debit {
+            active.from_user_id = Set(Some(
+                req.from_user_id.flatten().unwrap_or(existing_to_user_id),
+            ));
+            active.to_guild_bank = Set(true);
+            active.status = Set(TransactionStatus::Donated.to_string());
         }
         active.updated_at = Set(chrono::Utc::now().into());
 
@@ -1747,7 +1766,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_transaction_rejects_non_positive_amount() {
+    async fn create_transaction_rejects_zero_amount() {
         let db = seed_db().await;
         let alice = insert_user(&db, "alice", "alice@example.com").await;
         let error = BankService::new()
@@ -1768,6 +1787,33 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn create_transaction_normalizes_negative_input_as_guild_donation() {
+        let db = seed_db().await;
+        let alice = insert_user(&db, "alice", "alice@example.com").await;
+        let created = BankService::new()
+            .create_transaction(
+                &db,
+                &CreateTransactionRequest {
+                    to_user_id: alice,
+                    amount: "-10.00".parse().unwrap(),
+                    status: None,
+                    r#type: None,
+                    split_id: None,
+                    to_guild_bank: None,
+                    from_user_id: None,
+                    guild_tenant_id: None,
+                },
+                alice,
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.amount, "10.00".parse().unwrap());
+        assert_eq!(created.from_user_id, Some(alice));
+        assert!(created.to_guild_bank);
+        assert_eq!(created.status, TransactionStatus::Donated);
     }
 
     #[tokio::test]
