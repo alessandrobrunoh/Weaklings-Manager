@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import type { PaginatedData, Role, UserProfile } from '../../core/models/api.models';
@@ -40,7 +40,7 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
 @Component({
   selector: 'app-users',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Avatar, PageHeader, PageStack, DataTable, DataTableCell, Icon, TooltipDirective],
+  imports: [Avatar, PageHeader, PageStack, DataTable, DataTableCell, Icon, RouterLink, TooltipDirective],
   styles: `
     .kpi-card {
       position: relative;
@@ -249,6 +249,17 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
             }
           }
         </ng-template>
+
+        <ng-template dataTableCell="actions" let-row>
+          <a
+            class="btn btn--outline btn--sm inline-flex items-center gap-1.5 text-xs"
+            [routerLink]="['/users', row.id]"
+            (click)="$event.stopPropagation()"
+          >
+            <app-icon name="users" size="0.75rem" />
+            Gestisci / collega
+          </a>
+        </ng-template>
       </app-data-table>
     </app-page-stack>
   `,
@@ -306,6 +317,11 @@ export class Users {
       sortable: true,
       accessor: (user) => user.role,
       filterOptions: ROLE_FILTERS.map((option) => ({ value: option.value, label: option.label })),
+    },
+    {
+      key: 'actions',
+      label: 'common.actions',
+      accessor: () => '',
     },
   ];
 

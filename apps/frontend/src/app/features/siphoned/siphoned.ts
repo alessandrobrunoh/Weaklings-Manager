@@ -9,6 +9,8 @@ import type {
   SiphonedIngestRequest,
   SiphonedIngestResponse,
   SiphonedPlayerBalance,
+  CreateTransactionRequest,
+  TransactionView,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
@@ -258,6 +260,14 @@ const STATS_FETCH_LIMIT = 1000;
           <ng-template dataTableCell="last_seen" let-row>
             {{ formatDate(row.last_seen) }}
           </ng-template>
+          <ng-template dataTableCell="actions" let-row>
+            @if (toNumber(row.net) < 0) {
+              <button type="button" class="btn btn--primary btn--sm" (click)="openDebtSettlement(row)">
+                <app-icon name="bank" size="0.75rem" />
+                Salda debito
+              </button>
+            }
+          </ng-template>
         </app-data-table>
       } @else if (tab() === 'entries') {
         <app-data-table
@@ -433,6 +443,21 @@ const STATS_FETCH_LIMIT = 1000;
         </div>
       </app-dialog>
     }
+    @if (settlement(); as quote) {
+      <app-dialog [title]="'Salda debito Siphoned'" (closed)="settlement.set(null)">
+        <p>
+          {{ quote.player }} deve {{ formatAmount(quote.debt) }} Siphoned.
+          Prezzo Albion Market: {{ formatAmount(quote.unitPrice) }} silver.
+        </p>
+        <p class="font-mono text-lg font-bold">{{ formatAmount(quote.total) }} silver</p>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="settlement.set(null)">Annulla</button>
+          <button type="button" class="btn btn--primary" [disabled]="saving()" (click)="confirmSettlement()">
+            Conferma transazione
+          </button>
+        </div>
+      </app-dialog>
+    }
   `,
 })
 export class Siphoned {
@@ -450,6 +475,13 @@ export class Siphoned {
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
   protected readonly saving = signal(false);
+  protected readonly settlement = signal<{
+    player: string;
+    userId: number;
+    debt: number;
+    unitPrice: number;
+    total: number;
+  } | null>(null);
   protected readonly showIngestForm = signal(false);
   protected readonly showEntryForm = signal(false);
   protected readonly rawExport = signal('');
@@ -491,6 +523,63 @@ export class Siphoned {
   private readonly balanceQuery = signal<DataTablePageChange>(emptyPageChange());
 
   protected readonly canIngest = computed(() => this.auth.hasPermission('siphoned.ingest'));
+
+  protected async openDebtSettlement(row: SiphonedPlayerBalance): Promise<void> {
+    const debt = Math.abs(this.toNumber(row.net));
+    try {
+      const users = await firstValueFrom(this.api.get<PaginatedData<{ id: number; username: string }>>('api/users', {
+        page: 1, limit: 1000,
+      }));
+      const candidates = await Promise.all(
+        users.items.map(async (user) => {
+          const link = await firstValueFrom(this.api.get<{ linked: boolean; albion_player_name?: string | null }>(
+            `api/albion/link/users/${user.id}`,
+          ));
+          return link.linked && link.albion_player_name?.toLowerCase() === row.player_name.toLowerCase()
+            ? user.id
+            : null;
+        }),
+      );
+      const userId = candidates.find((id): id is number => id !== null);
+      if (userId === undefined) {
+        this.toasts.error(`Nessun account collegato a ${row.player_name}.`);
+        return;
+      }
+      const response = await firstValueFrom(this.api.get<Array<{ sell_price_min: number; buy_price_max: number }>>(
+        'api/albiondata/prices?items=SIPHONED_ENERGY',
+      ));
+      const price = response.find((item) => item.sell_price_min > 0)?.sell_price_min
+        ?? response.find((item) => item.buy_price_max > 0)?.buy_price_max
+        ?? 0;
+      if (price <= 0) {
+        this.toasts.error('Prezzo Siphoned Energy non disponibile.');
+        return;
+      }
+      this.settlement.set({ player: row.player_name, userId, debt, unitPrice: price, total: debt * price });
+    } catch {
+      this.toasts.error('Impossibile recuperare prezzo o collegamento Albion.');
+    }
+  }
+
+  protected async confirmSettlement(): Promise<void> {
+    const quote = this.settlement();
+    if (!quote) return;
+    this.saving.set(true);
+    try {
+      await firstValueFrom(this.api.post<TransactionView>('api/bank/transactions', {
+        to_user_id: quote.userId,
+        amount: quote.total,
+        status: 'donated',
+        type: 'siphoned_settlement',
+      } satisfies CreateTransactionRequest));
+      this.settlement.set(null);
+      this.toasts.success('Transazione creata.');
+    } catch {
+      this.toasts.error('Impossibile creare la transazione.');
+    } finally {
+      this.saving.set(false);
+    }
+  }
 
   protected readonly balanceColumns: readonly DataTableColumn<SiphonedPlayerBalance>[] = [
     {
@@ -539,6 +628,7 @@ export class Siphoned {
       accessor: (row) => row.last_seen,
       comparator: (a, b) => a.last_seen.localeCompare(b.last_seen),
     },
+    { key: 'actions', label: 'common.actions', accessor: () => '' },
   ];
 
   protected readonly entryColumns = computed<DataTableColumn<SiphonedEntryView>[]>(() => {
