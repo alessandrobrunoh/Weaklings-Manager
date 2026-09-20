@@ -1,5 +1,4 @@
-//! Keep the persisted ledger canonical: direction is represented by the
-//! transaction endpoints, while the stored amount is always positive.
+//! Reserve the migration version without changing legacy transaction semantics.
 
 use sea_orm_migration::prelude::*;
 
@@ -9,24 +8,15 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .get_connection()
-            .execute_unprepared(
-                "ALTER TABLE transactions
-                 ADD CONSTRAINT transactions_amount_positive CHECK (amount > 0)",
-            )
-            .await?;
+        // Negative amounts are still used by existing bank donation flows.
+        // This migration must remain a no-op so legacy tenants can boot and
+        // retain their balances without rewriting historical transactions.
+        let _ = manager;
         Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .get_connection()
-            .execute_unprepared(
-                "ALTER TABLE transactions
-                 DROP CONSTRAINT IF EXISTS transactions_amount_positive",
-            )
-            .await?;
+        let _ = manager;
         Ok(())
     }
 }
