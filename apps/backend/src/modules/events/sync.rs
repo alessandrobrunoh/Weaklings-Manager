@@ -5,7 +5,10 @@
 //! `ping_alliance = false`, so creating it cannot recursively create another
 //! mirror.
 
-use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder, Statement,
+};
 
 use crate::{
     errors::AppError,
@@ -18,6 +21,7 @@ use crate::{
             models::{CreateEventRequest, EventView, ParticipateEventRequest},
             service::EventService,
         },
+        splits::entities::split,
     },
     tenant::TenantRegistry,
 };
@@ -76,6 +80,34 @@ pub async fn create_mirror(
     )
     .await?;
 
+    let source_roles = crate::modules::events::entities::event_roster_role::Entity::find()
+        .filter(
+            crate::modules::events::entities::event_roster_role::Column::EventId
+                .eq(source_event.id),
+        )
+        .all(source_db)
+        .await?;
+    let mut mapped_roles = Vec::with_capacity(source_roles.len());
+    for role in source_roles {
+        let build_share = AllianceShareService::share_build(
+            control,
+            registry,
+            source_db,
+            ShareParams {
+                source_tenant_id,
+                source_kind: "guild",
+                actor: source_creator,
+                authorized: true,
+            },
+            CreateAllianceShareRequest {
+                artifact_type: ArtifactType::Build,
+                id: role.build_id,
+            },
+        )
+        .await?;
+        mapped_roles.push(build_share.published_id);
+    }
+
     let creator_id = upsert_user(&alliance.db, source_creator).await?;
     let mirror = EventService::new()
         .create_event(
@@ -98,6 +130,42 @@ pub async fn create_mirror(
             },
         )
         .await?;
+
+    for build_id in mapped_roles {
+        crate::modules::events::entities::event_roster_role::ActiveModel {
+            event_id: sea_orm::ActiveValue::Set(mirror.id),
+            build_id: sea_orm::ActiveValue::Set(build_id),
+            ..Default::default()
+        }
+        .insert(&alliance.db)
+        .await?;
+    }
+
+    let source_split = split::Entity::find()
+        .filter(split::Column::EventId.eq(source_event.id))
+        .order_by_desc(split::Column::Id)
+        .one(source_db)
+        .await?;
+    if let Some(source_split) = source_split {
+        let split_share = AllianceShareService::share_split(
+            control,
+            registry,
+            source_db,
+            ShareParams {
+                source_tenant_id,
+                source_kind: "guild",
+                actor: source_creator,
+                authorized: true,
+            },
+            CreateAllianceShareRequest {
+                artifact_type: ArtifactType::Split,
+                id: source_split.id,
+            },
+        )
+        .await?;
+        AllianceShareService::attach_shared_split_to_event(registry, &split_share, mirror.id)
+            .await?;
+    }
 
     control
         .execute(Statement::from_sql_and_values(
