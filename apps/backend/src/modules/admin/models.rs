@@ -280,6 +280,23 @@ pub struct DiscordRoleView {
     pub managed: bool,
 }
 
+/// A human Discord guild member not yet present as a local `users` row.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct DiscordMemberView {
+    /// Discord user snowflake.
+    pub id: String,
+    /// Discord username (`user.username`).
+    pub username: String,
+    /// Discord display name (`user.global_name`), when set.
+    pub global_name: Option<String>,
+    /// Guild nickname, when set.
+    pub nick: Option<String>,
+    /// Best label for pickers: nick, then global name, then username.
+    pub display_name: String,
+    /// Avatar hash, when the user has one.
+    pub avatar: Option<String>,
+}
+
 /// One tag on a Discord forum channel.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct DiscordForumTagView {

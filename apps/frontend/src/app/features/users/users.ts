@@ -2,8 +2,15 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
-import type { PaginatedData, Role, UserProfile } from '../../core/models/api.models';
+import type {
+  AlbionGuildMember,
+  DiscordMemberView,
+  PaginatedData,
+  Role,
+  UserProfile,
+} from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TranslateService } from '../../core/services/translate.service';
 import type { TranslationKey } from '../../i18n/en';
@@ -14,10 +21,11 @@ import {
   type DataTablePageChange,
 } from '../../shared/components/data-table/data-table';
 import { DataTableCell } from '../../shared/components/data-table/data-table-cell';
+import { Dialog } from '../../shared/components/dialog/dialog';
 import { Icon } from '../../shared/components/icon/icon';
 import { PageHeader } from '../../shared/components/page-header/page-header';
 import { PageStack } from '../../shared/components/page-stack/page-stack';
-import { StatCard } from '../../shared/components/stat-card/stat-card';
+import { SearchableSelect } from '../../shared/components/searchable-select/searchable-select';
 
 import { TooltipDirective } from '../../shared/directives/tooltip.directive';
 
@@ -40,7 +48,18 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
 @Component({
   selector: 'app-users',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Avatar, PageHeader, PageStack, DataTable, DataTableCell, Icon, RouterLink, TooltipDirective],
+  imports: [
+    Avatar,
+    Dialog,
+    PageHeader,
+    PageStack,
+    DataTable,
+    DataTableCell,
+    Icon,
+    RouterLink,
+    SearchableSelect,
+    TooltipDirective,
+  ],
   styles: `
     .kpi-card {
       position: relative;
@@ -110,6 +129,12 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         <app-icon name="sparkles" size="0.875rem" />
         {{ t('common.refreshNow') }}
       </button>
+      @if (canCreate()) {
+        <button type="button" class="btn btn--primary btn--sm" (click)="openCreate()">
+          <app-icon name="plus" size="0.875rem" />
+          {{ t('users.create') }}
+        </button>
+      }
     </app-page-header>
 
     <app-page-stack>
@@ -262,13 +287,69 @@ const ROLE_FILTERS: readonly { value: Role; label: string }[] = [
         </ng-template>
       </app-data-table>
     </app-page-stack>
+
+    @if (createOpen()) {
+      <app-dialog
+        [title]="t('users.create')"
+        [subtitle]="t('users.create.hint')"
+        icon="users"
+        (closed)="closeCreate()"
+      >
+        <form id="create-member-form" class="grid gap-4" (submit)="createMember($event)">
+          <label>
+            <span class="label">{{ t('users.create.discord') }}</span>
+            <app-searchable-select
+              [options]="discordOptions()"
+              [value]="selectedDiscordId()"
+              [allowEmpty]="false"
+              [loading]="discordLoading()"
+              [searchPlaceholder]="t('users.create.discordPlaceholder')"
+              [noMatchesLabel]="t('picker.noMatches')"
+              [emptyOptionsLabel]="t('users.create.discordEmpty')"
+              [ariaLabel]="t('users.create.discord')"
+              (valueChange)="selectedDiscordId.set($event)"
+            />
+          </label>
+          <label>
+            <span class="label">{{ t('users.create.albion') }}</span>
+            <app-searchable-select
+              [options]="albionOptions()"
+              [value]="selectedAlbionId()"
+              [allowEmpty]="false"
+              [loading]="albionLoading()"
+              [searchPlaceholder]="t('users.create.albionPlaceholder')"
+              [noMatchesLabel]="t('picker.noMatches')"
+              [emptyOptionsLabel]="t('users.create.albionEmpty')"
+              [ariaLabel]="t('users.create.albion')"
+              (valueChange)="selectedAlbionId.set($event)"
+            />
+          </label>
+        </form>
+        <div dialogFooter>
+          <button type="button" class="btn btn--ghost" (click)="closeCreate()">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="submit"
+            class="btn btn--primary"
+            form="create-member-form"
+            [disabled]="creating() || !selectedDiscordId() || !selectedAlbionId()"
+          >
+            {{ t('users.create.submit') }}
+          </button>
+        </div>
+      </app-dialog>
+    }
   `,
 })
 export class Users {
   private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly toasts = inject(ToastService);
   private readonly translate = inject(TranslateService);
+
+  protected readonly canCreate = computed(() => this.auth.hasPermission('users.create'));
 
   protected readonly pageSize = PAGE_SIZE;
   protected readonly users = signal<UserProfile[]>([]);
@@ -325,7 +406,32 @@ export class Users {
     },
   ];
 
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
+
+  protected readonly createOpen = signal(false);
+  protected readonly creating = signal(false);
+  protected readonly discordLoading = signal(false);
+  protected readonly albionLoading = signal(false);
+  protected readonly discordMembers = signal<DiscordMemberView[]>([]);
+  protected readonly albionMembers = signal<AlbionGuildMember[]>([]);
+  protected readonly selectedDiscordId = signal('');
+  protected readonly selectedAlbionId = signal('');
+
+  protected readonly discordOptions = computed(() =>
+    this.discordMembers().map((member) => ({
+      id: member.id,
+      label: member.display_name,
+      hint: member.display_name === member.username ? undefined : member.username,
+    })),
+  );
+
+  protected readonly albionOptions = computed(() =>
+    this.albionMembers().map((member) => ({
+      id: member.id,
+      label: member.name,
+    })),
+  );
 
   constructor() {
     void this.load();
@@ -355,6 +461,69 @@ export class Users {
     this.tableSort.set(event.sort);
     this.tableFilters.set(event.columnFilters);
     void this.load();
+  }
+
+  protected openCreate(): void {
+    this.createOpen.set(true);
+    this.selectedDiscordId.set('');
+    this.selectedAlbionId.set('');
+    void this.loadCreateOptions();
+  }
+
+  protected closeCreate(): void {
+    this.createOpen.set(false);
+    this.creating.set(false);
+  }
+
+  protected async createMember(event: Event): Promise<void> {
+    event.preventDefault();
+    const discordId = this.selectedDiscordId();
+    const albionId = this.selectedAlbionId();
+    if (!discordId || !albionId || this.creating()) {
+      return;
+    }
+    const albion = this.albionMembers().find((member) => member.id === albionId);
+    this.creating.set(true);
+    try {
+      await firstValueFrom(
+        this.api.post<UserProfile>('api/users', {
+          discord_id: discordId,
+          albion_player_id: albionId,
+          albion_player_name: albion?.name,
+        }),
+      );
+      this.toasts.success(this.t('users.create.success', { name: albion?.name ?? albionId }));
+      this.closeCreate();
+      await this.load();
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+    } finally {
+      this.creating.set(false);
+    }
+  }
+
+  private async loadCreateOptions(): Promise<void> {
+    this.discordLoading.set(true);
+    this.albionLoading.set(true);
+    try {
+      const [discord, roster] = await Promise.all([
+        firstValueFrom(this.api.get<DiscordMemberView[]>('api/admin/discord/members')),
+        firstValueFrom(
+          this.api.get<PaginatedData<AlbionGuildMember> | AlbionGuildMember[]>('api/albion/guild/roster', {
+            limit: 500,
+          }),
+        ),
+      ]);
+      this.discordMembers.set(discord ?? []);
+      this.albionMembers.set(Array.isArray(roster) ? roster : (roster.items ?? []));
+    } catch (error) {
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
+      this.discordMembers.set([]);
+      this.albionMembers.set([]);
+    } finally {
+      this.discordLoading.set(false);
+      this.albionLoading.set(false);
+    }
   }
 
   protected async load(): Promise<void> {
