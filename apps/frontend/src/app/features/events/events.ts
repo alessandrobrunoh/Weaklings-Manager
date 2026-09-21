@@ -844,8 +844,12 @@ export class Events {
   protected readonly draftRegear = signal(false);
   protected readonly draftPingAlliance = signal(false);
   protected readonly allianceId = signal<string | null>(null);
+  protected readonly allianceMembershipStatus = signal<string | null>(null);
   protected readonly canPingAlliance = computed(
-    () => this.auth.profile()?.tenant_kind === 'guild' && Boolean(this.allianceId()),
+    () =>
+      this.auth.profile()?.tenant_kind === 'guild' &&
+      Boolean(this.allianceId()) &&
+      this.allianceMembershipStatus() === 'active',
   );
   protected readonly discordRoles = signal<DiscordRoleView[]>([]);
   protected readonly draftDiscordRoleIds = signal<string[]>([]);
@@ -1263,6 +1267,8 @@ export class Events {
 
   private async loadCreateOptions(): Promise<void> {
     this.compsLoading.set(true);
+    this.allianceId.set(null);
+    this.allianceMembershipStatus.set(null);
     try {
       const [comps, islands, alliance] = await Promise.all([
         firstValueFrom(this.api.get<PaginatedData<CompSummary>>('api/comps', { page: 1, limit: 100 })),
@@ -1272,6 +1278,7 @@ export class Events {
       this.comps.set(comps.items);
       this.islands.set(islands);
       this.allianceId.set(alliance?.alliance_id ?? null);
+      this.allianceMembershipStatus.set(alliance?.membership_status ?? null);
     } catch (error) {
       this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     }
