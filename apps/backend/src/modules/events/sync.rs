@@ -26,6 +26,27 @@ use crate::{
     tenant::TenantRegistry,
 };
 
+/// Ensure an event may create an alliance mirror before the source event is inserted.
+pub async fn assert_active_alliance(
+    control: &DatabaseConnection,
+    guild_tenant_id: &str,
+) -> Result<(), AppError> {
+    let row = control
+        .query_one(Statement::from_sql_and_values(
+            control.get_database_backend(),
+            "SELECT 1 FROM alliance_memberships \
+             WHERE guild_tenant_id = $1 AND status = 'active'",
+            [guild_tenant_id.into()],
+        ))
+        .await?;
+    if row.is_none() {
+        return Err(AppError::Conflict(
+            "guild is not an active member of an alliance".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 /// Create the alliance-side event and persist its idempotent cross-tenant link.
 pub async fn create_mirror(
     control: &DatabaseConnection,
@@ -58,7 +79,9 @@ pub async fn create_mirror(
         .map(|row| row.try_get_by_index::<String>(0))
         .transpose()?;
     let Some(alliance_id) = alliance_id else {
-        return Ok(None);
+        return Err(AppError::Conflict(
+            "guild is not an active member of an alliance".to_owned(),
+        ));
     };
     let alliance = registry.get_or_load(&alliance_id).await?;
 
@@ -165,6 +188,9 @@ pub async fn create_mirror(
         .await?;
         AllianceShareService::attach_shared_split_to_event(registry, &split_share, mirror.id)
             .await?;
+        crate::modules::splits::service::SplitService::new()
+            .sync_event_participants(&alliance.db, mirror.id)
+            .await?;
     }
 
     control
@@ -246,6 +272,7 @@ pub async fn sync_participation(
     let Some((peer_tenant, peer_id)) = peer_event(control, tenant_id, event_id).await? else {
         return Ok(());
     };
+    let current = registry.get_or_load(tenant_id).await?;
     let peer = registry.get_or_load(&peer_tenant).await?;
     let peer_user = upsert_user(&peer.db, actor).await?;
     let service = EventService::new();
@@ -269,6 +296,14 @@ pub async fn sync_participation(
             .cancel_participation(&peer.db, peer_id, peer_user)
             .await?;
     }
+    // Event-linked splits use the event roster as their participant source.
+    // Keep both copies current when a signup changes from either tenant.
+    crate::modules::splits::service::SplitService::new()
+        .sync_event_participants(&current.db, event_id)
+        .await?;
+    crate::modules::splits::service::SplitService::new()
+        .sync_event_participants(&peer.db, peer_id)
+        .await?;
     Ok(())
 }
 
