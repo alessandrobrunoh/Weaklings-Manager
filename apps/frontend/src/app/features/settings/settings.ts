@@ -88,7 +88,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
     ViewToggle,
   ],
   template: `
-    <app-page-header [title]="t('nav.profile')" subtitle="Gestione account, progressione, economia e preferenze">
+    <app-page-header [title]="t('nav.profile')" [subtitle]="t('profile.subtitle')">
       <button
         type="button"
         class="btn btn--outline btn--sm"
@@ -142,7 +142,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
                   </span>
                 </div>
                 <p class="text-sm mt-0.5" style="color: var(--color-text-secondary)">
-                  {{ profile()?.email || 'Nessuna email' }} · ID #{{ profile()?.id }}
+                  {{ profile()?.email || t('common.noEmail') }} · ID #{{ profile()?.id }}
                 </p>
               </div>
             </div>
@@ -159,10 +159,10 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
                 ></span>
                 <div>
                   <p class="text-xs uppercase tracking-wider font-semibold" style="color: var(--color-text-secondary)">
-                    Albion Online Link
+                    {{ t('albion.title') }}
                   </p>
                   <p class="text-sm font-semibold mono" style="color: var(--color-text)">
-                    {{ albionLink()?.linked ? albionLink()?.albion_player_name : 'Non collegato' }}
+                    {{ albionLink()?.linked ? albionLink()?.albion_player_name : t('albion.not_linked') }}
                   </p>
                 </div>
               </div>
@@ -173,10 +173,10 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
                     type="button"
                     class="btn btn--outline btn--sm text-xs py-1 px-2.5"
                     (click)="unlinkConfirmOpen.set(true)"
-                    [appTooltip]="'Scollega il tuo personaggio Albion'"
+                    [appTooltip]="t('settings.albion.unlinkTooltip')"
                     tooltipPosition="top"
                   >
-                    Scollega
+                    {{ t('albion.unlink') }}
                   </button>
                 } @else {
                   <button
@@ -187,7 +187,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
                     tooltipPosition="top"
                   >
                     <app-icon name="plus" size="0.75rem" />
-                    Collega
+                    {{ t('dashboard.attention.link_albion_action') }}
                   </button>
                 }
               </div>
@@ -292,7 +292,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
                     {{ m.attendance_rate | number: '1.0-0' }}%
                   </span>
                   <span class="text-xs" style="color: var(--color-text-secondary)">
-                    {{ m.events_attended }} / {{ m.events_total }} eventi
+                    {{ t('settings.presence.eventsCount', { attended: m.events_attended, total: m.events_total }) }}
                   </span>
                 </div>
                 <div class="h-1.5 rounded-full overflow-hidden mb-3" style="background: var(--color-surface-2)">
@@ -304,12 +304,12 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
                 </div>
                 <p class="text-xs" style="color: var(--color-text-secondary)">
                   @if (m.attendance_streak > 0) {
-                    Serie attuale: <strong>{{ m.attendance_streak }} consecutivi</strong>.
+                    {{ t('settings.presence.streak', { count: m.attendance_streak }) }}
                   }
                 </p>
                 @if (m.next_event_title) {
                   <p class="mt-2 text-xs" style="color: var(--color-primary)">
-                    Prossimo: {{ m.next_event_title }}
+                    {{ t('settings.presence.next', { title: m.next_event_title }) }}
                   </p>
                 }
               }
@@ -318,7 +318,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
             <!-- Regear -->
             <article class="card p-5">
               <h2 class="text-sm uppercase tracking-wider font-semibold mb-3" style="color: var(--color-text-secondary)">
-                Richieste Regear
+                {{ t('regears.title') }}
               </h2>
               @if (userMetrics(); as m) {
                 <div class="flex items-baseline justify-between mb-1">
@@ -326,7 +326,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
                     {{ budget()?.weekly_balance ?? 0 }} / {{ budget()?.weekly_cap ?? 0 }}
                   </span>
                   <span class="text-xs" style="color: var(--color-text-secondary)">
-                    Settimanali
+                    {{ t('regears.budget.weekly') }}
                   </span>
                 </div>
                 <div class="h-1.5 rounded-full overflow-hidden mb-2" style="background: var(--color-surface-2)">
@@ -341,7 +341,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
                     {{ budget()?.bonus_balance ?? 0 }} / {{ budget()?.bonus_cap ?? 0 }}
                   </span>
                   <span class="text-xs" style="color: var(--color-text-secondary)">
-                    Bonus (giveaway)
+                    {{ t('regears.budget.bonus') }}
                   </span>
                 </div>
                 <div class="h-1.5 rounded-full overflow-hidden mb-3" style="background: var(--color-surface-2)">
@@ -352,9 +352,9 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
                   ></div>
                 </div>
                 <div class="grid grid-cols-2 gap-1 text-xs" style="color: var(--color-text-secondary)">
-                  <span>Approvati: <strong>{{ m.regears_approved }}</strong></span>
-                  <span>In attesa: <strong>{{ m.regears_pending }}</strong></span>
-                  <span class="col-span-2 mt-1">Rimborsato: <strong style="color: var(--color-success)">{{ formatAmount(m.regear_silver) }}</strong></span>
+                  <span>{{ t('regears.status.approved') }}: <strong>{{ m.regears_approved }}</strong></span>
+                  <span>{{ t('regears.status.pending') }}: <strong>{{ m.regears_pending }}</strong></span>
+                  <span class="col-span-2 mt-1">{{ t('regears.stat.totalReimbursed') }}: <strong style="color: var(--color-success)">{{ formatAmount(m.regear_silver) }}</strong></span>
                 </div>
               }
             </article>
@@ -362,18 +362,18 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
             <!-- Loot Splits -->
             <article class="card p-5">
               <h2 class="text-sm uppercase tracking-wider font-semibold mb-3" style="color: var(--color-text-secondary)">
-                Loot Splits
+                {{ t('splits.title') }}
               </h2>
               @if (userMetrics(); as m) {
                 <div class="mb-2">
-                  <p class="text-xs" style="color: var(--color-text-secondary)">Guadagno Totale</p>
+                  <p class="text-xs" style="color: var(--color-text-secondary)">{{ t('intel.splitEarnings') }}</p>
                   <p class="text-2xl font-bold mono" style="color: var(--color-success)">
                     {{ formatAmount(m.split_earnings) }}
                   </p>
                 </div>
                 <div class="grid grid-cols-2 gap-1 text-xs mt-3 pt-3 border-t" style="border-color: var(--color-border); color: var(--color-text-secondary)">
-                  <span>Partecipazioni: <strong>{{ m.splits_joined }}</strong></span>
-                  <span>Media split: <strong>{{ formatAmount(averageSplitShare()) }}</strong></span>
+                  <span>{{ t('splits.participants') }}: <strong>{{ m.splits_joined }}</strong></span>
+                  <span>{{ t('settings.splits.average') }}: <strong>{{ formatAmount(averageSplitShare()) }}</strong></span>
                   <span class="col-span-2 mt-1">K/D: <strong>{{ m.kills }}K / {{ m.deaths }}D</strong> ({{ formatCompact(m.kill_fame) }} fame)</span>
                 </div>
               }
@@ -385,25 +385,25 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
         @if (activeTab() === 'ledgers') {
           <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Economy snapshot">
             <app-stat-card
-              label="Argento in Attesa"
+              [label]="t('bank.balance.pending')"
               [value]="formatAmount(balance()?.pending_total ?? 0)"
               icon="bank"
               tone="primary"
             />
             <app-stat-card
-              label="Argento Richiesto"
+              [label]="t('bank.balance.requested')"
               [value]="formatAmount(balance()?.requested_total ?? 0)"
               icon="bank"
               tone="warning"
             />
             <app-stat-card
-              label="Argento Liquidato"
+              [label]="t('bank.finance.paidOut')"
               [value]="formatAmount(withdrawnTotal())"
               icon="bank"
               tone="success"
             />
             <app-stat-card
-              label="Energia Sifonata Netta"
+              [label]="t('bank.finance.siphonedNet')"
               [value]="formatAmount(siphonedBalance()?.net ?? 0)"
               icon="activity"
               tone="neutral"
@@ -415,7 +415,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
             <div class="card p-0 overflow-hidden">
               <div class="p-4 border-b" style="border-color: var(--color-border)">
                 <h2 class="text-base font-semibold" style="color: var(--color-text)">
-                  Transazioni Personali Banca
+                  {{ t('bank.transactions.title') }}
                 </h2>
               </div>
               <app-data-table
@@ -444,7 +444,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
             <div class="card p-0 overflow-hidden">
               <div class="p-4 border-b" style="border-color: var(--color-border)">
                 <h2 class="text-base font-semibold" style="color: var(--color-text)">
-                  Movimenti Energia Sifonata
+                  {{ t('siphoned.title') }}
                 </h2>
               </div>
               <app-data-table
@@ -473,9 +473,9 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
           <div class="card p-0 overflow-hidden">
             <div class="p-4 border-b flex items-center justify-between" style="border-color: var(--color-border)">
               <h2 class="text-base font-semibold" style="color: var(--color-text)">
-                Le mie battaglie recenti
+                {{ t('profile.battles.title') }}
               </h2>
-              <span class="chip font-mono text-xs">{{ battles().length }} registrate</span>
+              <span class="chip font-mono text-xs">{{ t('profile.battles.recorded', { count: battles().length }) }}</span>
             </div>
             <app-data-table
               [columns]="battleColumns"
@@ -487,7 +487,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
                 <a
                   [routerLink]="['/battles', row.battle_id]"
                   class="btn btn--tonal btn--sm text-xs py-1 px-2 mono"
-                  [appTooltip]="'Apri dettagli battaglia #' + row.battle_id"
+                  [appTooltip]="t('events.detail.open_battle') + ' #' + row.battle_id"
                   tooltipPosition="top"
                 >
                   #{{ row.battle_id }}
@@ -515,7 +515,7 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
               <div class="flex items-center gap-2 mb-4">
                 <app-icon name="sparkles" size="1.25rem" style="color: var(--color-primary)" />
                 <h2 class="text-base font-semibold" style="color: var(--color-text)">
-                  Tema e Aspetto
+                  {{ t('settings.appearance') }}
                 </h2>
               </div>
               <div class="grid gap-3">
@@ -578,14 +578,14 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
 
     <!-- Link Albion Character Dialog -->
     @if (linkDialogOpen()) {
-      <app-dialog title="Collega il tuo Personaggio Albion" (closed)="closeLinkDialog()">
+      <app-dialog [title]="t('albion.required.title')" (closed)="closeLinkDialog()">
         <div class="grid gap-3">
           <p id="albion-link-search-hint" class="text-xs" style="color: var(--color-text-secondary)">
             {{ t('settings.albion.searchHint') }}
           </p>
 
           <form class="flex gap-2" (submit)="searchPlayers($event)">
-            <label class="sr-only" for="albion-link-search">Nome personaggio Albion</label>
+            <label class="sr-only" for="albion-link-search">{{ t('settings.albion.searchPlaceholder') }}</label>
             <input
               id="albion-link-search"
               name="albion-player-search"
@@ -598,13 +598,13 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
               autofocus
             />
             <button type="submit" class="btn btn--primary btn--sm" [disabled]="playerSearch().trim().length < 2 || playerSearchLoading()">
-              Cerca
+              {{ t('common.search') }}
             </button>
           </form>
 
           @if (playerSearchLoading()) {
             <div class="p-6 flex justify-center">
-              <app-loading label="Ricerca giocatori Albion..." />
+              <app-loading [label]="t('common.loading')" />
             </div>
           } @else if (playerSearchDone()) {
             <div class="max-h-64 overflow-y-auto grid gap-1.5 pr-1" aria-live="polite">
@@ -621,11 +621,11 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
                       {{ player.name }}
                     </p>
                     <p class="text-xs" style="color: var(--color-text-secondary)">
-                      {{ player.guild_name ?? 'Nessuna gilda' }} · ID: {{ player.id }}
+                      {{ player.guild_name ?? t('albionSettings.lookup.noGuild') }} · ID: {{ player.id }}
                     </p>
                   </div>
                   <span class="btn btn--primary btn--sm text-xs py-1 px-2.5">
-                    Collega
+                    {{ t('dashboard.attention.link_albion_action') }}
                   </span>
                 </button>
               } @empty {
@@ -647,9 +647,9 @@ function emptyPaginatedBattles(): PaginatedData<BattleSummary> {
 
     <!-- Unlink Confirmation Dialog -->
     @if (unlinkConfirmOpen()) {
-      <app-dialog title="Scollega Personaggio Albion" (closed)="unlinkConfirmOpen.set(false)">
+      <app-dialog [title]="t('settings.albion.unlinkConfirmTitle')" (closed)="unlinkConfirmOpen.set(false)">
         <p class="text-sm" style="color: var(--color-text-secondary)">
-          Sei sicuro di voler scollegare il tuo personaggio <strong>{{ albionLink()?.albion_player_name }}</strong>?
+          {{ t('settings.albion.unlinkConfirmBody', { name: albionLink()?.albion_player_name ?? '' }) }}
         </p>
         <div dialogFooter class="flex justify-end gap-2">
           <button type="button" class="btn btn--ghost btn--sm" (click)="unlinkConfirmOpen.set(false)">
@@ -885,7 +885,8 @@ export class Settings {
   protected readonly trackTransaction = (row: TransactionView): unknown => row.id;
   protected readonly trackSiphonedEntry = (row: SiphonedEntryView): unknown => row.id;
   protected readonly trackBattle = (row: BattleSummary): unknown => row.battle_id;
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
 
   constructor() {
     void this.load();
@@ -1017,10 +1018,10 @@ export class Settings {
       );
       this.albionLink.set(linkStatus);
       this.closeLinkDialog();
-      this.toasts.success(`Personaggio ${player.name} collegato con successo!`);
+      this.toasts.success(this.t('albion.linked', { name: player.name }));
       await this.load();
     } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : 'Errore durante il collegamento');
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.savingLink.set(false);
     }
@@ -1033,10 +1034,10 @@ export class Settings {
       await firstValueFrom(this.api.delete<void>('api/albion/link'));
       this.albionLink.set(null);
       this.unlinkConfirmOpen.set(false);
-      this.toasts.success('Personaggio scollegato con successo');
+      this.toasts.success(this.t('albionSettings.link.unlinked'));
       await this.load();
     } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : 'Errore durante lo scollegamento');
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.savingLink.set(false);
     }

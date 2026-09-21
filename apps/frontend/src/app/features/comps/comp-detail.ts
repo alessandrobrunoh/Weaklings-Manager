@@ -2218,7 +2218,7 @@ export class CompDetailPage {
   }
 
   protected formatNumber(value: number): string {
-    return new Intl.NumberFormat('en-US').format(value);
+    return new Intl.NumberFormat(this.translate.locale()).format(value);
   }
 
   protected formatPercent(value: number): string {
@@ -2305,7 +2305,7 @@ export class CompDetailPage {
     if (Number.isNaN(numeric)) {
       return String(value);
     }
-    return numeric.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    return numeric.toLocaleString(this.translate.locale(), { maximumFractionDigits: 0 });
   }
 
   private async loadReadiness(compId: number): Promise<void> {

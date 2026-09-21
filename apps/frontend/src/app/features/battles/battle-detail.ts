@@ -2361,11 +2361,11 @@ export class BattleDetailPage {
   }
 
   protected formatDate(isoDate: string): string {
-    return new Date(isoDate).toLocaleString();
+    return new Date(isoDate).toLocaleString(this.translate.locale());
   }
 
   protected formatTime(isoDate: string): string {
-    return new Date(isoDate).toLocaleTimeString();
+    return new Date(isoDate).toLocaleTimeString(this.translate.locale());
   }
 
   protected formatTimeOffset(killIso: string, startIso: string): string {
@@ -2377,17 +2377,17 @@ export class BattleDetailPage {
   }
 
   protected formatAmount(value: number): string {
-    return value.toLocaleString();
+    return value.toLocaleString(this.translate.locale());
   }
 
   protected formatCompact(value: number): string {
-    return Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(
+    return Intl.NumberFormat(this.translate.locale(), { notation: 'compact', maximumFractionDigits: 1 }).format(
       value,
     );
   }
 
   protected formatDecimal(value: number): string {
-    return Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value);
+    return Intl.NumberFormat(this.translate.locale(), { maximumFractionDigits: 1 }).format(value);
   }
 
   protected formatDuration(battle: Pick<BattleSummary, 'start_time' | 'end_time'>): string {

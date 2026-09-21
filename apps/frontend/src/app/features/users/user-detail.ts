@@ -147,7 +147,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
                   <span class="chip" [class]="roleChip(user.role)">{{ user.role }}</span>
                 </div>
                 <p class="text-sm mt-0.5" style="color: var(--color-text-secondary)">
-                  {{ user.email || 'Nessuna email registrata' }} · ID #{{ user.id }}
+                  {{ user.email || t('common.noEmail') }} · ID #{{ user.id }}
                 </p>
               </div>
             </div>
@@ -164,10 +164,10 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
                 ></span>
                 <div>
                   <p class="text-xs uppercase tracking-wider font-semibold" style="color: var(--color-text-secondary)">
-                    Albion Online Link
+                    {{ t('albion.title') }}
                   </p>
                   <p class="text-sm font-semibold mono" style="color: var(--color-text)">
-                    {{ albionLink()?.linked ? albionLink()?.albion_player_name : 'Non collegato' }}
+                    {{ albionLink()?.linked ? albionLink()?.albion_player_name : t('albion.not_linked') }}
                   </p>
                 </div>
               </div>
@@ -179,21 +179,21 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
                       type="button"
                       class="btn btn--outline btn--sm text-xs py-1 px-2.5"
                       (click)="askUnlink()"
-                      [appTooltip]="'Scollega il personaggio Albion da questo utente'"
+                      [appTooltip]="t('users.link.unlinkTooltip')"
                       tooltipPosition="top"
                     >
-                      Scollega
+                      {{ t('albion.unlink') }}
                     </button>
                   }
                   <button
                     type="button"
                     class="btn btn--primary btn--sm text-xs py-1 px-2.5 flex items-center gap-1"
                     (click)="openLinkDialog()"
-                    [appTooltip]="albionLink()?.linked ? 'Modifica personaggio collegato' : 'Collega personaggio del roster'"
+                    [appTooltip]="albionLink()?.linked ? t('users.link.changeTooltip') : t('users.link.linkTooltip')"
                     tooltipPosition="top"
                   >
                     <app-icon name="plus" size="0.75rem" />
-                    {{ albionLink()?.linked ? 'Cambia' : 'Collega' }}
+                    {{ albionLink()?.linked ? t('users.link.change') : t('dashboard.attention.link_albion_action') }}
                   </button>
                 </div>
               }
@@ -279,26 +279,26 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
         <!-- KPI Strip for Member -->
         <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Member KPIs">
           <app-stat-card
-            label="Livello Stagione"
+            [label]="t('profile.xp.level')"
             [value]="progression()?.level ?? 1"
             icon="trophy"
             tone="primary"
           />
           <app-stat-card
-            label="XP Stagione"
+            [label]="t('profile.xp.xp')"
             [value]="formatAmount(progression()?.xp ?? 0)"
             icon="sparkles"
             tone="neutral"
           />
           <app-stat-card
-            label="Moltiplicatore XP"
+            [label]="t('profile.xp.multiplier')"
             [value]="'×' + formatMultiplier(progression()?.multiplier ?? 1)"
             icon="activity"
             tone="warning"
           />
           <app-stat-card
-            label="Rank Gilda"
-            [value]="progression()?.rank != null ? '#' + progression()?.rank : 'N/A'"
+            [label]="t('profile.xp.rank')"
+            [value]="progression()?.rank != null ? '#' + progression()?.rank : t('profile.xp.unranked')"
             icon="shield"
             tone="success"
           />
@@ -444,7 +444,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
                 <input
                   class="input w-full"
                   type="number"
-                  placeholder="+500 o -200"
+                  [placeholder]="t('users.adjust.addXpPlaceholder')"
                   [value]="draft().addXp"
                   (input)="updateDraft('addXp', $event)"
                 />
@@ -455,7 +455,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
                   class="input w-full"
                   type="number"
                   min="1"
-                  placeholder="Es. 10"
+                  [placeholder]="t('users.adjust.setLevelPlaceholder')"
                   [value]="draft().setLevel"
                   (input)="updateDraft('setLevel', $event)"
                 />
@@ -468,7 +468,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
                   min="0"
                   max="5"
                   step="0.1"
-                  placeholder="Es. 1.5"
+                  [placeholder]="t('users.adjust.setMultiplierPlaceholder')"
                   [value]="draft().setMultiplier"
                   (input)="updateDraft('setMultiplier', $event)"
                 />
@@ -489,7 +489,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
               <input
                 class="input w-full"
                 required
-                placeholder="Motivazione per il registro di audit"
+                [placeholder]="t('users.adjust.reasonPlaceholder')"
                 [value]="draft().reason"
                 (input)="updateDraft('reason', $event)"
               />
@@ -534,13 +534,13 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
               <h2 class="text-base font-semibold" style="color: var(--color-text)">
                 {{ t('users.warns.title') }}
               </h2>
-              <span class="chip font-mono text-xs">{{ warns().length }} infrazioni</span>
+              <span class="chip font-mono text-xs">{{ t('users.warns.recorded', { count: warns().length }) }}</span>
             </div>
 
             @if (warns().length === 0) {
               <div class="p-6 text-center rounded-[var(--radius-cards)] border" style="background: var(--color-surface-2); border-color: var(--color-border)">
                 <p class="text-sm" style="color: var(--color-text-secondary)">
-                  Nessun warn o sanzione registrata per questo membro.
+                  {{ t('users.warns.empty') }}
                 </p>
               </div>
             } @else {
@@ -558,7 +558,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
                     </div>
                     <p class="mt-2 font-medium" style="color: var(--color-text)">{{ warn.reason }}</p>
                     <p class="mt-1 text-xs" style="color: var(--color-text-secondary)">
-                      Registrato il {{ formatDate(warn.created_at) }}
+                      {{ t('warns.issued') }} {{ formatDate(warn.created_at) }}
                     </p>
                   </li>
                 }
@@ -593,10 +593,10 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
 
     <!-- Admin Link Albion Character Dialog -->
     @if (linkDialogOpen()) {
-      <app-dialog title="Collega Personaggio Albion" (closed)="closeLinkDialog()">
+      <app-dialog [title]="t('albion.link_now')" (closed)="closeLinkDialog()">
         <div class="grid gap-3">
           <p class="text-xs" style="color: var(--color-text-secondary)">
-            Cerca e seleziona un membro del roster attuale della gilda per collegarlo all'account di {{ member()?.username }}.
+            {{ t('users.link.hint', { username: member()?.username ?? '' }) }}
           </p>
 
           <input
@@ -631,12 +631,12 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
                     </p>
                   </div>
                   <span class="btn btn--tonal btn--sm text-xs py-1 px-2.5">
-                    Collega
+                    {{ t('dashboard.attention.link_albion_action') }}
                   </span>
                 </button>
               } @empty {
                 <p class="text-sm text-center py-4" style="color: var(--color-text-secondary)">
-                  Nessun giocatore trovato nel roster con questo nome.
+                  {{ t('settings.albion.noPlayers') }}
                 </p>
               }
             </div>
@@ -653,9 +653,9 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
 
     <!-- Admin Unlink Albion Character Dialog -->
     @if (unlinkConfirmOpen()) {
-      <app-dialog title="Scollega Personaggio Albion" (closed)="unlinkConfirmOpen.set(false)">
+      <app-dialog [title]="t('settings.albion.unlinkConfirmTitle')" (closed)="unlinkConfirmOpen.set(false)">
         <p class="text-sm" style="color: var(--color-text-secondary)">
-          Sei sicuro di voler scollegare il personaggio <strong>{{ albionLink()?.albion_player_name }}</strong> dall'utente <strong>{{ member()?.username }}</strong>?
+          {{ t('users.link.unlinkConfirm', { name: albionLink()?.albion_player_name ?? '', username: member()?.username ?? '' }) }}
         </p>
         <div dialogFooter class="flex justify-end gap-2">
           <button type="button" class="btn btn--ghost btn--sm" (click)="unlinkConfirmOpen.set(false)">
@@ -667,7 +667,7 @@ function asPaginated<T>(data: PaginatedData<T> | T[]): T[] {
             (click)="confirmUnlink()"
             [disabled]="savingLink()"
           >
-            Conferma Scollegamento
+            {{ t('settings.albion.unlinkConfirmTitle') }}
           </button>
         </div>
       </app-dialog>
@@ -764,7 +764,8 @@ export class UserDetailPage {
       .slice(0, 30);
   });
 
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
 
   /**
    * `userId` is a route-bound input, not a one-time constructor param.
@@ -962,7 +963,7 @@ export class UserDetailPage {
         );
         this.rosterMembers.set(asPaginated(roster));
       } catch {
-        this.toasts.error('Impossibile caricare il roster di gilda da Albion');
+        this.toasts.error(this.t('events.roster.loadFailed'));
       } finally {
         this.rosterLoading.set(false);
       }
@@ -992,9 +993,9 @@ export class UserDetailPage {
       );
       this.albionLink.set(linkStatus);
       this.closeLinkDialog();
-      this.toasts.success(`Personaggio ${player.name} collegato a ${member.username}`);
+      this.toasts.success(this.t('users.link.success', { name: player.name, username: member.username }));
     } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : 'Errore durante il collegamento');
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.savingLink.set(false);
     }
@@ -1013,9 +1014,9 @@ export class UserDetailPage {
       await firstValueFrom(this.api.delete<void>(`api/albion/link/users/${member.id}`));
       this.albionLink.set(null);
       this.unlinkConfirmOpen.set(false);
-      this.toasts.success('Personaggio scollegato con successo');
+      this.toasts.success(this.t('albionSettings.link.unlinked'));
     } catch (error) {
-      this.toasts.error(error instanceof Error ? error.message : 'Errore durante lo scollegamento');
+      this.toasts.error(error instanceof Error ? error.message : this.t('common.error'));
     } finally {
       this.savingLink.set(false);
     }

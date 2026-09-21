@@ -572,7 +572,7 @@ export class AdminWithdrawals {
     if (abs >= 1_000) {
       return `${(num / 1_000).toFixed(1)}k`;
     }
-    return num.toLocaleString();
+    return num.toLocaleString(this.translate.locale());
   }
 
   protected readonly columns = computed<readonly DataTableColumn<WithdrawalQueueRow>[]>(() => [
@@ -858,7 +858,7 @@ export class AdminWithdrawals {
     if (!iso) {
       return '—';
     }
-    return new Date(iso).toLocaleDateString();
+    return new Date(iso).toLocaleDateString(this.translate.locale());
   }
 
   protected statusChipClass(status: TransactionStatus): string {

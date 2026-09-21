@@ -444,16 +444,16 @@ const STATS_FETCH_LIMIT = 1000;
       </app-dialog>
     }
     @if (settlement(); as quote) {
-      <app-dialog [title]="'Salda debito Siphoned'" (closed)="settlement.set(null)">
+      <app-dialog [title]="t('siphoned.settle.title')" (closed)="settlement.set(null)">
         <p>
-          {{ quote.player }} deve {{ formatAmount(quote.debt) }} Siphoned.
-          Prezzo Albion Market: {{ formatAmount(quote.unitPrice) }} silver.
+          {{ t('siphoned.settle.debt', { player: quote.player, amount: formatAmount(quote.debt) }) }}
+          {{ t('siphoned.settle.price', { price: formatAmount(quote.unitPrice) }) }}
         </p>
         <p class="font-mono text-lg font-bold">{{ formatAmount(quote.total) }} silver</p>
         <div dialogFooter>
-          <button type="button" class="btn btn--ghost" (click)="settlement.set(null)">Annulla</button>
+          <button type="button" class="btn btn--ghost" (click)="settlement.set(null)">{{ t('common.cancel') }}</button>
           <button type="button" class="btn btn--primary" [disabled]="saving()" (click)="confirmSettlement()">
-            Conferma transazione
+            {{ t('siphoned.settle.confirm') }}
           </button>
         </div>
       </app-dialog>
@@ -542,22 +542,20 @@ export class Siphoned {
       );
       const userId = candidates.find((id): id is number => id !== null);
       if (userId === undefined) {
-        this.toasts.error(`Nessun account collegato a ${row.player_name}.`);
+        this.toasts.error(this.t('siphoned.settle.noAccount', { player: row.player_name }));
         return;
       }
       const response = await firstValueFrom(this.api.get<Array<{ sell_price_min: number; buy_price_max: number }>>(
         'api/albiondata/prices?items=SIPHONED_ENERGY',
       ));
+      // Albion Market may temporarily return no listing for Siphoned Energy.
+      // Use the agreed fixed valuation in that case so settlement remains possible.
       const price = response.find((item) => item.sell_price_min > 0)?.sell_price_min
         ?? response.find((item) => item.buy_price_max > 0)?.buy_price_max
-        ?? 0;
-      if (price <= 0) {
-        this.toasts.error('Prezzo Siphoned Energy non disponibile.');
-        return;
-      }
+        ?? 11_000;
       this.settlement.set({ player: row.player_name, userId, debt, unitPrice: price, total: debt * price });
     } catch {
-      this.toasts.error('Impossibile recuperare prezzo o collegamento Albion.');
+      this.toasts.error(this.t('siphoned.settle.loadFailed'));
     }
   }
 
@@ -573,9 +571,9 @@ export class Siphoned {
         type: 'siphoned_settlement',
       } satisfies CreateTransactionRequest));
       this.settlement.set(null);
-      this.toasts.success('Transazione creata.');
+      this.toasts.success(this.t('siphoned.settle.success'));
     } catch {
-      this.toasts.error('Impossibile creare la transazione.');
+      this.toasts.error(this.t('siphoned.settle.createFailed'));
     } finally {
       this.saving.set(false);
     }
@@ -714,7 +712,8 @@ export class Siphoned {
     return columns;
   });
 
-  protected t = (key: TranslationKey) => this.translate.t(key);
+  protected t = (key: TranslationKey, params?: Record<string, string | number>) =>
+    this.translate.t(key, params);
 
   constructor() {
     void this.refreshLastUpdated();

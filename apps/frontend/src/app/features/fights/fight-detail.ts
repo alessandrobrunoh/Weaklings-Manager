@@ -124,7 +124,7 @@ type PendingFightMutation =
       </a>
 
       <app-page-header
-        [title]="'Fight #' + detail.id"
+        [title]="t('fights.title', { id: detail.id })"
         [subtitle]="fightWindow(detail)"
       >
         @if (canManageFights()) {
@@ -135,7 +135,7 @@ type PendingFightMutation =
             (click)="openMerge()"
           >
             <app-icon name="refresh" size="0.75rem" />
-            Merge Fights
+            {{ t('fights.merge') }}
           </button>
           <button
             type="button"
@@ -144,7 +144,7 @@ type PendingFightMutation =
             (click)="openSplit()"
           >
             <app-icon name="close" size="0.75rem" />
-            Split Segments
+            {{ t('fights.split') }}
           </button>
         }
 
@@ -170,12 +170,12 @@ type PendingFightMutation =
           </span>
 
           <span class="chip chip--neutral font-mono text-xs capitalize">
-            Raggruppamento: {{ detail.grouping_method }} ({{ formatPercent(detail.grouping_confidence) }})
+            {{ t('fights.grouping', { method: detail.grouping_method, confidence: formatPercent(detail.grouping_confidence) }) }}
           </span>
 
           @if (detail.needs_review) {
             <span class="chip chip--warning font-bold text-xs">
-              Needs Review
+              {{ t('fights.needsReview') }}
             </span>
           }
 
@@ -193,13 +193,13 @@ type PendingFightMutation =
             <a
               class="chip chip--info no-underline text-xs"
               [routerLink]="['/events', detail.event_id]"
-              title="Visualizza l'evento programmato collegato"
+              [title]="t('battles.linkedEventHint')"
             >
-              Evento collegato #{{ detail.event_id }}
+              {{ t('fights.linkedEvent', { id: detail.event_id }) }}
             </a>
           } @else {
             <span class="chip text-xs text-[var(--color-text-tertiary)]">
-              Nessun evento collegato
+              {{ t('battles.unlinked') }}
             </span>
           }
         </div>
@@ -207,13 +207,14 @@ type PendingFightMutation =
         <!-- ================= 6 CORE KPI METRIC CARDS ================= -->
         <section
           class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6"
-          aria-label="Core Fight KPIs"
+          [attr.aria-label]="t('fights.kpisAria')"
         >
           <article class="surface p-3.5 sm:p-4 rounded-xl border border-[var(--color-border)]">
             <p class="battle-detail__label">{{ t('battles.total_fame') }}</p>
             <p class="battle-detail__value text-warning">{{ formatCompact(totalFame()) }}</p>
             <p class="battle-detail__sub">
-              Quota gilda: <strong class="mono text-white">{{ formatDecimal(ourFameShare()) }}%</strong>
+              {{ t('battles.guild_fame_vs_fight') }}:
+              <strong class="mono text-white">{{ formatDecimal(ourFameShare()) }}%</strong>
             </p>
           </article>
 
@@ -223,7 +224,7 @@ type PendingFightMutation =
               {{ formatAmount(totalKills()) }} / {{ formatAmount(totalDeaths()) }}
             </p>
             <p class="battle-detail__sub">
-              K/D gilda:
+              {{ t('fights.guildKd') }}
               <strong
                 class="mono"
                 [class.text-success]="ourGuildKdRatio() >= 1"
@@ -238,7 +239,7 @@ type PendingFightMutation =
             <p class="battle-detail__label">{{ t('battles.kill_participation') }}</p>
             <p class="battle-detail__value">{{ formatDecimal(ourKillParticipation()) }}%</p>
             <p class="battle-detail__sub">
-              <span class="mono">{{ ourGuild()?.kills ?? 0 }}</span> uccisioni nostre
+              {{ t('fights.ourKills', { count: ourGuild()?.kills ?? 0 }) }}
             </p>
           </article>
 
@@ -246,7 +247,8 @@ type PendingFightMutation =
             <p class="battle-detail__label">{{ t('battles.avg_ip') }}</p>
             <p class="battle-detail__value">{{ formatDecimal(ourGuildAvgIp()) }}</p>
             <p class="battle-detail__sub">
-              IP medio generale: <span class="mono">{{ formatDecimal(fightAvgIp()) }}</span>
+              {{ t('fights.overallAvgIp') }}
+              <span class="mono">{{ formatDecimal(fightAvgIp()) }}</span>
             </p>
           </article>
 
@@ -256,17 +258,17 @@ type PendingFightMutation =
               {{ formatCompact(totalEstimatedLoss()) }}
             </p>
             <p class="battle-detail__sub">
-              {{ pricedItemsCount() }} / {{ totalItemsCount() }} oggetti prezzati
+              {{ t('fights.pricedItems', { priced: pricedItemsCount(), total: totalItemsCount() }) }}
             </p>
           </article>
 
           <article class="surface p-3.5 sm:p-4 rounded-xl border border-[var(--color-border)]">
-            <p class="battle-detail__label">Fighters & Segmenti</p>
+            <p class="battle-detail__label">{{ t('fights.fightersAndSegments') }}</p>
             <p class="battle-detail__value text-white">
               {{ totalPlayersCount() }}
             </p>
             <p class="battle-detail__sub">
-              <span class="mono">{{ detail.battle_ids.length }}</span> segmenti di battaglia
+              {{ t('fights.battleSegmentsCount', { count: detail.battle_ids.length }) }}
             </p>
           </article>
         </section>
@@ -278,7 +280,7 @@ type PendingFightMutation =
           <!-- Tactical Faction Head-to-Head Banner -->
           <section class="card p-5 overflow-hidden border border-[var(--color-border)]">
             <h2 class="text-xs uppercase font-bold tracking-wider text-[var(--color-text-secondary)] mb-4">
-              CONFRONTO TATTICO FORZE IN CAMPO
+              {{ t('fights.tacticalComparison') }}
             </h2>
             <div class="grid gap-5 lg:grid-cols-11 lg:items-center">
               <!-- OUR FORCES -->
@@ -287,23 +289,23 @@ type PendingFightMutation =
                   <span class="chip chip--success font-semibold text-xs">
                     {{ ourAllianceName() ? '[' + ourAllianceName() + '] ' + (ourGuild()?.name || ourGuildName()) : (ourGuild()?.name || ourGuildName()) }}
                   </span>
-                  <span class="text-xs text-secondary mono">{{ ourForcesPlayers() }} fighters</span>
+                  <span class="text-xs text-secondary mono">{{ t('fights.fightersCount', { count: ourForcesPlayers() }) }}</span>
                 </div>
                 <div class="grid grid-cols-2 gap-2 mt-3 text-center sm:grid-cols-3">
                   <div class="surface p-2 rounded-lg">
-                    <p class="text-[10px] uppercase font-bold text-disabled">Kills / Deaths</p>
+                    <p class="text-[10px] uppercase font-bold text-disabled">{{ t('battles.kills') }} / {{ t('battles.deaths') }}</p>
                     <p class="font-bold text-sm mono text-white">
                       {{ ourForcesKills() }} / {{ ourForcesDeaths() }}
                     </p>
                   </div>
                   <div class="surface p-2 rounded-lg">
-                    <p class="text-[10px] uppercase font-bold text-disabled">K/D Ratio</p>
+                    <p class="text-[10px] uppercase font-bold text-disabled">{{ t('fights.kdRatio') }}</p>
                     <p class="font-bold text-sm mono" [class.text-success]="ourForcesKdRatio() >= 1" [class.text-error]="ourForcesKdRatio() < 1">
                       {{ formatDecimal(ourForcesKdRatio()) }}
                     </p>
                   </div>
                   <div class="surface p-2 rounded-lg">
-                    <p class="text-[10px] uppercase font-bold text-disabled">Kill Fame</p>
+                    <p class="text-[10px] uppercase font-bold text-disabled">{{ t('battles.kill_fame') }}</p>
                     <p class="font-bold text-sm mono text-warning">
                       {{ formatCompact(ourForcesKillFame()) }}
                     </p>
@@ -314,7 +316,7 @@ type PendingFightMutation =
               <!-- VS DIVIDER -->
               <div class="lg:col-span-1 text-center flex flex-col items-center justify-center">
                 <span class="font-black font-mono text-xs px-2.5 py-1 rounded-full bg-white/10 text-white border border-white/10">
-                  VS
+                  {{ t('fights.vs') }}
                 </span>
               </div>
 
@@ -322,25 +324,25 @@ type PendingFightMutation =
               <div class="lg:col-span-5 rounded-xl p-4 border border-[var(--color-error)] bg-[var(--color-error-container)]">
                 <div class="flex items-center justify-between mb-2">
                   <span class="chip chip--error font-semibold text-xs">
-                    {{ topEnemyAlliance()?.name ? '[' + topEnemyAlliance()?.name + '] ' + (topEnemyAlliance()?.guilds?.[0]?.name || 'Enemies') : 'Hostile Coalition' }}
+                    {{ topEnemyAlliance()?.name ? '[' + topEnemyAlliance()?.name + '] ' + (topEnemyAlliance()?.guilds?.[0]?.name || t('battles.filter_enemies')) : t('fights.hostileCoalition') }}
                   </span>
-                  <span class="text-xs text-secondary mono">{{ enemyForcesPlayers() }} fighters</span>
+                  <span class="text-xs text-secondary mono">{{ t('fights.fightersCount', { count: enemyForcesPlayers() }) }}</span>
                 </div>
                 <div class="grid grid-cols-2 gap-2 mt-3 text-center sm:grid-cols-3">
                   <div class="surface p-2 rounded-lg">
-                    <p class="text-[10px] uppercase font-bold text-disabled">Kills / Deaths</p>
+                    <p class="text-[10px] uppercase font-bold text-disabled">{{ t('battles.kills') }} / {{ t('battles.deaths') }}</p>
                     <p class="font-bold text-sm mono text-white">
                       {{ enemyForcesKills() }} / {{ enemyForcesDeaths() }}
                     </p>
                   </div>
                   <div class="surface p-2 rounded-lg">
-                    <p class="text-[10px] uppercase font-bold text-disabled">K/D Ratio</p>
+                    <p class="text-[10px] uppercase font-bold text-disabled">{{ t('fights.kdRatio') }}</p>
                     <p class="font-bold text-sm mono" [class.text-success]="enemyForcesKdRatio() >= 1" [class.text-error]="enemyForcesKdRatio() < 1">
                       {{ formatDecimal(enemyForcesKdRatio()) }}
                     </p>
                   </div>
                   <div class="surface p-2 rounded-lg">
-                    <p class="text-[10px] uppercase font-bold text-disabled">Kill Fame</p>
+                    <p class="text-[10px] uppercase font-bold text-disabled">{{ t('battles.kill_fame') }}</p>
                     <p class="font-bold text-sm mono text-warning">
                       {{ formatCompact(enemyForcesKillFame()) }}
                     </p>
@@ -351,48 +353,48 @@ type PendingFightMutation =
           </section>
 
           <!-- Squad MVPs & Combat Honors -->
-          <section aria-label="Combat MVPs">
+          <section [attr.aria-label]="t('fights.mvpsAria')">
             <h2 class="text-xs uppercase font-bold tracking-wider text-[var(--color-text-secondary)] mb-3">
-              COMBAT MVPs & TACTICAL HONORS
+              {{ t('fights.combatHonors') }}
             </h2>
             <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <!-- Top Executioner -->
               <article class="card p-4 border border-[var(--color-warning)]">
-                <p class="text-[10px] text-disabled uppercase font-bold tracking-wider">TOP EXECUTIONER</p>
+                <p class="text-[10px] text-disabled uppercase font-bold tracking-wider">{{ t('battles.mvp_killer') }}</p>
                 <div class="mt-2 flex items-center gap-3">
                   @if (mvpExecutioner(); as player) {
                     <app-avatar [username]="player.name" size="md" />
                     <div class="truncate min-w-0">
                       <p class="font-bold text-sm truncate text-white">{{ player.name }}</p>
-                      <p class="text-xs text-warning font-bold mono">{{ player.kills }} Kills ({{ formatDecimal(player.kdRatio) }} K/D)</p>
+                      <p class="text-xs text-warning font-bold mono">{{ t('fights.mvpKillsKd', { kills: player.kills, kd: formatDecimal(player.kdRatio) }) }}</p>
                       <p class="text-[10px] text-secondary truncate">{{ player.guild_name }}</p>
                     </div>
                   } @else {
-                    <p class="text-xs text-secondary">Nessun kill registrato</p>
+                    <p class="text-xs text-secondary">{{ t('fights.noKillsRecorded') }}</p>
                   }
                 </div>
               </article>
 
               <!-- Fame Hunter -->
               <article class="card p-4 border border-[var(--color-warning)]">
-                <p class="text-[10px] text-disabled uppercase font-bold tracking-wider">FAME HUNTER</p>
+                <p class="text-[10px] text-disabled uppercase font-bold tracking-wider">{{ t('battles.mvp_fame') }}</p>
                 <div class="mt-2 flex items-center gap-3">
                   @if (mvpFameHunter(); as player) {
                     <app-avatar [username]="player.name" size="md" />
                     <div class="truncate min-w-0">
                       <p class="font-bold text-sm truncate text-white">{{ player.name }}</p>
-                      <p class="text-xs text-warning font-bold mono">{{ formatCompact(player.kill_fame) }} Fame</p>
+                      <p class="text-xs text-warning font-bold mono">{{ t('fights.mvpFame', { fame: formatCompact(player.kill_fame) }) }}</p>
                       <p class="text-[10px] text-secondary truncate">{{ player.guild_name }}</p>
                     </div>
                   } @else {
-                    <p class="text-xs text-secondary">Nessuna fame registrata</p>
+                    <p class="text-xs text-secondary">{{ t('fights.noFameRecorded') }}</p>
                   }
                 </div>
               </article>
 
               <!-- Iron Vanguard (Highest IP) -->
               <article class="card p-4 border border-[var(--color-info)]">
-                <p class="text-[10px] text-disabled uppercase font-bold tracking-wider">IRON VANGUARD</p>
+                <p class="text-[10px] text-disabled uppercase font-bold tracking-wider">{{ t('battles.mvp_ip') }}</p>
                 <div class="mt-2 flex items-center gap-3">
                   @if (mvpIronVanguard(); as player) {
                     <app-avatar [username]="player.name" size="md" />
@@ -409,17 +411,17 @@ type PendingFightMutation =
 
               <!-- Heaviest Casualty -->
               <article class="card p-4 border border-[var(--color-error)]">
-                <p class="text-[10px] text-disabled uppercase font-bold tracking-wider">HEAVIEST CASUALTY</p>
+                <p class="text-[10px] text-disabled uppercase font-bold tracking-wider">{{ t('battles.heaviest_loss') }}</p>
                 <div class="mt-2 flex items-center gap-3">
                   @if (mvpHeaviestLoss(); as player) {
                     <app-avatar [username]="player.name" size="md" />
                     <div class="truncate min-w-0">
                       <p class="font-bold text-sm truncate text-white">{{ player.name }}</p>
-                      <p class="text-xs text-error font-bold mono">{{ formatCompact(player.estimatedLoss) }} Lost</p>
+                      <p class="text-xs text-error font-bold mono">{{ t('fights.mvpLost', { amount: formatCompact(player.estimatedLoss) }) }}</p>
                       <p class="text-[10px] text-secondary truncate">{{ player.guild_name }}</p>
                     </div>
                   } @else {
-                    <p class="text-xs text-secondary">0 perdite stimate</p>
+                    <p class="text-xs text-secondary">{{ t('fights.noEstimatedLosses') }}</p>
                   }
                 </div>
               </article>
@@ -431,12 +433,12 @@ type PendingFightMutation =
             <!-- Fame Distribution -->
             <article class="card p-4 border border-[var(--color-border)]">
               <h3 class="text-xs uppercase font-bold tracking-wider text-[var(--color-text-secondary)] mb-2">
-                Distribuzione Kill Fame
+                {{ t('fights.killFameDistribution') }}
               </h3>
               <app-chart
                 [option]="fameDistributionOption()"
                 height="15rem"
-                label="Distribuzione Kill Fame per gilda"
+                [label]="t('fights.killFameDistributionAria')"
                 [tableHead]="fameDistributionTableHead()"
                 [tableRows]="fameDistributionTableRows()"
               />
@@ -445,12 +447,12 @@ type PendingFightMutation =
             <!-- Top Guilds K/D Leaders -->
             <article class="card p-4 border border-[var(--color-border)]">
               <h3 class="text-xs uppercase font-bold tracking-wider text-[var(--color-text-secondary)] mb-2">
-                Top Guild per K/D Ratio
+                {{ t('battles.top_guilds_kd') }}
               </h3>
               <app-chart
                 [option]="topGuildsKdOption()"
                 height="15rem"
-                label="Top Guild per K/D Ratio"
+                [label]="t('battles.top_guilds_kd')"
                 [tableHead]="topGuildsKdTableHead()"
                 [tableRows]="topGuildsKdTableRows()"
               />
@@ -459,19 +461,19 @@ type PendingFightMutation =
             <!-- Segments Combat Activity -->
             <article class="card p-4 border border-[var(--color-border)]">
               <h3 class="text-xs uppercase font-bold tracking-wider text-[var(--color-text-secondary)] mb-2">
-                Attività per Segmento
+                {{ t('fights.segmentActivity') }}
               </h3>
               @if ((fight()?.segments?.length ?? 0) > 0) {
                 <app-chart
                   [option]="segmentsIntensityOption()"
                   height="15rem"
-                  label="Attività per segmento di battaglia"
+                  [label]="t('fights.segmentActivityAria')"
                   [tableHead]="segmentsIntensityTableHead()"
                   [tableRows]="segmentsIntensityTableRows()"
                 />
               } @else {
                 <div class="h-48 flex items-center justify-center text-xs text-secondary text-center p-4">
-                  Dati dei segmenti non disponibili per il grafico.
+                  {{ t('fights.segmentChartEmpty') }}
                 </div>
               }
             </article>
@@ -481,13 +483,13 @@ type PendingFightMutation =
           <section class="card p-4 border border-[var(--color-border)]">
             <div class="flex items-center justify-between gap-3 mb-3">
               <div>
-                <h3 class="font-bold text-sm text-white">Segmenti di Battaglia Collegati</h3>
+                <h3 class="font-bold text-sm text-white">{{ t('fights.attachedSegments') }}</h3>
                 <p class="text-xs text-secondary">
-                  Questo scontro canonico aggrega {{ detail.battle_ids.length }} segmenti di battaglia Albion Online.
+                  {{ t('fights.attachedSegmentsHint', { count: detail.battle_ids.length }) }}
                 </p>
               </div>
               <button type="button" class="btn btn--outline btn--sm text-xs" (click)="tab.set('segments')">
-                Visualizza tutti ({{ detail.battle_ids.length }}) →
+                {{ t('fights.viewAllSegments', { count: detail.battle_ids.length }) }}
               </button>
             </div>
 
@@ -503,9 +505,9 @@ type PendingFightMutation =
                     </span>
                     <div class="min-w-0">
                       <p class="text-xs font-bold text-white group-hover:text-[var(--color-primary)] truncate">
-                        Battaglia #{{ battleId }}
+                        {{ t('fights.battleNumber', { id: battleId }) }}
                       </p>
-                      <span class="text-[10px] text-secondary">Visualizza report →</span>
+                      <span class="text-[10px] text-secondary">{{ t('fights.viewReport') }}</span>
                     </div>
                   </div>
                   <app-icon name="chevron-right" size="0.75rem" class="text-secondary group-hover:text-white transition-colors" />
@@ -525,19 +527,19 @@ type PendingFightMutation =
                   <span class="chip font-bold text-xs" [class.chip--success]="alliance.isOurAlliance" [class.chip--neutral]="!alliance.isOurAlliance">
                     {{ alliance.name }}
                   </span>
-                  <span class="text-xs font-mono text-secondary">{{ alliance.players }} fighters</span>
+                  <span class="text-xs font-mono text-secondary">{{ t('fights.fightersCount', { count: alliance.players }) }}</span>
                 </div>
                 <div class="grid grid-cols-3 gap-2 mt-2 text-center text-xs">
                   <div class="surface p-2 rounded-lg">
-                    <span class="text-[10px] text-disabled block">K/D</span>
+                    <span class="text-[10px] text-disabled block">{{ t('battles.kill_death') }}</span>
                     <strong class="mono text-white">{{ formatDecimal(alliance.kdRatio) }}</strong>
                   </div>
                   <div class="surface p-2 rounded-lg">
-                    <span class="text-[10px] text-disabled block">Fame</span>
+                    <span class="text-[10px] text-disabled block">{{ t('battles.fame') }}</span>
                     <strong class="mono text-warning">{{ formatCompact(alliance.killFame) }}</strong>
                   </div>
                   <div class="surface p-2 rounded-lg">
-                    <span class="text-[10px] text-disabled block">Loss</span>
+                    <span class="text-[10px] text-disabled block">{{ t('common.loss') }}</span>
                     <strong class="mono text-error">{{ formatCompact(alliance.estimatedLoss) }}</strong>
                   </div>
                 </div>
@@ -549,14 +551,14 @@ type PendingFightMutation =
           <section class="card p-4 space-y-3 border border-[var(--color-border)]">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 class="text-sm font-bold text-white">Gilde Partecipanti</h2>
-                <p class="text-xs text-secondary">Riepilogo delle statistiche aggregate per ogni gilda</p>
+                <h2 class="text-sm font-bold text-white">{{ t('fights.participatingGuilds') }}</h2>
+                <p class="text-xs text-secondary">{{ t('fights.guildsSubtitle') }}</p>
               </div>
               <div class="w-full sm:w-64">
                 <input
                   type="search"
                   class="input input--sm text-xs w-full"
-                  placeholder="Cerca gilda o alleanza..."
+                  [placeholder]="t('fights.searchGuilds')"
                   [value]="guildSearchQuery()"
                   (input)="guildSearchQuery.set(inputValue($event))"
                 />
@@ -579,7 +581,7 @@ type PendingFightMutation =
                     </span>
                   }
                   @if (row.isOurGuild) {
-                    <span class="chip chip--success text-[9px] py-0 px-1 font-bold">La nostra gilda</span>
+                    <span class="chip chip--success text-[9px] py-0 px-1 font-bold">{{ t('fights.ourGuild') }}</span>
                   }
                 </div>
               </ng-template>
@@ -619,7 +621,7 @@ type PendingFightMutation =
                   [class.text-secondary]="playerSideFilter() !== 'all'"
                   (click)="playerSideFilter.set('all')"
                 >
-                  Tutti i giocatori ({{ enrichedPlayers().length }})
+                  {{ t('fights.allPlayers', { count: enrichedPlayers().length }) }}
                 </button>
                 <button
                   type="button"
@@ -629,7 +631,7 @@ type PendingFightMutation =
                   [class.text-secondary]="playerSideFilter() !== 'allies'"
                   (click)="playerSideFilter.set('allies')"
                 >
-                  Solo alleati ({{ allyPlayersCount() }})
+                  {{ t('battles.filter_allies') }} ({{ allyPlayersCount() }})
                 </button>
                 <button
                   type="button"
@@ -639,7 +641,7 @@ type PendingFightMutation =
                   [class.text-secondary]="playerSideFilter() !== 'enemies'"
                   (click)="playerSideFilter.set('enemies')"
                 >
-                  Solo nemici ({{ enemyPlayersCount() }})
+                  {{ t('battles.filter_enemies') }} ({{ enemyPlayersCount() }})
                 </button>
               </div>
 
@@ -648,7 +650,7 @@ type PendingFightMutation =
                 <input
                   type="search"
                   class="input input--sm text-xs w-full"
-                  placeholder="Cerca giocatore o gilda..."
+                  [placeholder]="t('fights.searchPlayers')"
                   [value]="playerSearchQuery()"
                   (input)="playerSearchQuery.set(inputValue($event))"
                 />
@@ -711,41 +713,41 @@ type PendingFightMutation =
               <section class="card p-5 border border-[var(--color-border)]">
                 <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
                   <div>
-                    <h2 class="text-sm font-bold text-white">Evidenza Pianificazione Evento</h2>
+                    <h2 class="text-sm font-bold text-white">{{ t('fights.planningEvidence') }}</h2>
                     <p class="text-xs text-secondary">
-                      Confronto tra i membri pianificati nel roster dell'evento e i giocatori rilevati negli snapshot di combattimento.
+                      {{ t('fights.planningEvidenceHint') }}
                     </p>
                   </div>
                   @if (detail.planned_comp; as comp) {
                     <span class="chip chip--info text-xs font-semibold">
-                      Composizione: {{ comp.name || ('#' + comp.id) }}
+                      {{ t('events.detail.comp') }}: {{ comp.name || ('#' + comp.id) }}
                     </span>
                   }
                 </div>
 
                 <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <div class="surface p-3 rounded-lg border border-[var(--color-border)]">
-                    <p class="text-[10px] text-disabled uppercase font-bold">Membri Osservati</p>
+                    <p class="text-[10px] text-disabled uppercase font-bold">{{ t('fights.observedMembers') }}</p>
                     <p class="text-base font-bold mono text-success mt-1">
                       {{ coverage.observed_planned_participants }} / {{ coverage.matchable_planned_participants }}
                     </p>
                   </div>
                   <div class="surface p-3 rounded-lg border border-[var(--color-border)]">
-                    <p class="text-[10px] text-disabled uppercase font-bold">Non Identificabili</p>
+                    <p class="text-[10px] text-disabled uppercase font-bold">{{ t('fights.unmatchedMembers') }}</p>
                     <p class="text-base font-bold mono text-secondary mt-1">
                       {{ coverage.unmatched_planned_participants }}
                     </p>
                   </div>
                   <div class="surface p-3 rounded-lg border border-[var(--color-border)]">
-                    <p class="text-[10px] text-disabled uppercase font-bold">Non Pianificati Rilevati</p>
+                    <p class="text-[10px] text-disabled uppercase font-bold">{{ t('fights.unplannedObserved') }}</p>
                     <p class="text-base font-bold mono text-warning mt-1">
                       {{ coverage.unplanned_observed_players }}
                     </p>
                   </div>
                   <div class="surface p-3 rounded-lg border border-[var(--color-border)]">
-                    <p class="text-[10px] text-disabled uppercase font-bold">Copertura Snapshot</p>
+                    <p class="text-[10px] text-disabled uppercase font-bold">{{ t('fights.snapshotCoverage') }}</p>
                     <p class="text-base font-bold mono text-white mt-1">
-                      {{ coverage.persisted_segments }} / {{ coverage.total_segments }} segmenti
+                      {{ coverage.persisted_segments }} / {{ t('fights.segmentsCount', { count: coverage.total_segments }) }}
                     </p>
                   </div>
                 </div>
@@ -755,26 +757,26 @@ type PendingFightMutation =
             <!-- Planned Participants Table -->
             @if (detail.planned_participants?.length) {
               <section class="card p-4 space-y-3 border border-[var(--color-border)]">
-                <h3 class="font-bold text-sm text-white">Partecipanti Pianificati</h3>
+                <h3 class="font-bold text-sm text-white">{{ t('fights.plannedParticipants') }}</h3>
                 <div class="overflow-x-auto">
                   <table class="table w-full">
                     <thead>
                       <tr>
-                        <th class="text-left text-xs">Membro</th>
-                        <th class="text-left text-xs">Build Primaria</th>
-                        <th class="text-left text-xs">Build Secondaria</th>
-                        <th class="text-left text-xs">Stato Osservazione</th>
+                        <th class="text-left text-xs">{{ t('common.username') }}</th>
+                        <th class="text-left text-xs">{{ t('events.detail.primary_build') }}</th>
+                        <th class="text-left text-xs">{{ t('events.detail.secondary_build') }}</th>
+                        <th class="text-left text-xs">{{ t('fights.observationStatus') }}</th>
                       </tr>
                     </thead>
                     <tbody>
                       @for (p of detail.planned_participants; track p.user_id) {
                         <tr class="hover:bg-[var(--color-surface-hover)]">
                           <td class="text-xs font-semibold text-white py-2">{{ p.username }}</td>
-                          <td class="text-xs text-secondary py-2">{{ p.primary_build_name || ('Build #' + p.primary_build_id) }}</td>
-                          <td class="text-xs text-secondary py-2">{{ p.secondary_build_name || 'Nessuna' }}</td>
+                          <td class="text-xs text-secondary py-2">{{ p.primary_build_name || t('fights.buildNumber', { id: p.primary_build_id }) }}</td>
+                          <td class="text-xs text-secondary py-2">{{ p.secondary_build_name || t('common.none') }}</td>
                           <td class="py-2">
                             <span class="chip text-[10px] font-bold" [class.chip--success]="p.observed" [class.chip--warning]="!p.observed">
-                              {{ p.observed ? 'Rilevato in battaglia' : (p.albion_player_id ? 'Assente dallo snapshot' : 'Nessun personaggio collegato') }}
+                              {{ p.observed ? t('fights.observedInBattle') : (p.albion_player_id ? t('fights.absentFromSnapshot') : t('fights.noLinkedCharacter')) }}
                             </span>
                           </td>
                         </tr>
@@ -788,17 +790,17 @@ type PendingFightMutation =
             <!-- Observed Friendly Players -->
             @if (detail.observed_friendly_players?.length) {
               <section class="card p-4 space-y-3 border border-[var(--color-border)]">
-                <h3 class="font-bold text-sm text-white">Giocatori Alleati Rilevati</h3>
+                <h3 class="font-bold text-sm text-white">{{ t('fights.observedAllies') }}</h3>
                 <div class="overflow-x-auto">
                   <table class="table w-full">
                     <thead>
                       <tr>
-                        <th class="text-left text-xs">Giocatore</th>
-                        <th class="text-left text-xs">Gilda</th>
-                        <th class="text-right text-xs">Segmenti</th>
-                        <th class="text-right text-xs">K / D</th>
-                        <th class="text-right text-xs">Kill Fame</th>
-                        <th class="text-right text-xs">Avg IP</th>
+                        <th class="text-left text-xs">{{ t('common.player') }}</th>
+                        <th class="text-left text-xs">{{ t('nav.guild') }}</th>
+                        <th class="text-right text-xs">{{ t('battles.segments') }}</th>
+                        <th class="text-right text-xs">{{ t('battles.kills') }} / {{ t('battles.deaths') }}</th>
+                        <th class="text-right text-xs">{{ t('battles.kill_fame') }}</th>
+                        <th class="text-right text-xs">{{ t('battles.avg_ip') }}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -827,10 +829,10 @@ type PendingFightMutation =
             <section class="card p-0 overflow-hidden border border-[var(--color-border)]">
               <header class="p-4 border-b border-[var(--color-border)] flex items-center justify-between">
                 <div>
-                  <h2 class="text-sm font-bold text-white">Segmenti di Battaglia Albion Online</h2>
-                  <p class="text-xs text-secondary">Ogni segmento corrisponde a un record di battaglia sincronizzato da AlbionBB.</p>
+                  <h2 class="text-sm font-bold text-white">{{ t('fights.albionSegments') }}</h2>
+                  <p class="text-xs text-secondary">{{ t('fights.albionSegmentsHint') }}</p>
                 </div>
-                <span class="chip font-mono text-xs font-bold">{{ detail.battle_ids.length }} segmenti</span>
+                <span class="chip font-mono text-xs font-bold">{{ t('fights.segmentsCount', { count: detail.battle_ids.length }) }}</span>
               </header>
 
               <ol class="divide-y divide-[var(--color-border)]">
@@ -843,7 +845,7 @@ type PendingFightMutation =
                       <div>
                         <div class="flex items-center gap-2">
                           <a [routerLink]="['/battles', battleId]" class="text-sm font-bold text-white hover:text-[var(--color-primary)] no-underline">
-                            Battaglia #{{ battleId }}
+                            {{ t('fights.battleNumber', { id: battleId }) }}
                           </a>
                           <a
                             class="text-[10px] text-secondary hover:underline no-underline"
@@ -851,18 +853,18 @@ type PendingFightMutation =
                             target="_blank"
                             rel="noopener noreferrer"
                           >
-                            AlbionBB ↗
+                            {{ t('battles.view_on_albionbb') }} ↗
                           </a>
                         </div>
                         <p class="text-[11px] text-secondary">
-                          Segmento aggregato nello scontro canonico #{{ detail.id }}
+                          {{ t('fights.segmentOfFight', { id: detail.id }) }}
                         </p>
                       </div>
                     </div>
 
                     <div class="flex items-center gap-2">
                       <a [routerLink]="['/battles', battleId]" class="btn btn--outline btn--sm text-xs no-underline">
-                        Visualizza report →
+                        {{ t('fights.viewReport') }}
                       </a>
                       @if (canManageFights()) {
                         <button
@@ -871,7 +873,7 @@ type PendingFightMutation =
                           [disabled]="mutating()"
                           (click)="openMove(battleId)"
                         >
-                          Sposta
+                          {{ t('fights.move') }}
                         </button>
                       }
                     </div>
@@ -884,9 +886,9 @@ type PendingFightMutation =
             @if (canManageFights()) {
               <section class="card p-5 border border-[var(--color-border)] space-y-3">
                 <div>
-                  <h3 class="text-sm font-bold text-white">Gestione Raggruppamento (Ufficiali)</h3>
+                  <h3 class="text-sm font-bold text-white">{{ t('fights.officerGrouping') }}</h3>
                   <p class="text-xs text-secondary">
-                    Il raggruppamento manuale dei fight è permanente. Fights aggregati devono appartenere allo stesso evento o essere entrambi indipendenti.
+                    {{ t('fights.officerGroupingHint') }}
                   </p>
                 </div>
 
@@ -909,7 +911,7 @@ type PendingFightMutation =
                     (click)="openMerge()"
                   >
                     <app-icon name="refresh" size="0.75rem" />
-                    Merge Fights
+                    {{ t('fights.merge') }}
                   </button>
                   <button
                     type="button"
@@ -918,7 +920,7 @@ type PendingFightMutation =
                     (click)="openSplit()"
                   >
                     <app-icon name="close" size="0.75rem" />
-                    Split Segments
+                    {{ t('fights.split') }}
                   </button>
                 </div>
               </section>
@@ -932,15 +934,15 @@ type PendingFightMutation =
       <!-- MERGE DIALOG -->
       @if (mergeOpen()) {
         <app-dialog
-          title="Unisci Scontri (Merge Fights)"
-          subtitle="Scegli il Fight ID che rimarrà attivo, e specifica uno o più altri Fight ID da unire in esso."
+          [title]="t('fights.mergeTitle')"
+          [subtitle]="t('fights.mergeSubtitle')"
           size="sm"
           (closed)="closeMutationDialog()"
         >
           <form id="fight-merge-form" class="space-y-3" (submit)="stageMerge($event)">
             <div>
               <label class="text-xs font-bold text-white block mb-1" for="fight-merge-target">
-                ID scontro sopravvissuto (Target)
+                {{ t('fights.mergeTargetLabel') }}
               </label>
               <input
                 id="fight-merge-target"
@@ -957,19 +959,19 @@ type PendingFightMutation =
 
             <div>
               <label class="text-xs font-bold text-white block mb-1" for="fight-merge-others">
-                Altri Fight ID da incorporare (separati da virgola)
+                {{ t('fights.mergeOthersLabel') }}
               </label>
               <input
                 id="fight-merge-others"
                 class="input input--sm text-xs w-full"
                 name="otherFightIds"
                 inputmode="numeric"
-                placeholder="es. 42, 57"
+                [placeholder]="t('fights.mergeOthersPlaceholder')"
                 [value]="mergeOtherIds()"
                 (input)="mergeOtherIds.set(inputValue($event)); clearDialogError()"
                 required
               />
-              <p class="text-[11px] text-secondary mt-1">Lo scontro corrente (#{{ detail.id }}) verrà incluso automaticamente.</p>
+              <p class="text-[11px] text-secondary mt-1">{{ t('fights.mergeCurrentIncluded', { id: detail.id }) }}</p>
             </div>
 
             @if (dialogError(); as error) {
@@ -979,10 +981,10 @@ type PendingFightMutation =
 
           <div dialogFooter>
             <button type="button" class="btn btn--ghost btn--sm" (click)="closeMutationDialog()">
-              Annulla
+              {{ t('common.cancel') }}
             </button>
             <button type="submit" class="btn btn--primary btn--sm" form="fight-merge-form">
-              Revisiona Unione
+              {{ t('fights.reviewMerge') }}
             </button>
           </div>
         </app-dialog>
@@ -991,13 +993,13 @@ type PendingFightMutation =
       <!-- SPLIT DIALOG -->
       @if (splitOpen()) {
         <app-dialog
-          title="Separa Segmenti (Split Segments)"
-          subtitle="I segmenti selezionati formeranno un nuovo scontro canonico indipendente."
+          [title]="t('fights.splitTitle')"
+          [subtitle]="t('fights.splitSubtitle')"
           size="sm"
           (closed)="closeMutationDialog()"
         >
           <form id="fight-split-form" class="space-y-3" (submit)="stageSplit($event)">
-            <p class="text-xs font-bold text-white mb-2">Seleziona i segmenti da estrarre:</p>
+            <p class="text-xs font-bold text-white mb-2">{{ t('fights.splitSelect') }}</p>
             <div class="space-y-1.5 max-h-56 overflow-y-auto pr-1">
               @for (battleId of detail.battle_ids; track battleId) {
                 <label class="flex items-center gap-2 text-xs text-white p-2 rounded surface hover:bg-[var(--color-surface-hover)] cursor-pointer">
@@ -1007,7 +1009,7 @@ type PendingFightMutation =
                     [checked]="isSplitSelected(battleId)"
                     (change)="toggleSplitBattle(battleId)"
                   />
-                  <span class="mono font-semibold">Battaglia #{{ battleId }}</span>
+                  <span class="mono font-semibold">{{ t('fights.battleNumber', { id: battleId }) }}</span>
                 </label>
               }
             </div>
@@ -1019,10 +1021,10 @@ type PendingFightMutation =
 
           <div dialogFooter>
             <button type="button" class="btn btn--ghost btn--sm" (click)="closeMutationDialog()">
-              Annulla
+              {{ t('common.cancel') }}
             </button>
             <button type="submit" class="btn btn--primary btn--sm" form="fight-merge-form">
-              Revisiona Separazione
+              {{ t('fights.reviewSplit') }}
             </button>
           </div>
         </app-dialog>
@@ -1031,15 +1033,15 @@ type PendingFightMutation =
       <!-- MOVE DIALOG -->
       @if (moveBattleId(); as battleId) {
         <app-dialog
-          title="Sposta Segmento di Battaglia"
-          [subtitle]="'Sposta la battaglia #' + battleId + ' in un altro scontro compatibile.'"
+          [title]="t('fights.moveTitle')"
+          [subtitle]="t('fights.moveSubtitle', { id: battleId })"
           size="sm"
           (closed)="closeMutationDialog()"
         >
           <form id="fight-move-form" class="space-y-3" (submit)="stageMove(battleId, $event)">
             <div>
               <label class="text-xs font-bold text-white block mb-1" for="fight-move-target">
-                Fight ID di destinazione
+                {{ t('fights.moveTargetLabel') }}
               </label>
               <input
                 id="fight-move-target"
@@ -1061,10 +1063,10 @@ type PendingFightMutation =
 
           <div dialogFooter>
             <button type="button" class="btn btn--ghost btn--sm" (click)="closeMutationDialog()">
-              Annulla
+              {{ t('common.cancel') }}
             </button>
             <button type="submit" class="btn btn--primary btn--sm" form="fight-move-form">
-              Revisiona Spostamento
+              {{ t('fights.reviewMove') }}
             </button>
           </div>
         </app-dialog>
@@ -1072,9 +1074,9 @@ type PendingFightMutation =
 
       <!-- CONFIRM MUTATION DIALOG -->
       @if (pendingMutation(); as pending) {
-        <app-dialog title="Conferma Modifica Scontro" size="sm" (closed)="cancelPendingMutation()">
+        <app-dialog [title]="t('fights.confirmTitle')" size="sm" (closed)="cancelPendingMutation()">
           <p class="text-sm text-white mb-2">{{ pending.description }}</p>
-          <p class="text-xs text-secondary">Questa operazione modifica i raggruppamenti del database in modo permanente.</p>
+          <p class="text-xs text-secondary">{{ t('fights.confirmPermanent') }}</p>
 
           @if (dialogError(); as error) {
             <p class="text-xs text-error bg-[var(--color-error-container)] p-2.5 rounded-lg mt-3" role="alert">{{ error }}</p>
@@ -1082,10 +1084,10 @@ type PendingFightMutation =
 
           <div dialogFooter>
             <button type="button" class="btn btn--ghost btn--sm" [disabled]="mutating()" (click)="cancelPendingMutation()">
-              Annulla
+              {{ t('common.cancel') }}
             </button>
             <button type="button" class="btn btn--danger btn--sm" [disabled]="mutating()" (click)="confirmMutation()">
-              {{ mutating() ? 'Applicazione in corso…' : 'Conferma Modifica' }}
+              {{ mutating() ? t('fights.applying') : t('fights.confirmChange') }}
             </button>
           </div>
         </app-dialog>
@@ -1110,33 +1112,33 @@ type PendingFightMutation =
 
             <div class="grid grid-cols-2 gap-2 text-xs">
               <div class="surface p-2.5 rounded-lg">
-                <span class="text-[10px] text-disabled block">Kills / Deaths</span>
+                <span class="text-[10px] text-disabled block">{{ t('battles.kills') }} / {{ t('battles.deaths') }}</span>
                 <strong class="mono text-white text-sm">{{ p.kills }} / {{ p.deaths }}</strong>
               </div>
               <div class="surface p-2.5 rounded-lg">
-                <span class="text-[10px] text-disabled block">K/D Ratio</span>
+                <span class="text-[10px] text-disabled block">{{ t('fights.kdRatio') }}</span>
                 <strong class="mono text-sm" [class.text-success]="p.kdRatio >= 1" [class.text-error]="p.kdRatio < 1">
                   {{ formatDecimal(p.kdRatio) }}
                 </strong>
               </div>
               <div class="surface p-2.5 rounded-lg">
-                <span class="text-[10px] text-disabled block">Kill Fame</span>
+                <span class="text-[10px] text-disabled block">{{ t('battles.kill_fame') }}</span>
                 <strong class="mono text-warning text-sm">{{ formatCompact(p.kill_fame) }}</strong>
               </div>
               <div class="surface p-2.5 rounded-lg">
-                <span class="text-[10px] text-disabled block">Item Power</span>
+                <span class="text-[10px] text-disabled block">{{ t('battles.item_power') }}</span>
                 <strong class="mono text-white text-sm">{{ formatDecimal(p.item_power ?? 0) }}</strong>
               </div>
               <div class="surface p-2.5 rounded-lg col-span-2">
-                <span class="text-[10px] text-disabled block">Perdite d'equipaggiamento stimate</span>
-                <strong class="mono text-error text-sm">{{ formatCompact(p.estimatedLoss) }} Silver</strong>
+                <span class="text-[10px] text-disabled block">{{ t('battles.estimated_value') }}</span>
+                <strong class="mono text-error text-sm">{{ formatCompact(p.estimatedLoss) }}</strong>
               </div>
             </div>
           </div>
 
           <div dialogFooter>
             <button type="button" class="btn btn--outline btn--sm" (click)="inspectedPlayer.set(null)">
-              Chiudi
+              {{ t('common.close') }}
             </button>
           </div>
         </app-dialog>
@@ -1558,14 +1560,14 @@ export class FightDetailPage {
   protected readonly tabOptions = computed<readonly ViewToggleOption[]>(() => {
     const fight = this.fight();
     const options: ViewToggleOption[] = [
-      { id: 'overview', label: 'Overview' },
-      { id: 'guilds', label: `Gilde (${fight?.guilds?.length ?? 0})` },
-      { id: 'players', label: `Giocatori (${fight?.players?.length ?? 0})` },
+      { id: 'overview', label: this.t('guild.tabs.overview') },
+      { id: 'guilds', label: `${this.t('battles.guilds')} (${fight?.guilds?.length ?? 0})` },
+      { id: 'players', label: `${this.t('battles.players')} (${fight?.players?.length ?? 0})` },
     ];
     if (this.hasRosterEvidence()) {
-      options.push({ id: 'roster', label: 'Roster & Evento' });
+      options.push({ id: 'roster', label: this.t('fights.rosterTab') });
     }
-    options.push({ id: 'segments', label: `Segmenti (${fight?.battle_ids?.length ?? 0})` });
+    options.push({ id: 'segments', label: `${this.t('battles.segments')} (${fight?.battle_ids?.length ?? 0})` });
     return options;
   });
 
@@ -1708,7 +1710,7 @@ export class FightDetailPage {
       legend: { bottom: 0, left: 'center', type: 'scroll', textStyle: { color: this.chrome().axis } },
       series: [
         {
-          name: 'Kill Fame',
+          name: this.t('battles.kill_fame'),
           type: 'pie',
           radius: ['42%', '70%'],
           center: ['50%', '42%'],
@@ -1724,7 +1726,7 @@ export class FightDetailPage {
     };
   });
 
-  protected readonly fameDistributionTableHead = computed(() => ['Gilda', 'Kill Fame']);
+  protected readonly fameDistributionTableHead = computed(() => [this.t('nav.guild'), this.t('battles.kill_fame')]);
   protected readonly fameDistributionTableRows = computed<ChartTableRow[]>(() => {
     return [...this.enrichedGuilds()]
       .sort((a, b) => b.kill_fame - a.kill_fame)
@@ -1749,7 +1751,7 @@ export class FightDetailPage {
       },
       series: [
         {
-          name: 'Kills',
+          name: this.t('battles.kills'),
           type: 'bar',
           data: rows.map((g) => ({
             value: g.kills,
@@ -1764,7 +1766,12 @@ export class FightDetailPage {
     };
   });
 
-  protected readonly topGuildsKdTableHead = computed(() => ['Gilda', 'K/D Ratio', 'Kills', 'Deaths']);
+  protected readonly topGuildsKdTableHead = computed(() => [
+    this.t('nav.guild'),
+    this.t('fights.kdRatio'),
+    this.t('battles.kills'),
+    this.t('battles.deaths'),
+  ]);
   protected readonly topGuildsKdTableRows = computed<ChartTableRow[]>(() => {
     return [...this.enrichedGuilds()]
       .sort((a, b) => b.kills - a.kills)
@@ -1794,14 +1801,14 @@ export class FightDetailPage {
       yAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: chrome.gridline } } },
       series: [
         {
-          name: 'Kills',
+          name: this.t('battles.kills'),
           type: 'bar',
           data: segments.map((s) => s.total_kills),
           itemStyle: { color: palette.ally, borderRadius: [4, 4, 0, 0] },
           barMaxWidth: 20,
         },
         {
-          name: 'Giocatori',
+          name: this.t('battles.players'),
           type: 'bar',
           data: segments.map((s) => s.total_players),
           itemStyle: { color: chrome.axis, borderRadius: [4, 4, 0, 0] },
@@ -1811,7 +1818,11 @@ export class FightDetailPage {
     };
   });
 
-  protected readonly segmentsIntensityTableHead = computed(() => ['Segmento', 'Kills', 'Giocatori']);
+  protected readonly segmentsIntensityTableHead = computed(() => [
+    this.t('fights.segment'),
+    this.t('battles.kills'),
+    this.t('battles.players'),
+  ]);
   protected readonly segmentsIntensityTableRows = computed<ChartTableRow[]>(() => {
     return (this.fight()?.segments ?? []).map((s) => [
       `#${s.battle_id}`,
@@ -1907,19 +1918,22 @@ export class FightDetailPage {
     const targetId = this.parsePositiveId(this.mergeTargetId());
     const otherIds = this.parseIdList(this.mergeOtherIds());
     if (!currentId || !targetId || otherIds === null) {
-      this.dialogError.set('Inserisci un target Fight ID valido e un elenco di Fight ID separati da virgola.');
+      this.dialogError.set(this.t('fights.mergeInvalid'));
       return;
     }
     const fightIds = [...new Set([currentId, targetId, ...otherIds])];
     if (fightIds.length < 2) {
-      this.dialogError.set('Seleziona almeno due diversi scontri da unire.');
+      this.dialogError.set(this.t('fights.mergeNeedTwo'));
       return;
     }
     this.mergeOpen.set(false);
     this.pendingMutation.set({
       kind: 'merge',
       body: { target_fight_id: targetId, fight_ids: fightIds },
-      description: `Unione di ${fightIds.map((id) => `scontro #${id}`).join(', ')}. Lo scontro #${targetId} rimarrà attivo.`,
+      description: this.t('fights.mergeDescription', {
+        fights: fightIds.map((id) => this.t('fights.fightNumber', { id })).join(', '),
+        target: targetId,
+      }),
     });
   }
 
@@ -1929,14 +1943,16 @@ export class FightDetailPage {
     const selected = this.splitBattleIds();
     const total = this.fight()?.battle_ids.length ?? 0;
     if (!sourceId || selected.length === 0 || selected.length >= total) {
-      this.dialogError.set('Seleziona almeno un segmento, ma lasciane almeno uno nello scontro attuale.');
+      this.dialogError.set(this.t('fights.splitInvalid'));
       return;
     }
     this.splitOpen.set(false);
     this.pendingMutation.set({
       kind: 'split',
       body: { battle_ids: selected },
-      description: `Separa ${selected.map((id) => `battaglia #${id}`).join(', ')} in un nuovo scontro.`,
+      description: this.t('fights.splitDescription', {
+        battles: selected.map((id) => this.t('fights.battleNumber', { id })).join(', '),
+      }),
     });
   }
 
@@ -1945,7 +1961,7 @@ export class FightDetailPage {
     const sourceId = this.fight()?.id;
     const targetId = this.parsePositiveId(this.moveTargetId());
     if (!sourceId || !targetId || targetId === sourceId) {
-      this.dialogError.set('Inserisci un Fight ID di destinazione valido e diverso.');
+      this.dialogError.set(this.t('fights.moveInvalid'));
       return;
     }
     this.moveBattleId.set(null);
@@ -1953,7 +1969,11 @@ export class FightDetailPage {
       kind: 'move',
       battleId,
       body: { battle_id: battleId, target_fight_id: targetId },
-      description: `Sposta la battaglia #${battleId} dallo scontro #${sourceId} allo scontro #${targetId}.`,
+      description: this.t('fights.moveDescription', {
+        battleId,
+        sourceId,
+        targetId,
+      }),
     });
   }
 
@@ -1979,14 +1999,14 @@ export class FightDetailPage {
             : `api/fights/${sourceId}/move-battle`;
       const result = await firstValueFrom(this.api.post<FightMutationResult>(path, pending.body));
       this.pendingMutation.set(null);
-      this.mutationSuccess.set(`Raggruppamento aggiornato con successo. Fight risultante: #${result.fight_id}.`);
+      this.mutationSuccess.set(this.t('fights.mutationSuccess', { id: result.fight_id }));
       if (result.fight_id === sourceId) {
         await this.load();
       } else {
         await this.router.navigate(['/fights', result.fight_id]);
       }
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Impossibile aggiornare il raggruppamento.';
+      const message = error instanceof Error ? error.message : this.t('fights.mutationFailed');
       this.dialogError.set(message);
       this.mutationError.set(message);
     } finally {
@@ -1996,7 +2016,8 @@ export class FightDetailPage {
 
   // Format Helpers
   protected fightWindow(fight: FightDetail): string {
-    return `${this.formatDate(fight.started_at)}${fight.ended_at ? ` al ${this.formatDate(fight.ended_at)}` : ''}`;
+    const start = this.formatDate(fight.started_at);
+    return fight.ended_at ? this.t('fights.windowRange', { start, end: this.formatDate(fight.ended_at) }) : start;
   }
 
   protected formatDate(value: string): string {

@@ -737,7 +737,7 @@ export class AdminTransactions {
     if (!iso) {
       return '—';
     }
-    return new Date(iso).toLocaleDateString();
+    return new Date(iso).toLocaleDateString(this.translate.locale());
   }
 
   protected statusChipClass(status: TransactionStatus): string {

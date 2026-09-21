@@ -119,7 +119,7 @@ export class AdminGiveawayDetail {
 
   protected formatWhen(value: string): string {
     const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleString(this.i18n.locale());
   }
 
   protected async draw(): Promise<void> {
