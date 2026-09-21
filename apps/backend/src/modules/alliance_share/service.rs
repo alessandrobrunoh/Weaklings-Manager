@@ -352,6 +352,35 @@ impl AllianceShareService {
             .ok_or_else(|| AppError::Internal("share row vanished after upsert".to_owned()))
     }
 
+    /// Attach a published split to an event in the destination tenant.
+    ///
+    /// Event mirrors are a special kind of share: unlike a generic alliance
+    /// snapshot, their split is live on both Discord servers and must be
+    /// discoverable by both pollers.  Keep this small operation here so the
+    /// event mirror cannot accidentally update the source split.
+    pub async fn attach_shared_split_to_event(
+        registry: &TenantRegistry,
+        share: &AllianceShareView,
+        event_id: i64,
+    ) -> Result<(), AppError> {
+        let alliance = registry.get_or_load(&share.alliance_tenant_id).await?;
+        let split = split_row::Entity::find_by_id(share.published_id)
+            .one(&alliance.db)
+            .await?
+            .ok_or_else(|| {
+                AppError::NotFound(format!("Published split {} not found", share.published_id))
+            })?;
+        let mut active: split_row::ActiveModel = split.into();
+        active.event_id = Set(Some(event_id));
+        // A mirrored split is intentionally writable from either tenant.  The
+        // event/participation API remains the source of truth for signups,
+        // while this flag lets the alliance Discord poller create its thread.
+        active.origin_read_only = Set(false);
+        active.updated_at = Set(chrono::Utc::now().into());
+        active.update(&alliance.db).await?;
+        Ok(())
+    }
+
     /// Share status for a guild-side split detail badge.
     ///
     /// # Errors
