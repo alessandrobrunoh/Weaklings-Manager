@@ -18,7 +18,10 @@ use crate::tenant::{ControlDb, TenantRegistry};
 use axum::{
     Extension, Json, Router,
     extract::Query,
-    http::HeaderMap,
+    http::{
+        HeaderMap,
+        header::{CACHE_CONTROL, HeaderValue},
+    },
     response::Redirect,
     routing::{get, post},
 };
@@ -778,7 +781,14 @@ pub async fn get_me(
     Extension(control): Extension<ControlDb>,
     Extension(registry): Extension<TenantRegistry>,
     Extension(key): Extension<Key>,
-) -> Result<(PrivateCookieJar, Json<ApiResponse<DiscordUserProfile>>), AppError> {
+) -> Result<
+    (
+        PrivateCookieJar,
+        [(axum::http::header::HeaderName, HeaderValue); 1],
+        Json<ApiResponse<DiscordUserProfile>>,
+    ),
+    AppError,
+> {
     let jar = PrivateCookieJar::from_headers(&headers, key);
     let session_cookie = jar
         .get("session_user")
@@ -820,6 +830,13 @@ pub async fn get_me(
     }
 
     if let Some(Extension(db)) = db.as_ref() {
+        // The cookie caches `user_id` from login. Re-resolve from the Discord snowflake so a
+        // stale or email-collided cookie cannot show another member's name, splits, or bank.
+        if let Some(user_id) =
+            crate::modules::users::identity::user_id_for_discord_id(db, &profile.id).await?
+        {
+            profile.user_id = user_id;
+        }
         if profile.user_id > 0 {
             profile.username =
                 crate::modules::users::display_name::resolve_by_id(db, profile.user_id).await?;
@@ -877,7 +894,11 @@ pub async fn get_me(
             .max_age(time::Duration::days(7)),
     );
 
-    Ok((jar, Json(ApiResponse::new(profile))))
+    Ok((
+        jar,
+        [(CACHE_CONTROL, HeaderValue::from_static("private, no-store"))],
+        Json(ApiResponse::new(profile)),
+    ))
 }
 
 async fn persist_session_highest_role(

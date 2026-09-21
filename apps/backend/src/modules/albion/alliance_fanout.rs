@@ -1,15 +1,11 @@
 //! After an Albion register/link, also register the player on the paired alliance/guild tenant.
 
-use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, QueryFilter, Statement,
-};
+use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
 
 use crate::config::Config;
 use crate::errors::AppError;
 use crate::modules::auth::UserContext;
 use crate::modules::platform::service::PlatformService;
-use crate::modules::users::entities::{Column as UserColumn, Entity as UserEntity};
 use crate::tenant::TenantRegistry;
 
 use super::discord_guild_role::{self, assign_discord_role, revoke_discord_role};
@@ -426,32 +422,19 @@ async fn ensure_user_and_link(
 }
 
 async fn ensure_user(db: &DatabaseConnection, user: &UserContext) -> Result<i64, AppError> {
-    if let Some(existing) = UserEntity::find()
-        .filter(UserColumn::DiscordId.eq(&user.id))
-        .one(db)
-        .await?
-    {
-        return Ok(existing.id);
-    }
     let email = user
         .email
         .clone()
         .unwrap_or_else(|| format!("discord-{}@alliance.local", user.id));
-    if let Some(existing) = UserEntity::find()
-        .filter(UserColumn::Email.eq(&email))
-        .one(db)
-        .await?
-    {
-        return Ok(existing.id);
-    }
-    let active = crate::modules::users::entities::ActiveModel {
-        username: Set(user.username.clone()),
-        email: Set(email),
-        role: Set("User".to_owned()),
-        discord_id: Set(Some(user.id.clone())),
-        ..Default::default()
-    };
-    Ok(active.insert(db).await?.id)
+    crate::modules::users::identity::upsert_discord_user(
+        db,
+        &user.id,
+        &user.username,
+        &email,
+        "User",
+        false,
+    )
+    .await
 }
 
 #[cfg(test)]

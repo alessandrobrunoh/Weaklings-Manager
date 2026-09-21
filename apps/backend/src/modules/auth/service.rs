@@ -430,49 +430,88 @@ impl AuthService {
         None
     }
 
-    /// Finds or creates the local `users` row backing this Discord profile, keyed by email.
+    /// Finds or creates the local `users` row backing this Discord profile.
+    ///
+    /// Lookup order is Discord snowflake first, then email. Admin-provisioned members are created
+    /// with a placeholder email and a real `discord_id`, so first login must reuse that row instead
+    /// of inserting a second account keyed only by Discord's email scope.
     ///
     /// Discord login is always requested with the `email` scope, so `profile.email` should be
-    /// present; keeps `users` up to date with the latest username/role on every login.
+    /// present when inserting a brand-new row; keeps `users` up to date with the latest
+    /// username/role on every login.
     ///
     /// # Errors
     ///
-    /// Returns `AppError::Unauthorized` if Discord did not provide an email, or `AppError::Database`
-    /// if the lookup/write fails.
+    /// Returns `AppError::Unauthorized` if Discord did not provide an email and no existing row
+    /// matches this Discord id, or `AppError::Database` if the lookup/write fails.
     pub async fn upsert_user(
         &self,
         db: &DatabaseConnection,
         profile: &DiscordUserProfile,
     ) -> Result<i64, AppError> {
-        let email = profile.email.clone().ok_or_else(|| {
+        let email = profile
+            .email
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned);
+
+        if let Some(existing) = UserEntity::find()
+            .filter(user_entities::Column::DiscordId.eq(&profile.id))
+            .one(db)
+            .await?
+        {
+            return update_existing_user(db, existing, profile, email.as_deref()).await;
+        }
+
+        let email = email.ok_or_else(|| {
             AppError::Unauthorized("Discord account has no email to provision a user".to_string())
         })?;
 
-        let existing = UserEntity::find()
+        if let Some(existing) = UserEntity::find()
             .filter(user_entities::Column::Email.eq(&email))
             .one(db)
-            .await?;
+            .await?
+        {
+            return update_existing_user(db, existing, profile, Some(&email)).await;
+        }
 
-        if let Some(existing) = existing {
-            let id = existing.id;
-            let mut active: user_entities::ActiveModel = existing.into();
-            active.username = Set(profile.username.clone());
-            active.role = Set(profile.highest_role.clone());
-            active.discord_id = Set(Some(profile.id.clone()));
-            active.update(db).await?;
-            Ok(id)
-        } else {
-            let active = user_entities::ActiveModel {
-                username: Set(profile.username.clone()),
-                email: Set(email),
-                role: Set(profile.highest_role.clone()),
-                discord_id: Set(Some(profile.id.clone())),
-                ..Default::default()
-            };
-            let inserted = active.insert(db).await?;
-            Ok(inserted.id)
+        let inserted = user_entities::ActiveModel {
+            username: Set(profile.username.clone()),
+            email: Set(email),
+            role: Set(profile.highest_role.clone()),
+            discord_id: Set(Some(profile.id.clone())),
+            ..Default::default()
+        }
+        .insert(db)
+        .await?;
+        Ok(inserted.id)
+    }
+}
+
+async fn update_existing_user(
+    db: &DatabaseConnection,
+    existing: user_entities::Model,
+    profile: &DiscordUserProfile,
+    new_email: Option<&str>,
+) -> Result<i64, AppError> {
+    let id = existing.id;
+    let mut active: user_entities::ActiveModel = existing.into();
+    active.username = Set(profile.username.clone());
+    active.role = Set(profile.highest_role.clone());
+    active.discord_id = Set(Some(profile.id.clone()));
+    if let Some(email) = new_email {
+        let taken = UserEntity::find()
+            .filter(user_entities::Column::Email.eq(email))
+            .filter(user_entities::Column::Id.ne(id))
+            .one(db)
+            .await?;
+        if taken.is_none() {
+            active.email = Set(email.to_string());
         }
     }
+    active.update(db).await?;
+    Ok(id)
 }
 
 impl Default for AuthService {
@@ -530,7 +569,9 @@ fn usable_bot_token(bot_token: Option<&str>) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::{UserEntity, user_entities};
     use crate::modules::auth::entities::role;
+    use sea_orm::EntityTrait;
 
     fn discord_guild(owner: bool, permissions: &str) -> DiscordGuild {
         DiscordGuild {
@@ -668,6 +709,156 @@ mod tests {
             owner: false,
             permissions: String::new(),
         }
+    }
+
+    fn login_profile(id: &str, username: &str, email: Option<&str>) -> DiscordUserProfile {
+        DiscordUserProfile {
+            id: id.to_owned(),
+            username: username.to_owned(),
+            email: email.map(str::to_owned),
+            avatar: None,
+            roles: vec!["Member".into()],
+            highest_role: "Member".into(),
+            user_id: 0,
+            is_superadmin: false,
+            is_platform_admin: false,
+            permissions: vec![],
+            tenant_id: None,
+            tenant_name: None,
+            tenant_kind: None,
+            features: vec![],
+            brand: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn upsert_reuses_manually_created_discord_user() {
+        use crate::migration::MigratorTrait;
+        use crate::modules::users::service::provisional_discord_email;
+        use sea_orm::{ActiveModelTrait, Database, Set};
+
+        let db = Database::connect("sqlite::memory:").await.expect("connect");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrate");
+
+        let created = user_entities::ActiveModel {
+            username: Set("nelly".into()),
+            email: Set(provisional_discord_email("111")),
+            role: Set("Member".into()),
+            discord_id: Set(Some("111".into())),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("insert");
+
+        let id = AuthService::new()
+            .upsert_user(
+                &db,
+                &login_profile("111", "Nelly", Some("nelly@example.com")),
+            )
+            .await
+            .expect("upsert");
+        assert_eq!(id, created.id);
+
+        let row = UserEntity::find_by_id(id)
+            .one(&db)
+            .await
+            .expect("load")
+            .expect("row");
+        assert_eq!(row.email, "nelly@example.com");
+        assert_eq!(row.username, "Nelly");
+        assert_eq!(row.discord_id.as_deref(), Some("111"));
+
+        let count = UserEntity::find().all(&db).await.expect("list").len();
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn upsert_still_matches_email_when_discord_id_was_missing() {
+        use crate::migration::MigratorTrait;
+        use sea_orm::{ActiveModelTrait, Database, Set};
+
+        let db = Database::connect("sqlite::memory:").await.expect("connect");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrate");
+
+        let created = user_entities::ActiveModel {
+            username: Set("old".into()),
+            email: Set("nelly@example.com".into()),
+            role: Set("User".into()),
+            discord_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("insert");
+
+        let id = AuthService::new()
+            .upsert_user(
+                &db,
+                &login_profile("111", "Nelly", Some("nelly@example.com")),
+            )
+            .await
+            .expect("upsert");
+        assert_eq!(id, created.id);
+        let row = UserEntity::find_by_id(id)
+            .one(&db)
+            .await
+            .expect("load")
+            .expect("row");
+        assert_eq!(row.discord_id.as_deref(), Some("111"));
+    }
+
+    #[tokio::test]
+    async fn upsert_keeps_placeholder_email_when_real_email_is_taken() {
+        use crate::migration::MigratorTrait;
+        use crate::modules::users::service::provisional_discord_email;
+        use sea_orm::{ActiveModelTrait, Database, Set};
+
+        let db = Database::connect("sqlite::memory:").await.expect("connect");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrate");
+
+        user_entities::ActiveModel {
+            username: Set("other".into()),
+            email: Set("nelly@example.com".into()),
+            role: Set("User".into()),
+            discord_id: Set(Some("999".into())),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("other");
+
+        let created = user_entities::ActiveModel {
+            username: Set("nelly".into()),
+            email: Set(provisional_discord_email("111")),
+            role: Set("Member".into()),
+            discord_id: Set(Some("111".into())),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("insert");
+
+        let id = AuthService::new()
+            .upsert_user(
+                &db,
+                &login_profile("111", "Nelly", Some("nelly@example.com")),
+            )
+            .await
+            .expect("upsert");
+        assert_eq!(id, created.id);
+        let row = UserEntity::find_by_id(id)
+            .one(&db)
+            .await
+            .expect("load")
+            .expect("row");
+        assert_eq!(row.email, provisional_discord_email("111"));
     }
 
     #[test]
