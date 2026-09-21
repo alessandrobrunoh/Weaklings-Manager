@@ -78,7 +78,7 @@ where
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         // ── Path 1: session cookie (browser / frontend) ──────────────────────
-        if let Some(ctx) = try_from_session_cookie(parts) {
+        if let Some(ctx) = try_from_session_cookie(parts).await {
             return Ok(ctx);
         }
 
@@ -97,7 +97,7 @@ where
 /// server has no `Key` configured, or if the cookie fails to decrypt/authenticate (tampered,
 /// forged, or signed with a different key) — we treat all of these as "no session" rather than
 /// hard-failing so bot auth can still succeed.
-fn try_from_session_cookie(parts: &mut Parts) -> Option<UserContext> {
+async fn try_from_session_cookie(parts: &mut Parts) -> Option<UserContext> {
     let key = parts.extensions.get::<Key>()?;
     let jar = PrivateCookieJar::from_headers(&parts.headers, key.clone());
     let session_cookie = jar.get("session_user")?;
@@ -109,6 +109,19 @@ fn try_from_session_cookie(parts: &mut Parts) -> Option<UserContext> {
         .get::<PlatformAdmins>()
         .and_then(|admins| admins.contains(&profile.id).then(|| profile.id.clone()));
 
+    // Prefer the `users` row for this Discord snowflake over the cookie's cached `user_id`.
+    // Login used to key that cache by email, so a colliding address could pin the session to
+    // someone else's splits and bank while `users.discord_id` in the database stayed correct.
+    let user_id = if let Some(db) = parts.extensions.get::<DatabaseConnection>() {
+        crate::modules::users::identity::user_id_for_discord_id(db, &profile.id)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or(profile.user_id)
+    } else {
+        profile.user_id
+    };
+
     Some(UserContext {
         id: profile.id,
         username: profile.username,
@@ -116,7 +129,7 @@ fn try_from_session_cookie(parts: &mut Parts) -> Option<UserContext> {
         avatar: profile.avatar,
         roles: profile.roles,
         highest_role: profile.highest_role,
-        user_id: profile.user_id,
+        user_id,
         super_admin_id,
     })
 }
@@ -443,6 +456,61 @@ mod tests {
             .await
             .expect("extract");
         assert!(context.is_superadmin());
+    }
+
+    #[tokio::test]
+    async fn session_cookie_user_id_follows_discord_id_not_stale_cache() {
+        use crate::migration::MigratorTrait;
+        use crate::modules::users::entities as user_entities;
+        use sea_orm::{ActiveModelTrait, ActiveValue::Set, Database};
+
+        let db = Database::connect("sqlite::memory:").await.expect("connect");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrate");
+        let alice = user_entities::ActiveModel {
+            username: Set("alice".into()),
+            email: Set("alice@example.com".into()),
+            role: Set("User".into()),
+            discord_id: Set(Some("111".into())),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("alice")
+        .id;
+        let bob = user_entities::ActiveModel {
+            username: Set("bob".into()),
+            email: Set("bob@example.com".into()),
+            role: Set("User".into()),
+            discord_id: Set(Some("222".into())),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .expect("bob")
+        .id;
+        assert_ne!(alice, bob);
+
+        let profile_json = format!(
+            r#"{{"id":"222","username":"bob","email":"bob@example.com","avatar":null,"roles":["User"],"highest_role":"User","user_id":{alice}}}"#
+        );
+        let key = Key::generate();
+        let cookie_str = encrypt_session_cookie(&key, profile_json);
+
+        let req = Request::builder()
+            .header("Cookie", cookie_str)
+            .body(())
+            .unwrap();
+        let (mut parts, _) = req.into_parts();
+        parts.extensions.insert(key);
+        parts.extensions.insert(db);
+
+        let context = UserContext::from_request_parts(&mut parts, &())
+            .await
+            .expect("extract");
+        assert_eq!(context.id, "222");
+        assert_eq!(context.user_id, bob);
     }
 
     #[tokio::test]

@@ -4,10 +4,7 @@
 
 use crate::errors::AppError;
 use crate::modules::admin::models::BrandColorsView;
-use crate::modules::users::entities::{self as user_entities, Entity as UserEntity};
-use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
-};
+use sea_orm::{DatabaseConnection, EntityTrait};
 use serde::{Deserialize, Serialize};
 
 /// Token response returned from Discord's token exchange endpoint.
@@ -430,10 +427,12 @@ impl AuthService {
         None
     }
 
-    /// Finds or creates the local `users` row backing this Discord profile, keyed by email.
+    /// Finds or creates the local `users` row backing this Discord profile, keyed by Discord id.
     ///
     /// Discord login is always requested with the `email` scope, so `profile.email` should be
-    /// present; keeps `users` up to date with the latest username/role on every login.
+    /// present; keeps `users` up to date with the latest username/role on every login. Email is
+    /// only used to claim a row that has no `discord_id` yet — a colliding email must not attach
+    /// this Discord account to someone else's splits and bank.
     ///
     /// # Errors
     ///
@@ -448,30 +447,15 @@ impl AuthService {
             AppError::Unauthorized("Discord account has no email to provision a user".to_string())
         })?;
 
-        let existing = UserEntity::find()
-            .filter(user_entities::Column::Email.eq(&email))
-            .one(db)
-            .await?;
-
-        if let Some(existing) = existing {
-            let id = existing.id;
-            let mut active: user_entities::ActiveModel = existing.into();
-            active.username = Set(profile.username.clone());
-            active.role = Set(profile.highest_role.clone());
-            active.discord_id = Set(Some(profile.id.clone()));
-            active.update(db).await?;
-            Ok(id)
-        } else {
-            let active = user_entities::ActiveModel {
-                username: Set(profile.username.clone()),
-                email: Set(email),
-                role: Set(profile.highest_role.clone()),
-                discord_id: Set(Some(profile.id.clone())),
-                ..Default::default()
-            };
-            let inserted = active.insert(db).await?;
-            Ok(inserted.id)
-        }
+        crate::modules::users::identity::upsert_discord_user(
+            db,
+            &profile.id,
+            &profile.username,
+            &email,
+            &profile.highest_role,
+            true,
+        )
+        .await
     }
 }
 

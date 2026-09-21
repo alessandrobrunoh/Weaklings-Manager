@@ -5,10 +5,7 @@
 //! `ping_alliance = false`, so creating it cannot recursively create another
 //! mirror.
 
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    Set, Statement,
-};
+use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
 
 use crate::{
     errors::AppError,
@@ -21,7 +18,6 @@ use crate::{
             models::{CreateEventRequest, EventView, ParticipateEventRequest},
             service::EventService,
         },
-        users::entities::{self as user_entities, Entity as UserEntity},
     },
     tenant::TenantRegistry,
 };
@@ -154,40 +150,20 @@ pub async fn peer_event(
 }
 
 async fn upsert_user(db: &DatabaseConnection, actor: &ShareActor) -> Result<i64, AppError> {
-    if let Some(existing) = UserEntity::find()
-        .filter(user_entities::Column::DiscordId.eq(&actor.discord_id))
-        .one(db)
-        .await?
-    {
-        return Ok(existing.id);
-    }
     let email = actor
         .email
         .clone()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| format!("{}@event-sync.invalid", actor.discord_id));
-    if let Some(existing) = UserEntity::find()
-        .filter(user_entities::Column::Email.eq(&email))
-        .one(db)
-        .await?
-    {
-        let id = existing.id;
-        let mut active: user_entities::ActiveModel = existing.into();
-        active.discord_id = Set(Some(actor.discord_id.clone()));
-        active.username = Set(actor.username.clone());
-        active.update(db).await?;
-        return Ok(id);
-    }
-    Ok(user_entities::ActiveModel {
-        username: Set(actor.username.clone()),
-        email: Set(email),
-        role: Set("User".to_owned()),
-        discord_id: Set(Some(actor.discord_id.clone())),
-        ..Default::default()
-    }
-    .insert(db)
-    .await?
-    .id)
+    crate::modules::users::identity::upsert_discord_user(
+        db,
+        &actor.discord_id,
+        &actor.username,
+        &email,
+        "User",
+        false,
+    )
+    .await
 }
 
 /// Fan out a self-service participation mutation to the linked event.

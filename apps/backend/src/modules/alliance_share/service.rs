@@ -866,14 +866,6 @@ async fn upsert_alliance_user(
     db: &DatabaseConnection,
     actor: &ShareActor,
 ) -> Result<i64, AppError> {
-    if let Some(existing) = UserEntity::find()
-        .filter(user_entities::Column::DiscordId.eq(&actor.discord_id))
-        .one(db)
-        .await?
-    {
-        return Ok(existing.id);
-    }
-
     let email = actor
         .email
         .as_deref()
@@ -881,30 +873,15 @@ async fn upsert_alliance_user(
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| format!("{}@alliance-share.invalid", actor.discord_id));
-
-    if let Some(existing) = UserEntity::find()
-        .filter(user_entities::Column::Email.eq(&email))
-        .one(db)
-        .await?
-    {
-        let id = existing.id;
-        let mut active: user_entities::ActiveModel = existing.into();
-        active.discord_id = Set(Some(actor.discord_id.clone()));
-        active.username = Set(actor.username.clone());
-        active.update(db).await?;
-        return Ok(id);
-    }
-
-    let inserted = user_entities::ActiveModel {
-        username: Set(actor.username.clone()),
-        email: Set(email),
-        role: Set("User".to_owned()),
-        discord_id: Set(Some(actor.discord_id.clone())),
-        ..Default::default()
-    }
-    .insert(db)
-    .await?;
-    Ok(inserted.id)
+    crate::modules::users::identity::upsert_discord_user(
+        db,
+        &actor.discord_id,
+        &actor.username,
+        &email,
+        "User",
+        false,
+    )
+    .await
 }
 
 async fn delete_or_hide_published_build(
