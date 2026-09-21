@@ -16,15 +16,16 @@ use crate::responses::ApiResponse;
 use crate::tenant::{ControlDb, CurrentTenantId, TenantRegistry};
 use axum::{
     Extension, Json, Router,
-    extract::Path,
+    extract::{Path, Query},
     routing::{get, post, put},
 };
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
 
 use super::models::{
-    AutoRoleSettingsView, BrandColorsView, CreateRoleRequest, DiscordChannelView, DiscordRoleView,
-    GuildSettingsView, PermissionMatrix, UpdateAutoRoleRequest, UpdateBrandColorsRequest,
-    UpdateGuildSettingsRequest, UpdateRolePermissionsRequest, UpdateRoleRequest,
+    AutoRoleSettingsView, BrandColorsView, CreateRoleRequest, DiscordChannelView,
+    DiscordMemberView, DiscordRoleView, GuildSettingsView, PermissionMatrix, UpdateAutoRoleRequest,
+    UpdateBrandColorsRequest, UpdateGuildSettingsRequest, UpdateRolePermissionsRequest,
+    UpdateRoleRequest,
 };
 use super::service::AdminService;
 use crate::modules::auth::entities::{role, role_permission};
@@ -42,6 +43,7 @@ pub fn router() -> Router {
         .route("/roles/{role_id}/permissions", put(update_role_permissions))
         .route("/discord/roles", get(list_guild_discord_roles))
         .route("/discord/channels", get(list_guild_discord_channels))
+        .route("/discord/members", get(list_guild_discord_members))
         .route(
             "/settings",
             get(get_guild_settings).put(update_guild_settings),
@@ -338,6 +340,46 @@ pub async fn list_guild_discord_channels(
     require_discord_catalog(&user, &perms).await?;
     Ok(Json(ApiResponse::new(
         AdminService::discord_channels(&cfg, &tenant.0).await?,
+    )))
+}
+
+/// Query parameters for listing Discord members who are not yet local users.
+#[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
+pub struct ListDiscordMembersQuery {
+    /// Optional case-insensitive substring on nick, username, or global name.
+    pub q: Option<String>,
+}
+
+/// Discord guild members who do not yet have a local account.
+#[utoipa::path(
+    get,
+    path = "/api/admin/discord/members",
+    tag = "admin",
+    summary = "List Discord members not yet present as local users",
+    description = "Returns human members of this tenant's Discord guild whose snowflake is not \
+        already stored on a `users.discord_id`. Bots are omitted. Requires `users.create`. The bot \
+        needs the Server Members Intent; a missing token or Discord error is 502. Filter with \
+        `?q=` (nick/username/global name, case-insensitive).",
+    security(("session_cookie" = ["users.create"])),
+    params(ListDiscordMembersQuery),
+    responses(
+        (status = 200, description = "Unregistered Discord members", body = [DiscordMemberView]),
+        (status = 403, description = "Forbidden", body = ProblemDetails),
+        (status = 502, description = "Discord API unavailable, bot token missing, or Server Members Intent disabled", body = ProblemDetails)
+    )
+)]
+pub async fn list_guild_discord_members(
+    user: UserContext,
+    Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Query(query): Query<ListDiscordMembersQuery>,
+) -> Result<Json<ApiResponse<Vec<DiscordMemberView>>>, AppError> {
+    user.require(&perms, Permission::UsersCreate).await?;
+    Ok(Json(ApiResponse::new(
+        AdminService::discord_unregistered_members(&db, &cfg, &tenant.0, query.q.as_deref())
+            .await?,
     )))
 }
 

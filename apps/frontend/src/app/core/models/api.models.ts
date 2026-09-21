@@ -2730,6 +2730,21 @@ export interface DiscordRoleView {
   managed: boolean;
 }
 
+export interface DiscordMemberView {
+  id: string;
+  username: string;
+  global_name: string | null;
+  nick: string | null;
+  display_name: string;
+  avatar: string | null;
+}
+
+export interface CreateUserRequest {
+  discord_id: string;
+  albion_player_id?: string;
+  albion_player_name?: string;
+}
+
 export type DiscordChannelKind = 'text' | 'voice' | 'category' | 'forum' | 'other';
 
 export interface DiscordForumTagView {

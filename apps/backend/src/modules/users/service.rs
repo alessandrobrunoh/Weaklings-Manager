@@ -5,8 +5,8 @@
 use crate::errors::AppError;
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set,
-    TransactionTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, Set, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -115,6 +115,40 @@ pub struct UserFilters {
     pub sort: Option<String>,
     /// Sort direction: `asc` or `desc`. Defaults to `desc` when `sort` is set.
     pub order: Option<String>,
+}
+
+/// Request body for `POST /api/users` — provision a Discord member and link an Albion character.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct CreateUserRequest {
+    /// Discord user snowflake selected from `GET /api/admin/discord/members`.
+    #[schema(example = "123456789012345678")]
+    pub discord_id: String,
+    /// Albion player id from the configured guild roster. Preferred when present.
+    #[schema(example = "aPngkjfLT2CGiZoWXLr8UQ")]
+    pub albion_player_id: Option<String>,
+    /// Albion in-game name, resolved uniquely against the configured guild roster.
+    #[schema(example = "Kay")]
+    pub albion_player_name: Option<String>,
+}
+
+/// Fields needed to insert a local user already resolved from Discord + Albion.
+pub struct CreateLinkedMember {
+    /// Discord user snowflake.
+    pub discord_id: String,
+    /// Discord username (or nick) stored until an Albion name is linked.
+    pub username: String,
+    /// Highest gestionale role resolved from the member's Discord roles.
+    pub role: String,
+    /// Albion Online player id.
+    pub albion_player_id: String,
+    /// Albion Online character name.
+    pub albion_player_name: String,
+}
+
+/// Placeholder email for members provisioned before they log in with Discord OAuth.
+#[must_use]
+pub fn provisional_discord_email(discord_id: &str) -> String {
+    format!("{discord_id}@discord.invalid")
 }
 
 /// Service for executing business logic operations related to users.
@@ -569,6 +603,87 @@ impl UserService {
             limit,
         ))
     }
+
+    /// Inserts a local user for a Discord member and links their Albion character.
+    ///
+    /// The Discord snowflake is the stable identity: later OAuth login must reuse this row
+    /// instead of creating a second account keyed only by email.
+    pub async fn create_linked_member(
+        &self,
+        db: &DatabaseConnection,
+        input: CreateLinkedMember,
+    ) -> Result<UserProfile, AppError> {
+        use super::entities::{Column as UserColumn, Entity as UserEntity};
+        use crate::modules::albion::entities::albion_link;
+
+        let discord_id = input.discord_id.trim();
+        if discord_id.is_empty() {
+            return Err(AppError::Validation("discord_id is required".to_owned()));
+        }
+        if input.albion_player_id.trim().is_empty() || input.albion_player_name.trim().is_empty() {
+            return Err(AppError::Validation(
+                "albion_player_id and albion_player_name are required".to_owned(),
+            ));
+        }
+
+        let txn = db.begin().await?;
+
+        if UserEntity::find()
+            .filter(UserColumn::DiscordId.eq(discord_id))
+            .one(&txn)
+            .await?
+            .is_some()
+        {
+            return Err(AppError::Conflict(
+                "This Discord member already has an account".to_owned(),
+            ));
+        }
+
+        if albion_link::Entity::find()
+            .filter(albion_link::Column::AlbionPlayerId.eq(&input.albion_player_id))
+            .one(&txn)
+            .await?
+            .is_some()
+        {
+            return Err(AppError::Conflict(
+                "This Albion character is already linked to another member".to_owned(),
+            ));
+        }
+
+        if albion_link::Entity::find()
+            .filter(albion_link::Column::DiscordId.eq(discord_id))
+            .one(&txn)
+            .await?
+            .is_some()
+        {
+            return Err(AppError::Conflict(
+                "This Discord account is already linked to an Albion character".to_owned(),
+            ));
+        }
+
+        let inserted = super::entities::ActiveModel {
+            username: Set(input.username.clone()),
+            email: Set(provisional_discord_email(discord_id)),
+            role: Set(input.role.clone()),
+            discord_id: Set(Some(discord_id.to_string())),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await?;
+
+        albion_link::ActiveModel {
+            discord_id: Set(discord_id.to_string()),
+            albion_player_id: Set(input.albion_player_id.clone()),
+            albion_player_name: Set(input.albion_player_name.clone()),
+            linked_at: Set(chrono::Utc::now().into()),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await?;
+
+        txn.commit().await?;
+        UserProfile::from_model(db, inserted).await
+    }
 }
 
 impl Default for UserService {
@@ -909,5 +1024,86 @@ mod tests {
             .await
             .expect_err("an unrecognised category should be rejected");
         assert!(matches!(error, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn create_linked_member_inserts_user_and_albion_link() {
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("connect");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrate");
+        let service = UserService::new();
+
+        let profile = service
+            .create_linked_member(
+                &db,
+                CreateLinkedMember {
+                    discord_id: "111".into(),
+                    username: "nelly".into(),
+                    role: "Member".into(),
+                    albion_player_id: "player_1".into(),
+                    albion_player_name: "Kay".into(),
+                },
+            )
+            .await
+            .expect("create");
+
+        assert_eq!(profile.username, "Kay");
+        assert_eq!(profile.role, "Member");
+        assert_eq!(profile.email, provisional_discord_email("111"));
+
+        let again = service
+            .create_linked_member(
+                &db,
+                CreateLinkedMember {
+                    discord_id: "111".into(),
+                    username: "nelly".into(),
+                    role: "Member".into(),
+                    albion_player_id: "player_2".into(),
+                    albion_player_name: "Other".into(),
+                },
+            )
+            .await;
+        assert!(matches!(again, Err(AppError::Conflict(_))));
+    }
+
+    #[tokio::test]
+    async fn create_linked_member_rejects_claimed_albion_character() {
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("connect");
+        crate::migration::Migrator::up(&db, None)
+            .await
+            .expect("migrate");
+        let service = UserService::new();
+        service
+            .create_linked_member(
+                &db,
+                CreateLinkedMember {
+                    discord_id: "111".into(),
+                    username: "one".into(),
+                    role: "Member".into(),
+                    albion_player_id: "player_1".into(),
+                    albion_player_name: "Kay".into(),
+                },
+            )
+            .await
+            .expect("first");
+
+        let result = service
+            .create_linked_member(
+                &db,
+                CreateLinkedMember {
+                    discord_id: "222".into(),
+                    username: "two".into(),
+                    role: "Member".into(),
+                    albion_player_id: "player_1".into(),
+                    albion_player_name: "Kay".into(),
+                },
+            )
+            .await;
+        assert!(matches!(result, Err(AppError::Conflict(_))));
     }
 }

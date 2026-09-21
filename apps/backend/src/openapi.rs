@@ -199,6 +199,7 @@ use utoipa::OpenApi;
         crate::modules::admin::router::delete_role,
         crate::modules::admin::router::list_guild_discord_roles,
         crate::modules::admin::router::list_guild_discord_channels,
+        crate::modules::admin::router::list_guild_discord_members,
         crate::modules::admin::router::get_guild_settings,
         crate::modules::admin::router::update_guild_settings,
         crate::modules::admin::router::get_autorole,
@@ -296,6 +297,7 @@ use utoipa::OpenApi;
             crate::modules::users::service::UserProfile,
             crate::modules::users::service::UserMetrics,
             crate::modules::users::service::UserFilters,
+            crate::modules::users::service::CreateUserRequest,
             crate::modules::users::member_roles::UserRolesView,
             crate::modules::users::member_roles::UserRoleAssignmentView,
             crate::modules::users::member_roles::AssignUserRoleRequest,
@@ -575,6 +577,7 @@ use utoipa::OpenApi;
             crate::modules::admin::models::GuildSettingsView,
             crate::modules::admin::models::UpdateGuildSettingsRequest,
             crate::modules::admin::models::DiscordRoleView,
+            crate::modules::admin::models::DiscordMemberView,
             crate::modules::admin::models::DiscordChannelView,
             crate::modules::admin::models::DiscordForumTagView,
             crate::modules::admin::models::AutoRoleSettingsView,
@@ -818,7 +821,7 @@ Current permissions:
 | `bank.view_others`       | Admin             | `GET /bank/balance?user_id=`, `GET /bank/transactions?user_id=` |
 | `splits.manage`          | Admin, Officer    | split edit/close endpoints                 |
 | `splits.islands.manage`  | Admin             | island/tab catalog CRUD                    |
-| `users.create`           | Admin             | `POST /users`                              |
+| `users.create`           | Admin             | `POST /users`, `GET /admin/discord/members` |
 | `permissions.reload`     | Admin             | `POST /admin/permissions/reload`           |
 | `roles.manage`           | Admin             | `POST/PATCH/DELETE /admin/roles`           |
 | `comps.build_categories.manage` | Admin, Officer | build category CRUD endpoints |

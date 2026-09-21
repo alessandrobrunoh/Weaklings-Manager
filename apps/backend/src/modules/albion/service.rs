@@ -123,6 +123,45 @@ pub fn pick_exact_player<'a>(
     }
 }
 
+/// Picks a configured-guild roster row by Albion player id, or by unique exact name.
+///
+/// `albion_player_id` wins when present. Name matching is trimmed and case-insensitive;
+/// zero hits are not-found and two or more exact hits are validation so create never guesses.
+pub fn pick_roster_member<'a>(
+    roster: &'a [AlbionGuildMember],
+    albion_player_id: Option<&str>,
+    albion_player_name: Option<&str>,
+) -> Result<&'a AlbionGuildMember, AppError> {
+    if let Some(id) = albion_player_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return roster.iter().find(|member| member.id == id).ok_or_else(|| {
+            AppError::NotFound(format!("Albion character {id} is not in the guild roster"))
+        });
+    }
+    let name = albion_player_name
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            AppError::Validation("albion_player_id or albion_player_name is required".to_owned())
+        })?;
+    let key = name.to_lowercase();
+    let matches: Vec<&AlbionGuildMember> = roster
+        .iter()
+        .filter(|member| member.name.to_lowercase() == key)
+        .collect();
+    match matches.as_slice() {
+        [] => Err(AppError::NotFound(format!(
+            "No guild roster character named {name:?}"
+        ))),
+        [member] => Ok(*member),
+        _ => Err(AppError::Validation(format!(
+            "ign {name:?} matches more than one roster character"
+        ))),
+    }
+}
+
 /// The current Discord-to-Albion-player link status for a user, as returned by
 /// `GET /albion/link/me` and `POST /albion/link`.
 ///
@@ -502,5 +541,43 @@ mod tests {
         let players = [summary("1", "Kay"), summary("2", "kay")];
         let err = pick_exact_player(&players, "Kay").expect_err("ambiguous");
         assert!(matches!(err, AppError::Validation(msg) if msg.contains("more than one")));
+    }
+
+    fn roster_member(id: &str, name: &str) -> AlbionGuildMember {
+        AlbionGuildMember {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            guild_id: None,
+            guild_name: None,
+            kill_fame: None,
+            death_fame: None,
+        }
+    }
+
+    #[test]
+    fn pick_roster_member_by_id_ignores_name() {
+        let roster = [roster_member("1", "Kay"), roster_member("2", "Other")];
+        let hit = pick_roster_member(&roster, Some("2"), Some("Kay")).expect("id");
+        assert_eq!(hit.id, "2");
+    }
+
+    #[test]
+    fn pick_roster_member_by_unique_name() {
+        let roster = [roster_member("1", "Kay"), roster_member("2", "Kaylen")];
+        let hit = pick_roster_member(&roster, None, Some(" kay ")).expect("name");
+        assert_eq!(hit.id, "1");
+    }
+
+    #[test]
+    fn pick_roster_member_missing_id_is_not_found() {
+        let roster = [roster_member("1", "Kay")];
+        let err = pick_roster_member(&roster, Some("missing"), None).expect_err("missing");
+        assert!(matches!(err, AppError::NotFound(_)));
+    }
+
+    #[test]
+    fn pick_roster_member_requires_id_or_name() {
+        let err = pick_roster_member(&[], None, Some("  ")).expect_err("blank");
+        assert!(matches!(err, AppError::Validation(_)));
     }
 }

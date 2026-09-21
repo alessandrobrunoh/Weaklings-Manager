@@ -5,19 +5,22 @@
 use super::member_roles::{
     AssignUserRoleRequest, UserRolesView, add_user_role, list_user_roles, remove_user_role,
 };
-use super::service::{UserFilters, UserProfile, UserService};
+use super::service::{
+    CreateLinkedMember, CreateUserRequest, UserFilters, UserProfile, UserService,
+};
 use super::specializations::{UpdateSpecializationsRequest, UserSpecializationView};
 use crate::config::Config;
 use crate::errors::{AppError, ProblemDetails};
 use crate::modules::auth::{Permission, Permissions, UserContext};
 use crate::pagination::{PaginatedUserProfile, PaginationParams};
 use crate::responses::{ApiResponse, ApiResponseUserMetrics, ApiResponseUserProfile};
-use crate::tenant::CurrentTenantId;
+use crate::tenant::{CurrentTenantId, CurrentTenantKind};
 use axum::{
     Extension, Json, Router,
     extract::{Path, Query},
     routing::{delete, get},
 };
+use sea_orm::EntityTrait;
 
 /// Router query parameters for listing users, combining pagination and filtering.
 ///
@@ -392,42 +395,100 @@ pub async fn delete_user_role(
     )))
 }
 
-/// Create a new user profile.
+/// Create a local user from a Discord guild member and link an Albion character.
 ///
-/// Requires the Admin role.
+/// Requires `users.create`.
 ///
 /// # Errors
 ///
-/// * Returns `AppError::Forbidden` if the user is not an administrator.
+/// * Returns `AppError::Forbidden` if the caller lacks `users.create`.
+/// * Returns `AppError::Validation` if the Discord member is missing or not in the guild.
+/// * Returns `AppError::Conflict` if the Discord member or Albion character is already provisioned.
 #[utoipa::path(
     post,
     path = "/api/users",
     tag = "users",
-    summary = "(Stub — not wired to persistence yet) Create a user profile",
-    description = "**Frontend integrators: do not build against this endpoint yet.** It currently \
-        ignores the request body entirely and always returns the same hardcoded mock `UserProfile` \
-        (id 99, username \"new_user\") without writing anything to the database — it exists only to \
-        reserve the route and exercise the Admin-role check. Real user rows are created exclusively \
-        as a side effect of `GET /api/auth/discord/callback` (first login upserts a `users` row). \
-        Requires the Admin role.",
+    summary = "Provision a Discord member and link an Albion roster character",
+    description = "Creates a `users` row for a Discord guild member who is not yet in the directory, \
+        then links the selected Albion character from the configured guild roster. The Discord \
+        snowflake is the stable identity: later OAuth login reuses this row (see `AuthService::upsert_user`). \
+        Email is stored as a placeholder until first login. Requires `users.create`.",
     security(("session_cookie" = ["users.create"])),
+    request_body(content = CreateUserRequest),
     responses(
-        (status = 200, description = "Returns a mock UserProfile; no database write occurs", body = ApiResponseUserProfile),
-        (status = 403, description = "Forbidden - lacks administrator role", body = ProblemDetails)
+        (status = 200, description = "Member created and linked", body = ApiResponseUserProfile),
+        (status = 400, description = "Validation error — missing Discord/Albion identity or member not in guild", body = ProblemDetails),
+        (status = 403, description = "Forbidden - lacks users.create", body = ProblemDetails),
+        (status = 404, description = "Albion character is not on the guild roster", body = ProblemDetails),
+        (status = 409, description = "Discord member or Albion character already provisioned", body = ProblemDetails)
     )
 )]
 async fn create_user(
     user: UserContext,
     Extension(perms): Extension<Permissions>,
+    Extension(db): Extension<sea_orm::DatabaseConnection>,
+    Extension(cfg): Extension<Config>,
+    Extension(tenant): Extension<CurrentTenantId>,
+    Extension(kind): Extension<CurrentTenantKind>,
+    Json(body): Json<CreateUserRequest>,
 ) -> Result<Json<ApiResponse<UserProfile>>, AppError> {
     user.require(&perms, Permission::UsersCreate).await?;
-    // Return a mock created user for testing purposes
-    let mock_created = UserProfile {
-        id: 99,
-        username: "new_user".to_string(),
-        email: "new@example.com".to_string(),
-        role: "User".to_string(),
-    };
 
-    Ok(Json(ApiResponse::new(mock_created)))
+    let discord_id = body.discord_id.trim();
+    if discord_id.is_empty() {
+        return Err(AppError::Validation("discord_id is required".to_owned()));
+    }
+
+    let (member, role_ids) =
+        crate::modules::admin::service::AdminService::discord_member(&cfg, &tenant.0, discord_id)
+            .await?;
+    let db_roles = crate::modules::auth::entities::role::Entity::find()
+        .all(&db)
+        .await?;
+    let (_, highest) = crate::modules::auth::service::resolve_linked_roles(&role_ids, &db_roles);
+
+    let albion = crate::modules::albion::service::AlbionService::new(
+        crate::modules::albion::client::AlbionRegion::from_env_str(&cfg.albion_api_region),
+        cfg.albion_guild_id.clone(),
+    );
+    let roster = albion.get_configured_guild_roster().await?;
+    let player = crate::modules::albion::service::pick_roster_member(
+        &roster,
+        body.albion_player_id.as_deref(),
+        body.albion_player_name.as_deref(),
+    )?;
+
+    let created = UserService::new()
+        .create_linked_member(
+            &db,
+            CreateLinkedMember {
+                discord_id: member.id.clone(),
+                username: member.display_name.clone(),
+                role: highest,
+                albion_player_id: player.id.clone(),
+                albion_player_name: player.name.clone(),
+            },
+        )
+        .await?;
+
+    crate::modules::albion::discord_nick::sync_guild_nickname(
+        &cfg,
+        &tenant.0,
+        &member.id,
+        &player.name,
+    )
+    .await;
+    if kind.0 != "alliance"
+        && crate::modules::albion::discord_guild_role::belongs_to_configured_guild(
+            player.guild_id.as_deref(),
+            &cfg.albion_guild_id,
+        )
+    {
+        crate::modules::albion::discord_guild_role::assign_guild_role(
+            &db, &cfg, &tenant.0, &member.id,
+        )
+        .await;
+    }
+
+    Ok(Json(ApiResponse::new(created)))
 }

@@ -6,10 +6,13 @@ use sea_orm::{
 };
 use serde::Deserialize;
 
+use std::collections::HashSet;
+
 use crate::config::Config;
 use crate::errors::AppError;
 use crate::modules::auth::Permission;
 use crate::modules::auth::entities::{role, role_permission};
+use crate::modules::users::entities::{Column as UserColumn, Entity as UserEntity};
 
 use super::entities::{
     ActiveModel as GuildSettingActiveModel, Entity as GuildSettingEntity, Model,
@@ -462,6 +465,38 @@ impl AdminService {
         Ok(channels)
     }
 
+    /// Human Discord guild members who do not yet have a local `users` row.
+    ///
+    /// Requires the bot token and the Server Members Intent. Bots are omitted.
+    pub async fn discord_unregistered_members(
+        db: &DatabaseConnection,
+        cfg: &Config,
+        guild_id: &str,
+        query: Option<&str>,
+    ) -> Result<Vec<super::models::DiscordMemberView>, AppError> {
+        let members = fetch_discord_members(cfg, guild_id).await?;
+        let registered = registered_discord_ids(db).await?;
+        Ok(unregistered_discord_members(members, &registered, query))
+    }
+
+    /// One human guild member, used to verify the Discord id before provisioning.
+    pub async fn discord_member(
+        cfg: &Config,
+        guild_id: &str,
+        discord_user_id: &str,
+    ) -> Result<(super::models::DiscordMemberView, Vec<String>), AppError> {
+        let payload = fetch_discord_member(cfg, guild_id, discord_user_id).await?;
+        let Some(user) = payload.user.filter(|user| !user.bot) else {
+            return Err(AppError::Validation(
+                "this Discord member is a bot or has no user payload".to_string(),
+            ));
+        };
+        Ok((
+            discord_member_view(&user, payload.nick.as_deref()),
+            payload.roles,
+        ))
+    }
+
     /// The full role → permission matrix, including Discord-link fields.
     ///
     /// # Errors
@@ -758,6 +793,27 @@ struct DiscordChannelPayload {
     available_tags: Vec<DiscordForumTagPayload>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct DiscordUserPayload {
+    id: String,
+    username: String,
+    #[serde(default)]
+    global_name: Option<String>,
+    #[serde(default)]
+    avatar: Option<String>,
+    #[serde(default)]
+    bot: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DiscordGuildMemberPayload {
+    user: Option<DiscordUserPayload>,
+    #[serde(default)]
+    nick: Option<String>,
+    #[serde(default)]
+    roles: Vec<String>,
+}
+
 async fn default_role_discord_id(db: &DatabaseConnection) -> Result<Option<String>, AppError> {
     Ok(role::Entity::find()
         .filter(role::Column::IsDefault.eq(true))
@@ -841,6 +897,173 @@ async fn fetch_discord_channels(
     response.json().await.map_err(|error| {
         AppError::UpstreamService(format!("Discord channels response was invalid: {error}"))
     })
+}
+
+async fn fetch_discord_members(
+    cfg: &Config,
+    guild_id: &str,
+) -> Result<Vec<DiscordGuildMemberPayload>, AppError> {
+    let token = discord_bot_token(cfg)?;
+    let mut members = Vec::new();
+    let mut after: Option<String> = None;
+
+    loop {
+        let mut url = format!("https://discord.com/api/v10/guilds/{guild_id}/members?limit=1000");
+        if let Some(after) = &after {
+            url.push_str(&format!("&after={after}"));
+        }
+
+        let response = crate::http_client::shared()
+            .get(&url)
+            .header("Authorization", format!("Bot {token}"))
+            .header("User-Agent", "[REDACTED]Backend (0.0.3)")
+            .send()
+            .await
+            .map_err(|error| {
+                AppError::UpstreamService(format!("Discord members request failed: {error}"))
+            })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(AppError::UpstreamService(format!(
+                "Discord members request failed with status {status}: {body}"
+            )));
+        }
+
+        let page: Vec<DiscordGuildMemberPayload> = response.json().await.map_err(|error| {
+            AppError::UpstreamService(format!("Discord members response was invalid: {error}"))
+        })?;
+        if page.is_empty() {
+            break;
+        }
+        let last_id = page
+            .iter()
+            .rev()
+            .find_map(|member| member.user.as_ref().map(|user| user.id.clone()));
+        let page_len = page.len();
+        members.extend(page);
+        if page_len < 1000 {
+            break;
+        }
+        match last_id {
+            Some(id) => after = Some(id),
+            None => break,
+        }
+    }
+
+    Ok(members)
+}
+
+async fn fetch_discord_member(
+    cfg: &Config,
+    guild_id: &str,
+    discord_user_id: &str,
+) -> Result<DiscordGuildMemberPayload, AppError> {
+    let token = discord_bot_token(cfg)?;
+    let response = crate::http_client::shared()
+        .get(format!(
+            "https://discord.com/api/v10/guilds/{guild_id}/members/{discord_user_id}"
+        ))
+        .header("Authorization", format!("Bot {token}"))
+        .header("User-Agent", "[REDACTED]Backend (0.0.3)")
+        .send()
+        .await
+        .map_err(|error| {
+            AppError::UpstreamService(format!("Discord member request failed: {error}"))
+        })?;
+
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(AppError::Validation(
+            "this member is not in the Discord guild".to_string(),
+        ));
+    }
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(AppError::UpstreamService(format!(
+            "Discord member request failed with status {status}: {body}"
+        )));
+    }
+
+    response.json().await.map_err(|error| {
+        AppError::UpstreamService(format!("Discord member response was invalid: {error}"))
+    })
+}
+
+async fn registered_discord_ids(db: &DatabaseConnection) -> Result<HashSet<String>, AppError> {
+    let users = UserEntity::find()
+        .filter(UserColumn::DiscordId.is_not_null())
+        .all(db)
+        .await?;
+    Ok(users
+        .into_iter()
+        .filter_map(|user| user.discord_id)
+        .collect())
+}
+
+fn discord_member_view(
+    user: &DiscordUserPayload,
+    nick: Option<&str>,
+) -> super::models::DiscordMemberView {
+    super::models::DiscordMemberView {
+        display_name: discord_display_name(nick, user.global_name.as_deref(), &user.username),
+        id: user.id.clone(),
+        username: user.username.clone(),
+        global_name: user.global_name.clone(),
+        nick: nick.map(str::to_string),
+        avatar: user.avatar.clone(),
+    }
+}
+
+fn discord_display_name(nick: Option<&str>, global_name: Option<&str>, username: &str) -> String {
+    nick.map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or_else(|| global_name.map(str::trim).filter(|value| !value.is_empty()))
+        .unwrap_or(username)
+        .to_string()
+}
+
+fn unregistered_discord_members(
+    members: Vec<DiscordGuildMemberPayload>,
+    registered_ids: &HashSet<String>,
+    query: Option<&str>,
+) -> Vec<super::models::DiscordMemberView> {
+    let needle = query
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_lowercase);
+    let mut views: Vec<super::models::DiscordMemberView> = members
+        .into_iter()
+        .filter_map(|member| {
+            let user = member.user.filter(|user| !user.bot)?;
+            if registered_ids.contains(&user.id) {
+                return None;
+            }
+            let view = discord_member_view(&user, member.nick.as_deref());
+            if let Some(needle) = &needle {
+                let haystack = format!(
+                    "{} {} {} {}",
+                    view.display_name,
+                    view.username,
+                    view.global_name.as_deref().unwrap_or(""),
+                    view.nick.as_deref().unwrap_or("")
+                )
+                .to_lowercase();
+                if !haystack.contains(needle) {
+                    return None;
+                }
+            }
+            Some(view)
+        })
+        .collect();
+    views.sort_by(|left, right| {
+        left.display_name
+            .to_lowercase()
+            .cmp(&right.display_name.to_lowercase())
+            .then_with(|| left.username.cmp(&right.username))
+    });
+    views
 }
 
 /// Maps a Discord channel type onto the picker kinds the admin UI understands.
@@ -1113,8 +1336,10 @@ async fn other_role_grants(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::{DiscordGuildMemberPayload, DiscordUserPayload, unregistered_discord_members};
     use crate::migration::MigratorTrait;
     use sea_orm::Database;
+    use std::collections::HashSet;
 
     async fn seed_db() -> DatabaseConnection {
         let db = Database::connect("sqlite::memory:").await.expect("connect");
@@ -1699,5 +1924,39 @@ mod tests {
                 "{value} should have been rejected"
             );
         }
+    }
+
+    fn guild_member(
+        id: &str,
+        username: &str,
+        nick: Option<&str>,
+        bot: bool,
+    ) -> DiscordGuildMemberPayload {
+        DiscordGuildMemberPayload {
+            user: Some(DiscordUserPayload {
+                id: id.to_owned(),
+                username: username.to_owned(),
+                global_name: None,
+                avatar: None,
+                bot,
+            }),
+            nick: nick.map(str::to_owned),
+            roles: vec![],
+        }
+    }
+
+    #[test]
+    fn unregistered_members_skip_bots_and_existing_users() {
+        let registered = HashSet::from(["111".to_string()]);
+        let members = vec![
+            guild_member("111", "already", None, false),
+            guild_member("222", "botty", None, true),
+            guild_member("333", "nelly", Some("Nelly"), false),
+            guild_member("444", "kay", None, false),
+        ];
+        let views = unregistered_discord_members(members, &registered, Some("nel"));
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].id, "333");
+        assert_eq!(views[0].display_name, "Nelly");
     }
 }
