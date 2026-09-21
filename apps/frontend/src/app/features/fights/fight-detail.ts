@@ -772,7 +772,7 @@ type PendingFightMutation =
                       @for (p of detail.planned_participants; track p.user_id) {
                         <tr class="hover:bg-[var(--color-surface-hover)]">
                           <td class="text-xs font-semibold text-white py-2">{{ p.username }}</td>
-                          <td class="text-xs text-secondary py-2">{{ p.primary_build_name || t('fights.buildNumber', { id: p.primary_build_id }) }}</td>
+                          <td class="text-xs text-secondary py-2">{{ p.primary_build_name || (p.primary_build_id !== null ? t('fights.buildNumber', { id: p.primary_build_id }) : t('common.none')) }}</td>
                           <td class="text-xs text-secondary py-2">{{ p.secondary_build_name || t('common.none') }}</td>
                           <td class="py-2">
                             <span class="chip text-[10px] font-bold" [class.chip--success]="p.observed" [class.chip--warning]="!p.observed">
