@@ -366,7 +366,12 @@ pub fn skip_tenant_resolution(path: &str) -> bool {
         || path == "/api/auth/select-tenant"
         || path.starts_with("/api/platform")
         || path.starts_with("/api/tenants")
-        || path.starts_with("/api/alliances")
+        // Most alliance membership endpoints only use the control plane, but
+        // the role-patching endpoint also checks the currently selected
+        // tenant/kind. Do not skip tenant resolution for that route.
+        || path == "/api/alliances/me"
+        || (path.starts_with("/api/alliances/")
+            && (path.ends_with("/members") || path.ends_with("/accept")))
         || path == "/api/auth/tenants"
         || path == "/api/auth/switch-tenant"
         || path == "/api/auth/registerable-guilds"
@@ -713,7 +718,12 @@ mod tests {
         assert!(skip_tenant_resolution("/api/auth/select-tenant"));
         assert!(skip_tenant_resolution("/api/platform/admins/reload"));
         assert!(skip_tenant_resolution("/api/tenants/123/status"));
+        assert!(skip_tenant_resolution("/api/alliances/me"));
         assert!(skip_tenant_resolution("/api/alliances/123/members"));
+        assert!(skip_tenant_resolution(
+            "/api/alliances/123/members/456/accept"
+        ));
+        assert!(!skip_tenant_resolution("/api/alliances/123/members/456"));
         assert!(skip_tenant_resolution("/api/auth/tenants"));
         assert!(skip_tenant_resolution("/api/auth/switch-tenant"));
         assert!(skip_tenant_resolution("/api/auth/registerable-guilds"));

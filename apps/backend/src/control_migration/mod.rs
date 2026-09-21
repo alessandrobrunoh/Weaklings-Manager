@@ -19,6 +19,7 @@ mod m20260908_000010_alliance_share_split;
 mod m20260917_000001_alliance_shares_comp;
 mod m20260918_000001_alliance_membership_discord_role;
 mod m20260918_000001_event_sync_links;
+mod m20260921_000001_repair_alliance_share_artifact_types;
 
 /// Stable id of the seeded `SuperAdmin` platform role.
 pub const SUPERADMIN_ROLE_ID: &str = "01990000-0000-4000-8000-000000000001";
@@ -55,6 +56,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260908_000010_alliance_share_split::Migration),
             Box::new(m20260918_000001_alliance_membership_discord_role::Migration),
             Box::new(m20260918_000001_event_sync_links::Migration),
+            Box::new(m20260921_000001_repair_alliance_share_artifact_types::Migration),
         ]
     }
 }

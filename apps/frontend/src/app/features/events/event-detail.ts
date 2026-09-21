@@ -2937,8 +2937,12 @@ export class EventDetailPage {
   protected readonly draftRegear = signal(false);
   protected readonly draftPingAlliance = signal(false);
   protected readonly allianceId = signal<string | null>(null);
+  protected readonly allianceMembershipStatus = signal<string | null>(null);
   protected readonly canPingAlliance = computed(
-    () => this.auth.profile()?.tenant_kind === 'guild' && Boolean(this.allianceId()),
+    () =>
+      this.auth.profile()?.tenant_kind === 'guild' &&
+      Boolean(this.allianceId()) &&
+      this.allianceMembershipStatus() === 'active',
   );
   protected readonly draftEventDate = signal('');
   protected readonly draftMassTime = signal('19:30');
@@ -4807,8 +4811,10 @@ export class EventDetailPage {
     try {
       const context = await firstValueFrom(this.api.get<AllianceContext>('api/alliances/me'));
       this.allianceId.set(context?.alliance_id ?? null);
+      this.allianceMembershipStatus.set(context?.membership_status ?? null);
     } catch {
       this.allianceId.set(null);
+      this.allianceMembershipStatus.set(null);
     }
   }
 

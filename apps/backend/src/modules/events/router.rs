@@ -39,7 +39,7 @@ use super::roster_hub::{RosterHub, RosterNotification};
 use super::service::{
     BattleLinkingContext, EventService, apply_alliance_ping_targets, load_alliance_ping_targets,
 };
-use super::sync::{create_mirror, sync_participation};
+use super::sync::{assert_active_alliance, create_mirror, sync_participation};
 use crate::modules::admin::models::DiscordRoleView;
 use crate::modules::admin::service::AdminService;
 use crate::modules::albionbb::client::normalize_server;
@@ -746,6 +746,9 @@ async fn create_event(
     }
 
     let create_mirror_requested = req.ping_alliance;
+    if create_mirror_requested {
+        assert_active_alliance(&control.0, &tenant.0).await?;
+    }
     let service = EventService::new();
     let event = service.create_event(&db, user.user_id, req).await?;
     if create_mirror_requested {
@@ -821,8 +824,20 @@ async fn update_event(
     Json(req): Json<UpdateEventRequest>,
 ) -> Result<Json<ApiResponse<EventView>>, AppError> {
     user.require(&perms, Permission::EventsEdit).await?;
+    if req.ping_alliance == Some(true) {
+        assert_active_alliance(&control.0, &tenant_id).await?;
+    }
     let service = EventService::new();
+    let alliance_sync_requested = req.ping_alliance == Some(true);
     let event = service.update_event(&db, id, req).await?;
+    if alliance_sync_requested {
+        let actor = ShareActor {
+            discord_id: user.id.clone(),
+            username: user.username.clone(),
+            email: user.email.clone(),
+        };
+        create_mirror(&control.0, &registry, &db, &tenant_id, &event, &actor).await?;
+    }
     Ok(Json(ApiResponse::new(
         hydrate_event_view(event, &control, &registry, &tenant_id).await,
     )))
