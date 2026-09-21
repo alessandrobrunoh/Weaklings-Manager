@@ -16,7 +16,7 @@ import { uk } from '../../i18n/uk';
  * to react instantly when the user picks a new language.
  *
  * The user's choice is persisted in `localStorage` (`alm.lang`) and mirrored
- * onto `<html lang>` for accessibility / screen readers.
+ * onto `<html lang>` as a full BCP 47 tag for accessibility / screen readers.
  */
 export type Language = 'en' | 'it' | 'es' | 'fr' | 'uk';
 
@@ -79,9 +79,7 @@ export class TranslateService {
   }
 
   constructor() {
-    if (typeof document !== 'undefined') {
-      document.documentElement.lang = this._language();
-    }
+    this.applyHtmlLang();
   }
 
   /**
@@ -93,8 +91,12 @@ export class TranslateService {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(STORAGE_KEY, language);
     }
+    this.applyHtmlLang();
+  }
+
+  private applyHtmlLang(): void {
     if (typeof document !== 'undefined') {
-      document.documentElement.lang = language;
+      document.documentElement.lang = this.locale();
     }
   }
 

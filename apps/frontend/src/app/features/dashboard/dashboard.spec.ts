@@ -262,14 +262,14 @@ describe('Dashboard', () => {
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Outposts');
     expect(text).toContain('Kite 20');
-    const expectedTime = new Date('2026-09-04T19:30:00Z').toLocaleTimeString([], {
+    const expectedTime = new Date('2026-09-04T19:30:00Z').toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
     });
     expect(text).toContain(expectedTime);
     expect(text).not.toContain(
-      new Date('2026-09-04T20:00:00Z').toLocaleTimeString([], {
+      new Date('2026-09-04T20:00:00Z').toLocaleTimeString('en-US', {
         hour: '2-digit',
         minute: '2-digit',
         hour12: false,

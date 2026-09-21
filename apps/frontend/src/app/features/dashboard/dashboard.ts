@@ -567,7 +567,7 @@ export class Dashboard {
     const massAt = eventMassAt(selected);
     const isToday = massAt !== null && massAt.toDateString() === new Date().toDateString();
     const timeStr = massAt
-      ? massAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+      ? massAt.toLocaleTimeString(this.translate.locale(), { hour: '2-digit', minute: '2-digit', hour12: false })
       : '—';
 
     return {
@@ -575,7 +575,7 @@ export class Dashboard {
       title: selected.title,
       dayLabel: isToday
         ? this.t('dashboard.next_mass.today')
-        : (massAt?.toLocaleDateString([], { weekday: 'short' }).toUpperCase() || this.t('dashboard.next_mass.today')),
+        : (massAt?.toLocaleDateString(this.translate.locale(), { weekday: 'short' }).toUpperCase() || this.t('dashboard.next_mass.today')),
       time: timeStr,
       compName: selected.comp_name,
       capText: selected.player_cap
@@ -732,7 +732,7 @@ export class Dashboard {
   }
 
   protected formatAmount(value: number | string): string {
-    return new Intl.NumberFormat().format(Number(value ?? 0));
+    return new Intl.NumberFormat(this.translate.locale()).format(Number(value ?? 0));
   }
 
   private formatEtaLabel(eta: MassEta): string {

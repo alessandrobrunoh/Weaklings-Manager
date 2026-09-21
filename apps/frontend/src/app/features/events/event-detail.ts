@@ -206,7 +206,7 @@ interface AddEventMemberRequest {
           type="button"
           class="btn btn--ghost btn--sm"
           (click)="backToEvents()"
-          [appTooltip]="'Torna all\\'elenco degli eventi'"
+          [appTooltip]="t('events.detail.back')"
           tooltipPosition="bottom"
         >
           <app-icon name="chevron-left" size="0.875rem" />
@@ -217,7 +217,7 @@ interface AddEventMemberRequest {
             type="button"
             class="btn btn--primary btn--sm"
             (click)="start(detail.id)"
-            [appTooltip]="'Avvia ufficialmente l\\'evento'"
+            [appTooltip]="t('events.start')"
             tooltipPosition="bottom"
           >
             <app-icon name="sparkles" size="0.875rem" />
@@ -253,7 +253,7 @@ interface AddEventMemberRequest {
             type="button"
             class="btn btn--danger btn--sm"
             (click)="stop(detail.id)"
-            [appTooltip]="'Concludi l\\'evento in corso'"
+            [appTooltip]="t('events.end')"
             tooltipPosition="bottom"
           >
             <app-icon name="close" size="0.875rem" />
@@ -321,7 +321,7 @@ interface AddEventMemberRequest {
               @if (detail.regear) {
                 <span
                   class="chip chip--tonal text-xs inline-flex items-center gap-1"
-                  [appTooltip]="'Regear attivo: le perdite ammissibili saranno rimborsate'"
+                  [appTooltip]="t('events.detail.regear_active')"
                 >
                   <app-icon name="shield" size="0.75rem" />
                   {{ t('events.regear') }}
@@ -458,7 +458,7 @@ interface AddEventMemberRequest {
                 <div>
                   <div class="flex items-center gap-1.5">
                     <app-icon name="users" size="0.75rem" />
-                    <span class="text-xs font-semibold text-white"> Non sei iscritto </span>
+                    <span class="text-xs font-semibold text-white">{{ t('events.detail.not_registered') }}</span>
                   </div>
                   <p class="text-[10px] text-[var(--color-text-secondary)]">
                     Prenota il tuo posto nella comp.
@@ -563,7 +563,7 @@ interface AddEventMemberRequest {
                                 @if (canManageParticipants()) {
                                   <span
                                     class="text-[var(--color-text-tertiary)] hover:text-white cursor-grab active:cursor-grabbing flex-shrink-0"
-                                    [appTooltip]="'Trascina su un posto'"
+                                    [appTooltip]="t('events.detail.unassigned_hint')"
                                     tooltipPosition="top"
                                   >
                                     <app-icon name="grip" size="0.75rem" />
@@ -878,7 +878,7 @@ interface AddEventMemberRequest {
                                 @if (canManageParticipants() && seat.participant) {
                                   <span
                                     class="text-[var(--color-text-tertiary)] hover:text-white cursor-grab active:cursor-grabbing flex-shrink-0"
-                                    [appTooltip]="'Trascina per scambiare posto o sposta in panchina'"
+                                    [appTooltip]="t('events.detail.swap_selected')"
                                     tooltipPosition="top"
                                   >
                                     <app-icon name="grip" size="0.75rem" />
@@ -1404,7 +1404,7 @@ interface AddEventMemberRequest {
                           <div
                             class="flex items-center justify-between text-[11px] font-mono text-[var(--color-text-secondary)]"
                           >
-                            <span>Gilda: {{ formatCompact(opponent.guild_kill_fame) }}</span>
+                            <span>{{ t('nav.guild') }}: {{ formatCompact(opponent.guild_kill_fame) }}</span>
                             <span>Nemici: {{ formatCompact(opponent.opponent_kill_fame) }}</span>
                           </div>
                           @if (opponent.guild_kill_fame + opponent.opponent_kill_fame > 0) {
@@ -1644,7 +1644,7 @@ interface AddEventMemberRequest {
                         </div>
 
                         <div class="surface p-3">
-                          <span class="event-detail__label">Fama Kill Gilda</span>
+                          <span class="event-detail__label">{{ t('events.detail.kill_fame') }}</span>
                           <p class="font-mono text-sm font-bold text-[var(--color-success)] mt-0.5">
                             +{{ formatCompact(battle.guild_kill_fame) }}
                           </p>
@@ -1686,7 +1686,7 @@ interface AddEventMemberRequest {
                   <div class="flex items-center gap-3">
                     <div class="text-right">
                       <span class="text-xs text-[var(--color-text-secondary)] block"
-                        >Totale Netto:</span
+                        >{{ t('splits.netPaid') }}:</span
                       >
                       <strong class="text-sm font-mono font-bold text-[var(--color-success)]">
                         {{ formatAmount(detail.split_stats.completed_net_value) }} silver
@@ -2016,7 +2016,7 @@ interface AddEventMemberRequest {
               >
                 <app-icon name="swords" size="1rem" />
                 <div class="min-w-0">
-                  <p class="label mb-0.5">Arma principale</p>
+                  <p class="label mb-0.5">{{ t('events.detail.primary_build') }}</p>
                   <p class="text-sm font-semibold text-[var(--color-text)] truncate">
                     {{ selectedJoinWeapon()?.openalbion_item_name || 'Arma non disponibile' }}
                   </p>
@@ -2069,7 +2069,7 @@ interface AddEventMemberRequest {
         <div class="space-y-3">
           @if (isFillSelected()) {
             <div class="surface p-3">
-              <p class="label">Ruolo</p>
+              <p class="label">{{ t('common.role') }}</p>
               <p class="text-sm font-semibold text-[var(--color-text)]">
                 {{ t('events.detail.fill_option') }}
               </p>
@@ -2210,7 +2210,7 @@ interface AddEventMemberRequest {
                 [value]="draftRosterRoleBuildId()"
                 (change)="onDraftRosterRoleBuildChange($event)"
               >
-                <option value="">Seleziona una build</option>
+                <option value="">{{ t('events.detail.select_build') }}</option>
                 @for (build of availableExtraRoleBuilds(); track build.id) {
                   <option [value]="build.id">
                     {{ build.name }} &middot; {{ roleLabelName(build.role) }}
@@ -2363,7 +2363,7 @@ interface AddEventMemberRequest {
                 [value]="draftMemberPrimaryBuildId()"
                 (change)="onMemberPrimaryBuildChange($event)"
               >
-                <option value="">Seleziona build / slot</option>
+                <option value="">{{ t('events.detail.select_build_slot') }}</option>
                 <option [value]="fillValue">{{ t('events.detail.fill_option') }}</option>
                 @for (entry of availableBuilds(); track entry.build_id) {
                   <option [value]="entry.build_id">
@@ -2384,7 +2384,7 @@ interface AddEventMemberRequest {
                   [value]="draftMemberSecondaryBuildId()"
                   (change)="onMemberSecondaryBuildChange($event)"
                 >
-                  <option value="">Nessuna (opzionale)</option>
+                  <option value="">{{ t('common.none') }} ({{ t('common.optional') }})</option>
                   @for (entry of availableBuilds(); track entry.build_id) {
                     <option [value]="entry.build_id">
                       {{ entry.build.name }} &middot; {{ roleLabelName(entry.build.role) }}
@@ -2643,7 +2643,7 @@ interface AddEventMemberRequest {
             class="btn btn--outline btn--sm"
             (click)="inspectDialogSeat.set(null)"
           >
-            Chiudi
+            {{ t('common.close') }}
           </button>
         </div>
       </app-dialog>

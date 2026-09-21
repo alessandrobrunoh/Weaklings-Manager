@@ -582,13 +582,13 @@ export class Bank {
   protected formatDateDay(dateStr: string | null | undefined): string {
     if (!dateStr) return '—';
     const d = new Date(dateStr);
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return d.toLocaleDateString(this.translate.locale(), { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
   protected formatDateTime(dateStr: string | null | undefined): string {
     if (!dateStr) return '—';
     const d = new Date(dateStr);
-    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    return d.toLocaleTimeString(this.translate.locale(), { hour: '2-digit', minute: '2-digit', hour12: true });
   }
 
   protected async refreshNow(): Promise<void> {
@@ -720,7 +720,7 @@ export class Bank {
     if (abs >= 1_000) {
       return `${(num / 1_000).toFixed(1)}k`;
     }
-    return num.toLocaleString();
+    return num.toLocaleString(this.translate.locale());
   }
 
   private async mutate(
@@ -749,7 +749,7 @@ export class Bank {
     if (!iso) {
       return '—';
     }
-    return new Date(iso).toLocaleDateString();
+    return new Date(iso).toLocaleDateString(this.translate.locale());
   }
 
   protected statusChipClass(status: TransactionStatus): string {

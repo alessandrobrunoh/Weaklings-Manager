@@ -911,7 +911,7 @@ export class Events {
 
   /** Formats ISO date strings using the browser locale. */
   protected formatDate(iso: string): string {
-    return new Date(iso).toLocaleString();
+    return new Date(iso).toLocaleString(this.translate.locale());
   }
 
   /** Join still lands on detail, where picking a build is what actually joins. */
@@ -1047,19 +1047,19 @@ export class Events {
     const dateStr = event.mass_time_utc ?? event.event_date_utc;
     if (!dateStr) return '—';
     const d = new Date(dateStr);
-    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    return d.toLocaleTimeString(this.translate.locale(), { hour: '2-digit', minute: '2-digit', hour12: true });
   }
 
   protected formatDateDay(dateStr: string | null | undefined): string {
     if (!dateStr) return '—';
     const d = new Date(dateStr);
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return d.toLocaleDateString(this.translate.locale(), { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
   protected formatDateTime(dateStr: string | null | undefined): string {
     if (!dateStr) return '—';
     const d = new Date(dateStr);
-    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    return d.toLocaleTimeString(this.translate.locale(), { hour: '2-digit', minute: '2-digit', hour12: true });
   }
 
   protected async loadStats(): Promise<void> {

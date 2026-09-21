@@ -335,17 +335,17 @@ export class BattleGroupPage {
   }
 
   protected formatAmount(value: number): string {
-    return value.toLocaleString();
+    return value.toLocaleString(this.translate.locale());
   }
 
   protected formatCompact(value: number): string {
-    return Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(
+    return Intl.NumberFormat(this.translate.locale(), { notation: 'compact', maximumFractionDigits: 1 }).format(
       value,
     );
   }
 
   protected formatDecimal(value: number): string {
-    return Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value);
+    return Intl.NumberFormat(this.translate.locale(), { maximumFractionDigits: 1 }).format(value);
   }
 
   protected percentage(value: number, total: number): number {

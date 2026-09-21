@@ -604,15 +604,15 @@ export class Battles {
   }
 
   protected formatDate(isoDate: string): string {
-    return new Date(isoDate).toLocaleString();
+    return new Date(isoDate).toLocaleString(this.translate.locale());
   }
 
   protected formatAmount(value: number): string {
-    return value.toLocaleString();
+    return value.toLocaleString(this.translate.locale());
   }
 
   protected formatCompact(value: number): string {
-    return Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(
+    return Intl.NumberFormat(this.translate.locale(), { notation: 'compact', maximumFractionDigits: 1 }).format(
       value,
     );
   }
