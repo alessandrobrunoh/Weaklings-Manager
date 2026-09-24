@@ -329,3 +329,31 @@ export function buildApplicationFinalMessage(settings: GuildSettingsView, action
   };
 }
 
+export function buildTicketWelcomeEmbed(settings: GuildSettingsView): APIEmbed {
+  return createResponseEmbed(
+    'info',
+    settings.discord_tickets_welcome_title ?? 'Ticket di supporto',
+    settings.discord_tickets_welcome_message ?? 'Descrivi qui il problema: un membro dello staff ti risponderà appena possibile.',
+    'SUPPORT',
+  ).toJSON();
+}
+
+export function buildTicketClosedEmbed(settings: GuildSettingsView): APIEmbed {
+  return createResponseEmbed(
+    'warning',
+    settings.discord_tickets_closed_title ?? 'Ticket chiuso',
+    settings.discord_tickets_closed_message ?? 'Questo ticket è stato chiuso.',
+    'SUPPORT',
+  ).toJSON();
+}
+
+export function buildTicketComponents(ticketId: number): ActionRowBuilder<ButtonBuilder>[] {
+  return [new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`ticket:close:${ticketId}`)
+      .setLabel('Chiudi ticket')
+      .setEmoji('🔒')
+      .setStyle(ButtonStyle.Danger),
+  )];
+}
+

@@ -192,6 +192,11 @@ pub struct GuildSettingsView {
     pub discord_applications_status_closed_message: String,
     /// Message ID of the published application panel, when available.
     pub discord_applications_panel_message_id: Option<String>,
+    pub discord_tickets_archive_channel_id: Option<String>,
+    pub discord_tickets_welcome_title: String,
+    pub discord_tickets_welcome_message: String,
+    pub discord_tickets_closed_title: String,
+    pub discord_tickets_closed_message: String,
     /// Channel where the bot announces guild giveaways.
     pub discord_giveaways_channel_id: Option<String>,
     /// Optional role pinged on a new giveaway announcement.
@@ -260,6 +265,11 @@ impl GuildSettingsView {
             discord_applications_status_closed_message: model
                 .discord_applications_status_closed_message,
             discord_applications_panel_message_id: model.discord_applications_panel_message_id,
+            discord_tickets_archive_channel_id: model.discord_tickets_archive_channel_id,
+            discord_tickets_welcome_title: model.discord_tickets_welcome_title,
+            discord_tickets_welcome_message: model.discord_tickets_welcome_message,
+            discord_tickets_closed_title: model.discord_tickets_closed_title,
+            discord_tickets_closed_message: model.discord_tickets_closed_message,
             discord_giveaways_channel_id: model.discord_giveaways_channel_id,
             discord_giveaways_role_id: model.discord_giveaways_role_id,
             default_split_fee: model.default_split_fee,

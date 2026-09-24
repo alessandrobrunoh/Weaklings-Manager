@@ -127,6 +127,7 @@ mod m20260917_000001_add_split_origin_read_only;
 mod m20260918_000001_create_trials;
 mod m20260918_000002_enforce_positive_transaction_amount;
 mod m20260922_000004_create_discord_tickets;
+mod m20260922_000005_add_discord_ticket_settings;
 
 /// Main migrator coordinating the sequential execution of registered migration scripts.
 pub struct Migrator;
@@ -258,6 +259,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260918_000001_create_trials::Migration),
             Box::new(m20260918_000002_enforce_positive_transaction_amount::Migration),
             Box::new(m20260922_000004_create_discord_tickets::Migration),
+            Box::new(m20260922_000005_add_discord_ticket_settings::Migration),
         ]
     }
 }

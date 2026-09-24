@@ -438,6 +438,14 @@ export interface ApplicationView {
   reopen_count?: number;
 }
 
+export interface TicketView {
+  id: number;
+  user_discord_id: string;
+  username: string;
+  thread_id: string;
+  status: 'open' | 'closed';
+}
+
 export interface GuildSettingsView {
   discord_events_channel_id: string | null;
   discord_battles_channel_id: string | null;
@@ -486,6 +494,11 @@ export interface GuildSettingsView {
   discord_applications_error_message?: string;
   discord_applications_result_message?: string;
   discord_applications_panel_message_id: string | null;
+  discord_tickets_archive_channel_id?: string | null;
+  discord_tickets_welcome_title?: string;
+  discord_tickets_welcome_message?: string;
+  discord_tickets_closed_title?: string;
+  discord_tickets_closed_message?: string;
   discord_giveaways_channel_id?: string | null;
   discord_giveaways_role_id?: string | null;
   default_split_fee: number | string;
