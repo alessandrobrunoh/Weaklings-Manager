@@ -111,10 +111,16 @@ async function submitApplication(
     interaction.user.id,
   );
   if (active) {
-    await interaction.editReply({
-      embeds: [buildApplicationAlreadyOpenEmbed(settings, active.channel_id)],
-    });
-    return;
+    const existingChannel = await fetchGuildChannel(guild, active.channel_id);
+    if (existingChannel) {
+      await interaction.editReply({
+        embeds: [buildApplicationAlreadyOpenEmbed(settings, active.channel_id)],
+      });
+      return;
+    }
+    // The thread/channel was manually deleted. Mark the stale application
+    // closed so the member can submit a replacement immediately.
+    await api.post(`api/applications/${active.id}/close`, {}, interaction.user.id).catch(() => undefined);
   }
 
   const ingameName = interaction.fields.getTextInputValue(APPLICATION_INGAME_FIELD).trim();

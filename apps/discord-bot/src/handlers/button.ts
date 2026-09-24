@@ -149,10 +149,17 @@ async function handleTicketButton(
   }
   const active = await api.get<TicketView | null>('api/tickets/active', interaction.user.id);
   if (active) {
-    await interaction.editReply({
-      embeds: [createResponseEmbed('info', 'Ticket già aperto', `Hai già un ticket aperto: <#${active.thread_id}>.`, 'SUPPORT')],
-    });
-    return;
+    const existingThread = await fetchGuildChannel(guild, active.thread_id);
+    if (!existingThread || !existingThread.isThread()) {
+      // The user may have deleted the thread manually. Release the persisted
+      // ticket before creating its replacement.
+      await api.post(`api/tickets/${active.id}/close`, {}, interaction.user.id).catch(() => undefined);
+    } else {
+      await interaction.editReply({
+        embeds: [createResponseEmbed('info', 'Ticket già aperto', `Hai già un ticket aperto: <#${active.thread_id}>.`, 'SUPPORT')],
+      });
+      return;
+    }
   }
   const thread = await createPrivateTicketThread(
     parent,

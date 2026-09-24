@@ -3,6 +3,10 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ContainerBuilder,
+  SeparatorBuilder,
+  TextDisplayBuilder,
+  MessageFlags,
 } from "discord.js";
 import type { EventView, EventDetailView } from "../api/types.js";
 import { BOT_COLORS, buildAsciiBar, createBaseEmbed } from "./theme.js";
@@ -435,6 +439,64 @@ export function buildEventCalendarActionRows(
     rows.push(new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons.slice(index, index + 5)));
   }
   return rows;
+}
+
+/** Components V2 version of the persistent calendar, matching the application panel treatment. */
+export function buildEventCalendarV2Components(
+  events: EventView[],
+  guildId: string,
+  threadIds: Readonly<Record<string, string>>,
+): ContainerBuilder[] {
+  const orderedEvents = [...events]
+    .filter((event) => event.status === "scheduled" || event.status === "live")
+    .sort((a, b) => eventTimestamp(a, "start") - eventTimestamp(b, "start"))
+    .slice(0, 25);
+  const sections = new Map<string, string[]>();
+  for (const event of orderedEvents) {
+    const section = event.status === "live" ? "🔴 LIVE / TODAY" : "🟡 UPCOMING";
+    sections.set(section, [
+      ...(sections.get(section) ?? []),
+      `${event.call_to_arms ? "🚨" : "📌"} **${event.title}** · <t:${eventTimestamp(event, "start")}:R>`,
+    ]);
+  }
+  const text = sections.size > 0
+    ? [...sections.entries()].map(([name, lines]) => `**${name}**\n${lines.join("\n")}`).join("\n\n")
+    : "*No upcoming events found.*";
+  const buttons = orderedEvents.flatMap((event) => {
+    const threadId = threadIds[String(event.id)];
+    return threadId
+      ? [new ButtonBuilder()
+          .setLabel(`Open ${event.title}`.slice(0, 80))
+          .setEmoji("🔗")
+          .setStyle(ButtonStyle.Link)
+          .setURL(`https://discord.com/channels/${guildId}/${threadId}`)]
+      : [];
+  });
+  const container = new ContainerBuilder()
+    .setAccentColor(BOT_COLORS.BRAND)
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent("# 📅 Upcoming Guild Events\n\n" + text),
+    )
+    .addSeparatorComponents(new SeparatorBuilder());
+  for (let index = 0; index < buttons.length; index += 5) {
+    container.addActionRowComponents(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons.slice(index, index + 5)),
+    );
+  }
+  return [container];
+}
+
+/** Complete Components V2 payload for the persistent event calendar. */
+export function buildEventCalendarMessage(
+  events: EventView[],
+  guildId: string,
+  threadIds: Readonly<Record<string, string>>,
+) {
+  return {
+    flags: [MessageFlags.IsComponentsV2] as const,
+    components: buildEventCalendarV2Components(events, guildId, threadIds),
+    allowedMentions: { parse: [] as const },
+  };
 }
 
 // ── Event participation buttons ──────────────────────────────────────────────
