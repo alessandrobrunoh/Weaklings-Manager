@@ -1,5 +1,7 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+};
 
 use crate::errors::AppError;
 
@@ -18,7 +20,9 @@ impl TicketService {
         let username = username.trim();
         let thread_id = thread_id.trim();
         if username.is_empty() || thread_id.is_empty() {
-            return Err(AppError::Validation("username and thread_id are required".into()));
+            return Err(AppError::Validation(
+                "username and thread_id are required".into(),
+            ));
         }
         if Entity::find()
             .filter(Column::UserDiscordId.eq(discord_id))
@@ -55,11 +59,7 @@ impl TicketService {
             .map_err(AppError::Database)
     }
 
-    pub async fn close(
-        db: &DatabaseConnection,
-        id: i64,
-        actor: &str,
-    ) -> Result<Model, AppError> {
+    pub async fn close(db: &DatabaseConnection, id: i64, actor: &str) -> Result<Model, AppError> {
         let ticket = Entity::find_by_id(id)
             .one(db)
             .await?

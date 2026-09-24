@@ -1739,8 +1739,8 @@ export const it: TranslationDict = {
     'Canale di testo dove viene pubblicata la card pubblica delle candidature.',
   'admin.applications.category': 'Categoria candidature attive',
   'admin.applications.categoryHint': 'Categoria dei canali privati delle candidature aperte.',
-  'admin.applications.archiveCategory': 'Categoria archivio',
-  'admin.applications.archiveCategoryHint': 'Categoria opzionale per le candidature concluse.',
+  'admin.applications.archiveCategory': 'Canale archivio',
+  'admin.applications.archiveCategoryHint': 'Canale testuale opzionale per i collegamenti ai thread chiusi.',
   'admin.applications.manageRole': 'Ruolo gestore',
   'admin.applications.manageRoleHint':
     'Ruolo Discord autorizzato ad accettare, rifiutare o chiudere le candidature.',

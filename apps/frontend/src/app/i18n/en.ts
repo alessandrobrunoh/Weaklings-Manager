@@ -1941,8 +1941,8 @@ export const en = {
   'admin.applications.panelChannelHint': 'Text channel where the public application card is posted.',
   'admin.applications.category': 'Active application category',
   'admin.applications.categoryHint': 'Category for private channels of open applications.',
-  'admin.applications.archiveCategory': 'Archive category',
-  'admin.applications.archiveCategoryHint': 'Optional category for resolved applications.',
+  'admin.applications.archiveCategory': 'Archive channel',
+  'admin.applications.archiveCategoryHint': 'Optional text channel for links to resolved threads.',
   'admin.applications.manageRole': 'Manager role',
   'admin.applications.manageRoleHint':
     'Discord role allowed to accept, decline, or close applications.',
