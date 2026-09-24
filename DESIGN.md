@@ -1,246 +1,262 @@
-# Discord — Style Reference
-> Game world behind a chat bubble — every section is a self-contained environment with its own lighting and cast of characters.
+# Zed — Style Reference
+> Blueprint workshop, wide open. A near-white gridded page held together by a single deep violet-blue and the calm authority of a humanist serif — every screen feels like a chapter in a well-printed technical manual.
 
-**Theme:** dark
+**Theme:** light
 
-Deep cosmic blue fills every section like a starfield at 2am — not a background choice but a total environment. The hero plunges into a rich indigo-to-navy gradient populated with 3D characters, product screens, and floating mascots, making the UI feel like a game world rather than a marketing page. Blurple (#5865F2) — Discord's owned hue — appears only on primary CTAs, creating a controlled pop against the blue-black atmosphere. Typography does the heavy lifting: ABC Ginto Nord at weight 800 with tight -0.01em tracking slams headlines into all-caps blocks that feel like stamped metal, while body copy at 16px/1.5 stays conversational. The overall effect is a gaming-native space where every section is its own immersive stage, not a content column.
+Source measurements are normalized; roles and recommendations are interpreted. Font summary lists are independent, not paired by position. HTML examples are reconstructions, not source components.
+
+Zed reads as an open-source engineering notebook rendered on faint blueprint paper: a near-white grid canvas, a single deep violet-blue that carries every heading and link, and product chrome that stays almost entirely text and hairline borders. Typography is the personality — a humanist serif (Plex Serif) for headlines at surprisingly light weights (340), a custom Writer sans for UI and body, and a wide-tracked mono (Zed Mono) for labels and shortcuts. Components are sharp-cornered (2px radius), compact (6px gaps), and almost shadowless; structure is implied by 1px inset top-borders and the faint dotted grid beneath everything. The download CTA is the only saturated fill on the page, and surrounding it everything stays quiet, typographic, and editorial — closer to a technical whitepaper than a SaaS landing page.
 
 ## Tokens — Colors
 
 | Name | Value | Token | Role |
 |------|-------|-------|------|
-| Blurple | `#5865f2` | `--color-blurple` | Primary CTA buttons, brand icon, active states — the single chromatic anchor in a near-monochrome blue-black space, creating instant recognition as the only saturated element in the layout |
-| Dark Blurple | `#3442d9` | `--color-dark-blurple` | Hover state for primary buttons, pressed states |
-| Hover Blurple | `#8891f2` | `--color-hover-blurple` | Button hover tint, elevated blurple interactions |
-| Spring Green | `#57f287` | `--color-spring-green` | Online status indicators, success states |
-| Fuchsia | `#eb459` | `--color-fuchsia` | Nitro gradient accents, special event highlights |
-| Vivid Cerulean | `#00b0f4` | `--color-vivid-cerulean` | Voice/video channel indicators, info states |
-| Ember Orange | `#fda220` | `--color-ember-orange` | Quest indicators, achievement highlights |
-| Ekko Red | `#de2761` | `--color-ekko-red` | Destructive actions, critical alerts |
-| Void | `#000000` | `--color-void` | Text on light surfaces, icon fills, overlay backgrounds |
-| Snow | `#ffffff` | `--color-snow` | Primary text on dark backgrounds, button text, nav links, card backgrounds |
-| Not Quite Black | `#23272a` | `--color-not-quite-black` | Secondary button text and borders, dark UI surface color |
-| Dark Charcoal | `#2c2f33` | `--color-dark-charcoal` | App UI chrome surfaces, elevated dark panels |
-| Graphite | `#333333` | `--color-graphite` | Tertiary text on light surfaces, image overlays |
-| Fog | `#babcd9` | `--color-fog` | Subdued headings and body text on dark backgrounds — a lavender-tinted neutral that stays on-brand while reducing contrast |
-| Greyple | `#99aab5` | `--color-greyple` | Disabled states, placeholder text, muted metadata |
-| Dim Grey | `#50555f` | `--color-dim-grey` | Input borders, dividers, secondary icon fills |
-| Off White | `#f6f6f6` | `--color-off-white` | Light section backgrounds, card surfaces in light contexts |
+| Hero Violet | `#1348dc` | `--color-hero-violet` | Headlines, primary text links, brand mark — the single chromatic anchor that carries identity across the page |
+| Signal Blue | `#2b7fff` | `--color-signal-blue` | Blue supporting accent for decorative details and low-frequency emphasis. Do not promote it to the primary CTA color |
+| Sky Tint | `#8ec5ff` | `--color-sky-tint` | Blue supporting accent for decorative details and low-frequency emphasis. Do not promote it to the primary CTA color |
+| Frost | `#bedbff` | `--color-frost` | Hairline blue borders, tag outlines, divider lines that need to read as on-brand rather than neutral |
+| Slate Blue | `#74ade8` | `--color-slate-blue` | Icon strokes, secondary blue text, nav active markers — cool blue for chrome, not headlines |
+| Ice Wash | `#e6effe` | `--color-ice-wash` | Subtle background tints behind selected nav, soft blue drop-shadow tint, hover wash |
+| Deep Cobalt | `#053794` | `--color-deep-cobalt` | Pressed-state inset shadow and the deepest brand blue — appears only as a 2px inset top line on active nav items |
+| Silver Mist | `#e5e7eb` | `--color-silver-mist` | Page canvas, dominant border color, the faint grid lines — the workhorse neutral that holds the system together |
+| Pure White | `#ffffff` | `--color-pure-white` | Card surfaces, editor preview frames, raised content panels sitting on the Silver Mist canvas |
+| Off-White | `#f4f4f2` | `--color-off-white` | Warm white surface variant, image backings, slightly creamier than Pure White |
+| Graphite | `#3a3d43` | `--color-graphite` | Primary body and heading text, logo lockup color |
+| Charcoal | `#464b57` | `--color-charcoal` | Strong body text, button text on light fills, dark UI labels |
+| Slate | `#5d636f` | `--color-slate` | Secondary text, nav labels, supporting copy |
+| Pewter | `#6a7282` | `--color-pewter` | Tertiary text, muted helper copy, disabled labels |
+| Ash | `#878a98` | `--color-ash` | Muted icons, placeholder strokes, very low-emphasis UI |
+| Steel | `#b2b5bb` | `--color-steel` | Muted text, icon outlines, very low-contrast labels |
+| Fog | `#cccfd3` | `--color-fog` | Light borders, input borders at rest, disabled surfaces |
+| Mist | `#dadde2` | `--color-mist` | Hairline dividers between rows, subtle background fills |
+| Onyx | `#282c33` | `--color-onyx` | Dark editor preview surface, code block backgrounds |
+| Midnight | `#2f343e` | `--color-midnight` | Dark surface variant for framed code/editor insets |
 
 ## Tokens — Typography
 
-### ABC Ginto Nord Discord — All display headlines and section headings. Weight 800 is the signature move — combined with all-caps styling and -0.01em tracking, headlines compress into dense rectangular blocks. No other font or weight creates this stamped-label effect. Used at 56–61px for hero, 48px for section leads, 36px for subsections. · `--font-abc-ginto-nord-discord`
-- **Substitute:** Nunito Black, Poppins 800, or Rounded Mplus 1c 800
-- **Weights:** 700, 800
-- **Sizes:** 36px, 48px, 56px, 61px
-- **Line height:** 0.86–1.20
-- **Letter spacing:** -0.01em (approx -0.56px at 56px, -0.61px at 61px)
-- **Role:** All display headlines and section headings. Weight 800 is the signature move — combined with all-caps styling and -0.01em tracking, headlines compress into dense rectangular blocks. No other font or weight creates this stamped-label effect. Used at 56–61px for hero, 48px for section leads, 36px for subsections.
-
-### ABC Ginto Discord — Navigation labels, body copy, button text, UI labels. Letter-spacing at 0.013–0.016em adds subtle openness at small sizes — compensating for the condensed feel of the Nord headline font above. Weight 500 for buttons and nav emphasis, 400 for body and metadata. · `--font-abc-ginto-discord`
-- **Substitute:** Inter, DM Sans, or Nunito 400/500
-- **Weights:** 400, 500
-- **Sizes:** 16px, 20px
-- **Line height:** 1.20–1.50
-- **Letter spacing:** 0.013–0.016em
-- **Role:** Navigation labels, body copy, button text, UI labels. Letter-spacing at 0.013–0.016em adds subtle openness at small sizes — compensating for the condensed feel of the Nord headline font above. Weight 500 for buttons and nav emphasis, 400 for body and metadata.
-
-### GG Sans — Discord's proprietary UI font used inside product UI mock-ups and app interface screenshots embedded in marketing sections. Appears at 16px/1.5 exclusively — mirrors the in-product typeface to keep screenshots authentic. · `--font-gg-sans`
-- **Substitute:** Inter 400
+### Writer — Primary UI and body face — the calm, slightly condensed sans that carries every label, button, nav item, and paragraph. Its negative tracking (-0.4px at 16px) tightens the page into a dense, confident reading rhythm. At 9–11px it functions as micro-copy and tag text; at 14–16px it carries body paragraphs. Substitute: Inter, IBM Plex Sans, or Geist Sans at matching weights. · `--font-writer`
+- **Substitute:** Inter or IBM Plex Sans
 - **Weights:** 400
-- **Sizes:** 16px
-- **Line height:** 1.50
-- **Role:** Discord's proprietary UI font used inside product UI mock-ups and app interface screenshots embedded in marketing sections. Appears at 16px/1.5 exclusively — mirrors the in-product typeface to keep screenshots authentic.
+- **Sizes:** 9px, 10px, 11px, 12px, 13px, 14px, 16px
+- **Line height:** 1.10, 1.33, 1.43, 1.50, 1.71
+- **Letter spacing:** -0.0250em
+- **Role:** Primary UI and body face — the calm, slightly condensed sans that carries every label, button, nav item, and paragraph. Its negative tracking (-0.4px at 16px) tightens the page into a dense, confident reading rhythm. At 9–11px it functions as micro-copy and tag text; at 14–16px it carries body paragraphs. Substitute: Inter, IBM Plex Sans, or Geist Sans at matching weights.
 
-### ABC Ginto Normal — Long-form paragraph body text in feature sections, link lists in footer. Functionally identical metrics to ABC Ginto Discord but a separate optical variant for extended reading. · `--font-abc-ginto-normal`
-- **Substitute:** Inter 400
+### Plex Serif — Headlines and display text. The signature choice is weight 340 for large display ('Love your editor again' at 48px) — an unusually light cut that whispers rather than shouts, paired with tight -0.02em tracking (-0.96px at 48px). This is what makes the page read editorial rather than promotional. Used at 26px for section headlines, 17px for sub-headings, and occasionally for body emphasis. Substitute: IBM Plex Serif or Source Serif Pro. · `--font-plex-serif`
+- **Substitute:** IBM Plex Serif or Source Serif Pro
+- **Weights:** 340, 400
+- **Sizes:** 13px, 14px, 15px, 17px, 26px, 48px
+- **Line height:** 1.10, 1.20, 1.25, 1.43, 1.50
+- **Letter spacing:** -0.0200em
+- **Role:** Headlines and display text. The signature choice is weight 340 for large display ('Love your editor again' at 48px) — an unusually light cut that whispers rather than shouts, paired with tight -0.02em tracking (-0.96px at 48px). This is what makes the page read editorial rather than promotional. Used at 26px for section headlines, 17px for sub-headings, and occasionally for body emphasis. Substitute: IBM Plex Serif or Source Serif Pro.
+
+### Zed Mono — Monospaced face for keyboard shortcuts, command labels, keycaps, and editor chrome labels. Its +0.05em tracking (0.6px at 12px, 1.2px at 24px) deliberately widens letterforms to read as labels rather than code — a stylistic choice that signals 'this is a keybind, not syntax'. At 24px it functions as a large command-prompt display. Substitute: JetBrains Mono or IBM Plex Mono. · `--font-zed-mono`
+- **Substitute:** JetBrains Mono or IBM Plex Mono
 - **Weights:** 400
-- **Sizes:** 16px
-- **Line height:** 1.50
-- **Role:** Long-form paragraph body text in feature sections, link lists in footer. Functionally identical metrics to ABC Ginto Discord but a separate optical variant for extended reading.
+- **Sizes:** 10px, 11px, 12px, 24px
+- **Line height:** 1.33, 1.50, 1.67, 2.00
+- **Letter spacing:** 0.0500em
+- **Role:** Monospaced face for keyboard shortcuts, command labels, keycaps, and editor chrome labels. Its +0.05em tracking (0.6px at 12px, 1.2px at 24px) deliberately widens letterforms to read as labels rather than code — a stylistic choice that signals 'this is a keybind, not syntax'. At 24px it functions as a large command-prompt display. Substitute: JetBrains Mono or IBM Plex Mono.
+
+### ui-monospace — System mono fallback for nav and small chrome where a custom face isn't loaded. Negative tracking (-0.38px at 12px) tightens it for label use rather than code reading. · `--font-ui-monospace`
+- **Weights:** 400, 700
+- **Sizes:** 11px, 12px
+- **Line height:** 1.00, 1.33, 1.43
+- **Letter spacing:** -0.0320em
+- **Role:** System mono fallback for nav and small chrome where a custom face isn't loaded. Negative tracking (-0.38px at 12px) tightens it for label use rather than code reading.
 
 ### Type Scale
 
-| Role | Size | Line Height | Letter Spacing | Token |
-|------|------|-------------|----------------|-------|
-| body | 16px | 1.5 | — | `--text-body` |
-| body-lg | 20px | 1.38 | — | `--text-body-lg` |
-| heading-sm | 36px | 1.2 | -0.36px | `--text-heading-sm` |
-| heading | 48px | 0.93 | -0.48px | `--text-heading` |
-| heading-lg | 56px | 0.86 | -0.56px | `--text-heading-lg` |
-| display | 61px | 0.86 | -0.61px | `--text-display` |
+| Role | Family | Weight | Size | Line Height | Letter Spacing | Token |
+|------|--------|--------|------|-------------|----------------|-------|
+| caption | — | — | 12px | 1.5 | -0.3px | `--text-caption` |
+| body | — | — | 14px | 1.5 | -0.35px | `--text-body` |
+| heading-sm | — | — | 26px | 1.25 | -0.52px | `--text-heading-sm` |
+| heading | — | — | 48px | 1.1 | -0.96px | `--text-heading` |
 
 ## Tokens — Spacing & Shapes
 
-**Base unit:** 4px
-
-**Density:** comfortable
+**Density:** compact
 
 ### Spacing Scale
 
 | Name | Value | Token |
 |------|-------|-------|
 | 4 | 4px | `--spacing-4` |
+| 6 | 6px | `--spacing-6` |
 | 8 | 8px | `--spacing-8` |
+| 10 | 10px | `--spacing-10` |
 | 12 | 12px | `--spacing-12` |
+| 14 | 14px | `--spacing-14` |
 | 16 | 16px | `--spacing-16` |
 | 20 | 20px | `--spacing-20` |
 | 24 | 24px | `--spacing-24` |
-| 28 | 28px | `--spacing-28` |
+| 32 | 32px | `--spacing-32` |
 | 36 | 36px | `--spacing-36` |
 | 40 | 40px | `--spacing-40` |
 | 48 | 48px | `--spacing-48` |
-| 52 | 52px | `--spacing-52` |
-| 56 | 56px | `--spacing-56` |
-| 80 | 80px | `--spacing-80` |
-| 112 | 112px | `--spacing-112` |
-| 136 | 136px | `--spacing-136` |
-| 176 | 176px | `--spacing-176` |
+| 224 | 224px | `--spacing-224` |
 
 ### Border Radius
 
 | Element | Value |
 |---------|-------|
-| cards | 16px |
-| pills | 104px |
-| buttons | 12px |
-| buttonsLarge | 16px |
-| featurePanels | 24px |
+| tags | 2px |
+| cards | 2px |
+| inputs | 2px |
+| buttons | 2px |
+| logoTiles | 2px |
+| editorFrame | 6px |
+
+### Shadows
+
+| Name | Value | Token |
+|------|-------|-------|
+| subtle | `rgba(111, 123, 144, 0.1) 0px -2px 0px 0px inset` | `--shadow-subtle` |
+| subtle-2 | `rgba(111, 123, 144, 0.05) 0px -2px 0px 0px inset` | `--shadow-subtle-2` |
+| subtle-3 | `rgb(5, 55, 148) 0px -2px 0px 0px inset, rgb(230, 239, 254...` | `--shadow-subtle-3` |
+| subtle-4 | `rgba(0, 0, 0, 0.1) 0px 1px 3px 0px, rgba(0, 0, 0, 0.1) 0p...` | `--shadow-subtle-4` |
+| md | `rgba(0, 0, 0, 0.1) 0px 10px 15px -3px, rgba(0, 0, 0, 0.1)...` | `--shadow-md` |
 
 ### Layout
 
 - **Page max-width:** 1200px
-- **Section gap:** 80-120px
-- **Card padding:** 32-48px
-- **Element gap:** 8-16px
+- **Section gap:** 64-80px
+- **Card padding:** 24px
+- **Element gap:** 6px
 
 ## Components
 
-### Primary CTA Button (Blurple Filled)
-**Role:** Main call-to-action, e.g. 'Open Discord in your browser'
+### Top Navigation Bar
+**Role:** Primary site navigation, minimal header
 
-backgroundColor #5865F2, color #FFFFFF, borderRadius 12px, padding 19.5px 24px. No border visible — the blurple fill is self-contained. Hover shifts to #3442D9. The 19.5px vertical padding makes this the tallest button variant on the page — physically dominant in the CTA pair.
+White background, 1px #e5e7eb bottom border, ~60px height. Left: Zed wordmark in Writer at 16px weight 400 #3a3d43. Center: nav links (Product, Resources, Extensions, Docs, Pricing) in Writer 14px #5d636f, 24px horizontal gap. Right: search icon, language switcher, 'Sign up' ghost link, and 'Download' filled blue button (#2b7fff, white text, 2px radius, 8px 14px padding). Active nav item gets a 2px inset Deep Cobalt top-border and Ice Wash background.
 
-### Secondary CTA Button (White Filled)
-**Role:** Download prompt, paired with primary CTA
+### Primary Action Button (Download)
+**Role:** Highest-priority conversion CTA
 
-backgroundColor #FFFFFF, color #23272A, borderRadius 12px, padding 15px 24px. A clean white pill against the dark background — high contrast without blurple. Border is #23272A at 1px. The softer padding (vs primary) visually subordinates it as the secondary choice.
+Filled #2b7fff background, white text in Writer 14px weight 400, 2px radius, 10px 16px padding, 6px gap between label and trailing icon. The vivid blue is the only saturated fill on the entire page; everything else recedes behind it. Sits with a subtle rgba(0,0,0,0.1) 0 1px 3px drop shadow. Trailing download arrow icon in white.
 
-### Ghost Navigation Button (Transparent Outlined)
-**Role:** Nav dropdown triggers and secondary navigation actions
+### Ghost / Outline Button (Clone source)
+**Role:** Secondary action alongside the primary CTA
 
-backgroundColor transparent, color #FFFFFF, border 1px solid #FFFFFF, borderRadius 12px, padding 10px 16px. Used for nav menu items with dropdown arrows. The all-white outline on dark keeps it visible without competing with blurple.
-
-### Log In Button (White Outlined)
-**Role:** Top-right header authentication action
-
-backgroundColor #FFFFFF, color #000000, border 1px solid #000000, borderRadius 16px, padding 10px 16px. Uses a larger 16px radius than other buttons — matches the pill-like header style. Appears on the light/frosted header strip, making the filled white surface legible against the nav background.
-
-### Feature Showcase Card
-**Role:** Full-bleed section content containers holding product screenshots and feature copy
-
-Large rounded containers with 24px+ radius, set against the page's deep blue background. Each card uses its own gradient or solid background (purple-to-magenta for 'Group Chats', green for 'Watch Together') — section identity is expressed through the card background color, not the page background. Content splits 50/50: product screenshot left, text right. Cards span full viewport width on mobile, max ~1100px on desktop.
-
-### 3D Character Float
-**Role:** Decorative mascot and character illustrations scattered at section edges
-
-Not interactive UI — these are 3D-rendered PNG/WebP assets positioned absolutely at section boundaries, overlapping card edges. Sizes range from ~100px to ~300px. They exit and enter sections unpredictably, creating the 'world' atmosphere. No background, no border, no radius — raw edge compositing into the page.
-
-### Product Screen Mock-up
-**Role:** Embedded Discord UI screenshots within feature cards
-
-Screenshots of the actual Discord app rendered inside feature cards with 12-16px radius. They float slightly off-center with a subtle drop shadow. Mobile frames shown as phone outlines. Desktop frames shown as monitor bezels. The mock-ups use the real Discord dark UI (#2C2F33 surface, #23272A sidebar), grounding marketing claims in the actual product.
-
-### Navigation Bar
-**Role:** Global top navigation
-
-Fixed header spanning full viewport width. Background is semi-transparent over the hero image — appears near-white/frosted. Contains Discord wordmark left, text nav links center (16px ABC Ginto, #FFFFFF or #000000 depending on scroll state), and 'Log In' button far right. Dropdown triggers use the ghost outlined button variant. No visible shadow — floats as a flat strip.
+Transparent background, 1px #cccfd3 border, Writer 14px #3a3d43 text, 2px radius, 10px 16px padding, 6px gap to leading GitHub icon. Reads as the quieter sibling of the blue Download button.
 
 ### Hero Section
-**Role:** Full-viewport landing block
+**Role:** First-screen identity statement
 
-Full-bleed dark indigo background (#0E0F2D to near-black gradient implied). Headline in ABC Ginto Nord 800 at 56-61px, color #FFFFFF, all-caps, line-height 0.86, crammed into the left 50% of the viewport. Body copy at 16px ABC Ginto 400, color #FFFFFF, max-width ~380px. CTA pair (white + blurple buttons) sits below body. Right 50% holds the product mock-up composite with 3D characters overlapping both halves.
+Full-width Silver Mist (#e5e7eb) canvas with a faint dotted grid overlay (8px dot spacing). Centered stack: Plex Serif 48px weight 340 #1348dc headline ('Love your editor again') with -0.96px tracking, Writer 16px #5d636f subtext below, then a horizontal row of Primary Action + Ghost Button with 8px gap, then Writer 13px #6a7280 platform line ('Available for macOS, Linux, and Windows'). Vertical rhythm uses 16–24px gaps between elements. No card, no background panel — the grid paper IS the hero.
 
-### Footer Navigation
-**Role:** Site-wide footer link groups
+### Three-Column Feature Block
+**Role:** Value proposition summary (Fast, Intelligent, Collaborative)
 
-Dark background (#23272A or #000000). Multi-column link grid with group headings in 16px ABC Ginto 500 + positive letter-spacing. Link text at 16px/1.5 weight 400, color #BABCD9 (Fog) on dark. Discord wordmark and social icons top-left. No dividers — columns separated by gap only.
+Three equal-width columns on the Silver Mist canvas, 32px column gap. Each column: Plex Serif 17px weight 400 #1348dc label as a section title, Writer 14px #5d636f description paragraph below at 1.5 line-height. No cards, no borders, no icons — pure typographic separation. ~80px vertical padding above and below.
+
+### Editor Preview Card
+**Role:** Product showcase — the editor itself in context
+
+The hero's main visual artifact. Dark surface #282c33 filling the full card, 6px corner radius, soft 10px 15px -3px black/0.1 drop shadow that lifts it off the canvas. Inside: a faux macOS title bar (traffic lights), tab strip with file names in Zed Mono 12px, a file tree on the left (Gruvbox-tinted backgrounds in the mockup), and the main code pane with syntax highlighting using the full editor color palette (green #a1c181 for strings, red #d07277 for keywords, yellow #dec184 for types, teal #6eb4bf for functions, violet #b477cf for variables, orange #bf956a for constants). The card sits centered at ~1200px wide.
+
+### Logo Wall
+**Role:** Social proof — trusted-by strip
+
+Centered Plex Serif 26px weight 340 #1348dc heading ('Trusted by world-class developers & industry leading teams'), then a single horizontal row of grayscale company logos (Atlassian, Apple, Anthropic, Vercel, AWS, Baseten) at uniform ~80px height, evenly spaced. Logos are dark gray #3a3d43 to #5d636f, no color. ~48px vertical padding around the row.
+
+### Testimonial Card
+**Role:** Quoted endorsement from a named developer
+
+White (#ffffff) surface on the Silver Mist canvas, 2px radius, 1px #e5e7eb border, 24px padding. Quote text in Plex Serif 15px weight 400 #3a3d43 at 1.5 line-height, set in italic-feeling rhythm. Bottom row: small avatar (32px circle, 2px radius), name in Writer 13px weight 400 #3a3d43, role/company in Writer 12px #6a7282. Featured testimonial (Anthropic) uses a slightly larger card with the same structure.
+
+### Open Source Stats Block
+**Role:** Community credibility numbers
+
+Centered Plex Serif 26px #1348dc heading ('Open Source'), Writer 16px #5d636f subtext, then a four-column row of stats. Each stat: Plex Serif 26px weight 340 #1348dc number on top (7,784 / 78,821 / 1,766 / 1,020), Writer 13px #6a7282 label below. Numbers use the same display-weight serif as headlines to keep the typographic language consistent. Above and below the numbers, rows of tiny contributor avatar circles (24px, 2px radius) form a visual fence.
+
+### Two-Column Feature Section (AI / Agentic Editing)
+**Role:** Explanatory section pairing text with a product visual
+
+Full-width Silver Mist band, 1200px centered content. Left column (~40%): Plex Serif 26px #1348dc section heading, Writer 16px #5d636f description, Writer 14px #1348dc 'Learn More →' link. Right column (~60%): a dark editor screenshot card (#282c33, 6px radius) showing a split-pane code review interface. Section gap ~80px above and below, creating a distinct band in the page rhythm.
+
+### Keybind / Shortcut Label
+**Role:** Monospaced keyboard hint used in editor chrome and feature callouts
+
+Zed Mono 12px #3a3d43 text, +0.6px letter-spacing (0.05em), inside a 1px #cccfd3 bordered chip, 2px radius, 4px 8px padding. Sometimes sits on a #f4f4f2 background to read as a keycap. The wide tracking is what distinguishes it from inline code — it reads as a label, not as syntax.
+
+### Footer
+**Role:** Site footer with secondary links and brand mark
+
+Silver Mist canvas continuing from the page, 1px #e5e7eb top border, 48px vertical padding. Writer 13px #6a7282 link list in 3–4 columns, Zed wordmark in Writer 14px #3a3d43 at the bottom-left. No background fill change — the footer is implied by a single horizontal rule, not a panel.
 
 ## Do's and Don'ts
 
 ### Do
-- Use ABC Ginto Nord 800 in all-caps for all section headlines; letter-spacing must be -0.01em to maintain the compressed rectangular silhouette.
-- Keep #5865F2 (Blurple) exclusively on primary CTA buttons and interactive focus states — it is the only saturated color with a guaranteed role on every page.
-- Set feature section cards with their own gradient or solid background color (purple-magenta, green, etc.) to differentiate sections, since the global page background never changes.
-- Pair the blurple CTA button with a white filled secondary button using padding 15px 24px and radius 12px — never use blurple for both primary and secondary in the same CTA cluster.
-- Position 3D characters and mascot assets at card edges, overlapping between sections — the overlap is what creates the immersive environment, not isolated placement.
-- Apply 12px border-radius to standard buttons and 16px to the Log In/header button to maintain the subtle size hierarchy between interaction contexts.
-- Use the Fog color (#BABCD9) for body text in dark sections where full white (#FFFFFF) would overpower headlines — reserve pure white for headlines and critical UI labels.
+- Set headlines in Plex Serif weight 340 at 48px with -0.96px tracking — the whisper-weight serif is the signature.
+- Use Signal Blue (#2b7fff) fill for the primary Download action; it must be the only saturated fill on the screen.
+- Build all cards, buttons, tags, and inputs with a 2px corner radius — sharp corners are part of the editorial feel.
+- Use 6px gaps as the default element spacing and 64–80px as section gaps to keep the page compact and dense.
+- Pair every action button with a ghost/outline variant sitting 8px to the right — never a single-button row.
+- Express structure with 1px #e5e7eb borders and 2px inset top-lines, not with drop shadows.
+- Use Zed Mono 12px with +0.6px tracking (0.05em) for keybind chips and command labels — the wide tracking distinguishes them from inline code.
 
 ### Don't
-- Never use a white or light-gray page background — the deep blue-black environment is non-negotiable for the brand atmosphere; even light-themed sections should be contained within cards.
-- Never apply ABC Ginto Nord headlines at mixed-case — the all-caps + tight tracking combination is inseparable from the visual identity.
-- Never place Blurple as a background color on large areas (sections, cards) — at scale it overwhelms the controlled accent role and collapses contrast with Blurple text.
-- Never use gradient text on headlines — the weight and mass of the black-filled letterforms is the visual statement; gradients would undermine the stamped-metal quality.
-- Never add drop shadows to feature cards — section identity comes from contrasting card backgrounds, not elevation shadow depth.
-- Never reduce button border-radius below 12px — anything sharper breaks the rounded-corner system that softens the otherwise heavy typographic tone.
-- Never use Greyple (#99AAB5) or Dim Grey (#50555F) as primary text colors — they are reserved for disabled, muted, and placeholder states only.
+- Don't use Plex Serif above weight 400 for headlines — the lightness at 340 is the whole point.
+- Don't introduce a second saturated color for buttons, tags, or accents — Hero Violet and Signal Blue are the only chromatic UI colors.
+- Don't apply drop shadows to cards, nav, or text blocks — the only shadow that belongs is under the editor preview card.
+- Don't round corners beyond 6px; 32px or 40px radii on any control breaks the editorial system.
+- Don't use blue or violet for body text — those hues are reserved for headlines, links, and the CTA. Body text is Graphite or Slate.
+- Don't set body text larger than 16px or smaller than 13px in Writer — outside that range the page loses its typographic discipline.
+- Don't add decorative gradients, glassmorphism, or background images to sections — the dotted-grid canvas is the only texture allowed.
 
 ## Surfaces
 
 | Level | Name | Value | Purpose |
 |-------|------|-------|---------|
-| 0 | Cosmic Page | `#0e0f2d` | Global page background — deep indigo-navy environment that all sections sit within |
-| 1 | App Chrome | `#23272a` | Product UI sidebar and panel backgrounds shown in mock-ups |
-| 2 | App Surface | `#2c2f33` | Main content area inside product screenshots |
-| 3 | Feature Card | `#5865f2` | Feature section card backgrounds — each card uses its own themed gradient/solid (not always blurple), but this represents the brand-colored variant |
+| 0 | Canvas | `#e5e7eb` | Page background with faint dotted grid overlay |
+| 1 | Card | `#ffffff` | White content cards, testimonial panels, feature blocks |
+| 2 | Warm Surface | `#f4f4f2` | Cream-tinted surfaces for image holders and alternating bands |
+| 3 | Blue Wash | `#e6effe` | Selected nav background, soft blue tinted zones |
+| 4 | Dark Frame | `#282c33` | Editor screenshot and dark code insets |
 
 ## Elevation
 
-Discord marketing pages use no traditional box-shadow elevation. Depth is created entirely through color contrast between section backgrounds and floating card surfaces. 3D rendered characters establish z-depth through artistic perspective and overlap, not CSS shadows. The only elevation cue is scale — larger elements read as closer.
+- **Active nav item:** `rgb(5, 55, 148) 0px -2px 0px 0px inset, rgb(230, 239, 254) 0px 1px 3px 0px`
+- **Subtle separator / button top-edge:** `rgba(111, 123, 144, 0.1) 0px -2px 0px 0px inset`
+- **Light divider:** `rgba(111, 123, 144, 0.05) 0px -2px 0px 0px inset`
+- **Raised button:** `rgba(0, 0, 0, 0.1) 0px 1px 3px 0px, rgba(0, 0, 0, 0.1) 0px 1px 2px -1px`
+- **Editor screenshot card:** `rgba(0, 0, 0, 0.1) 0px 10px 15px -3px, rgba(0, 0, 0, 0.1) 0px 4px 6px -4px`
 
 ## Imagery
 
-Entirely 3D illustration and product screenshots — no photography. Characters are rendered in a cartoon-realistic 3D style with soft subsurface lighting, purple-blue-tinted shadows, and saturated clothing colors (orange, lavender, pink hoodie). They're posed mid-gesture and placed off-axis against the page, creating dynamism without a static layout grid. Product screenshots are composited into device frames (monitor bezel, phone outline) rendered in the same 3D style, making the 'product demo' feel like part of the illustration world rather than a flat screen-grab. Feature cards use full-bleed gradient backgrounds (purple-to-magenta, deep green) as the canvas for these screenshot composites — the gradient IS the scene lighting. Floating 3D props (a peach, a crystal, a robot mascot in lime green) appear at section boundaries as scene accessories. Zero photography — the visual world is entirely constructed, reinforcing that Discord is a space you build rather than a place that exists.
+Imagery is dominated by one element: the dark editor screenshot. It appears full-bleed within a 1200px frame, presented as a high-fidelity product capture with the macOS chrome, tabs, file tree, and syntax-highlighted code. The code uses a Gruvbox-inspired palette of warm muted hues (green, red, yellow, teal, violet, orange) on a near-black surface — a deliberate visual contrast to the otherwise light page. Beyond the editor, the only other imagery is a row of grayscale company logos for social proof and small circular contributor avatars. No lifestyle photography, no abstract graphics, no illustrations. The grid-patterned page background functions as the primary visual texture.
 
 ## Layout
 
-Full-bleed at the page level with no explicit max-width container visible — the deep blue background extends edge-to-edge. Hero is a split composition: text block flush-left with 3D product composite filling the right half, both contained within viewport height. Feature sections below the hero use large-radius cards (~24px) that span 80-90% of the viewport width, each card being a self-contained stage. Within cards, layout is 50/50 split — product screenshot left, headline + body right (or reversed). No alternating light/dark band rhythm — all sections share the same dark background; differentiation comes from card background colors. Navigation is a fixed-top full-width bar with centered link groups. Footer uses a 4-5 column link grid. The page is extremely long (7300px+), with generous inter-section gaps of 80-120px giving each feature room to breathe.
+The page model is centered, max-width 1200px content within a full-width Silver Mist canvas. The canvas carries a faint dotted grid overlay (8px spacing) that reads as blueprint paper and persists across every section — there are no alternating colored bands, only a continuous textured background. The hero is a centered typographic stack: Plex Serif display headline, Writer subtext, two side-by-side buttons, platform line. Sections below follow a rhythm of centered headlines over content blocks: a 3-column feature row, a wide editor preview card, a centered logo wall, a 3-column testimonial row, a 4-column stats block, and a 2-column text+visual section. The navigation is a thin top bar with center-aligned nav links and right-aligned actions. Vertical rhythm uses 64–80px between major sections and 6–16px within content. The only true full-bleed moment is the Silver Mist canvas itself; content always sits within the 1200px column.
 
 ## Agent Prompt Guide
 
-**Quick Color Reference**
-- Page background: #0E0F2D (deep indigo)
-- Primary headline text: #FFFFFF
-- Body text on dark: #BABCD9 (Fog)
-- Primary CTA: #5865F2 (Blurple), white text
-- Secondary CTA: #FFFFFF background, #23272A text
-- Nav links: #FFFFFF
-- Border / UI outlines: #FFFFFF (on dark) or #23272A (on light)
+Quick Color Reference:
+- Text (primary): #3a3d43 (Graphite)
+- Text (secondary): #5d636f (Slate)
+- Background (canvas): #e5e7eb (Silver Mist)
+- Background (card): #ffffff (Pure White)
+- Border (hairline): #e5e7eb (Silver Mist)
+- Accent / Headline: #1348dc (Hero Violet)
+- primary action: no distinct CTA color
 
-**Example Component Prompts**
-
-1. **Hero Section**: Full-bleed background #0E0F2D. Left 50%: headline 'GROUP CHAT THAT'S ALL FUN & GAMES' in ABC Ginto Nord 800, 56px, #FFFFFF, all-caps, letter-spacing -0.56px, line-height 0.86. Subtext 16px ABC Ginto 400, #FFFFFF, max-width 380px, line-height 1.5. Below: two buttons — white filled (#FFFFFF bg, #23272A text, 12px radius, 15px 24px padding) + blurple filled (#5865F2 bg, #FFFFFF text, 12px radius, 19.5px 24px padding), gap 16px. Right 50%: product screen composite with 3D character overlaps.
-
-2. **Feature Section Card** (purple variant): Card background linear-gradient from #8B31A0 to #E040A0, border-radius 24px, width 90vw centered, padding 48px. Left: Discord app screenshot in phone/desktop frame. Right: headline 'MAKE YOUR GROUP CHATS MORE FUN' in ABC Ginto Nord 800, 48px, #FFFFFF, all-caps, letter-spacing -0.48px. Body text 16px ABC Ginto 400, #FFFFFF, line-height 1.5, max-width 360px.
-
-3. **Navigation Bar**: Full-width fixed bar, semi-transparent background. Left: Discord logo + wordmark. Center: text links in ABC Ginto 400 16px, #FFFFFF, gap 4-8px. Dropdown triggers as ghost buttons (transparent bg, #FFFFFF border 1px, 12px radius, 10px 16px padding). Far right: 'Log In' button (#FFFFFF bg, #000000 text, 16px radius, 10px 16px padding).
-
-4. **Primary CTA Button**: backgroundColor #5865F2, color #FFFFFF, border none, borderRadius 12px, padding 19.5px 24px, font ABC Ginto 500 16px, letter-spacing 0.016em. Hover state: backgroundColor #3442D9.
-
-5. **Footer Link Column**: Dark background #23272A. Column heading: ABC Ginto 500, 16px, #FFFFFF, letter-spacing 0.013em. Links: ABC Ginto 400, 16px, #BABCD9, line-height 1.5, gap 8px between items. 4-5 columns in a row, gap 32px between columns.
-
-## Brand Color System
-
-Discord's color palette is a deliberate two-tier system: a near-monochromatic dark environment (indigo-black page, white text, charcoal UI) plus a single owned hue — Blurple (#5865F2). Every other color (Spring Green for online, Fuchsia for Nitro, Cerulean for voice) appears only in contextual UI states or seasonal campaigns. This means new page designs should default to white text on dark backgrounds with Blurple as the ONLY chromatic element in the layout chrome. The extended palette (Fuchsia, Yellow, Orange, Green) is available for in-product UI mock-ups, illustration coloring, and special campaign moments — not for general page components.
+Example Component Prompts:
+No distinct primary action color was observed; use the extracted neutral button treatments instead of inventing a filled CTA color.
+2. Editor preview card: Dark surface #282c33, 6px corner radius, soft shadow rgba(0,0,0,0.1) 0 10px 15px -3px. Inside: a 28px macOS title bar with red/yellow/green traffic lights, then a tab strip in Zed Mono 12px with +0.6px tracking showing file names. Main pane shows code in Zed Mono 12px with syntax colors — strings #a1c181, keywords #d07277, types #dec184, functions #6eb4bf, variables #b477cf, constants #bf956a — on the #282c33 background.
+3. Three-column feature block: Three equal columns on the Silver Mist canvas with 32px column gap. Each column starts with a Plex Serif 17px weight 400 #1348dc label, followed by Writer 14px weight 400 #5d636f body text at line-height 1.50. No borders, no cards, no icons — pure typographic separation with 80px vertical padding above and below.
+4. Testimonial card: White (#ffffff) surface, 2px radius, 1px #e5e7eb border, 24px padding. Quote in Plex Serif 15px weight 400 #3a3d43, italic-feel rhythm, line-height 1.50. Bottom row: 32px circular avatar, Writer 13px #3a3d43 name, Writer 12px #6a7282 role. Sits on the Silver Mist canvas as the only white object in a 3-column grid.
+5. Keybind chip: Zed Mono 12px weight 400 #3a3d43 text, letter-spacing 0.6px (0.05em), 1px #cccfd3 border, #f4f4f2 background, 2px radius, 4px 8px padding. Used inline next to feature descriptions to signal keyboard shortcuts — the wide tracking is what makes it read as a label rather than code.
 
 ## Similar Brands
 
-- **Roblox** — Same all-caps heavy display type + 3D character mascots as primary visual storytelling, placed loosely against colored environments
-- **Twitch** — Deep purple-dominant dark theme with a single vivid brand accent color reserved for CTAs, gaming-community audience
-- **Epic Games Store** — Full-bleed dark environments, product screenshot composites inside illustrated frames, large-type section headers in white on near-black
-- **Spotify (gaming campaigns)** — Saturated gradient card backgrounds as section differentiators within an otherwise monochromatic dark page structure
-- **Supercell** — 3D cartoon characters with subsurface-lit rendering, posed dynamically at section edges, overlapping layout containers
+- **Linear** — Same single-accent-blue-on-near-white approach with sharp corners, typographic density, and a signature product screenshot as the visual centerpiece.
+- **Vercel** — Minimal light landing pages anchored by a serif-or-geometric display headline, a single saturated CTA color, and full-bleed product chrome over a near-white canvas.
+- **Tailscale** — Developer-tool sites that lean on compact typographic systems, hairline borders, and 2px-radius components instead of cards and elevation.
+- **Resend** — Light-canvas dev marketing with one chromatic brand blue used sparingly, a dark code/editor inset as the hero visual, and tight editorial spacing.
 
 ## Quick Start
 
@@ -249,97 +265,101 @@ Discord's color palette is a deliberate two-tier system: a near-monochromatic da
 ```css
 :root {
   /* Colors */
-  --color-blurple: #5865f2;
-  --color-dark-blurple: #3442d9;
-  --color-hover-blurple: #8891f2;
-  --color-spring-green: #57f287;
-  --color-fuchsia: #eb459;
-  --color-vivid-cerulean: #00b0f4;
-  --color-ember-orange: #fda220;
-  --color-ekko-red: #de2761;
-  --color-void: #000000;
-  --color-snow: #ffffff;
-  --color-not-quite-black: #23272a;
-  --color-dark-charcoal: #2c2f33;
-  --color-graphite: #333333;
-  --color-fog: #babcd9;
-  --color-greyple: #99aab5;
-  --color-dim-grey: #50555f;
-  --color-off-white: #f6f6f6;
+  --color-hero-violet: #1348dc;
+  --color-signal-blue: #2b7fff;
+  --color-sky-tint: #8ec5ff;
+  --color-frost: #bedbff;
+  --color-slate-blue: #74ade8;
+  --color-ice-wash: #e6effe;
+  --color-deep-cobalt: #053794;
+  --color-silver-mist: #e5e7eb;
+  --color-pure-white: #ffffff;
+  --color-off-white: #f4f4f2;
+  --color-graphite: #3a3d43;
+  --color-charcoal: #464b57;
+  --color-slate: #5d636f;
+  --color-pewter: #6a7282;
+  --color-ash: #878a98;
+  --color-steel: #b2b5bb;
+  --color-fog: #cccfd3;
+  --color-mist: #dadde2;
+  --color-onyx: #282c33;
+  --color-midnight: #2f343e;
 
   /* Typography — Font Families */
-  --font-abc-ginto-nord-discord: 'ABC Ginto Nord Discord', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-abc-ginto-discord: 'ABC Ginto Discord', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-gg-sans: 'GG Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-abc-ginto-normal: 'ABC Ginto Normal', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-writer: 'Writer', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-plex-serif: 'Plex Serif', ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-zed-mono: 'Zed Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-ui-monospace: 'ui-monospace', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* Typography — Scale */
-  --text-body: 16px;
+  --text-caption: 12px;
+  --leading-caption: 1.5;
+  --tracking-caption: -0.3px;
+  --text-body: 14px;
   --leading-body: 1.5;
-  --text-body-lg: 20px;
-  --leading-body-lg: 1.38;
-  --text-heading-sm: 36px;
-  --leading-heading-sm: 1.2;
-  --tracking-heading-sm: -0.36px;
+  --tracking-body: -0.35px;
+  --text-heading-sm: 26px;
+  --leading-heading-sm: 1.25;
+  --tracking-heading-sm: -0.52px;
   --text-heading: 48px;
-  --leading-heading: 0.93;
-  --tracking-heading: -0.48px;
-  --text-heading-lg: 56px;
-  --leading-heading-lg: 0.86;
-  --tracking-heading-lg: -0.56px;
-  --text-display: 61px;
-  --leading-display: 0.86;
-  --tracking-display: -0.61px;
+  --leading-heading: 1.1;
+  --tracking-heading: -0.96px;
 
   /* Typography — Weights */
+  --font-weight-w340: 340;
   --font-weight-regular: 400;
-  --font-weight-medium: 500;
   --font-weight-bold: 700;
-  --font-weight-extrabold: 800;
 
   /* Spacing */
-  --spacing-unit: 4px;
   --spacing-4: 4px;
+  --spacing-6: 6px;
   --spacing-8: 8px;
+  --spacing-10: 10px;
   --spacing-12: 12px;
+  --spacing-14: 14px;
   --spacing-16: 16px;
   --spacing-20: 20px;
   --spacing-24: 24px;
-  --spacing-28: 28px;
+  --spacing-32: 32px;
   --spacing-36: 36px;
   --spacing-40: 40px;
   --spacing-48: 48px;
-  --spacing-52: 52px;
-  --spacing-56: 56px;
-  --spacing-80: 80px;
-  --spacing-112: 112px;
-  --spacing-136: 136px;
-  --spacing-176: 176px;
+  --spacing-224: 224px;
 
   /* Layout */
   --page-max-width: 1200px;
-  --section-gap: 80-120px;
-  --card-padding: 32-48px;
-  --element-gap: 8-16px;
+  --section-gap: 64-80px;
+  --card-padding: 24px;
+  --element-gap: 6px;
 
   /* Border Radius */
-  --radius-xl: 12px;
-  --radius-2xl: 16px;
-  --radius-full: 104px;
-  --radius-full-2: 120px;
+  --radius-sm: 2px;
+  --radius-md: 6px;
+  --radius-3xl: 32px;
+  --radius-3xl-2: 40px;
 
   /* Named Radii */
-  --radius-cards: 16px;
-  --radius-pills: 104px;
-  --radius-buttons: 12px;
-  --radius-buttonslarge: 16px;
-  --radius-featurepanels: 24px;
+  --radius-tags: 2px;
+  --radius-cards: 2px;
+  --radius-inputs: 2px;
+  --radius-buttons: 2px;
+  --radius-logotiles: 2px;
+  --radius-editorframe: 6px;
+
+  /* Shadows */
+  --shadow-subtle: rgba(111, 123, 144, 0.1) 0px -2px 0px 0px inset;
+  --shadow-subtle-2: rgba(111, 123, 144, 0.05) 0px -2px 0px 0px inset;
+  --shadow-subtle-3: rgb(5, 55, 148) 0px -2px 0px 0px inset, rgb(230, 239, 254) 0px 1px 3px 0px;
+  --shadow-subtle-4: rgba(0, 0, 0, 0.1) 0px 1px 3px 0px, rgba(0, 0, 0, 0.1) 0px 1px 2px -1px;
+  --shadow-md: rgba(0, 0, 0, 0.1) 0px 10px 15px -3px, rgba(0, 0, 0, 0.1) 0px 4px 6px -4px;
 
   /* Surfaces */
-  --surface-cosmic-page: #0e0f2d;
-  --surface-app-chrome: #23272a;
-  --surface-app-surface: #2c2f33;
-  --surface-feature-card: #5865f2;
+  --surface-canvas: #e5e7eb;
+  --surface-card: #ffffff;
+  --surface-warm-surface: #f4f4f2;
+  --surface-blue-wash: #e6effe;
+  --surface-dark-frame: #282c33;
 }
 ```
 
@@ -348,70 +368,74 @@ Discord's color palette is a deliberate two-tier system: a near-monochromatic da
 ```css
 @theme {
   /* Colors */
-  --color-blurple: #5865f2;
-  --color-dark-blurple: #3442d9;
-  --color-hover-blurple: #8891f2;
-  --color-spring-green: #57f287;
-  --color-fuchsia: #eb459;
-  --color-vivid-cerulean: #00b0f4;
-  --color-ember-orange: #fda220;
-  --color-ekko-red: #de2761;
-  --color-void: #000000;
-  --color-snow: #ffffff;
-  --color-not-quite-black: #23272a;
-  --color-dark-charcoal: #2c2f33;
-  --color-graphite: #333333;
-  --color-fog: #babcd9;
-  --color-greyple: #99aab5;
-  --color-dim-grey: #50555f;
-  --color-off-white: #f6f6f6;
+  --color-hero-violet: #1348dc;
+  --color-signal-blue: #2b7fff;
+  --color-sky-tint: #8ec5ff;
+  --color-frost: #bedbff;
+  --color-slate-blue: #74ade8;
+  --color-ice-wash: #e6effe;
+  --color-deep-cobalt: #053794;
+  --color-silver-mist: #e5e7eb;
+  --color-pure-white: #ffffff;
+  --color-off-white: #f4f4f2;
+  --color-graphite: #3a3d43;
+  --color-charcoal: #464b57;
+  --color-slate: #5d636f;
+  --color-pewter: #6a7282;
+  --color-ash: #878a98;
+  --color-steel: #b2b5bb;
+  --color-fog: #cccfd3;
+  --color-mist: #dadde2;
+  --color-onyx: #282c33;
+  --color-midnight: #2f343e;
 
   /* Typography */
-  --font-abc-ginto-nord-discord: 'ABC Ginto Nord Discord', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-abc-ginto-discord: 'ABC Ginto Discord', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-gg-sans: 'GG Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-abc-ginto-normal: 'ABC Ginto Normal', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-writer: 'Writer', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-plex-serif: 'Plex Serif', ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-zed-mono: 'Zed Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-ui-monospace: 'ui-monospace', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* Typography — Scale */
-  --text-body: 16px;
+  --text-caption: 12px;
+  --leading-caption: 1.5;
+  --tracking-caption: -0.3px;
+  --text-body: 14px;
   --leading-body: 1.5;
-  --text-body-lg: 20px;
-  --leading-body-lg: 1.38;
-  --text-heading-sm: 36px;
-  --leading-heading-sm: 1.2;
-  --tracking-heading-sm: -0.36px;
+  --tracking-body: -0.35px;
+  --text-heading-sm: 26px;
+  --leading-heading-sm: 1.25;
+  --tracking-heading-sm: -0.52px;
   --text-heading: 48px;
-  --leading-heading: 0.93;
-  --tracking-heading: -0.48px;
-  --text-heading-lg: 56px;
-  --leading-heading-lg: 0.86;
-  --tracking-heading-lg: -0.56px;
-  --text-display: 61px;
-  --leading-display: 0.86;
-  --tracking-display: -0.61px;
+  --leading-heading: 1.1;
+  --tracking-heading: -0.96px;
 
   /* Spacing */
   --spacing-4: 4px;
+  --spacing-6: 6px;
   --spacing-8: 8px;
+  --spacing-10: 10px;
   --spacing-12: 12px;
+  --spacing-14: 14px;
   --spacing-16: 16px;
   --spacing-20: 20px;
   --spacing-24: 24px;
-  --spacing-28: 28px;
+  --spacing-32: 32px;
   --spacing-36: 36px;
   --spacing-40: 40px;
   --spacing-48: 48px;
-  --spacing-52: 52px;
-  --spacing-56: 56px;
-  --spacing-80: 80px;
-  --spacing-112: 112px;
-  --spacing-136: 136px;
-  --spacing-176: 176px;
+  --spacing-224: 224px;
 
   /* Border Radius */
-  --radius-xl: 12px;
-  --radius-2xl: 16px;
-  --radius-full: 104px;
-  --radius-full-2: 120px;
+  --radius-sm: 2px;
+  --radius-md: 6px;
+  --radius-3xl: 32px;
+  --radius-3xl-2: 40px;
+
+  /* Shadows */
+  --shadow-subtle: rgba(111, 123, 144, 0.1) 0px -2px 0px 0px inset;
+  --shadow-subtle-2: rgba(111, 123, 144, 0.05) 0px -2px 0px 0px inset;
+  --shadow-subtle-3: rgb(5, 55, 148) 0px -2px 0px 0px inset, rgb(230, 239, 254) 0px 1px 3px 0px;
+  --shadow-subtle-4: rgba(0, 0, 0, 0.1) 0px 1px 3px 0px, rgba(0, 0, 0, 0.1) 0px 1px 2px -1px;
+  --shadow-md: rgba(0, 0, 0, 0.1) 0px 10px 15px -3px, rgba(0, 0, 0, 0.1) 0px 4px 6px -4px;
 }
 ```
