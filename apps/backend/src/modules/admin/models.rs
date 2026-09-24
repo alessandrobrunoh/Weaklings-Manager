@@ -448,6 +448,12 @@ pub struct UpdateGuildSettingsRequest {
     pub discord_applications_status_closed_message: Option<String>,
     /// New panel message ID; empty clears it.
     pub discord_applications_panel_message_id: Option<String>,
+    /// Archive channel for both application and support threads; empty clears it.
+    pub discord_tickets_archive_channel_id: Option<String>,
+    pub discord_tickets_welcome_title: Option<String>,
+    pub discord_tickets_welcome_message: Option<String>,
+    pub discord_tickets_closed_title: Option<String>,
+    pub discord_tickets_closed_message: Option<String>,
     /// New default split fee percentage. Must be between 0 and 100.
     #[schema(value_type = Option<String>, example = "20.00")]
     pub default_split_fee: Option<rust_decimal::Decimal>,
