@@ -28,8 +28,7 @@ import {
 } from "../embeds/giveaway.embed.js";
 import { buildBattleEmbed } from "../embeds/battle.embed.js";
 import {
-  buildApplicationPanelComponents,
-  buildApplicationPanelEmbed,
+  buildApplicationPanelMessage,
   buildApplicationStatusAnnouncement,
 } from "../embeds/application.embed.js";
 import { GUILD_NAME } from "../embeds/theme.js";
@@ -431,9 +430,12 @@ export class Poller {
       const channel = await this.client.channels.fetch(channelId);
       if (!channel?.isTextBased() || channel.isDMBased() || !('messages' in channel)) return;
       const message = await channel.messages.fetch(messageId);
+      // Clearing embeds is required when converting a legacy panel to
+      // Components V2; Discord rejects an edit that leaves the old embed in
+      // place while setting IS_COMPONENTS_V2.
       await message.edit({
-        embeds: [buildApplicationPanelEmbed(settings)],
-        components: buildApplicationPanelComponents(settings),
+        ...buildApplicationPanelMessage(settings),
+        embeds: [],
       });
     } catch (error) {
       console.warn('[Poller] Could not update application panel:', error);

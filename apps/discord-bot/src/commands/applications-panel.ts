@@ -4,7 +4,7 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 import type { ApiClient } from '../api/client.js';
-import { buildApplicationPanelComponents, buildApplicationPanelEmbed } from '../embeds/application.embed.js';
+import { buildApplicationPanelMessage } from '../embeds/application.embed.js';
 import { createResponseEmbed } from '../embeds/theme.js';
 import { getSettingsService } from '../services/settings.js';
 import type { GuildSettingsView } from '../api/types.js';
@@ -30,10 +30,7 @@ export async function execute(
     throw new Error('Il canale delle application non è un canale testuale del server.');
   }
 
-  const panel = await channel.send({
-    embeds: [buildApplicationPanelEmbed(settings)],
-    components: buildApplicationPanelComponents(settings),
-  });
+  const panel = await channel.send(buildApplicationPanelMessage(settings));
   await api.put('api/admin/settings', { discord_applications_panel_message_id: panel.id });
   await interaction.editReply({
     embeds: [createResponseEmbed('success', 'Application panel', 'La card delle application è stata pubblicata.', 'APPLICATIONS')],
