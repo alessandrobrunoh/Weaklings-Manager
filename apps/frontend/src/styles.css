@@ -1747,3 +1747,20 @@ html.dark {
   --color-primary-container: color-mix(in oklab, var(--color-primary) 20%, transparent);
   --color-primary-subtle: color-mix(in oklab, var(--color-primary) 12%, transparent);
 }
+
+/* Final geometry guard for legacy utility classes. Feature templates can keep
+   their semantic class names, but no page should reintroduce the old rounded
+   dashboard/card treatment after the Zed workbench tokens are applied. Full
+   pills remain available for statuses and avatars via `rounded-full`. */
+.rounded-lg,
+.rounded-xl,
+.rounded-2xl,
+.rounded-3xl {
+  border-radius: var(--radius-cards, 2px) !important;
+}
+
+.shadow-lg,
+.shadow-xl,
+.shadow-2xl {
+  box-shadow: none !important;
+}
