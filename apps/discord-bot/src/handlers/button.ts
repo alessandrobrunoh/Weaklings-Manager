@@ -147,6 +147,13 @@ async function handleTicketButton(
   if (!parent || parent.type !== ChannelType.GuildText) {
     throw new Error('Il canale dei ticket deve essere un canale testuale, non una categoria o un thread.');
   }
+  const active = await api.get<TicketView | null>('api/tickets/active', interaction.user.id);
+  if (active) {
+    await interaction.editReply({
+      embeds: [createResponseEmbed('info', 'Ticket già aperto', `Hai già un ticket aperto: <#${active.thread_id}>.`, 'SUPPORT')],
+    });
+    return;
+  }
   const thread = await createPrivateTicketThread(
     parent,
     ticketThreadName(interaction.user.username, interaction.user.id),
@@ -155,14 +162,6 @@ async function handleTicketButton(
     settings.discord_applications_manage_role_id ?? null,
     `Support ticket opened by ${interaction.user.tag}`,
   );
-  const active = await api.get<TicketView | null>('api/tickets/active', interaction.user.id);
-  if (active) {
-    await thread.delete('Duplicate ticket prevented').catch(() => undefined);
-    await interaction.editReply({
-      embeds: [createResponseEmbed('info', 'Ticket già aperto', `Hai già un ticket aperto: <#${active.thread_id}>.`, 'SUPPORT')],
-    });
-    return;
-  }
   const ticket = await api.post<TicketView>(
     'api/tickets',
     { thread_id: thread.id, username: interaction.user.username },
@@ -207,6 +206,11 @@ async function closeTicket(
   if (archiveChannelId) {
     const archiveChannel = await interaction.client.channels.fetch(archiveChannelId).catch(() => null);
     if (archiveChannel?.isTextBased() && !archiveChannel.isDMBased() && 'send' in archiveChannel) {
+      if (interaction.guild && 'permissionOverwrites' in archiveChannel) {
+        await archiveChannel.permissionOverwrites
+          .edit(interaction.guild.id, { ViewChannel: false })
+          .catch(() => undefined);
+      }
       await archiveChannel.send({
         content: `Ticket archiviato: <#${channel.id}>`,
         allowedMentions: { parse: [] },
@@ -372,6 +376,11 @@ async function finalizeApplicationChannel(
   if (isThread && settings.discord_tickets_archive_channel_id) {
     const archiveChannel = await interaction.client.channels.fetch(settings.discord_tickets_archive_channel_id).catch(() => null);
     if (archiveChannel?.isTextBased() && !archiveChannel.isDMBased() && 'send' in archiveChannel) {
+      if (interaction.guild && 'permissionOverwrites' in archiveChannel) {
+        await archiveChannel.permissionOverwrites
+          .edit(interaction.guild.id, { ViewChannel: false })
+          .catch(() => undefined);
+      }
       await archiveChannel.send({
         content: `Application archiviata: <#${channel.id}>`,
         allowedMentions: { parse: [] },
