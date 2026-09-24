@@ -118,6 +118,11 @@ fn catalog_items() -> &'static [OpenAlbionItem] {
     CATALOG.get_or_init(|| {
         let mut items: Vec<OpenAlbionItem> = serde_json::from_str(include_str!("catalog.json"))
             .expect("bundled Albion catalog must be valid JSON");
+        items.retain(|item| {
+            item.identifier
+                .as_deref()
+                .is_none_or(is_valid_catalog_identifier)
+        });
         for item in &mut items {
             if let Some(identifier) = item.identifier.as_deref() {
                 item.name = normalize_name(identifier, &item.name);
@@ -126,6 +131,60 @@ fn catalog_items() -> &'static [OpenAlbionItem] {
         }
         items
     })
+}
+
+/// Returns the catalog row for a persisted/request item id.
+///
+/// Item ids are the stable ids exposed by `/openalbion/catalog`; keeping this lookup here makes
+/// validation and the compatibility endpoints use the same filtered source of truth.
+#[must_use]
+pub fn catalog_item_by_id(item_id: i64) -> Option<&'static OpenAlbionItem> {
+    catalog_items().iter().find(|item| item.id == item_id)
+}
+
+/// Whether a catalog identifier represents a real craftable/selectable item.
+///
+/// The bundled source contains placeholder rows for every tier of a family. Consumables do not
+/// follow that ladder: the game only ships the tiers below. Keeping the rule beside the bundled
+/// catalog prevents an impossible family/tier pair from reaching either picker or persistence.
+#[must_use]
+pub fn is_valid_catalog_identifier(identifier: &str) -> bool {
+    let mut parts = identifier.splitn(2, '_');
+    let tier = parts.next().and_then(|value| value.strip_prefix('T'));
+    let family = parts.next().unwrap_or_default();
+    let Some(tier) = tier.and_then(|value| value.parse::<u8>().ok()) else {
+        return true;
+    };
+
+    let valid_tiers = if family.starts_with("POTION_HEAL") || family.starts_with("POTION_ENERGY") {
+        &[2, 4, 6][..]
+    } else if matches!(
+        family,
+        "POTION_REVIVE"
+            | "POTION_STONESKIN"
+            | "POTION_SLOWFIELD"
+            | "POTION_MOB_RESET"
+            | "POTION_CLEANSE2"
+            | "POTION_ACID"
+    ) {
+        &[3, 5, 7][..]
+    } else if matches!(
+        family,
+        "POTION_BERSERK" | "POTION_LAVA" | "POTION_GATHER" | "POTION_TORNADO"
+    ) {
+        &[4, 6, 8][..]
+    } else if family.starts_with("MEAL_PIE")
+        || family.starts_with("MEAL_OMELETTE")
+        || family.starts_with("MEAL_ROAST")
+    {
+        &[3, 5, 7][..]
+    } else if family.starts_with("MEAL_STEW") || family.starts_with("MEAL_SANDWICH") {
+        &[4, 6, 8][..]
+    } else {
+        return true;
+    };
+
+    valid_tiers.contains(&tier)
 }
 
 /// The bundled ability catalog, keyed by tier-stripped base identifier (`MAIN_SWORD`).

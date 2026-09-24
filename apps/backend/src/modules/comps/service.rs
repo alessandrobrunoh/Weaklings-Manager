@@ -74,6 +74,95 @@ fn parse_loadout(item: &build_item::Model) -> Result<BuildLoadout, AppError> {
         .map_err(|_| AppError::Internal(format!("Unknown build loadout: {}", item.loadout)))
 }
 
+/// Validates the catalog identity supplied for a build slot.
+///
+/// Older rows and a few internal tests predate the catalog id contract, so an unknown id is left
+/// untouched for backwards compatibility. Every id exposed by the current catalog is checked
+/// against the slot, type, and real family tier. This is the server-side counterpart to the
+/// picker filter and prevents a stale or hand-written client from creating impossible loadouts.
+fn validate_catalog_item(
+    slot: BuildSlot,
+    item_type: &str,
+    item_id: i64,
+    item_tier: Option<&str>,
+    quality: Option<i16>,
+    enchantment: Option<i16>,
+) -> Result<(), AppError> {
+    let Some(item) = crate::modules::openalbion::service::catalog_item_by_id(item_id) else {
+        return Ok(());
+    };
+    let identifier = item.identifier.as_deref().unwrap_or_default();
+    let compatible = match slot {
+        BuildSlot::Weapon => {
+            (identifier.starts_with('T')
+                && identifier.contains("_MAIN_"))
+                || (identifier.starts_with('T') && identifier.contains("_2H_"))
+        }
+        BuildSlot::OffHand => identifier.contains("_OFF_"),
+        BuildSlot::Head => identifier.contains("_HEAD_"),
+        BuildSlot::Armor => identifier.contains("_ARMOR_"),
+        BuildSlot::Shoes => identifier.contains("_SHOES_"),
+        BuildSlot::Cape => identifier.contains("_CAPE"),
+        BuildSlot::Bag => identifier.contains("_BAG") || identifier.contains("_BACKPACK_"),
+        BuildSlot::Potion => identifier.contains("_POTION_"),
+        BuildSlot::Food => identifier.contains("_MEAL_"),
+        BuildSlot::Mount => identifier.contains("_MOUNT_"),
+    };
+    if !compatible {
+        return Err(AppError::Validation(format!(
+            "{} cannot be placed in the {slot} slot",
+            item.name
+        )));
+    }
+
+    let expected_type = match slot {
+        BuildSlot::Weapon => "weapon",
+        BuildSlot::Head | BuildSlot::Armor | BuildSlot::Shoes => "armor",
+        BuildSlot::Potion | BuildSlot::Food => "consumable",
+        BuildSlot::OffHand | BuildSlot::Cape | BuildSlot::Bag | BuildSlot::Mount => "accessory",
+    };
+    if item_type != expected_type {
+        return Err(AppError::Validation(format!(
+            "{} has catalog type {}, not {expected_type}",
+            item.name,
+            item.item_type.as_deref().unwrap_or("unknown")
+        )));
+    }
+
+    if let Some(requested_tier) = item_tier.filter(|tier| !tier.trim().is_empty()) {
+        let requested_tier = requested_tier
+            .trim()
+            .trim_start_matches(['T', 't'])
+            .split('.')
+            .next()
+            .unwrap_or_default();
+        if item.tier.as_deref() != Some(requested_tier) {
+            return Err(AppError::Validation(format!(
+                "{} is tier {}, not T{requested_tier}",
+                item.name,
+                item.tier.as_deref().unwrap_or("unknown")
+            )));
+        }
+    }
+
+    let supports_quality = !identifier.contains("_POTION_")
+        && !identifier.contains("_MEAL_")
+        && !identifier.contains("_MOUNT_");
+    if !supports_quality && quality.is_some_and(|value| value != 4) {
+        return Err(AppError::Validation(format!(
+            "{} has no item quality; use the default quality",
+            item.name
+        )));
+    }
+    if identifier.contains("_MOUNT_") && enchantment.is_some_and(|value| value != 0) {
+        return Err(AppError::Validation(format!(
+            "{} cannot be enchanted",
+            item.name
+        )));
+    }
+    Ok(())
+}
+
 /// The `spell_id` values chosen on one equipped item, grouped by kind.
 async fn read_item_spells(
     db: &DatabaseConnection,
@@ -960,6 +1049,14 @@ impl CompService {
                     )));
                 }
 
+                validate_catalog_item(
+                    item.slot,
+                    &item.openalbion_item_type,
+                    item.openalbion_item_id,
+                    item.openalbion_item_tier.as_deref(),
+                    item.openalbion_item_quality,
+                    item.openalbion_item_enchantment,
+                )?;
                 let spells = item.spells;
                 let quality = parse_item_quality(item.openalbion_item_quality)
                     .map_err(AppError::Validation)?;
@@ -1345,6 +1442,14 @@ impl CompService {
             parse_item_quality(req.openalbion_item_quality).map_err(AppError::Validation)?;
         let enchantment = parse_item_enchantment(req.openalbion_item_enchantment)
             .map_err(AppError::Validation)?;
+        validate_catalog_item(
+            slot,
+            &req.openalbion_item_type,
+            req.openalbion_item_id,
+            req.openalbion_item_tier.as_deref(),
+            req.openalbion_item_quality,
+            req.openalbion_item_enchantment,
+        )?;
         let icon = icon_url_with_quality(req.openalbion_item_icon.as_deref(), quality);
 
         if let Some(model) = existing {

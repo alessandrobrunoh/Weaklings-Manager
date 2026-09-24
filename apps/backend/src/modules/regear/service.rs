@@ -18,8 +18,9 @@ use crate::modules::albion::entities::albion_link;
 use crate::modules::bank::entities::ActiveModel as BankActiveModel;
 use crate::modules::bank::status::TransactionStatus;
 use crate::modules::comps::entities::{build, comp_build};
+use crate::modules::comps::status::BuildSlot;
 use crate::modules::events::entities::{event, event_participation};
-use crate::modules::openalbion::service::aodp_identifier_for_stored_item;
+use crate::modules::openalbion::service::{aodp_identifier_for_stored_item, catalog_item_by_id};
 use crate::modules::users::entities as user_entities;
 use crate::pagination::{PaginatedData, PaginationParams, SortOrder, resolve_sort_key};
 
@@ -39,6 +40,52 @@ use super::status::{RegearSource, RegearStatus};
 
 /// The transaction type written into the Guild Bank when a regear is accepted.
 pub const TYPE_REGEAR_CREDIT: &str = "regear_credit";
+
+fn validate_regear_override(
+    slot: BuildSlot,
+    item_id: i64,
+    quality: i16,
+    enchantment: i16,
+) -> Result<(), AppError> {
+    let Some(item) = catalog_item_by_id(item_id) else {
+        return Ok(());
+    };
+    let identifier = item.identifier.as_deref().unwrap_or_default();
+    let compatible = match slot {
+        BuildSlot::Weapon => identifier.contains("_MAIN_") || identifier.contains("_2H_"),
+        BuildSlot::OffHand => identifier.contains("_OFF_"),
+        BuildSlot::Head => identifier.contains("_HEAD_"),
+        BuildSlot::Armor => identifier.contains("_ARMOR_"),
+        BuildSlot::Shoes => identifier.contains("_SHOES_"),
+        BuildSlot::Cape => identifier.contains("_CAPE"),
+        BuildSlot::Bag => identifier.contains("_BAG") || identifier.contains("_BACKPACK_"),
+        BuildSlot::Potion => identifier.contains("_POTION_"),
+        BuildSlot::Food => identifier.contains("_MEAL_"),
+        BuildSlot::Mount => identifier.contains("_MOUNT_"),
+    };
+    if !compatible {
+        return Err(AppError::Validation(format!(
+            "{} cannot be placed in the {slot} slot",
+            item.name
+        )));
+    }
+    let supports_quality = !identifier.contains("_POTION_")
+        && !identifier.contains("_MEAL_")
+        && !identifier.contains("_MOUNT_");
+    if !supports_quality && quality != 4 {
+        return Err(AppError::Validation(format!(
+            "{} has no item quality; use the default quality",
+            item.name
+        )));
+    }
+    if identifier.contains("_MOUNT_") && enchantment != 0 {
+        return Err(AppError::Validation(format!(
+            "{} cannot be enchanted",
+            item.name
+        )));
+    }
+    Ok(())
+}
 
 /// Service for executing regear business logic.
 pub struct RegearService;
@@ -767,6 +814,15 @@ impl RegearService {
             .filter(build_item::Column::Loadout.eq(BuildLoadout::Main.as_str()))
             .all(db)
             .await?;
+
+        for item_override in &req.item_overrides {
+            validate_regear_override(
+                item_override.slot,
+                item_override.openalbion_item_id,
+                item_override.openalbion_item_quality,
+                item_override.openalbion_item_enchantment,
+            )?;
+        }
 
         let mut equipment = serde_json::Map::new();
         let mut covered_slots: Vec<BuildSlot> = Vec::new();
