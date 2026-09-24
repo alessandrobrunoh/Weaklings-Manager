@@ -2818,6 +2818,11 @@ export interface GuildSettingsView {
   discord_applications_final_title?: string;
   discord_applications_result_message?: string;
   discord_applications_panel_message_id: string | null;
+  discord_tickets_archive_channel_id?: string | null;
+  discord_tickets_welcome_title?: string;
+  discord_tickets_welcome_message?: string;
+  discord_tickets_closed_title?: string;
+  discord_tickets_closed_message?: string;
   discord_giveaways_channel_id?: string | null;
   discord_giveaways_role_id?: string | null;
   default_split_fee: number | string;

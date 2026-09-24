@@ -22,8 +22,7 @@ import { channelSelectOptions, roleSelectOptions } from '../../shared/discord/di
 
 interface ApplicationsDraft {
   discord_applications_channel_id: string;
-  discord_applications_category_id: string;
-  discord_applications_archive_category_id: string;
+  discord_tickets_archive_channel_id: string;
   discord_applications_manage_role_id: string;
   discord_applications_accepted_role_id: string;
   discord_applications_status_channel_id: string;
@@ -52,6 +51,10 @@ interface ApplicationsDraft {
   discord_applications_final_title: string;
   discord_applications_result_message: string;
   discord_applications_panel_message_id: string;
+  discord_tickets_welcome_title: string;
+  discord_tickets_welcome_message: string;
+  discord_tickets_closed_title: string;
+  discord_tickets_closed_message: string;
 }
 
 interface MessageField {
@@ -67,8 +70,7 @@ interface MessageGroup {
 
 const EMPTY_DRAFT: ApplicationsDraft = {
   discord_applications_channel_id: '',
-  discord_applications_category_id: '',
-  discord_applications_archive_category_id: '',
+  discord_tickets_archive_channel_id: '',
   discord_applications_manage_role_id: '',
   discord_applications_accepted_role_id: '',
   discord_applications_status_channel_id: '',
@@ -97,6 +99,10 @@ const EMPTY_DRAFT: ApplicationsDraft = {
   discord_applications_final_title: 'Application conclusa',
   discord_applications_result_message: 'Grazie per aver inviato la tua application.',
   discord_applications_panel_message_id: '',
+  discord_tickets_welcome_title: 'Ticket di supporto',
+  discord_tickets_welcome_message: 'Descrivi qui il problema: un membro dello staff ti risponderà appena possibile.',
+  discord_tickets_closed_title: 'Ticket chiuso',
+  discord_tickets_closed_message: 'Questo ticket è stato chiuso.',
 };
 
 const MESSAGE_GROUPS: readonly MessageGroup[] = [
@@ -408,39 +414,21 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
                 </span>
               </label>
               <label>
-                <span class="label">{{ t('admin.applications.category') }}</span>
-                <app-searchable-select
-                  class="mt-1 block"
-                  [options]="channelOptions(['category'], draft().discord_applications_category_id)"
-                  [value]="draft().discord_applications_category_id"
-                  [emptyLabel]="t('admin.applications.placeholder')"
-                  [searchPlaceholder]="t('common.search')"
-                  [noMatchesLabel]="t('picker.noMatches')"
-                  [emptyOptionsLabel]="t('picker.empty')"
-                  [loading]="catalogLoading()"
-                  [ariaLabel]="t('admin.applications.category')"
-                  (valueChange)="setDraft('discord_applications_category_id', $event)"
-                />
-                <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
-                  {{ t('admin.applications.categoryHint') }}
-                </span>
-              </label>
-              <label>
                 <span class="label">{{ t('admin.applications.archiveCategory') }}</span>
                 <app-searchable-select
                   class="mt-1 block"
-                  [options]="channelOptions(['category'], draft().discord_applications_archive_category_id)"
-                  [value]="draft().discord_applications_archive_category_id"
+                  [options]="channelOptions(['text'], draft().discord_tickets_archive_channel_id)"
+                  [value]="draft().discord_tickets_archive_channel_id"
                   [emptyLabel]="t('admin.applications.placeholder')"
                   [searchPlaceholder]="t('common.search')"
                   [noMatchesLabel]="t('picker.noMatches')"
                   [emptyOptionsLabel]="t('picker.empty')"
                   [loading]="catalogLoading()"
                   [ariaLabel]="t('admin.applications.archiveCategory')"
-                  (valueChange)="setDraft('discord_applications_archive_category_id', $event)"
+                  (valueChange)="setDraft('discord_tickets_archive_channel_id', $event)"
                 />
                 <span class="mt-1 block text-xs" style="color: var(--color-text-secondary)">
-                  {{ t('admin.applications.archiveCategoryHint') }}
+                  I thread chiusi restano archiviati nel canale originale; qui viene pubblicato il riferimento per gli amministratori.
                 </span>
               </label>
               <label>
@@ -587,6 +575,27 @@ const MESSAGE_GROUPS: readonly MessageGroup[] = [
                   </div>
                 </fieldset>
               }
+              <fieldset class="message-group">
+                <legend>Ticket</legend>
+                <div class="grid gap-3">
+                  <label>
+                    <span class="label">Titolo di benvenuto</span>
+                    <input class="input" type="text" maxlength="256" [value]="draft().discord_tickets_welcome_title" (input)="updateField('discord_tickets_welcome_title', $event)" />
+                  </label>
+                  <label>
+                    <span class="label">Messaggio di benvenuto</span>
+                    <textarea class="input min-h-24" maxlength="4000" [value]="draft().discord_tickets_welcome_message" (input)="updateField('discord_tickets_welcome_message', $event)"></textarea>
+                  </label>
+                  <label>
+                    <span class="label">Titolo di chiusura</span>
+                    <input class="input" type="text" maxlength="256" [value]="draft().discord_tickets_closed_title" (input)="updateField('discord_tickets_closed_title', $event)" />
+                  </label>
+                  <label>
+                    <span class="label">Messaggio di chiusura</span>
+                    <textarea class="input min-h-24" maxlength="4000" [value]="draft().discord_tickets_closed_message" (input)="updateField('discord_tickets_closed_message', $event)"></textarea>
+                  </label>
+                </div>
+              </fieldset>
             </div>
           </section>
 
@@ -660,8 +669,7 @@ export class AdminApplications {
       const draft = this.draft();
       const body: UpdateGuildSettingsRequest = {
         discord_applications_channel_id: draft.discord_applications_channel_id.trim(),
-        discord_applications_category_id: draft.discord_applications_category_id.trim(),
-        discord_applications_archive_category_id: draft.discord_applications_archive_category_id.trim(),
+        discord_tickets_archive_channel_id: draft.discord_tickets_archive_channel_id.trim(),
         discord_applications_manage_role_id: draft.discord_applications_manage_role_id.trim(),
         discord_applications_accepted_role_id: draft.discord_applications_accepted_role_id.trim(),
         discord_applications_status_channel_id: draft.discord_applications_status_channel_id.trim(),
@@ -690,6 +698,10 @@ export class AdminApplications {
         discord_applications_final_title: draft.discord_applications_final_title.trim(),
         discord_applications_result_message: draft.discord_applications_result_message.trim(),
         discord_applications_panel_message_id: draft.discord_applications_panel_message_id.trim(),
+        discord_tickets_welcome_title: draft.discord_tickets_welcome_title.trim(),
+        discord_tickets_welcome_message: draft.discord_tickets_welcome_message.trim(),
+        discord_tickets_closed_title: draft.discord_tickets_closed_title.trim(),
+        discord_tickets_closed_message: draft.discord_tickets_closed_message.trim(),
       };
       const updated = await firstValueFrom(
         this.api.put<GuildSettingsView>('api/admin/settings', body),
@@ -740,8 +752,7 @@ export class AdminApplications {
 function toDraft(settings: GuildSettingsView): ApplicationsDraft {
   return {
     discord_applications_channel_id: settings.discord_applications_channel_id ?? '',
-    discord_applications_category_id: settings.discord_applications_category_id ?? '',
-    discord_applications_archive_category_id: settings.discord_applications_archive_category_id ?? '',
+    discord_tickets_archive_channel_id: settings.discord_tickets_archive_channel_id ?? '',
     discord_applications_manage_role_id: settings.discord_applications_manage_role_id ?? '',
     discord_applications_accepted_role_id: settings.discord_applications_accepted_role_id ?? '',
     discord_applications_status_channel_id: settings.discord_applications_status_channel_id ?? '',
@@ -793,5 +804,11 @@ function toDraft(settings: GuildSettingsView): ApplicationsDraft {
     discord_applications_result_message:
       settings.discord_applications_result_message ?? 'Grazie per aver inviato la tua application.',
     discord_applications_panel_message_id: settings.discord_applications_panel_message_id ?? '',
+    discord_tickets_welcome_title: settings.discord_tickets_welcome_title ?? 'Ticket di supporto',
+    discord_tickets_welcome_message:
+      settings.discord_tickets_welcome_message ??
+      'Descrivi qui il problema: un membro dello staff ti risponderà appena possibile.',
+    discord_tickets_closed_title: settings.discord_tickets_closed_title ?? 'Ticket chiuso',
+    discord_tickets_closed_message: settings.discord_tickets_closed_message ?? 'Questo ticket è stato chiuso.',
   };
 }
