@@ -32,6 +32,7 @@ pub mod regear;
 pub mod siphoned;
 pub mod splits;
 pub mod trials;
+pub mod tickets;
 pub mod users;
 pub mod utils;
 pub mod vods;
@@ -52,6 +53,7 @@ pub fn router() -> Router {
         .nest("/albion", albion::router())
         .nest("/albionbb", albionbb::router())
         .nest("/applications", applications::router())
+        .nest("/tickets", tickets::router())
         .nest("/albiondata", albiondata::router())
         .nest("/battles", battles::router())
         .nest("/attention", attention::router())
