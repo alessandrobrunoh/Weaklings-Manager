@@ -483,18 +483,18 @@ interface AddEventMemberRequest {
           <!-- ================= TAB 1: ROSTER & COMPOSITION BUILDER ================= -->
           @case ('roster') {
             @if (rosterSnapshotState() === 'ready' && rosterSnapshot(); as roster) {
-              <div class="space-y-4">
+              <div class="event-roster-shell space-y-4">
                 <p class="event-detail__roster-live sr-only" aria-live="polite" aria-atomic="true">
                   {{ rosterAnnouncement() }}
                 </p>
 
                 <!-- 3-COLUMN COMPACT LAYOUT: SIDEBAR PANCHINA | CONTENT PARTY | SIDEBAR CON EQUIP -->
                 <div
-                  class="grid grid-cols-1 lg:grid-cols-[250px_1fr_310px] xl:grid-cols-[270px_1fr_340px] gap-4 items-start"
+                  class="event-roster-layout grid grid-cols-1 lg:grid-cols-[250px_1fr_310px] xl:grid-cols-[270px_1fr_340px] gap-4 items-start"
                 >
                   <!-- 1. LEFT SIDEBAR: PANCHINA & CONTROLLI -->
                   <aside
-                    class="space-y-3 sticky top-4 max-h-[calc(100vh-6rem)] overflow-y-auto scrollbar-thin"
+                    class="event-roster-sidebar space-y-3 sticky top-4 max-h-[calc(100vh-6rem)] overflow-y-auto scrollbar-thin"
                   >
                     <!-- Panchina Card -->
                     <div
@@ -718,7 +718,7 @@ interface AddEventMemberRequest {
                   </aside>
 
                   <!-- 2. CENTER COLUMN: CONTENT PARTY -->
-                  <div class="space-y-4 min-w-0">
+                  <div class="event-roster-main space-y-4 min-w-0">
                     <!-- Active swap / assign notice banner -->
                     @if (rosterSwapSource(); as source) {
                       <div
@@ -2758,6 +2758,59 @@ interface AddEventMemberRequest {
       :host {
         display: block;
         color: var(--color-text);
+      }
+      /* Resolve legacy dark-theme utility classes through semantic tokens. */
+      :host ::ng-deep [class~='text-white'] {
+        color: var(--color-text) !important;
+      }
+      :host ::ng-deep [class~='text-secondary'] {
+        color: var(--color-text-secondary) !important;
+      }
+      :host ::ng-deep [class~='text-disabled'] {
+        color: var(--color-text-disabled) !important;
+      }
+      :host ::ng-deep [class~='hover:text-white']:hover {
+        color: var(--color-text) !important;
+      }
+      :host ::ng-deep [class~='bg-white/5'] {
+        background-color: color-mix(in srgb, var(--color-text) 5%, transparent) !important;
+      }
+      :host ::ng-deep [class~='bg-white/10'] {
+        background-color: color-mix(in srgb, var(--color-text) 10%, transparent) !important;
+      }
+      :host ::ng-deep [class~='border-white/5'],
+      :host ::ng-deep [class~='border-white/10'] {
+        border-color: color-mix(in srgb, var(--color-text) 16%, transparent) !important;
+      }
+      :host ::ng-deep [class~='bg-black/40'] {
+        background-color: var(--color-surface-3) !important;
+      }
+      .event-roster-shell {
+        container-type: inline-size;
+      }
+      .event-roster-sidebar,
+      .event-roster-main {
+        min-width: 0;
+      }
+      .event-roster-sidebar > .card,
+      .event-roster-main > .card,
+      .event-roster-main section.card {
+        border-color: var(--color-border);
+        background: var(--color-surface);
+      }
+      .event-roster-sidebar > .card {
+        box-shadow: var(--shadow-subtle-2);
+      }
+      .event-roster-main section.card {
+        box-shadow: var(--shadow-subtle);
+      }
+      @container (max-width: 720px) {
+        .event-roster-layout {
+          gap: 0.75rem;
+        }
+        .event-roster-main {
+          order: -1;
+        }
       }
       :host ::ng-deep .rounded-xl,
       :host ::ng-deep .rounded-2xl {

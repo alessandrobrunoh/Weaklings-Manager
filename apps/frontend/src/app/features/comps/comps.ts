@@ -255,7 +255,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
 
     <app-page-stack>
       <section class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-label="Comps summary">
-        @if (tab() === 'comps') {
+        @if (page() === 'comps') {
           <article class="kpi-card">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
@@ -409,7 +409,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
           </article>
         }
       </section>
-      @if (tab() === 'comps') {
+      @if (page() === 'comps') {
         <section class="grid gap-4" aria-label="Compositions list">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
@@ -767,11 +767,6 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
           </ng-template>
         </app-data-table>
       } @else {
-        <app-view-toggle
-          [options]="categoryKindOptions()"
-          [active]="categoryKind()"
-          (activeChange)="switchCategoryKind($event)"
-        />
         <app-data-table
           [columns]="categoryColumns()"
           [rows]="managedCategories()"
@@ -859,7 +854,7 @@ type PendingDelete = { kind: 'category'; id: number; name: string; categoryKind:
             ></textarea>
           </label>
 
-          @if (tab() === 'builds') {
+          @if (page() === 'builds') {
             <label>
               <span class="label">{{ t('common.role') }}</span>
               <select class="select" [value]="draftRole()" (change)="onRoleChange($event)">
@@ -1140,10 +1135,13 @@ export class Comps {
   protected readonly tab = signal<TabId>('comps');
   protected readonly tabOptions = computed<ViewToggleOption[]>(() =>
     this.page() === 'comps'
-      ? [{ id: 'comps', label: this.t('comps.comps') }]
+      ? [
+          { id: 'comps', label: this.t('comps.comps') },
+          { id: 'categories', label: this.t('comps.compCategories') },
+        ]
       : [
           { id: 'builds', label: this.t('comps.builds') },
-          { id: 'categories', label: this.t('comps.categories') },
+          { id: 'categories', label: this.t('comps.buildCategories') },
         ],
   );
   protected readonly loading = signal(false);
@@ -1244,10 +1242,6 @@ export class Comps {
   protected readonly categoryDialogOpen = signal(false);
   protected readonly categoryDialogMode = signal<'create' | 'edit'>('create');
   protected readonly categoryKind = signal<CategoryKind>('build');
-  protected readonly categoryKindOptions = computed<ViewToggleOption[]>(() => [
-    { id: 'build', label: this.t('comps.buildCategories') },
-    { id: 'comp', label: this.t('comps.compCategories') },
-  ]);
   protected readonly categoryDraftName = signal('');
   protected readonly categoryDraftDescription = signal('');
   protected readonly editingCategoryId = signal<number | null>(null);
@@ -1357,7 +1351,7 @@ export class Comps {
   );
 
   protected readonly currentCategories = computed(() =>
-    this.tab() === 'builds' ? this.buildCategories() : this.compCategories(),
+    this.page() === 'builds' ? this.buildCategories() : this.compCategories(),
   );
   protected readonly managedCategories = computed(() =>
     this.categoryKind() === 'build' ? this.buildCategories() : this.compCategories(),
@@ -1456,7 +1450,11 @@ export class Comps {
     this.translate.t(key, params);
 
   constructor() {
-    effect(() => this.tab.set(this.page()));
+    effect(() => {
+      const page = this.page();
+      this.tab.set(page);
+      this.categoryKind.set(page === 'builds' ? 'build' : 'comp');
+    });
     void this.init();
     // Static application data; one fetch serves every dialog opened in the session.
     void this.albionAbilities
@@ -1476,9 +1474,9 @@ export class Comps {
 
   protected async refreshNow(): Promise<void> {
     await this.loadCategories();
-    if (this.tab() === 'comps') {
+    if (this.page() === 'comps') {
       await this.loadComps();
-    } else if (this.tab() === 'builds') {
+    } else if (this.page() === 'builds') {
       await this.loadBuilds();
     }
   }
@@ -1494,7 +1492,7 @@ export class Comps {
   }
 
   protected createButtonLabel(): string {
-    if (this.tab() === 'builds') {
+    if (this.page() === 'builds' && this.tab() === 'builds') {
       return this.t('comps.createBuild');
     }
     if (this.tab() === 'categories') {
@@ -1504,34 +1502,28 @@ export class Comps {
   }
 
   protected switchTab(next: string): void {
-    if (next !== 'comps' && next !== 'builds' && next !== 'categories') {
+    const allowedTabs = this.page() === 'comps' ? ['comps', 'categories'] : ['builds', 'categories'];
+    if (!allowedTabs.includes(next)) {
       return;
     }
-    if (this.tab() === next) {
+    const nextTab = next as TabId;
+    if (this.tab() === nextTab) {
       return;
     }
-    this.tab.set(next);
+    this.tab.set(nextTab);
     this.closeCreate();
     this.closeCategoryDialog();
     this.closeConfirm();
     this.loadFailed.set(false);
-    if (next === 'comps') {
+    if (this.page() === 'comps' && next === 'comps') {
       this.compsPage = null;
       void this.loadComps();
-    } else if (next === 'builds') {
+    } else if (this.page() === 'builds' && next === 'builds') {
       this.buildsPage = null;
       void this.loadBuilds();
     } else {
       void this.loadCategories();
     }
-  }
-
-  protected switchCategoryKind(next: string): void {
-    if (next !== 'build' && next !== 'comp') {
-      return;
-    }
-    this.categoryKind.set(next);
-    this.closeCategoryDialog();
   }
 
   protected openCreate(): void {
